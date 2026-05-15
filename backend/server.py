@@ -1009,6 +1009,389 @@ async def submission_pdf(sid: str, authorization: Optional[str] = Header(None), 
 
 
 
+# ============== RISK REGISTER ==============
+RISK_RATING_LABELS = {
+    1: 'Low', 2: 'Low', 3: 'Moderate', 4: 'Moderate',
+    6: 'High', 8: 'High', 9: 'Critical', 12: 'Critical', 16: 'Critical', 25: 'Critical'
+}
+
+def risk_label(score: int) -> str:
+    if score <= 2: return 'Low'
+    if score <= 4: return 'Moderate'
+    if score <= 8: return 'High'
+    return 'Critical'
+
+class Risk(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    location_id: Optional[str] = None
+    hazard_category: str  # Gravity/fall, ICT, Administrative, Lighting, Biological, Chemical
+    hazard: str
+    risk_details: str
+    likelihood: int = 3  # 1..5
+    consequence: int = 3  # 1..5
+    current_controls: List[str] = []
+    residual_likelihood: int = 2
+    residual_consequence: int = 2
+    new_controls: List[str] = []
+    owner_id: Optional[str] = None
+    status: str = 'open'  # open, mitigated, closed
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/risks')
+async def list_risks(user=Depends(get_current_user)):
+    items = await db.risks.find({}, {'_id': 0}).sort('created_at', -1).to_list(2000)
+    return items
+
+@api_router.post('/risks')
+async def create_risk(r: Risk, user=Depends(get_current_user)):
+    doc = r.model_dump()
+    await db.risks.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/risks/{rid}')
+async def update_risk(rid: str, r: Risk, user=Depends(get_current_user)):
+    doc = r.model_dump(); doc['id'] = rid
+    await db.risks.update_one({'id': rid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/risks/{rid}')
+async def delete_risk(rid: str, user=Depends(require_admin)):
+    await db.risks.delete_one({'id': rid})
+    return {'ok': True}
+
+# ============== ACTION PLANS ==============
+class ActionItem(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: Optional[str] = None
+    assignee_id: Optional[str] = None
+    assignee_name: Optional[str] = None
+    submission_id: Optional[str] = None
+    risk_id: Optional[str] = None
+    location_id: Optional[str] = None
+    priority: str = 'medium'  # low, medium, high, critical
+    status: str = 'open'  # open, in_progress, done, overdue
+    due_date: Optional[str] = None
+    completed_at: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/actions')
+async def list_actions(user=Depends(get_current_user)):
+    items = await db.actions.find({}, {'_id': 0}).sort('due_date', 1).to_list(2000)
+    return items
+
+@api_router.post('/actions')
+async def create_action(a: ActionItem, user=Depends(get_current_user)):
+    doc = a.model_dump()
+    await db.actions.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/actions/{aid}')
+async def update_action(aid: str, a: ActionItem, user=Depends(get_current_user)):
+    doc = a.model_dump(); doc['id'] = aid
+    await db.actions.update_one({'id': aid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/actions/{aid}')
+async def delete_action(aid: str, user=Depends(get_current_user)):
+    await db.actions.delete_one({'id': aid})
+    return {'ok': True}
+
+# ============== CHEMICALS / SDS ==============
+class Chemical(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    manufacturer: Optional[str] = None
+    cas_number: Optional[str] = None
+    hazard_class: str = 'general'  # flammable, corrosive, toxic, oxidizer, explosive, general
+    sds_url: Optional[str] = None
+    sds_b64: Optional[str] = None  # base64 PDF content
+    location_id: Optional[str] = None
+    quantity: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/chemicals')
+async def list_chemicals(user=Depends(get_current_user)):
+    items = await db.chemicals.find({}, {'_id': 0}).to_list(2000)
+    return items
+
+@api_router.post('/chemicals')
+async def create_chemical(c: Chemical, user=Depends(get_current_user)):
+    doc = c.model_dump()
+    await db.chemicals.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/chemicals/{cid}')
+async def delete_chemical(cid: str, user=Depends(require_admin)):
+    await db.chemicals.delete_one({'id': cid})
+    return {'ok': True}
+
+# ============== ASSETS ==============
+class Asset(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    asset_type: str = 'equipment'  # equipment, vehicle, tool, ppe
+    serial_number: Optional[str] = None
+    location_id: Optional[str] = None
+    assigned_worker_id: Optional[str] = None
+    status: str = 'active'  # active, maintenance, retired
+    next_inspection: Optional[str] = None
+    last_inspection: Optional[str] = None
+    notes: Optional[str] = None
+    photo_b64: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/assets')
+async def list_assets(user=Depends(get_current_user)):
+    return await db.assets.find({}, {'_id': 0}).to_list(2000)
+
+@api_router.post('/assets')
+async def create_asset(a: Asset, user=Depends(get_current_user)):
+    doc = a.model_dump()
+    await db.assets.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/assets/{aid}')
+async def delete_asset(aid: str, user=Depends(require_admin)):
+    await db.assets.delete_one({'id': aid})
+    return {'ok': True}
+
+# ============== CONTRACTORS ==============
+class Contractor(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_name: str
+    contact_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    trade: Optional[str] = None
+    insurance_expiry: Optional[str] = None
+    prequalified: bool = False
+    workers_count: int = 0
+    notes: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/contractors')
+async def list_contractors(user=Depends(get_current_user)):
+    return await db.contractors.find({}, {'_id': 0}).to_list(2000)
+
+@api_router.post('/contractors')
+async def create_contractor(c: Contractor, user=Depends(get_current_user)):
+    doc = c.model_dump()
+    await db.contractors.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/contractors/{cid}')
+async def delete_contractor(cid: str, user=Depends(require_admin)):
+    await db.contractors.delete_one({'id': cid})
+    return {'ok': True}
+
+# ============== HAZARD QUICK REPORT ==============
+class HazardReport(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: str
+    severity: str = 'medium'  # low, medium, high, critical
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    reporter_id: Optional[str] = None
+    reporter_name: Optional[str] = None
+    photo_b64: Optional[str] = None
+    gps_lat: Optional[float] = None
+    gps_lng: Optional[float] = None
+    status: str = 'open'
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/hazards')
+async def list_hazards(user=Depends(get_current_user)):
+    return await db.hazards.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+@api_router.post('/hazards')
+async def create_hazard(h: HazardReport, user=Depends(get_current_user)):
+    doc = h.model_dump()
+    doc['reporter_id'] = user['id']
+    doc['reporter_name'] = user.get('name')
+    await db.hazards.insert_one(doc)
+    # Auto-create action for high/critical
+    if doc.get('severity') in ('high', 'critical'):
+        action = ActionItem(
+            title=f"Address hazard: {doc['title']}",
+            description=doc['description'],
+            priority=doc['severity'],
+            location_id=doc.get('location_id'),
+            due_date=(datetime.now(timezone.utc) + timedelta(days=3 if doc['severity']=='critical' else 7)).date().isoformat(),
+        ).model_dump()
+        await db.actions.insert_one(action)
+    doc.pop('_id', None)
+    return doc
+
+# ============== EXTEND SEED ==============
+@api_router.post('/seed-extras')
+async def seed_extras():
+    """Seed risk register, chemicals, assets, contractors, actions for demo."""
+    import random
+    random.seed(7)
+    await db.risks.delete_many({})
+    await db.actions.delete_many({})
+    await db.chemicals.delete_many({})
+    await db.assets.delete_many({})
+    await db.contractors.delete_many({})
+    await db.hazards.delete_many({})
+
+    locations = await db.locations.find({}, {'_id': 0}).to_list(100)
+    workers = await db.workers.find({}, {'_id': 0}).to_list(100)
+
+    # RISKS — civil-contractor specific
+    risk_seed = [
+        ('Gravity / Fall', 'Fall from height — scaffold without barrier on slab edge', 4, 5, ['Toe boards', 'PPE harness'], ['Install permanent guardrails', 'Daily inspection'], 2, 3),
+        ('Excavation', 'Trench collapse — unshored excavation > 1.2m', 4, 5, ['Sloping at 1:1'], ['Hydraulic shoring boxes', 'Competent person daily check'], 1, 3),
+        ('ICT', 'Loss of internet — no access to safe work procedures on jobsite', 3, 3, ['Paper backup of SWPs'], ['Offline mobile sync'], 1, 2),
+        ('Administrative', 'Hearing damage — exposure to compactor / jackhammer noise', 4, 3, ['Hearing protection issued'], ['Mandatory double-hearing protection above 85dB'], 2, 2),
+        ('Lighting', 'Insufficient lighting in stairwell of partially built structure', 3, 2, ['Temporary LED strings'], ['Permanent lighting install'], 1, 2),
+        ('Biological', 'Possibility of exposure to flu/seasonal illness on crowded crew bus', 3, 2, ['Hand sanitizer at site entry'], ['Stagger crew shifts'], 2, 2),
+        ('Plant / Equipment', 'Excavator swing-radius struck-by hazard for ground crew', 4, 5, ['Banksman / spotter'], ['Spatial awareness alarms', 'Exclusion zone tape'], 2, 4),
+        ('Chemical', 'Exposure to silica dust during concrete cutting', 4, 4, ['Wet cutting', 'P2 respirators'], ['Engineered local exhaust ventilation'], 2, 3),
+        ('Chemical', 'Asbestos exposure during demolition of legacy structures', 3, 5, ['Pre-demo asbestos survey'], ['Licensed asbestos removal contractor'], 1, 4),
+        ('Manual Handling', 'Back strain — lifting heavy formwork timbers manually', 4, 3, ['2-person lift policy'], ['Mechanical lifting aid procurement'], 3, 2),
+        ('Traffic', 'Public vehicle intrusion into work zone on Highway 401 expansion', 3, 5, ['TCP / cones / signage'], ['Concrete barriers', 'Variable message signs'], 2, 4),
+        ('Electrical', 'Contact with overhead power lines during crane operations', 2, 5, ['Spotter / minimum distance'], ['De-energize lines via utility coordination'], 1, 4),
+    ]
+    risk_docs = []
+    for hc, det, l, c, cur, new, rl, rc in risk_seed:
+        r = Risk(
+            location_id=random.choice(locations)['id'] if locations else None,
+            hazard_category=hc,
+            hazard=det.split(' — ')[0],
+            risk_details=det,
+            likelihood=l, consequence=c,
+            current_controls=cur,
+            new_controls=new,
+            residual_likelihood=rl, residual_consequence=rc,
+            owner_id=random.choice(workers)['id'] if workers else None,
+        ).model_dump()
+        risk_docs.append(r)
+    await db.risks.insert_many([dict(x) for x in risk_docs])
+
+    # ACTIONS
+    action_seed = [
+        ('Install permanent guardrails — Level 3 slab', 'high', 5),
+        ('Procure hydraulic shoring boxes', 'critical', 2),
+        ('Schedule licensed asbestos removal vendor', 'critical', 1),
+        ('Roll out P2 fit-testing for concrete cutters', 'high', 14),
+        ('Coordinate utility de-energization for crane lifts', 'high', 7),
+        ('Toolbox talk: hearing protection above 85dB', 'medium', 3),
+        ('Replace damaged barricades on Highway 401 zone', 'high', 4),
+        ('Refresh first-aid kits at all 4 sites', 'medium', 10),
+        ('Investigate near-miss: ground crew swing-radius', 'critical', -2),  # overdue
+        ('Update lighting in Downtown Bridge stairwell', 'medium', 21),
+    ]
+    today = datetime.now(timezone.utc)
+    action_docs = []
+    for title, pri, days in action_seed:
+        due = (today + timedelta(days=days)).date().isoformat()
+        st = 'overdue' if days < 0 else random.choice(['open', 'open', 'in_progress'])
+        w = random.choice(workers) if workers else None
+        a = ActionItem(
+            title=title,
+            description=f"Follow-up corrective action — assigned during risk review.",
+            assignee_id=w['id'] if w else None,
+            assignee_name=w['name'] if w else None,
+            priority=pri,
+            status=st,
+            due_date=due,
+            location_id=random.choice(locations)['id'] if locations else None,
+        ).model_dump()
+        action_docs.append(a)
+    await db.actions.insert_many([dict(x) for x in action_docs])
+
+    # CHEMICALS / SDS
+    chemicals = [
+        ('Diesel Fuel #2', 'Petro-Canada', 'flammable', '68476-34-6', '500 L drum'),
+        ('Portland Cement Type GU', 'Lafarge', 'general', '65997-15-1', '50 bags'),
+        ('Concrete Sealer Solvent', 'Sika', 'flammable', '64742-95-6', '20 L'),
+        ('Hydraulic Oil ISO 46', 'Shell Tellus', 'general', None, '200 L drum'),
+        ('Acetylene Gas', 'Air Liquide', 'explosive', '74-86-2', '4 cylinders'),
+        ('Oxygen Gas', 'Air Liquide', 'oxidizer', '7782-44-7', '4 cylinders'),
+        ('Hydrochloric Acid 10%', 'Acme Chem', 'corrosive', '7647-01-0', '5 L'),
+        ('Form Release Agent', 'BASF', 'general', None, '20 L'),
+        ('Spray Paint - Marking', 'Krylon', 'flammable', None, '24 cans'),
+        ('Sodium Hypochlorite (Bleach)', 'Univar', 'corrosive', '7681-52-9', '10 L'),
+    ]
+    chem_docs = []
+    for n, m, hc, cas, qty in chemicals:
+        c = Chemical(
+            name=n, manufacturer=m, hazard_class=hc, cas_number=cas, quantity=qty,
+            location_id=random.choice(locations)['id'] if locations else None,
+            notes='SDS reviewed and on-site.'
+        ).model_dump()
+        chem_docs.append(c)
+    await db.chemicals.insert_many([dict(x) for x in chem_docs])
+
+    # ASSETS
+    asset_seed = [
+        ('CAT 320 Excavator', 'equipment', 'CAT320-2023-001', 14),
+        ('Komatsu D65 Bulldozer', 'equipment', 'KOM-D65-022', 30),
+        ('Manitowoc 18000 Crane', 'equipment', 'MTC-18K-08', 5),
+        ('Ford F-550 Service Truck', 'vehicle', 'F550-PT-12', 60),
+        ('Wacker DPU 6555 Compactor', 'equipment', 'WK-6555-04', -3),  # overdue
+        ('Genie Z-45 Boom Lift', 'equipment', 'GZ45-19', 21),
+        ('Stihl Concrete Saw', 'tool', 'STL-TS420-07', 45),
+        ('Total Station Surveying Kit', 'tool', 'TS-LEICA-01', 90),
+    ]
+    asset_docs = []
+    for n, t, sn, days in asset_seed:
+        nxt = (today + timedelta(days=days)).date().isoformat()
+        a = Asset(
+            name=n, asset_type=t, serial_number=sn,
+            location_id=random.choice(locations)['id'] if locations else None,
+            next_inspection=nxt,
+            last_inspection=(today - timedelta(days=180)).date().isoformat(),
+            status='active' if days > 0 else 'maintenance',
+        ).model_dump()
+        asset_docs.append(a)
+    await db.assets.insert_many([dict(x) for x in asset_docs])
+
+    # CONTRACTORS
+    contractor_seed = [
+        ('Northern Steel Erectors Inc', 'Mark Lawson', 'mark@nse.ca', '416-555-1010', 'Structural Steel', True, 45, 200),
+        ('Apex Excavation Ltd', 'Diane Walters', 'd.walters@apex.ca', '905-555-2222', 'Earthworks', True, 28, 90),
+        ('Stellar Electrical Co', 'Raj Singh', 'raj@stellarelec.ca', '647-555-3333', 'Electrical', True, 12, -10),  # expired
+        ('CleanSite Asbestos Removal', 'Hannah Patel', 'hannah@cleansite.ca', '416-555-4444', 'Hazmat / Asbestos', True, 6, 365),
+        ('GreenScape Landscaping', 'Tom Chen', 'tom@greenscape.ca', '905-555-5555', 'Landscaping', False, 8, -45),  # not prequalified
+    ]
+    contractor_docs = []
+    for company, contact, email, phone, trade, prequal, count, days in contractor_seed:
+        exp = (today + timedelta(days=days)).date().isoformat()
+        c = Contractor(
+            company_name=company, contact_name=contact, email=email, phone=phone,
+            trade=trade, prequalified=prequal, workers_count=count, insurance_expiry=exp,
+            notes='Active on multiple jobsites.' if prequal else 'Pending prequalification review.',
+        ).model_dump()
+        contractor_docs.append(c)
+    await db.contractors.insert_many([dict(x) for x in contractor_docs])
+
+    return {
+        'ok': True,
+        'counts': {
+            'risks': len(risk_docs), 'actions': len(action_docs),
+            'chemicals': len(chem_docs), 'assets': len(asset_docs),
+            'contractors': len(contractor_docs),
+        }
+    }
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}
@@ -1039,6 +1422,14 @@ async def startup_seed():
             logger.info('Seed complete.')
         except Exception as e:
             logger.error(f'Seed failed: {e}')
+    # Always ensure extras exist (idempotent on count check)
+    risk_count = await db.risks.count_documents({})
+    if risk_count == 0:
+        logger.info('Seeding extras (risks, actions, chemicals, assets, contractors)...')
+        try:
+            await seed_extras()
+        except Exception as e:
+            logger.error(f'Extras seed failed: {e}')
 
 @app.on_event('shutdown')
 async def shutdown_db_client():

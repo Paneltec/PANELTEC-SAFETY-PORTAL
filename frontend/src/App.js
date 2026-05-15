@@ -8,7 +8,9 @@ import {
   TrendingUp, Bell, Search, Filter, ChevronRight, Building2, Wrench,
   Calendar, FileSearch, Loader2, Zap, BarChart3,
   MessageSquare, Settings, Send, Download, Share2, Key, Copy, WifiOff,
-  Smartphone, Mail, Pencil, Circle as CircleIcon, ArrowUpRight, Home, User
+  Smartphone, Mail, Pencil, Circle as CircleIcon, ArrowUpRight, Home, User,
+  AlertOctagon, FlaskConical, Truck, Briefcase, ListChecks, ChevronLeft,
+  Menu, ArrowRight, Clock, Flame, Droplets
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
