@@ -1,13 +1,17 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
+import io
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Any, Dict
 import uuid
+import secrets
+import base64
 from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
@@ -306,6 +310,11 @@ async def create_submission(s: FormSubmission, user=Depends(get_current_user)):
         doc['flagged'] = True
     await db.submissions.insert_one(doc)
     doc.pop('_id', None)
+    # Trigger auto-share rules (mocked email log)
+    try:
+        await evaluate_share_rules(doc)
+    except Exception as e:
+        logger.warning(f"Share rule eval failed: {e}")
     return doc
 
 @api_router.delete('/submissions/{sid}')
@@ -706,6 +715,299 @@ async def seed_demo():
             'counts': {'workers': len(worker_docs), 'locations': len(location_docs),
                        'templates': len(templates), 'submissions': len(submissions),
                        'certifications': len(cert_docs)}}
+
+# ============== AUTO-SHARE RULES ==============
+class AutoShareRule(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    location_id: Optional[str] = None
+    category: Optional[str] = None  # incident, near_miss, inspection, toolbox, general, or None=all
+    emails: List[str] = []
+    enabled: bool = True
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/share-rules')
+async def list_share_rules(user=Depends(get_current_user)):
+    items = await db.share_rules.find({}, {'_id': 0}).to_list(500)
+    return items
+
+@api_router.post('/share-rules')
+async def create_share_rule(r: AutoShareRule, user=Depends(require_admin)):
+    doc = r.model_dump()
+    await db.share_rules.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/share-rules/{rid}')
+async def delete_share_rule(rid: str, user=Depends(require_admin)):
+    await db.share_rules.delete_one({'id': rid})
+    return {'ok': True}
+
+@api_router.get('/share-log')
+async def list_share_log(user=Depends(get_current_user)):
+    items = await db.share_log.find({}, {'_id': 0}).sort('sent_at', -1).to_list(500)
+    return items
+
+async def evaluate_share_rules(submission: dict):
+    """Mock email dispatch — store every match in share_log."""
+    rules = await db.share_rules.find({'enabled': True}, {'_id': 0}).to_list(500)
+    for r in rules:
+        loc_match = (not r.get('location_id')) or r.get('location_id') == submission.get('location_id')
+        cat_match = (not r.get('category')) or r.get('category') == submission.get('category')
+        if loc_match and cat_match and r.get('emails'):
+            for email in r['emails']:
+                log = {
+                    'id': str(uuid.uuid4()),
+                    'rule_id': r['id'],
+                    'submission_id': submission['id'],
+                    'template_name': submission.get('template_name'),
+                    'location_name': submission.get('location_name'),
+                    'category': submission.get('category'),
+                    'recipient': email,
+                    'status': 'mocked',
+                    'sent_at': now_iso(),
+                }
+                await db.share_log.insert_one(log)
+
+# ============== API TOKENS (Public API) ==============
+class ApiToken(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    token: str = Field(default_factory=lambda: 'ptk_' + secrets.token_urlsafe(24))
+    scopes: List[str] = ['read']  # read, write
+    last_used: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/api-tokens')
+async def list_tokens(user=Depends(require_admin)):
+    items = await db.api_tokens.find({}, {'_id': 0}).to_list(200)
+    return items
+
+@api_router.post('/api-tokens')
+async def create_token(t: ApiToken, user=Depends(require_admin)):
+    doc = t.model_dump()
+    await db.api_tokens.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/api-tokens/{tid}')
+async def delete_token(tid: str, user=Depends(require_admin)):
+    await db.api_tokens.delete_one({'id': tid})
+    return {'ok': True}
+
+async def verify_api_key(x_api_key: Optional[str] = Header(None)):
+    if not x_api_key:
+        raise HTTPException(401, 'Missing X-API-Key header')
+    tok = await db.api_tokens.find_one({'token': x_api_key}, {'_id': 0})
+    if not tok:
+        raise HTTPException(401, 'Invalid API key')
+    await db.api_tokens.update_one({'id': tok['id']}, {'$set': {'last_used': now_iso()}})
+    return tok
+
+# Public API endpoints (consumed by Zapier-like integrations)
+@api_router.get('/public/submissions')
+async def public_list_submissions(tok=Depends(verify_api_key)):
+    items = await db.submissions.find({}, {'_id': 0}).sort('submitted_at', -1).to_list(500)
+    return items
+
+@api_router.get('/public/workers')
+async def public_list_workers(tok=Depends(verify_api_key)):
+    return await db.workers.find({}, {'_id': 0}).to_list(500)
+
+@api_router.get('/public/certifications')
+async def public_list_certs(tok=Depends(verify_api_key)):
+    return await db.certifications.find({}, {'_id': 0}).to_list(2000)
+
+@api_router.get('/public/locations')
+async def public_list_locations(tok=Depends(verify_api_key)):
+    return await db.locations.find({}, {'_id': 0}).to_list(500)
+
+# ============== CHAT / NOTIFICATIONS ==============
+class ChatMessage(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    sender_id: str
+    sender_name: str
+    sender_role: str = 'worker'
+    channel: str = 'general'  # general | broadcast | direct:<user_id>
+    body: str
+    location_id: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/chat/messages')
+async def list_messages(channel: str = 'general', limit: int = 100, user=Depends(get_current_user)):
+    items = await db.chat_messages.find({'channel': channel}, {'_id': 0}).sort('created_at', -1).limit(limit).to_list(limit)
+    return list(reversed(items))
+
+@api_router.post('/chat/messages')
+async def post_message(body: dict, user=Depends(get_current_user)):
+    msg = ChatMessage(
+        sender_id=user['id'],
+        sender_name=user.get('name', 'Unknown'),
+        sender_role=user.get('role', 'worker'),
+        channel=body.get('channel', 'general'),
+        body=body.get('body', '').strip(),
+        location_id=body.get('location_id'),
+    ).model_dump()
+    if not msg['body']:
+        raise HTTPException(400, 'Empty message')
+    await db.chat_messages.insert_one(msg)
+    msg.pop('_id', None)
+    # Add a notification fan-out
+    await db.notifications.insert_one({
+        'id': str(uuid.uuid4()),
+        'type': 'chat',
+        'title': f"New message from {msg['sender_name']}",
+        'body': msg['body'][:120],
+        'channel': msg['channel'],
+        'created_at': now_iso(),
+        'read': False,
+    })
+    return msg
+
+@api_router.get('/notifications')
+async def list_notifications(user=Depends(get_current_user)):
+    items = await db.notifications.find({}, {'_id': 0}).sort('created_at', -1).limit(50).to_list(50)
+    return items
+
+@api_router.post('/notifications/mark-read')
+async def mark_read(user=Depends(get_current_user)):
+    await db.notifications.update_many({}, {'$set': {'read': True}})
+    return {'ok': True}
+
+# ============== PDF EXPORT ==============
+@api_router.get('/submissions/{sid}/pdf')
+async def submission_pdf(sid: str, authorization: Optional[str] = Header(None), token: Optional[str] = None):
+    # Accept either Authorization header or ?token=... query (for download links)
+    user = None
+    auth_token = None
+    if authorization and authorization.startswith('Bearer '):
+        auth_token = authorization.split(' ', 1)[1]
+    elif token:
+        auth_token = token
+    if not auth_token:
+        raise HTTPException(401, 'Missing token')
+    try:
+        payload = jwt.decode(auth_token, JWT_SECRET, algorithms=[JWT_ALG])
+        user = await db.users.find_one({'id': payload['sub']}, {'_id': 0, 'password': 0})
+    except Exception:
+        raise HTTPException(401, 'Invalid token')
+    if not user:
+        raise HTTPException(401, 'User not found')
+
+    sub = await db.submissions.find_one({'id': sid}, {'_id': 0})
+    if not sub:
+        raise HTTPException(404, 'Submission not found')
+
+    # Build PDF
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage, Table, TableStyle, PageBreak
+    from reportlab.lib.units import inch
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.6*inch, rightMargin=0.6*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    PT_YELLOW = colors.HexColor('#FBBF24')
+    PT_BLACK = colors.HexColor('#0B0B0F')
+
+    title_style = ParagraphStyle('Title', parent=styles['Title'], textColor=PT_BLACK, fontSize=20, spaceAfter=4, alignment=0)
+    sub_style = ParagraphStyle('Sub', parent=styles['Normal'], textColor=colors.HexColor('#6B7280'), fontSize=10, spaceAfter=12)
+    h2 = ParagraphStyle('H2', parent=styles['Heading2'], textColor=PT_BLACK, fontSize=13, spaceBefore=10, spaceAfter=6)
+    body = styles['BodyText']
+
+    story = []
+    # Branded header
+    header_data = [[
+        Paragraph('<b><font color="#FBBF24">PANELTEC</font></b><br/><font size=8 color="#6B7280">SAFETY PORTAL · CIVIL CONTRACTORS</font>', styles['Normal']),
+        Paragraph(f'<para align=right><font size=9 color="#6B7280">Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}<br/>Document ID: {sub["id"][:8]}</font></para>', styles['Normal']),
+    ]]
+    header_tbl = Table(header_data, colWidths=[3.5*inch, 3.5*inch])
+    header_tbl.setStyle(TableStyle([
+        ('LINEBELOW', (0,0), (-1,-1), 2, PT_YELLOW),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 8),
+    ]))
+    story.append(header_tbl)
+    story.append(Spacer(1, 12))
+
+    story.append(Paragraph(sub.get('template_name', 'Safety Form'), title_style))
+    cat_label = sub.get('category', 'general').replace('_', ' ').title()
+    story.append(Paragraph(f"Category: <b>{cat_label}</b>", sub_style))
+
+    # Metadata table
+    meta = [
+        ['Worker:', sub.get('worker_name') or '—', 'Submitted:', (sub.get('submitted_at') or '')[:19].replace('T', ' ')],
+        ['Job Site:', sub.get('location_name') or '—', 'GPS:', f"{sub.get('gps_lat'):.4f}, {sub.get('gps_lng'):.4f}" if sub.get('gps_lat') else '—'],
+    ]
+    meta_tbl = Table(meta, colWidths=[1.0*inch, 2.5*inch, 1.0*inch, 2.5*inch])
+    meta_tbl.setStyle(TableStyle([
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),
+        ('FONTSIZE', (0,0), (-1,-1), 9),
+        ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F9FAFB')),
+        ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+        ('TEXTCOLOR', (0,0), (0,-1), colors.HexColor('#6B7280')),
+        ('TEXTCOLOR', (2,0), (2,-1), colors.HexColor('#6B7280')),
+        ('FONTNAME', (1,0), (1,-1), 'Helvetica-Bold'),
+        ('FONTNAME', (3,0), (3,-1), 'Helvetica-Bold'),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+    ]))
+    story.append(meta_tbl)
+
+    # AI Summary
+    if sub.get('ai_summary'):
+        story.append(Paragraph('AI Safety Insights', h2))
+        story.append(Paragraph(sub['ai_summary'].replace('\n', '<br/>'), body))
+
+    # Responses
+    story.append(Paragraph('Form Responses', h2))
+    for k, v in (sub.get('answers') or {}).items():
+        story.append(Paragraph(f"<b>{k}</b>", body))
+        story.append(Paragraph(str(v), body))
+        story.append(Spacer(1, 6))
+
+    # Photos
+    photos = sub.get('photos_b64') or []
+    if photos:
+        story.append(Paragraph('Photo Evidence', h2))
+        for p in photos[:6]:
+            try:
+                if ',' in p:
+                    p = p.split(',', 1)[1]
+                img_bytes = base64.b64decode(p)
+                img_buf = io.BytesIO(img_bytes)
+                story.append(RLImage(img_buf, width=4.5*inch, height=3*inch, kind='proportional'))
+                story.append(Spacer(1, 6))
+            except Exception as e:
+                logger.warning(f"PDF photo error: {e}")
+
+    # Signature
+    if sub.get('signature_b64'):
+        story.append(Paragraph('Worker Signature', h2))
+        try:
+            sig = sub['signature_b64']
+            if ',' in sig:
+                sig = sig.split(',', 1)[1]
+            sig_bytes = base64.b64decode(sig)
+            story.append(RLImage(io.BytesIO(sig_bytes), width=3*inch, height=1*inch, kind='proportional'))
+        except Exception as e:
+            logger.warning(f"Sig render error: {e}")
+
+    story.append(Spacer(1, 24))
+    story.append(Paragraph(f'<para align=center><font size=8 color="#9CA3AF">© Paneltec Civil Contractors · This is an electronically signed record · {sub["id"]}</font></para>', styles['Normal']))
+
+    doc.build(story)
+    buf.seek(0)
+    filename = f"paneltec-{sub.get('category','form')}-{sub['id'][:8]}.pdf"
+    return StreamingResponse(buf, media_type='application/pdf',
+                             headers={'Content-Disposition': f'inline; filename="{filename}"'})
+
+
 
 @api_router.get('/')
 async def root():

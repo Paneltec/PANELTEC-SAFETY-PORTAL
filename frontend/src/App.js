@@ -6,7 +6,9 @@ import {
   Sparkles, LogOut, Plus, Trash2, Edit3, Save, X, AlertTriangle,
   CheckCircle2, Camera, MapPinned, PenLine, Eye, ShieldCheck, HardHat,
   TrendingUp, Bell, Search, Filter, ChevronRight, Building2, Wrench,
-  Calendar, FileSearch, Loader2, Zap, BarChart3
+  Calendar, FileSearch, Loader2, Zap, BarChart3,
+  MessageSquare, Settings, Send, Download, Share2, Key, Copy, WifiOff,
+  Smartphone, Mail, Pencil, Circle as CircleIcon, ArrowUpRight, Home, User
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -166,7 +168,7 @@ function SignaturePad({ value, onChange }) {
 }
 
 // ===================== PHOTO UPLOAD =====================
-function PhotoUploader({ values=[], onChange }) {
+function PhotoUploader({ values=[], onChange, onAnnotate }) {
   const fileToB64 = (file) => new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
@@ -190,10 +192,17 @@ function PhotoUploader({ values=[], onChange }) {
           {values.map((p, i) => (
             <div key={i} className="relative group">
               <img src={p} alt="" className="w-full h-24 object-cover rounded-lg border"/>
-              <button type="button" onClick={()=>onChange(values.filter((_,j)=>j!==i))}
-                className="absolute top-1 right-1 bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                <X className="w-3 h-3"/>
-              </button>
+              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition rounded-lg flex items-center justify-center gap-1">
+                {onAnnotate && (
+                  <button type="button" onClick={()=>onAnnotate(i, p)} className="bg-amber-400 text-black rounded-full w-8 h-8 flex items-center justify-center hover:bg-amber-300" title="Annotate" data-testid={`annotate-${i}`}>
+                    <Pencil className="w-4 h-4"/>
+                  </button>
+                )}
+                <button type="button" onClick={()=>onChange(values.filter((_,j)=>j!==i))}
+                  className="bg-red-600 text-white rounded-full w-8 h-8 flex items-center justify-center hover:bg-red-700" title="Remove">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -511,15 +520,24 @@ function TemplateBuilder({ editing, onClose }) {
 
 // ===================== FILL FORM =====================
 function FillForm({ template, user, onClose }) {
-  const [answers, setAnswers] = useState({});
+  const draftKey = `pt_draft_${template.id}`;
+  const [answers, setAnswers] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(draftKey))?.answers || {}; } catch { return {}; }
+  });
   const [signature, setSignature] = useState("");
-  const [photos, setPhotos] = useState([]);
+  const [photos, setPhotos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(draftKey))?.photos || []; } catch { return []; }
+  });
   const [locations, setLocations] = useState([]);
   const [workers, setWorkers] = useState([]);
-  const [locationId, setLocationId] = useState("");
+  const [locationId, setLocationId] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(draftKey))?.locationId || ""; } catch { return ""; }
+  });
   const [workerId, setWorkerId] = useState("");
   const [gps, setGps] = useState({ lat: null, lng: null });
   const [saving, setSaving] = useState(false);
+  const [annotating, setAnnotating] = useState(null); // {index, src}
+  const [draftSaved, setDraftSaved] = useState(false);
 
   useEffect(() => {
     api.get("/locations").then(r => setLocations(r.data));
@@ -532,32 +550,57 @@ function FillForm({ template, user, onClose }) {
     }
   }, []);
 
+  // Auto-save draft to localStorage every change
+  useEffect(() => {
+    const has = Object.keys(answers).length > 0 || photos.length > 0 || locationId;
+    if (has) {
+      localStorage.setItem(draftKey, JSON.stringify({ answers, photos, locationId, savedAt: Date.now() }));
+      setDraftSaved(true);
+      const t = setTimeout(() => setDraftSaved(false), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [answers, photos, locationId]);
+
   const setAns = (label, val) => setAnswers({ ...answers, [label]: val });
 
   const submit = async () => {
     setSaving(true);
     const loc = locations.find(l => l.id === locationId);
     const w = workers.find(x => x.id === workerId);
+    const payload = {
+      id: crypto.randomUUID(),
+      template_id: template.id,
+      template_name: template.name,
+      category: template.category || "general",
+      location_id: locationId || null,
+      location_name: loc?.name || null,
+      worker_id: workerId || null,
+      worker_name: w?.name || user.name,
+      answers,
+      signature_b64: signature || null,
+      photos_b64: photos,
+      gps_lat: gps.lat,
+      gps_lng: gps.lng,
+      flagged: ["incident", "near_miss"].includes(template.category),
+      submitted_at: new Date().toISOString(),
+    };
     try {
-      await api.post("/submissions", {
-        id: crypto.randomUUID(),
-        template_id: template.id,
-        template_name: template.name,
-        category: template.category || "general",
-        location_id: locationId || null,
-        location_name: loc?.name || null,
-        worker_id: workerId || null,
-        worker_name: w?.name || user.name,
-        answers,
-        signature_b64: signature || null,
-        photos_b64: photos,
-        gps_lat: gps.lat,
-        gps_lng: gps.lng,
-        flagged: ["incident", "near_miss"].includes(template.category),
-        submitted_at: new Date().toISOString(),
-      });
+      await api.post("/submissions", payload);
+      localStorage.removeItem(draftKey);
       onClose();
-    } catch (e) { alert("Submit failed: " + (e?.response?.data?.detail || e.message)); }
+    } catch (e) {
+      // If offline, queue it
+      if (!navigator.onLine) {
+        const queue = JSON.parse(localStorage.getItem("pt_queue") || "[]");
+        queue.push(payload);
+        localStorage.setItem("pt_queue", JSON.stringify(queue));
+        alert("You're offline. Form queued — will sync when reconnected.");
+        localStorage.removeItem(draftKey);
+        onClose();
+      } else {
+        alert("Submit failed: " + (e?.response?.data?.detail || e.message));
+      }
+    }
     setSaving(false);
   };
 
@@ -625,20 +668,28 @@ function FillForm({ template, user, onClose }) {
               {f.type === "checkbox" && (
                 <label className="flex items-center gap-2"><input type="checkbox" checked={!!answers[f.label]} onChange={e=>setAns(f.label, e.target.checked)}/>{f.placeholder || "Confirm"}</label>
               )}
-              {f.type === "photo" && <PhotoUploader values={photos} onChange={setPhotos}/>}
+              {f.type === "photo" && (
+                <PhotoUploader values={photos} onChange={setPhotos} onAnnotate={(idx, src) => setAnnotating({ index: idx, src })}/>
+              )}
               {f.type === "signature" && <SignaturePad value={signature} onChange={setSignature}/>}
               {f.type === "gps" && <div className="text-sm text-slate-500">GPS auto-captured above</div>}
             </div>
           ))}
         </div>
 
-        <div className="sticky bottom-0 bg-white border-t p-4 flex justify-end gap-2">
+        <div className="sticky bottom-0 bg-white border-t p-4 flex justify-end gap-2 items-center">
+          {draftSaved && <span className="text-xs text-emerald-600 flex items-center gap-1 mr-auto"><CheckCircle2 className="w-3.5 h-3.5"/>Draft auto-saved</span>}
           <button onClick={onClose} className="px-4 py-2 border rounded-lg">Cancel</button>
           <button onClick={submit} disabled={saving} className="px-5 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2 disabled:opacity-50" data-testid="submit-form-btn">
             {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}Submit Form
           </button>
         </div>
       </div>
+      {annotating && (
+        <PhotoAnnotator src={annotating.src}
+          onSave={(b64) => { const copy = [...photos]; copy[annotating.index] = b64; setPhotos(copy); setAnnotating(null); }}
+          onCancel={() => setAnnotating(null)}/>
+      )}
     </div>
   );
 }
@@ -746,7 +797,15 @@ function SubmissionDetail({ submission, onClose }) {
               {s.worker_name} · {s.location_name} · {new Date(s.submitted_at).toLocaleString()}
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+          <div className="flex items-center gap-2">
+            <a href={`${process.env.REACT_APP_BACKEND_URL}/api/submissions/${s.id}/pdf?token=${localStorage.getItem("pt_token")}`}
+              target="_blank" rel="noopener noreferrer"
+              className="px-3 py-2 bg-slate-900 text-white text-sm rounded-lg font-semibold flex items-center gap-2 hover:bg-slate-800"
+              data-testid="pdf-download-btn">
+              <Download className="w-4 h-4"/>PDF
+            </a>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+          </div>
         </div>
 
         <div className="p-6 space-y-5">
@@ -1057,12 +1116,696 @@ function CertModal({ workers, onClose }) {
 }
 
 // ===================== MAIN APP =====================
+// ===================== PHOTO ANNOTATOR =====================
+function PhotoAnnotator({ src, onSave, onCancel }) {
+  const canvasRef = useRef(null);
+  const [tool, setTool] = useState("arrow");
+  const [color, setColor] = useState("#EF4444");
+  const [drawing, setDrawing] = useState(false);
+  const [start, setStart] = useState(null);
+  const [baseImage, setBaseImage] = useState(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const c = canvasRef.current;
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      setBaseImage(c.toDataURL("image/png"));
+    };
+    img.src = src;
+  }, [src]);
+
+  const getPos = (e) => {
+    const c = canvasRef.current;
+    const r = c.getBoundingClientRect();
+    const x = ((e.touches ? e.touches[0].clientX : e.clientX) - r.left) * (c.width / r.width);
+    const y = ((e.touches ? e.touches[0].clientY : e.clientY) - r.top) * (c.height / r.height);
+    return { x, y };
+  };
+
+  const drawArrow = (ctx, x1, y1, x2, y2) => {
+    const headLen = 20;
+    const ang = Math.atan2(y2-y1, x2-x1);
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x2,y2);
+    ctx.lineTo(x2 - headLen * Math.cos(ang - Math.PI/6), y2 - headLen * Math.sin(ang - Math.PI/6));
+    ctx.moveTo(x2,y2);
+    ctx.lineTo(x2 - headLen * Math.cos(ang + Math.PI/6), y2 - headLen * Math.sin(ang + Math.PI/6));
+    ctx.stroke();
+  };
+
+  const onDown = (e) => {
+    e.preventDefault();
+    const p = getPos(e);
+    setStart(p);
+    setDrawing(true);
+    if (tool === "pen") {
+      const ctx = canvasRef.current.getContext("2d");
+      ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.x, p.y);
+    }
+  };
+  const onMove = (e) => {
+    if (!drawing) return; e.preventDefault();
+    const p = getPos(e);
+    const ctx = canvasRef.current.getContext("2d");
+    if (tool === "pen") {
+      ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.lineCap = "round";
+      ctx.lineTo(p.x, p.y); ctx.stroke();
+    } else {
+      const img = new Image();
+      img.onload = () => {
+        ctx.clearRect(0,0,canvasRef.current.width,canvasRef.current.height);
+        ctx.drawImage(img, 0, 0);
+        ctx.strokeStyle = color; ctx.lineWidth = 5; ctx.lineCap = "round";
+        if (tool === "arrow") drawArrow(ctx, start.x, start.y, p.x, p.y);
+        else if (tool === "circle") {
+          const r = Math.hypot(p.x - start.x, p.y - start.y);
+          ctx.beginPath(); ctx.arc(start.x, start.y, r, 0, Math.PI*2); ctx.stroke();
+        }
+      };
+      img.src = baseImage;
+    }
+  };
+  const onUp = () => {
+    if (!drawing) return;
+    setDrawing(false);
+    setBaseImage(canvasRef.current.toDataURL("image/png"));
+  };
+
+  const reset = () => {
+    const img = new Image();
+    img.onload = () => {
+      const c = canvasRef.current;
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0,0,c.width,c.height);
+      ctx.drawImage(img, 0, 0);
+      setBaseImage(c.toDataURL("image/png"));
+    };
+    img.src = src;
+  };
+
+  const save = () => onSave(canvasRef.current.toDataURL("image/png"));
+
+  const tools = [
+    { id: "arrow", icon: ArrowUpRight, label: "Arrow" },
+    { id: "circle", icon: CircleIcon, label: "Circle" },
+    { id: "pen", icon: Pencil, label: "Draw" },
+  ];
+  const palette = ["#EF4444", "#F59E0B", "#10B981", "#3B82F6", "#0B0B0F"];
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[60] flex items-center justify-center p-4 fadein">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="font-bold">Annotate Photo</h3>
+          <button onClick={onCancel} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="p-3 border-b bg-slate-50 flex items-center gap-2 flex-wrap">
+          {tools.map(t => (
+            <button key={t.id} onClick={()=>setTool(t.id)}
+              className={`px-3 py-2 rounded-lg flex items-center gap-1.5 text-sm font-semibold ${tool===t.id ? "brand-grad text-black" : "bg-white border"}`}
+              data-testid={`annot-tool-${t.id}`}>
+              <t.icon className="w-4 h-4"/>{t.label}
+            </button>
+          ))}
+          <div className="w-px h-6 bg-slate-300 mx-1"/>
+          {palette.map(c => (
+            <button key={c} onClick={()=>setColor(c)}
+              className={`w-7 h-7 rounded-full border-2 ${color===c ? "ring-2 ring-amber-400 ring-offset-1" : ""}`}
+              style={{ background: c, borderColor: "white" }}/>
+          ))}
+          <button onClick={reset} className="ml-auto text-sm text-slate-600 hover:text-red-600 font-semibold">Reset</button>
+        </div>
+        <div className="flex-1 overflow-auto p-4 bg-slate-100 flex items-center justify-center">
+          <canvas ref={canvasRef}
+            className="max-w-full max-h-full border shadow-lg bg-white"
+            style={{ touchAction: "none", cursor: "crosshair" }}
+            onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+            onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}/>
+        </div>
+        <div className="p-3 border-t flex justify-end gap-2">
+          <button onClick={onCancel} className="px-4 py-2 border rounded-lg">Cancel</button>
+          <button onClick={save} className="px-5 py-2 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="save-annotation-btn">
+            <CheckCircle2 className="w-4 h-4"/>Save Annotation
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===================== CHAT =====================
+function Chat({ user }) {
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState("");
+  const [channel, setChannel] = useState("general");
+  const bottomRef = useRef(null);
+
+  const load = async () => {
+    try {
+      const { data } = await api.get(`/chat/messages?channel=${channel}`);
+      setMessages(data);
+    } catch (e) {}
+  };
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 3500);
+    return () => clearInterval(t);
+  }, [channel]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  const send = async (e) => {
+    e?.preventDefault();
+    if (!text.trim()) return;
+    await api.post("/chat/messages", { channel, body: text });
+    setText("");
+    load();
+  };
+
+  const channels = [
+    { id: "general", label: "General Crew", icon: MessageSquare },
+    { id: "broadcast", label: "Broadcast", icon: Bell },
+  ];
+
+  return (
+    <div className="p-4 lg:p-8 fadein h-full flex flex-col" style={{ minHeight: "calc(100vh - 80px)" }}>
+      <div className="mb-4">
+        <h1 className="text-2xl lg:text-3xl font-black text-slate-900">Site Chat</h1>
+        <p className="text-slate-500 mt-1 text-sm">Talk to your crew in real time</p>
+      </div>
+      <div className="flex gap-2 mb-4 flex-wrap">
+        {channels.map(c => (
+          <button key={c.id} onClick={()=>setChannel(c.id)}
+            className={`px-3 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 ${channel===c.id ? "brand-grad text-black" : "bg-white border"}`}
+            data-testid={`chat-channel-${c.id}`}>
+            <c.icon className="w-4 h-4"/>{c.label}
+          </button>
+        ))}
+      </div>
+      <div className="flex-1 bg-white rounded-2xl border flex flex-col min-h-0">
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {messages.length === 0 && (
+            <div className="text-center text-slate-400 py-12">
+              <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-40"/>
+              No messages yet. Be the first to say hi.
+            </div>
+          )}
+          {messages.map(m => {
+            const mine = m.sender_id === user.id;
+            return (
+              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div className={`max-w-[80%] ${mine ? "brand-grad text-black" : "bg-slate-100 text-slate-900"} px-4 py-2.5 rounded-2xl ${mine ? "rounded-br-md" : "rounded-bl-md"}`}>
+                  {!mine && <div className="text-xs font-bold text-amber-700 mb-0.5">{m.sender_name} <span className="text-slate-400 font-normal capitalize">· {m.sender_role}</span></div>}
+                  <div className="text-sm whitespace-pre-wrap">{m.body}</div>
+                  <div className={`text-[10px] mt-1 ${mine ? "text-black/60" : "text-slate-400"}`}>{new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                </div>
+              </div>
+            );
+          })}
+          <div ref={bottomRef}/>
+        </div>
+        <form onSubmit={send} className="border-t p-3 flex gap-2">
+          <input value={text} onChange={e=>setText(e.target.value)}
+            placeholder={channel === "broadcast" ? "Send announcement to all workers…" : "Type a message…"}
+            className="flex-1 px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-amber-400 outline-none"
+            data-testid="chat-input"/>
+          <button type="submit" className="px-5 py-2.5 brand-grad text-black font-bold rounded-xl flex items-center gap-2" data-testid="chat-send">
+            <Send className="w-4 h-4"/>Send
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ===================== SETTINGS =====================
+function SettingsPage({ user }) {
+  const [tab, setTab] = useState("share");
+  return (
+    <div className="p-6 lg:p-8 fadein">
+      <div className="mb-6">
+        <h1 className="text-3xl font-black text-slate-900">Settings</h1>
+        <p className="text-slate-500 mt-1">Auto-share rules, API tokens & integrations</p>
+      </div>
+      <div className="flex gap-2 border-b mb-6">
+        {[
+          { id: "share", label: "Auto-Share Rules", icon: Share2 },
+          { id: "tokens", label: "API Tokens", icon: Key },
+          { id: "log", label: "Share Log", icon: Mail },
+        ].map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-semibold flex items-center gap-2 transition ${tab===t.id ? "border-amber-400 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            data-testid={`settings-tab-${t.id}`}>
+            <t.icon className="w-4 h-4"/>{t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "share" && <ShareRules/>}
+      {tab === "tokens" && <ApiTokens/>}
+      {tab === "log" && <ShareLog/>}
+    </div>
+  );
+}
+
+function ShareRules() {
+  const [rules, setRules] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [show, setShow] = useState(false);
+  const load = () => {
+    api.get("/share-rules").then(r => setRules(r.data));
+    api.get("/locations").then(r => setLocations(r.data));
+  };
+  useEffect(() => { load(); }, []);
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <div className="text-sm text-slate-600">When a matching form is submitted, an email is auto-sent. <span className="text-amber-600 font-semibold">(MOCKED — logged to Share Log)</span></div>
+        <button onClick={()=>setShow(true)} className="px-4 py-2 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="new-rule-btn"><Plus className="w-4 h-4"/>New Rule</button>
+      </div>
+      <div className="bg-white rounded-2xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b text-slate-600 text-left">
+            <tr>
+              <th className="py-3 px-4 font-semibold">Trigger</th>
+              <th className="py-3 px-4 font-semibold">Job Site</th>
+              <th className="py-3 px-4 font-semibold">Recipients</th>
+              <th className="py-3 px-4 font-semibold">Status</th>
+              <th className="py-3 px-4"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map(r => {
+              const loc = locations.find(l => l.id === r.location_id);
+              const meta = CATEGORY_META[r.category] || CATEGORY_META.general;
+              return (
+                <tr key={r.id} className="border-b">
+                  <td className="py-3 px-4"><span className={`px-2 py-0.5 rounded text-xs font-semibold border ${meta.color}`}>{r.category ? meta.label : "Any"}</span></td>
+                  <td className="py-3 px-4 text-slate-700">{loc?.name || "Any location"}</td>
+                  <td className="py-3 px-4 text-slate-700 text-xs font-mono">{(r.emails||[]).join(", ")}</td>
+                  <td className="py-3 px-4">{r.enabled ? <span className="text-emerald-600 font-semibold">Active</span> : <span className="text-slate-400">Off</span>}</td>
+                  <td className="py-3 px-4"><button onClick={async()=>{ if(window.confirm("Delete?")){ await api.delete(`/share-rules/${r.id}`); load();}}} className="text-red-500"><Trash2 className="w-4 h-4"/></button></td>
+                </tr>
+              );
+            })}
+            {rules.length === 0 && <tr><td colSpan="5" className="py-10 text-center text-slate-400">No rules yet. Create one to start auto-sharing.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {show && <ShareRuleModal locations={locations} onClose={()=>{setShow(false); load();}}/>}
+    </div>
+  );
+}
+
+function ShareRuleModal({ locations, onClose }) {
+  const [r, setR] = useState({ location_id: "", category: "", emails: "", enabled: true });
+  const save = async () => {
+    const payload = {
+      id: crypto.randomUUID(),
+      location_id: r.location_id || null,
+      category: r.category || null,
+      emails: r.emails.split(",").map(s=>s.trim()).filter(Boolean),
+      enabled: r.enabled,
+      created_at: new Date().toISOString(),
+    };
+    await api.post("/share-rules", payload);
+    onClose();
+  };
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6">
+        <h2 className="text-2xl font-bold mb-4">New Auto-Share Rule</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">When category…</label>
+            <select value={r.category} onChange={e=>setR({...r, category: e.target.value})} className="w-full px-3 py-2.5 border rounded-lg">
+              <option value="">Any category</option>
+              <option value="incident">Incident</option>
+              <option value="near_miss">Near Miss</option>
+              <option value="inspection">Inspection</option>
+              <option value="toolbox">Toolbox Talk</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">At job site…</label>
+            <select value={r.location_id} onChange={e=>setR({...r, location_id: e.target.value})} className="w-full px-3 py-2.5 border rounded-lg">
+              <option value="">Any location</option>
+              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">Send to (comma-separated emails)</label>
+            <input value={r.emails} onChange={e=>setR({...r, emails: e.target.value})} placeholder="safety@paneltec.com, supervisor@paneltec.com" className="w-full px-3 py-2.5 border rounded-lg" data-testid="rule-emails"/>
+          </div>
+        </div>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg">Cancel</button>
+          <button onClick={save} className="px-5 py-2 brand-grad text-black font-bold rounded-lg" data-testid="save-rule-btn">Create Rule</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ShareLog() {
+  const [items, setItems] = useState([]);
+  useEffect(() => { api.get("/share-log").then(r => setItems(r.data)); }, []);
+  return (
+    <div className="bg-white rounded-2xl border overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 border-b text-slate-600 text-left">
+          <tr>
+            <th className="py-3 px-4 font-semibold">Sent</th>
+            <th className="py-3 px-4 font-semibold">Form</th>
+            <th className="py-3 px-4 font-semibold">Job Site</th>
+            <th className="py-3 px-4 font-semibold">Recipient</th>
+            <th className="py-3 px-4 font-semibold">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(i => (
+            <tr key={i.id} className="border-b">
+              <td className="py-3 px-4 text-slate-500">{new Date(i.sent_at).toLocaleString()}</td>
+              <td className="py-3 px-4 font-medium">{i.template_name}</td>
+              <td className="py-3 px-4 text-slate-600">{i.location_name}</td>
+              <td className="py-3 px-4 font-mono text-xs">{i.recipient}</td>
+              <td className="py-3 px-4"><span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-semibold">MOCKED</span></td>
+            </tr>
+          ))}
+          {items.length === 0 && <tr><td colSpan="5" className="py-10 text-center text-slate-400">No shares yet. Fill out a form to trigger rules.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ApiTokens() {
+  const [tokens, setTokens] = useState([]);
+  const [show, setShow] = useState(false);
+  const [copied, setCopied] = useState(null);
+  const load = () => api.get("/api-tokens").then(r => setTokens(r.data));
+  useEffect(() => { load(); }, []);
+
+  const copyToken = (t) => {
+    navigator.clipboard.writeText(t);
+    setCopied(t);
+    setTimeout(()=>setCopied(null), 2000);
+  };
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+        <div className="text-sm text-slate-600">Use in <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">X-API-Key</code> header for <code className="px-1.5 py-0.5 bg-slate-100 rounded text-xs">/api/public/*</code> endpoints (Zapier, custom integrations).</div>
+        <button onClick={()=>setShow(true)} className="px-4 py-2 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="new-token-btn"><Plus className="w-4 h-4"/>New Token</button>
+      </div>
+      <div className="space-y-3">
+        {tokens.map(t => (
+          <div key={t.id} className="bg-white rounded-xl border p-4">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div className="font-bold text-slate-900">{t.name}</div>
+                <div className="text-xs text-slate-400 mt-0.5">Created {new Date(t.created_at).toLocaleDateString()} · Last used: {t.last_used ? new Date(t.last_used).toLocaleString() : "never"}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="px-3 py-1.5 bg-slate-900 text-amber-400 rounded font-mono text-xs">{t.token.slice(0, 18)}…</code>
+                <button onClick={()=>copyToken(t.token)} className="px-3 py-1.5 border rounded text-sm font-semibold flex items-center gap-1.5 hover:bg-slate-50">
+                  <Copy className="w-3.5 h-3.5"/>{copied === t.token ? "Copied!" : "Copy"}
+                </button>
+                <button onClick={async()=>{ if(window.confirm("Revoke this token?")){ await api.delete(`/api-tokens/${t.id}`); load();}}} className="p-2 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4"/></button>
+              </div>
+            </div>
+          </div>
+        ))}
+        {tokens.length === 0 && <div className="text-center py-10 text-slate-400 bg-white rounded-2xl border">No API tokens yet.</div>}
+      </div>
+      <div className="mt-6 p-4 bg-slate-900 text-slate-100 rounded-xl text-xs font-mono overflow-x-auto">
+        <div className="text-amber-400 mb-2 font-bold tracking-wider text-[10px]">EXAMPLE USAGE</div>
+        <div className="opacity-80 whitespace-nowrap">curl -H "X-API-Key: ptk_…" {(process.env.REACT_APP_BACKEND_URL || "")}/api/public/submissions</div>
+      </div>
+      {show && <TokenModal onClose={()=>{setShow(false); load();}}/>}
+    </div>
+  );
+}
+
+function TokenModal({ onClose }) {
+  const [name, setName] = useState("");
+  const [created, setCreated] = useState(null);
+  const save = async () => {
+    const { data } = await api.post("/api-tokens", { id: crypto.randomUUID(), name, token: "ptk_" + crypto.randomUUID().replace(/-/g,''), scopes: ["read"], created_at: new Date().toISOString() });
+    setCreated(data);
+  };
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-md p-6">
+        {!created ? (
+          <>
+            <h2 className="text-2xl font-bold mb-4">New API Token</h2>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Token name (e.g. Zapier Integration)" className="w-full px-3 py-2.5 border rounded-lg" data-testid="token-name"/>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={onClose} className="px-4 py-2 border rounded-lg">Cancel</button>
+              <button onClick={save} disabled={!name} className="px-5 py-2 brand-grad text-black font-bold rounded-lg disabled:opacity-50" data-testid="save-token-btn">Create</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h2 className="text-2xl font-bold mb-2 flex items-center gap-2"><CheckCircle2 className="w-6 h-6 text-emerald-500"/>Token Created</h2>
+            <p className="text-sm text-slate-500 mb-4">Copy now — treat it like a password.</p>
+            <div className="bg-slate-900 text-amber-400 rounded-lg p-3 font-mono text-xs break-all">{created.token}</div>
+            <button onClick={()=>{navigator.clipboard.writeText(created.token);}} className="mt-3 w-full py-2 bg-slate-900 text-white rounded-lg font-semibold flex items-center justify-center gap-2">
+              <Copy className="w-4 h-4"/>Copy Token
+            </button>
+            <button onClick={onClose} className="mt-2 w-full py-2 brand-grad text-black font-bold rounded-lg">Done</button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ===================== WORKER MOBILE VIEW =====================
+function WorkerMobileApp({ user, onLogout }) {
+  const [tab, setTab] = useState("home");
+  const [fillTemplate, setFillTemplate] = useState(null);
+
+  const tabs = [
+    { id: "home", label: "Home", icon: Home },
+    { id: "forms", label: "Forms", icon: FileText },
+    { id: "chat", label: "Chat", icon: MessageSquare },
+    { id: "me", label: "Me", icon: User },
+  ];
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col max-w-md mx-auto shadow-2xl">
+      <header className="brand-grad-dark text-white px-4 py-4 flex items-center justify-between sticky top-0 z-30 shadow-md">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 brand-grad rounded-lg flex items-center justify-center">
+            <HardHat className="w-5 h-5 text-black"/>
+          </div>
+          <div>
+            <div className="text-[10px] text-amber-300 tracking-widest font-bold">PANELTEC</div>
+            <div className="text-sm font-bold leading-tight">Hi, {user.name?.split(" ")[0]}</div>
+          </div>
+        </div>
+        <button onClick={onLogout} className="p-2 hover:bg-white/10 rounded-lg" data-testid="mobile-logout"><LogOut className="w-5 h-5"/></button>
+      </header>
+
+      <main className="flex-1 overflow-y-auto pb-20">
+        {tab === "home" && <WorkerHome user={user} onFill={setFillTemplate} goTo={setTab}/>}
+        {tab === "forms" && <WorkerForms onFill={setFillTemplate}/>}
+        {tab === "chat" && <Chat user={user}/>}
+        {tab === "me" && <WorkerMe user={user}/>}
+      </main>
+
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t shadow-lg flex justify-around z-30">
+        {tabs.map(t => {
+          const active = tab === t.id;
+          return (
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              className={`flex-1 flex flex-col items-center justify-center py-2.5 ${active ? "text-amber-600" : "text-slate-500"}`}
+              data-testid={`mobile-nav-${t.id}`}>
+              <t.icon className={`w-5 h-5 ${active ? "scale-110" : ""} transition`}/>
+              <span className="text-[10px] font-bold mt-0.5">{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {fillTemplate && <FillForm template={fillTemplate} user={user} onClose={()=>setFillTemplate(null)}/>}
+    </div>
+  );
+}
+
+function WorkerHome({ user, onFill, goTo }) {
+  const [templates, setTemplates] = useState([]);
+  const [recentSubs, setRecentSubs] = useState([]);
+  useEffect(() => {
+    api.get("/forms/templates").then(r => setTemplates(r.data));
+    api.get("/submissions").then(r => setRecentSubs(r.data.slice(0, 5)));
+  }, []);
+
+  return (
+    <div className="p-4 space-y-5 fadein">
+      <div className="brand-grad rounded-2xl p-5 text-black shadow-lg">
+        <div className="text-xs font-bold tracking-widest opacity-70">TODAY</div>
+        <div className="text-2xl font-black mt-1">Stay Safe Out There</div>
+        <p className="text-sm opacity-80 mt-1">Complete your toolbox talk and run your pre-use checks.</p>
+        <button onClick={()=>goTo("forms")} className="mt-3 bg-black text-amber-400 font-bold rounded-lg px-4 py-2 text-sm flex items-center gap-1.5">
+          <PenLine className="w-4 h-4"/>Fill a Form
+        </button>
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="font-bold text-slate-900">Quick Start</h3>
+          <button onClick={()=>goTo("forms")} className="text-xs text-amber-600 font-semibold">All Forms →</button>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {templates.slice(0, 4).map(t => {
+            const meta = CATEGORY_META[t.category] || CATEGORY_META.general;
+            return (
+              <button key={t.id} onClick={()=>onFill(t)}
+                className="bg-white rounded-xl p-4 border text-left active:scale-95 transition shadow-sm"
+                data-testid={`mobile-form-${t.id}`}>
+                <div className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${meta.color}`}>{meta.label}</div>
+                <div className="font-bold text-sm mt-2 text-slate-900 line-clamp-2">{t.name}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h3 className="font-bold text-slate-900 mb-2">Recent Activity</h3>
+        <div className="space-y-2">
+          {recentSubs.map(s => {
+            const meta = CATEGORY_META[s.category] || CATEGORY_META.general;
+            return (
+              <div key={s.id} className="bg-white rounded-xl p-3 border flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${meta.color}`}>
+                  <FileText className="w-5 h-5"/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-sm truncate">{s.template_name}</div>
+                  <div className="text-xs text-slate-500 truncate">{s.worker_name} · {new Date(s.submitted_at).toLocaleDateString()}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkerForms({ onFill }) {
+  const [templates, setTemplates] = useState([]);
+  useEffect(() => { api.get("/forms/templates").then(r => setTemplates(r.data)); }, []);
+  return (
+    <div className="p-4 fadein">
+      <h2 className="text-xl font-black mb-3">All Forms</h2>
+      <div className="space-y-3">
+        {templates.map(t => {
+          const meta = CATEGORY_META[t.category] || CATEGORY_META.general;
+          return (
+            <button key={t.id} onClick={()=>onFill(t)} className="w-full bg-white rounded-2xl p-4 border text-left active:scale-[0.98] transition shadow-sm" data-testid={`mobile-form-list-${t.id}`}>
+              <div className="flex items-start justify-between">
+                <div className="flex-1 min-w-0">
+                  <div className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${meta.color}`}>{meta.label}</div>
+                  <div className="font-bold text-base mt-1.5 text-slate-900">{t.name}</div>
+                  <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">{t.description}</div>
+                </div>
+                <ChevronRight className="w-5 h-5 text-slate-400 ml-2"/>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function WorkerMe({ user }) {
+  const [certs, setCerts] = useState([]);
+  const [workers, setWorkers] = useState([]);
+  useEffect(() => {
+    api.get("/certifications").then(r => setCerts(r.data));
+    api.get("/workers").then(r => setWorkers(r.data));
+  }, []);
+  const myWorker = workers.find(w => w.email === user.email) || workers[0];
+  const myCerts = certs.filter(c => c.worker_id === myWorker?.id);
+  const today = new Date();
+  return (
+    <div className="p-4 fadein">
+      <div className="bg-white rounded-2xl border p-5 text-center">
+        <div className="w-20 h-20 brand-grad rounded-full mx-auto flex items-center justify-center text-black font-black text-2xl">
+          {user.name?.split(" ").map(n=>n[0]).slice(0,2).join("")}
+        </div>
+        <div className="font-black text-xl mt-3">{user.name}</div>
+        <div className="text-sm text-slate-500 capitalize">{user.role}</div>
+        <div className="text-xs text-slate-400 mt-0.5">{user.email}</div>
+      </div>
+      <h3 className="font-bold text-slate-900 mt-5 mb-2">My Certifications</h3>
+      <div className="space-y-2">
+        {myCerts.map(c => {
+          const exp = c.expiry_date ? new Date(c.expiry_date) : null;
+          const days = exp ? Math.floor((exp - today) / 86400000) : null;
+          const st = days == null ? "ok" : days < 0 ? "expired" : days <= 14 ? "critical" : days <= 60 ? "warning" : "ok";
+          const badge = { expired: "bg-red-100 text-red-700", critical: "bg-orange-100 text-orange-700", warning: "bg-amber-100 text-amber-700", ok: "bg-emerald-100 text-emerald-700" }[st];
+          return (
+            <div key={c.id} className="bg-white rounded-xl border p-3 flex items-center gap-3">
+              <Award className="w-6 h-6 text-amber-500"/>
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-sm">{c.name}</div>
+                <div className="text-xs text-slate-500">{c.issuer}</div>
+              </div>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badge}`}>
+                {days != null ? (days < 0 ? `Expired` : `${days}d`) : "OK"}
+              </span>
+            </div>
+          );
+        })}
+        {myCerts.length === 0 && <div className="text-center text-slate-400 text-sm py-4">No certifications on file</div>}
+      </div>
+    </div>
+  );
+}
+
+
 function App() {
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem("pt_user")); } catch { return null; }
   });
   const [view, setView] = useState("dashboard");
   const [fillTemplate, setFillTemplate] = useState(null);
+  const [online, setOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const a = () => { setOnline(true); syncQueue(); };
+    const b = () => setOnline(false);
+    window.addEventListener("online", a);
+    window.addEventListener("offline", b);
+    // Initial sync attempt on mount
+    syncQueue();
+    return () => { window.removeEventListener("online", a); window.removeEventListener("offline", b); };
+  }, []);
+
+  const syncQueue = async () => {
+    try {
+      const queue = JSON.parse(localStorage.getItem("pt_queue") || "[]");
+      if (queue.length === 0) return;
+      const remaining = [];
+      for (const item of queue) {
+        try { await api.post("/submissions", item); }
+        catch { remaining.push(item); }
+      }
+      localStorage.setItem("pt_queue", JSON.stringify(remaining));
+    } catch {}
+  };
 
   const logout = () => {
     localStorage.removeItem("pt_token");
@@ -1072,18 +1815,30 @@ function App() {
 
   if (!user) return <Login onLogin={setUser}/>;
 
+  // Workers get the mobile-first app experience
+  if (user.role === "worker") {
+    return (
+      <>
+        {!online && <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-1.5 text-xs font-semibold flex items-center justify-center gap-2"><WifiOff className="w-3.5 h-3.5"/>Offline — your forms will sync when reconnected</div>}
+        <WorkerMobileApp user={user} onLogout={logout}/>
+      </>
+    );
+  }
+
   const nav = [
     { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
     { id: "templates", label: "Forms", icon: FileText },
     { id: "submissions", label: "Inbox", icon: ClipboardList },
+    { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "workers", label: "Workers", icon: Users },
     { id: "locations", label: "Job Sites", icon: MapPin },
     { id: "certifications", label: "Certifications", icon: Award },
+    { id: "settings", label: "Settings", icon: Settings },
   ];
 
   return (
     <div className="min-h-screen flex bg-slate-50">
-      {/* Sidebar */}
+      {!online && <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-1.5 text-xs font-semibold flex items-center justify-center gap-2"><WifiOff className="w-3.5 h-3.5"/>Offline — changes will sync when reconnected</div>}
       <aside className="w-64 bg-slate-900 text-white flex flex-col">
         <div className="p-5 border-b border-slate-800">
           <div className="flex items-center gap-3">
@@ -1096,7 +1851,7 @@ function App() {
             </div>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {nav.map(n => {
             const active = view === n.id;
             return (
@@ -1122,14 +1877,15 @@ function App() {
         </div>
       </aside>
 
-      {/* Main */}
       <main className="flex-1 overflow-y-auto">
         {view === "dashboard" && <Dashboard goTo={setView}/>}
         {view === "templates" && <Templates user={user} onFill={setFillTemplate}/>}
         {view === "submissions" && <Submissions/>}
+        {view === "chat" && <Chat user={user}/>}
         {view === "workers" && <Workers/>}
         {view === "locations" && <Locations/>}
         {view === "certifications" && <Certifications/>}
+        {view === "settings" && <SettingsPage user={user}/>}
       </main>
 
       {fillTemplate && <FillForm template={fillTemplate} user={user} onClose={()=>setFillTemplate(null)}/>}

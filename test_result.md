@@ -237,6 +237,90 @@ frontend:
         agent: "testing"
         comment: "Certifications page displays table with 20 certification rows. Status badges working correctly: 2 expired (red), 0 critical (orange), 7 warning (amber), 11 ok (green). Table shows Worker, Certification, Issuer, Expiry Date, and Status columns. Days remaining calculated correctly (e.g., 'Expired 5d ago', '45d left')."
 
+  - task: "Worker Mobile View"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Worker mobile view fully functional. Login as worker@paneltec.com shows mobile-first layout with max-w-md container, yellow-on-black header (brand-grad-dark), bottom navigation with 4 tabs (Home/Forms/Chat/Me with data-testids mobile-nav-home/forms/chat/me). Home tab displays 'Stay Safe Out There' hero card in yellow. Forms tab shows all templates. Chat tab loads site chat. Me tab displays worker certifications with status badges (found 2 certs with proper color coding). Mobile logout button (mobile-logout) works correctly. All navigation and UI elements render properly in mobile layout."
+
+  - task: "Admin Settings Page"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Settings page accessible via nav-settings with 3 tabs: Auto-Share Rules (settings-tab-share), API Tokens (settings-tab-tokens), Share Log (settings-tab-log). Auto-Share Rules: Successfully created rule for category=Incident with emails=safety@paneltec.com, rule appears in table with proper category badge and recipient display. API Tokens: Successfully created token named 'Zapier', token starts with 'ptk_' prefix, appears in list with creation date and last used info, copy functionality available. Share Log tab displays MOCKED share entries. All CRUD operations working correctly."
+
+  - task: "Auto-Share Triggering"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Auto-share rule triggering verified. After creating rule for Incident category → safety@paneltec.com, submitted an Incident Report form with location, worker, description, and signature. Navigated to Settings → Share Log tab and confirmed MOCKED entry appears for safety@paneltec.com with template name, location, and MOCKED status badge. Auto-share logic correctly matches submission category to rules and logs the share event."
+
+  - task: "PDF Download"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "PDF download button (pdf-download-btn) present in submission detail modal. Button is an anchor tag (<a>) with target='_blank' attribute for opening in new tab. URL correctly formatted: /api/submissions/{id}/pdf?token={jwt_token}. Token parameter automatically appended from localStorage. Button positioned in top-right of modal with Download icon. Clicking triggers PDF generation/download (actual PDF download not tested in automation but URL structure and attributes verified correct)."
+
+  - task: "Photo Annotation"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Photo annotation feature fully functional. Uploaded test photo to Daily Site Inspection form, photo appears in grid. Hover over photo reveals annotate button (annotate-0). Clicking opens Photo Annotator modal with title 'Annotate Photo'. All 3 annotation tools present and working: Arrow (annot-tool-arrow), Circle (annot-tool-circle), Pen/Draw (annot-tool-pen). Successfully drew annotation using pen tool on canvas with mouse drag. Color palette available with 5 colors. Save button (save-annotation-btn) saves annotated image and closes modal. Annotated photo replaces original in form. Reset button available to undo annotations."
+
+  - task: "Chat (Admin)"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Chat feature working correctly for admin. Accessed via nav-chat. Chat interface loads with input field (chat-input) and send button (chat-send). Sent test message 'Test message from admin automation' - message appears in chat with brand-grad styling (yellow background, right-aligned) indicating own message. Found 6 messages with brand-grad styling. Channel switching works: clicked broadcast channel button (chat-channel-broadcast), button becomes active with brand-grad class. Messages poll every 3.5 seconds. Chat displays sender name, role, timestamp, and message body correctly."
+
+  - task: "Offline Draft Auto-Save"
+    implemented: true
+    working: true
+    file: "/app/frontend/src/App.js"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Draft auto-save feature working perfectly. Opened Daily Site Inspection form, typed 'Draft auto-save test content 12345' in textarea field. After 1.2 seconds, 'Draft auto-saved' indicator appeared with green checkmark (text-emerald-600). Verified draft saved to localStorage with key 'pt_draft_{templateId}' containing answers, photos, locationId, and savedAt timestamp. Closed form without submitting. Re-opened same form - draft values correctly restored in textarea field. Draft persists across form open/close cycles. Auto-save triggers on any field change (answers, photos, locationId). Draft cleared from localStorage only after successful form submission."
+
 backend:
   - task: "Authentication API"
     implemented: true
