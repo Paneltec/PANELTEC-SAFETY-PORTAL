@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import io
+import json
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
@@ -2218,17 +2219,34 @@ class Document(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
     category_slug: str = 'uncategorized'
-    file_type: str = 'unknown'  # pdf, docx, xlsx, pptx, image, txt, other
+    subfolder_id: Optional[str] = None  # nested 2-level folder support
+    file_type: str = 'unknown'
     mime_type: Optional[str] = None
     size_bytes: int = 0
-    content_b64: Optional[str] = None  # base64 encoded file content (data: prefix)
+    content_b64: Optional[str] = None
     ai_summary: Optional[str] = None
     ai_tags: List[str] = []
-    ai_doc_type: Optional[str] = None  # SWMS, Policy, Procedure, Form, Permit, ITP, SDS, Standard, etc.
+    ai_doc_type: Optional[str] = None
     is_form: bool = False
     extracted_fields: List[Dict[str, Any]] = []
     uploaded_by: Optional[str] = None
     description: Optional[str] = None
+    # NEW: versioning
+    version: int = 1
+    parent_doc_id: Optional[str] = None  # if this is a version of another doc, points to current latest
+    is_latest: bool = True
+    # NEW: expiry & review
+    expiry_date: Optional[str] = None
+    review_date: Optional[str] = None
+    review_frequency_months: Optional[int] = None
+    # NEW: acknowledgement
+    requires_ack: bool = False
+    ack_assignee_ids: List[str] = []  # worker IDs; empty list = all workers
+    # NEW: embeddings for semantic search (small float array)
+    embedding: List[float] = []
+    # NEW: source tracking
+    source: str = 'manual'  # manual, dropbox, onedrive
+    source_ref: Optional[str] = None  # e.g. Dropbox path
     created_at: str = Field(default_factory=now_iso)
 
 @api_router.get('/doc-categories')
@@ -2263,42 +2281,91 @@ async def delete_doc_category(cid: str, user=Depends(require_admin)):
     return {'ok': True}
 
 @api_router.get('/documents')
-async def list_documents(category: Optional[str] = None, search: Optional[str] = None,
+async def list_documents(category: Optional[str] = None, subfolder: Optional[str] = None,
+                         search: Optional[str] = None, include_versions: bool = False,
                          user=Depends(get_current_user)):
     q = {}
+    if not include_versions:
+        q['is_latest'] = True
     if category and category != 'all':
         q['category_slug'] = category
+    if subfolder == 'root':
+        q['subfolder_id'] = None
+    elif subfolder:
+        q['subfolder_id'] = subfolder
     if search:
         q['$or'] = [
             {'name': {'$regex': search, '$options': 'i'}},
             {'ai_tags': {'$regex': search, '$options': 'i'}},
             {'ai_summary': {'$regex': search, '$options': 'i'}},
         ]
-    # Don't return content_b64 in list view (heavy)
-    items = await db.documents.find(q, {'_id': 0, 'content_b64': 0}).sort('created_at', -1).to_list(1000)
+    items = await db.documents.find(q, {'_id': 0, 'content_b64': 0, 'embedding': 0}).sort('created_at', -1).to_list(2000)
     return items
 
 @api_router.get('/documents/{did}')
 async def get_document(did: str, user=Depends(get_current_user)):
-    d = await db.documents.find_one({'id': did}, {'_id': 0})
+    d = await db.documents.find_one({'id': did}, {'_id': 0, 'embedding': 0})
     if not d: raise HTTPException(404, 'Not found')
     return d
+
+async def _generate_embedding(text: str) -> List[float]:
+    """Embeddings not available via Emergent proxy. Returns empty — semantic search falls back to AI keyword expansion."""
+    return []
+
+async def _expand_query_ai(query: str) -> List[str]:
+    """Use chat LLM to expand a query into related search terms (semantic-ish)."""
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"qexpand-{uuid.uuid4()}",
+            system_message="You expand search queries for a civil contractor safety document library. Return a JSON array of 5-10 related search terms (synonyms, abbreviations, related concepts). Output only the JSON array, no commentary."
+        ).with_model('openai', 'gpt-4o-mini')
+        result = await chat.send_message(UserMessage(text=f"Query: \"{query}\"\nReturn ONLY a JSON array like [\"term1\", \"term2\", ...]"))
+        raw = str(result).strip()
+        if raw.startswith('```'):
+            raw = raw.split('```', 2)[1]
+            if raw.startswith('json'): raw = raw[4:]
+            raw = raw.strip()
+        terms = json.loads(raw)
+        if isinstance(terms, list):
+            return [str(t) for t in terms if t][:10]
+    except Exception as e:
+        logger.warning(f"Query expansion failed: {e}")
+    return []
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    import math
+    dot = sum(x*y for x, y in zip(a, b))
+    na = math.sqrt(sum(x*x for x in a))
+    nb = math.sqrt(sum(y*y for y in b))
+    if na == 0 or nb == 0: return 0.0
+    return dot / (na * nb)
 
 @api_router.post('/documents')
 async def create_document(d: Document, user=Depends(get_current_user)):
     doc = d.model_dump()
     doc['uploaded_by'] = user.get('name')
+    # Generate embedding from name + summary + tags for semantic search
+    embed_text = f"{doc.get('name','')}\n{doc.get('ai_summary','')}\n{' '.join(doc.get('ai_tags',[]))}\n{doc.get('ai_doc_type','')}"
+    doc['embedding'] = await _generate_embedding(embed_text)
     await db.documents.insert_one(doc)
-    # Return without heavy content
     doc.pop('_id', None)
     doc.pop('content_b64', None)
+    doc.pop('embedding', None)
     return doc
 
 @api_router.put('/documents/{did}')
 async def update_document(did: str, body: dict, user=Depends(get_current_user)):
-    allowed = {k: v for k, v in body.items() if k in ('name', 'category_slug', 'description', 'ai_summary', 'ai_tags', 'ai_doc_type', 'is_form', 'extracted_fields')}
+    allowed_keys = ('name', 'category_slug', 'subfolder_id', 'description',
+                    'ai_summary', 'ai_tags', 'ai_doc_type', 'is_form', 'extracted_fields',
+                    'expiry_date', 'review_date', 'review_frequency_months',
+                    'requires_ack', 'ack_assignee_ids')
+    allowed = {k: v for k, v in body.items() if k in allowed_keys}
     await db.documents.update_one({'id': did}, {'$set': allowed})
-    d = await db.documents.find_one({'id': did}, {'_id': 0, 'content_b64': 0})
+    d = await db.documents.find_one({'id': did}, {'_id': 0, 'content_b64': 0, 'embedding': 0})
     return d
 
 @api_router.delete('/documents/{did}')
@@ -2481,6 +2548,443 @@ async def doc_to_template(did: str, user=Depends(require_admin)):
     await db.form_templates.insert_one(tpl)
     tpl.pop('_id', None)
     return tpl
+
+
+
+# ============== SUBFOLDERS ==============
+class Subfolder(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    category_slug: str
+    name: str
+    color: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/subfolders')
+async def list_subfolders(category: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if category: q['category_slug'] = category
+    items = await db.subfolders.find(q, {'_id': 0}).sort('name', 1).to_list(500)
+    # Add doc counts per subfolder
+    docs = await db.documents.find({'is_latest': True}, {'_id': 0, 'subfolder_id': 1}).to_list(5000)
+    counts = {}
+    for d in docs:
+        sid = d.get('subfolder_id')
+        if sid:
+            counts[sid] = counts.get(sid, 0) + 1
+    for s in items:
+        s['doc_count'] = counts.get(s['id'], 0)
+    return items
+
+@api_router.post('/subfolders')
+async def create_subfolder(s: Subfolder, user=Depends(get_current_user)):
+    doc = s.model_dump()
+    await db.subfolders.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/subfolders/{sid}')
+async def delete_subfolder(sid: str, user=Depends(require_admin)):
+    await db.documents.update_many({'subfolder_id': sid}, {'$set': {'subfolder_id': None}})
+    await db.subfolders.delete_one({'id': sid})
+    return {'ok': True}
+
+# ============== DOCUMENT VERSIONING ==============
+@api_router.get('/documents/{did}/versions')
+async def list_doc_versions(did: str, user=Depends(get_current_user)):
+    """Return all versions of a document (current + history)."""
+    current = await db.documents.find_one({'id': did}, {'_id': 0, 'embedding': 0, 'content_b64': 0})
+    if not current: raise HTTPException(404, 'Not found')
+    # Find current "head" (the latest version of this lineage)
+    head_id = current['id'] if current.get('is_latest') else current.get('parent_doc_id')
+    if not head_id: head_id = current['id']
+    # All docs in lineage = head + all with parent_doc_id pointing to head
+    head = await db.documents.find_one({'id': head_id}, {'_id': 0, 'embedding': 0, 'content_b64': 0})
+    history = await db.documents.find(
+        {'parent_doc_id': head_id, 'is_latest': False},
+        {'_id': 0, 'embedding': 0, 'content_b64': 0}
+    ).sort('version', -1).to_list(100)
+    return {'current': head, 'history': history}
+
+class NewVersionIn(BaseModel):
+    name: Optional[str] = None
+    content_b64: str
+    file_type: Optional[str] = None
+    mime_type: Optional[str] = None
+    size_bytes: int = 0
+    change_note: Optional[str] = None
+
+@api_router.post('/documents/{did}/new-version')
+async def upload_new_version(did: str, body: NewVersionIn, user=Depends(get_current_user)):
+    """Upload a new version of an existing document. Old version is archived as is_latest=false."""
+    current = await db.documents.find_one({'id': did}, {'_id': 0})
+    if not current: raise HTTPException(404, 'Document not found')
+    head_id = current['id']  # current is always treated as the head
+
+    # Archive current
+    archive_id = str(uuid.uuid4())
+    archive = dict(current)
+    archive['id'] = archive_id
+    archive['parent_doc_id'] = head_id
+    archive['is_latest'] = False
+    await db.documents.insert_one(archive)
+
+    # Update head with new file
+    new_version = current.get('version', 1) + 1
+    update = {
+        'content_b64': body.content_b64,
+        'size_bytes': body.size_bytes,
+        'version': new_version,
+        'created_at': now_iso(),
+        'uploaded_by': user.get('name'),
+    }
+    if body.name: update['name'] = body.name
+    if body.file_type: update['file_type'] = body.file_type
+    if body.mime_type: update['mime_type'] = body.mime_type
+    if body.change_note: update['description'] = body.change_note
+    await db.documents.update_one({'id': did}, {'$set': update})
+
+    refreshed = await db.documents.find_one({'id': did}, {'_id': 0, 'embedding': 0, 'content_b64': 0})
+    return refreshed
+
+# ============== DOCUMENT EXPIRY OVERVIEW ==============
+@api_router.get('/documents/expiring')
+async def list_expiring_docs(days: int = 90, user=Depends(get_current_user)):
+    """Documents expiring or due for review within X days."""
+    today = datetime.now(timezone.utc).date()
+    cutoff = today + timedelta(days=days)
+    docs = await db.documents.find(
+        {'is_latest': True, '$or': [
+            {'expiry_date': {'$ne': None, '$exists': True}},
+            {'review_date': {'$ne': None, '$exists': True}},
+        ]},
+        {'_id': 0, 'content_b64': 0, 'embedding': 0}
+    ).to_list(2000)
+    result = []
+    for d in docs:
+        for field in ('expiry_date', 'review_date'):
+            v = d.get(field)
+            if not v: continue
+            try:
+                dt = datetime.fromisoformat(v).date()
+                if dt <= cutoff:
+                    days_left = (dt - today).days
+                    status = 'expired' if days_left < 0 else 'critical' if days_left <= 14 else 'warning'
+                    result.append({
+                        **d,
+                        '_field': field,
+                        '_field_date': v,
+                        '_days_left': days_left,
+                        '_status': status,
+                    })
+                    break
+            except Exception:
+                pass
+    result.sort(key=lambda x: x.get('_days_left', 9999))
+    return result
+
+# ============== ACKNOWLEDGEMENTS ==============
+class Acknowledgement(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    document_id: str
+    user_id: str
+    user_name: Optional[str] = None
+    acknowledged_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/acknowledgements/document/{did}')
+async def list_ack_for_doc(did: str, user=Depends(get_current_user)):
+    items = await db.acknowledgements.find({'document_id': did}, {'_id': 0}).to_list(2000)
+    return items
+
+@api_router.get('/acknowledgements/required')
+async def list_my_required_acks(user=Depends(get_current_user)):
+    """List documents this user needs to acknowledge but hasn't yet."""
+    # Get all docs requiring ack
+    docs = await db.documents.find(
+        {'requires_ack': True, 'is_latest': True},
+        {'_id': 0, 'content_b64': 0, 'embedding': 0}
+    ).to_list(2000)
+    # Find user's worker_id
+    worker = await db.workers.find_one({'email': user.get('email')}, {'_id': 0})
+    worker_id = worker['id'] if worker else None
+
+    # User's existing acks
+    my_acks = await db.acknowledgements.find({'user_id': user['id']}, {'_id': 0}).to_list(2000)
+    acked_ids = {a['document_id'] for a in my_acks}
+
+    required = []
+    for d in docs:
+        assignees = d.get('ack_assignee_ids', [])
+        # Empty assignees = everyone
+        if assignees and (not worker_id or worker_id not in assignees):
+            continue
+        if d['id'] in acked_ids:
+            continue
+        required.append(d)
+    return required
+
+@api_router.post('/acknowledgements')
+async def create_ack(body: dict, user=Depends(get_current_user)):
+    did = body.get('document_id')
+    if not did: raise HTTPException(400, 'document_id required')
+    # Prevent duplicates
+    existing = await db.acknowledgements.find_one({'document_id': did, 'user_id': user['id']})
+    if existing:
+        return {'ok': True, 'already_acked': True}
+    ack = Acknowledgement(
+        document_id=did,
+        user_id=user['id'],
+        user_name=user.get('name'),
+    ).model_dump()
+    await db.acknowledgements.insert_one(ack)
+    ack.pop('_id', None)
+    return ack
+
+@api_router.get('/acknowledgements/compliance')
+async def ack_compliance(user=Depends(get_current_user)):
+    """Compliance % per document requiring ack."""
+    docs = await db.documents.find(
+        {'requires_ack': True, 'is_latest': True},
+        {'_id': 0, 'content_b64': 0, 'embedding': 0}
+    ).to_list(2000)
+    workers = await db.workers.find({}, {'_id': 0}).to_list(2000)
+    worker_id_by_email = {w.get('email'): w['id'] for w in workers if w.get('email')}
+    all_worker_ids = {w['id'] for w in workers}
+    result = []
+    for d in docs:
+        assignees = set(d.get('ack_assignee_ids') or [])
+        if not assignees:
+            assignees = all_worker_ids
+        acks = await db.acknowledgements.find({'document_id': d['id']}, {'_id': 0}).to_list(2000)
+        # Acks are by user_id; map via email to worker_id
+        users = await db.users.find({'id': {'$in': [a['user_id'] for a in acks]}}, {'_id': 0}).to_list(2000)
+        ack_worker_ids = set()
+        for u in users:
+            wid = worker_id_by_email.get(u.get('email'))
+            if wid: ack_worker_ids.add(wid)
+        completed = len(assignees & ack_worker_ids)
+        total = len(assignees)
+        result.append({
+            'document_id': d['id'],
+            'document_name': d['name'],
+            'category_slug': d.get('category_slug'),
+            'total': total,
+            'completed': completed,
+            'pct': round(100 * completed / total, 1) if total else 0,
+        })
+    return result
+
+# ============== SEMANTIC SEARCH ==============
+class SemanticSearchIn(BaseModel):
+    query: str
+    top_k: int = 10
+
+@api_router.post('/documents/search/semantic')
+async def semantic_search(body: SemanticSearchIn, user=Depends(get_current_user)):
+    """AI-powered search: expand query into related terms, score by keyword + tag overlap."""
+    q = body.query.strip()
+    if not q:
+        return {'results': [], 'mode': 'empty'}
+
+    # Expand query with AI
+    expanded = await _expand_query_ai(q)
+    all_terms = [q.lower()] + [t.lower() for t in expanded]
+
+    # Score every latest doc
+    docs = await db.documents.find(
+        {'is_latest': True},
+        {'_id': 0, 'content_b64': 0, 'embedding': 0}
+    ).to_list(5000)
+
+    scored = []
+    for d in docs:
+        haystack = ' '.join([
+            d.get('name', ''),
+            d.get('ai_summary', '') or '',
+            ' '.join(d.get('ai_tags') or []),
+            d.get('ai_doc_type', '') or '',
+            d.get('category_slug', '') or '',
+        ]).lower()
+        score = 0.0
+        for term in all_terms:
+            if not term: continue
+            if term in haystack:
+                # Boost name + tags hits
+                if term in d.get('name', '').lower(): score += 2.0
+                if term in ' '.join(d.get('ai_tags') or []).lower(): score += 1.5
+                score += 1.0
+        if score > 0:
+            scored.append((score, d))
+
+    scored.sort(key=lambda x: -x[0])
+    top = scored[:body.top_k]
+    return {
+        'results': [{**d, '_score': round(s, 2), '_mode': 'ai'} for s, d in top],
+        'mode': 'ai',
+        'expanded_terms': expanded,
+    }
+
+@api_router.post('/documents/reindex')
+async def reindex_embeddings(user=Depends(require_admin)):
+    """Stub — embeddings not in use (Emergent proxy doesn't support them)."""
+    return {'ok': True, 'note': 'AI keyword expansion mode — no embedding index needed.'}
+
+# ============== DROPBOX SYNC (paste-token approach) ==============
+class DropboxConfig(BaseModel):
+    access_token: str
+    folder_path: str = ''  # empty = root; eg '/Risk & Compliance'
+
+@api_router.get('/integrations/dropbox/status')
+async def dropbox_status(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'dropbox'}, {'_id': 0})
+    if not cfg:
+        return {'connected': False}
+    return {
+        'connected': True,
+        'folder_path': cfg.get('folder_path', ''),
+        'last_sync': cfg.get('last_sync'),
+        'last_sync_count': cfg.get('last_sync_count', 0),
+    }
+
+@api_router.post('/integrations/dropbox/connect')
+async def dropbox_connect(body: DropboxConfig, user=Depends(require_admin)):
+    """Save Dropbox token + verify by listing the folder."""
+    import httpx
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(
+            'https://api.dropboxapi.com/2/users/get_current_account',
+            headers={'Authorization': f'Bearer {body.access_token}'},
+        )
+        if r.status_code != 200:
+            raise HTTPException(400, f'Dropbox auth failed: {r.text[:200]}')
+        account = r.json()
+    await db.integrations.update_one(
+        {'id': 'dropbox'},
+        {'$set': {
+            'id': 'dropbox',
+            'access_token': body.access_token,
+            'folder_path': body.folder_path,
+            'connected_at': now_iso(),
+            'account_email': account.get('email'),
+            'account_name': account.get('name', {}).get('display_name'),
+        }},
+        upsert=True,
+    )
+    return {'ok': True, 'account': account.get('email')}
+
+@api_router.delete('/integrations/dropbox')
+async def dropbox_disconnect(user=Depends(require_admin)):
+    await db.integrations.delete_one({'id': 'dropbox'})
+    return {'ok': True}
+
+@api_router.post('/integrations/dropbox/sync')
+async def dropbox_sync(classify: bool = True, max_files: int = 50, user=Depends(require_admin)):
+    """Pull files from configured Dropbox folder, classify with AI, ingest as documents."""
+    cfg = await db.integrations.find_one({'id': 'dropbox'}, {'_id': 0})
+    if not cfg: raise HTTPException(400, 'Dropbox not connected')
+    token = cfg['access_token']
+    folder = cfg.get('folder_path', '')
+
+    import httpx
+    synced = []
+    errors = []
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        # List files recursively
+        cursor = None
+        all_entries = []
+        while True:
+            url = 'https://api.dropboxapi.com/2/files/list_folder' if cursor is None else 'https://api.dropboxapi.com/2/files/list_folder/continue'
+            payload = {'cursor': cursor} if cursor else {'path': folder, 'recursive': True, 'limit': 200}
+            r = await client.post(url, headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}, json=payload)
+            if r.status_code != 200:
+                errors.append(f'list_folder failed: {r.text[:200]}')
+                break
+            data = r.json()
+            all_entries.extend([e for e in data.get('entries', []) if e.get('.tag') == 'file'])
+            if not data.get('has_more'): break
+            cursor = data.get('cursor')
+            if len(all_entries) > max_files * 3: break
+
+        # Get already-synced source_refs to skip
+        existing_refs = set()
+        async for d in db.documents.find({'source': 'dropbox'}, {'_id': 0, 'source_ref': 1, 'name': 1, 'size_bytes': 1}):
+            if d.get('source_ref'): existing_refs.add(d['source_ref'])
+
+        # Process up to max_files new files
+        to_process = [e for e in all_entries if e.get('path_lower') not in existing_refs][:max_files]
+
+        for entry in to_process:
+            try:
+                path = entry['path_lower']
+                name = entry['name']
+                size = entry.get('size', 0)
+                if size > 25 * 1024 * 1024:  # skip files > 25MB
+                    errors.append(f'{name}: too large ({size} bytes)')
+                    continue
+                # Download
+                r = await client.post(
+                    'https://content.dropboxapi.com/2/files/download',
+                    headers={
+                        'Authorization': f'Bearer {token}',
+                        'Dropbox-API-Arg': json.dumps({'path': entry['path_display']}),
+                    },
+                )
+                if r.status_code != 200:
+                    errors.append(f'{name}: download failed {r.status_code}')
+                    continue
+                raw = r.content
+                file_type = _detect_filetype(name)
+                # Build data URL
+                mime = {
+                    'pdf': 'application/pdf', 'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    'image': 'image/png', 'txt': 'text/plain', 'other': 'application/octet-stream',
+                }.get(file_type, 'application/octet-stream')
+                b64 = f"data:{mime};base64,{base64.b64encode(raw).decode()}"
+
+                # AI classify
+                classification = {'category_slug': 'uncategorized', 'doc_type': 'Other', 'summary': '', 'tags': [], 'is_form': False, 'extracted_fields': []}
+                if classify:
+                    try:
+                        text = _extract_text_from_b64(b64, file_type)
+                        ai_in = AIClassifyIn(filename=name, content_b64=b64, file_type=file_type, text_excerpt=text)
+                        ai_result = await ai_classify_document(ai_in, user)
+                        classification.update(ai_result)
+                    except Exception as ce:
+                        errors.append(f'{name}: classify failed {str(ce)[:100]}')
+
+                # Build doc
+                doc = Document(
+                    name=name,
+                    category_slug=classification.get('category_slug', 'uncategorized'),
+                    file_type=file_type,
+                    mime_type=mime,
+                    size_bytes=len(raw),
+                    content_b64=b64,
+                    ai_summary=classification.get('summary'),
+                    ai_tags=classification.get('tags', []),
+                    ai_doc_type=classification.get('doc_type'),
+                    is_form=classification.get('is_form', False),
+                    extracted_fields=classification.get('extracted_fields', []),
+                    source='dropbox',
+                    source_ref=path,
+                ).model_dump()
+                doc['uploaded_by'] = user.get('name')
+                # Embedding
+                embed_text = f"{name}\n{doc.get('ai_summary','')}\n{' '.join(doc.get('ai_tags',[]))}"
+                doc['embedding'] = await _generate_embedding(embed_text)
+                await db.documents.insert_one(doc)
+                synced.append({'name': name, 'category': doc['category_slug'], 'doc_type': doc.get('ai_doc_type')})
+            except Exception as ee:
+                errors.append(f"{entry.get('name','?')}: {str(ee)[:200]}")
+
+    await db.integrations.update_one(
+        {'id': 'dropbox'},
+        {'$set': {'last_sync': now_iso(), 'last_sync_count': len(synced)}},
+        upsert=True,
+    )
+    return {'ok': True, 'synced_count': len(synced), 'synced': synced[:20], 'errors': errors[:20], 'total_found': len(all_entries)}
 
 
 

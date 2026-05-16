@@ -1360,14 +1360,16 @@ function SettingsPage({ user }) {
         <h1 className="text-3xl font-black text-slate-900">Settings</h1>
         <p className="text-slate-500 mt-1">Auto-share rules, API tokens & integrations</p>
       </div>
-      <div className="flex gap-2 border-b mb-6">
+      <div className="flex gap-2 border-b mb-6 overflow-x-auto">
         {[
           { id: "share", label: "Auto-Share Rules", icon: Share2 },
           { id: "tokens", label: "API Tokens", icon: Key },
           { id: "log", label: "Share Log", icon: Mail },
+          { id: "dropbox", label: "Dropbox Sync", icon: BookOpen },
+          { id: "compliance", label: "Ack Compliance", icon: FileBadge },
         ].map(t => (
           <button key={t.id} onClick={()=>setTab(t.id)}
-            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-semibold flex items-center gap-2 transition ${tab===t.id ? "border-amber-400 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            className={`px-4 py-2.5 -mb-px border-b-2 text-sm font-semibold flex items-center gap-2 transition whitespace-nowrap ${tab===t.id ? "border-amber-400 text-slate-900" : "border-transparent text-slate-500 hover:text-slate-700"}`}
             data-testid={`settings-tab-${t.id}`}>
             <t.icon className="w-4 h-4"/>{t.label}
           </button>
@@ -1376,6 +1378,150 @@ function SettingsPage({ user }) {
       {tab === "share" && <ShareRules/>}
       {tab === "tokens" && <ApiTokens/>}
       {tab === "log" && <ShareLog/>}
+      {tab === "dropbox" && <DropboxSettings/>}
+      {tab === "compliance" && <AckCompliance/>}
+    </div>
+  );
+}
+
+function DropboxSettings() {
+  const [status, setStatus] = useState(null);
+  const [token, setToken] = useState("");
+  const [folder, setFolder] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastResult, setLastResult] = useState(null);
+
+  const load = () => api.get('/integrations/dropbox/status').then(r => setStatus(r.data));
+  useEffect(() => { load(); }, []);
+
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      await api.post('/integrations/dropbox/connect', { access_token: token, folder_path: folder });
+      setToken(""); load();
+    } catch (e) { alert("Connect failed: " + (e?.response?.data?.detail || e.message)); }
+    setConnecting(false);
+  };
+
+  const sync = async () => {
+    setSyncing(true);
+    try {
+      const { data } = await api.post('/integrations/dropbox/sync?classify=true&max_files=50', null, { timeout: 600000 });
+      setLastResult(data);
+      load();
+    } catch (e) { alert("Sync failed: " + (e?.response?.data?.detail || e.message)); }
+    setSyncing(false);
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect Dropbox?")) return;
+    await api.delete('/integrations/dropbox');
+    load();
+  };
+
+  return (
+    <div className="max-w-3xl">
+      <div className="bg-gradient-to-br from-blue-50 to-cyan-50 border-2 border-blue-200 rounded-2xl p-5 mb-5">
+        <h3 className="font-bold text-blue-900 flex items-center gap-2 mb-2">↻ Dropbox Sync</h3>
+        <p className="text-sm text-blue-800">Auto-import documents from a Dropbox folder. AI will classify and tag each file as it syncs.</p>
+      </div>
+
+      {status?.connected ? (
+        <div className="bg-white border rounded-2xl p-5">
+          <div className="flex items-center gap-2 text-emerald-600 font-bold mb-3"><CheckCircle2 className="w-5 h-5"/>Connected</div>
+          <div className="text-sm text-slate-600 mb-1"><b>Folder path:</b> <code className="bg-slate-100 px-2 py-0.5 rounded font-mono text-xs">{status.folder_path || "(root)"}</code></div>
+          {status.last_sync && <div className="text-sm text-slate-600">Last sync: {new Date(status.last_sync).toLocaleString()} · {status.last_sync_count} files imported</div>}
+          <div className="flex gap-2 mt-4">
+            <button onClick={sync} disabled={syncing} className="px-5 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2 disabled:opacity-50" data-testid="dropbox-sync-btn">
+              {syncing ? <Loader2 className="w-4 h-4 animate-spin"/> : <Upload className="w-4 h-4"/>}{syncing ? "Syncing (this may take a few minutes)..." : "Sync Now"}
+            </button>
+            <button onClick={disconnect} className="px-4 py-2.5 border rounded-lg text-sm">Disconnect</button>
+          </div>
+          {lastResult && (
+            <div className="mt-4 p-4 bg-slate-50 rounded-lg border text-sm">
+              <div className="font-bold mb-2">Sync result:</div>
+              <div>✓ Synced <b>{lastResult.synced_count}</b> new file{lastResult.synced_count===1?"":"s"} (of {lastResult.total_found} total)</div>
+              {lastResult.errors?.length > 0 && (
+                <div className="mt-2 text-red-600">⚠ {lastResult.errors.length} error(s):<ul className="list-disc ml-5 mt-1 text-xs">{lastResult.errors.slice(0,5).map((e,i)=>(<li key={i}>{e}</li>))}</ul></div>
+              )}
+              {lastResult.synced?.length > 0 && (
+                <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold">Show {lastResult.synced.length} synced files</summary><ul className="text-xs mt-2 space-y-1">{lastResult.synced.map((s,i)=>(<li key={i}>📄 <b>{s.name}</b> → {s.category} {s.doc_type ? `(${s.doc_type})` : ""}</li>))}</ul></details>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white border rounded-2xl p-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <div className="font-bold text-amber-900 mb-1">How to get a Dropbox access token:</div>
+            <ol className="list-decimal ml-5 text-amber-800 text-xs space-y-0.5">
+              <li>Go to <a href="https://www.dropbox.com/developers/apps" target="_blank" rel="noopener noreferrer" className="underline font-semibold">dropbox.com/developers/apps</a></li>
+              <li>Click "Create app" → "Scoped access" → "Full Dropbox" → name it "Paneltec Sync"</li>
+              <li>On the app page, scroll to "OAuth 2" → click "Generate access token"</li>
+              <li>Copy the token and paste it below</li>
+              <li>Note: tokens are short-lived (4 hours). Re-generate when needed.</li>
+            </ol>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">Dropbox Access Token</label>
+            <input value={token} onChange={e=>setToken(e.target.value)} placeholder="sl.u..." className="w-full px-3 py-2.5 border rounded-lg font-mono text-xs" data-testid="dropbox-token-input"/>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">Folder Path (leave empty for root)</label>
+            <input value={folder} onChange={e=>setFolder(e.target.value)} placeholder="/Risk & Compliance" className="w-full px-3 py-2.5 border rounded-lg" data-testid="dropbox-folder-input"/>
+            <div className="text-xs text-slate-500 mt-1">Use the EXACT folder path in your Dropbox, including the leading slash.</div>
+          </div>
+          <button onClick={connect} disabled={!token || connecting} className="w-full py-3 brand-grad text-black font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50" data-testid="dropbox-connect-btn">
+            {connecting ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}Connect Dropbox
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AckCompliance() {
+  const [rows, setRows] = useState([]);
+  useEffect(() => { api.get('/acknowledgements/compliance').then(r => setRows(r.data)); }, []);
+  const overall = rows.length ? Math.round(rows.reduce((s,r)=>s+r.pct, 0) / rows.length) : 0;
+  return (
+    <div className="max-w-4xl">
+      <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-2xl p-5 mb-5">
+        <h3 className="font-bold text-purple-900 flex items-center gap-2 mb-2"><FileBadge className="w-5 h-5"/>Worker Acknowledgement Compliance</h3>
+        <div className="text-4xl font-black text-purple-900">{overall}%</div>
+        <p className="text-sm text-purple-800">Overall compliance across all documents requiring worker acknowledgement</p>
+      </div>
+      <div className="bg-white border rounded-2xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b text-slate-600 text-left">
+            <tr>
+              <th className="py-3 px-4 font-semibold">Document</th>
+              <th className="py-3 px-4 font-semibold">Category</th>
+              <th className="py-3 px-4 font-semibold">Progress</th>
+              <th className="py-3 px-4 font-semibold">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.document_id} className="border-b">
+                <td className="py-3 px-4 font-medium">{r.document_name}</td>
+                <td className="py-3 px-4 text-slate-500 capitalize">{r.category_slug?.replace(/-/g,' ')}</td>
+                <td className="py-3 px-4">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 max-w-xs h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div className={`h-full ${r.pct>=80?"bg-emerald-500":r.pct>=50?"bg-amber-500":"bg-red-500"}`} style={{ width: `${r.pct}%` }}/>
+                    </div>
+                    <span className="text-xs text-slate-500">{r.completed} / {r.total}</span>
+                  </div>
+                </td>
+                <td className="py-3 px-4 font-bold">{r.pct}%</td>
+              </tr>
+            ))}
+            {rows.length === 0 && <tr><td colSpan="4" className="py-10 text-center text-slate-400">No documents require acknowledgement yet. Open a document → Settings → "Requires Worker Acknowledgement".</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1599,10 +1745,19 @@ function TokenModal({ onClose }) {
 function WorkerMobileApp({ user, onLogout }) {
   const [tab, setTab] = useState("home");
   const [fillTemplate, setFillTemplate] = useState(null);
+  const [pendingAcks, setPendingAcks] = useState(0);
+
+  useEffect(() => {
+    const loadAcks = () => api.get('/acknowledgements/required').then(r => setPendingAcks(r.data?.length || 0)).catch(()=>{});
+    loadAcks();
+    const t = setInterval(loadAcks, 30000);
+    return () => clearInterval(t);
+  }, []);
 
   const tabs = [
     { id: "home", label: "Home", icon: Home },
     { id: "forms", label: "Forms", icon: FileText },
+    { id: "action", label: "Action", icon: FileBadge, badge: pendingAcks },
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "me", label: "Me", icon: User },
   ];
@@ -1623,8 +1778,9 @@ function WorkerMobileApp({ user, onLogout }) {
       </header>
 
       <main className="flex-1 overflow-y-auto pb-20">
-        {tab === "home" && <WorkerHome user={user} onFill={setFillTemplate} goTo={setTab}/>}
+        {tab === "home" && <WorkerHome user={user} onFill={setFillTemplate} goTo={setTab} pendingAcks={pendingAcks}/>}
         {tab === "forms" && <WorkerForms onFill={setFillTemplate}/>}
+        {tab === "action" && <WorkerActions onCountChange={setPendingAcks}/>}
         {tab === "chat" && <Chat user={user}/>}
         {tab === "me" && <WorkerMe user={user}/>}
       </main>
@@ -1634,9 +1790,12 @@ function WorkerMobileApp({ user, onLogout }) {
           const active = tab === t.id;
           return (
             <button key={t.id} onClick={()=>setTab(t.id)}
-              className={`flex-1 flex flex-col items-center justify-center py-2.5 ${active ? "text-amber-600" : "text-slate-500"}`}
+              className={`flex-1 flex flex-col items-center justify-center py-2.5 relative ${active ? "text-amber-600" : "text-slate-500"}`}
               data-testid={`mobile-nav-${t.id}`}>
-              <t.icon className={`w-5 h-5 ${active ? "scale-110" : ""} transition`}/>
+              <div className="relative">
+                <t.icon className={`w-5 h-5 ${active ? "scale-110" : ""} transition`}/>
+                {t.badge > 0 && <span className="absolute -top-1.5 -right-2.5 bg-red-600 text-white text-[9px] font-black rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">{t.badge}</span>}
+              </div>
               <span className="text-[10px] font-bold mt-0.5">{t.label}</span>
             </button>
           );
@@ -1648,7 +1807,119 @@ function WorkerMobileApp({ user, onLogout }) {
   );
 }
 
-function WorkerHome({ user, onFill, goTo }) {
+function WorkerActions({ onCountChange }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [viewing, setViewing] = useState(null);
+  const load = async () => {
+    setLoading(true);
+    const { data } = await api.get('/acknowledgements/required');
+    setDocs(data); setLoading(false);
+    onCountChange && onCountChange(data.length);
+  };
+  useEffect(() => { load(); }, []);
+
+  const acknowledge = async (docId) => {
+    await api.post('/acknowledgements', { document_id: docId });
+    setViewing(null);
+    load();
+  };
+
+  return (
+    <div className="p-4 fadein">
+      <h2 className="text-xl font-black mb-1">Action Required</h2>
+      <p className="text-sm text-slate-500 mb-4">{docs.length} document{docs.length===1?"":"s"} need your acknowledgement</p>
+
+      {loading ? (
+        <div className="text-center py-10 text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin"/>Loading…</div>
+      ) : docs.length === 0 ? (
+        <div className="text-center py-12 bg-white rounded-2xl border-2 border-dashed">
+          <CheckCircle2 className="w-12 h-12 mx-auto text-emerald-400 mb-2"/>
+          <div className="font-semibold text-slate-700">All caught up!</div>
+          <div className="text-xs text-slate-500 mt-1">No documents need your acknowledgement.</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {docs.map(d => {
+            const info = FILE_ICONS[d.file_type] || FILE_ICONS.other;
+            return (
+              <button key={d.id} onClick={()=>setViewing(d)}
+                className="w-full bg-white rounded-2xl p-4 border-2 border-purple-200 text-left active:scale-[0.98] transition shadow-sm" data-testid={`worker-ack-${d.id}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${info.color} flex-shrink-0`}>
+                    <info.icon className="w-6 h-6"/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-slate-900">{d.name}</div>
+                    {d.ai_summary && <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">{d.ai_summary}</div>}
+                    <div className="px-2 py-0.5 mt-2 inline-block rounded-full text-[10px] font-bold bg-purple-100 text-purple-700">Tap to read & acknowledge</div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-slate-400"/>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {viewing && <WorkerAckModal doc={viewing} onAck={()=>acknowledge(viewing.id)} onClose={()=>setViewing(null)}/>}
+    </div>
+  );
+}
+
+function WorkerAckModal({ doc, onAck, onClose }) {
+  const [full, setFull] = useState(null);
+  const [acking, setAcking] = useState(false);
+  useEffect(() => { api.get(`/documents/${doc.id}`).then(r => setFull(r.data)); }, [doc.id]);
+  const info = FILE_ICONS[doc.file_type] || FILE_ICONS.other;
+  const dataUrl = full?.content_b64;
+  const handleAck = async () => { setAcking(true); await onAck(); };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-end md:items-center justify-center fadein">
+      <div className="bg-white w-full max-w-md rounded-t-3xl md:rounded-3xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="p-4 border-b flex items-center justify-between">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${info.color}`}><info.icon className="w-5 h-5"/></div>
+            <div className="min-w-0">
+              <div className="font-bold truncate">{doc.name}</div>
+              <div className="text-xs text-slate-500">{doc.ai_doc_type}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto">
+          {doc.ai_summary && (
+            <div className="p-4 bg-gradient-to-br from-amber-50 to-yellow-50 border-b">
+              <h3 className="font-bold text-amber-900 text-sm mb-1 flex items-center gap-1"><Sparkles className="w-4 h-4"/>Summary</h3>
+              <p className="text-sm text-slate-800">{doc.ai_summary}</p>
+            </div>
+          )}
+          <div className="p-3">
+            {!full ? <div className="text-center py-10 text-slate-400"><Loader2 className="w-5 h-5 animate-spin mx-auto"/></div> :
+              doc.file_type === "pdf" && dataUrl ? <iframe src={dataUrl} className="w-full h-[50vh] border rounded-lg" title={doc.name}/> :
+              doc.file_type === "image" && dataUrl ? <img src={dataUrl} alt={doc.name} className="max-w-full mx-auto border rounded-lg"/> :
+              doc.file_type === "txt" && dataUrl ? <pre className="text-xs bg-slate-50 p-3 rounded-lg border whitespace-pre-wrap">{atob(dataUrl.split(',')[1] || '')}</pre> :
+              <div className="text-center py-8 bg-slate-50 rounded-lg border-2 border-dashed">
+                <info.icon className="w-12 h-12 mx-auto text-slate-300 mb-2"/>
+                <div className="text-sm text-slate-600">Open the document to read its contents</div>
+                {dataUrl && <a href={dataUrl} download={doc.name} className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-amber-600"><Download className="w-4 h-4"/>Download</a>}
+              </div>
+            }
+          </div>
+        </div>
+        <div className="p-4 border-t bg-slate-50">
+          <button onClick={handleAck} disabled={acking} className="w-full py-3.5 brand-grad text-black font-black rounded-2xl flex items-center justify-center gap-2 active:scale-[0.98] transition disabled:opacity-50" data-testid="worker-ack-btn">
+            {acking ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle2 className="w-5 h-5"/>}I HAVE READ AND UNDERSTOOD
+          </button>
+          <div className="text-[11px] text-center text-slate-400 mt-2">Your acknowledgement will be recorded with timestamp.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkerHome({ user, onFill, goTo, pendingAcks = 0 }) {
   const [templates, setTemplates] = useState([]);
   const [recentSubs, setRecentSubs] = useState([]);
   useEffect(() => {
@@ -1658,11 +1929,24 @@ function WorkerHome({ user, onFill, goTo }) {
 
   return (
     <div className="p-4 space-y-5 fadein">
-      <div className="brand-grad rounded-2xl p-5 text-black shadow-lg">
-        <div className="text-xs font-bold tracking-widest opacity-70">TODAY</div>
+      {pendingAcks > 0 && (
+        <button onClick={()=>goTo("action")} className="w-full brand-grad text-black rounded-2xl p-4 text-left shadow-lg active:scale-[0.98] transition" data-testid="worker-action-banner">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-black/10 rounded-xl flex items-center justify-center"><FileBadge className="w-7 h-7"/></div>
+            <div className="flex-1">
+              <div className="text-xs font-bold tracking-wider opacity-70">ACTION REQUIRED</div>
+              <div className="font-black text-lg leading-tight">{pendingAcks} document{pendingAcks===1?"":"s"} to acknowledge</div>
+            </div>
+            <ChevronRight className="w-6 h-6"/>
+          </div>
+        </button>
+      )}
+
+      <div className="brand-grad-dark rounded-2xl p-5 text-white shadow-lg">
+        <div className="text-xs font-bold tracking-widest text-amber-300">TODAY</div>
         <div className="text-2xl font-black mt-1">Stay Safe Out There</div>
         <p className="text-sm opacity-80 mt-1">Complete your toolbox talk and run your pre-use checks.</p>
-        <button onClick={()=>goTo("forms")} className="mt-3 bg-black text-amber-400 font-bold rounded-lg px-4 py-2 text-sm flex items-center gap-1.5">
+        <button onClick={()=>goTo("forms")} className="mt-3 brand-grad text-black font-bold rounded-lg px-4 py-2 text-sm flex items-center gap-1.5">
           <PenLine className="w-4 h-4"/>Fill a Form
         </button>
       </div>
@@ -1817,9 +2101,24 @@ function DocumentLibrary() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
   const [search, setSearch] = useState("");
+  const [aiSearch, setAiSearch] = useState("");
+  const [aiResults, setAiResults] = useState(null);
+  const [aiSearching, setAiSearching] = useState(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
 
   const loadCats = () => api.get("/doc-categories").then(r => setCategories(r.data));
   useEffect(() => { loadCats(); }, []);
+
+  const runAiSearch = async (e) => {
+    e?.preventDefault();
+    if (!aiSearch.trim()) { setAiResults(null); return; }
+    setAiSearching(true);
+    try {
+      const { data } = await api.post("/documents/search/semantic", { query: aiSearch, top_k: 15 });
+      setAiResults(data);
+    } catch (e) { alert("Search failed: " + (e?.response?.data?.detail || e.message)); }
+    setAiSearching(false);
+  };
 
   if (activeCategory) {
     return <CategoryView category={activeCategory} onBack={()=>{setActiveCategory(null); loadCats();}}/>;
@@ -1839,7 +2138,7 @@ function DocumentLibrary() {
         <div className="flex gap-2">
           <div className="relative">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3"/>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search folders…"
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Filter folders…"
               className="pl-9 pr-3 py-2.5 border rounded-lg bg-white text-sm w-56"/>
           </div>
           <button onClick={()=>setShowUpload(true)}
@@ -1850,21 +2149,54 @@ function DocumentLibrary() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-        {filtered.map(c => (
-          <button key={c.id} onClick={()=>setActiveCategory(c)}
-            className="bg-white rounded-2xl border p-5 text-left card-hover group active:scale-95 transition"
-            data-testid={`doc-category-${c.slug}`}>
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-all group-hover:scale-110"
-                 style={{ backgroundColor: c.color + "20", color: c.color }}>
-              <Folder className="w-7 h-7" style={{ color: c.color }}/>
-            </div>
-            <div className="font-bold text-slate-900 text-sm leading-tight line-clamp-2">{c.name}</div>
-            <div className="text-xs text-slate-400 mt-1">{c.doc_count || 0} file{c.doc_count===1?"":"s"}</div>
+      {/* AI Smart Search */}
+      <form onSubmit={runAiSearch} className="mb-6 bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-2xl p-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Sparkles className="w-5 h-5 text-amber-600"/>
+          <h3 className="font-bold text-amber-900">AI Smart Search</h3>
+          <span className="text-xs text-amber-700">Ask in plain English — AI finds matching documents across all folders</span>
+        </div>
+        <div className="flex gap-2">
+          <input value={aiSearch} onChange={e=>setAiSearch(e.target.value)}
+            placeholder='e.g. "PPE requirements for working at heights" or "asbestos removal procedure"'
+            className="flex-1 px-4 py-3 border-2 border-amber-200 rounded-xl bg-white focus:ring-2 focus:ring-amber-400 outline-none"
+            data-testid="ai-search-input"/>
+          <button type="submit" disabled={aiSearching} className="px-5 py-3 brand-grad text-black font-bold rounded-xl flex items-center gap-2 disabled:opacity-50" data-testid="ai-search-btn">
+            {aiSearching ? <Loader2 className="w-4 h-4 animate-spin"/> : <Search className="w-4 h-4"/>}Search
           </button>
-        ))}
-      </div>
+          {aiResults && <button type="button" onClick={()=>{setAiResults(null); setAiSearch("");}} className="px-3 py-3 bg-white border rounded-xl text-sm font-semibold">Clear</button>}
+        </div>
+      </form>
 
+      {aiResults ? (
+        <div className="space-y-2 mb-6">
+          <div className="text-sm text-slate-600 mb-2">
+            <b>{aiResults.results.length}</b> document{aiResults.results.length===1?"":"s"} found
+            {aiResults.expanded_terms?.length > 0 && (
+              <span className="ml-2">· AI expanded to: {aiResults.expanded_terms.slice(0,5).map((t,i)=>(<span key={i} className="inline-block px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs font-mono mx-0.5">{t}</span>))}</span>
+            )}
+          </div>
+          {aiResults.results.map(d => <DocRow key={d.id} doc={d} onClick={()=>setSelectedDoc(d)}/>)}
+          {aiResults.results.length === 0 && <div className="text-center text-slate-400 py-8">No matching documents.</div>}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {filtered.map(c => (
+            <button key={c.id} onClick={()=>setActiveCategory(c)}
+              className="bg-white rounded-2xl border p-5 text-left card-hover group active:scale-95 transition"
+              data-testid={`doc-category-${c.slug}`}>
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-all group-hover:scale-110"
+                   style={{ backgroundColor: c.color + "20", color: c.color }}>
+                <Folder className="w-7 h-7" style={{ color: c.color }}/>
+              </div>
+              <div className="font-bold text-slate-900 text-sm leading-tight line-clamp-2">{c.name}</div>
+              <div className="text-xs text-slate-400 mt-1">{c.doc_count || 0} file{c.doc_count===1?"":"s"}</div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {selectedDoc && <DocViewer doc={selectedDoc} onClose={()=>{setSelectedDoc(null); loadCats();}} onDelete={async()=>{ if(window.confirm("Delete this document?")) { await api.delete(`/documents/${selectedDoc.id}`); setSelectedDoc(null); loadCats(); if(aiSearch) runAiSearch(); }}}/>}
       {showUpload && <BulkUploadModal categories={categories} onClose={()=>{setShowUpload(false); loadCats();}}/>}
     </div>
   );
@@ -1872,21 +2204,46 @@ function DocumentLibrary() {
 
 function CategoryView({ category, onBack }) {
   const [docs, setDocs] = useState([]);
+  const [subfolders, setSubfolders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [showNewSub, setShowNewSub] = useState(false);
+  const [activeSub, setActiveSub] = useState(null); // {id, name} or null = root
+  const [search, setSearch] = useState("");
+
+  const loadSubfolders = () => api.get(`/subfolders?category=${category.slug}`).then(r => setSubfolders(r.data));
   const load = async () => {
     setLoading(true);
-    const { data } = await api.get(`/documents?category=${category.slug}`);
+    const subParam = activeSub ? activeSub.id : 'root';
+    const { data } = await api.get(`/documents?category=${category.slug}&subfolder=${subParam}`);
     setDocs(data); setLoading(false);
   };
-  useEffect(() => { load(); }, [category.slug]);
+  useEffect(() => { loadSubfolders(); }, [category.slug]);
+  useEffect(() => { load(); }, [category.slug, activeSub?.id]);
+
+  const createSubfolder = async (name) => {
+    await api.post('/subfolders', { id: crypto.randomUUID(), category_slug: category.slug, name, color: category.color, created_at: new Date().toISOString() });
+    setShowNewSub(false);
+    loadSubfolders();
+  };
+
+  const filteredDocs = search ? docs.filter(d => `${d.name} ${d.ai_summary||''} ${(d.ai_tags||[]).join(' ')}`.toLowerCase().includes(search.toLowerCase())) : docs;
 
   return (
     <div className="p-6 lg:p-8 fadein">
-      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-900 flex items-center gap-1 mb-3" data-testid="docs-back-btn">
-        <ChevronLeft className="w-4 h-4"/>Back to all folders
-      </button>
+      <div className="flex items-center gap-2 text-sm mb-3">
+        <button onClick={onBack} className="text-slate-500 hover:text-slate-900 flex items-center gap-1" data-testid="docs-back-btn">
+          <ChevronLeft className="w-4 h-4"/>All folders
+        </button>
+        <ChevronRight className="w-3 h-3 text-slate-300"/>
+        <button onClick={()=>setActiveSub(null)} className={`font-semibold ${activeSub ? 'text-slate-500 hover:text-slate-900' : 'text-slate-900'}`}>{category.name}</button>
+        {activeSub && (<>
+          <ChevronRight className="w-3 h-3 text-slate-300"/>
+          <span className="font-semibold text-slate-900">{activeSub.name}</span>
+        </>)}
+      </div>
+
       <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -1894,82 +2251,188 @@ function CategoryView({ category, onBack }) {
             <FolderOpen className="w-8 h-8" style={{ color: category.color }}/>
           </div>
           <div>
-            <h1 className="text-3xl font-black text-slate-900">{category.name}</h1>
-            <p className="text-slate-500 mt-0.5">{docs.length} document{docs.length===1?"":"s"}</p>
+            <h1 className="text-3xl font-black text-slate-900">{activeSub?.name || category.name}</h1>
+            <p className="text-slate-500 mt-0.5">{docs.length} document{docs.length===1?"":"s"}{!activeSub && subfolders.length > 0 ? ` · ${subfolders.length} subfolder${subfolders.length===1?"":"s"}` : ""}</p>
           </div>
         </div>
-        <button onClick={()=>setShowUpload(true)} className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="upload-to-category-btn">
-          <Upload className="w-4 h-4"/>Upload Here
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Filter…" className="pl-9 pr-3 py-2.5 border rounded-lg bg-white text-sm w-48"/>
+          </div>
+          {!activeSub && (
+            <button onClick={()=>setShowNewSub(true)} className="px-4 py-2.5 bg-white border-2 border-slate-200 hover:border-amber-400 font-bold rounded-lg flex items-center gap-2 text-sm" data-testid="new-subfolder-btn">
+              <FolderOpen className="w-4 h-4"/>New Subfolder
+            </button>
+          )}
+          <button onClick={()=>setShowUpload(true)} className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="upload-to-category-btn">
+            <Upload className="w-4 h-4"/>Upload Here
+          </button>
+        </div>
       </div>
 
+      {/* Subfolders */}
+      {!activeSub && subfolders.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-xs font-bold text-slate-500 tracking-widest mb-3">SUBFOLDERS</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            {subfolders.map(s => (
+              <button key={s.id} onClick={()=>setActiveSub(s)}
+                className="bg-white rounded-xl border p-3 text-left card-hover group active:scale-95 transition" data-testid={`subfolder-${s.id}`}>
+                <Folder className="w-6 h-6 mb-2" style={{ color: s.color || category.color }}/>
+                <div className="font-bold text-slate-900 text-sm truncate">{s.name}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{s.doc_count || 0} files</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Documents */}
+      <h3 className="text-xs font-bold text-slate-500 tracking-widest mb-3">DOCUMENTS</h3>
       {loading ? (
         <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin"/>Loading…</div>
-      ) : docs.length === 0 ? (
+      ) : filteredDocs.length === 0 ? (
         <div className="bg-white border-2 border-dashed rounded-2xl p-12 text-center">
           <FilePlus className="w-12 h-12 mx-auto text-slate-300 mb-3"/>
-          <div className="text-slate-500 font-semibold">No documents yet in {category.name}</div>
+          <div className="text-slate-500 font-semibold">No documents here yet</div>
           <div className="text-xs text-slate-400 mt-1">Click "Upload Here" to add files</div>
         </div>
       ) : (
         <div className="space-y-2">
-          {docs.map(d => {
-            const info = FILE_ICONS[d.file_type] || FILE_ICONS.other;
-            return (
-              <button key={d.id} onClick={()=>setSelected(d)}
-                className="w-full bg-white rounded-xl border p-4 flex items-center gap-4 hover:shadow-md hover:border-amber-300 transition text-left"
-                data-testid={`doc-row-${d.id}`}>
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${info.color} flex-shrink-0`}>
-                  <info.icon className="w-6 h-6"/>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="font-bold text-slate-900 truncate">{d.name}</div>
-                  {d.ai_summary && <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">{d.ai_summary}</div>}
-                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                    {d.ai_doc_type && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">{d.ai_doc_type}</span>}
-                    {(d.ai_tags || []).slice(0, 4).map((t,i) => (
-                      <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">#{t}</span>
-                    ))}
-                    {d.is_form && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex items-center gap-1"><FileCheck className="w-3 h-3"/>Fillable Form</span>}
-                  </div>
-                </div>
-                <div className="text-xs text-slate-400 text-right flex-shrink-0">
-                  <div className="font-mono uppercase">{d.file_type}</div>
-                  <div>{fmtSize(d.size_bytes)}</div>
-                </div>
-              </button>
-            );
-          })}
+          {filteredDocs.map(d => <DocRow key={d.id} doc={d} onClick={()=>setSelected(d)}/>)}
         </div>
       )}
 
       {selected && <DocViewer doc={selected} onClose={()=>{setSelected(null); load();}} onDelete={async()=>{ if(window.confirm("Delete this document?")) { await api.delete(`/documents/${selected.id}`); setSelected(null); load(); }}}/>}
-      {showUpload && <BulkUploadModal categories={[category]} defaultCategory={category.slug} onClose={()=>{setShowUpload(false); load();}}/>}
+      {showUpload && <BulkUploadModal categories={[category]} defaultCategory={category.slug} defaultSubfolder={activeSub?.id} onClose={()=>{setShowUpload(false); load();}}/>}
+      {showNewSub && <NewSubfolderModal onClose={()=>setShowNewSub(false)} onCreate={createSubfolder}/>}
+    </div>
+  );
+}
+
+function DocRow({ doc, onClick }) {
+  const info = FILE_ICONS[doc.file_type] || FILE_ICONS.other;
+  // Status badges
+  const today = new Date();
+  let expiryBadge = null;
+  if (doc.expiry_date) {
+    const d = new Date(doc.expiry_date);
+    const days = Math.floor((d - today)/86400000);
+    if (days < 0) expiryBadge = <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 flex items-center gap-1"><AlertOctagon className="w-3 h-3"/>Expired {-days}d ago</span>;
+    else if (days <= 30) expiryBadge = <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700 flex items-center gap-1"><Clock className="w-3 h-3"/>Expires in {days}d</span>;
+  }
+  let reviewBadge = null;
+  if (doc.review_date && !expiryBadge) {
+    const d = new Date(doc.review_date);
+    const days = Math.floor((d - today)/86400000);
+    if (days < 0) reviewBadge = <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700">Review overdue</span>;
+    else if (days <= 30) reviewBadge = <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700">Review in {days}d</span>;
+  }
+
+  return (
+    <button onClick={onClick}
+      className="w-full bg-white rounded-xl border p-4 flex items-center gap-4 hover:shadow-md hover:border-amber-300 transition text-left"
+      data-testid={`doc-row-${doc.id}`}>
+      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${info.color} flex-shrink-0`}>
+        <info.icon className="w-6 h-6"/>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="font-bold text-slate-900 truncate flex items-center gap-2">
+          {doc.name}
+          {doc.version > 1 && <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">v{doc.version}</span>}
+        </div>
+        {doc.ai_summary && <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">{doc.ai_summary}</div>}
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          {doc.ai_doc_type && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">{doc.ai_doc_type}</span>}
+          {expiryBadge}
+          {reviewBadge}
+          {doc.requires_ack && <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-700 flex items-center gap-1"><FileBadge className="w-3 h-3"/>Requires Ack</span>}
+          {(doc.ai_tags || []).slice(0, 3).map((t,i) => (
+            <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">#{t}</span>
+          ))}
+          {doc.is_form && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex items-center gap-1"><FileCheck className="w-3 h-3"/>Form</span>}
+          {doc.source === "dropbox" && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-700">↻ Dropbox</span>}
+        </div>
+      </div>
+      <div className="text-xs text-slate-400 text-right flex-shrink-0">
+        <div className="font-mono uppercase">{doc.file_type}</div>
+        <div>{fmtSize(doc.size_bytes)}</div>
+      </div>
+    </button>
+  );
+}
+
+function NewSubfolderModal({ onClose, onCreate }) {
+  const [name, setName] = useState("");
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-sm p-6">
+        <h2 className="text-2xl font-bold mb-4">New Subfolder</h2>
+        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Subfolder name" className="w-full px-3 py-2.5 border rounded-lg" data-testid="subfolder-name-input"/>
+        <div className="mt-5 flex justify-end gap-2">
+          <button onClick={onClose} className="px-4 py-2 border rounded-lg">Cancel</button>
+          <button onClick={()=>onCreate(name)} disabled={!name.trim()} className="px-5 py-2 brand-grad text-black font-bold rounded-lg disabled:opacity-50" data-testid="save-subfolder-btn">Create</button>
+        </div>
+      </div>
     </div>
   );
 }
 
 function DocViewer({ doc, onClose, onDelete }) {
   const [full, setFull] = useState(null);
+  const [versions, setVersions] = useState({ current: null, history: [] });
+  const [acks, setAcks] = useState([]);
+  const [workers, setWorkers] = useState([]);
+  const [tab, setTab] = useState("preview"); // preview | versions | settings
   const [convertingForm, setConvertingForm] = useState(false);
+  const [showNewVersion, setShowNewVersion] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const versionFileRef = useRef(null);
 
-  useEffect(() => {
+  const loadAll = () => {
     api.get(`/documents/${doc.id}`).then(r => setFull(r.data));
-  }, [doc.id]);
+    api.get(`/documents/${doc.id}/versions`).then(r => setVersions(r.data)).catch(()=>{});
+    api.get(`/acknowledgements/document/${doc.id}`).then(r => setAcks(r.data)).catch(()=>{});
+    api.get('/workers').then(r => setWorkers(r.data)).catch(()=>{});
+  };
+  useEffect(() => { loadAll(); }, [doc.id]);
 
   const convertToTemplate = async () => {
     setConvertingForm(true);
     try {
       await api.post(`/documents/${doc.id}/to-template`);
-      alert("✓ Created a fillable form template from this document. Check the Forms section.");
-    } catch (e) {
-      alert("Failed: " + (e?.response?.data?.detail || e.message));
-    }
+      alert("✓ Created a fillable form template. Check the Forms section.");
+    } catch (e) { alert("Failed: " + (e?.response?.data?.detail || e.message)); }
     setConvertingForm(false);
+  };
+
+  const uploadVersion = async (file, changeNote) => {
+    const b64 = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+    await api.post(`/documents/${doc.id}/new-version`, {
+      name: file.name,
+      content_b64: b64,
+      file_type: detectFileType(file.name, file.type),
+      mime_type: file.type,
+      size_bytes: file.size,
+      change_note: changeNote,
+    });
+    setShowNewVersion(false);
+    loadAll();
   };
 
   const info = FILE_ICONS[doc.file_type] || FILE_ICONS.other;
   const dataUrl = full?.content_b64;
+  const tabs = [
+    { id: "preview", label: "Preview", icon: Eye },
+    { id: "versions", label: `Versions (${1 + (versions.history?.length || 0)})`, icon: Clock },
+    { id: "settings", label: "Settings", icon: Settings },
+  ];
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 fadein">
@@ -1980,8 +2443,11 @@ function DocViewer({ doc, onClose, onDelete }) {
               <info.icon className="w-6 h-6"/>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="font-bold text-slate-900 truncate">{doc.name}</div>
-              <div className="text-xs text-slate-500">{doc.ai_doc_type || "Document"} · {fmtSize(doc.size_bytes)} · Uploaded {new Date(doc.created_at).toLocaleDateString()}</div>
+              <div className="font-bold text-slate-900 truncate flex items-center gap-2">
+                {doc.name}
+                {full?.version > 1 && <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">v{full.version}</span>}
+              </div>
+              <div className="text-xs text-slate-500">{doc.ai_doc_type || "Document"} · {fmtSize(doc.size_bytes)} · Uploaded {new Date(doc.created_at).toLocaleDateString()}{doc.uploaded_by ? ` by ${doc.uploaded_by}` : ""}</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2003,60 +2469,232 @@ function DocViewer({ doc, onClose, onDelete }) {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="border-b flex gap-1 px-3 bg-slate-50">
+          {tabs.map(t => (
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              className={`px-4 py-2.5 text-sm font-semibold flex items-center gap-2 border-b-2 -mb-px ${tab===t.id?"border-amber-400 text-slate-900":"border-transparent text-slate-500 hover:text-slate-700"}`}
+              data-testid={`docviewer-tab-${t.id}`}>
+              <t.icon className="w-4 h-4"/>{t.label}
+            </button>
+          ))}
+        </div>
+
         <div className="flex-1 overflow-y-auto">
-          {/* AI Insights */}
-          {(doc.ai_summary || (doc.ai_tags && doc.ai_tags.length > 0)) && (
-            <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-b-2 border-amber-200 p-5">
-              <h3 className="font-bold text-amber-900 flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5"/>AI Insights</h3>
-              {doc.ai_summary && <p className="text-sm text-slate-800 whitespace-pre-wrap">{doc.ai_summary}</p>}
-              {doc.ai_tags && doc.ai_tags.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {doc.ai_tags.map((t,i)=>(<span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white border border-amber-200 text-amber-800">#{t}</span>))}
-                </div>
-              )}
-              {full?.is_form && full.extracted_fields?.length > 0 && (
-                <div className="mt-4 bg-white/70 rounded-lg p-3 border border-amber-200">
-                  <div className="text-xs font-bold text-amber-900 mb-2">EXTRACTED FORM FIELDS ({full.extracted_fields.length})</div>
-                  <div className="grid grid-cols-2 gap-1.5 text-xs">
-                    {full.extracted_fields.map((f, i) => (
-                      <div key={i} className="flex items-center gap-1.5 text-slate-700">
-                        <span className="text-slate-400">•</span>
-                        <span className="font-medium">{f.label}</span>
-                        <span className="text-slate-400 font-mono text-[10px]">{f.type}</span>
-                        {f.required && <span className="text-red-500">*</span>}
+          {tab === "preview" && (
+            <>
+              {(doc.ai_summary || (doc.ai_tags && doc.ai_tags.length > 0)) && (
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-b-2 border-amber-200 p-5">
+                  <h3 className="font-bold text-amber-900 flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5"/>AI Insights</h3>
+                  {doc.ai_summary && <p className="text-sm text-slate-800 whitespace-pre-wrap">{doc.ai_summary}</p>}
+                  {doc.ai_tags && doc.ai_tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {doc.ai_tags.map((t,i)=>(<span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white border border-amber-200 text-amber-800">#{t}</span>))}
+                    </div>
+                  )}
+                  {full?.is_form && full.extracted_fields?.length > 0 && (
+                    <div className="mt-4 bg-white/70 rounded-lg p-3 border border-amber-200">
+                      <div className="text-xs font-bold text-amber-900 mb-2">EXTRACTED FORM FIELDS ({full.extracted_fields.length})</div>
+                      <div className="grid grid-cols-2 gap-1.5 text-xs">
+                        {full.extracted_fields.map((f, i) => (
+                          <div key={i} className="flex items-center gap-1.5 text-slate-700">
+                            <span className="text-slate-400">•</span>
+                            <span className="font-medium">{f.label}</span>
+                            <span className="text-slate-400 font-mono text-[10px]">{f.type}</span>
+                            {f.required && <span className="text-red-500">*</span>}
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Expiry / Review banner */}
+              {(full?.expiry_date || full?.review_date || full?.requires_ack) && (
+                <div className="p-4 border-b bg-slate-50 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                  {full?.expiry_date && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-semibold tracking-wider">EXPIRES</div>
+                      <div className="font-bold text-slate-900">{new Date(full.expiry_date).toLocaleDateString()}</div>
+                    </div>
+                  )}
+                  {full?.review_date && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-semibold tracking-wider">REVIEW BY</div>
+                      <div className="font-bold text-slate-900">{new Date(full.review_date).toLocaleDateString()}{full?.review_frequency_months ? ` (every ${full.review_frequency_months}mo)` : ""}</div>
+                    </div>
+                  )}
+                  {full?.requires_ack && (
+                    <div>
+                      <div className="text-xs text-slate-500 font-semibold tracking-wider">ACKNOWLEDGEMENTS</div>
+                      <div className="font-bold text-slate-900">{acks.length} signed</div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* File preview */}
+              <div className="p-4">
+                {!full ? (
+                  <div className="flex items-center justify-center py-20 text-slate-400"><Loader2 className="w-6 h-6 animate-spin"/></div>
+                ) : doc.file_type === "pdf" && dataUrl ? (
+                  <iframe src={dataUrl} className="w-full h-[55vh] border rounded-lg" title={doc.name}/>
+                ) : doc.file_type === "image" && dataUrl ? (
+                  <img src={dataUrl} alt={doc.name} className="max-w-full max-h-[55vh] mx-auto border rounded-lg"/>
+                ) : doc.file_type === "txt" && dataUrl ? (
+                  <pre className="text-xs bg-slate-50 p-4 rounded-lg border whitespace-pre-wrap max-h-[55vh] overflow-y-auto">{atob(dataUrl.split(',')[1] || '')}</pre>
+                ) : (
+                  <div className="text-center py-12 bg-slate-50 rounded-lg border-2 border-dashed">
+                    <info.icon className="w-16 h-16 mx-auto text-slate-300 mb-3"/>
+                    <div className="font-semibold text-slate-700">{doc.file_type.toUpperCase()} preview not supported inline</div>
+                    <div className="text-sm text-slate-500 mt-1">Click "Download" to open this file</div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {tab === "versions" && (
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold">Version History</h3>
+                <button onClick={()=>versionFileRef.current?.click()} className="px-3 py-2 brand-grad text-black text-sm font-bold rounded-lg flex items-center gap-2" data-testid="new-version-btn">
+                  <Upload className="w-4 h-4"/>Upload New Version
+                </button>
+                <input ref={versionFileRef} type="file" className="hidden" onChange={async e => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  const note = window.prompt("What changed in this version? (optional)") || "";
+                  await uploadVersion(f, note);
+                }}/>
+              </div>
+              <div className="space-y-2">
+                {/* Current */}
+                {versions.current && (
+                  <div className="border-2 border-emerald-300 bg-emerald-50/30 rounded-xl p-3 flex items-center gap-3">
+                    <div className="w-10 h-10 bg-emerald-100 rounded-lg flex items-center justify-center"><CheckCircle2 className="w-5 h-5 text-emerald-600"/></div>
+                    <div className="flex-1">
+                      <div className="font-bold flex items-center gap-2">v{versions.current.version} <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded-full font-bold">CURRENT</span></div>
+                      <div className="text-xs text-slate-500">{new Date(versions.current.created_at).toLocaleString()} · {fmtSize(versions.current.size_bytes)}{versions.current.uploaded_by ? ` · ${versions.current.uploaded_by}` : ""}</div>
+                      {versions.current.description && <div className="text-xs text-slate-600 mt-1 italic">"{versions.current.description}"</div>}
+                    </div>
+                  </div>
+                )}
+                {/* History */}
+                {(versions.history || []).map(v => (
+                  <div key={v.id} className="border rounded-xl p-3 flex items-center gap-3 bg-white">
+                    <div className="w-10 h-10 bg-slate-100 rounded-lg flex items-center justify-center"><Clock className="w-5 h-5 text-slate-500"/></div>
+                    <div className="flex-1">
+                      <div className="font-bold text-slate-700">v{v.version}</div>
+                      <div className="text-xs text-slate-500">{new Date(v.created_at).toLocaleString()} · {fmtSize(v.size_bytes)}{v.uploaded_by ? ` · ${v.uploaded_by}` : ""}</div>
+                      {v.description && <div className="text-xs text-slate-600 mt-1 italic">"{v.description}"</div>}
+                    </div>
+                  </div>
+                ))}
+                {(versions.history?.length || 0) === 0 && <div className="text-center text-sm text-slate-400 py-4">No previous versions yet.</div>}
+              </div>
             </div>
           )}
 
-          {/* File preview */}
-          <div className="p-4">
-            {!full ? (
-              <div className="flex items-center justify-center py-20 text-slate-400"><Loader2 className="w-6 h-6 animate-spin"/></div>
-            ) : doc.file_type === "pdf" && dataUrl ? (
-              <iframe src={dataUrl} className="w-full h-[60vh] border rounded-lg" title={doc.name}/>
-            ) : doc.file_type === "image" && dataUrl ? (
-              <img src={dataUrl} alt={doc.name} className="max-w-full max-h-[60vh] mx-auto border rounded-lg"/>
-            ) : doc.file_type === "txt" && dataUrl ? (
-              <pre className="text-xs bg-slate-50 p-4 rounded-lg border whitespace-pre-wrap max-h-[60vh] overflow-y-auto">{atob(dataUrl.split(',')[1] || '')}</pre>
-            ) : (
-              <div className="text-center py-12 bg-slate-50 rounded-lg border-2 border-dashed">
-                <info.icon className="w-16 h-16 mx-auto text-slate-300 mb-3"/>
-                <div className="font-semibold text-slate-700">{doc.file_type.toUpperCase()} preview not supported inline</div>
-                <div className="text-sm text-slate-500 mt-1">Click "Download" to open this file</div>
-              </div>
-            )}
-          </div>
+          {tab === "settings" && (
+            <DocSettings doc={full || doc} workers={workers} onSaved={loadAll}/>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function BulkUploadModal({ categories, defaultCategory, onClose }) {
+function DocSettings({ doc, workers, onSaved }) {
+  const [name, setName] = useState(doc.name || "");
+  const [expiryDate, setExpiryDate] = useState(doc.expiry_date || "");
+  const [reviewDate, setReviewDate] = useState(doc.review_date || "");
+  const [reviewMonths, setReviewMonths] = useState(doc.review_frequency_months || "");
+  const [requiresAck, setRequiresAck] = useState(!!doc.requires_ack);
+  const [assignees, setAssignees] = useState(doc.ack_assignee_ids || []);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/documents/${doc.id}`, {
+        name,
+        expiry_date: expiryDate || null,
+        review_date: reviewDate || null,
+        review_frequency_months: reviewMonths ? Number(reviewMonths) : null,
+        requires_ack: requiresAck,
+        ack_assignee_ids: assignees,
+      });
+      setSavedAt(Date.now());
+      onSaved && onSaved();
+    } catch (e) { alert("Save failed: " + (e?.response?.data?.detail || e.message)); }
+    setSaving(false);
+  };
+
+  const toggleAssignee = (id) => setAssignees(assignees.includes(id) ? assignees.filter(x=>x!==id) : [...assignees, id]);
+
+  return (
+    <div className="p-5 space-y-5 max-w-2xl">
+      <div>
+        <label className="block text-sm font-semibold mb-1.5">Document Name</label>
+        <input value={name} onChange={e=>setName(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg"/>
+      </div>
+
+      <div className="border rounded-xl p-4 bg-slate-50">
+        <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-amber-500"/>Expiry & Review</h4>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Expiry Date</label>
+            <input type="date" value={expiryDate?.slice(0,10) || ""} onChange={e=>setExpiryDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white" data-testid="doc-expiry-date"/>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Review-by Date</label>
+            <input type="date" value={reviewDate?.slice(0,10) || ""} onChange={e=>setReviewDate(e.target.value)} className="w-full px-3 py-2 border rounded-lg bg-white" data-testid="doc-review-date"/>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-slate-600 mb-1">Review every (months)</label>
+            <input type="number" value={reviewMonths} onChange={e=>setReviewMonths(e.target.value)} placeholder="e.g. 12" className="w-full px-3 py-2 border rounded-lg bg-white"/>
+          </div>
+        </div>
+      </div>
+
+      <div className="border rounded-xl p-4 bg-slate-50">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input type="checkbox" checked={requiresAck} onChange={e=>setRequiresAck(e.target.checked)} className="w-5 h-5 mt-0.5" data-testid="doc-requires-ack"/>
+          <div>
+            <div className="font-bold text-slate-900 flex items-center gap-2"><FileBadge className="w-4 h-4 text-purple-500"/>Requires Worker Acknowledgement</div>
+            <div className="text-xs text-slate-500">Workers will see this in their "Action Required" list and must tap "I have read and understood".</div>
+          </div>
+        </label>
+        {requiresAck && (
+          <div className="mt-4">
+            <label className="block text-xs font-semibold text-slate-600 mb-2">Assign to specific workers (leave empty = all workers)</label>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto bg-white border rounded-lg p-2">
+              {workers.map(w => (
+                <label key={w.id} className="flex items-center gap-2 px-2 py-1 hover:bg-slate-50 rounded cursor-pointer text-sm">
+                  <input type="checkbox" checked={assignees.includes(w.id)} onChange={()=>toggleAssignee(w.id)}/>
+                  <span className="truncate">{w.name}</span>
+                </label>
+              ))}
+            </div>
+            <div className="text-xs text-slate-500 mt-2">{assignees.length === 0 ? "All workers" : `${assignees.length} workers selected`}</div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={saving} className="px-5 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2 disabled:opacity-50" data-testid="save-doc-settings-btn">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}Save
+        </button>
+        {savedAt && <span className="text-sm text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/>Saved</span>}
+      </div>
+    </div>
+  );
+}
+
+function BulkUploadModal({ categories, defaultCategory, defaultSubfolder, onClose }) {
   const [queue, setQueue] = useState([]); // [{file, status, doc, error, category}]
   const [aiClassify, setAiClassify] = useState(true);
   const [forceCategory, setForceCategory] = useState(defaultCategory || "");
@@ -2120,6 +2758,7 @@ function BulkUploadModal({ categories, defaultCategory, onClose }) {
           id: crypto.randomUUID(),
           name: f.name,
           category_slug: classification.category_slug,
+          subfolder_id: defaultSubfolder || null,
           file_type: fileType,
           mime_type: f.type,
           size_bytes: f.size,
