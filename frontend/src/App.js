@@ -12,7 +12,8 @@ import {
   AlertOctagon, FlaskConical, Truck, Briefcase, ListChecks, ChevronLeft,
   Menu, ArrowRight, Clock, Flame, Droplets,
   Folder, FolderOpen, FileSpreadsheet, FileType2, Upload, Tag, BookOpen, FilePlus,
-  FileCheck, FileBadge, Image as ImageIcon
+  FileCheck, FileBadge, Image as ImageIcon,
+  ClipboardCheck, StickyNote, UserCircle2, ListTodo
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,

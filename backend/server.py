@@ -3023,9 +3023,16 @@ class Client(BaseModel):
     model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str
+    contact_name: Optional[str] = None
     contact_email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
+    state: Optional[str] = None
+    parent_client_id: Optional[str] = None
+    member_ids: List[str] = []  # worker IDs assigned to this client
+    location_id: Optional[str] = None
+    status: str = 'active'  # active, inactive
+    created_by: Optional[str] = None
     simpro_id: Optional[str] = None
     source: str = 'manual'  # manual, simpro
     created_at: str = Field(default_factory=now_iso)
@@ -3041,9 +3048,22 @@ async def list_clients(search: Optional[str] = None, user=Depends(get_current_us
 @api_router.post('/clients')
 async def create_client(c: Client, user=Depends(require_admin)):
     doc = c.model_dump()
+    doc['created_by'] = user.get('name')
     await db.clients.insert_one(doc)
     doc.pop('_id', None)
     return doc
+
+@api_router.put('/clients/{cid}')
+async def update_client(cid: str, c: Client, user=Depends(require_admin)):
+    doc = c.model_dump(); doc['id'] = cid
+    await db.clients.update_one({'id': cid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.get('/clients/{cid}')
+async def get_client(cid: str, user=Depends(get_current_user)):
+    c = await db.clients.find_one({'id': cid}, {'_id': 0})
+    if not c: raise HTTPException(404, 'Not found')
+    return c
 
 @api_router.delete('/clients/{cid}')
 async def delete_client(cid: str, user=Depends(require_admin)):
@@ -3294,6 +3314,155 @@ async def seed_default_clients(user=Depends(require_admin)):
     for n in defaults:
         await db.clients.insert_one(Client(name=n).model_dump())
     return {'ok': True, 'created': len(defaults)}
+
+
+
+# ============== CLIENT FOLDERS (per-client document folders) ==============
+class ClientFolder(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    client_id: str
+    name: str
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/client-folders')
+async def list_client_folders(client_id: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if client_id: q['client_id'] = client_id
+    items = await db.client_folders.find(q, {'_id': 0}).sort('name', 1).to_list(500)
+    return items
+
+@api_router.post('/client-folders')
+async def create_client_folder(f: ClientFolder, user=Depends(get_current_user)):
+    doc = f.model_dump()
+    doc['created_by'] = user.get('name')
+    await db.client_folders.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/client-folders/{fid}')
+async def delete_client_folder(fid: str, user=Depends(get_current_user)):
+    await db.client_folders.delete_one({'id': fid})
+    return {'ok': True}
+
+# ============== NOTES ==============
+class Note(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    body: str = ""
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    folder_id: Optional[str] = None
+    file_ref: Optional[str] = None  # optional document_id link
+    sub_location: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/notes')
+async def list_notes(client_id: Optional[str] = None, folder_id: Optional[str] = None,
+                     search: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if client_id: q['client_id'] = client_id
+    if folder_id: q['folder_id'] = folder_id
+    if search:
+        q['$or'] = [
+            {'title': {'$regex': search, '$options': 'i'}},
+            {'body': {'$regex': search, '$options': 'i'}},
+        ]
+    items = await db.notes.find(q, {'_id': 0}).sort('created_at', -1).to_list(2000)
+    return items
+
+@api_router.get('/notes/{nid}')
+async def get_note(nid: str, user=Depends(get_current_user)):
+    n = await db.notes.find_one({'id': nid}, {'_id': 0})
+    if not n: raise HTTPException(404, 'Not found')
+    return n
+
+@api_router.post('/notes')
+async def create_note(n: Note, user=Depends(get_current_user)):
+    doc = n.model_dump()
+    doc['created_by'] = user.get('name')
+    if doc.get('client_id') and not doc.get('client_name'):
+        c = await db.clients.find_one({'id': doc['client_id']}, {'_id': 0, 'name': 1})
+        if c: doc['client_name'] = c['name']
+    await db.notes.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/notes/{nid}')
+async def update_note(nid: str, n: Note, user=Depends(get_current_user)):
+    doc = n.model_dump(); doc['id'] = nid
+    await db.notes.update_one({'id': nid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/notes/{nid}')
+async def delete_note(nid: str, user=Depends(get_current_user)):
+    await db.notes.delete_one({'id': nid})
+    return {'ok': True}
+
+# ============== CLIENT TASKS (separate from corrective-action ActionItem) ==============
+class ClientTask(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    description: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    assignee_id: Optional[str] = None
+    assignee_name: Optional[str] = None
+    priority: str = 'medium'  # low, medium, high, critical
+    status: str = 'open'  # open, in_progress, done, blocked
+    due_date: Optional[str] = None
+    completed_at: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/tasks')
+async def list_tasks(client_id: Optional[str] = None, status: Optional[str] = None,
+                     user=Depends(get_current_user)):
+    q = {}
+    if client_id: q['client_id'] = client_id
+    if status and status != 'all': q['status'] = status
+    items = await db.client_tasks.find(q, {'_id': 0}).sort('due_date', 1).to_list(2000)
+    return items
+
+@api_router.post('/tasks')
+async def create_task(t: ClientTask, user=Depends(get_current_user)):
+    doc = t.model_dump()
+    doc['created_by'] = user.get('name')
+    if doc.get('client_id') and not doc.get('client_name'):
+        c = await db.clients.find_one({'id': doc['client_id']}, {'_id': 0, 'name': 1})
+        if c: doc['client_name'] = c['name']
+    if doc.get('assignee_id') and not doc.get('assignee_name'):
+        w = await db.workers.find_one({'id': doc['assignee_id']}, {'_id': 0, 'name': 1})
+        if w: doc['assignee_name'] = w['name']
+    await db.client_tasks.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/tasks/{tid}')
+async def update_task(tid: str, t: ClientTask, user=Depends(get_current_user)):
+    doc = t.model_dump(); doc['id'] = tid
+    if doc.get('status') == 'done' and not doc.get('completed_at'):
+        doc['completed_at'] = now_iso()
+    await db.client_tasks.update_one({'id': tid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/tasks/{tid}')
+async def delete_task(tid: str, user=Depends(get_current_user)):
+    await db.client_tasks.delete_one({'id': tid})
+    return {'ok': True}
+
+@api_router.post('/tasks/{tid}/status')
+async def quick_status(tid: str, body: dict, user=Depends(get_current_user)):
+    new_status = body.get('status', 'open')
+    update = {'status': new_status}
+    if new_status == 'done': update['completed_at'] = now_iso()
+    await db.client_tasks.update_one({'id': tid}, {'$set': update})
+    t = await db.client_tasks.find_one({'id': tid}, {'_id': 0})
+    return t
 
 
 
