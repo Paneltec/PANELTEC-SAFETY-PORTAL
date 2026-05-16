@@ -780,13 +780,35 @@ async def list_share_log(user=Depends(get_current_user)):
     return items
 
 async def evaluate_share_rules(submission: dict):
-    """Mock email dispatch — store every match in share_log."""
+    """Evaluate auto-share rules. Send real email via M365 if configured, else MOCK to log."""
     rules = await db.share_rules.find({'enabled': True}, {'_id': 0}).to_list(500)
+    m365_cfg = await db.integrations.find_one({'id': 'm365'}, {'_id': 0})
+    m365_ready = bool(m365_cfg and m365_cfg.get('verified'))
+
     for r in rules:
         loc_match = (not r.get('location_id')) or r.get('location_id') == submission.get('location_id')
         cat_match = (not r.get('category')) or r.get('category') == submission.get('category')
         if loc_match and cat_match and r.get('emails'):
+            subject = f"[Paneltec Safety] {submission.get('template_name', 'Form')} — {submission.get('location_name', '')}"
+            html = f"""
+<h2 style="color:#0B0B0F">Paneltec Safety Portal</h2>
+<p>A new <b>{submission.get('template_name')}</b> ({submission.get('category')}) has been submitted at <b>{submission.get('location_name')}</b> by {submission.get('worker_name')}.</p>
+<table style="border-collapse:collapse;width:100%;margin-top:10px">
+  {''.join(f'<tr><td style="border:1px solid #E5E7EB;padding:6px;background:#F9FAFB"><b>{k}</b></td><td style="border:1px solid #E5E7EB;padding:6px">{v}</td></tr>' for k, v in (submission.get('answers') or {}).items())}
+</table>
+<p style="margin-top:14px;color:#6B7280;font-size:12px">Submitted: {submission.get('submitted_at')}<br>Submission ID: {submission.get('id')}</p>
+"""
             for email in r['emails']:
+                status = 'mocked'
+                response_detail = None
+                if m365_ready:
+                    try:
+                        result = await _send_m365_email(SendEmailIn(to=[email], subject=subject, body=html))
+                        status = 'sent' if result.get('ok') else 'failed'
+                        response_detail = str(result.get('response'))[:300] if not result.get('ok') else None
+                    except Exception as e:
+                        status = 'failed'
+                        response_detail = str(e)[:300]
                 log = {
                     'id': str(uuid.uuid4()),
                     'rule_id': r['id'],
@@ -795,7 +817,8 @@ async def evaluate_share_rules(submission: dict):
                     'location_name': submission.get('location_name'),
                     'category': submission.get('category'),
                     'recipient': email,
-                    'status': 'mocked',
+                    'status': status,
+                    'response': response_detail,
                     'sent_at': now_iso(),
                 }
                 await db.share_log.insert_one(log)
@@ -3463,6 +3486,473 @@ async def quick_status(tid: str, body: dict, user=Depends(get_current_user)):
     await db.client_tasks.update_one({'id': tid}, {'$set': update})
     t = await db.client_tasks.find_one({'id': tid}, {'_id': 0})
     return t
+
+
+
+# ============== EXTENDED SIMPRO CONFIG ==============
+class SimproConfigExt(BaseModel):
+    base_url: Optional[str] = None
+    company_id: Optional[str] = None
+    api_token: Optional[str] = None
+    staff_custom_field: Optional[str] = None
+    staff_field_value: Optional[str] = None
+    position_filter: List[str] = []
+    sync_interval_minutes: int = 60
+    auto_sync: bool = False
+    completed_jobs_history_days: int = 90
+    incremental_sync: bool = False
+
+@api_router.put('/integrations/simpro/config')
+async def simpro_update_config(body: SimproConfigExt, user=Depends(require_admin)):
+    update = {k: v for k, v in body.model_dump().items() if v is not None}
+    update['id'] = 'simpro'
+    await db.integrations.update_one({'id': 'simpro'}, {'$set': update}, upsert=True)
+    return {'ok': True}
+
+@api_router.get('/integrations/simpro/companies')
+async def simpro_list_companies(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg or not cfg.get('api_token') or not cfg.get('base_url'):
+        raise HTTPException(400, 'Configure base_url + api_token first')
+    import httpx
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.get(
+            f"{cfg['base_url'].rstrip('/')}/api/v1.0/companies/",
+            headers={'Authorization': f"Bearer {cfg['api_token']}"},
+        )
+        if r.status_code != 200:
+            raise HTTPException(r.status_code, r.text[:300])
+        data = r.json()
+    if isinstance(data, dict): data = data.get('items', [])
+    return [{'id': c.get('ID'), 'name': c.get('Name')} for c in data]
+
+@api_router.get('/integrations/simpro/custom-fields')
+async def simpro_list_custom_fields(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg or not cfg.get('api_token'): raise HTTPException(400, 'Connect Simpro first')
+    cid = cfg.get('company_id', '0')
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.get(
+                f"{cfg['base_url'].rstrip('/')}/api/v1.0/companies/{cid}/setup/customFields/employees/",
+                headers={'Authorization': f"Bearer {cfg['api_token']}"},
+            )
+            if r.status_code != 200:
+                return {'items': [], 'error': r.text[:200]}
+            data = r.json()
+    except Exception as e:
+        return {'items': [], 'error': str(e)[:200]}
+    items = data if isinstance(data, list) else data.get('items', [])
+    return {'items': [{'id': i.get('ID'), 'name': i.get('Name'), 'options': i.get('ListItems', [])} for i in items]}
+
+# ============== NAVIXY GPS ==============
+class NavixyConfig(BaseModel):
+    email: str
+    password: Optional[str] = None
+    api_key: Optional[str] = None  # session hash
+    api_base_url: str = 'api.us.navixy.com'
+    account_id: Optional[str] = None
+    tag_filter: List[str] = []
+    poll_interval_seconds: int = 30
+    auto_poll: bool = False
+
+@api_router.get('/integrations/navixy/status')
+async def navixy_status(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'navixy'}, {'_id': 0})
+    if not cfg: return {'connected': False}
+    return {
+        'connected': True,
+        'email': cfg.get('email'),
+        'api_base_url': cfg.get('api_base_url'),
+        'has_key': bool(cfg.get('api_key')),
+        'tag_filter': cfg.get('tag_filter', []),
+        'poll_interval_seconds': cfg.get('poll_interval_seconds', 30),
+        'auto_poll': cfg.get('auto_poll', False),
+        'verified': cfg.get('verified', False),
+        'last_sync': cfg.get('last_sync'),
+    }
+
+@api_router.post('/integrations/navixy/connect')
+async def navixy_connect(body: NavixyConfig, user=Depends(require_admin)):
+    """Save Navixy config. If password given but no api_key, attempt to fetch session hash."""
+    import httpx
+    verified = False
+    error = None
+    api_key = body.api_key
+    base = body.api_base_url.replace('https://', '').replace('http://', '').rstrip('/')
+    if not api_key and body.password:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(
+                    f"https://{base}/user/auth",
+                    data={'login': body.email, 'password': body.password},
+                )
+                if r.status_code == 200:
+                    data = r.json()
+                    if data.get('success'):
+                        api_key = data.get('hash')
+                        verified = True
+                    else: error = data.get('description', 'auth failed')
+                else: error = f"HTTP {r.status_code}"
+        except Exception as e:
+            error = str(e)[:200]
+    elif api_key:
+        # Verify with user/get_info
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                r = await client.post(f"https://{base}/user/get_info", data={'hash': api_key})
+                verified = (r.status_code == 200 and r.json().get('success'))
+                if not verified: error = r.json().get('description', 'invalid key')
+        except Exception as e:
+            error = str(e)[:200]
+
+    await db.integrations.update_one(
+        {'id': 'navixy'},
+        {'$set': {
+            'id': 'navixy',
+            'email': body.email,
+            'api_key': api_key,
+            'api_base_url': base,
+            'account_id': body.account_id,
+            'tag_filter': body.tag_filter,
+            'poll_interval_seconds': body.poll_interval_seconds,
+            'auto_poll': body.auto_poll,
+            'verified': verified,
+            'connected_at': now_iso(),
+        }},
+        upsert=True,
+    )
+    return {'ok': True, 'verified': verified, 'error': error, 'api_key': api_key}
+
+@api_router.delete('/integrations/navixy')
+async def navixy_disconnect(user=Depends(require_admin)):
+    await db.integrations.delete_one({'id': 'navixy'})
+    return {'ok': True}
+
+@api_router.post('/integrations/navixy/test')
+async def navixy_test(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'navixy'}, {'_id': 0})
+    if not cfg or not cfg.get('api_key'): raise HTTPException(400, 'Not connected')
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"https://{cfg['api_base_url']}/user/get_info",
+                data={'hash': cfg['api_key']},
+            )
+            data = r.json()
+            return {'ok': data.get('success', False), 'detail': data}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}
+
+@api_router.get('/integrations/navixy/tags')
+async def navixy_list_tags(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'navixy'}, {'_id': 0})
+    if not cfg or not cfg.get('api_key'): raise HTTPException(400, 'Not connected')
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.post(
+                f"https://{cfg['api_base_url']}/tag/list",
+                data={'hash': cfg['api_key']},
+            )
+            data = r.json()
+            if data.get('success'):
+                return {'tags': [{'id': t.get('id'), 'name': t.get('name'), 'color': t.get('color')} for t in data.get('list', [])]}
+            return {'tags': [], 'error': data.get('description')}
+    except Exception as e:
+        return {'tags': [], 'error': str(e)[:200]}
+
+@api_router.get('/integrations/navixy/trackers')
+async def navixy_list_trackers(user=Depends(require_admin)):
+    """Return current vehicle positions (filtered by tag if configured)."""
+    cfg = await db.integrations.find_one({'id': 'navixy'}, {'_id': 0})
+    if not cfg or not cfg.get('api_key'): raise HTTPException(400, 'Not connected')
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            # List trackers
+            r = await client.post(
+                f"https://{cfg['api_base_url']}/tracker/list",
+                data={'hash': cfg['api_key']},
+            )
+            data = r.json()
+            if not data.get('success'):
+                return {'trackers': [], 'error': data.get('description')}
+            trackers = data.get('list', [])
+            # Filter by tag if set
+            tag_filter = cfg.get('tag_filter', [])
+            if tag_filter:
+                trackers = [t for t in trackers if any(tid in (t.get('tag_bindings') or []) for tid in tag_filter)]
+            # Get latest positions
+            ids = [t['id'] for t in trackers]
+            if ids:
+                r2 = await client.post(
+                    f"https://{cfg['api_base_url']}/tracker/get_states",
+                    data={'hash': cfg['api_key'], 'trackers': str(ids).replace("'", '"')},
+                )
+                states_data = r2.json()
+                states_map = {s['source_id']: s for s in states_data.get('states', [])}
+                for t in trackers:
+                    s = states_map.get(t['id'], {})
+                    gps = s.get('gps', {})
+                    t['latitude'] = gps.get('location', {}).get('lat')
+                    t['longitude'] = gps.get('location', {}).get('lng')
+                    t['speed'] = gps.get('speed')
+                    t['updated'] = s.get('actual_track_update')
+                    t['movement'] = s.get('movement_status')
+        await db.integrations.update_one({'id': 'navixy'}, {'$set': {'last_sync': now_iso()}})
+        return {'trackers': trackers}
+    except Exception as e:
+        return {'trackers': [], 'error': str(e)[:200]}
+
+# ============== TEXTMAGIC SMS ==============
+class TextmagicConfig(BaseModel):
+    api_username: str
+    api_key: str
+    default_sender: Optional[str] = None
+
+@api_router.get('/integrations/textmagic/status')
+async def textmagic_status(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'textmagic'}, {'_id': 0})
+    if not cfg: return {'connected': False}
+    return {
+        'connected': True,
+        'api_username': cfg.get('api_username'),
+        'default_sender': cfg.get('default_sender'),
+        'verified': cfg.get('verified', False),
+        'last_sent': cfg.get('last_sent'),
+        'webhook_delivery': f"{os.environ.get('PUBLIC_BASE_URL', '')}/api/integrations/textmagic/webhook/delivery",
+        'webhook_inbound': f"{os.environ.get('PUBLIC_BASE_URL', '')}/api/integrations/textmagic/webhook/inbound",
+    }
+
+@api_router.post('/integrations/textmagic/connect')
+async def textmagic_connect(body: TextmagicConfig, user=Depends(require_admin)):
+    import httpx
+    verified = False
+    error = None
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            r = await client.get(
+                'https://rest.textmagic.com/api/v2/user',
+                headers={'X-TM-Username': body.api_username, 'X-TM-Key': body.api_key},
+            )
+            verified = (r.status_code == 200)
+            if not verified: error = r.text[:200]
+    except Exception as e:
+        error = str(e)[:200]
+    await db.integrations.update_one(
+        {'id': 'textmagic'},
+        {'$set': {
+            'id': 'textmagic',
+            'api_username': body.api_username,
+            'api_key': body.api_key,
+            'default_sender': body.default_sender,
+            'verified': verified,
+            'connected_at': now_iso(),
+        }},
+        upsert=True,
+    )
+    return {'ok': True, 'verified': verified, 'error': error}
+
+@api_router.delete('/integrations/textmagic')
+async def textmagic_disconnect(user=Depends(require_admin)):
+    await db.integrations.delete_one({'id': 'textmagic'})
+    return {'ok': True}
+
+class SendSMSIn(BaseModel):
+    phones: List[str]
+    text: str
+
+@api_router.post('/integrations/textmagic/send')
+async def textmagic_send(body: SendSMSIn, user=Depends(get_current_user)):
+    cfg = await db.integrations.find_one({'id': 'textmagic'}, {'_id': 0})
+    if not cfg: raise HTTPException(400, 'Textmagic not configured')
+    import httpx
+    payload = {'phones': ','.join(body.phones), 'text': body.text}
+    if cfg.get('default_sender'): payload['from'] = cfg['default_sender']
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        r = await client.post(
+            'https://rest.textmagic.com/api/v2/messages',
+            headers={'X-TM-Username': cfg['api_username'], 'X-TM-Key': cfg['api_key']},
+            data=payload,
+        )
+        result = {'status_code': r.status_code, 'response': r.json() if r.headers.get('content-type','').startswith('application/json') else r.text}
+    await db.integrations.update_one({'id': 'textmagic'}, {'$set': {'last_sent': now_iso()}})
+    # Log
+    await db.sms_log.insert_one({
+        'id': str(uuid.uuid4()),
+        'to': body.phones, 'text': body.text,
+        'sent_by': user.get('name'),
+        'sent_at': now_iso(),
+        'status': 'sent' if r.status_code < 400 else 'failed',
+        'response': str(result.get('response'))[:500],
+    })
+    return result
+
+@api_router.get('/integrations/textmagic/log')
+async def textmagic_log(user=Depends(get_current_user)):
+    return await db.sms_log.find({}, {'_id': 0}).sort('sent_at', -1).limit(100).to_list(100)
+
+@api_router.post('/integrations/textmagic/webhook/delivery')
+async def textmagic_webhook_delivery(body: dict):
+    await db.sms_callbacks.insert_one({
+        'id': str(uuid.uuid4()),
+        'type': 'delivery',
+        'payload': body,
+        'received_at': now_iso(),
+    })
+    return {'ok': True}
+
+@api_router.post('/integrations/textmagic/webhook/inbound')
+async def textmagic_webhook_inbound(body: dict):
+    await db.sms_callbacks.insert_one({
+        'id': str(uuid.uuid4()),
+        'type': 'inbound',
+        'payload': body,
+        'received_at': now_iso(),
+    })
+    return {'ok': True}
+
+# ============== MICROSOFT 365 EMAIL (Graph SendMail) ==============
+class M365Config(BaseModel):
+    tenant_id: str
+    client_id: str
+    client_secret: str
+    send_from_mailbox: str
+    reply_to: Optional[str] = None
+
+@api_router.get('/integrations/m365/status')
+async def m365_status(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'm365'}, {'_id': 0})
+    if not cfg: return {'connected': False}
+    return {
+        'connected': True,
+        'tenant_id': cfg.get('tenant_id'),
+        'client_id': cfg.get('client_id'),
+        'send_from_mailbox': cfg.get('send_from_mailbox'),
+        'reply_to': cfg.get('reply_to'),
+        'verified': cfg.get('verified', False),
+        'last_sent': cfg.get('last_sent'),
+    }
+
+async def _m365_get_token():
+    cfg = await db.integrations.find_one({'id': 'm365'}, {'_id': 0})
+    if not cfg: raise HTTPException(400, 'M365 not configured')
+    # Check cache
+    cache_exp = cfg.get('token_expires_at')
+    if cfg.get('access_token') and cache_exp:
+        try:
+            if datetime.fromisoformat(cache_exp) > datetime.now(timezone.utc) + timedelta(minutes=2):
+                return cfg['access_token']
+        except: pass
+    # Get new token
+    import httpx
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.post(
+            f"https://login.microsoftonline.com/{cfg['tenant_id']}/oauth2/v2.0/token",
+            data={
+                'client_id': cfg['client_id'],
+                'client_secret': cfg['client_secret'],
+                'scope': 'https://graph.microsoft.com/.default',
+                'grant_type': 'client_credentials',
+            },
+        )
+        if r.status_code != 200:
+            raise HTTPException(r.status_code, f"M365 token error: {r.text[:300]}")
+        td = r.json()
+        token = td['access_token']
+        exp = (datetime.now(timezone.utc) + timedelta(seconds=td.get('expires_in', 3600))).isoformat()
+        await db.integrations.update_one({'id': 'm365'}, {'$set': {'access_token': token, 'token_expires_at': exp}})
+        return token
+
+@api_router.post('/integrations/m365/connect')
+async def m365_connect(body: M365Config, user=Depends(require_admin)):
+    await db.integrations.update_one(
+        {'id': 'm365'},
+        {'$set': {
+            'id': 'm365',
+            'tenant_id': body.tenant_id,
+            'client_id': body.client_id,
+            'client_secret': body.client_secret,
+            'send_from_mailbox': body.send_from_mailbox,
+            'reply_to': body.reply_to,
+            'connected_at': now_iso(),
+            'access_token': None, 'token_expires_at': None,  # reset cache
+        }},
+        upsert=True,
+    )
+    # Try token
+    verified = False
+    error = None
+    try:
+        await _m365_get_token()
+        verified = True
+    except HTTPException as e:
+        error = str(e.detail)
+    except Exception as e:
+        error = str(e)[:200]
+    await db.integrations.update_one({'id': 'm365'}, {'$set': {'verified': verified}})
+    return {'ok': True, 'verified': verified, 'error': error}
+
+@api_router.delete('/integrations/m365')
+async def m365_disconnect(user=Depends(require_admin)):
+    await db.integrations.delete_one({'id': 'm365'})
+    return {'ok': True}
+
+class SendEmailIn(BaseModel):
+    to: List[str]
+    subject: str
+    body: str  # html
+    cc: List[str] = []
+
+async def _send_m365_email(payload: SendEmailIn) -> dict:
+    cfg = await db.integrations.find_one({'id': 'm365'}, {'_id': 0})
+    if not cfg: return {'ok': False, 'error': 'M365 not configured'}
+    token = await _m365_get_token()
+    mailbox = cfg['send_from_mailbox']
+    reply_to = cfg.get('reply_to')
+    msg = {
+        'message': {
+            'subject': payload.subject,
+            'body': {'contentType': 'HTML', 'content': payload.body},
+            'toRecipients': [{'emailAddress': {'address': e}} for e in payload.to],
+        },
+        'saveToSentItems': True,
+    }
+    if payload.cc:
+        msg['message']['ccRecipients'] = [{'emailAddress': {'address': e}} for e in payload.cc]
+    if reply_to:
+        msg['message']['replyTo'] = [{'emailAddress': {'address': reply_to}}]
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(
+            f"https://graph.microsoft.com/v1.0/users/{mailbox}/sendMail",
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            json=msg,
+        )
+        ok = (r.status_code in (200, 202))
+        return {'ok': ok, 'status_code': r.status_code, 'response': r.text[:500]}
+
+@api_router.post('/integrations/m365/send')
+async def m365_send(body: SendEmailIn, user=Depends(get_current_user)):
+    result = await _send_m365_email(body)
+    await db.email_log.insert_one({
+        'id': str(uuid.uuid4()),
+        'to': body.to, 'subject': body.subject,
+        'sent_by': user.get('name'),
+        'sent_at': now_iso(),
+        'status': 'sent' if result.get('ok') else 'failed',
+        'response': str(result)[:500],
+    })
+    if result.get('ok'):
+        await db.integrations.update_one({'id': 'm365'}, {'$set': {'last_sent': now_iso()}})
+    return result
+
+@api_router.get('/integrations/m365/log')
+async def m365_log(user=Depends(get_current_user)):
+    return await db.email_log.find({}, {'_id': 0}).sort('sent_at', -1).limit(100).to_list(100)
 
 
 

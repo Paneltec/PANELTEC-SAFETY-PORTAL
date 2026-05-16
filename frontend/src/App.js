@@ -4,6 +4,7 @@ import "./App.css";
 import ClientsPage from "./pages/Clients";
 import NotesPage from "./pages/Notes";
 import TasksPage from "./pages/Tasks";
+import IntegrationsPage from "./pages/Integrations";
 import {
   LayoutDashboard, FileText, ClipboardList, Users, MapPin, Award,
   Sparkles, LogOut, Plus, Trash2, Edit3, Save, X, AlertTriangle,
@@ -3439,6 +3440,7 @@ function App() {
     { id: "locations", label: "Job Sites", icon: MapPin },
     { id: "certifications", label: "Certifications", icon: Award },
     { id: "documents", label: "Documents", icon: BookOpen },
+    { id: "integrations", label: "Integrations", icon: Briefcase },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -3495,6 +3497,7 @@ function App() {
         {view === "locations" && <Locations/>}
         {view === "certifications" && <Certifications/>}
         {view === "documents" && <DocumentLibrary/>}
+        {view === "integrations" && <IntegrationsPage/>}
         {view === "settings" && <SettingsPage user={user}/>}
       </main>
 
