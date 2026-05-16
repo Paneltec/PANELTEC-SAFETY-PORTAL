@@ -2153,6 +2153,337 @@ async def seed_compliance():
 
 
 
+# ============== DOCUMENT LIBRARY ==============
+# Pre-defined categories based on Paneltec Risk & Compliance structure
+DEFAULT_DOC_CATEGORIES = [
+    {'slug': 'alcohol-drug', 'name': 'Alcohol & Drug Screening', 'icon': 'flask', 'color': '#8B5CF6'},
+    {'slug': 'asbestos', 'name': 'Asbestos', 'icon': 'shield-alert', 'color': '#DC2626'},
+    {'slug': 'audits', 'name': 'Audits', 'icon': 'clipboard-check', 'color': '#0EA5E9'},
+    {'slug': 'australian-standards', 'name': 'Australian Standards', 'icon': 'book', 'color': '#0891B2'},
+    {'slug': 'barriers', 'name': 'Barriers', 'icon': 'fence', 'color': '#EA580C'},
+    {'slug': 'byda', 'name': 'BYDA (Before You Dig)', 'icon': 'shovel', 'color': '#CA8A04'},
+    {'slug': 'calibration', 'name': 'Calibration Certificates', 'icon': 'gauge', 'color': '#0D9488'},
+    {'slug': 'carbon-reduction', 'name': 'Carbon Reduction', 'icon': 'leaf', 'color': '#16A34A'},
+    {'slug': 'ccf', 'name': 'CCF (Civil Contractors Federation)', 'icon': 'building', 'color': '#2563EB'},
+    {'slug': 'checklists', 'name': 'Checklists', 'icon': 'list-checks', 'color': '#7C3AED'},
+    {'slug': 'chemical-storage', 'name': 'Chemical Storage & Bunding', 'icon': 'flask', 'color': '#B91C1C'},
+    {'slug': 'codesafe', 'name': 'CodeSafe', 'icon': 'shield', 'color': '#059669'},
+    {'slug': 'committees', 'name': 'Committees & Memberships', 'icon': 'users', 'color': '#9333EA'},
+    {'slug': 'competencies', 'name': 'Competencies Matrices', 'icon': 'grid', 'color': '#0284C7'},
+    {'slug': 'confined-space', 'name': 'Confined Space', 'icon': 'box', 'color': '#DC2626'},
+    {'slug': 'contract-mgmt', 'name': 'Contract Management Plans', 'icon': 'file-text', 'color': '#0F172A'},
+    {'slug': 'electrical', 'name': 'Electrical Safety', 'icon': 'zap', 'color': '#F59E0B'},
+    {'slug': 'emergency', 'name': 'Emergency Management', 'icon': 'siren', 'color': '#DC2626'},
+    {'slug': 'environmental', 'name': 'Environmental Management', 'icon': 'leaf', 'color': '#16A34A'},
+    {'slug': 'first-aid', 'name': 'First Aid', 'icon': 'heart-pulse', 'color': '#EF4444'},
+    {'slug': 'forms', 'name': 'Forms', 'icon': 'file-text', 'color': '#6366F1'},
+    {'slug': 'heights', 'name': 'Working at Heights', 'icon': 'arrow-up', 'color': '#F97316'},
+    {'slug': 'hot-work', 'name': 'Hot Work', 'icon': 'flame', 'color': '#DC2626'},
+    {'slug': 'incidents', 'name': 'Incident Reports', 'icon': 'alert-triangle', 'color': '#DC2626'},
+    {'slug': 'inductions', 'name': 'Inductions', 'icon': 'user-check', 'color': '#0891B2'},
+    {'slug': 'insurance', 'name': 'Insurance', 'icon': 'shield-check', 'color': '#2563EB'},
+    {'slug': 'itp', 'name': 'ITPs (Inspection & Test Plans)', 'icon': 'clipboard-list', 'color': '#0D9488'},
+    {'slug': 'jsea', 'name': 'JSEA / Risk Assessments', 'icon': 'alert-octagon', 'color': '#F59E0B'},
+    {'slug': 'licences', 'name': 'Licences & Tickets', 'icon': 'award', 'color': '#CA8A04'},
+    {'slug': 'manuals', 'name': 'Manuals & Procedures', 'icon': 'book-open', 'color': '#475569'},
+    {'slug': 'permits', 'name': 'Permits to Work', 'icon': 'key', 'color': '#9333EA'},
+    {'slug': 'plant-equipment', 'name': 'Plant & Equipment', 'icon': 'truck', 'color': '#0EA5E9'},
+    {'slug': 'policies', 'name': 'Company Policies', 'icon': 'file-badge', 'color': '#1E40AF'},
+    {'slug': 'ppe', 'name': 'PPE', 'icon': 'hard-hat', 'color': '#FBBF24'},
+    {'slug': 'procurement', 'name': 'Procurement', 'icon': 'shopping-cart', 'color': '#7C3AED'},
+    {'slug': 'rehab', 'name': 'Rehabilitation & RTW', 'icon': 'activity', 'color': '#0D9488'},
+    {'slug': 'reports', 'name': 'Reports', 'icon': 'bar-chart', 'color': '#3B82F6'},
+    {'slug': 'sds', 'name': 'SDS (Safety Data Sheets)', 'icon': 'flask-conical', 'color': '#B91C1C'},
+    {'slug': 'site-management', 'name': 'Site Management', 'icon': 'map-pin', 'color': '#0891B2'},
+    {'slug': 'subcontractors', 'name': 'Subcontractor Management', 'icon': 'briefcase', 'color': '#7C3AED'},
+    {'slug': 'swms', 'name': 'SWMS', 'icon': 'shield-alert', 'color': '#EA580C'},
+    {'slug': 'toolbox', 'name': 'Toolbox Talks', 'icon': 'message-square', 'color': '#10B981'},
+    {'slug': 'traffic', 'name': 'Traffic Management', 'icon': 'traffic-cone', 'color': '#F97316'},
+    {'slug': 'training', 'name': 'Training Records', 'icon': 'graduation-cap', 'color': '#0284C7'},
+    {'slug': 'whs-acts', 'name': 'WHS Acts & Regulations', 'icon': 'scale', 'color': '#1E40AF'},
+    {'slug': 'uncategorized', 'name': 'Uncategorized', 'icon': 'folder', 'color': '#64748B'},
+]
+
+class DocCategory(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    slug: str
+    name: str
+    icon: str = 'folder'
+    color: str = '#64748B'
+    created_at: str = Field(default_factory=now_iso)
+
+class Document(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    category_slug: str = 'uncategorized'
+    file_type: str = 'unknown'  # pdf, docx, xlsx, pptx, image, txt, other
+    mime_type: Optional[str] = None
+    size_bytes: int = 0
+    content_b64: Optional[str] = None  # base64 encoded file content (data: prefix)
+    ai_summary: Optional[str] = None
+    ai_tags: List[str] = []
+    ai_doc_type: Optional[str] = None  # SWMS, Policy, Procedure, Form, Permit, ITP, SDS, Standard, etc.
+    is_form: bool = False
+    extracted_fields: List[Dict[str, Any]] = []
+    uploaded_by: Optional[str] = None
+    description: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/doc-categories')
+async def list_doc_categories(user=Depends(get_current_user)):
+    items = await db.doc_categories.find({}, {'_id': 0}).to_list(200)
+    if not items:
+        # Auto-seed on first call
+        for c in DEFAULT_DOC_CATEGORIES:
+            doc = DocCategory(**c).model_dump()
+            await db.doc_categories.insert_one(doc)
+        items = await db.doc_categories.find({}, {'_id': 0}).to_list(200)
+    # Add document counts
+    docs = await db.documents.find({}, {'_id': 0, 'category_slug': 1}).to_list(5000)
+    counts = {}
+    for d in docs:
+        slug = d.get('category_slug', 'uncategorized')
+        counts[slug] = counts.get(slug, 0) + 1
+    for c in items:
+        c['doc_count'] = counts.get(c['slug'], 0)
+    return items
+
+@api_router.post('/doc-categories')
+async def create_doc_category(c: DocCategory, user=Depends(require_admin)):
+    doc = c.model_dump()
+    await db.doc_categories.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/doc-categories/{cid}')
+async def delete_doc_category(cid: str, user=Depends(require_admin)):
+    await db.doc_categories.delete_one({'id': cid})
+    return {'ok': True}
+
+@api_router.get('/documents')
+async def list_documents(category: Optional[str] = None, search: Optional[str] = None,
+                         user=Depends(get_current_user)):
+    q = {}
+    if category and category != 'all':
+        q['category_slug'] = category
+    if search:
+        q['$or'] = [
+            {'name': {'$regex': search, '$options': 'i'}},
+            {'ai_tags': {'$regex': search, '$options': 'i'}},
+            {'ai_summary': {'$regex': search, '$options': 'i'}},
+        ]
+    # Don't return content_b64 in list view (heavy)
+    items = await db.documents.find(q, {'_id': 0, 'content_b64': 0}).sort('created_at', -1).to_list(1000)
+    return items
+
+@api_router.get('/documents/{did}')
+async def get_document(did: str, user=Depends(get_current_user)):
+    d = await db.documents.find_one({'id': did}, {'_id': 0})
+    if not d: raise HTTPException(404, 'Not found')
+    return d
+
+@api_router.post('/documents')
+async def create_document(d: Document, user=Depends(get_current_user)):
+    doc = d.model_dump()
+    doc['uploaded_by'] = user.get('name')
+    await db.documents.insert_one(doc)
+    # Return without heavy content
+    doc.pop('_id', None)
+    doc.pop('content_b64', None)
+    return doc
+
+@api_router.put('/documents/{did}')
+async def update_document(did: str, body: dict, user=Depends(get_current_user)):
+    allowed = {k: v for k, v in body.items() if k in ('name', 'category_slug', 'description', 'ai_summary', 'ai_tags', 'ai_doc_type', 'is_form', 'extracted_fields')}
+    await db.documents.update_one({'id': did}, {'$set': allowed})
+    d = await db.documents.find_one({'id': did}, {'_id': 0, 'content_b64': 0})
+    return d
+
+@api_router.delete('/documents/{did}')
+async def delete_document(did: str, user=Depends(get_current_user)):
+    await db.documents.delete_one({'id': did})
+    return {'ok': True}
+
+# AI classifier
+class AIClassifyIn(BaseModel):
+    filename: str
+    content_b64: Optional[str] = None  # data: prefix or raw base64
+    text_excerpt: Optional[str] = None  # if client extracted text already
+    file_type: Optional[str] = None
+
+def _detect_filetype(name: str, mime: Optional[str] = None) -> str:
+    n = name.lower()
+    if n.endswith('.pdf'): return 'pdf'
+    if n.endswith('.docx') or n.endswith('.doc'): return 'docx'
+    if n.endswith('.xlsx') or n.endswith('.xls') or n.endswith('.csv'): return 'xlsx'
+    if n.endswith('.pptx') or n.endswith('.ppt'): return 'pptx'
+    if any(n.endswith(e) for e in ('.png', '.jpg', '.jpeg', '.webp', '.gif')): return 'image'
+    if n.endswith('.txt') or n.endswith('.md'): return 'txt'
+    return 'other'
+
+def _extract_text_from_b64(content_b64: str, file_type: str) -> str:
+    """Best-effort text extraction from a base64 file."""
+    try:
+        # Strip data: prefix
+        if ',' in content_b64:
+            content_b64 = content_b64.split(',', 1)[1]
+        raw = base64.b64decode(content_b64)
+        if file_type == 'txt':
+            return raw.decode('utf-8', errors='ignore')[:8000]
+        if file_type == 'docx':
+            try:
+                from docx import Document as DocxDoc
+                buf = io.BytesIO(raw)
+                d = DocxDoc(buf)
+                txt = []
+                for p in d.paragraphs:
+                    if p.text.strip(): txt.append(p.text.strip())
+                for t in d.tables[:20]:
+                    for r in t.rows[:20]:
+                        for c in r.cells:
+                            if c.text.strip(): txt.append(c.text.strip())
+                return '\n'.join(txt)[:8000]
+            except Exception as e:
+                logger.warning(f"docx extract failed: {e}")
+                return ''
+        if file_type == 'pdf':
+            try:
+                # Lightweight: try pypdf if available, else skip
+                try:
+                    from pypdf import PdfReader
+                except ImportError:
+                    return ''
+                buf = io.BytesIO(raw)
+                reader = PdfReader(buf)
+                txt = []
+                for p in reader.pages[:10]:
+                    try: txt.append(p.extract_text() or '')
+                    except: pass
+                return '\n'.join(txt)[:8000]
+            except Exception as e:
+                logger.warning(f"pdf extract failed: {e}")
+                return ''
+        if file_type == 'xlsx':
+            try:
+                from openpyxl import load_workbook
+                buf = io.BytesIO(raw)
+                wb = load_workbook(buf, read_only=True, data_only=True)
+                txt = []
+                for sh in wb.sheetnames[:5]:
+                    ws = wb[sh]
+                    txt.append(f"# Sheet: {sh}")
+                    for row in ws.iter_rows(max_row=50, values_only=True):
+                        cells = [str(c) for c in row if c is not None]
+                        if cells: txt.append(' | '.join(cells))
+                return '\n'.join(txt)[:8000]
+            except Exception as e:
+                logger.warning(f"xlsx extract failed: {e}")
+                return ''
+        return ''
+    except Exception as e:
+        logger.warning(f"extract_text error: {e}")
+        return ''
+
+@api_router.post('/ai/classify-document')
+async def ai_classify_document(body: AIClassifyIn, user=Depends(get_current_user)):
+    """AI classifies a document into a category, generates tags + summary, detects if it's a form."""
+    file_type = body.file_type or _detect_filetype(body.filename)
+    text = body.text_excerpt or ''
+    if not text and body.content_b64:
+        text = _extract_text_from_b64(body.content_b64, file_type)
+
+    # Build category catalog for the AI
+    cat_list = '\n'.join([f"- {c['slug']}: {c['name']}" for c in DEFAULT_DOC_CATEGORIES])
+
+    prompt = f"""You are a document classification assistant for a civil contractor's risk & compliance library.
+
+Filename: {body.filename}
+File type: {file_type}
+
+Available categories (use the slug):
+{cat_list}
+
+Document text excerpt (first 8000 chars):
+\"\"\"
+{text[:7500] if text else '(no text extracted — classify based on filename only)'}
+\"\"\"
+
+Return ONLY a valid JSON object with this structure (no markdown, no commentary):
+{{
+  "category_slug": "one-of-the-slugs-above",
+  "doc_type": "Policy|Procedure|SWMS|Permit|ITP|Form|Checklist|Risk Assessment|SDS|Standard|Manual|Report|Certificate|Audit|Training Record|Other",
+  "summary": "2-3 sentence summary of what this document is about",
+  "tags": ["tag1", "tag2", "tag3", "tag4"],
+  "is_form": true_or_false_whether_this_is_a_fillable_form_or_checklist,
+  "extracted_fields": [
+    {{"label": "Field label from form", "type": "text|textarea|date|number|select|checkbox|signature|photo", "required": true_or_false}},
+    ...
+  ]
+}}
+
+Only include extracted_fields if is_form is true. Extract realistic form fields if you can identify them in the text. Be concise."""
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"doc-classify-{uuid.uuid4()}",
+            system_message="You classify civil-contractor risk & compliance documents. Return only valid JSON, no commentary, no markdown code fences."
+        ).with_model('openai', 'gpt-4o-mini')
+        result = await chat.send_message(UserMessage(text=prompt))
+        raw = str(result).strip()
+        if raw.startswith('```'):
+            raw = raw.split('```', 2)[1]
+            if raw.startswith('json'): raw = raw[4:]
+            raw = raw.strip()
+        import json
+        data = json.loads(raw)
+        # Validate category exists
+        valid_slugs = {c['slug'] for c in DEFAULT_DOC_CATEGORIES}
+        if data.get('category_slug') not in valid_slugs:
+            data['category_slug'] = 'uncategorized'
+        return data
+    except Exception as e:
+        logger.error(f"AI classify error: {e}")
+        # Heuristic fallback based on filename
+        name_l = body.filename.lower()
+        guess_slug = 'uncategorized'
+        for c in DEFAULT_DOC_CATEGORIES:
+            kw = c['name'].lower().split()[0]
+            if kw in name_l:
+                guess_slug = c['slug']; break
+        return {
+            'category_slug': guess_slug,
+            'doc_type': 'Other',
+            'summary': f"Document {body.filename} — automatic classification unavailable, please review.",
+            'tags': [file_type],
+            'is_form': False,
+            'extracted_fields': [],
+            '_fallback': True,
+        }
+
+@api_router.post('/documents/{did}/to-template')
+async def doc_to_template(did: str, user=Depends(require_admin)):
+    """Convert a classified form document into a fillable form template."""
+    d = await db.documents.find_one({'id': did}, {'_id': 0})
+    if not d: raise HTTPException(404, 'Not found')
+    if not d.get('extracted_fields'):
+        raise HTTPException(400, 'No extracted fields — run AI classify first or document is not a form')
+
+    tpl = FormTemplate(
+        name=d['name'].rsplit('.', 1)[0],
+        description=f"Auto-generated from document: {d['name']}",
+        category='general',
+        fields=[{'id': f"f{i+1}", **f} for i, f in enumerate(d['extracted_fields'])],
+    ).model_dump()
+    await db.form_templates.insert_one(tpl)
+    tpl.pop('_id', None)
+    return tpl
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}

@@ -10,7 +10,9 @@ import {
   MessageSquare, Settings, Send, Download, Share2, Key, Copy, WifiOff,
   Smartphone, Mail, Pencil, Circle as CircleIcon, ArrowUpRight, Home, User,
   AlertOctagon, FlaskConical, Truck, Briefcase, ListChecks, ChevronLeft,
-  Menu, ArrowRight, Clock, Flame, Droplets
+  Menu, ArrowRight, Clock, Flame, Droplets,
+  Folder, FolderOpen, FileSpreadsheet, FileType2, Upload, Tag, BookOpen, FilePlus,
+  FileCheck, FileBadge, Image as ImageIcon
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -1780,6 +1782,466 @@ function WorkerMe({ user }) {
     </div>
   );
 }
+// ===================== DOCUMENT LIBRARY =====================
+const FILE_ICONS = {
+  pdf: { icon: FileText, color: "text-red-600 bg-red-50" },
+  docx: { icon: FileText, color: "text-blue-600 bg-blue-50" },
+  xlsx: { icon: FileSpreadsheet, color: "text-emerald-600 bg-emerald-50" },
+  pptx: { icon: FileType2, color: "text-orange-600 bg-orange-50" },
+  image: { icon: ImageIcon, color: "text-purple-600 bg-purple-50" },
+  txt: { icon: FileText, color: "text-slate-600 bg-slate-50" },
+  other: { icon: FileText, color: "text-slate-500 bg-slate-50" },
+};
+
+function detectFileType(name, mime = "") {
+  const n = (name || "").toLowerCase();
+  if (n.endsWith(".pdf")) return "pdf";
+  if (n.endsWith(".docx") || n.endsWith(".doc")) return "docx";
+  if (n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".csv")) return "xlsx";
+  if (n.endsWith(".pptx") || n.endsWith(".ppt")) return "pptx";
+  if (/(png|jpe?g|webp|gif)$/.test(n)) return "image";
+  if (n.endsWith(".txt") || n.endsWith(".md")) return "txt";
+  if (mime?.startsWith("image/")) return "image";
+  return "other";
+}
+
+function fmtSize(b) {
+  if (!b) return "—";
+  if (b < 1024) return `${b} B`;
+  if (b < 1024*1024) return `${(b/1024).toFixed(1)} KB`;
+  return `${(b/1024/1024).toFixed(1)} MB`;
+}
+
+function DocumentLibrary() {
+  const [categories, setCategories] = useState([]);
+  const [activeCategory, setActiveCategory] = useState(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const loadCats = () => api.get("/doc-categories").then(r => setCategories(r.data));
+  useEffect(() => { loadCats(); }, []);
+
+  if (activeCategory) {
+    return <CategoryView category={activeCategory} onBack={()=>{setActiveCategory(null); loadCats();}}/>;
+  }
+
+  const filtered = search ? categories.filter(c => c.name.toLowerCase().includes(search.toLowerCase())) : categories;
+
+  return (
+    <div className="p-6 lg:p-8 fadein">
+      <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
+        <div>
+          <h1 className="text-3xl font-black text-slate-900 flex items-center gap-3">
+            <BookOpen className="w-8 h-8 text-amber-500"/>Document Library
+          </h1>
+          <p className="text-slate-500 mt-1">All your Risk & Compliance documents, organised and AI-tagged</p>
+        </div>
+        <div className="flex gap-2">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3"/>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search folders…"
+              className="pl-9 pr-3 py-2.5 border rounded-lg bg-white text-sm w-56"/>
+          </div>
+          <button onClick={()=>setShowUpload(true)}
+            className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2"
+            data-testid="bulk-upload-btn">
+            <Upload className="w-4 h-4"/>Bulk Upload
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {filtered.map(c => (
+          <button key={c.id} onClick={()=>setActiveCategory(c)}
+            className="bg-white rounded-2xl border p-5 text-left card-hover group active:scale-95 transition"
+            data-testid={`doc-category-${c.slug}`}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center mb-3 transition-all group-hover:scale-110"
+                 style={{ backgroundColor: c.color + "20", color: c.color }}>
+              <Folder className="w-7 h-7" style={{ color: c.color }}/>
+            </div>
+            <div className="font-bold text-slate-900 text-sm leading-tight line-clamp-2">{c.name}</div>
+            <div className="text-xs text-slate-400 mt-1">{c.doc_count || 0} file{c.doc_count===1?"":"s"}</div>
+          </button>
+        ))}
+      </div>
+
+      {showUpload && <BulkUploadModal categories={categories} onClose={()=>{setShowUpload(false); loadCats();}}/>}
+    </div>
+  );
+}
+
+function CategoryView({ category, onBack }) {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const load = async () => {
+    setLoading(true);
+    const { data } = await api.get(`/documents?category=${category.slug}`);
+    setDocs(data); setLoading(false);
+  };
+  useEffect(() => { load(); }, [category.slug]);
+
+  return (
+    <div className="p-6 lg:p-8 fadein">
+      <button onClick={onBack} className="text-sm text-slate-500 hover:text-slate-900 flex items-center gap-1 mb-3" data-testid="docs-back-btn">
+        <ChevronLeft className="w-4 h-4"/>Back to all folders
+      </button>
+      <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
+               style={{ backgroundColor: category.color + "20" }}>
+            <FolderOpen className="w-8 h-8" style={{ color: category.color }}/>
+          </div>
+          <div>
+            <h1 className="text-3xl font-black text-slate-900">{category.name}</h1>
+            <p className="text-slate-500 mt-0.5">{docs.length} document{docs.length===1?"":"s"}</p>
+          </div>
+        </div>
+        <button onClick={()=>setShowUpload(true)} className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="upload-to-category-btn">
+          <Upload className="w-4 h-4"/>Upload Here
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="text-center py-12 text-slate-400 flex items-center justify-center gap-2"><Loader2 className="w-5 h-5 animate-spin"/>Loading…</div>
+      ) : docs.length === 0 ? (
+        <div className="bg-white border-2 border-dashed rounded-2xl p-12 text-center">
+          <FilePlus className="w-12 h-12 mx-auto text-slate-300 mb-3"/>
+          <div className="text-slate-500 font-semibold">No documents yet in {category.name}</div>
+          <div className="text-xs text-slate-400 mt-1">Click "Upload Here" to add files</div>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {docs.map(d => {
+            const info = FILE_ICONS[d.file_type] || FILE_ICONS.other;
+            return (
+              <button key={d.id} onClick={()=>setSelected(d)}
+                className="w-full bg-white rounded-xl border p-4 flex items-center gap-4 hover:shadow-md hover:border-amber-300 transition text-left"
+                data-testid={`doc-row-${d.id}`}>
+                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${info.color} flex-shrink-0`}>
+                  <info.icon className="w-6 h-6"/>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="font-bold text-slate-900 truncate">{d.name}</div>
+                  {d.ai_summary && <div className="text-xs text-slate-500 line-clamp-2 mt-0.5">{d.ai_summary}</div>}
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                    {d.ai_doc_type && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200">{d.ai_doc_type}</span>}
+                    {(d.ai_tags || []).slice(0, 4).map((t,i) => (
+                      <span key={i} className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-600">#{t}</span>
+                    ))}
+                    {d.is_form && <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700 flex items-center gap-1"><FileCheck className="w-3 h-3"/>Fillable Form</span>}
+                  </div>
+                </div>
+                <div className="text-xs text-slate-400 text-right flex-shrink-0">
+                  <div className="font-mono uppercase">{d.file_type}</div>
+                  <div>{fmtSize(d.size_bytes)}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {selected && <DocViewer doc={selected} onClose={()=>{setSelected(null); load();}} onDelete={async()=>{ if(window.confirm("Delete this document?")) { await api.delete(`/documents/${selected.id}`); setSelected(null); load(); }}}/>}
+      {showUpload && <BulkUploadModal categories={[category]} defaultCategory={category.slug} onClose={()=>{setShowUpload(false); load();}}/>}
+    </div>
+  );
+}
+
+function DocViewer({ doc, onClose, onDelete }) {
+  const [full, setFull] = useState(null);
+  const [convertingForm, setConvertingForm] = useState(false);
+
+  useEffect(() => {
+    api.get(`/documents/${doc.id}`).then(r => setFull(r.data));
+  }, [doc.id]);
+
+  const convertToTemplate = async () => {
+    setConvertingForm(true);
+    try {
+      await api.post(`/documents/${doc.id}/to-template`);
+      alert("✓ Created a fillable form template from this document. Check the Forms section.");
+    } catch (e) {
+      alert("Failed: " + (e?.response?.data?.detail || e.message));
+    }
+    setConvertingForm(false);
+  };
+
+  const info = FILE_ICONS[doc.file_type] || FILE_ICONS.other;
+  const dataUrl = full?.content_b64;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 fadein">
+      <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="border-b p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${info.color} flex-shrink-0`}>
+              <info.icon className="w-6 h-6"/>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-slate-900 truncate">{doc.name}</div>
+              <div className="text-xs text-slate-500">{doc.ai_doc_type || "Document"} · {fmtSize(doc.size_bytes)} · Uploaded {new Date(doc.created_at).toLocaleDateString()}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {full?.is_form && (
+              <button onClick={convertToTemplate} disabled={convertingForm}
+                className="px-3 py-2 bg-emerald-600 text-white text-sm font-bold rounded-lg flex items-center gap-2 disabled:opacity-50"
+                data-testid="to-template-btn">
+                {convertingForm ? <Loader2 className="w-4 h-4 animate-spin"/> : <FilePlus className="w-4 h-4"/>}
+                To Form Template
+              </button>
+            )}
+            {dataUrl && (
+              <a href={dataUrl} download={doc.name} className="px-3 py-2 bg-slate-900 text-white text-sm font-bold rounded-lg flex items-center gap-2">
+                <Download className="w-4 h-4"/>Download
+              </a>
+            )}
+            <button onClick={onDelete} className="p-2 text-red-500 hover:bg-red-50 rounded-lg" title="Delete"><Trash2 className="w-4 h-4"/></button>
+            <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {/* AI Insights */}
+          {(doc.ai_summary || (doc.ai_tags && doc.ai_tags.length > 0)) && (
+            <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-b-2 border-amber-200 p-5">
+              <h3 className="font-bold text-amber-900 flex items-center gap-2 mb-2"><Sparkles className="w-5 h-5"/>AI Insights</h3>
+              {doc.ai_summary && <p className="text-sm text-slate-800 whitespace-pre-wrap">{doc.ai_summary}</p>}
+              {doc.ai_tags && doc.ai_tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3">
+                  {doc.ai_tags.map((t,i)=>(<span key={i} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-white border border-amber-200 text-amber-800">#{t}</span>))}
+                </div>
+              )}
+              {full?.is_form && full.extracted_fields?.length > 0 && (
+                <div className="mt-4 bg-white/70 rounded-lg p-3 border border-amber-200">
+                  <div className="text-xs font-bold text-amber-900 mb-2">EXTRACTED FORM FIELDS ({full.extracted_fields.length})</div>
+                  <div className="grid grid-cols-2 gap-1.5 text-xs">
+                    {full.extracted_fields.map((f, i) => (
+                      <div key={i} className="flex items-center gap-1.5 text-slate-700">
+                        <span className="text-slate-400">•</span>
+                        <span className="font-medium">{f.label}</span>
+                        <span className="text-slate-400 font-mono text-[10px]">{f.type}</span>
+                        {f.required && <span className="text-red-500">*</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* File preview */}
+          <div className="p-4">
+            {!full ? (
+              <div className="flex items-center justify-center py-20 text-slate-400"><Loader2 className="w-6 h-6 animate-spin"/></div>
+            ) : doc.file_type === "pdf" && dataUrl ? (
+              <iframe src={dataUrl} className="w-full h-[60vh] border rounded-lg" title={doc.name}/>
+            ) : doc.file_type === "image" && dataUrl ? (
+              <img src={dataUrl} alt={doc.name} className="max-w-full max-h-[60vh] mx-auto border rounded-lg"/>
+            ) : doc.file_type === "txt" && dataUrl ? (
+              <pre className="text-xs bg-slate-50 p-4 rounded-lg border whitespace-pre-wrap max-h-[60vh] overflow-y-auto">{atob(dataUrl.split(',')[1] || '')}</pre>
+            ) : (
+              <div className="text-center py-12 bg-slate-50 rounded-lg border-2 border-dashed">
+                <info.icon className="w-16 h-16 mx-auto text-slate-300 mb-3"/>
+                <div className="font-semibold text-slate-700">{doc.file_type.toUpperCase()} preview not supported inline</div>
+                <div className="text-sm text-slate-500 mt-1">Click "Download" to open this file</div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BulkUploadModal({ categories, defaultCategory, onClose }) {
+  const [queue, setQueue] = useState([]); // [{file, status, doc, error, category}]
+  const [aiClassify, setAiClassify] = useState(true);
+  const [forceCategory, setForceCategory] = useState(defaultCategory || "");
+  const [overall, setOverall] = useState({ done: 0, total: 0 });
+  const inputRef = useRef(null);
+
+  const onFiles = (files) => {
+    const arr = Array.from(files || []);
+    setQueue(prev => [...prev, ...arr.map(f => ({ file: f, status: "pending", error: null, doc: null }))]);
+  };
+
+  const fileToB64 = (file) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+
+  const upload = async () => {
+    setOverall({ done: 0, total: queue.length });
+    const newQueue = [...queue];
+    for (let i = 0; i < newQueue.length; i++) {
+      if (newQueue[i].status === "done") { setOverall(o => ({...o, done: o.done+1})); continue; }
+      newQueue[i].status = "uploading";
+      setQueue([...newQueue]);
+      try {
+        const f = newQueue[i].file;
+        const b64 = await fileToB64(f);
+        const fileType = detectFileType(f.name, f.type);
+
+        let classification = {
+          category_slug: forceCategory || "uncategorized",
+          doc_type: "Other",
+          summary: "",
+          tags: [],
+          is_form: false,
+          extracted_fields: [],
+        };
+
+        if (aiClassify) {
+          newQueue[i].status = "classifying";
+          setQueue([...newQueue]);
+          try {
+            const { data } = await api.post("/ai/classify-document", {
+              filename: f.name,
+              content_b64: b64,
+              file_type: fileType,
+            }, { timeout: 60000 });
+            classification = { ...classification, ...data };
+            // Honor manual override if set
+            if (forceCategory) classification.category_slug = forceCategory;
+          } catch (e) {
+            console.warn("Classify failed for", f.name, e);
+          }
+        }
+
+        newQueue[i].status = "saving";
+        setQueue([...newQueue]);
+
+        const payload = {
+          id: crypto.randomUUID(),
+          name: f.name,
+          category_slug: classification.category_slug,
+          file_type: fileType,
+          mime_type: f.type,
+          size_bytes: f.size,
+          content_b64: b64,
+          ai_summary: classification.summary,
+          ai_tags: classification.tags || [],
+          ai_doc_type: classification.doc_type,
+          is_form: !!classification.is_form,
+          extracted_fields: classification.extracted_fields || [],
+        };
+        const { data: saved } = await api.post("/documents", payload);
+        newQueue[i].status = "done";
+        newQueue[i].doc = saved;
+      } catch (e) {
+        newQueue[i].status = "error";
+        newQueue[i].error = e?.response?.data?.detail || e.message;
+      }
+      setQueue([...newQueue]);
+      setOverall(o => ({...o, done: o.done+1}));
+    }
+  };
+
+  const remove = (i) => setQueue(queue.filter((_,j)=>j!==i));
+  const clearDone = () => setQueue(queue.filter(q => q.status !== "done"));
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 fadein">
+      <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="border-b p-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold flex items-center gap-2"><Upload className="w-6 h-6 text-amber-500"/>Bulk Upload Documents</h2>
+            <p className="text-sm text-slate-500 mt-0.5">AI will auto-classify and tag each file</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5"/></button>
+        </div>
+
+        <div className="p-5 border-b bg-slate-50 flex items-center gap-4 flex-wrap">
+          <label className="flex items-center gap-2 text-sm font-semibold cursor-pointer">
+            <input type="checkbox" checked={aiClassify} onChange={e=>setAiClassify(e.target.checked)} className="w-4 h-4"/>
+            <Sparkles className="w-4 h-4 text-amber-500"/>AI Auto-Classify (recommended)
+          </label>
+          <div className="flex items-center gap-2 text-sm">
+            <span className="text-slate-500">Force category:</span>
+            <select value={forceCategory} onChange={e=>setForceCategory(e.target.value)} className="px-2 py-1 border rounded text-sm bg-white">
+              <option value="">Auto (AI decides)</option>
+              {categories.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Drop zone */}
+        <div className="p-5 border-b">
+          <label
+            onDragOver={e=>{e.preventDefault();}}
+            onDrop={e=>{e.preventDefault(); onFiles(e.dataTransfer.files);}}
+            className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 rounded-xl py-10 cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 transition">
+            <Upload className="w-10 h-10 text-slate-400 mb-2"/>
+            <div className="font-bold text-slate-700">Drag & drop files here</div>
+            <div className="text-sm text-slate-500 mt-1">or click to browse · PDF, DOCX, XLSX, images, txt</div>
+            <input ref={inputRef} type="file" multiple onChange={e=>onFiles(e.target.files)} className="hidden" data-testid="bulk-upload-input"/>
+          </label>
+        </div>
+
+        {/* Queue */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {queue.length === 0 ? (
+            <div className="text-center text-slate-400 text-sm py-6">No files queued yet.</div>
+          ) : (
+            <div className="space-y-2">
+              {queue.map((q, i) => {
+                const info = FILE_ICONS[detectFileType(q.file.name)] || FILE_ICONS.other;
+                return (
+                  <div key={i} className="flex items-center gap-3 bg-slate-50 rounded-lg p-3 border">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${info.color} flex-shrink-0`}>
+                      <info.icon className="w-5 h-5"/>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold truncate">{q.file.name}</div>
+                      <div className="text-xs text-slate-500 flex items-center gap-2">
+                        {fmtSize(q.file.size)}
+                        {q.doc?.ai_doc_type && <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">{q.doc.ai_doc_type}</span>}
+                        {q.doc?.category_slug && <span className="text-slate-400">→ {q.doc.category_slug}</span>}
+                      </div>
+                    </div>
+                    <div className="text-xs font-bold flex-shrink-0">
+                      {q.status === "pending" && <span className="text-slate-400">Queued</span>}
+                      {q.status === "uploading" && <span className="text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/>Reading</span>}
+                      {q.status === "classifying" && <span className="text-amber-600 flex items-center gap-1"><Sparkles className="w-3 h-3 animate-pulse"/>AI Classify</span>}
+                      {q.status === "saving" && <span className="text-blue-600 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/>Saving</span>}
+                      {q.status === "done" && <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/>Done</span>}
+                      {q.status === "error" && <span className="text-red-600" title={q.error}>Error</span>}
+                    </div>
+                    {q.status !== "done" && q.status !== "uploading" && q.status !== "classifying" && q.status !== "saving" && (
+                      <button onClick={()=>remove(i)} className="p-1 text-slate-400 hover:text-red-500"><X className="w-4 h-4"/></button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="border-t p-4 bg-slate-50 flex items-center justify-between gap-3">
+          <div className="text-sm text-slate-600">
+            {queue.length > 0 && <span><b>{queue.filter(q=>q.status==='done').length}</b> / {queue.length} uploaded · {queue.filter(q=>q.status==='error').length} errors</span>}
+          </div>
+          <div className="flex gap-2">
+            {queue.some(q=>q.status==='done') && <button onClick={clearDone} className="px-3 py-2 border rounded-lg text-sm">Clear done</button>}
+            <button onClick={onClose} className="px-3 py-2 border rounded-lg text-sm">Close</button>
+            <button onClick={upload} disabled={queue.length === 0 || queue.every(q=>q.status==='done')}
+              className="px-5 py-2 brand-grad text-black font-bold rounded-lg flex items-center gap-2 disabled:opacity-50"
+              data-testid="start-upload-btn">
+              <Upload className="w-4 h-4"/>Upload {queue.filter(q=>q.status!=='done').length} files
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 
 function App() {
@@ -1787,6 +2249,11 @@ function App() {
     try { return JSON.parse(localStorage.getItem("pt_user")); } catch { return null; }
   });
   const [view, setView] = useState("dashboard");
+  const [submissionFilter, setSubmissionFilter] = useState("all");
+  const goTo = (target, filter) => {
+    if (filter !== undefined && filter !== null) setSubmissionFilter(filter);
+    setView(target);
+  };
   const [fillTemplate, setFillTemplate] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
 
@@ -1839,6 +2306,7 @@ function App() {
     { id: "workers", label: "Workers", icon: Users },
     { id: "locations", label: "Job Sites", icon: MapPin },
     { id: "certifications", label: "Certifications", icon: Award },
+    { id: "documents", label: "Documents", icon: BookOpen },
     { id: "settings", label: "Settings", icon: Settings },
   ];
 
@@ -1884,13 +2352,14 @@ function App() {
       </aside>
 
       <main className="flex-1 overflow-y-auto">
-        {view === "dashboard" && <Dashboard goTo={setView}/>}
+        {view === "dashboard" && <Dashboard goTo={goTo}/>}
         {view === "templates" && <Templates user={user} onFill={setFillTemplate}/>}
-        {view === "submissions" && <Submissions/>}
+        {view === "submissions" && <Submissions initialFilter={submissionFilter}/>}
         {view === "chat" && <Chat user={user}/>}
         {view === "workers" && <Workers/>}
         {view === "locations" && <Locations/>}
         {view === "certifications" && <Certifications/>}
+        {view === "documents" && <DocumentLibrary/>}
         {view === "settings" && <SettingsPage user={user}/>}
       </main>
 
