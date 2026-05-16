@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import "./App.css";
+import ClientsPage from "./pages/Clients";
+import NotesPage from "./pages/Notes";
+import TasksPage from "./pages/Tasks";
 import {
   LayoutDashboard, FileText, ClipboardList, Users, MapPin, Award,
   Sparkles, LogOut, Plus, Trash2, Edit3, Save, X, AlertTriangle,
@@ -3430,6 +3433,9 @@ function App() {
     { id: "submissions", label: "Inbox", icon: ClipboardList },
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "workers", label: "Workers", icon: Users },
+    { id: "clients", label: "Clients", icon: Briefcase },
+    { id: "tasks", label: "Tasks", icon: ListChecks },
+    { id: "notes", label: "Notes", icon: StickyNote },
     { id: "locations", label: "Job Sites", icon: MapPin },
     { id: "certifications", label: "Certifications", icon: Award },
     { id: "documents", label: "Documents", icon: BookOpen },
@@ -3483,6 +3489,9 @@ function App() {
         {view === "submissions" && <Submissions initialFilter={submissionFilter}/>}
         {view === "chat" && <Chat user={user}/>}
         {view === "workers" && <Workers/>}
+        {view === "clients" && <ClientsPage/>}
+        {view === "tasks" && <TasksPage/>}
+        {view === "notes" && <NotesPage/>}
         {view === "locations" && <Locations/>}
         {view === "certifications" && <Certifications/>}
         {view === "documents" && <DocumentLibrary/>}
