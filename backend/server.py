@@ -3167,16 +3167,19 @@ async def simpro_status(user=Depends(require_admin)):
 
 @api_router.post('/integrations/simpro/connect')
 async def simpro_connect(body: SimproConfig, user=Depends(require_admin)):
-    """Save Simpro config + verify by hitting /api/v1.0/info or similar."""
-    base = (body.base_url or '').rstrip('/')
+    """Save Simpro config + verify by hitting /api/v1.0/companies/"""
+    base = (body.base_url or '').strip().rstrip('/')
     if not base:
         raise HTTPException(400, 'base_url required')
-    # Verify connection
+    # Strip whitespace from all credentials
+    api_token = (body.api_token or '').strip() or None
+    access_token = (body.access_token or '').strip() or None
+    client_id = (body.client_id or '').strip() or None
+    client_secret = (body.client_secret or '').strip() or None
+
     headers = {}
-    if body.api_token:
-        headers['Authorization'] = f'Bearer {body.api_token}'
-    elif body.access_token:
-        headers['Authorization'] = f'Bearer {body.access_token}'
+    if api_token: headers['Authorization'] = f'Bearer {api_token}'
+    elif access_token: headers['Authorization'] = f'Bearer {access_token}'
 
     verify_ok = False
     verify_error = None
@@ -3184,12 +3187,11 @@ async def simpro_connect(body: SimproConfig, user=Depends(require_admin)):
         try:
             import httpx
             async with httpx.AsyncClient(timeout=15.0) as client:
-                # Test with companies endpoint
                 r = await client.get(f"{base}/api/v1.0/companies/", headers=headers)
                 if r.status_code in (200, 304):
                     verify_ok = True
                 else:
-                    verify_error = f'HTTP {r.status_code}: {r.text[:200]}'
+                    verify_error = f'HTTP {r.status_code}: {r.text[:200] or "no body"}'
         except Exception as e:
             verify_error = str(e)[:200]
 
@@ -3198,11 +3200,11 @@ async def simpro_connect(body: SimproConfig, user=Depends(require_admin)):
         {'$set': {
             'id': 'simpro',
             'base_url': base,
-            'api_token': body.api_token,
-            'company_id': body.company_id or '0',
-            'client_id': body.client_id,
-            'client_secret': body.client_secret,
-            'access_token': body.access_token,
+            'api_token': api_token,
+            'company_id': (body.company_id or '0').strip(),
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'access_token': access_token,
             'refresh_token': body.refresh_token,
             'token_expires_at': body.token_expires_at,
             'connected_at': now_iso(),
@@ -3222,15 +3224,15 @@ async def _simpro_get(path: str, params: Optional[dict] = None):
     cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
     if not cfg:
         raise HTTPException(400, 'Simpro not connected. Configure in Settings → Simpro.')
-    base = cfg['base_url'].rstrip('/')
-    token = cfg.get('api_token') or cfg.get('access_token')
+    base = (cfg['base_url'] or '').strip().rstrip('/')
+    token = (cfg.get('api_token') or cfg.get('access_token') or '').strip()
     if not token:
         raise HTTPException(400, 'No Simpro token configured.')
     import httpx
     async with httpx.AsyncClient(timeout=30.0) as client:
         r = await client.get(f"{base}{path}", headers={'Authorization': f'Bearer {token}'}, params=params)
         if r.status_code >= 400:
-            raise HTTPException(r.status_code, f'Simpro API error: {r.text[:300]}')
+            raise HTTPException(r.status_code, f'Simpro API error ({r.status_code}): {r.text[:300] or "no body"}')
         return r.json()
 
 @api_router.post('/integrations/simpro/sync/employees')
@@ -3249,8 +3251,8 @@ async def simpro_sync_employees(company_ids: Optional[str] = None, user=Depends(
 
     # Map company IDs to friendly names (configurable, with defaults)
     company_name_map = cfg.get('company_name_map') or {
-        '2': 'Paneltec Civil',
-        '3': 'Viatec Traffic',
+        '2': 'Paneltec Pty Ltd',
+        '3': 'Viatec Traffic Solutions',
     }
 
     synced = []
@@ -3266,16 +3268,52 @@ async def simpro_sync_employees(company_ids: Optional[str] = None, user=Depends(
         if not isinstance(employees, list):
             employees = employees.get('items', []) if isinstance(employees, dict) else []
 
-        for emp in employees:
-            emp_id = str(emp.get('ID') or emp.get('id') or '')
+        for emp_summary in employees:
+            emp_id = str(emp_summary.get('ID') or emp_summary.get('id') or '')
             if not emp_id: continue
+
+            # Fetch full employee details (list endpoint only returns basic fields)
+            try:
+                emp = await _simpro_get(f'/api/v1.0/companies/{cid}/employees/{emp_id}')
+            except HTTPException:
+                emp = emp_summary  # Fall back to summary if detail fetch fails
+
             simpro_key = f"{cid}:{emp_id}"  # company-scoped key
 
-            first = emp.get('GivenName') or emp.get('first_name') or ''
-            last = emp.get('FamilyName') or emp.get('last_name') or ''
-            name = (first + ' ' + last).strip() or emp.get('Name') or 'Unknown'
-            email = emp.get('Email') or emp.get('email')
-            phone = emp.get('Phone') or emp.get('CellPhone') or emp.get('phone')
+            # SimPRO structures: Name is full, PrimaryContact has email/phones, Address has nested fields
+            full_name = emp.get('Name') or emp_summary.get('Name') or ''
+            first = emp.get('GivenName') or emp.get('FirstName') or ''
+            last = emp.get('FamilyName') or emp.get('LastName') or emp.get('Surname') or ''
+            name = (first + ' ' + last).strip() or full_name or 'Unknown'
+            # If only combined name, split it
+            if not first and not last and full_name and ' ' in full_name:
+                parts = full_name.split(' ', 1)
+                first, last = parts[0], parts[1]
+            elif not first and not last and full_name:
+                first = full_name
+
+            # PrimaryContact nested object
+            primary = emp.get('PrimaryContact') or {}
+            email = (primary.get('Email') or primary.get('SecondaryEmail') or
+                     emp.get('Email') or emp.get('email') or '')
+            phone = (primary.get('CellPhone') or primary.get('WorkPhone') or
+                     emp.get('Phone') or emp.get('phone') or '')
+
+            position = emp.get('Position') or emp.get('JobTitle') or emp.get('TypeName') or ''
+
+            # Address nested
+            addr = emp.get('Address') or {}
+            street_address = addr.get('Address') or ''
+            suburb = addr.get('City') or ''
+            state_full = addr.get('State') or ''
+            postal_code = addr.get('PostalCode') or ''
+            country = addr.get('Country') or 'AUSTRALIA'
+            # Map state abbreviations to full names
+            state_map = {'TAS':'Tasmania','VIC':'Victoria','NSW':'New South Wales','QLD':'Queensland',
+                         'SA':'South Australia','WA':'Western Australia','NT':'Northern Territory','ACT':'Australian Capital Territory'}
+            state = state_map.get(state_full.upper(), state_full) if state_full else ''
+
+            birth_date = emp.get('DateOfBirth') or None
 
             existing = await db.workers.find_one({'simpro_id': simpro_key}, {'_id': 0})
             worker_data = {
@@ -3285,20 +3323,32 @@ async def simpro_sync_employees(company_ids: Optional[str] = None, user=Depends(
                 'name': name,
                 'first_name': first or None,
                 'last_name': last or None,
-                'email': email,
-                'phone': phone,
+                'email': email or None,
+                'phone': phone or None,
+                'trade': position or None,
+                'street_address': street_address or None,
+                'suburb': suburb or None,
+                'state': state or None,
+                'postal_code': postal_code or None,
+                'country': country.upper() if country else 'AUSTRALIA',
+                'birth_date': birth_date,
                 'role': 'worker',
                 'source': 'simpro',
-                'status': 'active' if emp.get('Active', True) else 'inactive',
+                'status': 'inactive' if emp.get('Archived') else 'active',
             }
             if existing:
                 worker_data['id'] = existing['id']
+                # Preserve manually-set fields like availability, license, client_ids, skills
+                preserve = ['availability','license_allocated','license_allocated_by','is_manager','client_ids','skills','location_ids','signature_b64','photo_b64','additional_notes']
+                for k in preserve:
+                    if existing.get(k) and not worker_data.get(k):
+                        worker_data[k] = existing[k]
                 await db.workers.update_one({'simpro_id': simpro_key}, {'$set': worker_data})
             else:
                 worker_data['id'] = str(uuid.uuid4())
                 worker_data['created_at'] = now_iso()
                 await db.workers.insert_one(Worker(**worker_data).model_dump())
-            synced.append({'name': name, 'email': email, 'company': company_name})
+            synced.append({'name': name, 'email': email, 'phone': phone, 'position': position, 'company': company_name})
 
     await db.integrations.update_one(
         {'id': 'simpro'},
