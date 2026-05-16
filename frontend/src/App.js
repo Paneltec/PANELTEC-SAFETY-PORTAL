@@ -2394,17 +2394,32 @@ function TokenModal({ onClose }) {
 }
 
 // ===================== WORKER MOBILE VIEW =====================
-function WorkerMobileApp({ user, onLogout }) {
+function WorkerMobileApp({ user, onLogout, canInstall, onInstall }) {
   const [tab, setTab] = useState("home");
   const [fillTemplate, setFillTemplate] = useState(null);
   const [pendingAcks, setPendingAcks] = useState(0);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const isStandalone = typeof window !== "undefined" && window.paneltecIsStandalone && window.paneltecIsStandalone();
 
   useEffect(() => {
     const loadAcks = () => api.get('/acknowledgements/required').then(r => setPendingAcks(r.data?.length || 0)).catch(()=>{});
     loadAcks();
     const t = setInterval(loadAcks, 30000);
+    // Show install banner if installable and not yet dismissed
+    if (canInstall && !isStandalone && !localStorage.getItem("pt_install_dismissed")) {
+      setShowInstallBanner(true);
+    }
     return () => clearInterval(t);
-  }, []);
+  }, [canInstall, isStandalone]);
+
+  const dismissInstall = () => {
+    localStorage.setItem("pt_install_dismissed", "1");
+    setShowInstallBanner(false);
+  };
+  const doInstall = async () => {
+    await onInstall();
+    setShowInstallBanner(false);
+  };
 
   const tabs = [
     { id: "home", label: "Home", icon: Home },
@@ -2428,6 +2443,28 @@ function WorkerMobileApp({ user, onLogout }) {
         </div>
         <button onClick={onLogout} className="p-2 hover:bg-white/10 rounded-lg" data-testid="mobile-logout"><LogOut className="w-5 h-5"/></button>
       </header>
+
+      {showInstallBanner && (
+        <div className="bg-gradient-to-r from-amber-400 to-amber-500 text-black px-4 py-3 flex items-center gap-3 shadow-md" data-testid="install-banner">
+          <div className="w-10 h-10 bg-black/10 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Smartphone className="w-5 h-5"/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-black text-sm">Install Paneltec App</div>
+            <div className="text-xs opacity-80">Get full-screen mode, offline access & push notifications</div>
+          </div>
+          <button onClick={doInstall} className="bg-black text-amber-400 px-3 py-2 rounded-lg text-xs font-black flex-shrink-0" data-testid="install-app-btn">INSTALL</button>
+          <button onClick={dismissInstall} className="p-1 text-black/60 hover:text-black flex-shrink-0"><X className="w-4 h-4"/></button>
+        </div>
+      )}
+
+      {!isStandalone && /iPad|iPhone|iPod/.test(navigator.userAgent) && !showInstallBanner && !localStorage.getItem("pt_ios_dismissed") && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-xs text-blue-900 flex items-center gap-2">
+          <Smartphone className="w-4 h-4 flex-shrink-0"/>
+          <span className="flex-1">Tap <b>Share</b> → <b>Add to Home Screen</b> to install</span>
+          <button onClick={()=>localStorage.setItem("pt_ios_dismissed","1") || window.location.reload()} className="text-blue-600 font-bold">Got it</button>
+        </div>
+      )}
 
       <main className="flex-1 overflow-y-auto pb-20">
         {tab === "home" && <WorkerHome user={user} onFill={setFillTemplate} goTo={setTab} pendingAcks={pendingAcks}/>}
@@ -3578,16 +3615,43 @@ function App() {
   };
   const [fillTemplate, setFillTemplate] = useState(null);
   const [online, setOnline] = useState(navigator.onLine);
+  const [canInstall, setCanInstall] = useState(false);
 
   useEffect(() => {
     const a = () => { setOnline(true); syncQueue(); };
     const b = () => setOnline(false);
     window.addEventListener("online", a);
     window.addEventListener("offline", b);
-    // Initial sync attempt on mount
     syncQueue();
-    return () => { window.removeEventListener("online", a); window.removeEventListener("offline", b); };
+
+    // PWA install handling
+    const updateInstall = () => setCanInstall(!!(window.paneltecCanInstall && window.paneltecCanInstall()));
+    updateInstall();
+    window.addEventListener("paneltec-install-available", updateInstall);
+    window.addEventListener("paneltec-installed", updateInstall);
+
+    // SW sync queue trigger
+    window.addEventListener("paneltec-sync-queue", syncQueue);
+
+    // Handle ?goto= deep link from PWA shortcuts
+    const params = new URLSearchParams(window.location.search);
+    const dest = params.get("goto");
+    if (dest) setView(dest === "timesheet" ? "timesheet" : dest === "leave" ? "leave" : dest === "forms" ? "forms" : dest);
+
+    return () => {
+      window.removeEventListener("online", a);
+      window.removeEventListener("offline", b);
+      window.removeEventListener("paneltec-install-available", updateInstall);
+      window.removeEventListener("paneltec-installed", updateInstall);
+      window.removeEventListener("paneltec-sync-queue", syncQueue);
+    };
   }, []);
+
+  const installPwa = async () => {
+    if (!window.paneltecInstall) return;
+    const result = await window.paneltecInstall();
+    if (result.ok) setCanInstall(false);
+  };
 
   const syncQueue = async () => {
     try {
@@ -3615,7 +3679,7 @@ function App() {
     return (
       <>
         {!online && <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white text-center py-1.5 text-xs font-semibold flex items-center justify-center gap-2"><WifiOff className="w-3.5 h-3.5"/>Offline — your forms will sync when reconnected</div>}
-        <WorkerMobileApp user={user} onLogout={logout}/>
+        <WorkerMobileApp user={user} onLogout={logout} canInstall={canInstall} onInstall={installPwa}/>
       </>
     );
   }
@@ -3658,6 +3722,11 @@ function App() {
               <div className="text-[10px] text-amber-400 tracking-widest font-semibold">SAFETY PORTAL</div>
             </div>
           </div>
+          {canInstall && (
+            <button onClick={installPwa} className="mt-3 w-full px-3 py-2 brand-grad text-black text-xs font-bold rounded-lg flex items-center justify-center gap-1.5" data-testid="admin-install-btn">
+              <Smartphone className="w-3.5 h-3.5"/>Install App
+            </button>
+          )}
         </div>
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {nav.map(n => {

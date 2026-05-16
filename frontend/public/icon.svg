@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0B0F"/>
+      <stop offset="100%" stop-color="#1F2937"/>
+    </linearGradient>
+    <linearGradient id="hat" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FBBF24"/>
+      <stop offset="50%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#bg)"/>
+  <!-- Hard hat icon, centered -->
+  <g transform="translate(96 130)">
+    <!-- brim -->
+    <path d="M0 230 Q0 200 32 200 L288 200 Q320 200 320 230 L320 248 Q320 256 312 256 L8 256 Q0 256 0 248 Z" fill="url(#hat)" stroke="#92400E" stroke-width="3"/>
+    <!-- dome -->
+    <path d="M40 200 Q40 60 160 60 Q280 60 280 200 Z" fill="url(#hat)" stroke="#92400E" stroke-width="3"/>
+    <!-- top stripe -->
+    <path d="M152 60 L168 60 L168 200 L152 200 Z" fill="#0B0B0F" opacity="0.3"/>
+    <!-- side ridges -->
+    <path d="M70 130 Q72 128 75 130 Q72 180 70 200" stroke="#92400E" stroke-width="3" fill="none" opacity="0.5"/>
+    <path d="M250 130 Q248 128 245 130 Q248 180 250 200" stroke="#92400E" stroke-width="3" fill="none" opacity="0.5"/>
+  </g>
+  <!-- PT text below hat -->
+  <text x="256" y="430" font-family="Arial, sans-serif" font-size="56" font-weight="900" text-anchor="middle" fill="#FBBF24" letter-spacing="4">PANELTEC</text>
+</svg>
