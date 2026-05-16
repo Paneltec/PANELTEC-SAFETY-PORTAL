@@ -9,7 +9,7 @@ import json
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
-from typing import List, Optional, Any, Dict
+from typing import List, Optional, Any, Dict, Tuple
 import uuid
 import secrets
 import base64
@@ -4493,6 +4493,354 @@ async def update_note_files(nid: str, body: dict, user=Depends(get_current_user)
 @api_router.put('/notes/{nid}/additional')
 async def update_note_additional(nid: str, body: dict, user=Depends(get_current_user)):
     await db.notes.update_one({'id': nid}, {'$set': {'additional_notes_list': body.get('additional_notes_list', [])}})
+    return {'ok': True}
+
+
+
+# ============== WORK TYPES (WojoPay) ==============
+class WorkType(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    external_id: Optional[str] = None  # WojoPay ID e.g. "2234891"
+    name: str
+    mapping_type: str = 'PrimaryPayCategory'  # PrimaryPayCategory, LeaveCategory
+    enabled: bool = True
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/work-types')
+async def list_work_types(user=Depends(get_current_user)):
+    items = await db.work_types.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    if not items:
+        defaults = [
+            ('2234891', 'Call Out', 'PrimaryPayCategory'),
+            ('2151293', 'Fatigue Break', 'PrimaryPayCategory'),
+            ('2151289', 'Leave - Annual Leave Taken', 'LeaveCategory'),
+            ('2151292', 'Leave - Leave Without Pay Taken', 'LeaveCategory'),
+            ('2151295', 'Leave - Sick Leave Taken', 'LeaveCategory'),
+            ('2151297', 'Living Away From Home', 'PrimaryPayCategory'),
+            ('2151291', 'Meal Allowance', ''),
+            ('2234893', 'No Meal Break', 'PrimaryPayCategory'),
+            ('2234894', 'On Call Standby', 'PrimaryPayCategory'),
+            ('2234895', 'On Call Standby Tas Gas', 'PrimaryPayCategory'),
+            ('2234896', 'On Call Standby Taswater', 'PrimaryPayCategory'),
+            ('2151296', 'Public Holiday not worked', 'PrimaryPayCategory'),
+            ('2257349', 'Swap Day shift to Night Shift', 'PrimaryPayCategory'),
+            ('2304087', 'TMA', 'PrimaryPayCategory'),
+            ('2276752', 'Traffic Controller', 'PrimaryPayCategory'),
+            ('2151294', 'Work During Meal Break', ''),
+            (None, 'Standard Hours', 'PrimaryPayCategory'),
+            (None, 'Overtime', 'PrimaryPayCategory'),
+        ]
+        for ext, name, mtype in defaults:
+            await db.work_types.insert_one(WorkType(external_id=ext, name=name, mapping_type=mtype).model_dump())
+        items = await db.work_types.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    return items
+
+@api_router.post('/work-types')
+async def create_work_type(w: WorkType, user=Depends(require_admin)):
+    doc = w.model_dump()
+    await db.work_types.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/work-types/{wid}')
+async def update_work_type(wid: str, w: WorkType, user=Depends(require_admin)):
+    doc = w.model_dump(); doc['id'] = wid
+    await db.work_types.update_one({'id': wid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/work-types/{wid}')
+async def delete_work_type(wid: str, user=Depends(require_admin)):
+    await db.work_types.delete_one({'id': wid})
+    return {'ok': True}
+
+# ============== LEAVE CATEGORIES (WojoPay) ==============
+class LeaveCategory(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    external_id: Optional[str] = None  # WojoPay ID
+    name: str
+    category_type: str = 'Standard'  # Standard, LongServiceLeave
+    enabled: bool = True
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/leave-categories')
+async def list_leave_categories(user=Depends(get_current_user)):
+    items = await db.leave_categories.find({}, {'_id': 0}).sort('name', 1).to_list(200)
+    if not items:
+        defaults = [
+            ('1663035', 'Annual Leave', 'Standard', True),
+            ('1664018', 'Community Service Leave', 'Standard', False),
+            ('1663040', 'Compassionate Leave', 'Standard', False),
+            ('1663038', 'Leave Without Pay', 'Standard', False),
+            ('1663039', 'Long Service Leave', 'LongServiceLeave', False),
+            ('1663041', 'Paid Community Service Leave', 'Standard', False),
+            ('1663043', 'Paid Family and Domestic Violence Leave', 'Standard', False),
+            ('1663036', "Personal/Carer's Leave", 'Standard', False),
+        ]
+        for ext, name, ctype, enabled in defaults:
+            await db.leave_categories.insert_one(LeaveCategory(external_id=ext, name=name, category_type=ctype, enabled=enabled).model_dump())
+        items = await db.leave_categories.find({}, {'_id': 0}).sort('name', 1).to_list(200)
+    return items
+
+@api_router.post('/leave-categories')
+async def create_leave_category(c: LeaveCategory, user=Depends(require_admin)):
+    doc = c.model_dump()
+    await db.leave_categories.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/leave-categories/{cid}')
+async def update_leave_category(cid: str, c: LeaveCategory, user=Depends(require_admin)):
+    doc = c.model_dump(); doc['id'] = cid
+    await db.leave_categories.update_one({'id': cid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/leave-categories/{cid}')
+async def delete_leave_category(cid: str, user=Depends(require_admin)):
+    await db.leave_categories.delete_one({'id': cid})
+    return {'ok': True}
+
+# ============== TIME ENTRIES (Timesheets) ==============
+class BreakEntry(BaseModel):
+    start: str  # ISO datetime
+    end: Optional[str] = None
+    break_type: str = 'unpaid'  # paid, unpaid
+
+class TimeEntry(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    worker_id: str
+    worker_name: Optional[str] = None
+    entry_date: str  # YYYY-MM-DD
+    clock_in: Optional[str] = None  # ISO datetime
+    clock_out: Optional[str] = None
+    breaks: List[Dict[str, Any]] = []
+    work_type_id: Optional[str] = None
+    work_type_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    notes: Optional[str] = None
+    status: str = 'open'  # open, submitted, approved, rejected
+    submitted_at: Optional[str] = None
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
+    total_minutes: int = 0
+    paid_minutes: int = 0
+    created_at: str = Field(default_factory=now_iso)
+
+def _calc_minutes(entry: dict) -> Tuple[int, int]:
+    """Return (total_minutes, paid_minutes) for an entry."""
+    try:
+        if not entry.get('clock_in') or not entry.get('clock_out'):
+            return (0, 0)
+        ci = datetime.fromisoformat(entry['clock_in'].replace('Z', '+00:00'))
+        co = datetime.fromisoformat(entry['clock_out'].replace('Z', '+00:00'))
+        total = int((co - ci).total_seconds() / 60)
+        unpaid_break_min = 0
+        for b in (entry.get('breaks') or []):
+            if b.get('start') and b.get('end') and b.get('break_type') == 'unpaid':
+                try:
+                    bs = datetime.fromisoformat(b['start'].replace('Z', '+00:00'))
+                    be = datetime.fromisoformat(b['end'].replace('Z', '+00:00'))
+                    unpaid_break_min += int((be - bs).total_seconds() / 60)
+                except Exception:
+                    pass
+        paid = max(0, total - unpaid_break_min)
+        return (total, paid)
+    except Exception:
+        return (0, 0)
+
+@api_router.get('/timesheets')
+async def list_timesheets(worker_id: Optional[str] = None,
+                          start: Optional[str] = None, end: Optional[str] = None,
+                          status: Optional[str] = None,
+                          user=Depends(get_current_user)):
+    q = {}
+    if worker_id: q['worker_id'] = worker_id
+    if start: q.setdefault('entry_date', {})['$gte'] = start
+    if end: q.setdefault('entry_date', {})['$lte'] = end
+    if status and status != 'all': q['status'] = status
+    items = await db.time_entries.find(q, {'_id': 0}).sort('entry_date', -1).to_list(2000)
+    return items
+
+@api_router.get('/timesheets/me/open')
+async def get_my_open_timesheet(user=Depends(get_current_user)):
+    """Return the active (open, no clock_out) entry for the current user, if any."""
+    worker = await db.workers.find_one({'email': user.get('email')}, {'_id': 0}) if user.get('email') else None
+    worker_id = worker['id'] if worker else user.get('id')
+    entry = await db.time_entries.find_one({'worker_id': worker_id, 'clock_out': None}, {'_id': 0})
+    return entry or {}
+
+@api_router.post('/timesheets/clock-in')
+async def clock_in(body: dict, user=Depends(get_current_user)):
+    """Worker clocks in. Body: {work_type_id?, client_id?, location_id?, notes?}"""
+    worker = await db.workers.find_one({'email': user.get('email')}, {'_id': 0}) if user.get('email') else None
+    worker_id = worker['id'] if worker else user.get('id')
+
+    # Check if there's already an open entry
+    existing = await db.time_entries.find_one({'worker_id': worker_id, 'clock_out': None}, {'_id': 0})
+    if existing:
+        return {'ok': False, 'error': 'You already have an active clock-in. Clock out first.', 'entry': existing}
+
+    now = datetime.now(timezone.utc)
+    wt = await db.work_types.find_one({'id': body.get('work_type_id')}, {'_id': 0}) if body.get('work_type_id') else None
+    cl = await db.clients.find_one({'id': body.get('client_id')}, {'_id': 0}) if body.get('client_id') else None
+    loc = await db.locations.find_one({'id': body.get('location_id')}, {'_id': 0}) if body.get('location_id') else None
+
+    entry = TimeEntry(
+        worker_id=worker_id,
+        worker_name=worker.get('name') if worker else user.get('name'),
+        entry_date=now.date().isoformat(),
+        clock_in=now.isoformat(),
+        work_type_id=body.get('work_type_id'),
+        work_type_name=wt['name'] if wt else None,
+        client_id=body.get('client_id'),
+        client_name=cl['name'] if cl else None,
+        location_id=body.get('location_id'),
+        location_name=loc['name'] if loc else None,
+        notes=body.get('notes'),
+    ).model_dump()
+    await db.time_entries.insert_one(entry)
+    entry.pop('_id', None)
+    return {'ok': True, 'entry': entry}
+
+@api_router.post('/timesheets/{eid}/clock-out')
+async def clock_out(eid: str, user=Depends(get_current_user)):
+    entry = await db.time_entries.find_one({'id': eid}, {'_id': 0})
+    if not entry: raise HTTPException(404, 'Entry not found')
+    now_dt = datetime.now(timezone.utc).isoformat()
+    entry['clock_out'] = now_dt
+    total, paid = _calc_minutes(entry)
+    await db.time_entries.update_one({'id': eid}, {'$set': {
+        'clock_out': now_dt, 'total_minutes': total, 'paid_minutes': paid
+    }})
+    entry['total_minutes'] = total; entry['paid_minutes'] = paid
+    return {'ok': True, 'entry': entry}
+
+@api_router.post('/timesheets/{eid}/break/start')
+async def break_start(eid: str, body: dict, user=Depends(get_current_user)):
+    bt = body.get('break_type', 'unpaid')
+    new_break = {'start': datetime.now(timezone.utc).isoformat(), 'end': None, 'break_type': bt}
+    await db.time_entries.update_one({'id': eid}, {'$push': {'breaks': new_break}})
+    return {'ok': True}
+
+@api_router.post('/timesheets/{eid}/break/end')
+async def break_end(eid: str, user=Depends(get_current_user)):
+    entry = await db.time_entries.find_one({'id': eid}, {'_id': 0})
+    if not entry: raise HTTPException(404, 'Not found')
+    breaks = entry.get('breaks') or []
+    if not breaks or breaks[-1].get('end'):
+        return {'ok': False, 'error': 'No active break'}
+    breaks[-1]['end'] = datetime.now(timezone.utc).isoformat()
+    await db.time_entries.update_one({'id': eid}, {'$set': {'breaks': breaks}})
+    return {'ok': True}
+
+@api_router.put('/timesheets/{eid}')
+async def update_timesheet(eid: str, body: dict, user=Depends(get_current_user)):
+    allowed = {k: v for k, v in body.items() if k in
+               ('work_type_id', 'work_type_name', 'client_id', 'client_name',
+                'location_id', 'location_name', 'notes', 'clock_in', 'clock_out', 'breaks', 'status')}
+    await db.time_entries.update_one({'id': eid}, {'$set': allowed})
+    entry = await db.time_entries.find_one({'id': eid}, {'_id': 0})
+    if entry and entry.get('clock_in') and entry.get('clock_out'):
+        total, paid = _calc_minutes(entry)
+        await db.time_entries.update_one({'id': eid}, {'$set': {'total_minutes': total, 'paid_minutes': paid}})
+        entry['total_minutes'] = total; entry['paid_minutes'] = paid
+    return entry
+
+@api_router.post('/timesheets/{eid}/submit')
+async def submit_timesheet(eid: str, user=Depends(get_current_user)):
+    await db.time_entries.update_one({'id': eid}, {'$set': {'status': 'submitted', 'submitted_at': now_iso()}})
+    return {'ok': True}
+
+@api_router.post('/timesheets/{eid}/approve')
+async def approve_timesheet(eid: str, body: dict, user=Depends(require_admin)):
+    approved = body.get('approved', True)
+    await db.time_entries.update_one({'id': eid}, {'$set': {
+        'status': 'approved' if approved else 'rejected',
+        'approved_by': user.get('name'),
+        'approved_at': now_iso(),
+    }})
+    return {'ok': True}
+
+@api_router.delete('/timesheets/{eid}')
+async def delete_timesheet(eid: str, user=Depends(get_current_user)):
+    await db.time_entries.delete_one({'id': eid})
+    return {'ok': True}
+
+# ============== LEAVE REQUESTS ==============
+class LeaveRequest(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    worker_id: str
+    worker_name: Optional[str] = None
+    category_id: str
+    category_name: Optional[str] = None
+    start_date: str
+    end_date: str
+    half_day: bool = False
+    reason: Optional[str] = None
+    status: str = 'pending'  # pending, approved, rejected, cancelled
+    approver_id: Optional[str] = None
+    approver_name: Optional[str] = None
+    approver_notes: Optional[str] = None
+    decided_at: Optional[str] = None
+    submitted_at: str = Field(default_factory=now_iso)
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/leave-requests')
+async def list_leave_requests(status: Optional[str] = None, worker_id: Optional[str] = None,
+                              user=Depends(get_current_user)):
+    q = {}
+    if status and status != 'all': q['status'] = status
+    if worker_id: q['worker_id'] = worker_id
+    items = await db.leave_requests.find(q, {'_id': 0}).sort('submitted_at', -1).to_list(2000)
+    return items
+
+@api_router.get('/leave-requests/me')
+async def list_my_leave_requests(user=Depends(get_current_user)):
+    worker = await db.workers.find_one({'email': user.get('email')}, {'_id': 0}) if user.get('email') else None
+    worker_id = worker['id'] if worker else user.get('id')
+    items = await db.leave_requests.find({'worker_id': worker_id}, {'_id': 0}).sort('submitted_at', -1).to_list(500)
+    return items
+
+@api_router.post('/leave-requests')
+async def create_leave_request(l: LeaveRequest, user=Depends(get_current_user)):
+    doc = l.model_dump()
+    # Auto-fill worker info
+    worker = await db.workers.find_one({'email': user.get('email')}, {'_id': 0}) if user.get('email') else None
+    if worker and not doc.get('worker_id'):
+        doc['worker_id'] = worker['id']
+        doc['worker_name'] = worker.get('name')
+    elif not doc.get('worker_name'):
+        w = await db.workers.find_one({'id': doc['worker_id']}, {'_id': 0})
+        if w: doc['worker_name'] = w['name']
+    # Auto-fill category
+    cat = await db.leave_categories.find_one({'id': doc['category_id']}, {'_id': 0})
+    if cat: doc['category_name'] = cat['name']
+    await db.leave_requests.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.post('/leave-requests/{rid}/approve')
+async def approve_leave(rid: str, body: dict, user=Depends(require_admin)):
+    approved = body.get('approved', True)
+    update = {
+        'status': 'approved' if approved else 'rejected',
+        'approver_id': user.get('id'),
+        'approver_name': user.get('name'),
+        'approver_notes': body.get('notes'),
+        'decided_at': now_iso(),
+    }
+    await db.leave_requests.update_one({'id': rid}, {'$set': update})
+    return {'ok': True}
+
+@api_router.delete('/leave-requests/{rid}')
+async def delete_leave_request(rid: str, user=Depends(get_current_user)):
+    await db.leave_requests.delete_one({'id': rid})
     return {'ok': True}
 
 

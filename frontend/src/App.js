@@ -8,8 +8,10 @@ import IntegrationsPage from "./pages/Integrations";
 import ProjectBookingPage from "./pages/ProjectBooking";
 import AllocationPage from "./pages/Allocation";
 import PersonnelRequiredPage from "./pages/PersonnelRequired";
+import { AdminTimeSheetPage, AdminLeaveRequestsPage } from "./pages/AdminTimeLeave";
+import { WorkerTimeSheet, WorkerLeave, WorkerDocs } from "./pages/worker/WorkerMobilePages";
 import {
-  ListPage, TimeSheetPage, GroupTimeSheetPage, LeaveRequestsPage, FilesPage
+  ListPage, GroupTimeSheetPage, FilesPage
 } from "./pages/Placeholders";
 import {
   LayoutDashboard, FileText, ClipboardList, Users, MapPin, Award,
@@ -2406,10 +2408,10 @@ function WorkerMobileApp({ user, onLogout }) {
 
   const tabs = [
     { id: "home", label: "Home", icon: Home },
-    { id: "forms", label: "Forms", icon: FileText },
-    { id: "action", label: "Action", icon: FileBadge, badge: pendingAcks },
-    { id: "chat", label: "Chat", icon: MessageSquare },
-    { id: "me", label: "Me", icon: User },
+    { id: "timesheet", label: "Time", icon: Clock },
+    { id: "leave", label: "Leave", icon: Calendar },
+    { id: "docs", label: "Docs", icon: BookOpen },
+    { id: "more", label: "More", icon: Menu, badge: pendingAcks },
   ];
 
   return (
@@ -2429,6 +2431,10 @@ function WorkerMobileApp({ user, onLogout }) {
 
       <main className="flex-1 overflow-y-auto pb-20">
         {tab === "home" && <WorkerHome user={user} onFill={setFillTemplate} goTo={setTab} pendingAcks={pendingAcks}/>}
+        {tab === "timesheet" && <WorkerTimeSheet user={user}/>}
+        {tab === "leave" && <WorkerLeave user={user}/>}
+        {tab === "docs" && <WorkerDocs/>}
+        {tab === "more" && <WorkerMore user={user} onFill={setFillTemplate} goTo={setTab} pendingAcks={pendingAcks}/>}
         {tab === "forms" && <WorkerForms onFill={setFillTemplate}/>}
         {tab === "action" && <WorkerActions onCountChange={setPendingAcks}/>}
         {tab === "chat" && <Chat user={user}/>}
@@ -2437,7 +2443,7 @@ function WorkerMobileApp({ user, onLogout }) {
 
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t shadow-lg flex justify-around z-30">
         {tabs.map(t => {
-          const active = tab === t.id;
+          const active = tab === t.id || (t.id === "more" && ["forms","action","chat","me"].includes(tab));
           return (
             <button key={t.id} onClick={()=>setTab(t.id)}
               className={`flex-1 flex flex-col items-center justify-center py-2.5 relative ${active ? "text-amber-600" : "text-slate-500"}`}
@@ -2453,6 +2459,33 @@ function WorkerMobileApp({ user, onLogout }) {
       </nav>
 
       {fillTemplate && <FillForm template={fillTemplate} user={user} onClose={()=>setFillTemplate(null)}/>}
+    </div>
+  );
+}
+
+function WorkerMore({ user, onFill, goTo, pendingAcks }) {
+  const items = [
+    { id: "forms", label: "Fill Forms", icon: FileText, color: "bg-blue-500", desc: "Safety forms, inspections, incident reports" },
+    { id: "action", label: "Action Required", icon: FileBadge, color: "bg-purple-500", desc: "Documents needing acknowledgement", badge: pendingAcks },
+    { id: "chat", label: "Chat", icon: MessageSquare, color: "bg-emerald-500", desc: "Crew chat & broadcasts" },
+    { id: "me", label: "My Profile", icon: User, color: "bg-amber-500", desc: "Certifications, profile" },
+  ];
+  return (
+    <div className="p-4 fadein space-y-2">
+      <h2 className="text-xl font-black mb-3">More</h2>
+      {items.map(i => (
+        <button key={i.id} onClick={()=>goTo(i.id)} className="w-full bg-white rounded-2xl border p-4 flex items-center gap-3 active:scale-[0.98] transition shadow-sm" data-testid={`worker-more-${i.id}`}>
+          <div className={`w-12 h-12 ${i.color} text-white rounded-xl flex items-center justify-center flex-shrink-0`}>
+            <i.icon className="w-6 h-6"/>
+          </div>
+          <div className="flex-1 text-left">
+            <div className="font-bold">{i.label}</div>
+            <div className="text-xs text-slate-500">{i.desc}</div>
+          </div>
+          {i.badge > 0 && <span className="bg-red-600 text-white text-xs font-bold px-2 py-1 rounded-full">{i.badge}</span>}
+          <ChevronRight className="w-5 h-5 text-slate-400"/>
+        </button>
+      ))}
     </div>
   );
 }
@@ -3669,9 +3702,9 @@ function App() {
         {view === "allocation" && <AllocationPage/>}
         {view === "personnel_required" && <PersonnelRequiredPage/>}
         {view === "list" && <ListPage/>}
-        {view === "time_sheet" && <TimeSheetPage/>}
+        {view === "time_sheet" && <AdminTimeSheetPage/>}
         {view === "group_time_sheet" && <GroupTimeSheetPage/>}
-        {view === "leave_requests" && <LeaveRequestsPage/>}
+        {view === "leave_requests" && <AdminLeaveRequestsPage/>}
         {view === "files" && <FilesPage/>}
         {view === "settings" && <SettingsPage user={user}/>}
       </main>
