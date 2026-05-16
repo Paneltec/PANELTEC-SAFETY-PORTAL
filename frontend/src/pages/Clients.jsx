@@ -17,9 +17,14 @@ api.interceptors.request.use((c) => {
 const STATES = ["Tasmania","Victoria","New South Wales","Queensland","South Australia","Western Australia","Northern Territory","Australian Capital Territory"];
 
 // ============== CLIENT MANAGEMENT PAGE ==============
+// Module-level cache so switching tabs doesn't refetch (~374KB payload)
+let _clientsCache = null;
+let _clientsCacheAt = 0;
+const CACHE_TTL_MS = 60_000; // 60 seconds
+
 export default function ClientsPage() {
-  const [clients, setClients] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState(_clientsCache || []);
+  const [loading, setLoading] = useState(!_clientsCache);
   const [searchField, setSearchField] = useState("name");
   const [searchValue, setSearchValue] = useState("");
   const [selected, setSelected] = useState([]);
@@ -30,17 +35,35 @@ export default function ClientsPage() {
   const [showNotes, setShowNotes] = useState(null);
   const [showFolders, setShowFolders] = useState(null);
   const [showMembers, setShowMembers] = useState(null);
+  const [pageSize, setPageSize] = useState(50);
+  const [page, setPage] = useState(1);
 
-  const load = () => {
+  const load = (force = false) => {
+    // Use cache if fresh enough
+    const now = Date.now();
+    if (!force && _clientsCache && (now - _clientsCacheAt) < CACHE_TTL_MS) {
+      setClients(_clientsCache);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    api.get("/clients").then(r => { setClients(r.data); setLoading(false); });
+    api.get("/clients").then(r => {
+      _clientsCache = r.data;
+      _clientsCacheAt = Date.now();
+      setClients(r.data);
+      setLoading(false);
+    });
   };
   useEffect(() => { load(); }, []);
 
   const toggleLocation = async (c) => {
     const newLoc = c.location_id ? null : "active";
     await api.put(`/clients/${c.id}`, { ...c, location_id: newLoc });
-    load();
+    // Update locally instead of full refetch
+    const updated = clients.map(x => x.id === c.id ? { ...x, location_id: newLoc } : x);
+    setClients(updated);
+    _clientsCache = updated;
+    _clientsCacheAt = Date.now();
   };
 
   const filtered = clients.filter(c => {
@@ -52,8 +75,16 @@ export default function ClientsPage() {
     return true;
   });
 
+  // Pagination — only render the current page (not all 935 rows)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const paged = filtered.slice((safePage-1) * pageSize, safePage * pageSize);
+
+  // Reset to page 1 when search changes
+  useEffect(() => { setPage(1); }, [searchValue, searchField, pageSize]);
+
   const toggleSelect = (id) => setSelected(selected.includes(id) ? selected.filter(x=>x!==id) : [...selected, id]);
-  const toggleSelectAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map(c=>c.id));
+  const toggleSelectAll = () => setSelected(selected.length === paged.length ? [] : paged.map(c=>c.id));
 
   return (
     <div className="fadein">
@@ -78,7 +109,7 @@ export default function ClientsPage() {
           <input value={searchValue} onChange={e=>setSearchValue(e.target.value)} placeholder="Search…" className="px-3 py-2 text-sm w-56 focus:outline-none" data-testid="client-search-input"/>
           <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-r" data-testid="client-search-btn">SEARCH</button>
         </div>
-        <button onClick={load} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-sm" title="Refresh">
+        <button onClick={()=>load(true)} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-sm" title="Refresh">
           <ArrowRight className="w-4 h-4 rotate-90"/>
         </button>
       </div>
@@ -91,7 +122,7 @@ export default function ClientsPage() {
               <thead className="bg-slate-700 text-white">
                 <tr>
                   <th className="py-3 px-3 text-left w-10">
-                    <input type="checkbox" checked={filtered.length>0 && selected.length===filtered.length} onChange={toggleSelectAll}/>
+                    <input type="checkbox" checked={paged.length>0 && paged.every(c=>selected.includes(c.id))} onChange={toggleSelectAll}/>
                   </th>
                   <th className="py-3 px-3 text-left font-semibold">Client Name</th>
                   <th className="py-3 px-3 text-left font-semibold">Created By</th>
@@ -110,7 +141,7 @@ export default function ClientsPage() {
                   <tr><td colSpan="11" className="py-12 text-center text-slate-400"><Loader2 className="w-5 h-5 animate-spin inline-block mr-2"/>Loading…</td></tr>
                 ) : filtered.length === 0 ? (
                   <tr><td colSpan="11" className="py-12 text-center text-slate-400">No clients found. Click "ADD NEW" to create one.</td></tr>
-                ) : filtered.map((c, idx) => {
+                ) : paged.map((c, idx) => {
                   const active = (c.status || "active") === "active";
                   const hasLoc = !!c.location_id;
                   return (
@@ -171,8 +202,26 @@ export default function ClientsPage() {
               </tbody>
             </table>
           </div>
-          <div className="px-4 py-3 bg-slate-50 border-t text-sm text-slate-500 flex items-center justify-between">
-            <div>Showing : {filtered.length} {selected.length > 0 && <span className="ml-2 text-slate-700 font-semibold">· {selected.length} selected</span>}</div>
+          <div className="px-4 py-3 bg-slate-50 border-t text-sm text-slate-500 flex items-center justify-between flex-wrap gap-2">
+            <div>
+              Showing <b className="text-slate-900">{((safePage-1)*pageSize)+1}-{Math.min(safePage*pageSize, filtered.length)}</b> of <b className="text-slate-900">{filtered.length}</b>
+              {selected.length > 0 && <span className="ml-2 text-slate-700 font-semibold">· {selected.length} selected</span>}
+            </div>
+            <div className="flex items-center gap-2">
+              <select value={pageSize} onChange={e=>setPageSize(parseInt(e.target.value))} className="px-2 py-1 border rounded text-xs bg-white">
+                <option value="25">25 per page</option>
+                <option value="50">50 per page</option>
+                <option value="100">100 per page</option>
+                <option value="250">250 per page</option>
+              </select>
+              <div className="flex items-center gap-1">
+                <button onClick={()=>setPage(1)} disabled={safePage<=1} className="px-2 py-1 border rounded text-xs disabled:opacity-30">«</button>
+                <button onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={safePage<=1} className="px-2 py-1 border rounded text-xs disabled:opacity-30">‹ Prev</button>
+                <span className="px-3 text-xs font-bold">Page {safePage} / {totalPages}</span>
+                <button onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={safePage>=totalPages} className="px-2 py-1 border rounded text-xs disabled:opacity-30">Next ›</button>
+                <button onClick={()=>setPage(totalPages)} disabled={safePage>=totalPages} className="px-2 py-1 border rounded text-xs disabled:opacity-30">»</button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -185,7 +234,7 @@ export default function ClientsPage() {
         </button>
       </div>
 
-      {showEdit && <EditClientModal editing={editing} clients={clients} onClose={()=>{setShowEdit(false); load();}}/>}
+      {showEdit && <EditClientModal editing={editing} clients={clients} onClose={()=>{setShowEdit(false); load(true);}}/>}
       {showTasks && <ClientTasksModal client={showTasks} onClose={()=>setShowTasks(null)}/>}
       {showNotes && <ClientNotesModal client={showNotes} onClose={()=>setShowNotes(null)}/>}
       {showFolders && <ClientFoldersModal client={showFolders} onClose={()=>setShowFolders(null)}/>}

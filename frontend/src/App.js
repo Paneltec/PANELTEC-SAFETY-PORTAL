@@ -1137,20 +1137,33 @@ function EditMemberModal({ editing, onClose }) {
     client_ids: [], skills: [], is_manager: false, license_allocated: false,
   };
   const [w, setW] = useState(() => buildInitial(editing));
-  const [clients, setClients] = useState([]);
+  // Use module-level cache if available (set by Clients page or previous open)
+  const [clients, setClients] = useState(window.__paneltec_clients_cache || []);
   const [clientSearch, setClientSearch] = useState("");
+  const [clientLimit, setClientLimit] = useState(100); // only render first 100 + selected ones
   const [skills, setSkills] = useState([]);
   const [skillInput, setSkillInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [importingClients, setImportingClients] = useState(false);
   const [importResult, setImportResult] = useState(null);
 
-  // Reload state whenever a different worker is opened
   useEffect(() => {
     setW(buildInitial(editing));
   }, [editing?.id]);
 
-  const loadClients = () => api.get("/clients").then(r => setClients(r.data));
+  const loadClients = (force = false) => {
+    const cache = window.__paneltec_clients_cache;
+    const cacheAt = window.__paneltec_clients_cache_at || 0;
+    if (!force && cache && (Date.now() - cacheAt) < 60000) {
+      setClients(cache);
+      return Promise.resolve();
+    }
+    return api.get("/clients").then(r => {
+      window.__paneltec_clients_cache = r.data;
+      window.__paneltec_clients_cache_at = Date.now();
+      setClients(r.data);
+    });
+  };
 
   useEffect(() => {
     loadClients();
@@ -1182,6 +1195,13 @@ function EditMemberModal({ editing, onClose }) {
     setW({ ...w, client_ids: allSelected ? cur.filter(x=>!allIds.includes(x)) : Array.from(new Set([...cur, ...allIds])) });
   };
   const filteredClients = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+  // Always show selected clients + first N matching (capped for performance)
+  const selectedIds = new Set(w.client_ids || []);
+  const visibleClients = (() => {
+    const selectedRows = filteredClients.filter(c => selectedIds.has(c.id));
+    const otherRows = filteredClients.filter(c => !selectedIds.has(c.id)).slice(0, clientLimit);
+    return [...selectedRows, ...otherRows];
+  })();
 
   const addSkill = (s) => {
     if (!s || (w.skills||[]).includes(s)) return;
@@ -1314,17 +1334,22 @@ function EditMemberModal({ editing, onClose }) {
               </button>
             </div>
             <div className="border rounded max-h-56 overflow-y-auto bg-slate-50">
-              <label className="flex items-center gap-2 px-3 py-2 hover:bg-white border-b font-bold cursor-pointer">
+              <label className="flex items-center gap-2 px-3 py-2 hover:bg-white border-b font-bold cursor-pointer sticky top-0 bg-slate-100 z-10">
                 <input type="checkbox" checked={filteredClients.length>0 && filteredClients.every(c=>(w.client_ids||[]).includes(c.id))} onChange={toggleAllClients} className="w-4 h-4 accent-blue-500"/>
                 Select/Unselect All ({filteredClients.length})
               </label>
-              {filteredClients.map(c => (
+              {visibleClients.map(c => (
                 <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-white cursor-pointer border-b last:border-0 font-semibold">
                   <input type="checkbox" checked={(w.client_ids||[]).includes(c.id)} onChange={()=>toggleClient(c.id)} className="w-4 h-4 accent-blue-500"/>
                   <span className="flex-1">{c.name}</span>
                   {c.source === "simpro" && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">SIMPRO</span>}
                 </label>
               ))}
+              {filteredClients.length > visibleClients.length && (
+                <button type="button" onClick={()=>setClientLimit(l=>l+200)} className="w-full py-2 text-xs font-bold text-amber-700 hover:bg-amber-50 border-t">
+                  Show {Math.min(200, filteredClients.length - visibleClients.length)} more ({filteredClients.length - visibleClients.length} remaining)
+                </button>
+              )}
               {filteredClients.length === 0 && <div className="text-center py-4 text-sm text-slate-400">No clients match.</div>}
             </div>
           </div>
