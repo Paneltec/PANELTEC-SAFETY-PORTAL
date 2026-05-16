@@ -6,6 +6,10 @@ import NotesPage from "./pages/Notes";
 import TasksPage from "./pages/Tasks";
 import IntegrationsPage from "./pages/Integrations";
 import {
+  ProjectBookingPage, AllocationPage, PersonnelRequiredPage,
+  ListPage, TimeSheetPage, GroupTimeSheetPage, LeaveRequestsPage, FilesPage
+} from "./pages/Placeholders";
+import {
   LayoutDashboard, FileText, ClipboardList, Users, MapPin, Award,
   Sparkles, LogOut, Plus, Trash2, Edit3, Save, X, AlertTriangle,
   CheckCircle2, Camera, MapPinned, PenLine, Eye, ShieldCheck, HardHat,
@@ -3588,8 +3592,16 @@ function App() {
     { id: "chat", label: "Chat", icon: MessageSquare },
     { id: "workers", label: "Workers", icon: Users },
     { id: "clients", label: "Clients", icon: Briefcase },
+    { id: "project_booking", label: "Project Booking", icon: Calendar },
+    { id: "allocation", label: "Allocation", icon: ListChecks },
+    { id: "personnel_required", label: "Personnel Required", icon: UserCircle2 },
     { id: "tasks", label: "Tasks", icon: ListChecks },
     { id: "notes", label: "Notes", icon: StickyNote },
+    { id: "list", label: "List", icon: ClipboardList },
+    { id: "time_sheet", label: "Time Sheet", icon: Clock },
+    { id: "group_time_sheet", label: "Group Time Sheet", icon: Users },
+    { id: "leave_requests", label: "Leave Requests", icon: Calendar },
+    { id: "files", label: "Files", icon: Folder },
     { id: "locations", label: "Job Sites", icon: MapPin },
     { id: "certifications", label: "Certifications", icon: Award },
     { id: "documents", label: "Documents", icon: BookOpen },
@@ -3651,6 +3663,14 @@ function App() {
         {view === "certifications" && <Certifications/>}
         {view === "documents" && <DocumentLibrary/>}
         {view === "integrations" && <IntegrationsPage/>}
+        {view === "project_booking" && <ProjectBookingPage/>}
+        {view === "allocation" && <AllocationPage/>}
+        {view === "personnel_required" && <PersonnelRequiredPage/>}
+        {view === "list" && <ListPage/>}
+        {view === "time_sheet" && <TimeSheetPage/>}
+        {view === "group_time_sheet" && <GroupTimeSheetPage/>}
+        {view === "leave_requests" && <LeaveRequestsPage/>}
+        {view === "files" && <FilesPage/>}
         {view === "settings" && <SettingsPage user={user}/>}
       </main>
 
