@@ -392,27 +392,75 @@ function Templates({ user, onFill }) {
   const [tpls, setTpls] = useState([]);
   const [showBuilder, setShowBuilder] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [showAI, setShowAI] = useState(false);
+  const [phonePreview, setPhonePreview] = useState(null);
+  const [seeding, setSeeding] = useState(false);
+  const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const load = () => api.get("/forms/templates").then(r => setTpls(r.data));
   useEffect(() => { load(); }, []);
+
+  const seedCivilLibrary = async () => {
+    setSeeding(true);
+    try {
+      const { data } = await api.post("/forms/templates/seed-civil-library");
+      alert(`✓ Imported ${data.created} forms${data.skipped > 0 ? ` (${data.skipped} already existed)` : ''}`);
+      load();
+    } catch (e) { alert("Failed: " + (e?.response?.data?.detail || e.message)); }
+    setSeeding(false);
+  };
+
+  const filtered = tpls.filter(t => {
+    if (categoryFilter !== "all" && t.category !== categoryFilter) return false;
+    if (search && !`${t.name} ${t.description||""}`.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   return (
     <div className="p-6 lg:p-8 fadein">
       <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
         <div>
           <h1 className="text-3xl font-black text-slate-900">Form Templates</h1>
-          <p className="text-slate-500 mt-1">Choose a form to fill, or build your own</p>
+          <p className="text-slate-500 mt-1">Choose a form to fill, build your own, or generate with AI</p>
         </div>
         {user.role === "admin" && (
-          <button onClick={()=>{setEditing(null); setShowBuilder(true);}}
-            className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2"
-            data-testid="new-template-btn">
-            <Plus className="w-4 h-4"/>New Template
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={seedCivilLibrary} disabled={seeding}
+              className="px-4 py-2.5 bg-white border-2 border-slate-200 hover:border-amber-400 text-slate-700 font-bold rounded-lg flex items-center gap-2 disabled:opacity-50"
+              data-testid="seed-library-btn">
+              {seeding ? <Loader2 className="w-4 h-4 animate-spin"/> : <Download className="w-4 h-4"/>}Import Civil Library
+            </button>
+            <button onClick={()=>setShowAI(true)}
+              className="px-4 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-lg flex items-center gap-2"
+              data-testid="ai-builder-btn">
+              <Sparkles className="w-4 h-4"/>Build with AI
+            </button>
+            <button onClick={()=>{setEditing(null); setShowBuilder(true);}}
+              className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2"
+              data-testid="new-template-btn">
+              <Plus className="w-4 h-4"/>New Template
+            </button>
+          </div>
         )}
       </div>
 
+      <div className="flex gap-2 mb-4 flex-wrap">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400"/>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search forms..." className="w-full pl-9 pr-3 py-2.5 border rounded-lg bg-white text-sm"/>
+        </div>
+        <select value={categoryFilter} onChange={e=>setCategoryFilter(e.target.value)} className="px-3 py-2.5 border rounded-lg bg-white text-sm">
+          <option value="all">All categories ({tpls.length})</option>
+          <option value="incident">Incident</option>
+          <option value="near_miss">Near Miss</option>
+          <option value="inspection">Inspection</option>
+          <option value="toolbox">Toolbox</option>
+          <option value="general">General</option>
+        </select>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {tpls.map((t) => {
+        {filtered.map((t) => {
           const meta = CATEGORY_META[t.category] || CATEGORY_META.general;
           return (
             <div key={t.id} className="bg-white rounded-2xl p-5 border card-hover">
@@ -420,24 +468,256 @@ function Templates({ user, onFill }) {
                 <div className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${meta.color}`}>{meta.label}</div>
                 {user.role === "admin" && (
                   <div className="flex gap-1">
-                    <button onClick={()=>{setEditing(t); setShowBuilder(true);}} className="p-1.5 hover:bg-slate-100 rounded"><Edit3 className="w-4 h-4 text-slate-500"/></button>
+                    <button onClick={()=>setPhonePreview(t)} className="p-1.5 hover:bg-blue-50 rounded" title="Preview on phone" data-testid={`preview-${t.id}`}>
+                      <Smartphone className="w-4 h-4 text-blue-500"/>
+                    </button>
+                    <button onClick={()=>{setEditing(t); setShowBuilder(true);}} className="p-1.5 hover:bg-slate-100 rounded" title="Edit"><Edit3 className="w-4 h-4 text-slate-500"/></button>
                     <button onClick={async()=>{ if (window.confirm("Delete template?")) { await api.delete(`/forms/templates/${t.id}`); load(); }}}
-                      className="p-1.5 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4 text-red-500"/></button>
+                      className="p-1.5 hover:bg-red-50 rounded" title="Delete"><Trash2 className="w-4 h-4 text-red-500"/></button>
                   </div>
                 )}
               </div>
               <h3 className="text-lg font-bold text-slate-900 mt-3">{t.name}</h3>
               <p className="text-sm text-slate-500 mt-1 line-clamp-2">{t.description}</p>
               <div className="text-xs text-slate-400 mt-3">{t.fields?.length || 0} fields</div>
-              <button onClick={()=>onFill(t)} className="mt-4 w-full py-2.5 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 flex items-center justify-center gap-2" data-testid={`fill-${t.id}`}>
-                <PenLine className="w-4 h-4"/>Fill This Form
-              </button>
+              <div className="flex gap-2 mt-4">
+                <button onClick={()=>setPhonePreview(t)} className="px-3 py-2.5 bg-white border-2 border-blue-200 hover:bg-blue-50 text-blue-600 font-semibold rounded-lg flex items-center justify-center gap-1.5 text-sm" title="See on phone">
+                  <Smartphone className="w-4 h-4"/>Preview
+                </button>
+                <button onClick={()=>onFill(t)} className="flex-1 py-2.5 bg-slate-900 text-white font-semibold rounded-lg hover:bg-slate-800 flex items-center justify-center gap-2" data-testid={`fill-${t.id}`}>
+                  <PenLine className="w-4 h-4"/>Fill This Form
+                </button>
+              </div>
             </div>
           );
         })}
       </div>
 
       {showBuilder && <TemplateBuilder editing={editing} onClose={()=>{setShowBuilder(false); load();}}/>}
+      {showAI && <AIFormBuilderModal onClose={()=>{setShowAI(false); load();}}/>}
+      {phonePreview && <PhonePreviewModal template={phonePreview} onClose={()=>setPhonePreview(null)}/>}
+    </div>
+  );
+}
+
+function AIFormBuilderModal({ onClose }) {
+  const [description, setDescription] = useState("");
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("inspection");
+  const [generating, setGenerating] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const generate = async () => {
+    setGenerating(true);
+    try {
+      const { data } = await api.post("/ai/generate-form", { description, name, category }, { timeout: 60000 });
+      if (data.ok) setPreview(data.template);
+      else alert("Failed: " + (data.error || "AI returned no template"));
+    } catch (e) { alert("Failed: " + (e?.response?.data?.detail || e.message)); }
+    setGenerating(false);
+  };
+
+  const save = async () => {
+    if (!preview) return;
+    setSaving(true);
+    try {
+      const tpl = {
+        id: crypto.randomUUID(),
+        name: preview.name || name,
+        description: preview.description,
+        category: preview.category || category,
+        fields: preview.fields || [],
+        is_private: false,
+        created_at: new Date().toISOString(),
+      };
+      await api.post("/forms/templates", tpl);
+      alert(`✓ Created "${tpl.name}" with ${tpl.fields.length} fields. You can edit it from the Forms page.`);
+      onClose();
+    } catch (e) { alert("Save failed: " + (e?.response?.data?.detail || e.message)); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-5 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold flex items-center gap-2"><Sparkles className="w-5 h-5"/>Build a Form with AI</h2>
+          <button onClick={onClose} className="hover:bg-white/20 rounded p-1"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          {!preview ? (
+            <>
+              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-sm text-purple-900">
+                <b>💡 Describe what the form is for</b> — AI will design the fields. Examples:
+                <ul className="list-disc ml-5 mt-1 text-xs">
+                  <li>"Pre-use inspection for a 20-tonne excavator"</li>
+                  <li>"Pump truck operator checklist before pouring concrete"</li>
+                  <li>"Site induction for new subcontractors"</li>
+                  <li>"Daily welding rod usage log"</li>
+                </ul>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Form Name (optional)</label>
+                <input value={name} onChange={e=>setName(e.target.value)} placeholder="Leave blank — AI will suggest" className="w-full px-3 py-2.5 border rounded-lg"/>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Category</label>
+                <select value={category} onChange={e=>setCategory(e.target.value)} className="w-full px-3 py-2.5 border rounded-lg">
+                  <option value="inspection">Inspection</option>
+                  <option value="incident">Incident</option>
+                  <option value="near_miss">Near Miss</option>
+                  <option value="toolbox">Toolbox</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Describe the form <span className="text-red-500">*</span></label>
+                <textarea value={description} onChange={e=>setDescription(e.target.value)} rows="5" placeholder="e.g. A pre-use inspection for a 20-tonne hydraulic excavator including tracks, bucket, hydraulics, cab, and safety devices. Used daily by operators before starting work." className="w-full px-3 py-2.5 border rounded-lg" data-testid="ai-desc-input"/>
+              </div>
+              <button onClick={generate} disabled={!description.trim() || generating} className="w-full py-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50" data-testid="ai-generate-btn">
+                {generating ? <Loader2 className="w-5 h-5 animate-spin"/> : <Sparkles className="w-5 h-5"/>}{generating ? "Generating form..." : "Generate Form with AI"}
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm">
+                <div className="font-bold text-emerald-900 mb-1">✓ AI Generated Preview</div>
+                <div><b>Name:</b> {preview.name}</div>
+                <div><b>Category:</b> {preview.category}</div>
+                <div><b>Fields:</b> {preview.fields?.length || 0}</div>
+                <div className="mt-1 italic">{preview.description}</div>
+              </div>
+              <div className="border rounded-lg overflow-hidden">
+                <div className="bg-slate-100 px-3 py-2 font-bold text-sm">Field List</div>
+                <div className="max-h-80 overflow-y-auto">
+                  {preview.fields?.map((f, i) => (
+                    <div key={i} className="px-3 py-2 border-b last:border-0 flex items-center gap-2 text-sm">
+                      <span className="text-slate-400 font-mono text-xs">{i+1}.</span>
+                      <span className="flex-1">{f.label}{f.required && <span className="text-red-500"> *</span>}</span>
+                      <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-mono">{f.type}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={()=>setPreview(null)} className="flex-1 py-2.5 border rounded-lg font-bold">← Try Again</button>
+                <button onClick={save} disabled={saving} className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50" data-testid="ai-save-btn">
+                  {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}Save Template
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhonePreviewModal({ template, onClose }) {
+  const meta = CATEGORY_META[template.category] || CATEGORY_META.general;
+  return (
+    <div className="fixed inset-0 bg-slate-900/80 z-50 flex items-center justify-center p-4 fadein">
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[95vh] overflow-hidden flex flex-col">
+        <div className="bg-slate-900 text-white px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Smartphone className="w-5 h-5 text-amber-400"/>
+            <div>
+              <div className="text-xs text-amber-400 font-bold tracking-widest">PHONE PREVIEW</div>
+              <div className="text-sm font-bold">{template.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="hover:bg-white/10 rounded p-1"><X className="w-5 h-5"/></button>
+        </div>
+
+        {/* Phone frame */}
+        <div className="bg-slate-100 flex-1 overflow-y-auto p-4">
+          <div className="mx-auto bg-black rounded-[2.5rem] p-2 shadow-2xl" style={{ maxWidth: "360px" }}>
+            <div className="bg-white rounded-[2rem] overflow-hidden">
+              {/* Notch */}
+              <div className="bg-black h-6 flex justify-center items-end pb-1">
+                <div className="w-20 h-1.5 bg-slate-700 rounded-full"/>
+              </div>
+              {/* Status bar */}
+              <div className="brand-grad-dark text-white px-4 py-2.5 flex items-center justify-between text-xs">
+                <span className="font-bold">9:41</span>
+                <span>📶 📶 🔋</span>
+              </div>
+              {/* Header */}
+              <div className="brand-grad-dark text-white px-3 py-3 flex items-center gap-2">
+                <button className="text-white"><ChevronLeft className="w-5 h-5"/></button>
+                <div className="flex-1 min-w-0">
+                  <div className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold border ${meta.color}`}>{meta.label}</div>
+                  <div className="font-bold text-sm truncate">{template.name}</div>
+                </div>
+              </div>
+              {/* Form body */}
+              <div className="p-3 space-y-3 max-h-[60vh] overflow-y-auto bg-slate-50">
+                <div className="bg-white border rounded-lg p-3 text-xs space-y-2">
+                  <div>
+                    <label className="font-bold block mb-1">Job Site</label>
+                    <select disabled className="w-full px-2 py-2 border rounded text-xs bg-slate-50">
+                      <option>— Select job site —</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="font-bold block mb-1">Worker</label>
+                    <select disabled className="w-full px-2 py-2 border rounded text-xs bg-slate-50">
+                      <option>— Select worker —</option>
+                    </select>
+                  </div>
+                </div>
+                {(template.fields || []).map((f, i) => (
+                  <div key={i} className="bg-white border rounded-lg p-3">
+                    <label className="font-bold text-sm block mb-1.5">{f.label}{f.required && <span className="text-red-500"> *</span>}</label>
+                    {f.type === "text" && <input disabled placeholder={f.placeholder} className="w-full px-2 py-2 border rounded text-xs bg-slate-50"/>}
+                    {f.type === "textarea" && <textarea disabled rows="2" placeholder={f.placeholder} className="w-full px-2 py-2 border rounded text-xs bg-slate-50"/>}
+                    {f.type === "number" && <input disabled type="number" placeholder={f.placeholder} className="w-full px-2 py-2 border rounded text-xs bg-slate-50"/>}
+                    {f.type === "date" && <input disabled type="date" className="w-full px-2 py-2 border rounded text-xs bg-slate-50"/>}
+                    {f.type === "select" && (
+                      <select disabled className="w-full px-2 py-2 border rounded text-xs bg-slate-50">
+                        <option>— Select —</option>
+                        {(f.options||[]).map(o => <option key={o}>{o}</option>)}
+                      </select>
+                    )}
+                    {f.type === "radio" && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(f.options||[]).map(o => (
+                          <span key={o} className="px-3 py-1.5 bg-slate-100 border rounded text-xs font-semibold">{o}</span>
+                        ))}
+                      </div>
+                    )}
+                    {f.type === "checkbox" && <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" disabled/>{f.placeholder || "Confirm"}</label>}
+                    {f.type === "photo" && (
+                      <div className="border-2 border-dashed rounded-lg p-3 text-center text-xs text-slate-500">
+                        <Camera className="w-5 h-5 mx-auto mb-1"/>Tap to add photos
+                      </div>
+                    )}
+                    {f.type === "signature" && (
+                      <div className="border-2 border-dashed rounded-lg h-20 flex items-center justify-center text-xs text-slate-400">
+                        Sign here
+                      </div>
+                    )}
+                    {f.type === "gps" && (
+                      <div className="text-xs text-emerald-600 flex items-center gap-1"><MapPinned className="w-3 h-3"/>GPS auto-captured</div>
+                    )}
+                  </div>
+                ))}
+                <div className="brand-grad text-black py-3 rounded-lg text-center font-black text-sm">
+                  ✓ Submit Form
+                </div>
+              </div>
+              {/* Home indicator */}
+              <div className="bg-white py-2 flex justify-center">
+                <div className="w-32 h-1 bg-black rounded-full"/>
+              </div>
+            </div>
+          </div>
+          <div className="text-center text-xs text-slate-500 mt-3">
+            This is how your workers will see this form on their phone
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

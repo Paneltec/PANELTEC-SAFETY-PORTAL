@@ -4845,6 +4845,474 @@ async def delete_leave_request(rid: str, user=Depends(get_current_user)):
 
 
 
+# ============== CIVIL CONTRACTOR FORM TEMPLATE LIBRARY ==============
+CIVIL_TEMPLATES = [
+    {
+        'name': 'Vehicle Pre-Use Inspection',
+        'category': 'inspection',
+        'description': 'Daily pre-use check of light vehicles, utes, and service trucks before driving.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Vehicle Registration', 'type': 'text', 'required': True, 'placeholder': 'e.g. 1AB-2CD'},
+            {'label': 'Vehicle Type', 'type': 'select', 'required': True,
+             'options': ['Ute', 'Service Truck', 'Tipper', 'Vacuum Truck', 'Heavy Truck', 'Crane Truck', 'Other']},
+            {'label': 'Odometer Reading (km)', 'type': 'number', 'required': True},
+            {'label': 'Tyres — Tread & Pressure OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Brakes (foot & park) Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Lights (head/tail/indicators/brake) Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Windscreen & Mirrors OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Wipers & Washers Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Horn Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Seatbelts Functional?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Oil / Coolant / Fuel Levels OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Load Properly Secured?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'First Aid Kit & Fire Extinguisher Present?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Damage / Defects Noted', 'type': 'textarea', 'placeholder': 'Describe any damage, scratches, dents, defects'},
+            {'label': 'Photo of Vehicle / Defects', 'type': 'photo'},
+            {'label': 'GPS Location', 'type': 'gps'},
+            {'label': 'Driver Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Plant Pre-Start Checklist (Heavy Equipment)',
+        'category': 'inspection',
+        'description': 'Daily pre-start inspection for excavators, bulldozers, compactors, loaders, and graders.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Plant Type', 'type': 'select', 'required': True,
+             'options': ['Excavator', 'Bulldozer', 'Compactor', 'Loader', 'Grader', 'Backhoe', 'Skid Steer', 'Crane', 'Other']},
+            {'label': 'Plant Make & Model', 'type': 'text', 'required': True},
+            {'label': 'Plant Serial / Fleet #', 'type': 'text', 'required': True},
+            {'label': 'Hour Meter Reading', 'type': 'number', 'required': True},
+            {'label': 'Fluid Levels (oil, fuel, hydraulic, coolant) OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Hydraulic Hoses & Fittings — No Leaks?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Tracks / Tyres Condition', 'type': 'radio', 'required': True, 'options': ['Good', 'Fair', 'Poor']},
+            {'label': 'Greasing Points Lubricated?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Buckets / Attachments Secure?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Reverse Beeper & Horn Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Lights & Beacons Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Mirrors / Cameras OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Cabin Clean & Seatbelt Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Fire Extinguisher Present & Tagged?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'ROPS / FOPS Structure Sound?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Emergency Stop Functional?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Operator Licensed for this Plant?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Defects Found / Action Taken', 'type': 'textarea'},
+            {'label': 'Photo of Plant', 'type': 'photo'},
+            {'label': 'Operator Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Heavy Vehicle Daily Check',
+        'category': 'inspection',
+        'description': 'Daily check for heavy vehicles — dump trucks, tippers, semi-trailers.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Vehicle Rego', 'type': 'text', 'required': True},
+            {'label': 'Vehicle Type', 'type': 'select', 'options': ['Tipper', 'Dump Truck', 'Semi-Trailer', 'Crane Truck', 'Vacuum Truck', 'Other']},
+            {'label': 'Odometer (km)', 'type': 'number', 'required': True},
+            {'label': 'Fuel Level OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Tyres — Tread, Pressure, Damage', 'type': 'radio', 'required': True, 'options': ['All OK', 'Defects — Note Below']},
+            {'label': 'Brakes (incl. trailer brakes)', 'type': 'radio', 'required': True, 'options': ['OK', 'Defective']},
+            {'label': 'Lights All Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Load Secured (chains/straps)?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Body / Trailer Locks Engaged?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Reflectors & Mud Flaps OK?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Reverse Camera & Beeper Working?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Logbook / Work Diary Up To Date?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Driver Fatigue Status', 'type': 'radio', 'required': True, 'options': ['Fit for duty', 'Fatigued - Reporting', 'Other']},
+            {'label': 'Defects / Notes', 'type': 'textarea'},
+            {'label': 'Photo', 'type': 'photo'},
+            {'label': 'Driver Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'JSEA — Job Safety & Environmental Analysis',
+        'category': 'inspection',
+        'description': 'Pre-task safety analysis identifying hazards, controls, and PPE for the activity.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Job / Task Description', 'type': 'textarea', 'required': True, 'placeholder': 'e.g. Excavate 1.5m deep trench for water main'},
+            {'label': 'Location / Site', 'type': 'text', 'required': True},
+            {'label': 'Supervisor', 'type': 'text', 'required': True},
+            {'label': 'Step 1 — Activity', 'type': 'text', 'placeholder': 'Setup & site induction'},
+            {'label': 'Step 1 — Hazards', 'type': 'textarea'},
+            {'label': 'Step 1 — Controls', 'type': 'textarea'},
+            {'label': 'Step 2 — Activity', 'type': 'text'},
+            {'label': 'Step 2 — Hazards', 'type': 'textarea'},
+            {'label': 'Step 2 — Controls', 'type': 'textarea'},
+            {'label': 'Step 3 — Activity', 'type': 'text'},
+            {'label': 'Step 3 — Hazards', 'type': 'textarea'},
+            {'label': 'Step 3 — Controls', 'type': 'textarea'},
+            {'label': 'PPE Required', 'type': 'textarea', 'placeholder': 'Hard hat, hi-vis, boots, glasses, gloves, hearing'},
+            {'label': 'High Risk Construction Work?', 'type': 'radio', 'required': True, 'options': ['Yes — SWMS required', 'No']},
+            {'label': 'Environmental Impacts Considered?', 'type': 'radio', 'options': ['Yes', 'No', 'N/A']},
+            {'label': 'Emergency Procedure Briefed?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No']},
+            {'label': 'Site Photo', 'type': 'photo'},
+            {'label': 'Supervisor Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'SWMS Sign-On',
+        'category': 'inspection',
+        'description': 'Workers sign on to acknowledge they have read and understood the Safe Work Method Statement.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'SWMS Reference / Title', 'type': 'text', 'required': True},
+            {'label': 'SWMS Revision Number', 'type': 'text'},
+            {'label': 'Site / Location', 'type': 'text', 'required': True},
+            {'label': 'Worker Name', 'type': 'text', 'required': True},
+            {'label': 'Position / Trade', 'type': 'text'},
+            {'label': 'I have read and understood this SWMS', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'I understand the hazards & controls', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'I have the required tickets/licences', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'I will report any new hazards', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Comments / Questions', 'type': 'textarea'},
+            {'label': 'Worker Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Toolbox Talk Attendance',
+        'category': 'toolbox',
+        'description': 'Daily toolbox talk record with topic, key points, and crew sign-on.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Time', 'type': 'text', 'placeholder': '07:00'},
+            {'label': 'Site / Location', 'type': 'text', 'required': True},
+            {'label': 'Topic Discussed', 'type': 'text', 'required': True, 'placeholder': 'e.g. Working safely around excavators'},
+            {'label': 'Key Points Covered', 'type': 'textarea', 'required': True},
+            {'label': 'Number of Attendees', 'type': 'number', 'required': True},
+            {'label': 'Attendees (names)', 'type': 'textarea', 'required': True, 'placeholder': 'List worker names'},
+            {'label': 'Questions / Concerns Raised', 'type': 'textarea'},
+            {'label': 'Actions Required', 'type': 'textarea'},
+            {'label': 'Group Photo (optional)', 'type': 'photo'},
+            {'label': 'GPS Location', 'type': 'gps'},
+            {'label': 'Foreman / Supervisor Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Hot Work Permit',
+        'category': 'inspection',
+        'description': 'Permit required before welding, cutting, grinding, or other hot work.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Valid From (time)', 'type': 'text', 'required': True, 'placeholder': '08:00'},
+            {'label': 'Valid Until (time)', 'type': 'text', 'required': True, 'placeholder': '16:00'},
+            {'label': 'Location of Hot Work', 'type': 'text', 'required': True},
+            {'label': 'Type of Hot Work', 'type': 'select', 'required': True,
+             'options': ['Welding', 'Oxy-cutting', 'Grinding', 'Brazing', 'Soldering', 'Other']},
+            {'label': 'Combustibles removed within 11m radius?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Fire extinguisher (≥4.5kg) within 5m?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Fire watch assigned?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Fire watch will remain 60 min post-work?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Hot work area screened from public?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'SDS reviewed for materials being cut?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'PPE inspected (welding helmet, leather, gloves)?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Atmosphere tested (if confined space)?', 'type': 'radio', 'options': ['Yes', 'N/A']},
+            {'label': 'Issued to (Worker Name)', 'type': 'text', 'required': True},
+            {'label': 'Fire Watch Name', 'type': 'text', 'required': True},
+            {'label': 'Photo of Work Area', 'type': 'photo'},
+            {'label': 'Permit Holder Signature', 'type': 'signature', 'required': True},
+            {'label': 'Permit Issuer Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Confined Space Entry Permit',
+        'category': 'inspection',
+        'description': 'Permit required before entering any confined space (tanks, vaults, pits, trenches >1.5m).',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Valid From (time)', 'type': 'text', 'required': True},
+            {'label': 'Valid Until (time)', 'type': 'text', 'required': True},
+            {'label': 'Confined Space Location', 'type': 'text', 'required': True},
+            {'label': 'Description of Space', 'type': 'textarea', 'required': True},
+            {'label': 'Purpose of Entry', 'type': 'text', 'required': True},
+            {'label': 'Atmospheric Test — Oxygen (%)', 'type': 'number', 'required': True, 'placeholder': '19.5 - 23.5'},
+            {'label': 'Atmospheric Test — LEL (%)', 'type': 'number', 'required': True, 'placeholder': '<10'},
+            {'label': 'Atmospheric Test — H₂S (ppm)', 'type': 'number', 'required': True, 'placeholder': '<10'},
+            {'label': 'Atmospheric Test — CO (ppm)', 'type': 'number', 'required': True, 'placeholder': '<30'},
+            {'label': 'Gas Detector Calibrated?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Continuous Monitoring in Place?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Stand-by Person Posted?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Rescue Tripod & Harness in Place?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Communication Means (radio, voice)?', 'type': 'text', 'required': True},
+            {'label': 'Lockout/Tagout Applied?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Ventilation In Place?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Entrants (Names)', 'type': 'textarea', 'required': True},
+            {'label': 'Stand-by Person (Name)', 'type': 'text', 'required': True},
+            {'label': 'Photo of Space', 'type': 'photo'},
+            {'label': 'Authorised Entrant Signature', 'type': 'signature', 'required': True},
+            {'label': 'Permit Issuer Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Working at Heights Permit',
+        'category': 'inspection',
+        'description': 'Required for any work >2m above ground/lower level.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Valid From (time)', 'type': 'text', 'required': True},
+            {'label': 'Valid Until (time)', 'type': 'text', 'required': True},
+            {'label': 'Work Location', 'type': 'text', 'required': True},
+            {'label': 'Approximate Height (m)', 'type': 'number', 'required': True},
+            {'label': 'Description of Work', 'type': 'textarea', 'required': True},
+            {'label': 'Means of Access', 'type': 'select', 'required': True,
+             'options': ['Scaffold', 'EWP / Cherry Picker', 'Ladder', 'Roof', 'Rope Access', 'Other']},
+            {'label': 'Scaffold Inspected & Tagged Green?', 'type': 'radio', 'options': ['Yes', 'N/A']},
+            {'label': 'Edge Protection Installed?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Harness & Lanyard Inspected?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Anchor Points Verified (Rated 15kN)?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Worker has Working at Heights Ticket?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Rescue Plan in Place?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Tools Tethered?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Exclusion Zone Below?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Weather Conditions Suitable?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No - Postpone']},
+            {'label': 'Worker(s) Name', 'type': 'text', 'required': True},
+            {'label': 'Photo of Work Setup', 'type': 'photo'},
+            {'label': 'Worker Signature', 'type': 'signature', 'required': True},
+            {'label': 'Supervisor Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Excavation / Trench Permit',
+        'category': 'inspection',
+        'description': 'Permit for excavations and trenches before digging starts.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Valid From (time)', 'type': 'text', 'required': True},
+            {'label': 'Valid Until (time)', 'type': 'text', 'required': True},
+            {'label': 'Excavation Location', 'type': 'text', 'required': True},
+            {'label': 'Planned Depth (m)', 'type': 'number', 'required': True},
+            {'label': 'Planned Width (m)', 'type': 'number'},
+            {'label': 'Planned Length (m)', 'type': 'number'},
+            {'label': 'Dial Before You Dig (DBYD) ref #', 'type': 'text', 'required': True, 'placeholder': 'e.g. 12345678'},
+            {'label': 'Underground Services Located by Vacuum Excavation?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Services Marked on Surface?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Shoring / Benching Required?', 'type': 'radio', 'required': True, 'options': ['Shoring', 'Benching', 'Battering', 'Not required (<1.2m)']},
+            {'label': 'Edge Protection / Barriers in Place?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Safe Access/Egress every 7.5m?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Spoil Stockpiled >1m from Edge?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Spotter for Plant Required?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Competent Person Inspection Scheduled Daily?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Asbestos / Contaminated Soil Risk?', 'type': 'radio', 'required': True, 'options': ['No', 'Yes — refer Project Manager']},
+            {'label': 'Emergency Rescue Plan Briefed?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Photo of Excavation Setup', 'type': 'photo'},
+            {'label': 'Excavator Operator Signature', 'type': 'signature', 'required': True},
+            {'label': 'Permit Issuer Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Drug & Alcohol Test Record',
+        'category': 'general',
+        'description': 'Recording of breath/saliva test for drugs and alcohol — pre-employment, random, post-incident.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Time of Test', 'type': 'text', 'required': True},
+            {'label': 'Worker Name', 'type': 'text', 'required': True},
+            {'label': 'Test Reason', 'type': 'select', 'required': True,
+             'options': ['Pre-employment', 'Random', 'Post-incident', 'For-cause', 'Return to work']},
+            {'label': 'Type of Test', 'type': 'select', 'required': True,
+             'options': ['Breath (Alcohol)', 'Saliva (Drugs)', 'Urine (Drugs)']},
+            {'label': 'Tester Name', 'type': 'text', 'required': True},
+            {'label': 'Tester is Trained / Certified?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Alcohol Reading (BAC)', 'type': 'text', 'placeholder': '0.000'},
+            {'label': 'Drug Test Result', 'type': 'select',
+             'options': ['Negative', 'Non-Negative (refer lab)', 'N/A']},
+            {'label': 'Result', 'type': 'radio', 'required': True,
+             'options': ['Pass', 'Fail — Stood Down', 'Refer to Lab']},
+            {'label': 'Comments', 'type': 'textarea'},
+            {'label': 'Worker Signature (Consent)', 'type': 'signature', 'required': True},
+            {'label': 'Tester Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Site Sign-In / Visitor Register',
+        'category': 'general',
+        'description': 'Sign-in for visitors and workers arriving on site.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Sign In Time', 'type': 'text', 'required': True},
+            {'label': 'Full Name', 'type': 'text', 'required': True},
+            {'label': 'Company', 'type': 'text', 'required': True},
+            {'label': 'Phone Number', 'type': 'text', 'required': True},
+            {'label': 'Visiting / Working With', 'type': 'text'},
+            {'label': 'Purpose of Visit', 'type': 'textarea'},
+            {'label': 'Site Induction Completed?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No — Induct Now']},
+            {'label': 'White Card / Construction Induction Card?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No', 'N/A — Visitor only']},
+            {'label': 'PPE Issued / Verified?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Emergency Procedure Briefed?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Vehicle Rego (if applicable)', 'type': 'text'},
+            {'label': 'GPS Location', 'type': 'gps'},
+            {'label': 'Visitor Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'End of Day Site Sign-Off',
+        'category': 'general',
+        'description': 'Sign-off at end of shift documenting site condition handover.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Sign Off Time', 'type': 'text', 'required': True},
+            {'label': 'Worker Name', 'type': 'text', 'required': True},
+            {'label': 'Site / Location', 'type': 'text', 'required': True},
+            {'label': 'Hours Worked', 'type': 'number'},
+            {'label': 'Tasks Completed Today', 'type': 'textarea', 'required': True},
+            {'label': 'Tasks Outstanding for Tomorrow', 'type': 'textarea'},
+            {'label': 'Plant / Equipment Made Safe (parked, locked)?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Excavations Secured (covered/fenced)?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Traffic Control Equipment Removed/Set?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Site Tidied / Rubbish Removed?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Tools & Materials Secured?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Any Near Misses or Incidents Today?', 'type': 'radio', 'required': True, 'options': ['No', 'Yes — Report Filed']},
+            {'label': 'Fatigue Status', 'type': 'radio', 'required': True, 'options': ['OK', 'Fatigued — Reporting']},
+            {'label': 'Notes / Handover', 'type': 'textarea'},
+            {'label': 'End of Day Photo', 'type': 'photo'},
+            {'label': 'Worker Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Crane Lift / Rigging Plan',
+        'category': 'inspection',
+        'description': 'Pre-lift checklist for crane operations.',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Crane Type & Capacity', 'type': 'text', 'required': True},
+            {'label': 'Load Weight (kg)', 'type': 'number', 'required': True},
+            {'label': 'Load Description', 'type': 'text', 'required': True},
+            {'label': 'Lift Radius (m)', 'type': 'number', 'required': True},
+            {'label': 'Load is within Crane Capacity at this Radius?', 'type': 'radio', 'required': True, 'options': ['Yes — verified on chart']},
+            {'label': 'Crane Operator HRWL # ', 'type': 'text', 'required': True},
+            {'label': 'Dogger / Rigger Present?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Slings / Chains Tagged & Inspected?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Outriggers Fully Deployed on Stable Ground?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Overhead Powerlines Identified & Cleared?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Wind Speed (km/h)', 'type': 'number'},
+            {'label': 'Exclusion Zone Established?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Communication Method (radio, hand signals)?', 'type': 'text', 'required': True},
+            {'label': 'Tag Lines in Use?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A']},
+            {'label': 'Photo of Lift Setup', 'type': 'photo'},
+            {'label': 'Crane Operator Signature', 'type': 'signature', 'required': True},
+            {'label': 'Dogger Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+    {
+        'name': 'Asbestos Awareness / Class B Removal',
+        'category': 'inspection',
+        'description': 'Pre-work checklist for Class B asbestos removal (non-friable bonded asbestos).',
+        'fields': [
+            {'label': 'Date', 'type': 'date', 'required': True},
+            {'label': 'Location of Asbestos', 'type': 'text', 'required': True},
+            {'label': 'Type of ACM (e.g. AC pipe, cement sheet)', 'type': 'text', 'required': True},
+            {'label': 'Estimated Quantity (m² or m)', 'type': 'number', 'required': True},
+            {'label': 'Asbestos Register Reviewed?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'WHS Notification Submitted (>10m²)?', 'type': 'radio', 'required': True, 'options': ['Yes', 'N/A — <10m²']},
+            {'label': 'Class B Removalist Licensed?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'PPE: P2 Respirator + Disposable Coveralls?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Wetting Down / Suppression in Place?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Decontamination Area Set Up?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Waste Wrapped in 200μm Plastic + Labelled?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Air Monitoring Required?', 'type': 'radio', 'required': True, 'options': ['Yes', 'No — Class B exempt']},
+            {'label': 'Exclusion Zone Established?', 'type': 'radio', 'required': True, 'options': ['Yes']},
+            {'label': 'Removalist Names', 'type': 'textarea', 'required': True},
+            {'label': 'Photos of Work Area', 'type': 'photo'},
+            {'label': 'Supervisor Signature', 'type': 'signature', 'required': True},
+        ],
+    },
+]
+
+@api_router.post('/forms/templates/seed-civil-library')
+async def seed_civil_forms(user=Depends(require_admin)):
+    """Seed the 14 civil contractor form templates."""
+    created = []
+    skipped = []
+    for tpl_data in CIVIL_TEMPLATES:
+        existing = await db.form_templates.find_one({'name': tpl_data['name']}, {'_id': 0})
+        if existing:
+            skipped.append(tpl_data['name'])
+            continue
+        fields_with_ids = [{'id': f'f{i+1}', **f} for i, f in enumerate(tpl_data['fields'])]
+        tpl = FormTemplate(
+            name=tpl_data['name'],
+            description=tpl_data['description'],
+            category=tpl_data['category'],
+            fields=fields_with_ids,
+            is_private=False,
+        ).model_dump()
+        await db.form_templates.insert_one(tpl)
+        created.append(tpl_data['name'])
+    return {'ok': True, 'created': len(created), 'skipped': len(skipped),
+            'created_names': created, 'skipped_names': skipped}
+
+# ============== AI FORM BUILDER ==============
+class AIFormGenIn(BaseModel):
+    description: str
+    name: Optional[str] = None
+    category: str = 'general'
+
+@api_router.post('/ai/generate-form')
+async def ai_generate_form(body: AIFormGenIn, user=Depends(require_admin)):
+    """Use AI to generate a form template from a natural language description."""
+    prompt = f"""Generate a civil contractor safety form for the following purpose:
+
+Description: {body.description}
+{f'Form Name: {body.name}' if body.name else ''}
+Category: {body.category}
+
+Return ONLY valid JSON (no markdown, no commentary) with this structure:
+{{
+  "name": "form name",
+  "description": "1-sentence description",
+  "category": "inspection|incident|near_miss|toolbox|general",
+  "fields": [
+    {{"label": "Field label", "type": "text|textarea|number|date|select|radio|checkbox|signature|photo|gps", "required": true_or_false, "options": ["opt1","opt2"], "placeholder": "optional hint"}}
+  ]
+}}
+
+Field types available:
+- text: short single-line input
+- textarea: multi-line free text
+- number: numeric input
+- date: date picker
+- select: dropdown (provide options array)
+- radio: tap-to-select buttons (use for Yes/No/N/A — provide options array)
+- checkbox: single boolean tickbox
+- signature: signature pad
+- photo: photo upload (mobile camera)
+- gps: auto-captures GPS location
+
+Best practices:
+- Start with Date field
+- Use radio with ["Yes", "No"] or ["Yes", "No", "N/A"] for inspection checks
+- Use select for multi-choice (with 'options')
+- Include photo upload for evidence
+- End with signature field
+- 8-20 fields typically
+- Make required: true for safety-critical items"""
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"form-gen-{uuid.uuid4()}",
+            system_message="You are a WHS/civil-contractor safety expert generating digital safety forms. Output only valid JSON, no commentary or markdown fences."
+        ).with_model('openai', 'gpt-4o-mini')
+        result = await chat.send_message(UserMessage(text=prompt))
+        raw = str(result).strip()
+        if raw.startswith('```'):
+            raw = raw.split('```', 2)[1]
+            if raw.startswith('json'): raw = raw[4:]
+            raw = raw.strip()
+        data = json.loads(raw)
+        # Add field IDs
+        if 'fields' in data:
+            data['fields'] = [{'id': f'f{i+1}', **f} for i, f in enumerate(data['fields'])]
+        return {'ok': True, 'template': data}
+    except Exception as e:
+        logger.error(f"AI form gen error: {e}")
+        return {'ok': False, 'error': str(e)[:200]}
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}
