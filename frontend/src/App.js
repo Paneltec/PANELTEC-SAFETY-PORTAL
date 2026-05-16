@@ -227,14 +227,14 @@ function Dashboard({ goTo }) {
   ];
 
   const kpiCards = [
-    { label: "Total Submissions", value: k.total_submissions, icon: FileText, color: "from-slate-700 to-slate-900", text: "text-white" },
-    { label: "Incidents", value: k.incidents, icon: AlertTriangle, color: "from-red-500 to-red-700", text: "text-white" },
-    { label: "Near Misses", value: k.near_misses, icon: Zap, color: "from-orange-500 to-amber-600", text: "text-white" },
-    { label: "Inspections", value: k.inspections, icon: ShieldCheck, color: "from-blue-500 to-blue-700", text: "text-white" },
-    { label: "Toolbox Talks", value: k.toolbox_talks, icon: Users, color: "from-emerald-500 to-emerald-700", text: "text-white" },
-    { label: "Active Workers", value: k.workers, icon: HardHat, color: "from-amber-400 to-amber-600", text: "text-black" },
-    { label: "Job Sites", value: k.locations, icon: Building2, color: "from-purple-500 to-purple-700", text: "text-white" },
-    { label: "Certs Expiring", value: k.expiring_certs, icon: Award, color: "from-rose-500 to-rose-700", text: "text-white" },
+    { label: "Total Submissions", value: k.total_submissions, icon: FileText, color: "from-slate-700 to-slate-900", text: "text-white", target: "submissions", filter: "all" },
+    { label: "Incidents", value: k.incidents, icon: AlertTriangle, color: "from-red-500 to-red-700", text: "text-white", target: "submissions", filter: "incident" },
+    { label: "Near Misses", value: k.near_misses, icon: Zap, color: "from-orange-500 to-amber-600", text: "text-white", target: "submissions", filter: "near_miss" },
+    { label: "Inspections", value: k.inspections, icon: ShieldCheck, color: "from-blue-500 to-blue-700", text: "text-white", target: "submissions", filter: "inspection" },
+    { label: "Toolbox Talks", value: k.toolbox_talks, icon: Users, color: "from-emerald-500 to-emerald-700", text: "text-white", target: "submissions", filter: "toolbox" },
+    { label: "Active Workers", value: k.workers, icon: HardHat, color: "from-amber-400 to-amber-600", text: "text-black", target: "workers" },
+    { label: "Job Sites", value: k.locations, icon: Building2, color: "from-purple-500 to-purple-700", text: "text-white", target: "locations" },
+    { label: "Certs Expiring", value: k.expiring_certs, icon: Award, color: "from-rose-500 to-rose-700", text: "text-white", target: "certifications" },
   ];
 
   return (
@@ -252,13 +252,16 @@ function Dashboard({ goTo }) {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {kpiCards.map((c, i) => (
-          <div key={i} className={`bg-gradient-to-br ${c.color} ${c.text} rounded-2xl p-5 card-hover shadow-sm`}>
+          <button key={i} onClick={()=>goTo(c.target, c.filter)} type="button"
+            className={`bg-gradient-to-br ${c.color} ${c.text} rounded-2xl p-5 card-hover shadow-sm text-left active:scale-95 transition`}
+            data-testid={`kpi-${c.label.toLowerCase().replace(/\s+/g,'-')}`}>
             <div className="flex items-start justify-between">
               <c.icon className="w-7 h-7 opacity-80"/>
               <span className="text-xs opacity-75 font-semibold">{c.label}</span>
             </div>
             <div className="text-4xl font-black mt-3">{c.value}</div>
-          </div>
+            <div className="text-[10px] opacity-60 mt-1 font-semibold tracking-wider">VIEW →</div>
+          </button>
         ))}
       </div>
 
@@ -697,13 +700,14 @@ function FillForm({ template, user, onClose }) {
 }
 
 // ===================== SUBMISSIONS =====================
-function Submissions() {
+function Submissions({ initialFilter = "all" }) {
   const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(initialFilter);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(null);
   const load = () => api.get("/submissions").then(r => setItems(r.data));
   useEffect(() => { load(); }, []);
+  useEffect(() => { setFilter(initialFilter); }, [initialFilter]);
 
   const filtered = items.filter(s => {
     if (filter !== "all" && s.category !== filter) return false;

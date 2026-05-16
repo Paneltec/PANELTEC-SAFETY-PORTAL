@@ -1390,6 +1390,767 @@ async def seed_extras():
         }
     }
 
+# ============== SWMS (Safe Work Method Statements) ==============
+class SWMSStep(BaseModel):
+    step_no: float = 1.0
+    activity: str
+    hazards: List[str] = []
+    risk_class: int = 3  # 1-critical, 2-high, 3-moderate, 4-low
+    controls: List[str] = []
+    responsible: List[str] = []
+    residual_risk: int = 4
+
+class SWMS(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    high_risk_activity: str  # Mechanical Excavation, Working at Heights, Hot Work, etc.
+    project_name: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    supervisor_name: Optional[str] = None
+    prepared_by: Optional[str] = None
+    description: Optional[str] = None
+    ppe_required: List[str] = []
+    plant_equipment: List[str] = []
+    legislation: List[str] = []
+    training_required: List[str] = []
+    steps: List[Dict[str, Any]] = []
+    signoffs: List[Dict[str, Any]] = []  # [{name, signature_b64, company, date}]
+    status: str = 'draft'  # draft, approved, active, retired
+    valid_from: Optional[str] = None
+    valid_until: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/swms')
+async def list_swms(user=Depends(get_current_user)):
+    return await db.swms.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+@api_router.get('/swms/{sid}')
+async def get_swms(sid: str, user=Depends(get_current_user)):
+    s = await db.swms.find_one({'id': sid}, {'_id': 0})
+    if not s: raise HTTPException(404, 'Not found')
+    return s
+
+@api_router.post('/swms')
+async def create_swms(s: SWMS, user=Depends(get_current_user)):
+    doc = s.model_dump()
+    await db.swms.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/swms/{sid}')
+async def update_swms(sid: str, s: SWMS, user=Depends(get_current_user)):
+    doc = s.model_dump(); doc['id'] = sid
+    await db.swms.update_one({'id': sid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/swms/{sid}')
+async def delete_swms(sid: str, user=Depends(require_admin)):
+    await db.swms.delete_one({'id': sid})
+    return {'ok': True}
+
+@api_router.post('/swms/{sid}/signoff')
+async def signoff_swms(sid: str, body: dict, user=Depends(get_current_user)):
+    signoff = {
+        'name': body.get('name', user.get('name')),
+        'signature_b64': body.get('signature_b64'),
+        'company': body.get('company', 'Paneltec'),
+        'date': now_iso(),
+        'user_id': user['id'],
+    }
+    await db.swms.update_one({'id': sid}, {'$push': {'signoffs': signoff}})
+    return signoff
+
+class AISwmsIn(BaseModel):
+    title: str
+    activity: str
+    description: Optional[str] = None
+    location_name: Optional[str] = None
+
+@api_router.post('/ai/swms-draft')
+async def ai_swms_draft(body: AISwmsIn, user=Depends(get_current_user)):
+    """AI generates a draft SWMS from a task description."""
+    prompt = f"""Generate a Safe Work Method Statement (SWMS) for a civil contractor.
+
+Title: {body.title}
+High Risk Activity: {body.activity}
+Location: {body.location_name or 'Construction site'}
+Description: {body.description or ''}
+
+Return a valid JSON object with this exact structure (no markdown, no commentary, just JSON):
+{{
+  "ppe_required": ["item1", "item2", ...],
+  "plant_equipment": ["item1", ...],
+  "legislation": ["WHS Act 2011", "Code of Practice ..."],
+  "training_required": ["White Card", "..."],
+  "steps": [
+    {{
+      "step_no": 1.0,
+      "activity": "Setup and pre-start checks",
+      "hazards": ["Hazard 1", "Hazard 2"],
+      "risk_class": 2,
+      "controls": ["Control 1", "Control 2"],
+      "responsible": ["Supervisor", "Operator"],
+      "residual_risk": 4
+    }},
+    ...
+  ]
+}}
+
+risk_class scale: 1=Critical, 2=High, 3=Moderate, 4=Low.
+Provide 5-8 sequential steps covering setup, execution, and pack-down. Be specific to civil contractor work."""
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"swms-{uuid.uuid4()}",
+            system_message="You are an Australian/Canadian WHS expert helping a civil contractor draft Safe Work Method Statements. Always return only valid JSON, no commentary, no markdown code fences."
+        ).with_model('openai', 'gpt-4o-mini')
+        result = await chat.send_message(UserMessage(text=prompt))
+        text = str(result).strip()
+        if text.startswith('```'):
+            text = text.split('```', 2)[1]
+            if text.startswith('json'): text = text[4:]
+            text = text.strip()
+        import json
+        data = json.loads(text)
+        return data
+    except Exception as e:
+        logger.error(f"AI SWMS error: {e}")
+        # Fallback skeleton
+        return {
+            'ppe_required': ['Hard Hat', 'Safety Boots', 'High-Vis Vest', 'Safety Glasses', 'Gloves'],
+            'plant_equipment': ['As required by activity'],
+            'legislation': ['WHS Act', 'Code of Practice: Construction Work'],
+            'training_required': ['Construction Induction Card (White Card)'],
+            'steps': [
+                {'step_no': 1.0, 'activity': 'Site setup and pre-start inspection', 'hazards': ['Slips, trips, falls'], 'risk_class': 3, 'controls': ['Walk site', 'Toolbox talk'], 'responsible': ['Supervisor'], 'residual_risk': 4},
+                {'step_no': 2.0, 'activity': f'Execute {body.activity}', 'hazards': ['Activity-specific'], 'risk_class': 2, 'controls': ['Follow SWMS', 'PPE'], 'responsible': ['Operators'], 'residual_risk': 3},
+                {'step_no': 3.0, 'activity': 'Pack-down and housekeeping', 'hazards': ['Manual handling'], 'risk_class': 3, 'controls': ['Team lift'], 'responsible': ['Crew'], 'residual_risk': 4},
+            ],
+            '_fallback': True,
+        }
+
+# ============== ITP (Inspection & Test Plans) ==============
+class ITPItem(BaseModel):
+    item_no: float = 1.0
+    description: str
+    reference: Optional[str] = None  # spec / standard
+    inspection_type: str = 'check'  # check, hold_point, witness_point, survey, test
+    frequency: Optional[str] = None
+    acceptance_criteria: Optional[str] = None
+    operations_by: Optional[str] = 'Paneltec'
+    verification_by: Optional[str] = 'Client'
+    status: str = 'pending'  # pending, in_progress, passed, failed, n_a
+    completed_at: Optional[str] = None
+    notes: Optional[str] = None
+
+class ITP(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    project_name: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    discipline: str = 'civil'  # civil, structural, mechanical, electrical
+    description: Optional[str] = None
+    items: List[Dict[str, Any]] = []
+    status: str = 'open'
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/itps')
+async def list_itps(user=Depends(get_current_user)):
+    return await db.itps.find({}, {'_id': 0}).sort('created_at', -1).to_list(500)
+
+@api_router.get('/itps/{iid}')
+async def get_itp(iid: str, user=Depends(get_current_user)):
+    i = await db.itps.find_one({'id': iid}, {'_id': 0})
+    if not i: raise HTTPException(404, 'Not found')
+    return i
+
+@api_router.post('/itps')
+async def create_itp(i: ITP, user=Depends(get_current_user)):
+    doc = i.model_dump()
+    await db.itps.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/itps/{iid}')
+async def update_itp(iid: str, i: ITP, user=Depends(get_current_user)):
+    doc = i.model_dump(); doc['id'] = iid
+    await db.itps.update_one({'id': iid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/itps/{iid}')
+async def delete_itp(iid: str, user=Depends(require_admin)):
+    await db.itps.delete_one({'id': iid})
+    return {'ok': True}
+
+# ============== PERMITS TO WORK ==============
+class Permit(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    permit_type: str = 'hot_work'  # hot_work, confined_space, excavation, working_at_heights, electrical_isolation
+    project_name: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    description: str
+    valid_from: str
+    valid_until: str
+    issued_by: Optional[str] = None
+    issued_to: Optional[str] = None
+    precautions: List[str] = []
+    checklist: List[Dict[str, Any]] = []  # [{label, checked}]
+    status: str = 'active'  # draft, active, expired, closed, cancelled
+    signoffs: List[Dict[str, Any]] = []
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/permits')
+async def list_permits(user=Depends(get_current_user)):
+    items = await db.permits.find({}, {'_id': 0}).sort('valid_from', -1).to_list(500)
+    # Auto-expire
+    now = datetime.now(timezone.utc).isoformat()
+    for p in items:
+        if p.get('status') == 'active' and p.get('valid_until', '') < now:
+            await db.permits.update_one({'id': p['id']}, {'$set': {'status': 'expired'}})
+            p['status'] = 'expired'
+    return items
+
+@api_router.post('/permits')
+async def create_permit(p: Permit, user=Depends(get_current_user)):
+    doc = p.model_dump()
+    await db.permits.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/permits/{pid}')
+async def update_permit(pid: str, p: Permit, user=Depends(get_current_user)):
+    doc = p.model_dump(); doc['id'] = pid
+    await db.permits.update_one({'id': pid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/permits/{pid}')
+async def delete_permit(pid: str, user=Depends(require_admin)):
+    await db.permits.delete_one({'id': pid})
+    return {'ok': True}
+
+# ============== ENVIRONMENTAL ASPECTS ==============
+class EnvAspect(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    aspect_code: str  # EM-01..EM-09
+    category: str  # air_quality, noise, soil_water, flora_fauna, heritage, fuels_chemicals, community, waste, biodiversity
+    title: str
+    description: Optional[str] = None
+    control_measures: List[str] = []
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    monitoring_frequency: Optional[str] = None
+    responsible: Optional[str] = None
+    status: str = 'active'
+    created_at: str = Field(default_factory=now_iso)
+
+class EnvMonitoringLog(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    aspect_id: str
+    aspect_title: Optional[str] = None
+    reading: str  # e.g. "75 dB", "pH 7.2"
+    threshold: Optional[str] = None
+    status: str = 'within_limits'  # within_limits, exceeded, action_required
+    notes: Optional[str] = None
+    photo_b64: Optional[str] = None
+    recorded_by: Optional[str] = None
+    recorded_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/env/aspects')
+async def list_env_aspects(user=Depends(get_current_user)):
+    return await db.env_aspects.find({}, {'_id': 0}).to_list(500)
+
+@api_router.post('/env/aspects')
+async def create_env_aspect(a: EnvAspect, user=Depends(get_current_user)):
+    doc = a.model_dump()
+    await db.env_aspects.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/env/aspects/{aid}')
+async def delete_env_aspect(aid: str, user=Depends(require_admin)):
+    await db.env_aspects.delete_one({'id': aid})
+    return {'ok': True}
+
+@api_router.get('/env/logs')
+async def list_env_logs(user=Depends(get_current_user)):
+    return await db.env_logs.find({}, {'_id': 0}).sort('recorded_at', -1).to_list(2000)
+
+@api_router.post('/env/logs')
+async def create_env_log(l: EnvMonitoringLog, user=Depends(get_current_user)):
+    doc = l.model_dump()
+    doc['recorded_by'] = user.get('name')
+    await db.env_logs.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+# ============== INSURANCE POLICIES ==============
+class InsurancePolicy(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    contractor_id: Optional[str] = None  # if linked to contractor; if null = own/Paneltec
+    insurance_type: str  # combined_business, employers_liability, motor_vehicle, public_liability, professional_indemnity
+    company: str
+    policy_number: str
+    coverage_amount: Optional[str] = None
+    issued_date: Optional[str] = None
+    expiry_date: str
+    document_b64: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/insurance')
+async def list_insurance(user=Depends(get_current_user)):
+    return await db.insurance.find({}, {'_id': 0}).sort('expiry_date', 1).to_list(500)
+
+@api_router.post('/insurance')
+async def create_insurance(p: InsurancePolicy, user=Depends(get_current_user)):
+    doc = p.model_dump()
+    await db.insurance.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/insurance/{pid}')
+async def delete_insurance(pid: str, user=Depends(require_admin)):
+    await db.insurance.delete_one({'id': pid})
+    return {'ok': True}
+
+# ============== AUDIT REGISTER ==============
+class AuditFinding(BaseModel):
+    description: str
+    severity: str = 'observation'  # major_nc, minor_nc, observation, opportunity
+    corrective_action: Optional[str] = None
+    closed: bool = False
+
+class Audit(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    title: str
+    audit_type: str = 'internal'  # internal, external, client, regulatory
+    scope: Optional[str] = None
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    auditor: Optional[str] = None
+    planned_date: Optional[str] = None
+    actual_date: Optional[str] = None
+    status: str = 'planned'  # planned, in_progress, completed, cancelled
+    findings: List[Dict[str, Any]] = []
+    report_b64: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/audits')
+async def list_audits(user=Depends(get_current_user)):
+    return await db.audits.find({}, {'_id': 0}).sort('planned_date', -1).to_list(500)
+
+@api_router.post('/audits')
+async def create_audit(a: Audit, user=Depends(get_current_user)):
+    doc = a.model_dump()
+    await db.audits.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/audits/{aid}')
+async def update_audit(aid: str, a: Audit, user=Depends(get_current_user)):
+    doc = a.model_dump(); doc['id'] = aid
+    await db.audits.update_one({'id': aid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/audits/{aid}')
+async def delete_audit(aid: str, user=Depends(require_admin)):
+    await db.audits.delete_one({'id': aid})
+    return {'ok': True}
+
+# ============== SEED COMPLIANCE EXTRAS (SWMS/ITP/Permits/Env/Insurance/Audits + TasWater project) ==============
+@api_router.post('/seed-compliance')
+async def seed_compliance():
+    import random
+    random.seed(11)
+    await db.swms.delete_many({})
+    await db.itps.delete_many({})
+    await db.permits.delete_many({})
+    await db.env_aspects.delete_many({})
+    await db.env_logs.delete_many({})
+    await db.insurance.delete_many({})
+    await db.audits.delete_many({})
+
+    # Add TasWater realistic location if not present
+    locations = await db.locations.find({}, {'_id': 0}).to_list(100)
+    taswater = next((l for l in locations if 'Tasman' in l.get('name','')), None)
+    if not taswater:
+        taswater = Location(
+            name='Tasman Hwy Scottsdale — WTP Sledge Track',
+            address='35480-35530 Tasman Highway, Scottsdale TAS',
+            project_code='PT-TW-WTP-001',
+        ).model_dump()
+        await db.locations.insert_one(dict(taswater))
+        locations.append(taswater)
+
+    workers = await db.workers.find({}, {'_id': 0}).to_list(100)
+    today = datetime.now(timezone.utc)
+
+    # SWMS — TasWater project examples
+    swms_seed = [
+        {
+            'title': 'SWMS-003 — Water Main Construction & Traffic Management',
+            'high_risk_activity': 'Mechanical Excavation in Road Reserve',
+            'project_name': 'TasWater Tasman Hwy Scottsdale',
+            'description': 'Replacement of 605m DN200 AC raw water main in and adjacent to road reserve. Covers excavation, asbestos pipe removal, traffic management.',
+            'ppe_required': ['Hard Hat', 'Hi-Vis Vest (white reflective for night)', 'Safety Boots', 'Safety Glasses', 'Hearing Protection', 'P2 Dust Masks', 'Razor Shield Gloves'],
+            'plant_equipment': ['Vacuum Truck', 'Excavator CAT 320', 'HDD Drill Rig', 'Dump Truck', 'Traffic Cones / Bollards'],
+            'legislation': ['WHS Act 2012 (Tas)', 'WHS Regulations 2012', 'AS1742.3 Traffic Control', 'TasWater Supplement WSAA Code', 'Construction Work CoP 2013'],
+            'training_required': ['White Card Construction Induction', 'TasWater Induction', 'Traffic Control Ticket', 'Class B Asbestos Awareness', 'Confined Space (if applicable)'],
+            'steps': [
+                {'step_no': 1.0, 'activity': 'General safety requirements & site induction', 'hazards': ['Personal injury to operator/workers'], 'risk_class': 2, 'controls': ['Current TasWater induction', 'Site-specific JSEA daily review', 'PPE per matrix'], 'responsible': ['Compliance Manager', 'Supervisor'], 'residual_risk': 4},
+                {'step_no': 2.0, 'activity': 'Setting out / taking down roadwork signage', 'hazards': ['Struck by oncoming traffic'], 'risk_class': 1, 'controls': ['Verify signage per TGS', 'Hi-vis at all times', 'Traffic controllers at both ends'], 'responsible': ['Traffic Controllers'], 'residual_risk': 3},
+                {'step_no': 3.0, 'activity': 'Underground asset locating', 'hazards': ['Strike on services', 'Contact electrical lines'], 'risk_class': 1, 'controls': ['DBYD lookup', 'Vacuum excavation for proving', 'Trained locator'], 'responsible': ['Supervisor', 'Asset Locator'], 'residual_risk': 3},
+                {'step_no': 4.0, 'activity': 'Mechanical excavation of trench', 'hazards': ['Trench collapse', 'Falling into trench', 'Plant rollover'], 'risk_class': 1, 'controls': ['Shoring boxes >1.2m', 'Trench barriers', 'Spotter for plant', 'Daily competent person inspection'], 'responsible': ['Supervisor', 'Excavator Operator'], 'residual_risk': 3},
+                {'step_no': 5.0, 'activity': 'Class B asbestos AC pipe removal', 'hazards': ['Asbestos fibre exposure'], 'risk_class': 1, 'controls': ['Wet methods', 'P2 respirators', 'Licensed removalist', 'Air monitoring', 'Decontamination'], 'responsible': ['Asbestos Supervisor'], 'residual_risk': 3},
+                {'step_no': 6.0, 'activity': 'Pipe laying & connection', 'hazards': ['Manual handling', 'Crush injury'], 'risk_class': 2, 'controls': ['Mechanical lifting aids', 'Pipe slings', 'Clear communication'], 'responsible': ['Crew', 'Crane Operator'], 'residual_risk': 4},
+                {'step_no': 7.0, 'activity': 'Backfill & compaction', 'hazards': ['Compactor injury', 'Noise > 85dB'], 'risk_class': 2, 'controls': ['Double hearing protection', 'Compactor pre-start'], 'responsible': ['Operator'], 'residual_risk': 4},
+                {'step_no': 8.0, 'activity': 'Pack-down & site reinstatement', 'hazards': ['Residual road hazards'], 'risk_class': 3, 'controls': ['Sweep roadway', 'Remove signage in correct order'], 'responsible': ['Supervisor'], 'residual_risk': 4},
+            ],
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'supervisor_name': 'Mathew Loone',
+            'prepared_by': 'Patrick Monaghan',
+            'status': 'active',
+            'valid_from': (today - timedelta(days=14)).isoformat(),
+            'valid_until': (today + timedelta(days=90)).isoformat(),
+        },
+        {
+            'title': 'SWMS-004 — Working at Heights (Scaffold Erection)',
+            'high_risk_activity': 'Working at Heights >2m',
+            'project_name': 'Downtown Bridge Reconstruction',
+            'description': 'Erection and use of scaffold for bridge soffit works.',
+            'ppe_required': ['Hard Hat', 'Hi-Vis Vest', 'Safety Boots', 'Fall Arrest Harness', 'Lanyard'],
+            'plant_equipment': ['Modular scaffold system', 'Edge protection'],
+            'legislation': ['Managing Risk of Falls at Workplaces CoP 2015'],
+            'training_required': ['Working at Heights ticket', 'Scaffold High Risk Work Licence'],
+            'steps': [
+                {'step_no': 1.0, 'activity': 'Scaffold design verification', 'hazards': ['Scaffold collapse'], 'risk_class': 1, 'controls': ['Engineer-certified design', 'Competent erector'], 'responsible': ['Scaffold Supervisor'], 'residual_risk': 3},
+                {'step_no': 2.0, 'activity': 'Erection of scaffold base', 'hazards': ['Falls from height', 'Falling objects'], 'risk_class': 1, 'controls': ['Edge protection', 'Tool tethers', 'Exclusion zone'], 'responsible': ['Scaffolders'], 'residual_risk': 3},
+                {'step_no': 3.0, 'activity': 'Daily inspection & tagging', 'hazards': ['Use of defective scaffold'], 'risk_class': 2, 'controls': ['Scafftag system', 'Pre-use inspection'], 'responsible': ['Site Supervisor'], 'residual_risk': 4},
+                {'step_no': 4.0, 'activity': 'Working on scaffold platform', 'hazards': ['Fall from edge'], 'risk_class': 2, 'controls': ['100% tie-off above 2m', 'Toe boards'], 'responsible': ['All Workers'], 'residual_risk': 4},
+                {'step_no': 5.0, 'activity': 'Dismantling', 'hazards': ['Material falling'], 'risk_class': 1, 'controls': ['Reverse erection sequence', 'Drop zone'], 'responsible': ['Scaffolders'], 'residual_risk': 3},
+            ],
+            'location_id': locations[1]['id'] if len(locations) > 1 else None,
+            'location_name': locations[1]['name'] if len(locations) > 1 else None,
+            'status': 'active',
+            'valid_from': (today - timedelta(days=5)).isoformat(),
+            'valid_until': (today + timedelta(days=60)).isoformat(),
+        },
+        {
+            'title': 'SWMS-005 — Hot Work (Welding & Cutting)',
+            'high_risk_activity': 'Hot Work',
+            'description': 'Welding and oxy-cutting of structural steel on site.',
+            'ppe_required': ['Welding Helmet', 'Leather Gloves', 'Welding Jacket', 'Safety Boots', 'Hi-Vis'],
+            'plant_equipment': ['Welder', 'Oxy-acetylene set', 'Fire extinguisher (CO2 + dry chem)'],
+            'legislation': ['Welding Processes CoP 2016'],
+            'training_required': ['Welding ticket', 'Hot Work Permit Holder training'],
+            'steps': [
+                {'step_no': 1.0, 'activity': 'Hot Work Permit issued', 'hazards': ['Fire ignition'], 'risk_class': 1, 'controls': ['Permit valid', 'Combustibles removed 11m radius'], 'responsible': ['Permit Issuer'], 'residual_risk': 3},
+                {'step_no': 2.0, 'activity': 'Fire watch posted', 'hazards': ['Smouldering ignition post-work'], 'risk_class': 2, 'controls': ['Fire watch 60min post-work'], 'responsible': ['Fire Watch'], 'residual_risk': 4},
+                {'step_no': 3.0, 'activity': 'Welding/cutting activity', 'hazards': ['Arc flash', 'UV burns', 'Fume inhalation'], 'risk_class': 2, 'controls': ['Welding screens', 'Extraction fans'], 'responsible': ['Welder'], 'residual_risk': 4},
+            ],
+            'status': 'active',
+            'valid_from': (today - timedelta(days=2)).isoformat(),
+            'valid_until': (today + timedelta(days=30)).isoformat(),
+        },
+    ]
+    swms_docs = []
+    for s in swms_seed:
+        d = SWMS(**s).model_dump()
+        swms_docs.append(d)
+    await db.swms.insert_many([dict(x) for x in swms_docs])
+
+    # ITPs — TasWater inspections
+    itp_seed = [
+        {
+            'name': 'Hydrostatic Pressure Testing — Mains & Services',
+            'project_name': 'TasWater Tasman Hwy Scottsdale',
+            'discipline': 'civil',
+            'description': 'Per TasWater guidelines & WSA 03-2011-3.1 Water Supply Code',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'items': [
+                {'item_no': 1.0, 'description': 'Pre-test visual inspection of joints', 'reference': 'WSA 03-2011 §13', 'inspection_type': 'check', 'frequency': 'Each section', 'acceptance_criteria': 'All joints visually sound', 'operations_by': 'Paneltec', 'verification_by': 'Paneltec', 'status': 'passed'},
+                {'item_no': 2.0, 'description': 'Fill pipeline & vent', 'reference': 'WSA 03-2011', 'inspection_type': 'check', 'frequency': 'Each section', 'acceptance_criteria': 'No air pockets', 'operations_by': 'Paneltec', 'verification_by': 'Paneltec', 'status': 'passed'},
+                {'item_no': 3.0, 'description': 'Pressurise to 1.5× design pressure', 'inspection_type': 'hold_point', 'frequency': 'Each test', 'acceptance_criteria': 'Hold pressure 2 hours, drop ≤ 5kPa', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'in_progress'},
+                {'item_no': 4.0, 'description': 'Witness pressure decay test', 'inspection_type': 'witness_point', 'frequency': 'Each test', 'acceptance_criteria': 'TasWater witness present', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'pending'},
+                {'item_no': 5.0, 'description': 'Pressure test certificate issued', 'inspection_type': 'check', 'acceptance_criteria': 'Signed by both parties', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'pending'},
+            ],
+        },
+        {
+            'name': 'Asphalt Reinstatement',
+            'project_name': 'TasWater Tasman Hwy Scottsdale',
+            'discipline': 'civil',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'items': [
+                {'item_no': 1.0, 'description': 'Subgrade preparation', 'inspection_type': 'check', 'acceptance_criteria': 'CBR ≥ 5%', 'operations_by': 'Paneltec', 'verification_by': 'Paneltec', 'status': 'passed'},
+                {'item_no': 2.0, 'description': 'Sub-base compaction', 'inspection_type': 'hold_point', 'acceptance_criteria': '95% MMDD', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'passed'},
+                {'item_no': 3.0, 'description': 'Prime coat applied', 'inspection_type': 'check', 'acceptance_criteria': 'Coverage even', 'operations_by': 'Paneltec', 'verification_by': 'Paneltec', 'status': 'passed'},
+                {'item_no': 4.0, 'description': 'Asphalt laid to spec thickness', 'inspection_type': 'witness_point', 'acceptance_criteria': '50mm AC10', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'in_progress'},
+                {'item_no': 5.0, 'description': 'Final survey & line marking', 'inspection_type': 'survey', 'operations_by': 'Paneltec', 'verification_by': 'TasWater', 'status': 'pending'},
+            ],
+        },
+        {
+            'name': 'Concrete Foundation Pour — Industrial Park',
+            'discipline': 'civil',
+            'items': [
+                {'item_no': 1.0, 'description': 'Formwork inspection', 'inspection_type': 'hold_point', 'acceptance_criteria': 'Per drawing', 'operations_by': 'Paneltec', 'verification_by': 'Engineer', 'status': 'passed'},
+                {'item_no': 2.0, 'description': 'Reinforcement placement', 'inspection_type': 'hold_point', 'acceptance_criteria': 'Cover ≥ 50mm', 'operations_by': 'Paneltec', 'verification_by': 'Engineer', 'status': 'passed'},
+                {'item_no': 3.0, 'description': 'Concrete delivery slump test', 'inspection_type': 'test', 'acceptance_criteria': 'Slump 80±20mm', 'operations_by': 'Paneltec', 'verification_by': 'Paneltec', 'status': 'in_progress'},
+                {'item_no': 4.0, 'description': '28-day cylinder strength', 'inspection_type': 'test', 'acceptance_criteria': '32 MPa min', 'operations_by': 'Lab', 'verification_by': 'Engineer', 'status': 'pending'},
+            ],
+        },
+    ]
+    itp_docs = []
+    for i in itp_seed:
+        d = ITP(**i).model_dump()
+        itp_docs.append(d)
+    await db.itps.insert_many([dict(x) for x in itp_docs])
+
+    # PERMITS
+    permit_seed = [
+        {
+            'permit_type': 'hot_work',
+            'description': 'Oxy-cutting of redundant steel pipe brackets',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'valid_from': today.isoformat(),
+            'valid_until': (today + timedelta(hours=8)).isoformat(),
+            'issued_by': 'Mathew Loone',
+            'issued_to': 'John Carpenter',
+            'precautions': ['Fire extinguisher within 5m', 'Fire watch 60min after', 'Combustibles removed 11m radius', 'Hot work area screened'],
+            'checklist': [
+                {'label': 'Combustible materials removed within 11m', 'checked': True},
+                {'label': 'Fire extinguisher available', 'checked': True},
+                {'label': 'Fire watch assigned', 'checked': True},
+                {'label': 'SDS reviewed for materials being cut', 'checked': True},
+                {'label': 'PPE inspected', 'checked': True},
+            ],
+            'status': 'active',
+        },
+        {
+            'permit_type': 'excavation',
+            'description': 'Trench excavation 1.8m deep for water main replacement Ch 0+200 to 0+250',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'valid_from': (today - timedelta(days=2)).isoformat(),
+            'valid_until': (today + timedelta(days=5)).isoformat(),
+            'issued_by': 'Patrick Monaghan',
+            'issued_to': 'Mike Rodriguez',
+            'precautions': ['DBYD completed', 'Shoring boxes installed', 'Edge protection', 'Daily competent person inspection'],
+            'checklist': [
+                {'label': 'Dial Before You Dig (DBYD) completed', 'checked': True},
+                {'label': 'Underground services visually proven via vacuum excavation', 'checked': True},
+                {'label': 'Shoring or benching plan in place', 'checked': True},
+                {'label': 'Safe access/egress every 7.5m', 'checked': True},
+                {'label': 'Emergency rescue plan briefed', 'checked': False},
+            ],
+            'status': 'active',
+        },
+        {
+            'permit_type': 'confined_space',
+            'description': 'Entry into existing valve chamber for inspection',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'valid_from': (today - timedelta(days=15)).isoformat(),
+            'valid_until': (today - timedelta(days=14)).isoformat(),
+            'issued_by': 'Patrick Monaghan',
+            'issued_to': 'David Chen',
+            'precautions': ['Gas test before entry', 'Stand-by person', 'Tripod rescue setup'],
+            'checklist': [
+                {'label': 'Atmospheric testing (O₂, LEL, H₂S, CO)', 'checked': True},
+                {'label': 'Stand-by person posted', 'checked': True},
+                {'label': 'Rescue tripod & harness in place', 'checked': True},
+            ],
+            'status': 'expired',
+        },
+        {
+            'permit_type': 'working_at_heights',
+            'description': 'Working on scaffold deck at Level 2 of bridge soffit',
+            'location_id': locations[1]['id'] if len(locations) > 1 else None,
+            'location_name': locations[1]['name'] if len(locations) > 1 else None,
+            'valid_from': today.isoformat(),
+            'valid_until': (today + timedelta(days=14)).isoformat(),
+            'issued_by': 'Liam OConnor',
+            'issued_to': 'Sarah Thompson',
+            'precautions': ['Scaffold tagged green', 'Harness inspected', '100% tie-off above 2m'],
+            'checklist': [
+                {'label': 'Scaffold inspected & tagged today', 'checked': True},
+                {'label': 'Harness & lanyard inspected', 'checked': True},
+                {'label': 'Anchor points identified', 'checked': True},
+                {'label': 'Rescue plan briefed', 'checked': True},
+            ],
+            'status': 'active',
+        },
+    ]
+    permit_docs = []
+    for p in permit_seed:
+        d = Permit(**p).model_dump()
+        permit_docs.append(d)
+    await db.permits.insert_many([dict(x) for x in permit_docs])
+
+    # ENVIRONMENTAL ASPECTS (EM-01 .. EM-09)
+    env_seed = [
+        ('EM-01', 'air_quality', 'Air Quality (Dust Control & Plant Emissions)', 'Manage dust from earthworks and emissions from plant', ['Water carts for dust suppression', 'Regular plant maintenance', 'Tarp loaded trucks'], 'Daily'),
+        ('EM-02', 'air_quality', 'Prime & Bitumen', 'Manage fumes from bituminous works', ['Apply at correct temperature', 'PPE for crew', 'Avoid sensitive receptors'], 'Per pour'),
+        ('EM-03', 'community', 'Community Relations', 'Manage community impact and complaints', ['Letterbox drop pre-works', 'Public complaints to TasWater CSC', 'Site signage with contact'], 'Ongoing'),
+        ('EM-04', 'flora_fauna', 'Flora & Fauna', 'Protect biodiversity', ['No-go zones marked', 'Spotter for tree felling', 'Wildlife rescue plan'], 'Ongoing'),
+        ('EM-05', 'heritage', 'Heritage & Archaeology', 'Protect cultural heritage', ['Unexpected finds procedure', 'Aboriginal cultural awareness'], 'Ongoing'),
+        ('EM-06', 'noise', 'Noise Pollution', 'Manage construction noise to neighbours', ['Work during normal hours', 'Quieter equipment selection', 'Noise monitoring'], 'Weekly'),
+        ('EM-07', 'soil_water', 'Soil Management (Inc. Contaminated Soil)', 'Prevent erosion & manage spoil', ['Silt fences', 'Stabilised site entry', 'Contaminated soil segregation'], 'Daily'),
+        ('EM-08', 'fuels_chemicals', 'Storage of Fuels & Chemicals on Site', 'Prevent spills', ['Bunded storage', 'Spill kits at each site', 'SDS available'], 'Weekly'),
+        ('EM-09', 'soil_water', 'Water Quality Monitoring', 'Protect waterways', ['No-discharge to waterways', 'Wash-down bay', 'pH monitoring'], 'Weekly'),
+    ]
+    env_docs = []
+    for code, cat, title, desc, ctrl, freq in env_seed:
+        a = EnvAspect(
+            aspect_code=code, category=cat, title=title, description=desc,
+            control_measures=ctrl, monitoring_frequency=freq,
+            location_id=taswater['id'], location_name=taswater['name'],
+            responsible='Site Supervisor'
+        ).model_dump()
+        env_docs.append(a)
+    await db.env_aspects.insert_many([dict(x) for x in env_docs])
+
+    # Environmental monitoring logs
+    log_docs = []
+    log_samples = [
+        ('Noise Pollution', '72 dB', '75 dB (daytime limit)', 'within_limits', 'Background reading at boundary'),
+        ('Noise Pollution', '83 dB', '75 dB', 'exceeded', 'Compactor in operation, residents notified'),
+        ('Air Quality (Dust Control & Plant Emissions)', 'PM10 45 µg/m³', '50 µg/m³', 'within_limits', 'Water cart in use'),
+        ('Water Quality Monitoring', 'pH 7.4', 'pH 6.5-8.5', 'within_limits', 'Wash-bay discharge'),
+        ('Water Quality Monitoring', 'pH 9.1', 'pH 6.5-8.5', 'exceeded', 'Concrete washout — investigated, washout bin emptied'),
+        ('Storage of Fuels & Chemicals on Site', 'No leaks', 'No leaks', 'within_limits', 'Weekly bund check OK'),
+    ]
+    for title, reading, threshold, status, notes in log_samples:
+        aspect = next((a for a in env_docs if a['title'] == title), env_docs[0])
+        days_ago = random.randint(0, 30)
+        log_docs.append(EnvMonitoringLog(
+            aspect_id=aspect['id'], aspect_title=aspect['title'],
+            reading=reading, threshold=threshold, status=status, notes=notes,
+            recorded_by='Site Supervisor',
+            recorded_at=(today - timedelta(days=days_ago)).isoformat(),
+        ).model_dump())
+    await db.env_logs.insert_many([dict(x) for x in log_docs])
+
+    # INSURANCE POLICIES (Paneltec own + on contractors)
+    insurance_seed = [
+        # Paneltec own
+        ('combined_business', 'QBE Insurance Australia Ltd', '183A327842BPK', '$20M', 365),
+        ('employers_liability', 'QBE Insurance Australia Ltd', '1HO1962502GWC', '$50M', 365),
+        ('motor_vehicle', 'National Transport Insurance', '9924502', '$2M per vehicle', 200),
+        ('public_liability', 'Allianz', 'PL-PT-2025-008', '$20M', 14),  # expiring soon!
+        ('professional_indemnity', 'CGU', 'PI-PT-2025-002', '$5M', 60),
+    ]
+    insurance_docs = []
+    for itype, company, polno, cov, days in insurance_seed:
+        p = InsurancePolicy(
+            contractor_id=None,
+            insurance_type=itype, company=company, policy_number=polno,
+            coverage_amount=cov,
+            issued_date=(today - timedelta(days=365 - days)).date().isoformat(),
+            expiry_date=(today + timedelta(days=days)).date().isoformat(),
+        ).model_dump()
+        insurance_docs.append(p)
+    # Link insurance to existing contractors
+    contractors = await db.contractors.find({}, {'_id': 0}).to_list(100)
+    for i, c in enumerate(contractors[:3]):
+        days = [180, -10, 30][i]
+        p = InsurancePolicy(
+            contractor_id=c['id'],
+            insurance_type='public_liability',
+            company='Various',
+            policy_number=f'CTR-{c["id"][:6]}-PL',
+            coverage_amount='$10M',
+            issued_date=(today - timedelta(days=365)).date().isoformat(),
+            expiry_date=(today + timedelta(days=days)).date().isoformat(),
+        ).model_dump()
+        insurance_docs.append(p)
+    await db.insurance.insert_many([dict(x) for x in insurance_docs])
+
+    # AUDITS
+    audit_seed = [
+        {
+            'title': 'Internal WHS System Audit Q1',
+            'audit_type': 'internal',
+            'scope': 'Full WHS management system review',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'auditor': 'Emily Brooks',
+            'planned_date': (today - timedelta(days=20)).date().isoformat(),
+            'actual_date': (today - timedelta(days=18)).date().isoformat(),
+            'status': 'completed',
+            'findings': [
+                {'description': 'SWMS not signed by all crew before commencement on 2 occasions', 'severity': 'minor_nc', 'corrective_action': 'Supervisor verification at pre-start', 'closed': True},
+                {'description': 'First aid kit at site office missing eye-wash solution', 'severity': 'observation', 'corrective_action': 'Restock from supplier', 'closed': True},
+                {'description': 'Opportunity: Digitise sign-in register via QR code', 'severity': 'opportunity', 'closed': False},
+            ],
+        },
+        {
+            'title': 'TasWater Client Compliance Audit',
+            'audit_type': 'client',
+            'scope': 'Audit against TasWater Contractor Compliance Standards',
+            'location_id': taswater['id'],
+            'location_name': taswater['name'],
+            'auditor': 'TasWater HSE Team',
+            'planned_date': (today + timedelta(days=14)).date().isoformat(),
+            'status': 'planned',
+            'findings': [],
+        },
+        {
+            'title': 'External ISO 45001 Surveillance Audit',
+            'audit_type': 'external',
+            'scope': 'ISO 45001:2018 Occupational Health & Safety surveillance',
+            'auditor': 'SAI Global',
+            'planned_date': (today - timedelta(days=90)).date().isoformat(),
+            'actual_date': (today - timedelta(days=88)).date().isoformat(),
+            'status': 'completed',
+            'findings': [
+                {'description': 'Minor: Risk register review frequency not consistently documented', 'severity': 'minor_nc', 'corrective_action': 'Monthly review cadence with sign-off', 'closed': True},
+            ],
+        },
+        {
+            'title': 'Site Inspection — Highway 401',
+            'audit_type': 'internal',
+            'scope': 'PPE & site setup audit',
+            'location_id': locations[0]['id'] if locations else None,
+            'location_name': locations[0]['name'] if locations else None,
+            'auditor': 'Liam OConnor',
+            'planned_date': (today + timedelta(days=3)).date().isoformat(),
+            'status': 'planned',
+            'findings': [],
+        },
+    ]
+    audit_docs = []
+    for a in audit_seed:
+        d = Audit(**a).model_dump()
+        audit_docs.append(d)
+    await db.audits.insert_many([dict(x) for x in audit_docs])
+
+    return {
+        'ok': True,
+        'counts': {
+            'swms': len(swms_docs), 'itps': len(itp_docs), 'permits': len(permit_docs),
+            'env_aspects': len(env_docs), 'env_logs': len(log_docs),
+            'insurance': len(insurance_docs), 'audits': len(audit_docs),
+        }
+    }
+
+
+
 
 
 @api_router.get('/')
@@ -1413,7 +2174,6 @@ logger = logging.getLogger(__name__)
 
 @app.on_event('startup')
 async def startup_seed():
-    # Auto-seed on first run if empty
     count = await db.users.count_documents({})
     if count == 0:
         logger.info('No users found, auto-seeding demo data...')
@@ -1422,7 +2182,6 @@ async def startup_seed():
             logger.info('Seed complete.')
         except Exception as e:
             logger.error(f'Seed failed: {e}')
-    # Always ensure extras exist (idempotent on count check)
     risk_count = await db.risks.count_documents({})
     if risk_count == 0:
         logger.info('Seeding extras (risks, actions, chemicals, assets, contractors)...')
@@ -1430,6 +2189,13 @@ async def startup_seed():
             await seed_extras()
         except Exception as e:
             logger.error(f'Extras seed failed: {e}')
+    swms_count = await db.swms.count_documents({})
+    if swms_count == 0:
+        logger.info('Seeding compliance (SWMS, ITPs, Permits, Env, Insurance, Audits)...')
+        try:
+            await seed_compliance()
+        except Exception as e:
+            logger.error(f'Compliance seed failed: {e}')
 
 @app.on_event('shutdown')
 async def shutdown_db_client():
