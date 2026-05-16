@@ -3060,6 +3060,8 @@ class Client(BaseModel):
     status: str = 'active'  # active, inactive
     created_by: Optional[str] = None
     simpro_id: Optional[str] = None
+    simpro_refs: List[str] = []  # all SimPRO references (cross-company tracking)
+    notes: Optional[str] = None
     source: str = 'manual'  # manual, simpro
     created_at: str = Field(default_factory=now_iso)
 
@@ -3391,38 +3393,70 @@ async def simpro_sync_clients(company_ids: Optional[str] = None, include_cost_ce
     synced = []
     errors = []
 
+    async def _upsert_client(name: str, kind: str, ext_id: str, comp_label: str, cid: str,
+                             email: Optional[str] = None, phone: Optional[str] = None):
+        """Upsert a client by normalized name. Tracks which SimPRO companies/types reference it.
+        Prevents duplicates when the same customer exists in multiple SimPRO companies."""
+        norm_name = name.strip()
+        if not norm_name: return
+        # Look for an existing client with same name OR matching simpro_id
+        existing = await db.clients.find_one({
+            '$or': [
+                {'name': norm_name},
+                {'simpro_id': f"{cid}:{kind}:{ext_id}"},
+                {'simpro_refs': f"{cid}:{kind}:{ext_id}"},
+            ]
+        }, {'_id': 0})
+        new_ref = f"{cid}:{kind}:{ext_id}"
+        if existing:
+            refs = set(existing.get('simpro_refs') or [])
+            if existing.get('simpro_id'): refs.add(existing['simpro_id'])
+            refs.add(new_ref)
+            update = {
+                'simpro_refs': list(refs),
+                'source': 'simpro',
+            }
+            # Only fill empty fields (preserve manual edits)
+            if email and not existing.get('contact_email'): update['contact_email'] = email
+            if phone and not existing.get('phone'): update['phone'] = phone
+            await db.clients.update_one({'id': existing['id']}, {'$set': update})
+            synced.append({'name': norm_name, 'type': kind, 'company': comp_label, 'merged': True})
+        else:
+            doc = {
+                'id': str(uuid.uuid4()),
+                'simpro_id': new_ref,
+                'simpro_refs': [new_ref],
+                'name': norm_name,
+                'contact_email': email,
+                'phone': phone,
+                'source': 'simpro',
+                'notes': f"SimPRO {kind} from {comp_label}" if kind == 'cc' else None,
+                'created_at': now_iso(),
+            }
+            await db.clients.insert_one(Client(**doc).model_dump())
+            synced.append({'name': norm_name, 'type': kind, 'company': comp_label, 'merged': False})
+
     for cid in target_companies:
         comp_label = company_name_map.get(cid, f'Company {cid}')
 
-        # 1) Cost centers — these are usually the project/division "clients" in civil contracting
+        # 1) Cost centers
         if include_cost_centers:
             try:
-                # SimPRO uses /setup/accounts/costCenters/ path
                 cost_centers = await _simpro_get(f'/api/v1.0/companies/{cid}/setup/accounts/costCenters/', params={'pageSize': 250})
                 if not isinstance(cost_centers, list):
                     cost_centers = cost_centers.get('items', []) if isinstance(cost_centers, dict) else []
                 for c in cost_centers:
-                    sid = f"{cid}:cc:{c.get('ID')}"
-                    cname = c.get('Name') or 'Unnamed CC'
-                    existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
-                    data = {
-                        'simpro_id': sid,
-                        'name': cname,
-                        'source': 'simpro',
-                        'notes': f"SimPRO Cost Center from {comp_label}",
-                    }
-                    if existing:
-                        data['id'] = existing['id']
-                        await db.clients.update_one({'simpro_id': sid}, {'$set': data})
-                    else:
-                        data['id'] = str(uuid.uuid4())
-                        data['created_at'] = now_iso()
-                        await db.clients.insert_one(Client(**data).model_dump())
-                    synced.append({'name': cname, 'type': 'cost_center', 'company': comp_label})
+                    await _upsert_client(
+                        name=c.get('Name') or 'Unnamed CC',
+                        kind='cc',
+                        ext_id=str(c.get('ID') or ''),
+                        comp_label=comp_label,
+                        cid=cid,
+                    )
             except HTTPException as e:
                 errors.append(f'Company {cid} cost centers: {str(e.detail)[:200]}')
 
-        # 2) Customer companies — paginate (SimPRO max pageSize is 250)
+        # 2) Customer companies — paginated
         try:
             page = 1
             while True:
@@ -3431,30 +3465,36 @@ async def simpro_sync_clients(company_ids: Optional[str] = None, include_cost_ce
                     customers = customers.get('items', []) if isinstance(customers, dict) else []
                 if not customers: break
                 for c in customers:
-                    cust_id = str(c.get('ID') or c.get('id') or '')
-                    if not cust_id: continue
-                    sid = f"{cid}:cust:{cust_id}"
-                    name = c.get('CompanyName') or c.get('Name') or 'Unnamed'
-                    email = c.get('Email')
-                    phone = c.get('Phone')
-                    existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
-                    data = {'simpro_id': sid, 'name': name, 'contact_email': email, 'phone': phone, 'source': 'simpro'}
-                    if existing:
-                        data['id'] = existing['id']
-                        await db.clients.update_one({'simpro_id': sid}, {'$set': data})
-                    else:
-                        data['id'] = str(uuid.uuid4())
-                        data['created_at'] = now_iso()
-                        await db.clients.insert_one(Client(**data).model_dump())
-                    synced.append({'name': name, 'type': 'customer', 'company': comp_label})
+                    await _upsert_client(
+                        name=c.get('CompanyName') or c.get('Name') or 'Unnamed',
+                        kind='cust',
+                        ext_id=str(c.get('ID') or ''),
+                        comp_label=comp_label,
+                        cid=cid,
+                        email=c.get('Email'),
+                        phone=c.get('Phone'),
+                    )
                 if len(customers) < 250: break
                 page += 1
-                if page > 20: break  # safety limit (5000 customers max)
+                if page > 20: break
         except HTTPException as e:
             errors.append(f'Company {cid} customers: {str(e.detail)[:200]}')
 
-    return {'ok': True, 'synced_count': len(synced), 'companies_synced': target_companies,
-            'errors': errors, 'synced': synced[:100]}
+    # Calculate stats
+    unique_count = len({s['name'] for s in synced})
+    new_count = sum(1 for s in synced if not s.get('merged'))
+    merged_count = sum(1 for s in synced if s.get('merged'))
+
+    return {
+        'ok': True,
+        'synced_count': new_count,
+        'merged_count': merged_count,
+        'unique_clients': unique_count,
+        'total_refs': len(synced),
+        'companies_synced': target_companies,
+        'errors': errors,
+        'synced': synced[:100],
+    }
 
 # Seed local fallback clients (so the UI has data before Simpro is connected)
 @api_router.post('/clients/seed-defaults')
