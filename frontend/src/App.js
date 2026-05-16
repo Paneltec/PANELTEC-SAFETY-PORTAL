@@ -1130,23 +1130,45 @@ function SimproSyncCompanyModal({ syncing, onClose, onSync }) {
 
 
 function EditMemberModal({ editing, onClose }) {
-  const initial = editing || {
+  const buildInitial = (e) => e ? { ...e } : {
     first_name: "", last_name: "", email: "", phone: "", birth_date: "",
     country: "AUSTRALIA", state: "", street_address: "", suburb: "", postal_code: "",
     additional_notes: "", role: "worker", trade: "",
     client_ids: [], skills: [], is_manager: false, license_allocated: false,
   };
-  const [w, setW] = useState(initial);
+  const [w, setW] = useState(() => buildInitial(editing));
   const [clients, setClients] = useState([]);
   const [clientSearch, setClientSearch] = useState("");
   const [skills, setSkills] = useState([]);
   const [skillInput, setSkillInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [importingClients, setImportingClients] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+  // Reload state whenever a different worker is opened
+  useEffect(() => {
+    setW(buildInitial(editing));
+  }, [editing?.id]);
+
+  const loadClients = () => api.get("/clients").then(r => setClients(r.data));
 
   useEffect(() => {
-    api.get("/clients").then(r => setClients(r.data));
+    loadClients();
     api.get("/skills").then(r => setSkills(r.data));
   }, []);
+
+  const populateFromSimpro = async (companyIds) => {
+    setImportingClients(true); setImportResult(null);
+    try {
+      const ids = companyIds.join(",");
+      const { data } = await api.post(`/integrations/simpro/sync/clients?company_ids=${ids}&include_cost_centers=true`, null, { timeout: 120000 });
+      setImportResult({ ok: data.ok, count: data.synced_count, errors: data.errors });
+      await loadClients();
+    } catch (e) {
+      setImportResult({ ok: false, count: 0, errors: [e?.response?.data?.detail || e.message] });
+    }
+    setImportingClients(false);
+  };
 
   const set = (k, v) => setW({ ...w, [k]: v });
   const toggleClient = (cid) => {
@@ -1172,12 +1194,13 @@ function EditMemberModal({ editing, onClose }) {
     setSaving(true);
     const fullName = `${w.first_name||""} ${w.last_name||""}`.trim() || w.name || "Unnamed";
     const payload = {
-      ...w,
+      ...editing,  // preserve all original fields including simpro_id, simpro_company_*, source, availability
+      ...w,        // overlay user edits
       name: fullName,
       id: editing?.id || crypto.randomUUID(),
       role: w.is_manager ? "manager" : (w.role || "worker"),
       created_at: editing?.created_at || new Date().toISOString(),
-      location_ids: w.location_ids || [],
+      location_ids: w.location_ids || editing?.location_ids || [],
     };
     try {
       if (editing) await api.put(`/workers/${editing.id}`, payload);
@@ -1258,23 +1281,48 @@ function EditMemberModal({ editing, onClose }) {
 
           {/* Client / Project assignment */}
           <div>
-            <label className="block text-sm font-semibold mb-2">Client</label>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+              <label className="block text-sm font-semibold">Client</label>
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs text-slate-500 mr-1">Populate from SimPRO:</span>
+                <button type="button" onClick={()=>populateFromSimpro(["2"])} disabled={importingClients}
+                  className="px-2.5 py-1 text-xs font-bold rounded bg-blue-100 text-blue-700 hover:bg-blue-200 border border-blue-300 disabled:opacity-50"
+                  data-testid="populate-clients-co2">
+                  {importingClients ? "..." : "Paneltec"}
+                </button>
+                <button type="button" onClick={()=>populateFromSimpro(["3"])} disabled={importingClients}
+                  className="px-2.5 py-1 text-xs font-bold rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-300 disabled:opacity-50"
+                  data-testid="populate-clients-co3">
+                  {importingClients ? "..." : "Viatec"}
+                </button>
+                <button type="button" onClick={()=>populateFromSimpro(["2","3"])} disabled={importingClients}
+                  className="px-2.5 py-1 text-xs font-bold rounded bg-amber-100 text-amber-700 hover:bg-amber-200 border border-amber-300 disabled:opacity-50"
+                  data-testid="populate-clients-both">
+                  {importingClients ? "..." : "Both"}
+                </button>
+              </div>
+            </div>
+            {importResult && (
+              <div className={`mb-2 px-2 py-1.5 rounded text-xs ${importResult.ok?"bg-emerald-50 text-emerald-800":"bg-red-50 text-red-800"}`}>
+                {importResult.ok ? `✓ Imported ${importResult.count} clients/cost centers` : `⚠ ${(importResult.errors||[]).join("; ")}`}
+              </div>
+            )}
             <div className="flex items-center gap-2 mb-2">
               <input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder="Search Project" className="flex-1 px-3 py-2 border rounded"/>
-              <button type="button" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-sm">SEARCH</button>
-              <button type="button" onClick={()=>setClientSearch("")} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded" title="Refresh">
+              <button type="button" onClick={loadClients} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded" title="Refresh">
                 <ArrowRight className="w-4 h-4 rotate-90"/>
               </button>
             </div>
             <div className="border rounded max-h-56 overflow-y-auto bg-slate-50">
               <label className="flex items-center gap-2 px-3 py-2 hover:bg-white border-b font-bold cursor-pointer">
                 <input type="checkbox" checked={filteredClients.length>0 && filteredClients.every(c=>(w.client_ids||[]).includes(c.id))} onChange={toggleAllClients} className="w-4 h-4 accent-blue-500"/>
-                Select/Unselect All
+                Select/Unselect All ({filteredClients.length})
               </label>
               {filteredClients.map(c => (
                 <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-white cursor-pointer border-b last:border-0 font-semibold">
                   <input type="checkbox" checked={(w.client_ids||[]).includes(c.id)} onChange={()=>toggleClient(c.id)} className="w-4 h-4 accent-blue-500"/>
-                  {c.name}
+                  <span className="flex-1">{c.name}</span>
+                  {c.source === "simpro" && <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 font-bold">SIMPRO</span>}
                 </label>
               ))}
               {filteredClients.length === 0 && <div className="text-center py-4 text-sm text-slate-400">No clients match.</div>}

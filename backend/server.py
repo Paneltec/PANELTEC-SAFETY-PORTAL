@@ -3372,40 +3372,89 @@ async def clear_seed_workers(user=Depends(require_admin)):
     return {'ok': True, 'deleted': result.deleted_count}
 
 @api_router.post('/integrations/simpro/sync/clients')
-async def simpro_sync_clients(user=Depends(require_admin)):
-    """Pull customer/clients (companies) from Simpro."""
+async def simpro_sync_clients(company_ids: Optional[str] = None, include_cost_centers: bool = True, user=Depends(require_admin)):
+    """Pull customer companies + cost centers from Simpro across one or more companies."""
     cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
     if not cfg:
         raise HTTPException(400, 'Simpro not connected')
-    cid = cfg.get('company_id', '0')
-    try:
-        # Simpro: /api/v1.0/companies/{companyID}/customers/companies/
-        customers = await _simpro_get(f'/api/v1.0/companies/{cid}/customers/companies/', params={'pageSize': 500})
-    except HTTPException as e:
-        return {'ok': False, 'error': str(e.detail), 'synced_count': 0}
 
-    if not isinstance(customers, list):
-        customers = customers.get('items', []) if isinstance(customers, dict) else []
+    if company_ids:
+        target_companies = [c.strip() for c in company_ids.split(',') if c.strip()]
+    else:
+        target_companies = [cfg.get('company_id', '0')]
+
+    company_name_map = cfg.get('company_name_map') or {
+        '2': 'Paneltec Pty Ltd',
+        '3': 'Viatec Traffic Solutions',
+    }
 
     synced = []
-    for c in customers:
-        sid = str(c.get('ID') or c.get('id') or '')
-        if not sid: continue
-        name = c.get('CompanyName') or c.get('Name') or 'Unnamed'
-        email = c.get('Email')
-        phone = c.get('Phone')
-        existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
-        data = {'simpro_id': sid, 'name': name, 'contact_email': email, 'phone': phone, 'source': 'simpro'}
-        if existing:
-            data['id'] = existing['id']
-            await db.clients.update_one({'simpro_id': sid}, {'$set': data})
-        else:
-            data['id'] = str(uuid.uuid4())
-            data['created_at'] = now_iso()
-            await db.clients.insert_one(Client(**data).model_dump())
-        synced.append({'name': name})
+    errors = []
 
-    return {'ok': True, 'synced_count': len(synced)}
+    for cid in target_companies:
+        comp_label = company_name_map.get(cid, f'Company {cid}')
+
+        # 1) Cost centers — these are usually the project/division "clients" in civil contracting
+        if include_cost_centers:
+            try:
+                # SimPRO uses /setup/accounts/costCenters/ path
+                cost_centers = await _simpro_get(f'/api/v1.0/companies/{cid}/setup/accounts/costCenters/', params={'pageSize': 250})
+                if not isinstance(cost_centers, list):
+                    cost_centers = cost_centers.get('items', []) if isinstance(cost_centers, dict) else []
+                for c in cost_centers:
+                    sid = f"{cid}:cc:{c.get('ID')}"
+                    cname = c.get('Name') or 'Unnamed CC'
+                    existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
+                    data = {
+                        'simpro_id': sid,
+                        'name': cname,
+                        'source': 'simpro',
+                        'notes': f"SimPRO Cost Center from {comp_label}",
+                    }
+                    if existing:
+                        data['id'] = existing['id']
+                        await db.clients.update_one({'simpro_id': sid}, {'$set': data})
+                    else:
+                        data['id'] = str(uuid.uuid4())
+                        data['created_at'] = now_iso()
+                        await db.clients.insert_one(Client(**data).model_dump())
+                    synced.append({'name': cname, 'type': 'cost_center', 'company': comp_label})
+            except HTTPException as e:
+                errors.append(f'Company {cid} cost centers: {str(e.detail)[:200]}')
+
+        # 2) Customer companies — paginate (SimPRO max pageSize is 250)
+        try:
+            page = 1
+            while True:
+                customers = await _simpro_get(f'/api/v1.0/companies/{cid}/customers/companies/', params={'pageSize': 250, 'page': page})
+                if not isinstance(customers, list):
+                    customers = customers.get('items', []) if isinstance(customers, dict) else []
+                if not customers: break
+                for c in customers:
+                    cust_id = str(c.get('ID') or c.get('id') or '')
+                    if not cust_id: continue
+                    sid = f"{cid}:cust:{cust_id}"
+                    name = c.get('CompanyName') or c.get('Name') or 'Unnamed'
+                    email = c.get('Email')
+                    phone = c.get('Phone')
+                    existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
+                    data = {'simpro_id': sid, 'name': name, 'contact_email': email, 'phone': phone, 'source': 'simpro'}
+                    if existing:
+                        data['id'] = existing['id']
+                        await db.clients.update_one({'simpro_id': sid}, {'$set': data})
+                    else:
+                        data['id'] = str(uuid.uuid4())
+                        data['created_at'] = now_iso()
+                        await db.clients.insert_one(Client(**data).model_dump())
+                    synced.append({'name': name, 'type': 'customer', 'company': comp_label})
+                if len(customers) < 250: break
+                page += 1
+                if page > 20: break  # safety limit (5000 customers max)
+        except HTTPException as e:
+            errors.append(f'Company {cid} customers: {str(e.detail)[:200]}')
+
+    return {'ok': True, 'synced_count': len(synced), 'companies_synced': target_companies,
+            'errors': errors, 'synced': synced[:100]}
 
 # Seed local fallback clients (so the UI has data before Simpro is connected)
 @api_router.post('/clients/seed-defaults')
