@@ -82,15 +82,45 @@ class RegisterIn(BaseModel):
     name: str
     role: str = 'worker'
 
+class WorkerAvailabilityDay(BaseModel):
+    enabled: bool = False
+    start: str = "06:00"  # 24hr HH:MM
+    end: str = "15:00"
+
 class Worker(BaseModel):
     model_config = ConfigDict(extra='ignore')
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
+    name: str  # legacy combined name (kept for backwards compat)
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
-    role: str = 'worker'  # worker, supervisor, admin
-    trade: Optional[str] = None  # civil contractor trades
+    role: str = 'worker'  # worker, supervisor, admin, manager
+    trade: Optional[str] = None
+    # Address
+    country: Optional[str] = 'AUSTRALIA'
+    state: Optional[str] = None
+    street_address: Optional[str] = None
+    suburb: Optional[str] = None
+    postal_code: Optional[str] = None
+    birth_date: Optional[str] = None  # YYYY-MM-DD
+    additional_notes: Optional[str] = None
+    # Assignment
     location_ids: List[str] = []
+    client_ids: List[str] = []  # Simpro clients/companies
+    skills: List[str] = []
+    # Status
+    is_manager: bool = False
+    license_allocated: bool = False
+    license_allocated_by: Optional[str] = None  # admin user name who granted access
+    status: str = 'active'  # active, inactive
+    # Availability (Mon..Sun)
+    availability: Dict[str, Dict[str, Any]] = Field(default_factory=lambda: {
+        d: {'enabled': False, 'start': '06:00', 'end': '15:00'}
+        for d in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+    })
+    # Simpro
+    simpro_id: Optional[str] = None
     signature_b64: Optional[str] = None
     photo_b64: Optional[str] = None
     created_at: str = Field(default_factory=now_iso)
@@ -2988,6 +3018,285 @@ async def dropbox_sync(classify: bool = True, max_files: int = 50, user=Depends(
 
 
 
+# ============== CLIENTS (companies/projects from Simpro, with local fallback) ==============
+class Client(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    simpro_id: Optional[str] = None
+    source: str = 'manual'  # manual, simpro
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/clients')
+async def list_clients(search: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if search:
+        q['name'] = {'$regex': search, '$options': 'i'}
+    items = await db.clients.find(q, {'_id': 0}).sort('name', 1).to_list(2000)
+    return items
+
+@api_router.post('/clients')
+async def create_client(c: Client, user=Depends(require_admin)):
+    doc = c.model_dump()
+    await db.clients.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/clients/{cid}')
+async def delete_client(cid: str, user=Depends(require_admin)):
+    await db.clients.delete_one({'id': cid})
+    return {'ok': True}
+
+# ============== SKILLS ==============
+class Skill(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str
+    category: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/skills')
+async def list_skills(user=Depends(get_current_user)):
+    items = await db.skills.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    if not items:
+        # seed defaults
+        defaults = [
+            'Concrete Finishing', 'Excavator Operation', 'Crane Operation', 'Welding',
+            'Pipe Laying', 'Asphalt Laying', 'Traffic Control', 'Surveying',
+            'Carpentry', 'Steel Fixing', 'Formwork', 'Asbestos Removal (Class B)',
+            'Confined Space Entry', 'First Aid', 'Working at Heights',
+            'Backhoe Loader', 'Bulldozer', 'Compactor', 'Dump Truck', 'Grader',
+            'Forklift', 'EWP (Boom/Scissor)', 'Telehandler', 'Vacuum Truck',
+            'HDD (Directional Drilling)',
+        ]
+        for n in defaults:
+            await db.skills.insert_one(Skill(name=n).model_dump())
+        items = await db.skills.find({}, {'_id': 0}).sort('name', 1).to_list(500)
+    return items
+
+@api_router.post('/skills')
+async def create_skill(s: Skill, user=Depends(require_admin)):
+    doc = s.model_dump()
+    await db.skills.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+# ============== WORKER AVAILABILITY ==============
+@api_router.put('/workers/{wid}/availability')
+async def update_availability(wid: str, body: dict, user=Depends(get_current_user)):
+    """Update a worker's weekly availability. Body: {monday: {enabled, start, end}, ...}"""
+    await db.workers.update_one({'id': wid}, {'$set': {'availability': body.get('availability', body)}})
+    w = await db.workers.find_one({'id': wid}, {'_id': 0})
+    return w
+
+# ============== SIMPRO INTEGRATION ==============
+class SimproConfig(BaseModel):
+    base_url: str  # e.g. https://yourcompany.simprosuite.com
+    api_token: Optional[str] = None  # legacy basic-token (Bearer)
+    company_id: Optional[str] = None  # e.g. "0"
+    client_id: Optional[str] = None  # OAuth2 Build option
+    client_secret: Optional[str] = None
+    # OAuth tokens stored after exchange
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
+    token_expires_at: Optional[str] = None
+
+@api_router.get('/integrations/simpro/status')
+async def simpro_status(user=Depends(require_admin)):
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg:
+        return {'connected': False}
+    return {
+        'connected': True,
+        'base_url': cfg.get('base_url'),
+        'company_id': cfg.get('company_id'),
+        'has_token': bool(cfg.get('api_token') or cfg.get('access_token')),
+        'auth_method': 'oauth2' if cfg.get('client_id') else 'token',
+        'last_sync': cfg.get('last_sync'),
+        'last_sync_count': cfg.get('last_sync_count', 0),
+    }
+
+@api_router.post('/integrations/simpro/connect')
+async def simpro_connect(body: SimproConfig, user=Depends(require_admin)):
+    """Save Simpro config + verify by hitting /api/v1.0/info or similar."""
+    base = (body.base_url or '').rstrip('/')
+    if not base:
+        raise HTTPException(400, 'base_url required')
+    # Verify connection
+    headers = {}
+    if body.api_token:
+        headers['Authorization'] = f'Bearer {body.api_token}'
+    elif body.access_token:
+        headers['Authorization'] = f'Bearer {body.access_token}'
+
+    verify_ok = False
+    verify_error = None
+    if headers:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                # Test with companies endpoint
+                r = await client.get(f"{base}/api/v1.0/companies/", headers=headers)
+                if r.status_code in (200, 304):
+                    verify_ok = True
+                else:
+                    verify_error = f'HTTP {r.status_code}: {r.text[:200]}'
+        except Exception as e:
+            verify_error = str(e)[:200]
+
+    await db.integrations.update_one(
+        {'id': 'simpro'},
+        {'$set': {
+            'id': 'simpro',
+            'base_url': base,
+            'api_token': body.api_token,
+            'company_id': body.company_id or '0',
+            'client_id': body.client_id,
+            'client_secret': body.client_secret,
+            'access_token': body.access_token,
+            'refresh_token': body.refresh_token,
+            'token_expires_at': body.token_expires_at,
+            'connected_at': now_iso(),
+            'verified': verify_ok,
+        }},
+        upsert=True,
+    )
+    return {'ok': True, 'verified': verify_ok, 'error': verify_error}
+
+@api_router.delete('/integrations/simpro')
+async def simpro_disconnect(user=Depends(require_admin)):
+    await db.integrations.delete_one({'id': 'simpro'})
+    return {'ok': True}
+
+async def _simpro_get(path: str, params: Optional[dict] = None):
+    """Helper to call Simpro API with stored credentials."""
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg:
+        raise HTTPException(400, 'Simpro not connected. Configure in Settings → Simpro.')
+    base = cfg['base_url'].rstrip('/')
+    token = cfg.get('api_token') or cfg.get('access_token')
+    if not token:
+        raise HTTPException(400, 'No Simpro token configured.')
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.get(f"{base}{path}", headers={'Authorization': f'Bearer {token}'}, params=params)
+        if r.status_code >= 400:
+            raise HTTPException(r.status_code, f'Simpro API error: {r.text[:300]}')
+        return r.json()
+
+@api_router.post('/integrations/simpro/sync/employees')
+async def simpro_sync_employees(user=Depends(require_admin)):
+    """Pull employees from Simpro and upsert as Workers."""
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg:
+        raise HTTPException(400, 'Simpro not connected')
+    cid = cfg.get('company_id', '0')
+    try:
+        # Real Simpro API: GET /api/v1.0/companies/{companyID}/employees/
+        # Reference: https://developer.simprogroup.com/api-reference/
+        employees = await _simpro_get(f'/api/v1.0/companies/{cid}/employees/', params={'pageSize': 250})
+    except HTTPException as e:
+        return {'ok': False, 'error': str(e.detail), 'synced_count': 0}
+
+    if not isinstance(employees, list):
+        employees = employees.get('items', []) if isinstance(employees, dict) else []
+
+    synced = []
+    for emp in employees:
+        # Map Simpro Employee schema to our Worker
+        emp_id = str(emp.get('ID') or emp.get('id') or '')
+        if not emp_id: continue
+        first = emp.get('GivenName') or emp.get('first_name') or ''
+        last = emp.get('FamilyName') or emp.get('last_name') or ''
+        name = (first + ' ' + last).strip() or emp.get('Name') or 'Unknown'
+        email = emp.get('Email') or emp.get('email')
+        phone = emp.get('Phone') or emp.get('CellPhone') or emp.get('phone')
+
+        existing = await db.workers.find_one({'simpro_id': emp_id}, {'_id': 0})
+        worker_data = {
+            'simpro_id': emp_id,
+            'name': name,
+            'first_name': first or None,
+            'last_name': last or None,
+            'email': email,
+            'phone': phone,
+            'role': 'worker',
+            'status': 'active' if emp.get('Active', True) else 'inactive',
+        }
+        if existing:
+            worker_data['id'] = existing['id']
+            await db.workers.update_one({'simpro_id': emp_id}, {'$set': worker_data})
+        else:
+            worker_data['id'] = str(uuid.uuid4())
+            worker_data['created_at'] = now_iso()
+            await db.workers.insert_one(Worker(**worker_data).model_dump())
+        synced.append({'name': name, 'email': email})
+
+    await db.integrations.update_one(
+        {'id': 'simpro'},
+        {'$set': {'last_sync': now_iso(), 'last_sync_count': len(synced), 'last_sync_type': 'employees'}},
+    )
+    return {'ok': True, 'synced_count': len(synced), 'synced': synced[:50]}
+
+@api_router.post('/integrations/simpro/sync/clients')
+async def simpro_sync_clients(user=Depends(require_admin)):
+    """Pull customer/clients (companies) from Simpro."""
+    cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
+    if not cfg:
+        raise HTTPException(400, 'Simpro not connected')
+    cid = cfg.get('company_id', '0')
+    try:
+        # Simpro: /api/v1.0/companies/{companyID}/customers/companies/
+        customers = await _simpro_get(f'/api/v1.0/companies/{cid}/customers/companies/', params={'pageSize': 500})
+    except HTTPException as e:
+        return {'ok': False, 'error': str(e.detail), 'synced_count': 0}
+
+    if not isinstance(customers, list):
+        customers = customers.get('items', []) if isinstance(customers, dict) else []
+
+    synced = []
+    for c in customers:
+        sid = str(c.get('ID') or c.get('id') or '')
+        if not sid: continue
+        name = c.get('CompanyName') or c.get('Name') or 'Unnamed'
+        email = c.get('Email')
+        phone = c.get('Phone')
+        existing = await db.clients.find_one({'simpro_id': sid}, {'_id': 0})
+        data = {'simpro_id': sid, 'name': name, 'contact_email': email, 'phone': phone, 'source': 'simpro'}
+        if existing:
+            data['id'] = existing['id']
+            await db.clients.update_one({'simpro_id': sid}, {'$set': data})
+        else:
+            data['id'] = str(uuid.uuid4())
+            data['created_at'] = now_iso()
+            await db.clients.insert_one(Client(**data).model_dump())
+        synced.append({'name': name})
+
+    return {'ok': True, 'synced_count': len(synced)}
+
+# Seed local fallback clients (so the UI has data before Simpro is connected)
+@api_router.post('/clients/seed-defaults')
+async def seed_default_clients(user=Depends(require_admin)):
+    count = await db.clients.count_documents({})
+    if count > 0:
+        return {'ok': True, 'note': 'Clients already exist', 'count': count}
+    defaults = [
+        'Active Tree Services', 'AETV Pty Ltd', 'Andrew Foley Plumbing',
+        'Andrew Walters Constructions', 'Anglicare Tasmania Inc.', 'Aus Flight Handling',
+        'Barwick Developments Pty Ltd', 'Batchelor Civil Contracting', 'Binc Premix Concrete',
+        'Boags', 'Boral Concrete', "Break O'Day Council", 'Bridge Pro Engineering P/L',
+        'Burnie City Council', 'TasWater', 'Tasmanian Government', 'Hydro Tasmania',
+        'Launceston City Council', 'Devonport City Council', 'Department of State Growth',
+    ]
+    for n in defaults:
+        await db.clients.insert_one(Client(name=n).model_dump())
+    return {'ok': True, 'created': len(defaults)}
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}
@@ -3031,6 +3340,22 @@ async def startup_seed():
             await seed_compliance()
         except Exception as e:
             logger.error(f'Compliance seed failed: {e}')
+    # Seed default clients/skills
+    if await db.clients.count_documents({}) == 0:
+        try:
+            defaults = [
+                'Active Tree Services', 'AETV Pty Ltd', 'Andrew Foley Plumbing',
+                'Andrew Walters Constructions', 'Anglicare Tasmania Inc.', 'Aus Flight Handling',
+                'Barwick Developments Pty Ltd', 'Batchelor Civil Contracting', 'Binc Premix Concrete',
+                'Boags', 'Boral Concrete', "Break O'Day Council", 'Bridge Pro Engineering P/L',
+                'Burnie City Council', 'TasWater', 'Tasmanian Government', 'Hydro Tasmania',
+                'Launceston City Council', 'Devonport City Council', 'Department of State Growth',
+            ]
+            for n in defaults:
+                await db.clients.insert_one(Client(name=n).model_dump())
+            logger.info(f'Seeded {len(defaults)} default clients')
+        except Exception as e:
+            logger.error(f'Client seed failed: {e}')
 
 @app.on_event('shutdown')
 async def shutdown_db_client():

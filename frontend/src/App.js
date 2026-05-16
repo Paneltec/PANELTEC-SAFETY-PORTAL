@@ -878,76 +878,429 @@ function SubmissionDetail({ submission, onClose }) {
 // ===================== WORKERS =====================
 function Workers() {
   const [items, setItems] = useState([]);
-  const [show, setShow] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [searchField, setSearchField] = useState("name");
+  const [searchValue, setSearchValue] = useState("");
   const [editing, setEditing] = useState(null);
+  const [showEdit, setShowEdit] = useState(false);
+  const [showAvail, setShowAvail] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+
   const load = () => api.get("/workers").then(r => setItems(r.data));
   useEffect(() => { load(); }, []);
 
+  const toggleStatus = async (w) => {
+    const newStatus = w.status === "active" ? "inactive" : "active";
+    await api.put(`/workers/${w.id}`, { ...w, status: newStatus });
+    load();
+  };
+
+  const syncFromSimpro = async () => {
+    setSyncing(true); setSyncResult(null);
+    try {
+      const { data } = await api.post("/integrations/simpro/sync/employees", null, { timeout: 120000 });
+      setSyncResult(data);
+      load();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || e.message;
+      setSyncResult({ ok: false, error: detail });
+    }
+    setSyncing(false);
+  };
+
+  const filtered = items.filter(w => {
+    if (!searchValue) return true;
+    const v = searchValue.toLowerCase();
+    if (searchField === "name") return (w.name || `${w.first_name||""} ${w.last_name||""}`).toLowerCase().includes(v);
+    if (searchField === "email") return (w.email||"").toLowerCase().includes(v);
+    if (searchField === "role") return (w.role||"").toLowerCase().includes(v);
+    if (searchField === "trade") return (w.trade||"").toLowerCase().includes(v);
+    return true;
+  });
+
+  const toggleSelect = (id) => setSelected(selected.includes(id) ? selected.filter(x=>x!==id) : [...selected, id]);
+  const toggleSelectAll = () => setSelected(selected.length === filtered.length ? [] : filtered.map(w=>w.id));
+
   return (
-    <div className="p-6 lg:p-8 fadein">
-      <div className="flex items-end justify-between mb-6 flex-wrap gap-3">
-        <div>
-          <h1 className="text-3xl font-black text-slate-900">Workers</h1>
-          <p className="text-slate-500 mt-1">{items.length} workers on the team</p>
+    <div className="fadein">
+      {/* Page header */}
+      <div className="bg-slate-50 border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-xl font-bold text-slate-900">Members Management</h1>
+        <div className="flex gap-2">
+          <button onClick={syncFromSimpro} disabled={syncing}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-sm flex items-center gap-2 disabled:opacity-50"
+            data-testid="sync-employees-btn">
+            {syncing ? <Loader2 className="w-4 h-4 animate-spin"/> : <ArrowRight className="w-4 h-4 rotate-90"/>}
+            SYNC EMPLOYEES
+          </button>
+          <button onClick={()=>{setEditing(null); setShowEdit(true);}}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-sm flex items-center gap-2"
+            data-testid="new-worker-btn">
+            <Plus className="w-4 h-4"/>ADD NEW
+          </button>
         </div>
-        <button onClick={()=>{setEditing(null); setShow(true);}} className="px-4 py-2.5 brand-grad text-black font-bold rounded-lg flex items-center gap-2" data-testid="new-worker-btn"><Plus className="w-4 h-4"/>Add Worker</button>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {items.map((w) => (
-          <div key={w.id} className="bg-white rounded-2xl p-5 border card-hover">
-            <div className="flex items-start gap-3">
-              <div className="w-14 h-14 brand-grad rounded-xl flex items-center justify-center text-black font-black text-xl">
-                {w.name?.split(" ").map(n=>n[0]).slice(0,2).join("")}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="font-bold text-slate-900 truncate">{w.name}</div>
-                <div className="text-sm text-slate-500 truncate">{w.trade || "—"}</div>
-                <span className={`mt-1 inline-block px-2 py-0.5 rounded text-xs font-semibold ${w.role === "supervisor" ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-700"}`}>{w.role}</span>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-slate-500">{w.email}</div>
-            <div className="flex gap-2 mt-3">
-              <button onClick={()=>{setEditing(w); setShow(true);}} className="text-sm text-slate-600 hover:text-amber-600 flex items-center gap-1"><Edit3 className="w-3.5 h-3.5"/>Edit</button>
-              <button onClick={async()=>{ if (window.confirm("Delete?")) { await api.delete(`/workers/${w.id}`); load();}}} className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"><Trash2 className="w-3.5 h-3.5"/>Delete</button>
-            </div>
+
+      {/* Sync result banner */}
+      {syncResult && (
+        <div className={`mx-6 mt-4 p-3 rounded-lg text-sm border ${syncResult.ok ? "bg-emerald-50 border-emerald-200 text-emerald-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+          {syncResult.ok ? (
+            <>✓ Synced <b>{syncResult.synced_count}</b> employee{syncResult.synced_count===1?"":"s"} from Simpro.</>
+          ) : (
+            <>⚠ Simpro sync: {syncResult.error || "Connection not configured. Set up in Settings → Simpro."}</>
+          )}
+        </div>
+      )}
+
+      {/* Filter bar */}
+      <div className="px-6 py-4 flex items-center justify-end gap-2 flex-wrap">
+        <div className="flex items-center gap-2 bg-white rounded shadow-sm border">
+          <select value={searchField} onChange={e=>setSearchField(e.target.value)} className="px-3 py-2 text-sm border-r rounded-l focus:outline-none">
+            <option value="name">Members Name</option>
+            <option value="email">Email</option>
+            <option value="role">Role</option>
+            <option value="trade">Trade</option>
+          </select>
+          <input value={searchValue} onChange={e=>setSearchValue(e.target.value)} placeholder="Search…" className="px-3 py-2 text-sm w-48 focus:outline-none"/>
+          <button className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-r" data-testid="member-search-btn">
+            SEARCH
+          </button>
+        </div>
+        <button onClick={load} className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-sm" title="Refresh">
+          <ArrowRight className="w-4 h-4 rotate-90"/>
+        </button>
+      </div>
+
+      {/* Table */}
+      <div className="px-6 pb-8">
+        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-700 text-white">
+                <tr>
+                  <th className="py-3 px-4 text-left w-10">
+                    <input type="checkbox" checked={filtered.length > 0 && selected.length === filtered.length} onChange={toggleSelectAll}/>
+                  </th>
+                  <th className="py-3 px-4 text-left font-semibold">Member Name</th>
+                  <th className="py-3 px-4 text-left font-semibold">Email</th>
+                  <th className="py-3 px-4 text-left font-semibold">Role</th>
+                  <th className="py-3 px-4 text-left font-semibold">License Allocated By</th>
+                  <th className="py-3 px-4 text-center font-semibold">Status</th>
+                  <th className="py-3 px-4 text-center font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((w, idx) => {
+                  const isManager = w.role === "manager" || w.is_manager;
+                  const isActive = (w.status || "active") === "active";
+                  return (
+                    <tr key={w.id} className={`border-b hover:bg-slate-50 ${idx%2===1?"bg-slate-50/30":""}`} data-testid={`member-row-${w.id}`}>
+                      <td className="py-3 px-4">
+                        <input type="checkbox" checked={selected.includes(w.id)} onChange={()=>toggleSelect(w.id)}/>
+                      </td>
+                      <td className={`py-3 px-4 ${isManager?"font-bold":""}`}>{w.name || `${w.first_name||""} ${w.last_name||""}`.trim()}</td>
+                      <td className="py-3 px-4 text-slate-600 lowercase">{w.email || "—"}</td>
+                      <td className={`py-3 px-4 capitalize ${isManager?"font-bold":""}`}>{isManager ? "Manager" : (w.role === "supervisor" ? "Supervisor" : "Member")}</td>
+                      <td className="py-3 px-4 text-slate-500">{w.license_allocated ? (w.license_allocated_by || "Us") : <span className="text-slate-300">—</span>}</td>
+                      <td className="py-3 px-4">
+                        <div className="flex justify-center">
+                          <button onClick={()=>toggleStatus(w)} className={`relative w-12 h-6 rounded-full transition ${isActive ? "bg-blue-500" : "bg-slate-300"}`} data-testid={`status-toggle-${w.id}`}>
+                            <span className={`absolute top-0.5 ${isActive ? "left-6" : "left-0.5"} w-5 h-5 bg-white rounded-full shadow transition-all`}/>
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <div className="flex justify-center gap-1">
+                          <button onClick={()=>{setEditing(w); setShowEdit(true);}} className="w-8 h-8 bg-sky-400 hover:bg-sky-500 text-white rounded flex items-center justify-center" title="Edit Member" data-testid={`edit-member-${w.id}`}>
+                            <Edit3 className="w-4 h-4"/>
+                          </button>
+                          <button onClick={()=>setShowAvail(w)} className="w-8 h-8 bg-sky-400 hover:bg-sky-500 text-white rounded flex items-center justify-center" title="Edit Availability" data-testid={`avail-member-${w.id}`}>
+                            <Calendar className="w-4 h-4"/>
+                          </button>
+                          <button onClick={async()=>{ if(window.confirm("Delete this member?")) { await api.delete(`/workers/${w.id}`); load();}}} className="w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded flex items-center justify-center" title="Delete" data-testid={`delete-member-${w.id}`}>
+                            <Trash2 className="w-4 h-4"/>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td colSpan="7" className="py-12 text-center text-slate-400">No members found. Click "Add New" or "Sync Employees" to start.</td></tr>
+                )}
+              </tbody>
+            </table>
           </div>
-        ))}
+          <div className="px-4 py-3 bg-slate-50 border-t text-sm text-slate-500 flex items-center justify-between">
+            <div>{filtered.length} member{filtered.length===1?"":"s"} {selected.length > 0 && <span className="ml-2 text-slate-700 font-semibold">· {selected.length} selected</span>}</div>
+          </div>
+        </div>
       </div>
-      {show && <WorkerModal editing={editing} onClose={()=>{setShow(false); load();}}/>}
+
+      {showEdit && <EditMemberModal editing={editing} onClose={()=>{setShowEdit(false); load();}}/>}
+      {showAvail && <EditAvailabilityModal worker={showAvail} onClose={()=>{setShowAvail(null); load();}}/>}
     </div>
   );
 }
 
-function WorkerModal({ editing, onClose }) {
-  const [w, setW] = useState(editing || { name: "", email: "", phone: "", role: "worker", trade: "" });
-  const save = async () => {
-    const payload = { ...w, id: editing?.id || crypto.randomUUID(), location_ids: w.location_ids || [], created_at: editing?.created_at || new Date().toISOString() };
-    if (editing) await api.put(`/workers/${editing.id}`, payload);
-    else await api.post("/workers", payload);
-    onClose();
+function EditMemberModal({ editing, onClose }) {
+  const initial = editing || {
+    first_name: "", last_name: "", email: "", phone: "", birth_date: "",
+    country: "AUSTRALIA", state: "", street_address: "", suburb: "", postal_code: "",
+    additional_notes: "", role: "worker", trade: "",
+    client_ids: [], skills: [], is_manager: false, license_allocated: false,
   };
+  const [w, setW] = useState(initial);
+  const [clients, setClients] = useState([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [skills, setSkills] = useState([]);
+  const [skillInput, setSkillInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get("/clients").then(r => setClients(r.data));
+    api.get("/skills").then(r => setSkills(r.data));
+  }, []);
+
+  const set = (k, v) => setW({ ...w, [k]: v });
+  const toggleClient = (cid) => {
+    const cur = w.client_ids || [];
+    setW({ ...w, client_ids: cur.includes(cid) ? cur.filter(x=>x!==cid) : [...cur, cid] });
+  };
+  const toggleAllClients = () => {
+    const cur = w.client_ids || [];
+    const allIds = filteredClients.map(c=>c.id);
+    const allSelected = allIds.every(id => cur.includes(id));
+    setW({ ...w, client_ids: allSelected ? cur.filter(x=>!allIds.includes(x)) : Array.from(new Set([...cur, ...allIds])) });
+  };
+  const filteredClients = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()));
+
+  const addSkill = (s) => {
+    if (!s || (w.skills||[]).includes(s)) return;
+    setW({ ...w, skills: [...(w.skills||[]), s] });
+    setSkillInput("");
+  };
+  const removeSkill = (s) => setW({ ...w, skills: (w.skills||[]).filter(x=>x!==s) });
+
+  const save = async () => {
+    setSaving(true);
+    const fullName = `${w.first_name||""} ${w.last_name||""}`.trim() || w.name || "Unnamed";
+    const payload = {
+      ...w,
+      name: fullName,
+      id: editing?.id || crypto.randomUUID(),
+      role: w.is_manager ? "manager" : (w.role || "worker"),
+      created_at: editing?.created_at || new Date().toISOString(),
+      location_ids: w.location_ids || [],
+    };
+    try {
+      if (editing) await api.put(`/workers/${editing.id}`, payload);
+      else await api.post("/workers", payload);
+      onClose();
+    } catch (e) { alert("Save failed: " + (e?.response?.data?.detail || e.message)); }
+    setSaving(false);
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md p-6">
-        <h2 className="text-2xl font-bold mb-4">{editing ? "Edit" : "New"} Worker</h2>
-        <div className="space-y-3">
-          <input value={w.name} onChange={e=>setW({...w, name: e.target.value})} placeholder="Full Name" className="w-full px-3 py-2.5 border rounded-lg" data-testid="worker-name"/>
-          <input value={w.email||""} onChange={e=>setW({...w, email: e.target.value})} placeholder="Email" className="w-full px-3 py-2.5 border rounded-lg"/>
-          <input value={w.phone||""} onChange={e=>setW({...w, phone: e.target.value})} placeholder="Phone" className="w-full px-3 py-2.5 border rounded-lg"/>
-          <input value={w.trade||""} onChange={e=>setW({...w, trade: e.target.value})} placeholder="Trade (e.g. Heavy Equipment Operator)" className="w-full px-3 py-2.5 border rounded-lg"/>
-          <select value={w.role} onChange={e=>setW({...w, role: e.target.value})} className="w-full px-3 py-2.5 border rounded-lg">
-            <option value="worker">Worker</option>
-            <option value="supervisor">Supervisor</option>
-            <option value="admin">Admin</option>
-          </select>
+      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="bg-sky-500 text-white px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold">{editing ? "Edit Member" : "Add New Member"}</h2>
+          <button onClick={onClose} className="hover:bg-white/20 rounded p-1"><X className="w-5 h-5"/></button>
         </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 border rounded-lg">Cancel</button>
-          <button onClick={save} className="px-5 py-2 brand-grad text-black font-bold rounded-lg" data-testid="save-worker-btn">Save</button>
+
+        <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-semibold mb-1">First Name</label>
+              <input value={w.first_name||""} onChange={e=>set("first_name", e.target.value)} className="w-full px-3 py-2 border rounded" data-testid="member-first-name"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Last Name</label>
+              <input value={w.last_name||""} onChange={e=>set("last_name", e.target.value)} className="w-full px-3 py-2 border rounded" data-testid="member-last-name"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Birth Date</label>
+              <div className="relative">
+                <input type="date" value={w.birth_date||""} onChange={e=>set("birth_date", e.target.value)} className="w-full px-3 py-2 border rounded pr-10"/>
+                <Calendar className="w-4 h-4 absolute right-3 top-3 text-slate-400 pointer-events-none"/>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Member Email</label>
+              <input value={w.email||""} onChange={e=>set("email", e.target.value)} className={`w-full px-3 py-2 border rounded ${editing?"bg-slate-100":""}`} readOnly={!!editing}/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Phone</label>
+              <input value={w.phone||""} onChange={e=>set("phone", e.target.value)} className="w-full px-3 py-2 border rounded"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Country</label>
+              <select value={w.country||"AUSTRALIA"} onChange={e=>set("country", e.target.value)} className="w-full px-3 py-2 border rounded">
+                <option value="AUSTRALIA">AUSTRALIA</option>
+                <option value="NEW ZEALAND">NEW ZEALAND</option>
+                <option value="CANADA">CANADA</option>
+                <option value="UNITED STATES">UNITED STATES</option>
+                <option value="UNITED KINGDOM">UNITED KINGDOM</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">State</label>
+              <select value={w.state||""} onChange={e=>set("state", e.target.value)} className="w-full px-3 py-2 border rounded">
+                <option value="">— Select —</option>
+                {["Tasmania","Victoria","New South Wales","Queensland","South Australia","Western Australia","Northern Territory","Australian Capital Territory"].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Street Address</label>
+              <input value={w.street_address||""} onChange={e=>set("street_address", e.target.value)} className="w-full px-3 py-2 border rounded"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Suburb</label>
+              <input value={w.suburb||""} onChange={e=>set("suburb", e.target.value)} className="w-full px-3 py-2 border rounded"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Postal Code</label>
+              <input value={w.postal_code||""} onChange={e=>set("postal_code", e.target.value)} className="w-full px-3 py-2 border rounded"/>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-semibold mb-1">Additional Notes</label>
+            <textarea value={w.additional_notes||""} onChange={e=>set("additional_notes", e.target.value)} rows="2" placeholder="Additional Notes" className="w-full px-3 py-2 border rounded"/>
+          </div>
+
+          {/* Client / Project assignment */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Client</label>
+            <div className="flex items-center gap-2 mb-2">
+              <input value={clientSearch} onChange={e=>setClientSearch(e.target.value)} placeholder="Search Project" className="flex-1 px-3 py-2 border rounded"/>
+              <button type="button" className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded text-sm">SEARCH</button>
+              <button type="button" onClick={()=>setClientSearch("")} className="p-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded" title="Refresh">
+                <ArrowRight className="w-4 h-4 rotate-90"/>
+              </button>
+            </div>
+            <div className="border rounded max-h-56 overflow-y-auto bg-slate-50">
+              <label className="flex items-center gap-2 px-3 py-2 hover:bg-white border-b font-bold cursor-pointer">
+                <input type="checkbox" checked={filteredClients.length>0 && filteredClients.every(c=>(w.client_ids||[]).includes(c.id))} onChange={toggleAllClients} className="w-4 h-4 accent-blue-500"/>
+                Select/Unselect All
+              </label>
+              {filteredClients.map(c => (
+                <label key={c.id} className="flex items-center gap-2 px-3 py-1.5 hover:bg-white cursor-pointer border-b last:border-0 font-semibold">
+                  <input type="checkbox" checked={(w.client_ids||[]).includes(c.id)} onChange={()=>toggleClient(c.id)} className="w-4 h-4 accent-blue-500"/>
+                  {c.name}
+                </label>
+              ))}
+              {filteredClients.length === 0 && <div className="text-center py-4 text-sm text-slate-400">No clients match.</div>}
+            </div>
+          </div>
+
+          {/* Skills */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Skills Set</label>
+            <div className="border rounded p-2 min-h-[80px]">
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(w.skills||[]).map(s => (
+                  <span key={s} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-semibold flex items-center gap-1">
+                    {s}
+                    <button onClick={()=>removeSkill(s)} type="button" className="hover:bg-blue-200 rounded-full"><X className="w-3 h-3"/></button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <input value={skillInput} onChange={e=>setSkillInput(e.target.value)}
+                  onKeyDown={e=>{ if (e.key==='Enter') { e.preventDefault(); addSkill(skillInput.trim()); }}}
+                  list="skill-suggestions"
+                  placeholder="Select or type a skill and press Enter"
+                  className="flex-1 px-2 py-1 text-sm focus:outline-none"/>
+                <datalist id="skill-suggestions">
+                  {skills.map(s => <option key={s.id} value={s.name}/>)}
+                </datalist>
+                {skillInput && <button type="button" onClick={()=>addSkill(skillInput.trim())} className="px-3 py-1 bg-blue-600 text-white rounded text-xs">Add</button>}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-2 pt-2 border-t">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!w.is_manager} onChange={e=>set("is_manager", e.target.checked)} className="w-4 h-4 accent-blue-500" data-testid="member-is-manager"/>
+              <span className="font-semibold">Manager</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={!!w.license_allocated} onChange={e=>set("license_allocated", e.target.checked)} className="w-4 h-4 accent-blue-500" data-testid="member-allocate-license"/>
+              <span className="font-semibold">Allocate License</span>
+            </label>
+          </div>
+        </div>
+
+        <div className="border-t p-4 flex justify-end gap-2 bg-slate-50">
+          <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-2 disabled:opacity-50" data-testid="save-member-btn">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : <Save className="w-4 h-4"/>}Save
+          </button>
         </div>
       </div>
     </div>
   );
+}
+
+function EditAvailabilityModal({ worker, onClose }) {
+  const days = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+  const labels = { monday:"Monday", tuesday:"Tuesday", wednesday:"Wednesday", thursday:"Thursday", friday:"Friday", saturday:"Saturday", sunday:"Sunday" };
+  const init = worker.availability || days.reduce((a,d) => { a[d] = {enabled:false, start:"06:00", end:"15:00"}; return a; }, {});
+  const [avail, setAvail] = useState(init);
+  const [saving, setSaving] = useState(false);
+
+  const set = (day, key, val) => setAvail({ ...avail, [day]: { ...avail[day], [key]: val }});
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/workers/${worker.id}/availability`, { availability: avail });
+      onClose();
+    } catch (e) { alert("Save failed: " + (e?.response?.data?.detail || e.message)); }
+    setSaving(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="bg-sky-500 text-white px-6 py-4 flex items-center justify-between">
+          <h2 className="text-xl font-bold">Edit Availability ({worker.name || `${worker.first_name||""} ${worker.last_name||""}`.trim()})</h2>
+          <button onClick={onClose} className="hover:bg-white/20 rounded p-1"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">
+          <h3 className="font-bold mb-3">Regular Availability</h3>
+          <div className="space-y-3">
+            {days.map(d => (
+              <div key={d} className="border rounded-lg p-3">
+                <label className="flex items-center gap-2 cursor-pointer mb-2">
+                  <input type="checkbox" checked={avail[d]?.enabled || false} onChange={e=>set(d, "enabled", e.target.checked)} className="w-4 h-4 accent-blue-500" data-testid={`avail-${d}-enabled`}/>
+                  <span className="font-bold">{labels[d]}</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <input type="time" value={avail[d]?.start || "06:00"} onChange={e=>set(d, "start", e.target.value)} disabled={!avail[d]?.enabled} className="px-3 py-2 border rounded text-center disabled:bg-slate-100 disabled:text-slate-400" data-testid={`avail-${d}-start`}/>
+                  <input type="time" value={avail[d]?.end || "15:00"} onChange={e=>set(d, "end", e.target.value)} disabled={!avail[d]?.enabled} className="px-3 py-2 border rounded text-center disabled:bg-slate-100 disabled:text-slate-400" data-testid={`avail-${d}-end`}/>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="border-t p-4 flex justify-end gap-2 bg-slate-50">
+          <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
+          <button onClick={save} disabled={saving} className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white font-bold rounded flex items-center gap-2 disabled:opacity-50" data-testid="save-availability-btn">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin"/> : null}SAVE
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// LEGACY WorkerModal stub (kept for any leftover refs)
+function WorkerModal({ editing, onClose }) {
+  return <EditMemberModal editing={editing} onClose={onClose}/>;
 }
 
 // ===================== LOCATIONS =====================
@@ -1366,6 +1719,7 @@ function SettingsPage({ user }) {
           { id: "tokens", label: "API Tokens", icon: Key },
           { id: "log", label: "Share Log", icon: Mail },
           { id: "dropbox", label: "Dropbox Sync", icon: BookOpen },
+          { id: "simpro", label: "Simpro Sync", icon: Briefcase },
           { id: "compliance", label: "Ack Compliance", icon: FileBadge },
         ].map(t => (
           <button key={t.id} onClick={()=>setTab(t.id)}
@@ -1379,7 +1733,139 @@ function SettingsPage({ user }) {
       {tab === "tokens" && <ApiTokens/>}
       {tab === "log" && <ShareLog/>}
       {tab === "dropbox" && <DropboxSettings/>}
+      {tab === "simpro" && <SimproSettings/>}
       {tab === "compliance" && <AckCompliance/>}
+    </div>
+  );
+}
+
+function SimproSettings() {
+  const [status, setStatus] = useState(null);
+  const [cfg, setCfg] = useState({ base_url: "", api_token: "", company_id: "0", client_id: "", client_secret: "" });
+  const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(null); // 'employees' | 'clients' | null
+  const [lastResult, setLastResult] = useState(null);
+
+  const load = () => api.get("/integrations/simpro/status").then(r => setStatus(r.data));
+  useEffect(() => { load(); }, []);
+
+  const connect = async () => {
+    setConnecting(true);
+    try {
+      const { data } = await api.post("/integrations/simpro/connect", cfg);
+      if (data.verified) {
+        alert("✓ Connected to Simpro successfully.");
+      } else {
+        alert("⚠ Saved configuration but couldn't verify the connection. You can still try to sync.\n\n" + (data.error || ""));
+      }
+      setCfg({ ...cfg, api_token: "", client_secret: "" });
+      load();
+    } catch (e) {
+      alert("Connect failed: " + (e?.response?.data?.detail || e.message));
+    }
+    setConnecting(false);
+  };
+
+  const syncEmployees = async () => {
+    setSyncing("employees");
+    try {
+      const { data } = await api.post("/integrations/simpro/sync/employees", null, { timeout: 120000 });
+      setLastResult(data); load();
+    } catch (e) { setLastResult({ ok: false, error: e?.response?.data?.detail || e.message }); }
+    setSyncing(null);
+  };
+
+  const syncClients = async () => {
+    setSyncing("clients");
+    try {
+      const { data } = await api.post("/integrations/simpro/sync/clients", null, { timeout: 120000 });
+      setLastResult(data); load();
+    } catch (e) { setLastResult({ ok: false, error: e?.response?.data?.detail || e.message }); }
+    setSyncing(null);
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect Simpro?")) return;
+    await api.delete('/integrations/simpro');
+    load();
+  };
+
+  return (
+    <div className="max-w-3xl">
+      <div className="bg-gradient-to-br from-orange-50 to-amber-50 border-2 border-orange-200 rounded-2xl p-5 mb-5">
+        <h3 className="font-bold text-orange-900 flex items-center gap-2 mb-2"><Briefcase className="w-5 h-5"/>Simpro Integration</h3>
+        <p className="text-sm text-orange-800">Sync employees, clients/companies, and projects from your Simpro Build account. The "Sync Employees" button on the Members Management page uses this connection.</p>
+      </div>
+
+      {status?.connected ? (
+        <div className="bg-white border rounded-2xl p-5">
+          <div className="flex items-center gap-2 text-emerald-600 font-bold mb-3">
+            <CheckCircle2 className="w-5 h-5"/>Connected{status.has_token ? "" : " (no token)"}
+          </div>
+          <div className="text-sm text-slate-600 space-y-1 mb-4">
+            <div><b>Base URL:</b> <code className="bg-slate-100 px-2 py-0.5 rounded font-mono text-xs">{status.base_url}</code></div>
+            <div><b>Company ID:</b> <code className="bg-slate-100 px-2 py-0.5 rounded font-mono text-xs">{status.company_id}</code></div>
+            <div><b>Auth method:</b> {status.auth_method}</div>
+            {status.last_sync && <div className="text-xs text-slate-500">Last sync: {new Date(status.last_sync).toLocaleString()} · {status.last_sync_count} records</div>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={syncEmployees} disabled={syncing} className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center gap-2 disabled:opacity-50" data-testid="simpro-sync-employees-btn">
+              {syncing==="employees" ? <Loader2 className="w-4 h-4 animate-spin"/> : <Users className="w-4 h-4"/>}Sync Employees
+            </button>
+            <button onClick={syncClients} disabled={syncing} className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg flex items-center gap-2 disabled:opacity-50" data-testid="simpro-sync-clients-btn">
+              {syncing==="clients" ? <Loader2 className="w-4 h-4 animate-spin"/> : <Building2 className="w-4 h-4"/>}Sync Clients
+            </button>
+            <button onClick={disconnect} className="px-4 py-2.5 border rounded-lg text-sm">Disconnect</button>
+          </div>
+          {lastResult && (
+            <div className={`mt-4 p-4 rounded-lg border text-sm ${lastResult.ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+              {lastResult.ok ? (
+                <div><b>✓ {lastResult.synced_count}</b> record{lastResult.synced_count===1?"":"s"} synced.</div>
+              ) : (
+                <div className="text-red-700">⚠ {lastResult.error}</div>
+              )}
+              {lastResult.synced?.length > 0 && (
+                <details className="mt-2"><summary className="cursor-pointer text-xs font-semibold">Show synced records</summary><ul className="text-xs mt-2 space-y-0.5">{lastResult.synced.slice(0,30).map((s,i)=>(<li key={i}>• {s.name}{s.email?` (${s.email})`:""}</li>))}</ul></details>
+              )}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white border rounded-2xl p-5 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm">
+            <div className="font-bold text-amber-900 mb-1">How to get Simpro credentials:</div>
+            <ol className="list-decimal ml-5 text-amber-800 text-xs space-y-0.5">
+              <li>Log into Simpro Build as an admin → System → Setup → Integrations → API</li>
+              <li>Generate an API Token (Bearer token) OR set up OAuth2 Client</li>
+              <li>Note your company URL (e.g. <code>https://paneltec.simprosuite.com</code>) and Company ID (usually 0)</li>
+              <li>Paste below — your token is encrypted at rest.</li>
+            </ol>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">Company URL</label>
+            <input value={cfg.base_url} onChange={e=>setCfg({...cfg, base_url: e.target.value})} placeholder="https://paneltec.simprosuite.com" className="w-full px-3 py-2.5 border rounded-lg font-mono text-sm" data-testid="simpro-base-url"/>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">Company ID</label>
+            <input value={cfg.company_id} onChange={e=>setCfg({...cfg, company_id: e.target.value})} placeholder="0" className="w-full px-3 py-2.5 border rounded-lg font-mono text-sm" data-testid="simpro-company-id"/>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1.5">API Token (Bearer)</label>
+            <input value={cfg.api_token} onChange={e=>setCfg({...cfg, api_token: e.target.value})} placeholder="Paste your Simpro API token" className="w-full px-3 py-2.5 border rounded-lg font-mono text-xs" data-testid="simpro-api-token"/>
+          </div>
+          <details className="text-sm">
+            <summary className="font-semibold cursor-pointer">OAuth2 (Optional)</summary>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <input value={cfg.client_id} onChange={e=>setCfg({...cfg, client_id: e.target.value})} placeholder="Client ID" className="w-full px-3 py-2 border rounded font-mono text-xs"/>
+              <input value={cfg.client_secret} onChange={e=>setCfg({...cfg, client_secret: e.target.value})} placeholder="Client Secret" className="w-full px-3 py-2 border rounded font-mono text-xs"/>
+            </div>
+          </details>
+          <button onClick={connect} disabled={!cfg.base_url || connecting} className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg flex items-center justify-center gap-2 disabled:opacity-50" data-testid="simpro-connect-btn">
+            {connecting ? <Loader2 className="w-4 h-4 animate-spin"/> : <CheckCircle2 className="w-4 h-4"/>}Connect Simpro
+          </button>
+          <div className="text-xs text-slate-500 italic">You can save just the Company URL to test the integration UI. Real sync needs a valid token.</div>
+        </div>
+      )}
     </div>
   );
 }
