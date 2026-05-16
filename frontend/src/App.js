@@ -891,6 +891,7 @@ function Workers() {
   const [showAvail, setShowAvail] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  const [showSyncModal, setShowSyncModal] = useState(false);
 
   const load = () => api.get("/workers").then(r => setItems(r.data));
   useEffect(() => { load(); }, []);
@@ -901,10 +902,13 @@ function Workers() {
     load();
   };
 
-  const syncFromSimpro = async () => {
+  const syncFromSimpro = async (companyIds) => {
     setSyncing(true); setSyncResult(null);
     try {
-      const { data } = await api.post("/integrations/simpro/sync/employees", null, { timeout: 120000 });
+      const url = companyIds && companyIds.length
+        ? `/integrations/simpro/sync/employees?company_ids=${companyIds.join(",")}`
+        : "/integrations/simpro/sync/employees";
+      const { data } = await api.post(url, null, { timeout: 120000 });
       setSyncResult(data);
       load();
     } catch (e) {
@@ -912,6 +916,18 @@ function Workers() {
       setSyncResult({ ok: false, error: detail });
     }
     setSyncing(false);
+    setShowSyncModal(false);
+  };
+
+  const clearTestWorkers = async () => {
+    if (!window.confirm("Delete all NON-Simpro (test/manual) workers? This keeps any workers already synced from Simpro.")) return;
+    try {
+      const { data } = await api.delete("/workers/seed-data");
+      alert(`✓ Removed ${data.deleted} test/manual workers.`);
+      load();
+    } catch (e) {
+      alert("Failed: " + (e?.response?.data?.detail || e.message));
+    }
   };
 
   const filtered = items.filter(w => {
@@ -932,12 +948,18 @@ function Workers() {
       {/* Page header */}
       <div className="bg-slate-50 border-b px-6 py-4 flex items-center justify-between flex-wrap gap-2">
         <h1 className="text-xl font-bold text-slate-900">Members Management</h1>
-        <div className="flex gap-2">
-          <button onClick={syncFromSimpro} disabled={syncing}
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={()=>setShowSyncModal(true)} disabled={syncing}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-sm flex items-center gap-2 disabled:opacity-50"
             data-testid="sync-employees-btn">
             {syncing ? <Loader2 className="w-4 h-4 animate-spin"/> : <ArrowRight className="w-4 h-4 rotate-90"/>}
             SYNC EMPLOYEES
+          </button>
+          <button onClick={clearTestWorkers}
+            className="px-3 py-2 bg-white border-2 border-red-200 hover:bg-red-50 text-red-600 font-bold rounded text-sm flex items-center gap-2"
+            title="Remove all non-Simpro test workers"
+            data-testid="clear-test-workers-btn">
+            <Trash2 className="w-4 h-4"/>Clean Test Workers
           </button>
           <button onClick={()=>{setEditing(null); setShowEdit(true);}}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-sm flex items-center gap-2"
@@ -1007,7 +1029,11 @@ function Workers() {
                       <td className={`py-3 px-4 ${isManager?"font-bold":""}`}>{w.name || `${w.first_name||""} ${w.last_name||""}`.trim()}</td>
                       <td className="py-3 px-4 text-slate-600 lowercase">{w.email || "—"}</td>
                       <td className={`py-3 px-4 capitalize ${isManager?"font-bold":""}`}>{isManager ? "Manager" : (w.role === "supervisor" ? "Supervisor" : "Member")}</td>
-                      <td className="py-3 px-4 text-slate-500">{w.license_allocated ? (w.license_allocated_by || "Us") : <span className="text-slate-300">—</span>}</td>
+                      <td className="py-3 px-4 text-slate-500">
+                        {w.simpro_company_name ? (
+                          <span className={`px-2 py-0.5 rounded text-xs font-bold ${w.simpro_company_id==='2'?'bg-blue-100 text-blue-700':w.simpro_company_id==='3'?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-700'}`}>{w.simpro_company_name}</span>
+                        ) : w.license_allocated ? (w.license_allocated_by || "Us") : <span className="text-slate-300">—</span>}
+                      </td>
                       <td className="py-3 px-4">
                         <div className="flex justify-center">
                           <button onClick={()=>toggleStatus(w)} className={`relative w-12 h-6 rounded-full transition ${isActive ? "bg-blue-500" : "bg-slate-300"}`} data-testid={`status-toggle-${w.id}`}>
@@ -1045,9 +1071,63 @@ function Workers() {
 
       {showEdit && <EditMemberModal editing={editing} onClose={()=>{setShowEdit(false); load();}}/>}
       {showAvail && <EditAvailabilityModal worker={showAvail} onClose={()=>{setShowAvail(null); load();}}/>}
+      {showSyncModal && <SimproSyncCompanyModal syncing={syncing} onClose={()=>setShowSyncModal(false)} onSync={syncFromSimpro}/>}
     </div>
   );
 }
+
+function SimproSyncCompanyModal({ syncing, onClose, onSync }) {
+  const [c2, setC2] = useState(true);   // Paneltec Civil
+  const [c3, setC3] = useState(true);   // Viatec Traffic
+  const start = () => {
+    const ids = [];
+    if (c2) ids.push("2");
+    if (c3) ids.push("3");
+    if (ids.length === 0) { alert("Pick at least one company"); return; }
+    onSync(ids);
+  };
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg w-full max-w-md overflow-hidden">
+        <div className="bg-sky-500 text-white px-5 py-3 flex items-center justify-between">
+          <h2 className="text-lg font-bold">Sync Employees from SimPRO</h2>
+          <button onClick={onClose} className="hover:bg-white/20 rounded p-1" disabled={syncing}><X className="w-5 h-5"/></button>
+        </div>
+        <div className="p-5">
+          <p className="text-sm text-slate-600 mb-4">Choose which SimPRO companies to sync employees from. Workers are tagged with their source company.</p>
+          <div className="space-y-2">
+            <label className={`flex items-center gap-3 px-4 py-3 border-2 rounded-lg cursor-pointer transition ${c2?"border-blue-500 bg-blue-50":"border-slate-200"}`}>
+              <input type="checkbox" checked={c2} onChange={e=>setC2(e.target.checked)} className="w-5 h-5 accent-blue-500" data-testid="sync-c2"/>
+              <div className="flex-1">
+                <div className="font-bold">Paneltec Civil</div>
+                <div className="text-xs text-slate-500">SimPRO Company ID: 2</div>
+              </div>
+            </label>
+            <label className={`flex items-center gap-3 px-4 py-3 border-2 rounded-lg cursor-pointer transition ${c3?"border-emerald-500 bg-emerald-50":"border-slate-200"}`}>
+              <input type="checkbox" checked={c3} onChange={e=>setC3(e.target.checked)} className="w-5 h-5 accent-emerald-500" data-testid="sync-c3"/>
+              <div className="flex-1">
+                <div className="font-bold">Viatec Traffic</div>
+                <div className="text-xs text-slate-500">SimPRO Company ID: 3</div>
+              </div>
+            </label>
+          </div>
+          <div className="mt-4 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+            <b>Tip:</b> Run "Clean Test Workers" first to remove the seed/demo workers before your first real sync.
+          </div>
+        </div>
+        <div className="border-t p-3 flex justify-end gap-2 bg-slate-50">
+          <button onClick={onClose} disabled={syncing} className="px-4 py-2 border rounded">Cancel</button>
+          <button onClick={start} disabled={syncing || (!c2 && !c3)} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded flex items-center gap-2 disabled:opacity-50" data-testid="confirm-sync-btn">
+            {syncing ? <Loader2 className="w-4 h-4 animate-spin"/> : <ArrowRight className="w-4 h-4 rotate-90"/>}
+            {syncing ? "Syncing..." : "Start Sync"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 
 function EditMemberModal({ editing, onClose }) {
   const initial = editing || {

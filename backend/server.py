@@ -121,6 +121,9 @@ class Worker(BaseModel):
     })
     # Simpro
     simpro_id: Optional[str] = None
+    simpro_company_id: Optional[str] = None
+    simpro_company_name: Optional[str] = None
+    source: str = 'manual'  # manual, simpro
     signature_b64: Optional[str] = None
     photo_b64: Optional[str] = None
     created_at: str = Field(default_factory=now_iso)
@@ -3231,58 +3234,92 @@ async def _simpro_get(path: str, params: Optional[dict] = None):
         return r.json()
 
 @api_router.post('/integrations/simpro/sync/employees')
-async def simpro_sync_employees(user=Depends(require_admin)):
-    """Pull employees from Simpro and upsert as Workers."""
+async def simpro_sync_employees(company_ids: Optional[str] = None, user=Depends(require_admin)):
+    """Pull employees from Simpro for one or more companies.
+    company_ids: comma-separated list (e.g. '2,3'). Falls back to configured company_id."""
     cfg = await db.integrations.find_one({'id': 'simpro'}, {'_id': 0})
     if not cfg:
         raise HTTPException(400, 'Simpro not connected')
-    cid = cfg.get('company_id', '0')
-    try:
-        # Real Simpro API: GET /api/v1.0/companies/{companyID}/employees/
-        # Reference: https://developer.simprogroup.com/api-reference/
-        employees = await _simpro_get(f'/api/v1.0/companies/{cid}/employees/', params={'pageSize': 250})
-    except HTTPException as e:
-        return {'ok': False, 'error': str(e.detail), 'synced_count': 0}
 
-    if not isinstance(employees, list):
-        employees = employees.get('items', []) if isinstance(employees, dict) else []
+    # Determine which companies to sync
+    if company_ids:
+        target_companies = [c.strip() for c in company_ids.split(',') if c.strip()]
+    else:
+        target_companies = [cfg.get('company_id', '0')]
+
+    # Map company IDs to friendly names (configurable, with defaults)
+    company_name_map = cfg.get('company_name_map') or {
+        '2': 'Paneltec Civil',
+        '3': 'Viatec Traffic',
+    }
 
     synced = []
-    for emp in employees:
-        # Map Simpro Employee schema to our Worker
-        emp_id = str(emp.get('ID') or emp.get('id') or '')
-        if not emp_id: continue
-        first = emp.get('GivenName') or emp.get('first_name') or ''
-        last = emp.get('FamilyName') or emp.get('last_name') or ''
-        name = (first + ' ' + last).strip() or emp.get('Name') or 'Unknown'
-        email = emp.get('Email') or emp.get('email')
-        phone = emp.get('Phone') or emp.get('CellPhone') or emp.get('phone')
+    errors = []
+    for cid in target_companies:
+        company_name = company_name_map.get(cid, f'Company {cid}')
+        try:
+            employees = await _simpro_get(f'/api/v1.0/companies/{cid}/employees/', params={'pageSize': 250})
+        except HTTPException as e:
+            errors.append(f'Company {cid}: {str(e.detail)[:200]}')
+            continue
 
-        existing = await db.workers.find_one({'simpro_id': emp_id}, {'_id': 0})
-        worker_data = {
-            'simpro_id': emp_id,
-            'name': name,
-            'first_name': first or None,
-            'last_name': last or None,
-            'email': email,
-            'phone': phone,
-            'role': 'worker',
-            'status': 'active' if emp.get('Active', True) else 'inactive',
-        }
-        if existing:
-            worker_data['id'] = existing['id']
-            await db.workers.update_one({'simpro_id': emp_id}, {'$set': worker_data})
-        else:
-            worker_data['id'] = str(uuid.uuid4())
-            worker_data['created_at'] = now_iso()
-            await db.workers.insert_one(Worker(**worker_data).model_dump())
-        synced.append({'name': name, 'email': email})
+        if not isinstance(employees, list):
+            employees = employees.get('items', []) if isinstance(employees, dict) else []
+
+        for emp in employees:
+            emp_id = str(emp.get('ID') or emp.get('id') or '')
+            if not emp_id: continue
+            simpro_key = f"{cid}:{emp_id}"  # company-scoped key
+
+            first = emp.get('GivenName') or emp.get('first_name') or ''
+            last = emp.get('FamilyName') or emp.get('last_name') or ''
+            name = (first + ' ' + last).strip() or emp.get('Name') or 'Unknown'
+            email = emp.get('Email') or emp.get('email')
+            phone = emp.get('Phone') or emp.get('CellPhone') or emp.get('phone')
+
+            existing = await db.workers.find_one({'simpro_id': simpro_key}, {'_id': 0})
+            worker_data = {
+                'simpro_id': simpro_key,
+                'simpro_company_id': cid,
+                'simpro_company_name': company_name,
+                'name': name,
+                'first_name': first or None,
+                'last_name': last or None,
+                'email': email,
+                'phone': phone,
+                'role': 'worker',
+                'source': 'simpro',
+                'status': 'active' if emp.get('Active', True) else 'inactive',
+            }
+            if existing:
+                worker_data['id'] = existing['id']
+                await db.workers.update_one({'simpro_id': simpro_key}, {'$set': worker_data})
+            else:
+                worker_data['id'] = str(uuid.uuid4())
+                worker_data['created_at'] = now_iso()
+                await db.workers.insert_one(Worker(**worker_data).model_dump())
+            synced.append({'name': name, 'email': email, 'company': company_name})
 
     await db.integrations.update_one(
         {'id': 'simpro'},
         {'$set': {'last_sync': now_iso(), 'last_sync_count': len(synced), 'last_sync_type': 'employees'}},
     )
-    return {'ok': True, 'synced_count': len(synced), 'synced': synced[:50]}
+    return {'ok': True, 'synced_count': len(synced), 'synced': synced[:100],
+            'errors': errors, 'companies_synced': target_companies}
+
+@api_router.delete('/workers/seed-data')
+async def clear_seed_workers(user=Depends(require_admin)):
+    """Remove all non-Simpro (test/seeded/manual) workers. Useful before first Simpro sync."""
+    # Delete only workers that are NOT from Simpro
+    result = await db.workers.delete_many({
+        '$or': [
+            {'source': {'$ne': 'simpro'}},
+            {'simpro_id': {'$in': [None, '']}},
+            {'simpro_id': {'$exists': False}},
+        ]
+    })
+    # Also clean associated certifications & user records for those workers
+    return {'ok': True, 'deleted': result.deleted_count}
 
 @api_router.post('/integrations/simpro/sync/clients')
 async def simpro_sync_clients(user=Depends(require_admin)):
