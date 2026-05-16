@@ -818,6 +818,163 @@ function TemplateBuilder({ editing, onClose }) {
   );
 }
 
+// ===================== Colored Y/N/N/A Radio Buttons =====================
+function ColoredRadioGroup({ options, value, onChange }) {
+  const styleFor = (opt) => {
+    const o = (opt || "").toLowerCase();
+    const selected = value === opt;
+    if (o === "yes") {
+      return selected
+        ? "bg-emerald-500 text-white border-emerald-600 shadow-md scale-[1.02]"
+        : "bg-white text-emerald-700 border-emerald-300 hover:bg-emerald-50";
+    }
+    if (o === "no") {
+      return selected
+        ? "bg-red-500 text-white border-red-600 shadow-md scale-[1.02]"
+        : "bg-white text-red-700 border-red-300 hover:bg-red-50";
+    }
+    if (o === "n/a" || o === "na" || o === "not applicable") {
+      return selected
+        ? "bg-slate-500 text-white border-slate-600 shadow-md scale-[1.02]"
+        : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50";
+    }
+    return selected
+      ? "brand-grad text-black border-amber-500 shadow-md scale-[1.02]"
+      : "bg-white text-slate-700 border-slate-300 hover:border-amber-300";
+  };
+  return (
+    <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
+      {options.map(o => (
+        <button key={o} type="button" onClick={()=>onChange(o)}
+          className={`px-4 py-3 rounded-xl border-2 font-bold text-sm transition-all min-h-[48px] ${styleFor(o)}`}
+          data-testid={`radio-${o.toLowerCase().replace(/[^a-z0-9]/g,'-')}`}>
+          {o}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ===================== Vehicle Selector =====================
+function VehicleSelector({ value, vehicles, onChange, onAddNew }) {
+  const [filter, setFilter] = useState("");
+  const filtered = filter
+    ? vehicles.filter(v => `${v.name} ${v.registration||""}`.toLowerCase().includes(filter.toLowerCase()))
+    : vehicles;
+  const selected = vehicles.find(v => v.name === value || v.registration === value || v.id === value);
+  return (
+    <div>
+      {selected ? (
+        <div className="flex items-center gap-2 bg-blue-50 border-2 border-blue-300 rounded-lg p-3">
+          <Truck className="w-5 h-5 text-blue-600 flex-shrink-0"/>
+          <div className="flex-1 min-w-0">
+            <div className="font-bold text-blue-900 truncate">{selected.name}</div>
+            <div className="text-xs text-blue-700">{selected.registration || "no rego"} · {selected.vehicle_type} {selected.source === "navixy" && <span className="ml-1 px-1.5 py-0.5 bg-blue-200 rounded text-[9px] font-bold">NAVIXY</span>}</div>
+          </div>
+          <button type="button" onClick={()=>onChange("")} className="p-1 text-blue-700 hover:bg-blue-100 rounded"><X className="w-4 h-4"/></button>
+        </div>
+      ) : (
+        <>
+          <input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search vehicle by name or rego..." className="w-full px-3 py-2.5 border rounded-lg mb-2"/>
+          <div className="border rounded-lg max-h-48 overflow-y-auto bg-slate-50">
+            {filtered.length === 0 ? (
+              <div className="text-center py-4 text-sm text-slate-400">No matching vehicles</div>
+            ) : filtered.slice(0, 50).map(v => (
+              <button key={v.id} type="button" onClick={()=>onChange(v.name)}
+                className="w-full text-left px-3 py-2 hover:bg-white border-b last:border-0 flex items-center gap-2">
+                <Truck className="w-4 h-4 text-slate-400 flex-shrink-0"/>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{v.name}</div>
+                  <div className="text-xs text-slate-500">{v.registration || "no rego"}</div>
+                </div>
+                {v.source === "navixy" && <span className="text-[9px] px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded font-bold">NAVIXY</span>}
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={onAddNew}
+            className="mt-2 w-full py-2.5 bg-emerald-50 hover:bg-emerald-100 border-2 border-emerald-300 text-emerald-700 font-bold rounded-lg flex items-center justify-center gap-2 text-sm"
+            data-testid="add-vehicle-btn">
+            <Plus className="w-4 h-4"/>Add New Vehicle
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function AddVehicleModal({ onClose, onSaved }) {
+  const [v, setV] = useState({ name: "", registration: "", vehicle_type: "ute", make: "", model: "", year: "", notes: "" });
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!v.name) { alert("Vehicle name required"); return; }
+    setSaving(true);
+    try {
+      const payload = { ...v, id: crypto.randomUUID(), active: true, source: "manual", created_at: new Date().toISOString() };
+      const { data } = await api.post("/vehicles", payload);
+      onSaved(data);
+    } catch (e) { alert("Save failed: " + (e?.response?.data?.detail || e.message)); }
+    setSaving(false);
+  };
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[60] flex items-end md:items-center justify-center p-0 md:p-4">
+      <div className="bg-white rounded-t-3xl md:rounded-2xl w-full max-w-md max-h-[92vh] overflow-hidden flex flex-col">
+        <div className="brand-grad-dark text-white px-5 py-4 flex items-center justify-between">
+          <h3 className="text-lg font-bold flex items-center gap-2"><Truck className="w-5 h-5 text-amber-400"/>Add New Vehicle</h3>
+          <button onClick={onClose} className="hover:bg-white/10 rounded p-1"><X className="w-5 h-5"/></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-3">
+          <div>
+            <label className="block text-sm font-semibold mb-1">Vehicle Name <span className="text-red-500">*</span></label>
+            <input value={v.name} onChange={e=>setV({...v,name:e.target.value})} placeholder="e.g. Tipper #5 - Isuzu" className="w-full px-3 py-2.5 border rounded-lg"/>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Registration / Rego</label>
+            <input value={v.registration} onChange={e=>setV({...v,registration:e.target.value.toUpperCase()})} placeholder="e.g. 1AB-2CD" className="w-full px-3 py-2.5 border rounded-lg uppercase"/>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Vehicle Type</label>
+            <select value={v.vehicle_type} onChange={e=>setV({...v,vehicle_type:e.target.value})} className="w-full px-3 py-2.5 border rounded-lg">
+              <option value="ute">Ute</option>
+              <option value="truck">Truck / Tipper</option>
+              <option value="excavator">Excavator</option>
+              <option value="bulldozer">Bulldozer</option>
+              <option value="loader">Loader</option>
+              <option value="crane">Crane</option>
+              <option value="trailer">Trailer</option>
+              <option value="vacuum_truck">Vacuum Truck</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-sm font-semibold mb-1">Make</label>
+              <input value={v.make} onChange={e=>setV({...v,make:e.target.value})} className="w-full px-3 py-2.5 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Model</label>
+              <input value={v.model} onChange={e=>setV({...v,model:e.target.value})} className="w-full px-3 py-2.5 border rounded-lg"/>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold mb-1">Year</label>
+              <input value={v.year} onChange={e=>setV({...v,year:e.target.value})} placeholder="2022" className="w-full px-3 py-2.5 border rounded-lg"/>
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-semibold mb-1">Notes</label>
+            <textarea value={v.notes} onChange={e=>setV({...v,notes:e.target.value})} rows="2" className="w-full px-3 py-2.5 border rounded-lg"/>
+          </div>
+        </div>
+        <div className="border-t p-4 bg-slate-50">
+          <button onClick={save} disabled={!v.name || saving} className="w-full py-3 brand-grad text-black font-black rounded-xl flex items-center justify-center gap-2 disabled:opacity-50" data-testid="save-vehicle-btn">
+            {saving ? <Loader2 className="w-5 h-5 animate-spin"/> : <CheckCircle2 className="w-5 h-5"/>}Save Vehicle
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // ===================== FILL FORM =====================
 function FillForm({ template, user, onClose }) {
   const draftKey = `pt_draft_${template.id}`;
@@ -830,25 +987,60 @@ function FillForm({ template, user, onClose }) {
   });
   const [locations, setLocations] = useState([]);
   const [workers, setWorkers] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
   const [locationId, setLocationId] = useState(() => {
     try { return JSON.parse(localStorage.getItem(draftKey))?.locationId || ""; } catch { return ""; }
   });
   const [workerId, setWorkerId] = useState("");
   const [gps, setGps] = useState({ lat: null, lng: null });
   const [saving, setSaving] = useState(false);
-  const [annotating, setAnnotating] = useState(null); // {index, src}
+  const [annotating, setAnnotating] = useState(null);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [showAddVehicle, setShowAddVehicle] = useState(false);
+  const [geocoding, setGeocoding] = useState(null); // field label currently being geocoded
 
   useEffect(() => {
     api.get("/locations").then(r => setLocations(r.data));
-    api.get("/workers").then(r => setWorkers(r.data));
+    api.get("/workers").then(r => {
+      setWorkers(r.data);
+      // Auto-fill worker based on logged-in user's email
+      if (user?.email) {
+        const me = r.data.find(w => (w.email||"").toLowerCase() === user.email.toLowerCase());
+        if (me) setWorkerId(me.id);
+      }
+    });
+    api.get("/vehicles").then(r => setVehicles(r.data)).catch(()=>{});
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude }),
-        () => setGps({ lat: 43.6532, lng: -79.3832 })
+        () => setGps({ lat: -41.4391, lng: 147.1358 }) // fallback: Launceston TAS
       );
     }
-  }, []);
+  }, [user?.email]);
+
+  const reloadVehicles = () => api.get("/vehicles").then(r => setVehicles(r.data));
+
+  const addressByGps = async (fieldLabel) => {
+    if (!navigator.geolocation) { alert("GPS not available"); return; }
+    setGeocoding(fieldLabel);
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      try {
+        const { data } = await api.post("/geocode/reverse", {
+          lat: pos.coords.latitude, lng: pos.coords.longitude,
+        });
+        if (data.ok) {
+          const addr = [data.street_address, data.suburb, data.state, data.postal_code].filter(Boolean).join(", ");
+          setAns(fieldLabel, addr);
+        } else {
+          alert("Couldn't get address: " + (data.error || "unknown"));
+        }
+      } catch (e) { alert("Failed: " + (e?.response?.data?.detail || e.message)); }
+      setGeocoding(null);
+    }, (err) => {
+      alert("GPS denied: " + err.message);
+      setGeocoding(null);
+    }, { enableHighAccuracy: true, timeout: 15000 });
+  };
 
   // Auto-save draft to localStorage every change
   useEffect(() => {
@@ -945,6 +1137,37 @@ function FillForm({ template, user, onClose }) {
               <label className="block text-sm font-semibold mb-1.5">
                 {f.label} {f.required && <span className="text-red-500">*</span>}
               </label>
+              {(() => {
+                const lbl = (f.label || "").toLowerCase();
+                const isAddressField = /address|street|location/i.test(lbl) && !lbl.includes("email");
+                const isVehicleField = f.type === "text" && /vehicle|rego|registration|plate|fleet/i.test(lbl);
+
+                if (isVehicleField) {
+                  return (
+                    <VehicleSelector
+                      value={answers[f.label] || ""}
+                      vehicles={vehicles}
+                      onChange={(val) => setAns(f.label, val)}
+                      onAddNew={() => setShowAddVehicle(f.label)}
+                    />
+                  );
+                }
+                if (isAddressField && f.type === "text") {
+                  return (
+                    <div className="space-y-1.5">
+                      <input className="w-full px-3 py-2.5 border rounded-lg" value={answers[f.label]||""} onChange={e=>setAns(f.label, e.target.value)} placeholder={f.placeholder}/>
+                      <button type="button" onClick={()=>addressByGps(f.label)} disabled={geocoding === f.label}
+                        className="w-full py-2 bg-blue-50 hover:bg-blue-100 border-2 border-blue-200 text-blue-700 font-bold rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-50"
+                        data-testid={`gps-address-${f.id}`}>
+                        {geocoding === f.label ? <Loader2 className="w-4 h-4 animate-spin"/> : <MapPinned className="w-4 h-4"/>}
+                        {geocoding === f.label ? "Getting your location..." : "📍 Use My Current Location"}
+                      </button>
+                    </div>
+                  );
+                }
+                return null;
+              })() || (
+              <>
               {f.type === "text" && <input className="w-full px-3 py-2.5 border rounded-lg" value={answers[f.label]||""} onChange={e=>setAns(f.label, e.target.value)} placeholder={f.placeholder}/>}
               {f.type === "textarea" && <textarea className="w-full px-3 py-2.5 border rounded-lg" rows="3" value={answers[f.label]||""} onChange={e=>setAns(f.label, e.target.value)} placeholder={f.placeholder}/>}
               {f.type === "number" && <input type="number" className="w-full px-3 py-2.5 border rounded-lg" value={answers[f.label]||""} onChange={e=>setAns(f.label, e.target.value)}/>}
@@ -956,14 +1179,11 @@ function FillForm({ template, user, onClose }) {
                 </select>
               )}
               {f.type === "radio" && (
-                <div className="flex flex-wrap gap-2">
-                  {(f.options||[]).map(o => (
-                    <button key={o} type="button" onClick={()=>setAns(f.label, o)}
-                      className={`px-4 py-2 rounded-lg border font-medium text-sm transition ${answers[f.label]===o ? "brand-grad text-black border-amber-400" : "bg-white text-slate-700 hover:border-amber-300"}`}>
-                      {o}
-                    </button>
-                  ))}
-                </div>
+                <ColoredRadioGroup
+                  options={f.options || []}
+                  value={answers[f.label]}
+                  onChange={(val) => setAns(f.label, val)}
+                />
               )}
               {f.type === "checkbox" && (
                 <label className="flex items-center gap-2"><input type="checkbox" checked={!!answers[f.label]} onChange={e=>setAns(f.label, e.target.checked)}/>{f.placeholder || "Confirm"}</label>
@@ -972,7 +1192,14 @@ function FillForm({ template, user, onClose }) {
                 <PhotoUploader values={photos} onChange={setPhotos} onAnnotate={(idx, src) => setAnnotating({ index: idx, src })}/>
               )}
               {f.type === "signature" && <SignaturePad value={signature} onChange={setSignature}/>}
-              {f.type === "gps" && <div className="text-sm text-slate-500">GPS auto-captured above</div>}
+              {f.type === "gps" && (
+                <div className="text-sm text-emerald-600 flex items-center gap-1.5">
+                  <MapPinned className="w-4 h-4"/>
+                  {gps.lat ? `GPS captured: ${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}` : "Capturing GPS..."}
+                </div>
+              )}
+              </>
+              )}
             </div>
           ))}
         </div>
@@ -989,6 +1216,16 @@ function FillForm({ template, user, onClose }) {
         <PhotoAnnotator src={annotating.src}
           onSave={(b64) => { const copy = [...photos]; copy[annotating.index] = b64; setPhotos(copy); setAnnotating(null); }}
           onCancel={() => setAnnotating(null)}/>
+      )}
+      {showAddVehicle && (
+        <AddVehicleModal
+          onClose={() => setShowAddVehicle(false)}
+          onSaved={(newVehicle) => {
+            reloadVehicles();
+            setAns(showAddVehicle, newVehicle.name);
+            setShowAddVehicle(false);
+          }}
+        />
       )}
     </div>
   );

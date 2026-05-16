@@ -5313,6 +5313,185 @@ Best practices:
 
 
 
+# ============== VEHICLES (Navixy + local) ==============
+class Vehicle(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    name: str  # display name (e.g. "Tipper #4")
+    registration: Optional[str] = None  # rego
+    vehicle_type: str = 'other'  # ute, truck, tipper, excavator, etc.
+    make: Optional[str] = None
+    model: Optional[str] = None
+    year: Optional[str] = None
+    navixy_id: Optional[str] = None
+    navixy_tracker_id: Optional[str] = None
+    last_lat: Optional[float] = None
+    last_lng: Optional[float] = None
+    last_speed: Optional[float] = None
+    last_update: Optional[str] = None
+    tags: List[str] = []
+    notes: Optional[str] = None
+    source: str = 'manual'  # manual, navixy
+    active: bool = True
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/vehicles')
+async def list_vehicles(user=Depends(get_current_user)):
+    items = await db.vehicles.find({'active': True}, {'_id': 0}).sort('name', 1).to_list(2000)
+    return items
+
+@api_router.post('/vehicles')
+async def create_vehicle(v: Vehicle, user=Depends(get_current_user)):
+    doc = v.model_dump()
+    await db.vehicles.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/vehicles/{vid}')
+async def update_vehicle(vid: str, v: Vehicle, user=Depends(get_current_user)):
+    doc = v.model_dump(); doc['id'] = vid
+    await db.vehicles.update_one({'id': vid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/vehicles/{vid}')
+async def delete_vehicle(vid: str, user=Depends(require_admin)):
+    await db.vehicles.update_one({'id': vid}, {'$set': {'active': False}})
+    return {'ok': True}
+
+@api_router.post('/integrations/navixy/sync-vehicles')
+async def navixy_sync_vehicles(user=Depends(require_admin)):
+    """Pull Navixy trackers and create/update local Vehicle records."""
+    cfg = await db.integrations.find_one({'id': 'navixy'}, {'_id': 0})
+    if not cfg or not cfg.get('api_key'):
+        raise HTTPException(400, 'Navixy not connected')
+    import httpx, traceback
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.post(
+                f"https://{cfg['api_base_url']}/tracker/list",
+                data={'hash': cfg['api_key']},
+            )
+            data = r.json()
+            if not data.get('success'):
+                return {'ok': False, 'error': data.get('description', 'Navixy error'), 'synced': 0}
+            trackers = data.get('list', [])
+
+            # Get current states
+            ids = [str(t['id']) for t in trackers]
+            states_map = {}
+            if ids:
+                r2 = await client.post(
+                    f"https://{cfg['api_base_url']}/tracker/get_states",
+                    data={'hash': cfg['api_key'], 'trackers': '[' + ','.join(ids) + ']'},
+                )
+                try:
+                    states_data = r2.json()
+                    if states_data.get('success'):
+                        for s in states_data.get('states', []):
+                            if isinstance(s, dict):
+                                sid = s.get('source_id')
+                                if sid is not None:
+                                    states_map[sid] = s
+                except Exception as se:
+                    logger.warning(f"states parse: {se}")
+
+        synced = []
+        for t in trackers:
+            tid = str(t['id'])
+            navixy_key = f"navixy:{tid}"
+            existing = await db.vehicles.find_one({'navixy_id': navixy_key}, {'_id': 0})
+
+            s = states_map.get(int(tid), {}) or {}
+            if not isinstance(s, dict): s = {}
+            gps = s.get('gps') if isinstance(s.get('gps'), dict) else {}
+            loc = gps.get('location') if isinstance(gps.get('location'), dict) else {}
+
+            data = {
+                'navixy_id': navixy_key,
+                'navixy_tracker_id': tid,
+                'name': t.get('label') or f"Vehicle {tid}",
+                'tags': [str(tb) for tb in (t.get('tag_bindings') or [])],
+                'last_lat': loc.get('lat'),
+                'last_lng': loc.get('lng'),
+                'last_speed': gps.get('speed'),
+                'last_update': s.get('actual_track_update'),
+                'source': 'navixy',
+                'active': True,
+            }
+            if existing:
+                data['id'] = existing['id']
+                # Preserve user-set fields
+                preserve = ['registration', 'vehicle_type', 'make', 'model', 'year', 'notes']
+                for k in preserve:
+                    if existing.get(k): data[k] = existing[k]
+                await db.vehicles.update_one({'navixy_id': navixy_key}, {'$set': data})
+            else:
+                data['id'] = str(uuid.uuid4())
+                data['created_at'] = now_iso()
+                # Try to detect vehicle type from name
+                lname = data['name'].lower()
+                if 'truck' in lname or 'tipper' in lname: data['vehicle_type'] = 'truck'
+                elif 'ute' in lname: data['vehicle_type'] = 'ute'
+                elif 'excav' in lname: data['vehicle_type'] = 'excavator'
+                elif 'plumber' in lname: data['vehicle_type'] = 'ute'
+                await db.vehicles.insert_one(Vehicle(**data).model_dump())
+            synced.append({'name': data['name'], 'tracker_id': tid})
+
+        return {'ok': True, 'synced': len(synced), 'vehicles': synced[:50]}
+    except Exception as e:
+        logger.error(f"navixy sync vehicles: {e}\n{traceback.format_exc()[:600]}")
+        return {'ok': False, 'error': str(e)[:200], 'synced': 0}
+
+# ============== REVERSE GEOCODING ==============
+class ReverseGeocodeIn(BaseModel):
+    lat: float
+    lng: float
+
+@api_router.post('/geocode/reverse')
+async def reverse_geocode(body: ReverseGeocodeIn, user=Depends(get_current_user)):
+    """Reverse-geocode lat/lng to a street address using OpenStreetMap Nominatim (free)."""
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                'https://nominatim.openstreetmap.org/reverse',
+                params={
+                    'lat': body.lat,
+                    'lon': body.lng,
+                    'format': 'json',
+                    'addressdetails': 1,
+                    'zoom': 18,
+                },
+                headers={'User-Agent': 'PaneltecSafetyPortal/1.0 (contact@paneltec.com.au)'},
+            )
+            if r.status_code != 200:
+                return {'ok': False, 'error': f'Geocoder HTTP {r.status_code}'}
+            data = r.json()
+            addr = data.get('address') or {}
+            # Combine house number + road
+            street_parts = []
+            if addr.get('house_number'): street_parts.append(addr['house_number'])
+            if addr.get('road'): street_parts.append(addr['road'])
+            street = ' '.join(street_parts) or addr.get('pedestrian') or addr.get('footway') or ''
+            suburb = addr.get('suburb') or addr.get('city') or addr.get('town') or addr.get('village') or addr.get('hamlet') or ''
+            state_code = addr.get('state') or ''
+            postal = addr.get('postcode') or ''
+            country = (addr.get('country') or '').upper() or 'AUSTRALIA'
+            return {
+                'ok': True,
+                'street_address': street,
+                'suburb': suburb,
+                'state': state_code,
+                'postal_code': postal,
+                'country': country,
+                'display_name': data.get('display_name', ''),
+                'raw': addr,
+            }
+    except Exception as e:
+        return {'ok': False, 'error': str(e)[:200]}
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}
