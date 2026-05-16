@@ -922,7 +922,7 @@ function Workers() {
   const clearTestWorkers = async () => {
     if (!window.confirm("Delete all NON-Simpro (test/manual) workers? This keeps any workers already synced from Simpro.")) return;
     try {
-      const { data } = await api.delete("/workers/seed-data");
+      const { data } = await api.delete("/workers-bulk/seed-data");
       alert(`✓ Removed ${data.deleted} test/manual workers.`);
       load();
     } catch (e) {

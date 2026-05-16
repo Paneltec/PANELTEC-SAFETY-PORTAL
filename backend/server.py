@@ -3307,18 +3307,18 @@ async def simpro_sync_employees(company_ids: Optional[str] = None, user=Depends(
     return {'ok': True, 'synced_count': len(synced), 'synced': synced[:100],
             'errors': errors, 'companies_synced': target_companies}
 
-@api_router.delete('/workers/seed-data')
+@api_router.delete('/workers-bulk/seed-data')
 async def clear_seed_workers(user=Depends(require_admin)):
     """Remove all non-Simpro (test/seeded/manual) workers. Useful before first Simpro sync."""
     # Delete only workers that are NOT from Simpro
     result = await db.workers.delete_many({
         '$or': [
+            {'source': {'$exists': False}},
             {'source': {'$ne': 'simpro'}},
             {'simpro_id': {'$in': [None, '']}},
             {'simpro_id': {'$exists': False}},
         ]
     })
-    # Also clean associated certifications & user records for those workers
     return {'ok': True, 'deleted': result.deleted_count}
 
 @api_router.post('/integrations/simpro/sync/clients')
