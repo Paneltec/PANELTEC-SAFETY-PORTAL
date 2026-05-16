@@ -5,8 +5,10 @@ import ClientsPage from "./pages/Clients";
 import NotesPage from "./pages/Notes";
 import TasksPage from "./pages/Tasks";
 import IntegrationsPage from "./pages/Integrations";
+import ProjectBookingPage from "./pages/ProjectBooking";
+import AllocationPage from "./pages/Allocation";
+import PersonnelRequiredPage from "./pages/PersonnelRequired";
 import {
-  ProjectBookingPage, AllocationPage, PersonnelRequiredPage,
   ListPage, TimeSheetPage, GroupTimeSheetPage, LeaveRequestsPage, FilesPage
 } from "./pages/Placeholders";
 import {

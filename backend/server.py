@@ -4132,6 +4132,371 @@ async def m365_log(user=Depends(get_current_user)):
 
 
 
+# ============== PROJECT BOOKINGS ==============
+class ProjectBooking(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    member_id: str
+    member_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    location_id: Optional[str] = None
+    sub_location: Optional[str] = None
+    start_date: str  # YYYY-MM-DD
+    end_date: str
+    notes: Optional[str] = None
+    status: str = 'active'  # active, completed, cancelled
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/project-bookings')
+async def list_project_bookings(member_id: Optional[str] = None, client_id: Optional[str] = None,
+                                 user=Depends(get_current_user)):
+    q = {}
+    if member_id: q['member_id'] = member_id
+    if client_id: q['client_id'] = client_id
+    items = await db.project_bookings.find(q, {'_id': 0}).sort('start_date', -1).to_list(1000)
+    return items
+
+@api_router.post('/project-bookings')
+async def create_project_booking(b: ProjectBooking, user=Depends(get_current_user)):
+    doc = b.model_dump()
+    doc['created_by'] = user.get('name')
+    if doc.get('member_id') and not doc.get('member_name'):
+        w = await db.workers.find_one({'id': doc['member_id']}, {'_id': 0, 'name': 1})
+        if w: doc['member_name'] = w['name']
+    if doc.get('client_id') and not doc.get('client_name'):
+        c = await db.clients.find_one({'id': doc['client_id']}, {'_id': 0, 'name': 1})
+        if c: doc['client_name'] = c['name']
+    await db.project_bookings.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/project-bookings/{bid}')
+async def update_project_booking(bid: str, b: ProjectBooking, user=Depends(get_current_user)):
+    doc = b.model_dump(); doc['id'] = bid
+    await db.project_bookings.update_one({'id': bid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/project-bookings/{bid}')
+async def delete_project_booking(bid: str, user=Depends(get_current_user)):
+    await db.project_bookings.delete_one({'id': bid})
+    return {'ok': True}
+
+# ============== ALLOCATIONS (Day-level worker rostering) ==============
+class Allocation(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    member_id: str
+    member_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    skill: Optional[str] = None
+    booking_date: str  # YYYY-MM-DD
+    start_time: str = '07:00'  # HH:MM
+    end_time: str = '15:00'
+    sub_location: Optional[str] = None
+    notes: Optional[str] = None
+    notified_at: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/allocations')
+async def list_allocations(start: Optional[str] = None, end: Optional[str] = None,
+                            member_id: Optional[str] = None, client_id: Optional[str] = None,
+                            user=Depends(get_current_user)):
+    q = {}
+    if start and end:
+        q['booking_date'] = {'$gte': start, '$lte': end}
+    elif start:
+        q['booking_date'] = {'$gte': start}
+    if member_id: q['member_id'] = member_id
+    if client_id: q['client_id'] = client_id
+    items = await db.allocations.find(q, {'_id': 0}).sort('booking_date', 1).to_list(3000)
+    return items
+
+@api_router.post('/allocations')
+async def create_allocation(a: Allocation, user=Depends(get_current_user)):
+    doc = a.model_dump()
+    doc['created_by'] = user.get('name')
+    if doc.get('member_id') and not doc.get('member_name'):
+        w = await db.workers.find_one({'id': doc['member_id']}, {'_id': 0, 'name': 1})
+        if w: doc['member_name'] = w['name']
+    if doc.get('client_id') and not doc.get('client_name'):
+        c = await db.clients.find_one({'id': doc['client_id']}, {'_id': 0, 'name': 1})
+        if c: doc['client_name'] = c['name']
+    await db.allocations.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/allocations/{aid}')
+async def update_allocation(aid: str, a: Allocation, user=Depends(get_current_user)):
+    doc = a.model_dump(); doc['id'] = aid
+    await db.allocations.update_one({'id': aid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/allocations/{aid}')
+async def delete_allocation(aid: str, user=Depends(get_current_user)):
+    await db.allocations.delete_one({'id': aid})
+    return {'ok': True}
+
+@api_router.post('/allocations/notify')
+async def notify_allocations(body: dict, user=Depends(require_admin)):
+    """Send SMS + Email notifications for all allocations in a date range.
+    Body: {start: 'YYYY-MM-DD', end: 'YYYY-MM-DD'}"""
+    start = body.get('start')
+    end = body.get('end')
+    if not start or not end:
+        raise HTTPException(400, 'start and end dates required')
+
+    allocs = await db.allocations.find({
+        'booking_date': {'$gte': start, '$lte': end}
+    }, {'_id': 0}).to_list(2000)
+
+    # Group by member
+    by_member = {}
+    for a in allocs:
+        if a.get('member_id'):
+            by_member.setdefault(a['member_id'], []).append(a)
+
+    workers = {w['id']: w for w in await db.workers.find({}, {'_id': 0}).to_list(2000)}
+    sms_sent = 0; email_sent = 0; errors = []
+
+    textmagic_ready = bool(await db.integrations.find_one({'id': 'textmagic', 'verified': True}))
+    m365_ready = bool(await db.integrations.find_one({'id': 'm365', 'verified': True}))
+
+    for member_id, allocs_for_member in by_member.items():
+        worker = workers.get(member_id)
+        if not worker: continue
+
+        # Build a readable schedule
+        lines = ["Hi " + (worker.get('first_name') or worker.get('name', '')) + ", your Paneltec schedule:"]
+        for a in sorted(allocs_for_member, key=lambda x: x['booking_date']):
+            line = f"  {a['booking_date']} {a.get('start_time','')}-{a.get('end_time','')}"
+            if a.get('client_name'): line += f" @ {a['client_name']}"
+            if a.get('skill'): line += f" ({a['skill']})"
+            lines.append(line)
+        sms_body = '\n'.join(lines)[:1000]
+        html_body = '<h3>Your Paneltec Schedule</h3><table border=1 cellpadding=5 style="border-collapse:collapse"><tr><th>Date</th><th>Time</th><th>Client</th><th>Skill</th><th>Notes</th></tr>'
+        for a in sorted(allocs_for_member, key=lambda x: x['booking_date']):
+            html_body += f"<tr><td>{a['booking_date']}</td><td>{a.get('start_time','')}-{a.get('end_time','')}</td><td>{a.get('client_name') or '-'}</td><td>{a.get('skill') or '-'}</td><td>{a.get('notes') or ''}</td></tr>"
+        html_body += '</table>'
+
+        # SMS
+        phone = worker.get('phone')
+        if phone and textmagic_ready:
+            try:
+                # Reuse the existing send function
+                cfg = await db.integrations.find_one({'id': 'textmagic'}, {'_id': 0})
+                import httpx
+                async with httpx.AsyncClient(timeout=20.0) as client:
+                    r = await client.post(
+                        'https://rest.textmagic.com/api/v2/messages',
+                        headers={'X-TM-Username': cfg['api_username'], 'X-TM-Key': cfg['api_key']},
+                        data={'phones': phone.replace(' ', ''), 'text': sms_body,
+                              'from': cfg.get('default_sender', 'PANELTEC')},
+                    )
+                    if r.status_code < 400: sms_sent += 1
+                    else: errors.append(f"SMS to {worker.get('name')}: HTTP {r.status_code}")
+            except Exception as e:
+                errors.append(f"SMS to {worker.get('name')}: {str(e)[:100]}")
+
+        # Email
+        email = worker.get('email')
+        if email and m365_ready:
+            try:
+                result = await _send_m365_email(SendEmailIn(
+                    to=[email],
+                    subject=f"[Paneltec] Your schedule {start} to {end}",
+                    body=html_body,
+                ))
+                if result.get('ok'): email_sent += 1
+                else: errors.append(f"Email to {worker.get('name')}: {result.get('response','')[:80]}")
+            except Exception as e:
+                errors.append(f"Email to {worker.get('name')}: {str(e)[:100]}")
+
+        # Mark allocations as notified
+        for a in allocs_for_member:
+            await db.allocations.update_one({'id': a['id']}, {'$set': {'notified_at': now_iso()}})
+
+    return {'ok': True, 'sms_sent': sms_sent, 'email_sent': email_sent,
+            'members_notified': len(by_member), 'errors': errors[:20]}
+
+class NotifSchedule(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    range_start: str
+    range_end: str
+    days_of_week: List[str] = []  # ['monday','tuesday'...]
+    cadence: str = 'specific_day'  # previous_day, specific_day, weekly, monthly
+    scope: str = 'this_week'  # this_week, all_weeks
+    notification_time: str = '06:00'
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/allocations/notif-schedules')
+async def list_notif_schedules(user=Depends(get_current_user)):
+    return await db.notif_schedules.find({}, {'_id': 0}).sort('created_at', -1).to_list(200)
+
+@api_router.post('/allocations/notif-schedules')
+async def create_notif_schedule(s: NotifSchedule, user=Depends(require_admin)):
+    doc = s.model_dump()
+    doc['created_by'] = user.get('name')
+    await db.notif_schedules.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.delete('/allocations/notif-schedules/{sid}')
+async def delete_notif_schedule(sid: str, user=Depends(require_admin)):
+    await db.notif_schedules.delete_one({'id': sid})
+    return {'ok': True}
+
+@api_router.post('/allocations/email-pdf')
+async def email_allocations_pdf(body: dict, user=Depends(require_admin)):
+    """Generate a PDF of the schedule and email it to a list of recipients."""
+    start = body.get('start')
+    end = body.get('end')
+    recipients = body.get('recipients', [user.get('email')] if user.get('email') else [])
+    if not start or not end:
+        raise HTTPException(400, 'start and end required')
+    if not recipients:
+        raise HTTPException(400, 'recipients required')
+
+    allocs = await db.allocations.find({'booking_date': {'$gte': start, '$lte': end}}, {'_id': 0}).sort('booking_date', 1).to_list(2000)
+
+    # Build PDF
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.units import inch
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=0.4*inch, rightMargin=0.4*inch, topMargin=0.4*inch, bottomMargin=0.4*inch)
+    styles = getSampleStyleSheet()
+    PT_YELLOW = colors.HexColor('#FBBF24')
+    story = []
+    story.append(Paragraph(f'<font color="#0B0B0F"><b>PANELTEC</b></font> <font color="#6B7280">SAFETY PORTAL</font>', styles['Title']))
+    story.append(Paragraph(f'Allocation Schedule: <b>{start}</b> to <b>{end}</b>', styles['Heading2']))
+    story.append(Spacer(1, 10))
+
+    if allocs:
+        data = [['Date', 'Time', 'Member', 'Client', 'Skill', 'Sub Loc', 'Notes']]
+        for a in allocs:
+            data.append([
+                a.get('booking_date',''),
+                f"{a.get('start_time','')}-{a.get('end_time','')}",
+                a.get('member_name','')[:25],
+                (a.get('client_name','') or '')[:25],
+                (a.get('skill','') or '')[:20],
+                (a.get('sub_location','') or '')[:15],
+                (a.get('notes','') or '')[:30],
+            ])
+        tbl = Table(data, repeatRows=1)
+        tbl.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), PT_YELLOW),
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.3, colors.HexColor('#CBD5E1')),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#F8FAFC')]),
+        ]))
+        story.append(tbl)
+    else:
+        story.append(Paragraph('<i>No allocations in this date range.</i>', styles['Normal']))
+
+    doc.build(story)
+    buf.seek(0)
+    pdf_b64 = base64.b64encode(buf.read()).decode()
+
+    # Email it (attachment via Graph API)
+    cfg = await db.integrations.find_one({'id': 'm365'}, {'_id': 0})
+    if not cfg:
+        return {'ok': False, 'error': 'M365 not configured. Connect in Integrations → M365.'}
+    token = await _m365_get_token()
+    msg = {
+        'message': {
+            'subject': f'[Paneltec] Allocation Schedule {start} to {end}',
+            'body': {'contentType': 'HTML', 'content': f'<p>Attached is the Paneltec allocation schedule from {start} to {end}.</p>'},
+            'toRecipients': [{'emailAddress': {'address': e}} for e in recipients],
+            'attachments': [{
+                '@odata.type': '#microsoft.graph.fileAttachment',
+                'name': f'paneltec-schedule-{start}-to-{end}.pdf',
+                'contentType': 'application/pdf',
+                'contentBytes': pdf_b64,
+            }],
+        }
+    }
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        r = await client.post(
+            f"https://graph.microsoft.com/v1.0/users/{cfg['send_from_mailbox']}/sendMail",
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            json=msg,
+        )
+        ok = r.status_code in (200, 202)
+        return {'ok': ok, 'recipients': recipients, 'response': r.text[:300] if not ok else None}
+
+# ============== PERSONNEL REQUIRED ==============
+class PersonnelRequired(BaseModel):
+    model_config = ConfigDict(extra='ignore')
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    required_date: str  # YYYY-MM-DD
+    location_id: Optional[str] = None
+    location_name: Optional[str] = None
+    client_id: Optional[str] = None
+    client_name: Optional[str] = None
+    skill: str
+    number_required: int = 1
+    number_filled: int = 0
+    notes: Optional[str] = None
+    status: str = 'open'  # open, filled, cancelled
+    created_by: Optional[str] = None
+    created_at: str = Field(default_factory=now_iso)
+
+@api_router.get('/personnel-required')
+async def list_personnel_required(skill: Optional[str] = None, user=Depends(get_current_user)):
+    q = {}
+    if skill: q['skill'] = {'$regex': skill, '$options': 'i'}
+    items = await db.personnel_required.find(q, {'_id': 0}).sort('required_date', 1).to_list(1000)
+    return items
+
+@api_router.post('/personnel-required')
+async def create_personnel_required(p: PersonnelRequired, user=Depends(get_current_user)):
+    doc = p.model_dump()
+    doc['created_by'] = user.get('name')
+    await db.personnel_required.insert_one(doc)
+    doc.pop('_id', None)
+    return doc
+
+@api_router.put('/personnel-required/{pid}')
+async def update_personnel_required(pid: str, p: PersonnelRequired, user=Depends(get_current_user)):
+    doc = p.model_dump(); doc['id'] = pid
+    await db.personnel_required.update_one({'id': pid}, {'$set': doc}, upsert=True)
+    return doc
+
+@api_router.delete('/personnel-required/{pid}')
+async def delete_personnel_required(pid: str, user=Depends(get_current_user)):
+    await db.personnel_required.delete_one({'id': pid})
+    return {'ok': True}
+
+# ============== NOTE EXTENSIONS (member_ids, file_refs, additional_notes, sub_location) ==============
+@api_router.put('/notes/{nid}/members')
+async def update_note_members(nid: str, body: dict, user=Depends(get_current_user)):
+    await db.notes.update_one({'id': nid}, {'$set': {'member_ids': body.get('member_ids', [])}})
+    return {'ok': True}
+
+@api_router.put('/notes/{nid}/files')
+async def update_note_files(nid: str, body: dict, user=Depends(get_current_user)):
+    await db.notes.update_one({'id': nid}, {'$set': {'file_refs': body.get('file_refs', [])}})
+    return {'ok': True}
+
+@api_router.put('/notes/{nid}/additional')
+async def update_note_additional(nid: str, body: dict, user=Depends(get_current_user)):
+    await db.notes.update_one({'id': nid}, {'$set': {'additional_notes_list': body.get('additional_notes_list', [])}})
+    return {'ok': True}
+
+
+
 @api_router.get('/')
 async def root():
     return {'message': 'Paneltec Safety Portal API', 'status': 'ok'}

@@ -1,7 +1,5 @@
 import React from "react";
-import {
-  Calendar, ListChecks, UserCog, ClipboardList, Clock, Users2, CalendarClock, FolderArchive
-} from "lucide-react";
+import { ClipboardList, Clock, Users2, CalendarClock, FolderArchive } from "lucide-react";
 
 function Placeholder({ icon: Icon, title, description, color = "amber" }) {
   const colorMap = {
@@ -37,21 +35,6 @@ function Placeholder({ icon: Icon, title, description, color = "amber" }) {
       </div>
     </div>
   );
-}
-
-export function ProjectBookingPage() {
-  return <Placeholder icon={Calendar} color="blue" title="Project Booking"
-    description="Book workers onto specific projects for a date range. Tie crew availability to SimPRO jobs."/>;
-}
-
-export function AllocationPage() {
-  return <Placeholder icon={ListChecks} color="purple" title="Allocation"
-    description="Assign workers, plant, and resources to specific tasks/jobs for a period."/>;
-}
-
-export function PersonnelRequiredPage() {
-  return <Placeholder icon={UserCog} color="emerald" title="Personnel Required"
-    description="Workforce planning: how many people of each skill type are required at each jobsite per day."/>;
 }
 
 export function ListPage() {
