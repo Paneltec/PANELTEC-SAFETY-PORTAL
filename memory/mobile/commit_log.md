@@ -1,0 +1,46 @@
+## Iteration 1 — Initial scaffolding (by previous agent)
+- **Commit**: 22f2930e2874bc47a822685d1d77bea501e0d91d
+- **Date**: 2026-06-17T04:30:00Z (approx)
+- **Changes**:
+  - Created full Expo Router file structure with auth routing and 5-tab navigator
+  - Built auth screens (login.tsx, signup.tsx) with full API integration
+  - Built all 5 tab screens (dashboard, capture, compliance, ask, settings)
+  - Created SWMS module (list, new, detail with AI generation)
+  - Created Pre-starts module (list, new with crew sign-ons)
+  - Created Site diary module (list, new with AI structuring)
+  - Created Hazards module (list, new with severity picker)
+  - Created Incidents module (list, new with category selection)
+  - Created core lib files (api.ts, auth.ts, colors.ts)
+  - Created reusable components (StatusBadge, EmptyState, PrimaryButton, GhostButton, FormField)
+  - Created layout files for all sub-routes
+- **Files modified**: 30+ files under /app/mobile/
+- **Web files referenced**: All files under /app/frontend/src/
+
+## Iteration 2 — Bug fixes, missing screens, auth flow fix
+- **Commit**: 22f2930e2874bc47a822685d1d77bea501e0d91d (same base, code changes not yet committed)
+- **Date**: 2026-06-17T05:42:00Z
+- **Changes**:
+  - Fixed hazards/new.tsx: removed misplaced `import { TouchableOpacity }` at line 54, added it to top import
+  - Created inspections/index.tsx: list screen with pass/fail/NA results display
+  - Created inspections/new.tsx: template picker (Site walk, Plant inspection, Working at height) + checklist with pass/fail/NA buttons
+  - Created contractors/index.tsx: list with compliance summary, status filtering
+  - Created contractors/new.tsx: form with company details, ABN, trade, status
+  - Created contractors/[id].tsx: detail page with contact info and documents section
+  - Created AuthContext.tsx: shared auth context to fix login navigation bug
+  - Updated _layout.tsx: wrapped in AuthProvider, login/logout properly triggers navigation
+  - Updated login.tsx: uses setAuth(true) instead of direct router.replace
+  - Updated signup.tsx: uses setAuth(true) instead of direct router.replace
+  - Updated settings.tsx: uses setAuth(false) on logout instead of direct router.replace
+- **Files modified**:
+  - /app/mobile/src/lib/AuthContext.tsx (new)
+  - /app/mobile/app/_layout.tsx (modified)
+  - /app/mobile/app/(auth)/login.tsx (modified)
+  - /app/mobile/app/(auth)/signup.tsx (modified)
+  - /app/mobile/app/(tabs)/settings.tsx (modified)
+  - /app/mobile/app/hazards/new.tsx (bug fix)
+  - /app/mobile/app/inspections/index.tsx (new)
+  - /app/mobile/app/inspections/new.tsx (new)
+  - /app/mobile/app/contractors/index.tsx (new)
+  - /app/mobile/app/contractors/new.tsx (new)
+  - /app/mobile/app/contractors/[id].tsx (new)
+- **Web files referenced**: Inspections.jsx, Contractors.jsx

@@ -3,10 +3,11 @@ import { Link, NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
-  Search, Bell, ChevronDown, Menu, X, LogOut, ChevronsLeft, ChevronsRight,
+  Search, Bell, ChevronDown, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
+import { useWorkspace } from '../../lib/workspace';
 import { WORKSPACES as MOCK_WS } from '../../mocks/dashboard';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -32,6 +33,7 @@ const NAV = [
     { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors' },
     { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports' },
+    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org' },
@@ -57,7 +59,8 @@ const SidebarNav = ({ collapsed, onItemClick }) => (
                       isActive ? 'bg-brand-blue-soft text-brand-blue font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`} title={collapsed ? it.label : undefined}>
                   <Icon size={18} className="shrink-0" />
-                  {!collapsed && <span className="truncate">{it.label}</span>}
+                  {!collapsed && <span className="truncate flex-1">{it.label}</span>}
+                  {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
                 </NavLink>
               </li>
             );

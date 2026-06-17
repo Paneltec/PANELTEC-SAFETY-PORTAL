@@ -97,6 +97,15 @@ Marketing landing, mock auth, app shell, dashboard, integrations register, 13 st
 - **SWMS detail review actions** only show for `submitted` status and `hseq_lead`/`admin` roles
 - The dashboard metrics key is `attention_band` (not `band`) — frontend handles both for resilience
 
+
+## Phase 3b — Navixy GPS integration — shipped 2026-02-17
+- New collection `integration_configs` with masked secrets (`••••<last4>`).
+- New backend module `/app/backend/integrations.py` mounts under `/api/integrations`.
+- 4 connector cards on `/app/settings/integrations`; Navixy now routes to a real admin page; the other 3 still open the Phase-1 "request access" modal (MOCKED).
+- Navixy v2 endpoints used: `/v2/user/auth`, `/v2/tracker/list`, `/v2/tracker/get_states`. Operator enters base URL, email, password in the UI — no credentials hardcoded.
+- New routes: `/app/settings/integrations/navixy` (admin), `/app/vehicles` (live fleet list, map placeholder).
+- Bug fix: `useWorkspace` import was missing in `/app/frontend/src/components/layout/AppShell.jsx` — added `import { useWorkspace } from '../../lib/workspace';`.
+
 ## Backlog
 
 ### P0 — Phase 3 next

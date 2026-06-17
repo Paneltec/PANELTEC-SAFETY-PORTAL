@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plug, ArrowRight, ShieldAlert } from 'lucide-react';
 import { toast } from 'sonner';
 import { INTEGRATIONS } from '../mocks/dashboard';
@@ -7,6 +8,7 @@ import {
 } from '../components/ui/dialog';
 
 function IntegrationCard({ integ, onConfigure }) {
+  const isLive = integ.key === 'navixy';
   return (
     <div
       className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col"
@@ -24,24 +26,34 @@ function IntegrationCard({ integ, onConfigure }) {
           <div className="flex items-center gap-2">
             <h3 className="font-display text-lg font-semibold">{integ.name}</h3>
             <span
-              className="text-[10px] px-2 py-0.5 rounded-full bg-brand-amber-soft text-amber-700 font-semibold uppercase tracking-wider"
+              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider ${isLive ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-amber-soft text-amber-700'}`}
               data-testid={`integration-status-${integ.key}`}
             >
-              {integ.status}
+              {isLive ? 'Live API' : integ.status}
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-600 leading-relaxed">{integ.purpose}</p>
         </div>
       </div>
       <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-        <span className="text-xs text-slate-400">MOCKED · UI only</span>
-        <button
-          onClick={onConfigure}
-          data-testid={`integration-configure-${integ.key}`}
-          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline"
-        >
-          Configure <ArrowRight size={14} />
-        </button>
+        <span className="text-xs text-slate-400">{isLive ? 'Live · per-org session hash' : 'MOCKED · UI only'}</span>
+        {isLive ? (
+          <Link
+            to="/app/settings/integrations/navixy"
+            data-testid={`integration-configure-${integ.key}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline"
+          >
+            Configure <ArrowRight size={14} />
+          </Link>
+        ) : (
+          <button
+            onClick={onConfigure}
+            data-testid={`integration-configure-${integ.key}`}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline"
+          >
+            Configure <ArrowRight size={14} />
+          </button>
+        )}
       </div>
     </div>
   );

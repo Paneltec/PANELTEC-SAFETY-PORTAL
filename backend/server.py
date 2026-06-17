@@ -22,6 +22,7 @@ from crud import (  # noqa: E402
 from dashboard import files_router, router as dashboard_router  # noqa: E402
 from db import close as close_db  # noqa: E402
 from exports import router as exports_router  # noqa: E402
+from integrations import router as integrations_router  # noqa: E402
 from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
 
@@ -72,6 +73,7 @@ api.include_router(contractors_router)
 api.include_router(renewals_router)
 api.include_router(renewals_public_router)
 api.include_router(exports_router)
+api.include_router(integrations_router)
 api.include_router(ask_router)
 
 app.include_router(api)

@@ -23,6 +23,8 @@ import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
 import Ask from '@/pages/Ask';
 import PublicRenewal from '@/pages/PublicRenewal';
+import NavixyAdmin from '@/pages/NavixyAdmin';
+import Vehicles from '@/pages/Vehicles';
 
 function App() {
   return (
@@ -65,10 +67,12 @@ function App() {
 
               <Route path="renewals" element={<Renewals />} />
               <Route path="audit-exports" element={<AuditExports />} />
+              <Route path="vehicles" element={<Vehicles />} />
 
               <Route path="settings/org" element={<Stub />} />
               <Route path="settings/workspaces" element={<Stub />} />
               <Route path="settings/integrations" element={<Integrations />} />
+              <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
               <Route path="settings/users" element={<Stub />} />
             </Route>
 
