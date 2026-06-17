@@ -233,7 +233,6 @@ async def _navixy_tracker_tag_map(client: httpx.AsyncClient, base: str, h: str) 
 @router.get("/navixy/vehicles")
 async def navixy_vehicles(
     tag_ids: Optional[str] = None,
-    include_offline: int = 0,
     user: dict = Depends(get_current_user),
 ):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "navixy"})
@@ -307,11 +306,6 @@ async def navixy_vehicles(
             continue
         s = states.get(tid) if isinstance(states.get(tid), dict) else {}
         gps = s.get("gps") if isinstance(s.get("gps"), dict) else {}
-        # Only include vehicles with a real position unless the caller asks
-        # for the unfiltered debug list. Reflects the customer's expectation:
-        # "if it's in the list, it has data."
-        if not include_offline and (gps.get("lat") is None or gps.get("lng") is None):
-            continue
         src = t.get("source") if isinstance(t.get("source"), dict) else {}
         out.append({
             "id": tid,
@@ -325,6 +319,5 @@ async def navixy_vehicles(
             "address": s.get("address"),
             "tags": [tag_lookup[tid_] for tid_ in v_tag_ids if tid_ in tag_lookup],
         })
-    # `total` now reflects positioned vehicles (what the UI shows).
     return {"count": len(out), "total": len(out), "vehicles": out,
             "fetched_at": now_iso(), "filter_tag_ids": sorted(selected_tag_ids)}
