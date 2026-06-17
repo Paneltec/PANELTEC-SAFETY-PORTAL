@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog, Download, Share, Plus, X } from 'lucide-react';
 import { login } from '../lib/auth';
 import { apiError } from '../lib/api';
+import { usePwaInstall } from '../lib/pwa';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -14,6 +15,14 @@ export default function Cover() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const { canInstall, isIOS, prompt: triggerInstall, dismiss: dismissInstall } = usePwaInstall();
+  const [iosOpen, setIosOpen] = useState(false);
+
+  const handleInstall = async () => {
+    if (isIOS) { setIosOpen(true); return; }
+    const { outcome } = await triggerInstall();
+    if (outcome === 'dismissed') dismissInstall();
+  };
 
   const doLogin = async (em, pw) => {
     setError('');
@@ -46,10 +55,37 @@ export default function Cover() {
           <img src="/brand/mark.png" alt="" className="h-7 w-auto" />
           <span className="font-display text-[13px] font-bold tracking-[0.22em] text-slate-900 md:text-white">PANELTEC CIVIL</span>
         </Link>
-        <div className="hidden sm:block text-[12px] tracking-wide text-slate-600 md:text-white/80">
-          Need access? <span className="font-semibold text-slate-900 md:text-white">Contact your admin</span>
+        <div className="hidden sm:flex items-center gap-4 text-[12px] tracking-wide text-slate-600 md:text-white/80">
+          {canInstall && (
+            <button type="button" onClick={handleInstall} data-testid="cover-install-pill"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-slate-300 md:border-white/25 bg-white/80 md:bg-white/10 backdrop-blur text-slate-900 md:text-white text-[11px] font-semibold uppercase tracking-wider hover:bg-white md:hover:bg-white/20">
+              <Download size={12} /> Install Paneltec on your phone →
+            </button>
+          )}
+          <span>Need access? <span className="font-semibold text-slate-900 md:text-white">Contact your admin</span></span>
         </div>
       </div>
+
+      {/* iOS install instructions modal */}
+      {iosOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setIosOpen(false)} data-testid="cover-ios-modal">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between mb-3">
+              <h3 className="font-display text-lg font-bold text-[#0F1B2D]">Install on iPhone</h3>
+              <button onClick={() => setIosOpen(false)} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X size={18} /></button>
+            </div>
+            <ol className="space-y-3 text-sm text-slate-700">
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">1</span>
+                Tap the <Share size={14} className="inline align-text-bottom mx-0.5" /> Share button in Safari&apos;s toolbar.</li>
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">2</span>
+                Scroll down and tap <Plus size={14} className="inline align-text-bottom mx-0.5" /> <strong>Add to Home Screen</strong>.</li>
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">3</span>
+                Tap <strong>Add</strong>. The Paneltec icon will appear on your home screen.</li>
+            </ol>
+            <button onClick={() => setIosOpen(false)} className="mt-5 w-full py-2.5 rounded-lg bg-brand-blue text-white font-semibold text-sm">Got it</button>
+          </div>
+        </div>
+      )}
 
       <div className="min-h-screen w-full md:grid md:grid-cols-[3fr_2fr]">
         {/* LEFT — hero (hidden on mobile) */}
