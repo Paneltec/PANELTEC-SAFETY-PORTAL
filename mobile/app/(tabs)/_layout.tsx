@@ -65,6 +65,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="vehicles"
+        options={{
+          title: 'Vehicles',
+          tabBarIcon: ({ color, size }) => <Ionicons name="car" size={size} color={color} />,
+          href: canDo(perms, 'vehicles', 'open') ? undefined : null,
+        }}
+      />
+      <Tabs.Screen
         name="my-work"
         options={{
           title: 'My Work',
