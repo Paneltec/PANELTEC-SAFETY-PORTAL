@@ -4,6 +4,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
+import PdfActions from '../components/PdfActions';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 
@@ -53,10 +54,13 @@ export default function InspectionsList() {
                     <td className="px-4 py-3 text-slate-500">{it.date}</td>
                     <td className="px-4 py-3 text-slate-500"><span className="text-emerald-700 font-medium">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-medium' : ''}>{failed}</span> fail · {total - passed - failed} N/A</td>
                     <td className="px-4 py-3 text-right">
-                      <EmailButton resourceKind="inspections" recordId={it.id}
-                        subject={`Inspection Report: ${it.template_name} — ${it.date}`}
-                        body={`Inspection report.\n\nTemplate: ${it.template_name}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
-                        variant="row" size="sm" label="Email" />
+                      <div className="inline-flex gap-1 items-center">
+                        <PdfActions resourceKind="inspections" recordId={it.id} title={it.template_name || it.template || 'Inspection'} size="sm" />
+                        <EmailButton resourceKind="inspections" recordId={it.id}
+                          subject={`Inspection Report: ${it.template_name} — ${it.date}`}
+                          body={`Inspection report.\n\nTemplate: ${it.template_name}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
+                          variant="row" size="sm" label="Email" />
+                      </div>
                     </td>
                   </tr>
                 );

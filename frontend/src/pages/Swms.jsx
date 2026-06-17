@@ -4,6 +4,7 @@ import { FileText, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
+import PdfActions from '../components/PdfActions';
 import { getUser } from '../lib/auth';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
@@ -43,6 +44,15 @@ export default function SwmsList() {
                   <td className="px-4 py-3"><StatusBadge value={s.status} /></td>
                   <td className="px-4 py-3 text-slate-500">v{s.version || 1}</td>
                   <td className="px-4 py-3 text-slate-500">{(s.created_at || '').slice(0, 10)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex gap-1 items-center">
+                      <PdfActions resourceKind="swms" recordId={s.id} title={s.title} size="sm" />
+                      <EmailButton resourceKind="swms" recordId={s.id}
+                        subject={`SWMS for Review: ${s.title} v${s.version || 1}`}
+                        body={`Please review the attached SWMS.\n\nTitle: ${s.title}\nStatus: ${s.status}`}
+                        variant="row" size="sm" label="Email" />
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
