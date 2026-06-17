@@ -291,38 +291,75 @@ export default function Vehicles() {
             )
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
-              {vehicles.map((v) => (
-                <li key={v.id} className="p-3 hover:bg-slate-50" data-testid={`vehicle-${v.id}`}>
+              {vehicles.map((v, idx) => {
+                const isOnline = v.status !== 'offline';
+                const primary = v.tags?.[0];
+                const moreCount = (v.tags?.length || 0) - 1;
+                const rowBg = idx % 2 === 0 ? '#EAF3FB' : '#F2F8FC';
+                return (
+                <li key={v.id} className="px-4 py-3.5" style={{ backgroundColor: rowBg }} data-testid={`vehicle-${v.id}`}>
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${v.status === 'online' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
-                    <div className="font-medium text-sm truncate flex-1">{v.label}</div>
-                    {v.speed_kph != null && v.speed_kph > 0 && <span className="text-xs text-slate-500">{v.speed_kph} km/h</span>}
+                    <div className="font-bold text-base text-brand-blue truncate flex-1">{v.label}</div>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); setActiveMapVehicle(v); }}
                       title="Show position on map"
                       aria-label={`Show ${v.label} on map`}
                       data-testid={`vehicle-pin-${v.id}`}
-                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-blue/30 text-brand-blue hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-colors"
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-md bg-white text-brand-blue hover:bg-brand-blue hover:text-white transition-colors"
+                      style={{ borderWidth: 1, borderStyle: 'solid', borderColor: '#BCD8F5' }}
                     >
-                      <MapPin size={13} />
+                      <MapPin size={14} />
                     </button>
+                    {/* TODO: wire to real vehicle utilisation status */}
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                      style={{ backgroundColor: '#D5EFE3', color: '#0F7A4F', border: '1px solid #A8DEC5' }}
+                      data-testid={`vehicle-util-${v.id}`}
+                    >
+                      Free
+                    </span>
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">{v.plate || '—'} · <RelTime iso={v.last_seen} />{v.movement_status ? ` · ${v.movement_status}` : ''}</div>
-                  {v.address && <div className="text-xs text-slate-400 mt-0.5 truncate">{v.address}</div>}
-                  {v.tags?.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {v.tags.map((t) => (
-                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border"
-                              style={{ borderColor: '#' + (t.color || 'CBD5E1').replace('#',''), color: '#' + (t.color || '475569').replace('#','') }}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#' + (t.color || '94A3B8').replace('#','') }} />
-                          {t.name}
+                  <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                    {isOnline ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Live
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-rose-700">
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" /> Offline
+                      </span>
+                    )}
+                    {v.speed_kph != null && v.speed_kph > 0 && (
+                      <span className="text-[11px] text-slate-500">{v.speed_kph} km/h</span>
+                    )}
+                    {primary && (() => {
+                      const c = '#' + (primary.color || '2C6BFF').replace('#', '');
+                      return (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ backgroundColor: `${c}1A`, color: c, border: `1px solid ${c}55` }}
+                          data-testid={`vehicle-tag-${v.id}`}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: c }} />
+                          {primary.name}
                         </span>
-                      ))}
-                    </div>
-                  )}
+                      );
+                    })()}
+                    {moreCount > 0 && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-semibold text-slate-500 bg-white border border-slate-200">
+                        +{moreCount} more
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    {v.plate || '—'} · <RelTime iso={v.last_seen} />
+                    {v.movement_status ? ` · ${v.movement_status}` : ''}
+                  </div>
+                  {v.address && <div className="text-[11px] text-slate-400 truncate">{v.address}</div>}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           )}
         </div>
