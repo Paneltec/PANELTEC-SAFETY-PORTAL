@@ -16,17 +16,44 @@ function RelTime({ iso }) {
   return <span>{Math.round(mins / 60 / 24)}d ago</span>;
 }
 
+const TAG_FILTER_KEY = 'paneltec_vehicle_tag_filter';
+
+function loadPersistedTagIds() {
+  try {
+    const raw = localStorage.getItem(TAG_FILTER_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch { return []; }
+}
+
 export default function Vehicles() {
   const [data, setData] = useState(null);
   const [tags, setTags] = useState([]);
-  const [selected, setSelected] = useState(new Set());
+  const [selected, setSelected] = useState(() => new Set(loadPersistedTagIds()));
   const [busy, setBusy] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
+  // Persist selection on every change. Initial render writes back what we
+  // already hydrated (idempotent).
+  useEffect(() => {
+    try { localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(Array.from(selected))); }
+    catch { /* ignore quota errors */ }
+  }, [selected]);
+
   const loadTags = async () => {
-    try { const { data: d } = await api.get('/integrations/navixy/tags'); setTags(d.tags || []); }
-    catch { /* tags are optional; ignore */ }
+    try {
+      const { data: d } = await api.get('/integrations/navixy/tags');
+      const tagList = d.tags || [];
+      setTags(tagList);
+      // Prune any persisted IDs that no longer exist in Navixy.
+      setSelected((prev) => {
+        const valid = new Set(tagList.map((t) => t.id));
+        const filtered = new Set([...prev].filter((id) => valid.has(id)));
+        return filtered.size === prev.size ? prev : filtered;
+      });
+    } catch { /* tags are optional; ignore */ }
   };
 
   const loadVehicles = async (tagSet) => {
