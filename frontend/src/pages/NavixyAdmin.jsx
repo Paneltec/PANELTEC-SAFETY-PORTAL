@@ -80,7 +80,11 @@ export default function NavixyAdmin() {
   const save = async () => {
     setBusy((b) => ({ ...b, save: true }));
     const ok = await autoSave();
-    if (ok) toast.success('Credentials saved');
+    if (ok) {
+      toast.success('Credentials saved');
+      // Clear the input fields so the next render shows the new masked placeholders + Saved chips
+      setS((prev) => ({ ...prev, passwordInput: '', hashInput: '' }));
+    }
     setBusy((b) => ({ ...b, save: false }));
   };
 
@@ -149,7 +153,15 @@ export default function NavixyAdmin() {
             <Field label="Email">
               <Input type="email" value={s.email} onChange={(v) => setS({ ...s, email: v })} placeholder="info@yourcompany.com" testid="nav-email" />
             </Field>
-            <Field label="Password">
+            <Field label="Password" rightSlot={(s.passwordOnFile && !s.passwordInput) ? (
+              <span className="text-[10px] text-emerald-700 inline-flex items-center gap-1 normal-case tracking-normal font-normal" data-testid="nav-password-saved">
+                <CheckCircle2 size={11} /> Saved · {s.passwordOnFile}
+              </span>
+            ) : s.passwordInput ? (
+              <span className="text-[10px] text-amber-700 inline-flex items-center gap-1 normal-case tracking-normal font-normal">
+                Editing — click Save to confirm
+              </span>
+            ) : null}>
               <InputWithToggle
                 value={s.passwordInput}
                 onChange={(v) => setS({ ...s, passwordInput: v })}
@@ -158,7 +170,15 @@ export default function NavixyAdmin() {
                 testid="nav-password"
               />
             </Field>
-            <Field label="API key / session hash">
+            <Field label="API key / session hash" rightSlot={(s.hashOnFile && !s.hashInput) ? (
+              <span className="text-[10px] text-emerald-700 inline-flex items-center gap-1 normal-case tracking-normal font-normal" data-testid="nav-hash-saved">
+                <CheckCircle2 size={11} /> Saved · {s.hashOnFile}
+              </span>
+            ) : s.hashInput ? (
+              <span className="text-[10px] text-amber-700 inline-flex items-center gap-1 normal-case tracking-normal font-normal">
+                Editing — click Save to confirm
+              </span>
+            ) : null}>
               <InputWithToggle
                 value={s.hashInput}
                 onChange={(v) => setS({ ...s, hashInput: v })}
@@ -212,10 +232,13 @@ export default function NavixyAdmin() {
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, children, rightSlot }) {
   return (
     <label className="block">
-      <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-slate-700 mb-1.5">{label}</div>
+      <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-slate-700 mb-1.5 flex items-center justify-between gap-2">
+        <span>{label}</span>
+        {rightSlot}
+      </div>
       {children}
     </label>
   );

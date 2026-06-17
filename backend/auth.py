@@ -132,6 +132,8 @@ async def login(body: LoginIn):
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("status") == "disabled":
+        raise HTTPException(status_code=401, detail="Account disabled — contact your administrator")
     token = create_access_token(user["id"], user["email"])
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
 

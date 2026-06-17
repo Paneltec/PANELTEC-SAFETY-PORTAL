@@ -39,11 +39,11 @@ export default function Vehicles() {
     finally { setBusy(false); setRefreshing(false); }
   };
 
-  useEffect(() => { loadTags(); loadVehicles(new Set()); }, []);
+  useEffect(() => { loadTags(); setBusy(false); }, []);
 
-  // Debounce filter changes
+  // Only fetch vehicles once tags are selected; clear data when filters cleared.
   useEffect(() => {
-    if (busy) return; // skip first mount
+    if (selected.size === 0) { setData(null); return; }
     const t = setTimeout(() => loadVehicles(selected), 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -143,8 +143,16 @@ export default function Vehicles() {
             </div>
           </div>
           {vehicles.length === 0 ? (
-            <div className="p-10 text-center">
-              <div className="text-sm text-slate-500">{filtered ? 'No vehicles match the selected tags. Try clearing filters.' : 'No vehicles in your fleet.'}</div>
+            <div className="p-10 text-center" data-testid="vehicles-empty-state">
+              {selected.size === 0 ? (
+                <>
+                  <div className="inline-flex w-14 h-14 rounded-2xl bg-brand-blue-soft items-center justify-center mb-3"><TagIcon size={22} className="text-brand-blue" /></div>
+                  <h4 className="font-display text-lg font-semibold">Select one or more tags to view your fleet</h4>
+                  <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">Use the tags on the left to filter your vehicles. We don&apos;t load the full fleet by default — picking a tag keeps the view focused and fast.</p>
+                </>
+              ) : (
+                <div className="text-sm text-slate-500">No vehicles match the selected tags. Try clearing filters.</div>
+              )}
             </div>
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
