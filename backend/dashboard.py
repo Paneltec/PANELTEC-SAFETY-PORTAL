@@ -100,3 +100,8 @@ async def serve_renewal(token: str, name: str):
 @files_router.get("/exports/{name}")
 async def serve_export(name: str):
     return _serve("exports", name)
+
+
+@files_router.get("/pdfs/{name}")
+async def serve_pdf(name: str):
+    return _serve("pdfs", name)

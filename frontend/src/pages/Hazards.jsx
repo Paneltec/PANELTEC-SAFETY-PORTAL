@@ -4,6 +4,7 @@ import { Camera, Loader2, Plus, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
+import PdfActions from '../components/PdfActions';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 
@@ -36,7 +37,8 @@ export default function HazardsList() {
                 </div>
                 <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.description}</p>
                 <div className="mt-3 flex items-center justify-between"><StatusBadge value={h.status} /><span className="text-[10px] text-slate-400">{(h.created_at || '').slice(0, 10)}</span></div>
-                <div className="mt-2 pt-2 border-t border-slate-100">
+                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                  <PdfActions resourceKind="hazards" recordId={h.id} title={h.title} size="sm" />
                   <EmailButton resourceKind="hazards" recordId={h.id}
                     subject={`Hazard Report: ${h.title} (severity: ${h.severity})`}
                     body={`A hazard has been reported.\n\nTitle: ${h.title}\nSeverity: ${h.severity}\nDescription: ${h.description || ''}`}

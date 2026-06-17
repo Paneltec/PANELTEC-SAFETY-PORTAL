@@ -16,6 +16,22 @@ from permissions import PERMISSIONS_SCHEMA, RESOURCES, require_permission
 log = logging.getLogger("paneltec.email")
 router = APIRouter(prefix="/email", tags=["email"])
 
+# ---- PDF attachment helper ----
+from pdf_renderer import RENDERERS, persist_pdf, filename_for  # noqa: E402
+
+async def _pdf_attachment_for(record: dict, resource: str) -> Optional[dict]:
+    """Render record PDF, persist to /uploads/pdfs/, return attachment dict."""
+    try:
+        renderer, _coll = RENDERERS[resource]
+        pdf_bytes = renderer(record)
+        name_hint = filename_for(record, resource).removesuffix(".pdf")
+        file_url, fname = persist_pdf(name_hint, pdf_bytes)
+        return {"file_url": file_url, "filename": fname,
+                "label": f"{resource.replace('_', ' ').title()} PDF"}
+    except Exception as e:
+        log.warning("PDF gen failed for %s/%s: %s", resource, record.get("id"), e)
+        return None
+
 EmailStatus = Literal["queued", "sent", "failed", "cancelled"]
 
 
@@ -260,6 +276,9 @@ async def email_swms_for_review(record_id: str, body: RecordEmailIn, user: dict)
     )
     link = f"/app/swms/{record_id}"
     atts = [{"file_url": f"/api/swms/{record_id}/pdf", "filename": f"swms-{record_id[:8]}.pdf"}]
+    pdf_att = await _pdf_attachment_for(rec, "swms")
+    if pdf_att:
+        atts = [pdf_att]
     return await queue_email_doc(
         org_id=user["org_id"], to=body.to, cc=body.cc, subject=subject,
         body_html=_wrap_body(body.message, summary, link), attachments=atts,
@@ -277,10 +296,12 @@ async def email_prestart(record_id, body, user):
         f"<p><strong>Work:</strong> {rec.get('work_summary', '')}</p>"
         f"<p><strong>Sign-ons:</strong> {len(rec.get('sign_ons', []))}</p>"
     )
+    pdf_att = await _pdf_attachment_for(rec, "pre_starts")
     return await queue_email_doc(
         org_id=user["org_id"], to=body.to, cc=body.cc, subject=subject,
         body_html=_wrap_body(body.message, summary, f"/app/pre-starts"),
-        attachments=[], related_record_type="pre_starts", related_record_id=record_id,
+        attachments=[pdf_att] if pdf_att else [],
+        related_record_type="pre_starts", related_record_id=record_id,
         created_by=user["id"], resource_kind="pre_starts",
     )
 
@@ -289,10 +310,12 @@ async def email_site_diary(record_id, body, user):
     rec = await _record_or_404("site_diary_entries", record_id, user["org_id"])
     subject = f"Site Diary: {rec.get('date')}"
     summary = f"<p><strong>Date:</strong> {rec.get('date')}</p><p>{rec.get('raw_notes', '')[:400]}</p>"
+    pdf_att = await _pdf_attachment_for(rec, "site_diary")
     return await queue_email_doc(
         org_id=user["org_id"], to=body.to, cc=body.cc, subject=subject,
         body_html=_wrap_body(body.message, summary, f"/app/site-diary"),
-        attachments=[], related_record_type="site_diary", related_record_id=record_id,
+        attachments=[pdf_att] if pdf_att else [],
+        related_record_type="site_diary", related_record_id=record_id,
         created_by=user["id"], resource_kind="site_diary",
     )
 
@@ -308,6 +331,9 @@ async def email_hazard(record_id, body, user):
     atts = []
     if rec.get("photo_url"):
         atts.append({"file_url": rec["photo_url"], "filename": "hazard-photo.jpg"})
+    pdf_att = await _pdf_attachment_for(rec, "hazards")
+    if pdf_att:
+        atts.append(pdf_att)
     return await queue_email_doc(
         org_id=user["org_id"], to=body.to, cc=body.cc, subject=subject,
         body_html=_wrap_body(body.message, summary, f"/app/hazards"),
@@ -343,10 +369,12 @@ async def email_inspection(record_id, body, user):
         f"<p><strong>Date:</strong> {rec.get('date')}</p>"
         f"<p><strong>Checklist:</strong> {len(items)} items, {fails} fails</p>"
     )
+    pdf_att = await _pdf_attachment_for(rec, "inspections")
     return await queue_email_doc(
         org_id=user["org_id"], to=body.to, cc=body.cc, subject=subject,
         body_html=_wrap_body(body.message, summary, f"/app/inspections"),
-        attachments=[], related_record_type="inspections", related_record_id=record_id,
+        attachments=[pdf_att] if pdf_att else [],
+        related_record_type="inspections", related_record_id=record_id,
         created_by=user["id"], resource_kind="inspections",
     )
 
