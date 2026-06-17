@@ -21,10 +21,12 @@ from crud import (  # noqa: E402
 )
 from dashboard import files_router, router as dashboard_router  # noqa: E402
 from db import close as close_db  # noqa: E402
+from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
 from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
+from users import router as users_router  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("paneltec")
@@ -41,6 +43,11 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api")
+
+
+# Permission enforcement middleware — runs before route deps.
+from permissions_middleware import PermissionsMiddleware  # noqa: E402
+app.add_middleware(PermissionsMiddleware)
 
 
 @api.get("/")
@@ -75,6 +82,9 @@ api.include_router(renewals_public_router)
 api.include_router(exports_router)
 api.include_router(integrations_router)
 api.include_router(ask_router)
+api.include_router(users_router)
+api.include_router(email_router)
+api.include_router(record_email_router)
 
 app.include_router(api)
 

@@ -1,3 +1,44 @@
+# Phase 5 — Permissions Matrix + Email Outbox (shipped 2026-02-17)
+
+## Permission model
+- 12 resources × 4 actions (open / view / edit / email). Vehicles, integrations and users have `email_supported: false`.
+- Role defaults in `/app/backend/permissions.py::ROLE_DEFAULTS`. Per-user overrides stored in Mongo collection `user_permissions`. Explicit override always wins over the role default.
+- `require_permission(resource, action)` FastAPI dep used directly in `crud.py`, `users.py`, `email_outbox.py`. A `PermissionsMiddleware` (`/app/backend/permissions_middleware.py`) auto-gates `/api/contractors`, `/api/renewals`, `/api/audit-exports`, `/api/integrations`, `/api/users` so we didn't have to touch those modules. 403 response always reads `{"detail":"Permission denied: <r>.<a>"}`.
+- `GET /api/auth/me` now returns `effective_permissions` matrix for client-side gating.
+
+## User management — admin only
+- `GET /api/users`, `GET /api/users/{id}`, `PATCH /api/users/{id}`, `DELETE /api/users/{id}` (soft-disable)
+- `GET /api/users/{id}/permissions`, `PUT /api/users/{id}/permissions`, `POST /api/users/{id}/permissions/reset`
+- `POST /api/users` invites a new user (status=invited) and queues an invite email through the outbox
+
+## Email + Outbox
+- Mongo collection `outbound_emails`.
+- `POST /api/email/send` — generic; checks `<resource_kind>.email` permission; if `integration_configs.kind=microsoft365` is `connected`, marks `sent` (real Graph call is a TODO at `https://graph.microsoft.com/v1.0/me/sendMail`); otherwise `queued` with note "Microsoft 365 not connected".
+- `GET /api/email/outbox` + `GET /:id` + `POST /:id/retry` + `POST /:id/cancel`.
+- Convenience routes (each gated by `<resource>.email`):
+  - `POST /api/swms/{id}/email-for-review`
+  - `POST /api/pre-starts/{id}/email`
+  - `POST /api/site-diary/{id}/email-daily`
+  - `POST /api/hazards/{id}/email`
+  - `POST /api/incidents/{id}/email-summary`
+  - `POST /api/inspections/{id}/email`
+  - `POST /api/contractors/{id}/email`
+  - `POST /api/renewals/{id}/email-link`
+  - `POST /api/audit-exports/{id}/email`
+
+## Frontend
+- `PermissionsProvider` in `AppShell` hydrates from `/api/auth/me`.
+- `useCan(resource, action)` + `<Can>` JSX guard in `/app/frontend/src/lib/permissions.js`.
+- Sidebar items hide via `can(resource, "open")`.
+- New pages: `/app/settings/users` (full matrix UX with tri-state cells, invite modal) and `/app/outbox` (status/retry/cancel + M365 not-connected banner).
+
+## Seed
+- `audit@paneltec.com` (auditor) gets one override: `audit_exports.edit = true` — shows the "Custom" pill on the user list and demonstrates the override flow.
+- 5 sample outbox entries (queued / sent / failed / cancelled mix).
+
+## Mobile (deferred)
+TODO: thread `effective_permissions` into the Expo app's auth store and gate the same tabs / actions. Web frontend ships first.
+
 # Paneltec Civil — PRD & Build Log
 
 ## Original problem statement

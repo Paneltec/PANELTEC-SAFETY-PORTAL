@@ -8,6 +8,7 @@ import {
 import Logo from '../brand/Logo';
 import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
 import { useWorkspace } from '../../lib/workspace';
+import { PermissionsProvider, useCan } from '../../lib/permissions';
 import { WORKSPACES as MOCK_WS } from '../../mocks/dashboard';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -22,54 +23,62 @@ const NAV = [
     { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkles, testid: 'nav-ask' },
   ]},
   { section: 'Capture', items: [
-    { to: '/app/swms', label: 'AI SWMS', icon: FileText, testid: 'nav-swms' },
-    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheck, testid: 'nav-pre-starts' },
-    { to: '/app/site-diary', label: 'Site Diary', icon: NotebookPen, testid: 'nav-site-diary' },
-    { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards' },
-    { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents' },
-    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections' },
+    { to: '/app/swms', label: 'AI SWMS', icon: FileText, testid: 'nav-swms', resource: 'swms' },
+    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheck, testid: 'nav-pre-starts', resource: 'pre_starts' },
+    { to: '/app/site-diary', label: 'Site Diary', icon: NotebookPen, testid: 'nav-site-diary', resource: 'site_diary' },
+    { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards', resource: 'hazards' },
+    { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents', resource: 'incidents' },
+    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections' },
   ]},
   { section: 'Compliance', items: [
-    { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors' },
-    { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals' },
-    { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports' },
-    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true },
+    { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors', resource: 'contractors' },
+    { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals' },
+    { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports' },
+    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'vehicles' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org' },
     { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces' },
-    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations' },
-    { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users' },
+    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations' },
+    { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users', resource: 'users' },
+    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true },
   ]},
 ];
 
-const SidebarNav = ({ collapsed, onItemClick }) => (
-  <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
-    {NAV.map((group) => (
-      <div key={group.section} className="mb-5">
-        {!collapsed && <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.section}</div>}
-        <ul className="space-y-0.5">
-          {group.items.map((it) => {
-            const Icon = it.icon;
-            return (
-              <li key={it.to}>
-                <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
-                  className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                      isActive ? 'bg-brand-blue-soft text-brand-blue font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`} title={collapsed ? it.label : undefined}>
-                  <Icon size={18} className="shrink-0" />
-                  {!collapsed && <span className="truncate flex-1">{it.label}</span>}
-                  {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
-                </NavLink>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    ))}
-  </nav>
-);
+const SidebarNav = ({ collapsed, onItemClick }) => {
+  const can = useCan();
+  return (
+    <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
+      {NAV.map((group) => {
+        const visible = group.items.filter((it) => !it.resource || can(it.resource, 'open'));
+        if (visible.length === 0) return null;
+        return (
+          <div key={group.section} className="mb-5">
+            {!collapsed && <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.section}</div>}
+            <ul className="space-y-0.5">
+              {visible.map((it) => {
+                const Icon = it.icon;
+                return (
+                  <li key={it.to}>
+                    <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
+                      className={({ isActive }) =>
+                        `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
+                          isActive ? 'bg-brand-blue-soft text-brand-blue font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        }`} title={collapsed ? it.label : undefined}>
+                      <Icon size={18} className="shrink-0" />
+                      {!collapsed && <span className="truncate flex-1">{it.label}</span>}
+                      {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
+                    </NavLink>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })}
+    </nav>
+  );
+};
 
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const navigate = useNavigate();
@@ -173,7 +182,13 @@ export default function AppShell() {
 
   if (!getToken()) return <Navigate to="/login" replace />;
 
+  const permsValue = {
+    effective: user?.effective_permissions || {},
+    role: user?.role || null,
+  };
+
   return (
+    <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
       <SidebarShell collapsed={collapsed} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
@@ -192,5 +207,6 @@ export default function AppShell() {
         <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main"><Outlet /></main>
       </div>
     </div>
+    </PermissionsProvider>
   );
 }

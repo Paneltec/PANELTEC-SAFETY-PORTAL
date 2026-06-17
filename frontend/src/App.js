@@ -25,6 +25,8 @@ import Ask from '@/pages/Ask';
 import PublicRenewal from '@/pages/PublicRenewal';
 import NavixyAdmin from '@/pages/NavixyAdmin';
 import Vehicles from '@/pages/Vehicles';
+import UsersManagement from '@/pages/UsersManagement';
+import Outbox from '@/pages/Outbox';
 
 function App() {
   return (
@@ -73,7 +75,8 @@ function App() {
               <Route path="settings/workspaces" element={<Stub />} />
               <Route path="settings/integrations" element={<Integrations />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
-              <Route path="settings/users" element={<Stub />} />
+              <Route path="settings/users" element={<UsersManagement />} />
+              <Route path="outbox" element={<Outbox />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

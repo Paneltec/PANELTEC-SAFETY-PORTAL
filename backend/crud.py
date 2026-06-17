@@ -1,24 +1,23 @@
-"""Generic CRUD routers — one per entity. All routes are org/workspace scoped
-and require a JWT-authenticated user. Soft delete via `deleted_at`.
+"""Generic CRUD routers — permission-gated.
 
 Each entity exposes:
-  GET    /api/{entity}                 — list (filters: workspace_id, status, date_from, date_to)
-  GET    /api/{entity}/{id}            — detail
-  POST   /api/{entity}                 — create
-  PATCH  /api/{entity}/{id}            — partial update
-  DELETE /api/{entity}/{id}            — soft delete
+  GET    /api/{entity}                 — list (requires <resource>.view)
+  GET    /api/{entity}/{id}            — detail (requires <resource>.view)
+  POST   /api/{entity}                 — create (requires <resource>.edit)
+  PATCH  /api/{entity}/{id}            — partial update (requires <resource>.edit)
+  DELETE /api/{entity}/{id}            — soft delete (requires <resource>.edit)
 """
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, Optional, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from auth import get_current_user
 from db import db
 from models import (
     HazardIn, IncidentIn, InspectionIn, PreStartIn, SiteDiaryIn, SwmsIn,
     SwmsReview, new_id, now_iso,
 )
+from permissions import require_permission
 
 
 def _scoped(user: dict, workspace_id: Optional[str] = None) -> dict:
@@ -33,7 +32,7 @@ def _strip(doc: dict) -> dict:
     return doc
 
 
-def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRouter:
+def build_router(prefix: str, collection: str, model: Type[BaseModel], resource: str) -> APIRouter:
     r = APIRouter(prefix=f"/{prefix}", tags=[prefix])
 
     @r.get("")
@@ -43,7 +42,7 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRou
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
         limit: int = Query(200, ge=1, le=500),
-        user: dict = Depends(get_current_user),
+        user: dict = Depends(require_permission(resource, "view")),
     ):
         q = _scoped(user, workspace_id)
         if status:
@@ -59,14 +58,15 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRou
         return docs
 
     @r.get("/{item_id}")
-    async def get_item(item_id: str, user: dict = Depends(get_current_user)):
-        doc = await db[collection].find_one({"id": item_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
+    async def get_item(item_id: str, user: dict = Depends(require_permission(resource, "view"))):
+        doc = await db[collection].find_one(
+            {"id": item_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Not found")
         return doc
 
     @r.post("", status_code=201)
-    async def create_item(body: model, user: dict = Depends(get_current_user)):
+    async def create_item(body: model, user: dict = Depends(require_permission(resource, "edit"))):
         payload = body.model_dump()
         doc = {
             "id": new_id(),
@@ -77,15 +77,16 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRou
             "deleted_at": None,
             **payload,
         }
-        # Version starts at 1 for SWMS
         if collection == "swms":
             doc["version"] = 1
         await db[collection].insert_one(dict(doc))
         return _strip(doc)
 
     @r.patch("/{item_id}")
-    async def update_item(item_id: str, patch: dict, user: dict = Depends(get_current_user)):
-        patch = {k: v for k, v in (patch or {}).items() if k not in {"id", "org_id", "created_at", "created_by"}}
+    async def update_item(item_id: str, patch: dict,
+                          user: dict = Depends(require_permission(resource, "edit"))):
+        patch = {k: v for k, v in (patch or {}).items()
+                 if k not in {"id", "org_id", "created_at", "created_by"}}
         patch["updated_at"] = now_iso()
         result = await db[collection].find_one_and_update(
             {"id": item_id, "org_id": user["org_id"], "deleted_at": None},
@@ -98,7 +99,8 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRou
         return result
 
     @r.delete("/{item_id}")
-    async def delete_item(item_id: str, user: dict = Depends(get_current_user)):
+    async def delete_item(item_id: str,
+                          user: dict = Depends(require_permission(resource, "edit"))):
         result = await db[collection].update_one(
             {"id": item_id, "org_id": user["org_id"], "deleted_at": None},
             {"$set": {"deleted_at": now_iso()}},
@@ -111,18 +113,19 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel]) -> APIRou
 
 
 # ---------- Build the six entity routers ----------
-swms_router = build_router("swms", "swms", SwmsIn)
-prestarts_router = build_router("pre-starts", "pre_starts", PreStartIn)
-diary_router = build_router("site-diary", "site_diary_entries", SiteDiaryIn)
-hazards_router = build_router("hazards", "hazards", HazardIn)
-incidents_router = build_router("incidents", "incidents", IncidentIn)
-inspections_router = build_router("inspections", "inspections", InspectionIn)
+swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms")
+prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts")
+diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary")
+hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards")
+incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents")
+inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections")
 
 
 # ---------- SWMS review (extra endpoint) ----------
 
 @swms_router.post("/{item_id}/review")
-async def review_swms(item_id: str, body: SwmsReview, user: dict = Depends(get_current_user)):
+async def review_swms(item_id: str, body: SwmsReview,
+                      user: dict = Depends(require_permission("swms", "edit"))):
     if user["role"] not in {"hseq_lead", "admin"}:
         raise HTTPException(status_code=403, detail="Only HSE leads can review SWMS")
     status_map = {"approve": "approved", "reject": "rejected", "request_changes": "changes_requested"}

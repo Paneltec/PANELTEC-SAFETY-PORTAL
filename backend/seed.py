@@ -308,6 +308,39 @@ async def seed_all() -> dict:
     await _seed_capture(org_id, ws_ids, user_ids)
     from seed_phase3 import seed_phase3
     phase3 = await seed_phase3(org_id, ws_ids, user_ids)
+    # Phase 5 — one override on auditor + 5 sample outbox emails (idempotent)
+    auditor_id = user_ids.get("audit@paneltec.com")
+    if auditor_id and not await db.user_permissions.find_one({"user_id": auditor_id}):
+        await db.user_permissions.insert_one({
+            "user_id": auditor_id, "org_id": org_id,
+            "overrides": {"audit_exports": {"edit": True}},
+            "updated_at": now_iso(),
+            "updated_by": user_ids.get("admin@paneltec.com") or auditor_id,
+        })
+    if await db.outbound_emails.count_documents({"org_id": org_id}) == 0:
+        admin = user_ids.get("admin@paneltec.com") or auditor_id
+        samples = [
+            ("queued",    "Daily Pre-Start: today",          ["site@client.com"], "pre_starts"),
+            ("sent",      "SWMS for Review: Excavation v2",  ["hseq@client.com"], "swms"),
+            ("queued",    "Hazard Report: Trip on cable",    ["super@client.com"], "hazards"),
+            ("failed",    "Incident Summary: Near miss",     ["insurance@client.com"], "incidents"),
+            ("cancelled", "Audit Export: Q2 pack",           ["audit@client.com"], "audit_exports"),
+        ]
+        docs = []
+        for status, subject, to_list, kind in samples:
+            docs.append({
+                "id": new_id(), "org_id": org_id, "to": to_list, "cc": [],
+                "subject": subject,
+                "body_html": f"<p>Auto-seeded sample for {kind}.</p>",
+                "attachments": [], "related_record_type": kind,
+                "related_record_id": None, "resource_kind": kind,
+                "status": status,
+                "provider": "microsoft365" if status == "sent" else None,
+                "sent_at": now_iso() if status == "sent" else None,
+                "error": "Auth token rejected" if status == "failed" else None,
+                "created_by": admin, "created_at": now_iso(), "updated_at": now_iso(),
+            })
+        await db.outbound_emails.insert_many(docs)
     counts = {
         "users": await db.users.count_documents({"org_id": org_id}),
         "workspaces": len(ws_ids),

@@ -136,9 +136,13 @@ async def login(body: LoginIn):
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
 
 
-@router.get("/me", response_model=UserOut)
+@router.get("/me", response_model=None)
 async def me(user: dict = Depends(get_current_user)):
-    return UserOut(**_to_user_out(user))
+    from permissions import effective_for  # avoid circular at import time
+    return {
+        **_to_user_out(user),
+        "effective_permissions": await effective_for(user),
+    }
 
 
 @router.post("/logout")
