@@ -83,9 +83,13 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
     if not patch:
         raise HTTPException(400, "No fields to update")
     patch["updated_at"] = now_iso()
+    # Status changes (disable/reactivate) revoke any existing JWTs for that user.
+    update_op: dict = {"$set": patch}
+    if "status" in patch:
+        update_op["$inc"] = {"token_version": 1}
     result = await db.users.find_one_and_update(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"$set": patch},
+        update_op,
         return_document=True,
         projection={"_id": 0, "password_hash": 0},
     )
@@ -150,6 +154,7 @@ async def invite_user(body: InviteUserIn, actor: dict = Depends(require_permissi
         "org_id": actor["org_id"], "workspace_ids": body.workspace_ids,
         "password_hash": hash_password(temp_pwd),
         "status": "invited",
+        "token_version": 0,
         "invite_token": invite_token,
         "invited_by": actor["id"],
         "created_at": now_iso(),
@@ -182,7 +187,8 @@ async def disable_user(user_id: str, actor: dict = Depends(require_permission("u
         raise HTTPException(400, "Can't disable your own account")
     result = await db.users.update_one(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"$set": {"status": "disabled", "updated_at": now_iso()}},
+        {"$set": {"status": "disabled", "updated_at": now_iso()},
+         "$inc": {"token_version": 1}},
     )
     if result.matched_count == 0:
         raise HTTPException(404, "User not found")

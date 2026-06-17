@@ -33,10 +33,11 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str) -> str:
+def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
     payload = {
         "sub": user_id,
         "email": email,
+        "tv": token_version,
         "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS),
         "type": "access",
     }
@@ -83,6 +84,14 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found",
                             headers={"X-Auth-Reason": "jwt-invalid"})
+
+    # Token-version check — bumped on disable/reactivate to immediately revoke tokens.
+    token_tv = payload.get("tv", 0)
+    user_tv = user.get("token_version", 0)
+    if token_tv != user_tv:
+        raise HTTPException(status_code=401, detail="Token revoked",
+                            headers={"X-Auth-Reason": "token-revoked"})
+
     user.pop("password_hash", None)
     return user
 
@@ -119,10 +128,11 @@ async def signup(body: SignupIn):
         "role": "admin",  # signups own their org
         "org_id": org_id,
         "workspace_ids": [ws_id],
+        "token_version": 0,
         "created_at": now_iso(),
     }
     await db.users.insert_one(user_doc)
-    token = create_access_token(user_id, email)
+    token = create_access_token(user_id, email, 0)
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user_doc)))
 
 
@@ -134,7 +144,7 @@ async def login(body: LoginIn):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator")
-    token = create_access_token(user["id"], user["email"])
+    token = create_access_token(user["id"], user["email"], user.get("token_version", 0))
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
 
 

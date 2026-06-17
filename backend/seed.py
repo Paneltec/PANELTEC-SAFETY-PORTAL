@@ -74,6 +74,7 @@ async def _ensure_users(org_id: str, ws_ids: list[str]) -> dict[str, str]:
             "role": u["role"],
             "org_id": org_id,
             "workspace_ids": ws_ids,
+            "token_version": 0,
             "created_at": now_iso(),
         }
         await db.users.insert_one(dict(doc))
