@@ -1,52 +1,49 @@
-## Iteration 1 — Initial scaffolding (by previous agent)
-- **Commit**: 22f2930e2874bc47a822685d1d77bea501e0d91d
-- **Date**: 2026-06-17T04:30:00Z (approx)
-- **Changes**:
-  - Created full Expo Router file structure with auth routing and 5-tab navigator
-  - Built auth screens (login.tsx, signup.tsx) with full API integration
-  - Built all 5 tab screens (dashboard, capture, compliance, ask, settings)
-  - Created SWMS module (list, new, detail with AI generation)
-  - Created Pre-starts module (list, new with crew sign-ons)
-  - Created Site diary module (list, new with AI structuring)
-  - Created Hazards module (list, new with severity picker)
-  - Created Incidents module (list, new with category selection)
-  - Created core lib files (api.ts, auth.ts, colors.ts)
-  - Created reusable components (StatusBadge, EmptyState, PrimaryButton, GhostButton, FormField)
-  - Created layout files for all sub-routes
-- **Files modified**: 30+ files under /app/mobile/
-- **Web files referenced**: All files under /app/frontend/src/
+## Iteration 1 — Phase 4 MVP (prior work)
+- **Commit**: (see earlier commits)
+- **Changes**: Built the 5-tab Expo app with 34 routes.
 
-## Iteration 2 — Bug fixes, missing screens, auth flow fix
-- **Commit**: 22f2930e (same base)
-- **Date**: 2026-06-17T05:42:00Z
-- **Changes**:
-  - Fixed hazards/new.tsx: removed misplaced TouchableOpacity import
-  - Created inspections/index.tsx and inspections/new.tsx
-  - Created contractors/index.tsx, new.tsx, and [id].tsx
-  - Created AuthContext.tsx for shared auth state
-  - Updated _layout.tsx, login.tsx, signup.tsx, settings.tsx for AuthContext
-- **Files modified**: 11 files
+## Iteration 2 — Phase 8 scaffolding (prior work)
+- **Commit**: (see earlier commits)
+- **Changes**: Installed expo-file-system, expo-sharing. Created permissions.ts, PdfActions.tsx, EmailSendSheet.tsx, EmailButton.tsx, ReadOnlyBanner.tsx. Updated AuthContext for effective_permissions.
 
-## Iteration 3 — Phase 4: Tab restructure, briefing, QR Sign-On, My Work, camera hazard
-- **Commit**: 9240725c1029721a125943248d7364d363189b52
-- **Date**: 2026-06-17T05:55:00Z
+## Iteration 3 — Phase 8 Full Wiring
+- **Commit**: 75480707926b90f48d7851296a8793ebffc08f50
+- **Date**: 2026-06-17T08:35:00Z
 - **Changes**:
-  - Restructured tabs: Home, Capture, QR Sign-On, My Work, Profile (was Dashboard, Capture, Compliance, Ask AI, Settings)
-  - Tab _layout.tsx: Compliance and Ask AI hidden (href: null) but still accessible via routes
-  - dashboard.tsx: Added /api/ask/briefing call with AI briefing card (violet theme, cited evidence, confidence badge)
-  - settings.tsx: Rebuilt as Profile with workspace switcher (radio group) + sign out + settings links
-  - qr-signon.tsx: NEW — QR code scanner with viewfinder UI, manual code entry, MOCKED scan + sign-on
-  - my-work.tsx: NEW — Records grouped by type (SWMS, pre-starts, diary, hazards, incidents, inspections) with counts
-  - hazards/new.tsx: Added camera (expo-image-picker) + AI vision (POST /api/ai/hazard-vision) + controls list
-  - app.json: Added camera and photo library permissions for iOS/Android
-  - Installed expo-camera@17.0.10, expo-image-picker@17.0.11
+  - Track 1 (Permissions): 
+    - Wired `setForceLogoutHandler` in AuthContext.tsx → connects api.ts 401 interceptor to force-logout
+    - Updated `(tabs)/_layout.tsx` to gate Capture tab via `hasAnyCaptureOpen(perms)`
+    - Updated `(tabs)/capture.tsx` to filter tools by `can(resource, 'open')`
+    - Gated Create/New buttons in all 6 index screens: swms, pre-starts, site-diary, hazards, incidents, inspections
+  - Track 2 (PDF):
+    - Wired `PdfActions` component into all 6 detail screens (swms/[id], pre-starts/[id], site-diary/[id], hazards/[id], incidents/[id], inspections/[id])
+    - `ReadOnlyBanner` shown when user lacks edit permission
+  - Track 3 (Email):
+    - Wired `EmailButton` into all 6 detail screens, gated by `can(resource, 'email')`
+    - Created Outbox tab at `(tabs)/outbox.tsx` with pull-to-refresh, status filters, retry/cancel, detail drawer
+    - Added Outbox tab to tab bar in `_layout.tsx`
+    - Added outbox badge count on Home tab
+  - Track 4 (Polish):
+    - Updated login.tsx to show specific "Account disabled" banner
+    - Force-logout wired via api.ts interceptor + AuthContext
+  - Created 5 new detail screens: pre-starts/[id].tsx, site-diary/[id].tsx, hazards/[id].tsx, incidents/[id].tsx, inspections/[id].tsx
+  - Added list→detail navigation (onPress → router.push) for pre-starts, site-diary, hazards, incidents index screens
 - **Files modified**:
-  - /app/mobile/app/(tabs)/_layout.tsx (rewritten)
-  - /app/mobile/app/(tabs)/dashboard.tsx (rewritten — added briefing)
-  - /app/mobile/app/(tabs)/settings.tsx (rewritten — profile + workspace switcher)
-  - /app/mobile/app/(tabs)/qr-signon.tsx (new)
-  - /app/mobile/app/(tabs)/my-work.tsx (new)
-  - /app/mobile/app/hazards/new.tsx (rewritten — camera + AI vision)
-  - /app/mobile/app.json (permissions)
-- **Web files referenced**: Dashboard.jsx (briefing), Hazards.jsx (camera/AI vision)
-- **All 45 TS/TSX files compile (HTTP 200)**
+  - `/app/mobile/app/(tabs)/_layout.tsx` (overwritten - added Outbox tab, permission gating, badge)
+  - `/app/mobile/app/(tabs)/capture.tsx` (overwritten - permission-filtered tools)
+  - `/app/mobile/app/(tabs)/outbox.tsx` (new - full outbox screen)
+  - `/app/mobile/app/swms/[id].tsx` (overwritten - added PdfActions, EmailButton, ReadOnlyBanner)
+  - `/app/mobile/app/pre-starts/[id].tsx` (new)
+  - `/app/mobile/app/site-diary/[id].tsx` (new)
+  - `/app/mobile/app/hazards/[id].tsx` (new)
+  - `/app/mobile/app/incidents/[id].tsx` (new)
+  - `/app/mobile/app/inspections/[id].tsx` (new)
+  - `/app/mobile/app/swms/index.tsx` (added permission gating)
+  - `/app/mobile/app/pre-starts/index.tsx` (added permission gating + detail nav)
+  - `/app/mobile/app/site-diary/index.tsx` (added permission gating + detail nav)
+  - `/app/mobile/app/hazards/index.tsx` (added permission gating + detail nav)
+  - `/app/mobile/app/incidents/index.tsx` (added permission gating + detail nav)
+  - `/app/mobile/app/inspections/index.tsx` (added permission gating)
+  - `/app/mobile/app/(auth)/login.tsx` (disabled account banner)
+  - `/app/mobile/src/lib/AuthContext.tsx` (force-logout handler registration)
+- **Web files referenced**: Swms.jsx, PreStarts.jsx, SiteDiary.jsx, Hazards.jsx, Incidents.jsx, Inspections.jsx, Outbox.jsx, Login.jsx, App.js, permissions.js, PdfActions.jsx, EmailButton.jsx
