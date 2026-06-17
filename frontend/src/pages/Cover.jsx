@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Loader2, Copy, Check, AlertCircle } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog } from 'lucide-react';
 import { login } from '../lib/auth';
 import { apiError } from '../lib/api';
 
@@ -14,16 +14,14 @@ export default function Cover() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
 
-  const submit = async (e) => {
-    e.preventDefault();
+  const doLogin = async (em, pw) => {
     setError('');
-    if (!EMAIL_RE.test(email.trim())) { setError('Please enter a valid email address.'); return; }
-    if (!password) { setError('Enter your password to continue.'); return; }
+    if (!EMAIL_RE.test(em.trim())) { setError('Please enter a valid email address.'); return; }
+    if (!pw) { setError('Enter your password to continue.'); return; }
     setBusy(true);
     try {
-      await login(email.trim(), password);
+      await login(em.trim(), pw);
       navigate('/app/dashboard');
     } catch (err) {
       const msg = apiError(err) || '';
@@ -32,17 +30,17 @@ export default function Cover() {
     } finally { setBusy(false); }
   };
 
-  const copyDemo = async () => {
-    try {
-      await navigator.clipboard.writeText('demo@paneltec.com / demo123');
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch { /* no clipboard permission — silent */ }
+  const submit = (e) => { e.preventDefault(); doLogin(email, password); };
+
+  const demo = async (em, pw, label) => {
+    setEmail(em); setPassword(pw);
+    await doLogin(em, pw);
+    void label;
   };
 
   return (
     <div className="min-h-screen w-full bg-[#FBF8F2]" data-testid="cover-page">
-      {/* Topbar — over hero on desktop, plain on mobile */}
+      {/* Topbar */}
       <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <Link to="/" className="flex items-center gap-2.5" data-testid="cover-brand">
           <img src="/brand/mark.png" alt="" className="h-7 w-auto" />
@@ -58,15 +56,15 @@ export default function Cover() {
         <div className="hidden md:block relative overflow-hidden">
           <img src="/brand/hero.png" alt="Australian civil construction site at golden hour" className="absolute inset-0 w-full h-full object-cover" data-testid="cover-hero-img" />
           <div className="absolute inset-0" style={{ background: 'linear-gradient(110deg, rgba(15,27,45,0.85) 0%, rgba(15,27,45,0.55) 40%, rgba(15,27,45,0) 70%)' }} />
-          <div className="relative h-full flex flex-col justify-between p-16 lg:p-20">
-            <div className="mt-[15vh] max-w-[460px]">
-              <div className="inline-block text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-blue bg-white/10 backdrop-blur px-3 py-1.5 rounded-full mb-6 border border-white/15">
+          <div className="relative h-full flex flex-col justify-between p-12 lg:p-16">
+            <div className="mt-[14vh] max-w-[460px]">
+              <div className="inline-block text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-blue bg-white/10 backdrop-blur px-3 py-1.5 rounded-full mb-5 border border-white/15">
                 WHS Compliance for civil teams
               </div>
-              <h1 className="font-display text-4xl lg:text-5xl xl:text-[56px] font-bold leading-[1.05] text-white tracking-tight">
+              <h1 className="font-display text-4xl lg:text-5xl xl:text-[52px] font-bold leading-[1.05] text-white tracking-tight">
                 One source of truth for Australian civil safety.
               </h1>
-              <p className="mt-5 text-base lg:text-lg text-white/75 leading-relaxed">
+              <p className="mt-4 text-base lg:text-lg text-white/75 leading-relaxed">
                 SWMS, pre-starts, hazards, contractors, fleet — every operational record in one place.
               </p>
             </div>
@@ -77,82 +75,104 @@ export default function Cover() {
         </div>
 
         {/* RIGHT — login pane */}
-        <div className="relative bg-[#FBF8F2] md:shadow-[inset_24px_0_36px_-24px_rgba(15,27,45,0.18)]">
-          <div className="min-h-screen flex items-center justify-center px-6 sm:px-10 md:px-12 py-24 md:py-10">
-            <div className="w-full max-w-[420px]">
-              {/* Mobile-only: hero copy stacked above the form */}
-              <div className="md:hidden mb-8">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-blue mb-3">
+        <div className="relative bg-[#FBF8F2]">
+          <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 md:px-8 py-24 md:py-10">
+            <div className="w-full max-w-[460px]">
+              {/* Mobile-only hero intro */}
+              <div className="md:hidden mb-6 px-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-blue mb-2">
                   WHS Compliance for civil teams
                 </div>
-                <h1 className="font-display text-3xl font-bold leading-tight tracking-tight text-[#0F1B2D]">
+                <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-[#0F1B2D]">
                   One source of truth for Australian civil safety.
                 </h1>
-                <p className="mt-3 text-sm text-slate-600">
-                  SWMS, pre-starts, hazards, contractors, fleet — every operational record in one place.
-                </p>
               </div>
 
-              <img src="/brand/mark.png" alt="Paneltec Civil" className="h-14 w-auto mb-6" data-testid="cover-mark" />
-              <h2 className="font-display text-[32px] font-bold tracking-tight text-[#0F1B2D]">Welcome back</h2>
-              <p className="mt-1.5 text-sm text-slate-600">Sign in to your Paneltec Civil workspace.</p>
+              {/* The elevated login card */}
+              <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-10 overflow-hidden" data-testid="cover-card">
+                {/* Accent stripe */}
+                <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: '#2C6BFF' }} aria-hidden="true" />
 
-              <form onSubmit={submit} className="mt-8 space-y-5" data-testid="cover-login-form" autoComplete="on">
-                <div>
-                  <label htmlFor="cover-email" className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-1.5">Email</label>
-                  <input id="cover-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                    placeholder="you@company.com" autoComplete="email" autoFocus required
-                    data-testid="cover-email"
-                    className="w-full px-3.5 py-3 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
-                </div>
+                <img src="/brand/mark.png" alt="Paneltec Civil" className="h-12 w-auto mb-5" data-testid="cover-mark" />
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-brand-blue">Sign in to your account</div>
+                <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#0F1B2D]">Welcome back</h2>
+                <p className="mt-1.5 text-sm text-slate-600">Sign in below to access your Paneltec Civil dashboard.</p>
 
-                <div>
-                  <label htmlFor="cover-password" className="block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-1.5">Password</label>
-                  <div className="relative">
-                    <input id="cover-password" type={showPwd ? 'text' : 'password'} value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••" autoComplete="current-password" required
-                      data-testid="cover-password"
-                      className="w-full pl-3.5 pr-11 py-3 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
-                    <button type="button" onClick={() => setShowPwd((s) => !s)} tabIndex={-1}
-                      aria-label={showPwd ? 'Hide password' : 'Show password'}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700"
-                      data-testid="cover-toggle-pwd">
-                      {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
-                    </button>
+                <form onSubmit={submit} className="mt-7 space-y-4" data-testid="cover-login-form" autoComplete="on">
+                  <div>
+                    <label htmlFor="cover-email" className="block text-sm font-medium text-slate-800 mb-1.5">Email address</label>
+                    <input id="cover-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                      placeholder="e.g. you@paneltec.com.au" autoComplete="email" autoFocus required
+                      data-testid="cover-email"
+                      className="w-full px-3.5 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
                   </div>
-                </div>
 
-                <div className="flex items-center justify-between text-[12px]">
-                  <label className="inline-flex items-center gap-2 cursor-pointer text-slate-600">
-                    <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-brand-blue focus:ring-brand-blue/30" data-testid="cover-remember" />
-                    Remember me
-                  </label>
-                  <Link to="/forgot-password" className="text-brand-blue hover:underline font-medium" data-testid="cover-forgot">Forgot password?</Link>
-                </div>
-
-                {error && (
-                  <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[12px] text-rose-800" data-testid="cover-error">
-                    <AlertCircle size={14} className="mt-0.5 shrink-0" />
-                    <span>{error}</span>
+                  <div>
+                    <label htmlFor="cover-password" className="block text-sm font-medium text-slate-800 mb-1.5">Password</label>
+                    <div className="relative">
+                      <input id="cover-password" type={showPwd ? 'text' : 'password'} value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter your password" autoComplete="current-password" required
+                        data-testid="cover-password"
+                        className="w-full pl-3.5 pr-11 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
+                      <button type="button" onClick={() => setShowPwd((s) => !s)} tabIndex={-1}
+                        aria-label={showPwd ? 'Hide password' : 'Show password'}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700"
+                        data-testid="cover-toggle-pwd">
+                        {showPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                <button type="submit" disabled={busy} data-testid="cover-submit"
-                  className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-brand-blue text-white text-sm font-semibold tracking-wide hover:bg-blue-600 active:bg-blue-700 transition-colors disabled:opacity-60">
-                  {busy ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : <>Sign in <ArrowRight size={16} /></>}
-                </button>
-              </form>
+                  <div className="flex items-center justify-between text-[12px]">
+                    <label className="inline-flex items-center gap-2 cursor-pointer text-slate-600">
+                      <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-brand-blue focus:ring-brand-blue/30" data-testid="cover-remember" />
+                      Remember me
+                    </label>
+                    <Link to="/forgot-password" className="text-brand-blue hover:underline font-medium" data-testid="cover-forgot">Forgot password?</Link>
+                  </div>
 
-              {/* Demo credentials */}
-              <div className="mt-6 rounded-lg bg-slate-100 border border-slate-200 px-3.5 py-2.5 flex items-center justify-between gap-3" data-testid="cover-demo">
-                <div className="font-mono text-[11px] text-slate-700 truncate">demo@paneltec.com / demo123</div>
-                <button type="button" onClick={copyDemo} aria-label="Copy demo credentials"
-                  className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-slate-300 bg-white text-slate-500 hover:text-brand-blue hover:border-brand-blue/40"
-                  data-testid="cover-demo-copy">
-                  {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
-                </button>
+                  {error && (
+                    <div className="flex items-start gap-2 px-3 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-[12px] text-rose-800" data-testid="cover-error">
+                      <AlertCircle size={14} className="mt-0.5 shrink-0" />
+                      <span>{error}</span>
+                    </div>
+                  )}
+
+                  <button type="submit" disabled={busy} data-testid="cover-submit"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-lg bg-brand-blue text-white text-base font-bold tracking-wide hover:bg-blue-600 active:bg-blue-700 transition-colors disabled:opacity-60 shadow-md">
+                    {busy ? <><Loader2 size={18} className="animate-spin" /> Signing in…</> : <>Sign in to Paneltec Civil <ArrowRight size={18} /></>}
+                  </button>
+                </form>
+
+                {/* Demo divider */}
+                <div className="mt-7 flex items-center gap-3" data-testid="cover-demo-divider">
+                  <div className="flex-1 h-px bg-slate-200" />
+                  <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Or use a demo account</div>
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  <button type="button" disabled={busy}
+                    onClick={() => demo('admin@paneltec.com', 'demo123', 'admin')}
+                    title="Admin demo — full access including user management & integrations"
+                    data-testid="cover-demo-admin"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:border-brand-blue hover:text-brand-blue hover:bg-brand-blue/5 disabled:opacity-50">
+                    <ShieldCheck size={14} /> Admin demo
+                  </button>
+                  <button type="button" disabled={busy}
+                    onClick={() => demo('demo@paneltec.com', 'demo123', 'hseq')}
+                    title="HSEQ Lead demo — manage WHS compliance records & users (no integration edits)"
+                    data-testid="cover-demo-hseq"
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:border-brand-blue hover:text-brand-blue hover:bg-brand-blue/5 disabled:opacity-50">
+                    <UserCog size={14} /> HSEQ Lead demo
+                  </button>
+                </div>
+
+                <div className="mt-5 text-center text-[12px] text-slate-500" data-testid="cover-help">
+                  Need an account? Contact your administrator.
+                </div>
               </div>
             </div>
           </div>
