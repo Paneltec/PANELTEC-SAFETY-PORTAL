@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, EyeOff, Key, Loader2, Play, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, Key, Loader2, Play, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { BackButton } from '../components/capture/Ui';
@@ -60,9 +60,28 @@ export default function NavixyAdmin() {
     auto_poll: !!s.auto_poll,
   });
 
+  const toastError = (e) => {
+    const status = e?.response?.status;
+    if (status === 401) return; // global interceptor handles real session loss
+    if (status === 403) {
+      toast.error("You don't have permission to edit integrations.", {
+        description: 'Ask an admin to enable integrations.edit for your user, or run this as an admin.',
+      });
+      return;
+    }
+    toast.error(apiError(e) || 'Request failed');
+  };
+
   const autoSave = async () => {
     try { const { data } = await api.put('/integrations/navixy', buildBody()); apply(data); return true; }
-    catch (e) { toast.error(apiError(e)); return false; }
+    catch (e) { toastError(e); return false; }
+  };
+
+  const save = async () => {
+    setBusy((b) => ({ ...b, save: true }));
+    const ok = await autoSave();
+    if (ok) toast.success('Credentials saved');
+    setBusy((b) => ({ ...b, save: false }));
   };
 
   const getHash = async () => {
@@ -72,7 +91,7 @@ export default function NavixyAdmin() {
       const { data } = await api.post('/integrations/navixy/get-hash');
       toast.success('Session hash refreshed', { description: `Stored ${data.hash_last4 || ''}` });
       await load();
-    } catch (e) { toast.error(apiError(e)); }
+    } catch (e) { toastError(e); }
     finally { setBusy((b) => ({ ...b, hash: false })); }
   };
 
@@ -87,7 +106,7 @@ export default function NavixyAdmin() {
       await load();
     } catch (e) {
       setTestMsg({ ok: false, text: apiError(e) });
-      toast.error(apiError(e));
+      toastError(e);
     } finally { setBusy((b) => ({ ...b, test: false })); }
   };
 
@@ -175,6 +194,11 @@ export default function NavixyAdmin() {
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-sm font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
               style={{ backgroundColor: '#16A34A' }}>
               {busy.hash ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />} Get Hash
+            </button>
+            <button onClick={save} disabled={busy.save} data-testid="nav-save"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-transparent text-sm font-semibold uppercase tracking-[0.14em] disabled:opacity-60 hover:bg-black/5"
+              style={{ color: '#0F1B2D', border: '1px solid #0F1B2D' }}>
+              {busy.save ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
             </button>
             <button onClick={test} disabled={busy.test} data-testid="nav-test-connection"
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-sm font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
