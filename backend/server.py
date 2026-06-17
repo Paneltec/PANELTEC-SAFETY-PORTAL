@@ -1,100 +1,80 @@
-from fastapi import FastAPI, APIRouter
-from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
-from motor.motor_asyncio import AsyncIOMotorClient
-import os
+"""FastAPI app entrypoint — mounts all routers under /api."""
 import logging
+import os
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
-import uuid
-from datetime import datetime, timezone
-import boto3
 
-ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+from dotenv import load_dotenv
 
-# MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+ROOT = Path(__file__).parent
+load_dotenv(ROOT / ".env")  # MUST run before importing anything that reads env
 
-# Tigris S3-compatible client
-s3_client = boto3.client(
-    's3',
-    endpoint_url=os.environ.get('TIGRIS_ENDPOINT', 'http://localhost:8085'),
-    aws_access_key_id=os.environ.get('TIGRIS_ACCESS_KEY_ID', ''),
-    aws_secret_access_key=os.environ.get('TIGRIS_SECRET_ACCESS_KEY', ''),
-    region_name='auto',
+from fastapi import APIRouter, Depends, FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from ai import router as ai_router  # noqa: E402
+from auth import get_current_user, router as auth_router  # noqa: E402
+from crud import (  # noqa: E402
+    diary_router, hazards_router, incidents_router, inspections_router,
+    prestarts_router, swms_router,
 )
-TIGRIS_BUCKET = os.environ.get('TIGRIS_BUCKET', 'default-bucket')
+from dashboard import files_router, router as dashboard_router  # noqa: E402
+from db import close as close_db  # noqa: E402
+from seed import ensure_indexes, seed_all  # noqa: E402
 
-# Create the main app without a prefix
-app = FastAPI()
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
+log = logging.getLogger("paneltec")
 
-# Create a router with the /api prefix
-api_router = APIRouter(prefix="/api")
+app = FastAPI(title="Paneltec Civil API", version="0.2.0", openapi_url="/api/openapi.json")
 
-
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class StatusCheckCreate(BaseModel):
-    client_name: str
-
-
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
-
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
-
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
-
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
-
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
-
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
-
-    return status_checks
-
-# Include the router in the main app
-app.include_router(api_router)
-
+# CORS — Bearer auth so allow_credentials isn't required; permit wildcard via env.
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
+    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+api = APIRouter(prefix="/api")
+
+
+@api.get("/")
+async def root():
+    return {"service": "paneltec-civil", "version": "0.2.0"}
+
+
+@api.get("/health")
+async def health():
+    return {"ok": True}
+
+
+@api.get("/whoami")
+async def whoami(user: dict = Depends(get_current_user)):
+    return {"id": user["id"], "email": user["email"], "role": user["role"]}
+
+
+# mount routers
+api.include_router(auth_router)
+api.include_router(ai_router)
+api.include_router(dashboard_router)
+api.include_router(files_router)
+api.include_router(swms_router)
+api.include_router(prestarts_router)
+api.include_router(diary_router)
+api.include_router(hazards_router)
+api.include_router(incidents_router)
+api.include_router(inspections_router)
+
+app.include_router(api)
+
+
+@app.on_event("startup")
+async def on_startup():
+    await ensure_indexes()
+    result = await seed_all()
+    log.info("Seeded: %s", result["counts"])
+
 
 @app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
+async def on_shutdown():
+    close_db()

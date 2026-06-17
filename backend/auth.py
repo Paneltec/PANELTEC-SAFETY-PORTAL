@@ -1,0 +1,143 @@
+"""JWT + bcrypt auth — Bearer tokens in Authorization header."""
+import os
+from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+import bcrypt
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from db import db
+from models import LoginIn, SignupIn, TokenOut, UserOut, new_id, now_iso
+
+JWT_ALGORITHM = "HS256"
+JWT_EXP_DAYS = 7
+
+bearer_scheme = HTTPBearer(auto_error=False)
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+def _secret() -> str:
+    return os.environ["JWT_SECRET"]
+
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def create_access_token(user_id: str, email: str) -> str:
+    payload = {
+        "sub": user_id,
+        "email": email,
+        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS),
+        "type": "access",
+    }
+    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+
+
+def _to_user_out(doc: dict) -> dict:
+    """Strip Mongo _id and password_hash, return JSON-safe user."""
+    return {
+        "id": doc["id"],
+        "email": doc["email"],
+        "name": doc["name"],
+        "role": doc["role"],
+        "org_id": doc["org_id"],
+        "workspace_ids": doc.get("workspace_ids", []),
+        "created_at": doc["created_at"],
+    }
+
+
+async def get_current_user(
+    request: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> dict:
+    token = None
+    if creds and creds.scheme.lower() == "bearer":
+        token = creds.credentials
+    else:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    user.pop("password_hash", None)
+    return user
+
+
+def require_roles(*roles: str):
+    async def _checker(user: dict = Depends(get_current_user)) -> dict:
+        if user["role"] not in roles and user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Insufficient role")
+        return user
+    return _checker
+
+
+# ---------- Endpoints ----------
+
+@router.post("/signup", response_model=TokenOut)
+async def signup(body: SignupIn):
+    email = body.email.lower()
+    if await db.users.find_one({"email": email}):
+        raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Create org + default workspace for fresh signups
+    org_id = new_id()
+    ws_id = new_id()
+    org_name = body.org_name or f"{body.name}'s organisation"
+    await db.orgs.insert_one({"id": org_id, "name": org_name, "slug": org_id[:8], "created_at": now_iso()})
+    await db.workspaces.insert_one({"id": ws_id, "org_id": org_id, "name": "Default workspace", "created_at": now_iso()})
+
+    user_id = new_id()
+    user_doc = {
+        "id": user_id,
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": body.name,
+        "role": "admin",  # signups own their org
+        "org_id": org_id,
+        "workspace_ids": [ws_id],
+        "created_at": now_iso(),
+    }
+    await db.users.insert_one(user_doc)
+    token = create_access_token(user_id, email)
+    return TokenOut(access_token=token, user=UserOut(**_to_user_out(user_doc)))
+
+
+@router.post("/login", response_model=TokenOut)
+async def login(body: LoginIn):
+    email = body.email.lower()
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user or not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    token = create_access_token(user["id"], user["email"])
+    return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
+
+
+@router.get("/me", response_model=UserOut)
+async def me(user: dict = Depends(get_current_user)):
+    return UserOut(**_to_user_out(user))
+
+
+@router.post("/logout")
+async def logout(user: dict = Depends(get_current_user)):
+    # Stateless JWT — client just drops the token. Endpoint exists for parity.
+    return {"ok": True}
