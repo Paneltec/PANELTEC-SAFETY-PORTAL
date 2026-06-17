@@ -28,27 +28,32 @@ const CAPTURE_TOOLS = [
 export default function DashboardScreen() {
   const router = useRouter();
   const [metrics, setMetrics] = useState<any>(null);
+  const [briefing, setBriefing] = useState<any>(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
-      const [u, m] = await Promise.all([
-        getUser(),
-        api.get('/dashboard/metrics').then(r => r.data).catch(() => null),
-      ]);
+      const u = await getUser();
       setUser(u);
-      setMetrics(m);
+      const wsParam = u?.workspace_ids?.[0] ? { workspace_id: u.workspace_ids[0] } : {};
+      const [m, b] = await Promise.allSettled([
+        api.get('/dashboard/metrics', { params: wsParam }).then(r => r.data),
+        api.get('/ask/briefing', { params: wsParam }).then(r => r.data),
+      ]);
+      if (m.status === 'fulfilled') setMetrics(m.value);
+      if (b.status === 'fulfilled') setBriefing(b.value);
     } catch {} finally {
       setLoading(false);
+      setBriefingLoading(false);
       setRefreshing(false);
     }
   };
 
   useEffect(() => { loadData(); }, []);
-
-  const onRefresh = () => { setRefreshing(true); loadData(); };
+  const onRefresh = () => { setRefreshing(true); setBriefingLoading(true); loadData(); };
 
   const score = metrics?.attention_score ?? 0;
   const band = metrics?.attention_band ?? 'Strong';
@@ -65,7 +70,7 @@ export default function DashboardScreen() {
         <View style={styles.header}>
           <View>
             <Text style={styles.overline}>PANELTEC CIVIL</Text>
-            <Text style={styles.heading}>Compliance Dashboard</Text>
+            <Text style={styles.heading}>Home</Text>
           </View>
           <View style={styles.avatar}>
             <Text style={styles.avatarText}>{initials(user)}</Text>
@@ -91,6 +96,45 @@ export default function DashboardScreen() {
           </View>
         </View>
 
+        {/* Intelligence briefing */}
+        {briefingLoading ? (
+          <View style={styles.briefingCard}>
+            <ActivityIndicator color={Colors.violet} />
+            <Text style={styles.briefingLoading}>Generating AI briefing...</Text>
+          </View>
+        ) : briefing ? (
+          <View testID="briefing-card" style={styles.briefingCard}>
+            <View style={styles.briefingHeader}>
+              <Text style={styles.briefingOverline}>INTELLIGENCE BRIEFING</Text>
+              <View style={styles.confBadge}>
+                <View style={[styles.confDot, { backgroundColor: briefing.confidence === 'high' ? Colors.emerald : Colors.amber }]} />
+                <Text style={styles.confText}>{briefing.confidence || 'high'}</Text>
+              </View>
+            </View>
+            <Text style={styles.briefingTitle}>{briefing.title}</Text>
+            <Text style={styles.briefingBody}>{briefing.body}</Text>
+            {briefing.cited_evidence?.length > 0 && (
+              <View style={styles.evidenceWrap}>
+                <Text style={styles.evidenceLabel}>CITED EVIDENCE</Text>
+                {briefing.cited_evidence.slice(0, 3).map((c: any, i: number) => (
+                  <View key={i} style={styles.evidenceChip}>
+                    <Text style={styles.evidenceType}>{c.record_type}</Text>
+                    <Text style={styles.evidenceText}>{c.label}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity
+              testID="ask-intelligence-link"
+              style={styles.askLink}
+              onPress={() => router.push('/(tabs)/ask' as any)}
+            >
+              <Ionicons name="sparkles" size={14} color={Colors.violet} />
+              <Text style={styles.askLinkText}>Ask Intelligence anything</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {/* Metrics grid */}
         <Text style={styles.sectionLabel}>COMPLIANCE SNAPSHOT</Text>
         <View style={styles.metricsGrid}>
@@ -104,7 +148,7 @@ export default function DashboardScreen() {
                 <Text style={styles.metricSub}>this quarter</Text>
               </View>
               <Text style={styles.metricValue}>
-                {loading ? '…' : (metrics?.[row.field] ?? 0)}
+                {loading ? '...' : (metrics?.[row.field] ?? 0)}
               </Text>
             </View>
           ))}
@@ -144,34 +188,48 @@ const styles = StyleSheet.create({
   heading: { fontSize: 26, fontWeight: '700', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.blue, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  scoreCard: {
-    borderWidth: 2, borderRadius: 16, padding: 16, marginBottom: 20,
-    backgroundColor: '#F0FDF4',
-  },
+  scoreCard: { borderWidth: 2, borderRadius: 16, padding: 16, marginBottom: 16, backgroundColor: '#F0FDF4' },
   scoreRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-  scoreCircle: {
-    width: 72, height: 72, borderRadius: 36, borderWidth: 4,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  scoreCircle: { width: 72, height: 72, borderRadius: 36, borderWidth: 4, alignItems: 'center', justifyContent: 'center' },
   scoreNum: { fontSize: 18, fontWeight: '800' },
   scoreLbl: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   scoreTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   scoreDesc: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
   scoreExtra: { fontSize: 12, color: Colors.textSecondary, marginTop: 4 },
-  sectionLabel: {
-    fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary,
-    marginBottom: 10, marginTop: 8,
+  // Briefing
+  briefingCard: {
+    borderWidth: 2, borderColor: '#DDD6FE', borderRadius: 16, padding: 16,
+    backgroundColor: '#F5F3FF', marginBottom: 16,
   },
+  briefingLoading: { fontSize: 13, color: Colors.violet, marginTop: 8, textAlign: 'center' },
+  briefingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  briefingOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.violet },
+  confBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: '#fff' },
+  confDot: { width: 6, height: 6, borderRadius: 3 },
+  confText: { fontSize: 10, fontWeight: '600', color: Colors.textSecondary, textTransform: 'uppercase' },
+  briefingTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink },
+  briefingBody: { fontSize: 14, color: '#475569', marginTop: 6, lineHeight: 20 },
+  evidenceWrap: { marginTop: 12 },
+  evidenceLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1, color: Colors.textTertiary, marginBottom: 6 },
+  evidenceChip: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8, padding: 10,
+    borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 10, backgroundColor: '#fff', marginBottom: 6,
+  },
+  evidenceType: {
+    fontSize: 9, fontWeight: '700', color: Colors.violet, backgroundColor: Colors.violetSoft,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  evidenceText: { fontSize: 12, color: '#475569', flex: 1, lineHeight: 16 },
+  askLink: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#DDD6FE' },
+  askLinkText: { fontSize: 13, color: Colors.violet, fontWeight: '600' },
+  // Metrics
+  sectionLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary, marginBottom: 10, marginTop: 8 },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   metricCard: {
     width: '48%', flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 12, padding: 12,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 12,
   },
-  metricIcon: {
-    width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.bg,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  metricIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.bg, alignItems: 'center', justifyContent: 'center' },
   metricLabel: { fontSize: 13, fontWeight: '500', color: Colors.text },
   metricSub: { fontSize: 9, color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
   metricValue: { fontSize: 20, fontWeight: '700', color: Colors.ink },
@@ -179,10 +237,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.white,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8,
   },
-  captureIcon: {
-    width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.blueSoft,
-    alignItems: 'center', justifyContent: 'center',
-  },
+  captureIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
   captureTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   captureDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
 });

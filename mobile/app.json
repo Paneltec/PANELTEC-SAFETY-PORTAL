@@ -9,14 +9,19 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Scan QR codes and capture hazard photos",
+        "NSPhotoLibraryUsageDescription": "Attach site photos to reports"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#000"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
     },
     "web": {
       "bundler": "metro",
@@ -25,6 +30,11 @@
     },
     "plugins": [
       "expo-router",
+      "expo-image-picker",
+      [
+        "expo-camera",
+        { "cameraPermission": "Scan QR codes for crew sign-on" }
+      ],
       [
         "expo-splash-screen",
         {

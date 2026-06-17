@@ -17,30 +17,36 @@
 - **Web files referenced**: All files under /app/frontend/src/
 
 ## Iteration 2 — Bug fixes, missing screens, auth flow fix
-- **Commit**: 22f2930e2874bc47a822685d1d77bea501e0d91d (same base, code changes not yet committed)
+- **Commit**: 22f2930e (same base)
 - **Date**: 2026-06-17T05:42:00Z
 - **Changes**:
-  - Fixed hazards/new.tsx: removed misplaced `import { TouchableOpacity }` at line 54, added it to top import
-  - Created inspections/index.tsx: list screen with pass/fail/NA results display
-  - Created inspections/new.tsx: template picker (Site walk, Plant inspection, Working at height) + checklist with pass/fail/NA buttons
-  - Created contractors/index.tsx: list with compliance summary, status filtering
-  - Created contractors/new.tsx: form with company details, ABN, trade, status
-  - Created contractors/[id].tsx: detail page with contact info and documents section
-  - Created AuthContext.tsx: shared auth context to fix login navigation bug
-  - Updated _layout.tsx: wrapped in AuthProvider, login/logout properly triggers navigation
-  - Updated login.tsx: uses setAuth(true) instead of direct router.replace
-  - Updated signup.tsx: uses setAuth(true) instead of direct router.replace
-  - Updated settings.tsx: uses setAuth(false) on logout instead of direct router.replace
+  - Fixed hazards/new.tsx: removed misplaced TouchableOpacity import
+  - Created inspections/index.tsx and inspections/new.tsx
+  - Created contractors/index.tsx, new.tsx, and [id].tsx
+  - Created AuthContext.tsx for shared auth state
+  - Updated _layout.tsx, login.tsx, signup.tsx, settings.tsx for AuthContext
+- **Files modified**: 11 files
+
+## Iteration 3 — Phase 4: Tab restructure, briefing, QR Sign-On, My Work, camera hazard
+- **Commit**: 9240725c1029721a125943248d7364d363189b52
+- **Date**: 2026-06-17T05:55:00Z
+- **Changes**:
+  - Restructured tabs: Home, Capture, QR Sign-On, My Work, Profile (was Dashboard, Capture, Compliance, Ask AI, Settings)
+  - Tab _layout.tsx: Compliance and Ask AI hidden (href: null) but still accessible via routes
+  - dashboard.tsx: Added /api/ask/briefing call with AI briefing card (violet theme, cited evidence, confidence badge)
+  - settings.tsx: Rebuilt as Profile with workspace switcher (radio group) + sign out + settings links
+  - qr-signon.tsx: NEW — QR code scanner with viewfinder UI, manual code entry, MOCKED scan + sign-on
+  - my-work.tsx: NEW — Records grouped by type (SWMS, pre-starts, diary, hazards, incidents, inspections) with counts
+  - hazards/new.tsx: Added camera (expo-image-picker) + AI vision (POST /api/ai/hazard-vision) + controls list
+  - app.json: Added camera and photo library permissions for iOS/Android
+  - Installed expo-camera@17.0.10, expo-image-picker@17.0.11
 - **Files modified**:
-  - /app/mobile/src/lib/AuthContext.tsx (new)
-  - /app/mobile/app/_layout.tsx (modified)
-  - /app/mobile/app/(auth)/login.tsx (modified)
-  - /app/mobile/app/(auth)/signup.tsx (modified)
-  - /app/mobile/app/(tabs)/settings.tsx (modified)
-  - /app/mobile/app/hazards/new.tsx (bug fix)
-  - /app/mobile/app/inspections/index.tsx (new)
-  - /app/mobile/app/inspections/new.tsx (new)
-  - /app/mobile/app/contractors/index.tsx (new)
-  - /app/mobile/app/contractors/new.tsx (new)
-  - /app/mobile/app/contractors/[id].tsx (new)
-- **Web files referenced**: Inspections.jsx, Contractors.jsx
+  - /app/mobile/app/(tabs)/_layout.tsx (rewritten)
+  - /app/mobile/app/(tabs)/dashboard.tsx (rewritten — added briefing)
+  - /app/mobile/app/(tabs)/settings.tsx (rewritten — profile + workspace switcher)
+  - /app/mobile/app/(tabs)/qr-signon.tsx (new)
+  - /app/mobile/app/(tabs)/my-work.tsx (new)
+  - /app/mobile/app/hazards/new.tsx (rewritten — camera + AI vision)
+  - /app/mobile/app.json (permissions)
+- **Web files referenced**: Dashboard.jsx (briefing), Hazards.jsx (camera/AI vision)
+- **All 45 TS/TSX files compile (HTTP 200)**

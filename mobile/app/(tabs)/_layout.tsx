@@ -23,8 +23,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="dashboard"
         options={{
-          title: 'Dashboard',
-          tabBarIcon: ({ color, size }) => <Ionicons name="grid" size={size} color={color} />,
+          title: 'Home',
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -35,26 +35,29 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="compliance"
+        name="qr-signon"
         options={{
-          title: 'Compliance',
-          tabBarIcon: ({ color, size }) => <Ionicons name="shield-checkmark" size={size} color={color} />,
+          title: 'QR Sign-On',
+          tabBarIcon: ({ color, size }) => <Ionicons name="qr-code" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
-        name="ask"
+        name="my-work"
         options={{
-          title: 'Ask AI',
-          tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} />,
+          title: 'My Work',
+          tabBarIcon: ({ color, size }) => <Ionicons name="briefcase" size={size} color={color} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
-          title: 'Settings',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings" size={size} color={color} />,
+          title: 'Profile',
+          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
         }}
       />
+      {/* Hidden tabs — still accessible via routes but not shown in tab bar */}
+      <Tabs.Screen name="compliance" options={{ href: null }} />
+      <Tabs.Screen name="ask" options={{ href: null }} />
     </Tabs>
   );
 }
