@@ -24,7 +24,6 @@ import AuditExports from '@/pages/AuditExports';
 import Ask from '@/pages/Ask';
 import PublicRenewal from '@/pages/PublicRenewal';
 import NavixyAdmin from '@/pages/NavixyAdmin';
-import GoogleMapsAdmin from '@/pages/GoogleMapsAdmin';
 import Vehicles from '@/pages/Vehicles';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
@@ -76,7 +75,6 @@ function App() {
               <Route path="settings/workspaces" element={<Stub />} />
               <Route path="settings/integrations" element={<Integrations />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
-              <Route path="settings/integrations/google-maps" element={<GoogleMapsAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
               <Route path="outbox" element={<Outbox />} />
             </Route>

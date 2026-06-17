@@ -1,32 +1,8 @@
 import React from 'react';
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 import { MapPin, ExternalLink } from 'lucide-react';
 import { Dialog, DialogContent } from './ui/dialog';
-import { useGoogleMapsKey } from '../lib/googleMaps';
-
-function MapBody({ vehicle, apiKey }) {
-  const { isLoaded } = useJsApiLoader({ id: 'paneltec-gmaps', googleMapsApiKey: apiKey });
-  if (!isLoaded) return <div className="h-full flex items-center justify-center text-sm text-slate-500">Loading map…</div>;
-  return (
-    <GoogleMap
-      mapContainerStyle={{ width: '100%', height: '100%' }}
-      center={{ lat: vehicle.lat, lng: vehicle.lng }}
-      zoom={16}
-      options={{
-        mapTypeId: 'roadmap',
-        mapTypeControl: false,
-        streetViewControl: false,
-        fullscreenControl: true,
-        zoomControl: true,
-      }}
-    >
-      <Marker position={{ lat: vehicle.lat, lng: vehicle.lng }} />
-    </GoogleMap>
-  );
-}
 
 export default function VehicleMapModal({ vehicle, open, onClose }) {
-  const apiKey = useGoogleMapsKey();
   if (!vehicle) return null;
   const hasGps = typeof vehicle.lat === 'number' && typeof vehicle.lng === 'number';
   const isLive = vehicle.status !== 'offline';
@@ -35,6 +11,9 @@ export default function VehicleMapModal({ vehicle, open, onClose }) {
     ? `https://www.google.com/maps/dir/?api=1&destination=${vehicle.lat},${vehicle.lng}`
     : null;
   const navixyHref = trackerId ? `https://my.us.navixy.com/?tracker=${trackerId}` : null;
+  const embedSrc = hasGps
+    ? `https://maps.google.com/maps?q=${vehicle.lat},${vehicle.lng}&z=15&output=embed`
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -66,22 +45,22 @@ export default function VehicleMapModal({ vehicle, open, onClose }) {
                 This vehicle has not reported a GPS position recently. Try again when the tracker is online.
               </p>
             </div>
-          ) : apiKey === null ? (
-            <div className="h-full flex flex-col items-center justify-center text-center px-6" data-testid="vehicle-map-no-key">
-              <MapPin size={28} className="text-slate-400 mb-3" />
-              <h4 className="font-display text-lg font-semibold">Google Maps not configured</h4>
-              <p className="mt-1 text-sm text-slate-600 max-w-sm">
-                Configure Google Maps in <a href="/app/settings/integrations/google-maps" className="text-brand-blue underline">Settings → Integrations</a> to enable map view.
-              </p>
-            </div>
-          ) : apiKey === undefined ? (
-            <div className="h-full flex items-center justify-center text-sm text-slate-500">Loading map…</div>
           ) : (
-            <MapBody vehicle={vehicle} apiKey={apiKey} />
+            <iframe
+              title={`Map of ${vehicle.label || 'vehicle'}`}
+              src={embedSrc}
+              width="100%"
+              height="100%"
+              style={{ border: 0, display: 'block' }}
+              loading="lazy"
+              allowFullScreen
+              referrerPolicy="no-referrer-when-downgrade"
+              data-testid="vmm-iframe"
+            />
           )}
         </div>
 
-        {/* Bottom strip — only when we have GPS */}
+        {/* Bottom strip — only when GPS */}
         {hasGps && (
           <div className="px-4 py-2 border-t border-slate-200 bg-white flex items-center justify-between text-xs" data-testid="vmm-strip">
             <div className="font-mono text-slate-600 tabular-nums" data-testid="vmm-coords">

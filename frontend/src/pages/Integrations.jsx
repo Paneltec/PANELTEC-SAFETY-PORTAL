@@ -89,25 +89,6 @@ export default function Integrations() {
         {INTEGRATIONS.map((integ) => (
           <IntegrationCard key={integ.key} integ={integ} onConfigure={() => openModal(integ)} />
         ))}
-        {/* Google Maps — real integration with its own admin page */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col" data-testid="integration-card-google_maps">
-          <div className="flex items-start gap-3">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-display font-bold text-lg shrink-0" style={{ backgroundColor: '#4285F4' }} aria-hidden="true">G</div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className="font-display text-lg font-semibold">Google Maps</h3>
-                <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700" data-testid="integration-status-google_maps">Live API</span>
-              </div>
-              <p className="mt-1 text-sm text-slate-600 leading-relaxed">Map tiles & geocoding for the Vehicles page.</p>
-            </div>
-          </div>
-          <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <span className="text-xs text-slate-400">Live · per-org API key</span>
-            <Link to="/app/settings/integrations/google-maps" data-testid="integration-configure-google_maps" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline">
-              Configure <ArrowRight size={14} />
-            </Link>
-          </div>
-        </div>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>

@@ -4,11 +4,9 @@ import {
   MapPin, RefreshCw, Radio, ArrowRight, Tag as TagIcon, X as XIcon,
   Loader2, List as ListIcon, Map as MapIcon,
 } from 'lucide-react';
-import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
 import VehicleMapModal from '../components/VehicleMapModal';
-import { useGoogleMapsKey } from '../lib/googleMaps';
 
 function RelTime({ iso }) {
   if (!iso) return <span className="text-slate-400">—</span>;
@@ -33,79 +31,42 @@ function loadPersistedTagIds() {
   } catch { return []; }
 }
 
-function pinSymbol(color, isOnline) {
-  if (typeof window === 'undefined' || !window.google?.maps) return undefined;
-  return {
-    path: 'M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8z',
-    fillColor: '#' + (color || '2C6BFF').replace('#', ''),
-    fillOpacity: 1,
-    strokeColor: isOnline ? '#10B981' : '#475569',
-    strokeWeight: 2,
-    scale: 1.4,
-    anchor: new window.google.maps.Point(12, 22),
-  };
-}
+function pinSymbol() { return undefined; /* unused — kept for diff stability */ }
 
-function VehicleFleetMap({ vehicles, apiKey, onMarkerClick }) {
-  const { isLoaded } = useJsApiLoader({ id: 'paneltec-gmaps', googleMapsApiKey: apiKey });
-  const [active, setActive] = useState(null);
-  const positioned = useMemo(
-    () => vehicles.filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number'),
-    [vehicles]
-  );
-
-  const onLoad = (map) => {
-    if (positioned.length === 0) { map.setCenter(SYDNEY); map.setZoom(5); return; }
-    if (positioned.length === 1) { map.setCenter({ lat: positioned[0].lat, lng: positioned[0].lng }); map.setZoom(14); return; }
-    const bounds = new window.google.maps.LatLngBounds();
-    positioned.forEach((v) => bounds.extend({ lat: v.lat, lng: v.lng }));
-    map.fitBounds(bounds, 40);
-  };
-
-  if (!isLoaded) return <div className="h-[70vh] flex items-center justify-center text-sm text-slate-500" data-testid="vehicles-map-loading">Loading Google Maps…</div>;
-
+function VehicleFleetMap({ vehicles }) {
+  const positioned = vehicles.filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number');
+  if (positioned.length === 0) {
+    return (
+      <div className="h-[70vh] flex items-center justify-center text-sm text-slate-500" data-testid="vehicles-map-empty">
+        No vehicles in the current selection have reported a GPS position.
+      </div>
+    );
+  }
+  const avgLat = positioned.reduce((s, v) => s + v.lat, 0) / positioned.length;
+  const avgLng = positioned.reduce((s, v) => s + v.lng, 0) / positioned.length;
+  // The Google Maps embed iframe only supports a single coordinate. We centre
+  // on the fleet centroid; a single pin shows the cluster area. For per-vehicle
+  // detail the user clicks the pin icon in the list (opens VehicleMapModal).
+  const src = `https://maps.google.com/maps?q=${avgLat},${avgLng}&z=10&output=embed`;
   return (
-    <div className="h-[70vh] rounded-b-2xl overflow-hidden" data-testid="vehicles-map">
-      <GoogleMap
-        mapContainerStyle={{ width: '100%', height: '100%' }}
-        center={SYDNEY}
-        zoom={5}
-        onLoad={onLoad}
-        options={{ mapTypeControl: true, streetViewControl: false, fullscreenControl: true }}
-      >
-        {positioned.map((v) => (
-          <Marker key={v.id} position={{ lat: v.lat, lng: v.lng }}
-                  icon={pinSymbol(v.tags?.[0]?.color, v.status === 'online')}
-                  onClick={() => setActive(v.id)}>
-            {active === v.id && (
-              <InfoWindow position={{ lat: v.lat, lng: v.lng }} onCloseClick={() => setActive(null)}>
-                <div className="text-xs space-y-1 min-w-[200px]" style={{ color: '#1F2937' }}>
-                  <div className="font-semibold text-sm">{v.label}</div>
-                  <div>{v.plate || '—'} · {v.status}</div>
-                  {v.movement_status && <div className="capitalize">Movement: {v.movement_status}</div>}
-                  {v.speed_kph != null && v.speed_kph > 0 && <div>{v.speed_kph} km/h</div>}
-                  {v.address && <div style={{ fontStyle: 'italic' }}>{v.address}</div>}
-                  {v.tags?.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingTop: 4 }}>
-                      {v.tags.map((t) => (
-                        <span key={t.id} style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 4,
-                          padding: '1px 6px', borderRadius: 999, border: `1px solid #${(t.color || 'CBD5E1').replace('#','')}`,
-                          color: `#${(t.color || '475569').replace('#','')}`, fontSize: 10,
-                        }}>{t.name}</span>
-                      ))}
-                    </div>
-                  )}
-                  <button onClick={() => { setActive(null); onMarkerClick?.(v); }}
-                          style={{ color: '#2C6BFF', textDecoration: 'underline', fontSize: 11, marginTop: 4 }}>
-                    View details →
-                  </button>
-                </div>
-              </InfoWindow>
-            )}
-          </Marker>
-        ))}
-      </GoogleMap>
+    <div className="relative" data-testid="vehicles-map">
+      <div className="px-4 py-2 text-[11px] text-slate-500 bg-slate-50 border-b border-slate-100" data-testid="vehicles-map-note">
+        Showing area of <strong className="text-slate-700">{positioned.length}</strong> vehicle{positioned.length === 1 ? '' : 's'}.
+        Click a vehicle&apos;s pin icon in the list for a focused view.
+      </div>
+      <div className="h-[70vh]">
+        <iframe
+          title="Fleet area"
+          src={src}
+          width="100%"
+          height="100%"
+          style={{ border: 0, display: 'block' }}
+          loading="lazy"
+          allowFullScreen
+          referrerPolicy="no-referrer-when-downgrade"
+          data-testid="vehicles-map-iframe"
+        />
+      </div>
     </div>
   );
 }
@@ -119,7 +80,6 @@ export default function Vehicles() {
   const [error, setError] = useState('');
   const [view, setView] = useState('list');
   const [activeMapVehicle, setActiveMapVehicle] = useState(null);
-  const apiKey = useGoogleMapsKey();
 
   useEffect(() => {
     try { localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(Array.from(selected))); }
@@ -274,21 +234,7 @@ export default function Vehicles() {
               )}
             </div>
           ) : view === 'map' ? (
-            apiKey === null ? (
-              <div className="p-10 text-center" data-testid="map-no-key">
-                <MapPin size={28} className="mx-auto text-slate-400 mb-3" />
-                <h4 className="font-display text-lg font-semibold">Google Maps not configured</h4>
-                <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
-                  Configure Google Maps in{' '}
-                  <Link to="/app/settings/integrations/google-maps" className="text-brand-blue underline">Settings → Integrations → Google Maps</Link>{' '}
-                  to enable map view.
-                </p>
-              </div>
-            ) : apiKey === undefined ? (
-              <div className="p-10 text-center text-sm text-slate-500">Loading…</div>
-            ) : (
-              <VehicleFleetMap vehicles={vehicles} apiKey={apiKey} onMarkerClick={setActiveMapVehicle} />
-            )
+            <VehicleFleetMap vehicles={vehicles} />
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
               {vehicles.map((v, idx) => {
