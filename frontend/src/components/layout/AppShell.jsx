@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { Link, NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
-  Search, Bell, ChevronDown, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
+  Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
@@ -83,13 +83,22 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
 
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { workspaceId, setWorkspaceId } = useWorkspace();
   const options = [{ id: '*', name: 'All workspaces' }, ...MOCK_WS];
   const active = options.find((o) => o.id === workspaceId) || options[0];
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/login');
+    navigate('/');
+  };
+
+  const onBack = () => {
+    // navigate(-1) falls back gracefully when history is empty in most
+    // browsers, but be explicit: if there's effectively no history (e.g. the
+    // user landed directly on a non-dashboard URL), send them home instead.
+    if (window.history.length <= 1) navigate('/app/dashboard');
+    else navigate(-1);
   };
 
   return (
@@ -100,6 +109,17 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       <button className="hidden md:inline-flex p-2 rounded-md hover:bg-slate-100 text-slate-500" onClick={onToggleCollapse} data-testid="sidebar-collapse-button" aria-label="Collapse sidebar">
         {collapsed ? <ChevronsRight size={18} /> : <ChevronsLeft size={18} />}
       </button>
+
+      {location.pathname !== '/app/dashboard' && (
+        <button
+          onClick={onBack}
+          title="Back"
+          aria-label="Back"
+          data-testid="topbar-back"
+          className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-slate-200 text-slate-600 bg-white hover:bg-slate-50 hover:text-slate-900 transition-colors">
+          <ChevronLeft size={16} />
+        </button>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
