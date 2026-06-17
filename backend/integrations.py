@@ -185,41 +185,139 @@ async def navixy_test(user: dict = Depends(require_roles("admin", "hseq_lead")))
     return {"vehicle_count": len(trackers), "sample": sample, "tested_at": now_iso()}
 
 
-@router.get("/navixy/vehicles")
-async def navixy_vehicles(user: dict = Depends(get_current_user)):
+@router.get("/navixy/tags")
+async def navixy_tags(user: dict = Depends(get_current_user)):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "navixy"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Navixy not connected")
     cfg = doc["config"]
     h = cfg.get("session_hash")
-    url_list = f"{cfg['api_base_url'].rstrip('/')}/v2/tracker/list"
-    url_states = f"{cfg['api_base_url'].rstrip('/')}/v2/tracker/get_states"
+    base = cfg["api_base_url"].rstrip("/")
     try:
         async with httpx.AsyncClient(timeout=15) as c:
-            tr = await c.post(url_list, json={"hash": h})
-            trackers = (tr.json() or {}).get("list") or []
+            r = await c.post(f"{base}/v2/tag/list", json={"hash": h})
+            data = r.json() or {}
+    except Exception as e:
+        raise HTTPException(502, f"Navixy unreachable: {e}")
+    if not data.get("success"):
+        msg = (data.get("status") or {}).get("description") or "tag/list failed"
+        if "hash" in msg.lower():
+            raise HTTPException(400, "Hash invalid — refresh in Settings → Integrations → Navixy")
+        raise HTTPException(400, msg)
+    tags = [
+        {"id": t.get("id"), "name": t.get("name"), "color": t.get("color")}
+        for t in (data.get("list") or []) if t.get("id") is not None
+    ]
+    return {"tags": tags, "count": len(tags)}
+
+
+async def _navixy_tracker_tag_map(client: httpx.AsyncClient, base: str, h: str) -> dict:
+    """Return {tracker_id: [tag_id, ...]} using POST /v2/tag/tracker/list."""
+    try:
+        r = await client.post(f"{base}/v2/tag/tracker/list", json={"hash": h})
+        data = r.json() or {}
+    except Exception:
+        return {}
+    if not data.get("success"):
+        return {}
+    out: dict = {}
+    # Navixy returns list of {tracker_id, tag_id}
+    for row in data.get("list") or []:
+        tid = row.get("tracker_id")
+        if tid is None:
+            continue
+        out.setdefault(tid, []).append(row.get("tag_id"))
+    return out
+
+
+@router.get("/navixy/vehicles")
+async def navixy_vehicles(
+    tag_ids: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "navixy"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(400, "Navixy not connected")
+    cfg = doc["config"]
+    h = cfg.get("session_hash")
+    base = cfg["api_base_url"].rstrip("/")
+    selected_tag_ids = set()
+    if tag_ids:
+        for x in tag_ids.split(","):
+            x = x.strip()
+            if x.isdigit():
+                selected_tag_ids.add(int(x))
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            tr = await c.post(f"{base}/v2/tracker/list", json={"hash": h})
+            tr_data = tr.json() or {}
+            if not tr_data.get("success", True):
+                msg = (tr_data.get("status") or {}).get("description") or "tracker/list failed"
+                if "hash" in msg.lower():
+                    raise HTTPException(400, "Hash invalid — refresh in Settings → Integrations → Navixy")
+                raise HTTPException(400, msg)
+            trackers = tr_data.get("list") or []
+            trackers = [t for t in trackers if isinstance(t, dict)]
+            states = {}
             if trackers:
                 ids = [t["id"] for t in trackers if t.get("id")]
-                st = await c.post(url_states, json={"hash": h, "trackers": ids})
-                states = {s.get("source_id"): s for s in ((st.json() or {}).get("states") or [])}
-            else:
-                states = {}
+                st = await c.post(f"{base}/v2/tracker/get_states", json={"hash": h, "trackers": ids})
+                st_data = st.json() or {}
+                states_raw = st_data.get("states") if isinstance(st_data, dict) else []
+                for s in (states_raw or []):
+                    if isinstance(s, dict):
+                        states[s.get("source_id")] = s
+            # Fetch tag/name lookup + per-tracker binding map
+            tag_lookup: dict = {}
+            try:
+                tg = await c.post(f"{base}/v2/tag/list", json={"hash": h})
+                for t in (tg.json() or {}).get("list") or []:
+                    if isinstance(t, dict):
+                        tag_lookup[t.get("id")] = {"id": t.get("id"), "name": t.get("name"), "color": t.get("color")}
+            except Exception:
+                pass
+            binding = await _navixy_tracker_tag_map(c, base, h)
+            # Some Navixy plans also return `tag_bindings` inline on each tracker object
+            for t in trackers:
+                inline = t.get("tag_bindings") or t.get("tags") or []
+                if inline and t.get("id") not in binding:
+                    extracted = []
+                    for x in inline:
+                        if isinstance(x, dict):
+                            v = x.get("tag_id") if "tag_id" in x else x.get("id")
+                            if v is not None:
+                                extracted.append(v)
+                        elif isinstance(x, (int, str)):
+                            extracted.append(int(x) if str(x).isdigit() else x)
+                    binding[t["id"]] = extracted
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"Navixy unreachable: {e}")
 
     out = []
     for t in trackers:
-        s = states.get(t.get("id"), {}) or {}
-        gps = s.get("gps") or {}
+        if not isinstance(t, dict):
+            continue
+        tid = t.get("id")
+        v_tag_ids = binding.get(tid) or []
+        if selected_tag_ids and not (set(v_tag_ids) & selected_tag_ids):
+            continue
+        s = states.get(tid) if isinstance(states.get(tid), dict) else {}
+        gps = s.get("gps") if isinstance(s.get("gps"), dict) else {}
+        src = t.get("source") if isinstance(t.get("source"), dict) else {}
         out.append({
-            "id": t.get("id"),
+            "id": tid,
             "label": t.get("label") or t.get("clone_label") or "Vehicle",
-            "plate": (t.get("source") or {}).get("phone"),
+            "plate": src.get("phone"),
             "lat": gps.get("lat"),
             "lng": gps.get("lng"),
             "speed_kph": gps.get("speed"),
             "last_seen": s.get("last_update") or s.get("connection_status"),
             "status": "online" if s.get("connection_status") == "active" else "offline",
             "address": s.get("address"),
+            "tags": [tag_lookup[tid_] for tid_ in v_tag_ids if tid_ in tag_lookup],
         })
-    return {"count": len(out), "vehicles": out, "fetched_at": now_iso()}
+    return {"count": len(out), "total": len(trackers), "vehicles": out,
+            "fetched_at": now_iso(), "filter_tag_ids": sorted(selected_tag_ids)}
