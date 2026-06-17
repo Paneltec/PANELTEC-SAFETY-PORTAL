@@ -9,6 +9,7 @@ import Logo from '../brand/Logo';
 import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
+import OutboxBell from './OutboxBell';
 import { WORKSPACES as MOCK_WS } from '../../mocks/dashboard';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
@@ -128,6 +129,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         <Bell size={18} />
         <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-brand-red text-white text-[10px] font-semibold flex items-center justify-center">3</span>
       </button>
+      <OutboxBell />
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

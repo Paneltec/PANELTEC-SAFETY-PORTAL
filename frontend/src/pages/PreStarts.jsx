@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import EmailButton from '../components/EmailButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -26,6 +27,12 @@ export default function PreStartsList() {
               <div className="font-display font-semibold mt-1">{p.crew_lead}</div>
               <p className="text-sm text-slate-600 mt-1 line-clamp-2">{p.work_summary}</p>
               <div className="mt-3 text-xs text-slate-500">{p.sign_ons?.length || 0} signed on</div>
+              <div className="mt-2 pt-2 border-t border-slate-100">
+                <EmailButton resourceKind="pre_starts" recordId={p.id}
+                  subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
+                  body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
+                  variant="row" size="sm" label="Email" />
+              </div>
             </div>
           ))}
         </div>

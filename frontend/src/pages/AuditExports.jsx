@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import EmailButton from '../components/EmailButton';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -67,8 +68,20 @@ export default function AuditExports() {
                   <td className="px-4 py-3 text-slate-500 text-xs">{fmtBytes(it.size_bytes)}</td>
                   <td className="px-4 py-3 text-slate-400 text-[10px] font-mono">{(it.sha256 || '').slice(0, 12)}…</td>
                   <td className="px-4 py-3 text-right">
-                    <a href={`${BACKEND}${it.file_url}`} target="_blank" rel="noreferrer" data-testid={`export-download-${it.id}`}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download size={12} /> Download</a>
+                    <div className="inline-flex gap-1 items-center">
+                      <EmailButton
+                        resourceKind="audit_exports"
+                        recordId={it.id}
+                        subject={`Audit Export: ${it.scope || it.title} (${it.date_from} to ${it.date_to})`}
+                        body={`Please find attached the requested audit export for ${it.date_from} → ${it.date_to}.\n\nScope: ${it.scope || ''}\nFormat: ${(it.format || '').toUpperCase()}`}
+                        attachments={[{ file_url: `${BACKEND}${it.file_url}`, label: `${it.title}.${it.format}` }]}
+                        variant="row"
+                        size="sm"
+                        label="Email"
+                      />
+                      <a href={`${BACKEND}${it.file_url}`} target="_blank" rel="noreferrer" data-testid={`export-download-${it.id}`}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download size={12} /> Download</a>
+                    </div>
                   </td>
                 </tr>
               ))}

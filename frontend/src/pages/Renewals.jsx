@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import EmailButton from '../components/EmailButton';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'], ['workers_comp', 'Workers comp'],
@@ -56,7 +57,17 @@ export default function Renewals() {
                   <td className="px-4 py-3 text-slate-500 text-xs">{(r.expires_at || '').slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">
                     {r.status === 'pending' && (
-                      <div className="inline-flex gap-1">
+                      <div className="inline-flex gap-1 items-center">
+                        <EmailButton
+                          resourceKind="renewals"
+                          recordId={r.id}
+                          subject={`Document Renewal Request — Paneltec Civil`}
+                          body={`Hi ${r.contractor_name},\n\nPlease re-submit the following document(s) via the secure link below:\n${(r.doc_types_requested || []).join(', ')}\n\nThe link expires on ${(r.expires_at || '').slice(0, 10)}.\n\nThanks,\nPaneltec Civil`}
+                          recipients={r.contractor_email ? [r.contractor_email] : []}
+                          variant="primary"
+                          size="sm"
+                          label="Email link"
+                        />
                         <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy size={12} /> Copy</button>
                         <button onClick={() => revoke(r.id)} className="px-2 py-1 text-xs rounded border border-red-200 text-red-700 hover:bg-red-50 inline-flex items-center gap-1" data-testid={`revoke-${r.id}`}><X size={12} /> Revoke</button>
                       </div>

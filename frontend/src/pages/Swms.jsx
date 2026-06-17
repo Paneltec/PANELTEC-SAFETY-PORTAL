@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { FileText, Loader2, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import EmailButton from '../components/EmailButton';
 import { getUser } from '../lib/auth';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,

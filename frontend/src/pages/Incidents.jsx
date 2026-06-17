@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import EmailButton from '../components/EmailButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 
@@ -49,6 +50,12 @@ export default function IncidentsList() {
                   <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{(CATS.find(([k]) => k === i.category) || [])[1] || i.category}</span></td>
                   <td className="px-4 py-3"><StatusBadge value={i.follow_up_status} /></td>
                   <td className="px-4 py-3 text-slate-500">{(i.occurred_at || '').slice(0, 10)}</td>
+                  <td className="px-4 py-3 text-right">
+                    <EmailButton resourceKind="incidents" recordId={i.id}
+                      subject={`Incident Summary: ${i.title}`}
+                      body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
+                      variant="row" size="sm" label="Email" />
+                  </td>
                 </tr>
               ))}
             </tbody>

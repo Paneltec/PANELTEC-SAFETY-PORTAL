@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import EmailButton from '../components/EmailButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, AiButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -26,6 +27,12 @@ export default function SiteDiaryList() {
                 {d.structured_log && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-violet-soft text-brand-violet font-semibold uppercase tracking-wider">AI structured</span>}
               </div>
               <p className="text-sm text-slate-700 line-clamp-2">{d.raw_notes}</p>
+              <div className="mt-2 pt-2 border-t border-slate-100">
+                <EmailButton resourceKind="site_diary" recordId={d.id}
+                  subject={`Site Diary — ${d.date}`}
+                  body={`Site diary entry for ${d.date}.\n\n${d.raw_notes || ''}`}
+                  variant="row" size="sm" label="Email" />
+              </div>
             </div>
           ))}
         </div>
