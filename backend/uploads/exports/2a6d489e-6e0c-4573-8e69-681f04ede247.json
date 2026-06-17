@@ -1,0 +1,23 @@
+{
+  "meta": {
+    "export_id": "2a6d489e-6e0c-4573-8e69-681f04ede247",
+    "title": "Compliance Evidence Pack",
+    "date_from": "2025-01-01",
+    "date_to": "2025-12-31",
+    "scope": "All workspaces",
+    "generated_at": "2026-06-17T05:15:55.731450+00:00",
+    "generated_by": "demo@paneltec.com",
+    "counts": {
+      "swms": 0,
+      "incidents": 0,
+      "hazards": 0,
+      "contractors": 0
+    }
+  },
+  "data": {
+    "swms": [],
+    "incidents": [],
+    "hazards": [],
+    "contractors": []
+  }
+}
