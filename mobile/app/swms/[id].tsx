@@ -6,11 +6,16 @@ import { getUser } from '../../src/lib/auth';
 import StatusBadge from '../../src/components/StatusBadge';
 import PrimaryButton from '../../src/components/PrimaryButton';
 import GhostButton from '../../src/components/GhostButton';
+import PdfActions from '../../src/components/PdfActions';
+import EmailButton from '../../src/components/EmailButton';
+import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 export default function SwmsDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const can = useCan();
   const [doc, setDoc] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [user, setUser] = useState<any>(null);
@@ -28,17 +33,34 @@ export default function SwmsDetailScreen() {
   };
 
   if (!doc) return <View style={s.center}><ActivityIndicator color={Colors.blue} /></View>;
+
   const isReviewer = ['hseq_lead', 'admin'].includes(user?.role);
+  const canEdit = can('swms', 'edit');
+  const canView = can('swms', 'view');
+  const canEmail = can('swms', 'email');
 
   return (
     <ScrollView testID="swms-detail" style={s.scroll} contentContainerStyle={s.content}>
+      {!canEdit && <ReadOnlyBanner />}
       <Text style={s.heading}>{doc.title}</Text>
       <View style={s.metaRow}>
         <StatusBadge value={doc.status} />
         <Text style={s.meta}>v{doc.version || 1} · {doc.created_at?.slice(0, 10)}</Text>
       </View>
 
-      {isReviewer && doc.status === 'submitted' && (
+      <View testID="swms-actions" style={s.actionRow}>
+        {canView && <PdfActions resourceKind="swms" recordId={id!} title={doc.title} />}
+        {canEmail && (
+          <EmailButton
+            resourceKind="swms"
+            recordId={id!}
+            subject={`SWMS for Review: ${doc.title} v${doc.version || 1}`}
+            body={`Please review the attached SWMS.\n\nTitle: ${doc.title}\nStatus: ${doc.status}`}
+          />
+        )}
+      </View>
+
+      {canEdit && isReviewer && doc.status === 'submitted' && (
         <View style={s.reviewRow}>
           <GhostButton testID="swms-request-changes" onPress={() => review('request_changes')}>Changes</GhostButton>
           <GhostButton testID="swms-reject" onPress={() => review('reject')}>Reject</GhostButton>
@@ -70,8 +92,9 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 32 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   heading: { fontSize: 24, fontWeight: '700', color: Colors.ink },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8, marginBottom: 16 },
+  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   meta: { fontSize: 12, color: Colors.textTertiary },
+  actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 16 },
   reviewRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
   section: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 10 },
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.textTertiary, textTransform: 'uppercase', marginBottom: 8 },

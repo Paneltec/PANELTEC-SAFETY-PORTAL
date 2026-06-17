@@ -4,18 +4,23 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
+import { ROUTE_TO_RESOURCE } from '../../src/lib/permissions';
 
 const TOOLS = [
-  { key: 'swms', title: 'AI SWMS Generator', desc: 'Draft Safe Work Method Statements from a job brief in minutes.', icon: 'document-text' as const, route: '/swms' },
-  { key: 'pre-starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks captured on mobile, signed at the gate.', icon: 'clipboard' as const, route: '/pre-starts' },
-  { key: 'site-diary', title: 'Site Diary AI', desc: 'Auto-summarise voice notes and photos into a daily site diary.', icon: 'book' as const, route: '/site-diary' },
-  { key: 'hazards', title: 'Hazard Reports from Photos', desc: 'Snap a hazard — AI classifies risk and drafts the report.', icon: 'warning' as const, route: '/hazards' },
-  { key: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture with witness statements and evidence.', icon: 'alert-circle' as const, route: '/incidents' },
-  { key: 'inspections', title: 'Inspection Reports', desc: 'Plant, scaffold and site walk inspections with pass/fail items.', icon: 'checkmark-circle' as const, route: '/inspections' },
+  { key: 'swms', resource: 'swms', title: 'AI SWMS Generator', desc: 'Draft Safe Work Method Statements from a job brief in minutes.', icon: 'document-text' as const, route: '/swms' },
+  { key: 'pre-starts', resource: 'pre_starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks captured on mobile, signed at the gate.', icon: 'clipboard' as const, route: '/pre-starts' },
+  { key: 'site-diary', resource: 'site_diary', title: 'Site Diary AI', desc: 'Auto-summarise voice notes and photos into a daily site diary.', icon: 'book' as const, route: '/site-diary' },
+  { key: 'hazards', resource: 'hazards', title: 'Hazard Reports from Photos', desc: 'Snap a hazard — AI classifies risk and drafts the report.', icon: 'warning' as const, route: '/hazards' },
+  { key: 'incidents', resource: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture with witness statements and evidence.', icon: 'alert-circle' as const, route: '/incidents' },
+  { key: 'inspections', resource: 'inspections', title: 'Inspection Reports', desc: 'Plant, scaffold and site walk inspections with pass/fail items.', icon: 'checkmark-circle' as const, route: '/inspections' },
 ];
 
 export default function CaptureScreen() {
   const router = useRouter();
+  const can = useCan();
+
+  const visibleTools = TOOLS.filter(t => can(t.resource, 'open'));
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -24,7 +29,12 @@ export default function CaptureScreen() {
         <Text style={styles.heading}>Create & Capture</Text>
         <Text style={styles.sub}>Choose a capture tool to start a new record.</Text>
 
-        {TOOLS.map((t) => (
+        {visibleTools.length === 0 ? (
+          <View style={styles.emptyBox}>
+            <Ionicons name="lock-closed" size={24} color={Colors.textTertiary} />
+            <Text style={styles.emptyText}>No capture tools available for your role.</Text>
+          </View>
+        ) : visibleTools.map((t) => (
           <TouchableOpacity
             key={t.key}
             testID={`capture-tool-${t.key}`}
@@ -54,6 +64,8 @@ const styles = StyleSheet.create({
   overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.blue },
   heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
   sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 20 },
+  emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 8 },
+  emptyText: { fontSize: 14, color: Colors.textTertiary },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,

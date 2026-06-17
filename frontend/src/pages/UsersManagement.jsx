@@ -5,8 +5,14 @@ import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
 import { RESOURCE_LABELS, EMAIL_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from '../components/ui/select';
 
 const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
+const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
+const STATUSES = ['active', 'invited', 'disabled'];
+const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
 
@@ -123,7 +129,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
   const [tab, setTab] = useState('profile');
   const [detail, setDetail] = useState(null);
   const [perms, setPerms] = useState(null);
-  const [profile, setProfile] = useState({ name: '', role: '', status: '', workspace_ids: [] });
+  const [profile, setProfile] = useState({ name: '', email: '', role: '', status: '', workspace_ids: [] });
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
@@ -132,7 +138,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
     try {
       const { data: u } = await api.get(`/users/${userRow.id}`);
       setDetail(u);
-      setProfile({ name: u.name, role: u.role, status: u.status || 'active', workspace_ids: u.workspace_ids || [] });
+      setProfile({ name: u.name, email: u.email || '', role: u.role, status: u.status || 'active', workspace_ids: u.workspace_ids || [] });
       const { data: p } = await api.get(`/users/${userRow.id}/permissions`);
       setPerms(p);
       try { const { data: ws } = await api.get('/workspaces'); setWorkspaces(ws || []); } catch { /* ignore */ }
@@ -140,10 +146,25 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [userRow.id]);
 
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const saveProfile = async () => {
     setBusy(true);
-    try { await api.patch(`/users/${userRow.id}`, profile); toast.success('Profile updated'); onReload(); load(); }
-    catch (e) { toast.error(apiError(e)); }
+    try {
+      const payload = { ...profile };
+      // Drop email from payload if unchanged from server detail (avoids spurious
+      // collision checks) or invalid format.
+      const original = (detail?.email || '').toLowerCase();
+      const next = (payload.email || '').toLowerCase().trim();
+      if (!next || !emailRe.test(next)) {
+        delete payload.email;
+      } else if (next === original) {
+        delete payload.email;
+      } else {
+        payload.email = next;
+      }
+      await api.patch(`/users/${userRow.id}`, payload);
+      toast.success('Profile updated'); onReload(); load();
+    } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
 
@@ -199,13 +220,36 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
         {tab === 'profile' && detail && (
           <div className="mt-5 space-y-4">
             <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Name</div>
-              <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit} /></label>
-            <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Role</div>
-              <select value={profile.role} onChange={(e) => setProfile({ ...profile, role: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit}>
-                {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
-            <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Status</div>
-              <select value={profile.status} onChange={(e) => setProfile({ ...profile, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit}>
-                {['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+              <input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit} data-testid="user-name" /></label>
+            <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Email</div>
+              <input type="email" value={profile.email} onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm disabled:bg-slate-50 disabled:text-slate-500"
+                disabled={!canEdit} placeholder="name@example.com" autoComplete="off" data-testid="user-email" />
+              {profile.email && !emailRe.test(profile.email.trim()) && (
+                <div className="text-[11px] text-rose-600 mt-1">Enter a valid email address.</div>
+              )}
+            </label>
+            <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Role</div>
+              <Select value={profile.role || undefined} onValueChange={(v) => setProfile({ ...profile, role: v })} disabled={!canEdit}>
+                <SelectTrigger className="w-full" data-testid="user-role"><SelectValue placeholder="Select role" /></SelectTrigger>
+                <SelectContent>
+                  {ROLES.map((r) => (
+                    <SelectItem key={r} value={r} data-testid={`role-opt-${r}`}>{ROLE_LABELS[r]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Status</div>
+              <Select value={profile.status || undefined} onValueChange={(v) => setProfile({ ...profile, status: v })} disabled={!canEdit}>
+                <SelectTrigger className="w-full" data-testid="user-status"><SelectValue placeholder="Select status" /></SelectTrigger>
+                <SelectContent>
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s} value={s} data-testid={`status-opt-${s}`}>{STATUS_LABELS[s]}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="text-[11px] text-slate-500 mt-1">Changing role / status / email will sign the user out of any active sessions.</div>
+            </div>
             <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Workspaces</div>
               {workspaces.length === 0 ? <div className="text-xs text-slate-400 italic">No workspaces in your org.</div> : (
                 <div className="space-y-1 border border-slate-200 rounded-lg p-2" data-testid="user-workspaces">

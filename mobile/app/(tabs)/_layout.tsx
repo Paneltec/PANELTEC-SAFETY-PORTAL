@@ -1,9 +1,22 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
+import { useAuth } from '../../src/lib/AuthContext';
+import { hasAnyCaptureOpen, canDo } from '../../src/lib/permissions';
+import api from '../../src/lib/api';
 
 export default function TabLayout() {
+  const { perms } = useAuth();
+  const showCapture = hasAnyCaptureOpen(perms);
+  const [queueCount, setQueueCount] = useState(0);
+
+  useEffect(() => {
+    api.get('/email/outbox', { params: { status: 'queued', mine: 'true' } })
+      .then(({ data }) => setQueueCount(data?.count ?? data?.items?.length ?? 0))
+      .catch(() => {});
+  }, []);
+
   return (
     <Tabs
       screenOptions={{
@@ -25,6 +38,8 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          tabBarBadge: queueCount > 0 ? queueCount : undefined,
+          tabBarBadgeStyle: queueCount > 0 ? { backgroundColor: Colors.violet, fontSize: 10, minWidth: 18, height: 18, lineHeight: 18 } : undefined,
         }}
       />
       <Tabs.Screen
@@ -32,6 +47,7 @@ export default function TabLayout() {
         options={{
           title: 'Capture',
           tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} />,
+          href: showCapture ? undefined : null,
         }}
       />
       <Tabs.Screen
@@ -39,6 +55,13 @@ export default function TabLayout() {
         options={{
           title: 'QR Sign-On',
           tabBarIcon: ({ color, size }) => <Ionicons name="qr-code" size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="outbox"
+        options={{
+          title: 'Outbox',
+          tabBarIcon: ({ color, size }) => <Ionicons name="mail" size={size} color={color} />,
         }}
       />
       <Tabs.Screen

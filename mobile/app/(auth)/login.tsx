@@ -26,8 +26,15 @@ export default function LoginScreen() {
     try {
       await login(email, password);
       setAuth(true);
-    } catch (err) {
-      setError(apiError(err) || 'Invalid email or password.');
+    } catch (err: any) {
+      const msg = apiError(err) || 'Invalid email or password.';
+      // Track 4: detect disabled account
+      const detail = err?.response?.data?.detail;
+      if (typeof detail === 'string' && detail.toLowerCase().includes('disabled')) {
+        setError('Account disabled — contact your organisation administrator to re-enable your account.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }

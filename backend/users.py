@@ -83,10 +83,22 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
     patch = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not patch:
         raise HTTPException(400, "No fields to update")
+    # Email change: lowercase + collision check (against other users in same org).
+    if "email" in patch:
+        new_email = str(patch["email"]).lower().strip()
+        clash = await db.users.find_one({
+            "org_id": actor["org_id"],
+            "email": new_email,
+            "id": {"$ne": user_id},
+        })
+        if clash:
+            raise HTTPException(400, "Email already in use")
+        patch["email"] = new_email
     patch["updated_at"] = now_iso()
-    # Status changes (disable/reactivate) revoke any existing JWTs for that user.
+    # Status / email / role changes revoke any existing JWTs for that user
+    # (status was already doing this; email and role changes also justify it).
     update_op: dict = {"$set": patch}
-    if "status" in patch:
+    if any(k in patch for k in ("status", "email", "role")):
         update_op["$inc"] = {"token_version": 1}
     result = await db.users.find_one_and_update(
         {"id": user_id, "org_id": actor["org_id"]},
