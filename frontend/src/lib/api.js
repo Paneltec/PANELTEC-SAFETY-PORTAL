@@ -20,10 +20,12 @@ api.interceptors.response.use(
   (r) => r,
   (err) => {
     const status = err?.response?.status;
-    if (status === 401) {
+    const reason = err?.response?.headers?.['x-auth-reason'];
+    // Only log out when *our own* JWT middleware said so.
+    // Upstream-provider 401s (Navixy, LLM, etc.) bubble through unchanged.
+    if (status === 401 && reason) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      // Avoid loops on the login page itself
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.assign('/login');
       }

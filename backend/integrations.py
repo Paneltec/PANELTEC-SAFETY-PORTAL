@@ -4,6 +4,7 @@ Phase A: Navixy is real (live HTTP). The other three are placeholders so the
 existing Integrations UI keeps working.
 """
 from __future__ import annotations
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
@@ -16,6 +17,7 @@ from auth import get_current_user, require_roles
 from db import db
 from models import new_id, now_iso
 
+log = logging.getLogger("paneltec.integrations")
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
 Kind = Literal["simpro", "microsoft365", "textmagic", "navixy"]
@@ -90,8 +92,13 @@ async def put_integration(kind: Kind, body: dict, user: dict = Depends(require_r
         incoming = body or {}
         for secret_key in ("password", "session_hash"):
             v = incoming.get(secret_key)
-            if v is None or (isinstance(v, str) and v.startswith("••••")):
+            if v is None:
                 incoming[secret_key] = prev.get(secret_key)
+            elif isinstance(v, str) and (v.startswith("••••") or v.startswith("****") or v.strip() == ""):
+                log.info("navixy PUT: keeping stored %s (incoming was masked/empty)", secret_key)
+                incoming[secret_key] = prev.get(secret_key)
+            else:
+                log.info("navixy PUT: updating %s (new value, len=%d)", secret_key, len(v))
         config = NavixyConfig(**{**prev, **incoming}).model_dump()
     else:
         config = body or {}

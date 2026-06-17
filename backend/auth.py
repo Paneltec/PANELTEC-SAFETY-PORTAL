@@ -68,17 +68,21 @@ async def get_current_user(
         if auth.startswith("Bearer "):
             token = auth[7:]
     if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        raise HTTPException(status_code=401, detail="Not authenticated",
+                            headers={"X-Auth-Reason": "jwt-missing"})
     try:
         payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="Token expired",
+                            headers={"X-Auth-Reason": "jwt-expired"})
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token",
+                            headers={"X-Auth-Reason": "jwt-invalid"})
 
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+        raise HTTPException(status_code=401, detail="User not found",
+                            headers={"X-Auth-Reason": "jwt-invalid"})
     user.pop("password_hash", None)
     return user
 
