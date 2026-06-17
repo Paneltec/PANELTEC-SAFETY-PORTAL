@@ -230,6 +230,62 @@ async def _navixy_tracker_tag_map(client: httpx.AsyncClient, base: str, h: str) 
     return out
 
 
+import logging
+import os
+
+_LOG = logging.getLogger("paneltec.navixy")
+_NAVIXY_DEBUG = os.environ.get("NAVIXY_DEBUG", "").lower() in ("1", "true", "yes")
+
+
+def _extract_position(state: dict) -> dict:
+    """Pull lat/lng/speed/last_seen out of a Navixy /v2/tracker/get_states entry.
+
+    Real Navixy v2 shape (verified June 2026):
+        {source_id, gps: {location: {lat, lng}, speed, updated, ...},
+         last_update, connection_status, movement_status, ...}
+
+    Older / alt-plan shapes also seen in the wild:
+        gps.lat/lng                   (very old / niche plans)
+        location.lat/lng              (some EU resellers)
+        last_position.{lat,lng}       (legacy API)
+    Try each in order; use whichever has data.
+    """
+    if not isinstance(state, dict):
+        return {"lat": None, "lng": None, "speed": None, "last_seen": None}
+
+    lat = lng = None
+    gps = state.get("gps") if isinstance(state.get("gps"), dict) else {}
+
+    loc = gps.get("location") if isinstance(gps.get("location"), dict) else None
+    if isinstance(loc, dict):
+        lat, lng = loc.get("lat"), loc.get("lng")
+    if lat is None or lng is None:
+        # gps.lat/lng (rare flat shape)
+        lat = lat if lat is not None else gps.get("lat")
+        lng = lng if lng is not None else gps.get("lng")
+    if lat is None or lng is None:
+        # top-level location.lat/lng
+        loc2 = state.get("location") if isinstance(state.get("location"), dict) else None
+        if isinstance(loc2, dict):
+            lat = lat if lat is not None else loc2.get("lat")
+            lng = lng if lng is not None else loc2.get("lng")
+    if lat is None or lng is None:
+        last_pos = state.get("last_position") if isinstance(state.get("last_position"), dict) else None
+        if isinstance(last_pos, dict):
+            lat = lat if lat is not None else last_pos.get("lat")
+            lng = lng if lng is not None else last_pos.get("lng")
+
+    speed = gps.get("speed") if isinstance(gps, dict) else None
+    if speed is None:
+        speed = state.get("speed_kph") or state.get("speed")
+
+    last_seen = (gps.get("updated") if isinstance(gps, dict) else None) \
+        or state.get("last_update") \
+        or state.get("connection_status")
+
+    return {"lat": lat, "lng": lng, "speed": speed, "last_seen": last_seen}
+
+
 @router.get("/navixy/vehicles")
 async def navixy_vehicles(
     tag_ids: Optional[str] = None,
@@ -262,12 +318,36 @@ async def navixy_vehicles(
             states = {}
             if trackers:
                 ids = [t["id"] for t in trackers if t.get("id")]
-                st = await c.post(f"{base}/v2/tracker/get_states", json={"hash": h, "trackers": ids})
+                st = await c.post(f"{base}/v2/tracker/get_states",
+                                  json={"hash": h, "trackers": ids, "allow_not_exist": True})
                 st_data = st.json() or {}
-                states_raw = st_data.get("states") if isinstance(st_data, dict) else []
-                for s in (states_raw or []):
-                    if isinstance(s, dict):
-                        states[s.get("source_id")] = s
+                states_raw = st_data.get("states") if isinstance(st_data, dict) else None
+                # Navixy returns `states` as a dict keyed by tracker_id (string).
+                # IMPORTANT: each state's inner `source_id` is the *device* id,
+                # which is different from the tracker id used in tracker/list —
+                # so we MUST key off the outer dict key, not source_id.
+                # Older / niche shapes return a list of state objects.
+                if isinstance(states_raw, dict):
+                    for k, v in states_raw.items():
+                        if isinstance(v, dict):
+                            try:
+                                key = int(k)
+                            except (TypeError, ValueError):
+                                key = k
+                            states[key] = v
+                elif isinstance(states_raw, list):
+                    for s in states_raw:
+                        if isinstance(s, dict) and s.get("source_id") is not None:
+                            # In list-shape, source_id IS the tracker id.
+                            states[s["source_id"]] = s
+                if _NAVIXY_DEBUG:
+                    with_pos = sum(
+                        1 for s in states.values()
+                        if isinstance(s.get("gps"), dict) and isinstance(s["gps"].get("location"), dict)
+                        and s["gps"]["location"].get("lat") is not None
+                    )
+                    _LOG.info("navixy get_states: %d trackers requested → %d states parsed, %d with gps.location",
+                              len(ids), len(states), with_pos)
             # Fetch tag/name lookup + per-tracker binding map
             tag_lookup: dict = {}
             try:
@@ -305,16 +385,16 @@ async def navixy_vehicles(
         if selected_tag_ids and not (set(v_tag_ids) & selected_tag_ids):
             continue
         s = states.get(tid) if isinstance(states.get(tid), dict) else {}
-        gps = s.get("gps") if isinstance(s.get("gps"), dict) else {}
+        pos = _extract_position(s)
         src = t.get("source") if isinstance(t.get("source"), dict) else {}
         out.append({
             "id": tid,
             "label": t.get("label") or t.get("clone_label") or "Vehicle",
             "plate": src.get("phone"),
-            "lat": gps.get("lat"),
-            "lng": gps.get("lng"),
-            "speed_kph": gps.get("speed"),
-            "last_seen": s.get("last_update") or s.get("connection_status"),
+            "lat": pos["lat"],
+            "lng": pos["lng"],
+            "speed_kph": pos["speed"],
+            "last_seen": pos["last_seen"],
             "status": "online" if s.get("connection_status") == "active" else "offline",
             "address": s.get("address"),
             "tags": [tag_lookup[tid_] for tid_ in v_tag_ids if tid_ in tag_lookup],
