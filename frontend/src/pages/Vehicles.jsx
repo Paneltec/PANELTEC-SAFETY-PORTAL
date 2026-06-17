@@ -4,12 +4,11 @@ import {
   MapPin, RefreshCw, Radio, ArrowRight, Tag as TagIcon, X as XIcon,
   Loader2, List as ListIcon, Map as MapIcon,
 } from 'lucide-react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
 import VehicleMapModal from '../components/VehicleMapModal';
+import { useGoogleMapsKey } from '../lib/googleMaps';
 
 function RelTime({ iso }) {
   if (!iso) return <span className="text-slate-400">—</span>;
@@ -23,7 +22,7 @@ function RelTime({ iso }) {
 }
 
 const TAG_FILTER_KEY = 'paneltec_vehicle_tag_filter';
-const SYDNEY = [-33.8688, 151.2093];
+const SYDNEY = { lat: -33.8688, lng: 151.2093 };
 
 function loadPersistedTagIds() {
   try {
@@ -34,86 +33,82 @@ function loadPersistedTagIds() {
   } catch { return []; }
 }
 
-// --- Leaflet ---------------------------------------------------------------
-
-// Color-coded pin via divIcon (avoids the broken default marker-image URLs
-// that ship with leaflet under webpack).
-function buildPinIcon(color, online) {
-  const fill = color || '#2C6BFF';
-  const ring = online ? '#10B981' : '#94A3B8';
-  const html = `
-    <div style="position:relative;width:24px;height:32px">
-      <div style="position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:${fill};border:2px solid ${ring};box-shadow:0 1px 3px rgba(0,0,0,.35)"></div>
-      <div style="position:absolute;left:9px;top:18px;width:0;height:0;border-left:3px solid transparent;border-right:3px solid transparent;border-top:8px solid ${fill}"></div>
-    </div>`;
-  return L.divIcon({
-    html, className: 'paneltec-vehicle-pin', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28],
-  });
+function pinSymbol(color, isOnline) {
+  if (typeof window === 'undefined' || !window.google?.maps) return undefined;
+  return {
+    path: 'M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8z',
+    fillColor: '#' + (color || '2C6BFF').replace('#', ''),
+    fillOpacity: 1,
+    strokeColor: isOnline ? '#10B981' : '#475569',
+    strokeWeight: 2,
+    scale: 1.4,
+    anchor: new window.google.maps.Point(12, 22),
+  };
 }
 
-function RecenterOnVehicles({ vehicles }) {
-  const map = useMap();
-  useEffect(() => {
-    const pts = (vehicles || [])
-      .filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number')
-      .map((v) => [v.lat, v.lng]);
-    if (pts.length === 0) {
-      map.setView(SYDNEY, 10);
-      return;
-    }
-    if (pts.length === 1) {
-      map.setView(pts[0], 14);
-      return;
-    }
-    map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
-  }, [vehicles, map]);
-  return null;
-}
+function VehicleFleetMap({ vehicles, apiKey, onMarkerClick }) {
+  const { isLoaded } = useJsApiLoader({ id: 'paneltec-gmaps', googleMapsApiKey: apiKey });
+  const [active, setActive] = useState(null);
+  const positioned = useMemo(
+    () => vehicles.filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number'),
+    [vehicles]
+  );
 
-function VehicleMap({ vehicles }) {
+  const onLoad = (map) => {
+    if (positioned.length === 0) { map.setCenter(SYDNEY); map.setZoom(5); return; }
+    if (positioned.length === 1) { map.setCenter({ lat: positioned[0].lat, lng: positioned[0].lng }); map.setZoom(14); return; }
+    const bounds = new window.google.maps.LatLngBounds();
+    positioned.forEach((v) => bounds.extend({ lat: v.lat, lng: v.lng }));
+    map.fitBounds(bounds, 40);
+  };
+
+  if (!isLoaded) return <div className="h-[70vh] flex items-center justify-center text-sm text-slate-500" data-testid="vehicles-map-loading">Loading Google Maps…</div>;
+
   return (
-    <div className="relative h-[70vh] rounded-b-2xl overflow-hidden" data-testid="vehicles-map">
-      <MapContainer center={SYDNEY} zoom={10} scrollWheelZoom className="w-full h-full">
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-        />
-        <RecenterOnVehicles vehicles={vehicles} />
-        {vehicles.map((v) => {
-          const color = v.tags?.[0]?.color;
-          return (
-            <Marker key={v.id} position={[v.lat, v.lng]} icon={buildPinIcon(color, v.status === 'online')}>
-              <Popup>
-                <div className="text-xs space-y-1 min-w-[180px]" data-testid={`vehicle-popup-${v.id}`}>
-                  <div className="font-semibold text-sm flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${v.status === 'online' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-                    {v.label}
-                  </div>
-                  <div className="text-slate-500">{v.plate || '—'} · <RelTime iso={v.last_seen} /></div>
-                  {v.speed_kph != null && v.speed_kph > 0 && <div className="text-slate-500">{v.speed_kph} km/h</div>}
-                  {v.address && <div className="text-slate-500 italic">{v.address}</div>}
+    <div className="h-[70vh] rounded-b-2xl overflow-hidden" data-testid="vehicles-map">
+      <GoogleMap
+        mapContainerStyle={{ width: '100%', height: '100%' }}
+        center={SYDNEY}
+        zoom={5}
+        onLoad={onLoad}
+        options={{ mapTypeControl: true, streetViewControl: false, fullscreenControl: true }}
+      >
+        {positioned.map((v) => (
+          <Marker key={v.id} position={{ lat: v.lat, lng: v.lng }}
+                  icon={pinSymbol(v.tags?.[0]?.color, v.status === 'online')}
+                  onClick={() => setActive(v.id)}>
+            {active === v.id && (
+              <InfoWindow position={{ lat: v.lat, lng: v.lng }} onCloseClick={() => setActive(null)}>
+                <div className="text-xs space-y-1 min-w-[200px]" style={{ color: '#1F2937' }}>
+                  <div className="font-semibold text-sm">{v.label}</div>
+                  <div>{v.plate || '—'} · {v.status}</div>
+                  {v.movement_status && <div className="capitalize">Movement: {v.movement_status}</div>}
+                  {v.speed_kph != null && v.speed_kph > 0 && <div>{v.speed_kph} km/h</div>}
+                  {v.address && <div style={{ fontStyle: 'italic' }}>{v.address}</div>}
                   {v.tags?.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingTop: 4 }}>
                       {v.tags.map((t) => (
-                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border"
-                              style={{ borderColor: t.color || '#CBD5E1', color: t.color || '#475569' }}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.color || '#94A3B8' }} />
-                          {t.name}
-                        </span>
+                        <span key={t.id} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 4,
+                          padding: '1px 6px', borderRadius: 999, border: `1px solid #${(t.color || 'CBD5E1').replace('#','')}`,
+                          color: `#${(t.color || '475569').replace('#','')}`, fontSize: 10,
+                        }}>{t.name}</span>
                       ))}
                     </div>
                   )}
+                  <button onClick={() => { setActive(null); onMarkerClick?.(v); }}
+                          style={{ color: '#2C6BFF', textDecoration: 'underline', fontSize: 11, marginTop: 4 }}>
+                    View details →
+                  </button>
                 </div>
-              </Popup>
-            </Marker>
-          );
-        })}
-      </MapContainer>
+              </InfoWindow>
+            )}
+          </Marker>
+        ))}
+      </GoogleMap>
     </div>
   );
 }
-
-// --- Main page -------------------------------------------------------------
 
 export default function Vehicles() {
   const [data, setData] = useState(null);
@@ -122,8 +117,9 @@ export default function Vehicles() {
   const [busy, setBusy] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
-  const [view, setView] = useState('list'); // 'list' | 'map'
+  const [view, setView] = useState('list');
   const [activeMapVehicle, setActiveMapVehicle] = useState(null);
+  const apiKey = useGoogleMapsKey();
 
   useEffect(() => {
     try { localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(Array.from(selected))); }
@@ -140,7 +136,7 @@ export default function Vehicles() {
         const filtered = new Set([...prev].filter((id) => valid.has(id)));
         return filtered.size === prev.size ? prev : filtered;
       });
-    } catch { /* tags are optional; ignore */ }
+    } catch { /* tags optional */ }
   };
 
   const loadVehicles = async (tagSet) => {
@@ -227,14 +223,14 @@ export default function Vehicles() {
             )}
           </div>
           {tags.length === 0 ? (
-            <div className="text-xs text-slate-500 italic py-4">No tags configured in Navixy yet. Tags can be created in your Navixy dashboard.</div>
+            <div className="text-xs text-slate-500 italic py-4">No tags configured in Navixy yet.</div>
           ) : (
             <ul className="space-y-1" data-testid="vehicles-tag-list">
               {tags.map((t) => (
                 <li key={t.id}>
                   <label className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 cursor-pointer text-sm">
                     <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggleTag(t.id)} data-testid={`tag-toggle-${t.id}`} />
-                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: t.color || '#94A3B8' }} />
+                    <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: '#' + (t.color || '94A3B8').replace('#','') }} />
                     <span className="flex-1 truncate">{t.name}</span>
                     <span className="text-[11px] text-slate-400">{tagCounts[t.id] || 0}</span>
                   </label>
@@ -253,7 +249,6 @@ export default function Vehicles() {
                 {filtered ? `${vehicles.length} of ${total} vehicles` : `${total} vehicles`}
               </div>
             </div>
-            {/* List/Map toggle */}
             <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs" data-testid="vehicles-view-toggle">
               <button onClick={() => setView('list')} data-testid="vehicles-view-list"
                 className={`inline-flex items-center gap-1 px-2.5 py-1.5 ${view === 'list' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
@@ -272,14 +267,28 @@ export default function Vehicles() {
                 <>
                   <div className="inline-flex w-14 h-14 rounded-2xl bg-brand-blue-soft items-center justify-center mb-3"><TagIcon size={22} className="text-brand-blue" /></div>
                   <h4 className="font-display text-lg font-semibold">Select one or more tags to view your fleet</h4>
-                  <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">Use the tags on the left to filter your vehicles. We don&apos;t load the full fleet by default — picking a tag keeps the view focused and fast.</p>
+                  <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">Use the tags on the left to filter your vehicles.</p>
                 </>
               ) : (
-                <div className="text-sm text-slate-500">No vehicles match the selected tags. Try clearing filters.</div>
+                <div className="text-sm text-slate-500">No vehicles match the selected tags.</div>
               )}
             </div>
           ) : view === 'map' ? (
-            <VehicleMap vehicles={vehicles} />
+            apiKey === null ? (
+              <div className="p-10 text-center" data-testid="map-no-key">
+                <MapPin size={28} className="mx-auto text-slate-400 mb-3" />
+                <h4 className="font-display text-lg font-semibold">Google Maps not configured</h4>
+                <p className="mt-1 text-sm text-slate-600 max-w-md mx-auto">
+                  Configure Google Maps in{' '}
+                  <Link to="/app/settings/integrations/google-maps" className="text-brand-blue underline">Settings → Integrations → Google Maps</Link>{' '}
+                  to enable map view.
+                </p>
+              </div>
+            ) : apiKey === undefined ? (
+              <div className="p-10 text-center text-sm text-slate-500">Loading…</div>
+            ) : (
+              <VehicleFleetMap vehicles={vehicles} apiKey={apiKey} onMarkerClick={setActiveMapVehicle} />
+            )
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
               {vehicles.map((v) => (
@@ -299,13 +308,14 @@ export default function Vehicles() {
                       <MapPin size={13} />
                     </button>
                   </div>
-                  <div className="text-xs text-slate-500 mt-0.5">{v.plate || '—'} · <RelTime iso={v.last_seen} /></div>
+                  <div className="text-xs text-slate-500 mt-0.5">{v.plate || '—'} · <RelTime iso={v.last_seen} />{v.movement_status ? ` · ${v.movement_status}` : ''}</div>
                   {v.address && <div className="text-xs text-slate-400 mt-0.5 truncate">{v.address}</div>}
                   {v.tags?.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {v.tags.map((t) => (
-                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border" style={{ borderColor: t.color || '#CBD5E1', color: t.color || '#475569' }}>
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.color || '#94A3B8' }} />
+                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border"
+                              style={{ borderColor: '#' + (t.color || 'CBD5E1').replace('#',''), color: '#' + (t.color || '475569').replace('#','') }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#' + (t.color || '94A3B8').replace('#','') }} />
                           {t.name}
                         </span>
                       ))}
@@ -326,8 +336,3 @@ export default function Vehicles() {
     </div>
   );
 }
-
-// MapPin import is no longer used in the body but kept around in case the
-// empty-state copy ever references it again.
-// eslint-disable-next-line no-unused-vars
-const _MapPinFallback = MapPin;

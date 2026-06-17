@@ -20,8 +20,8 @@ from models import new_id, now_iso
 log = logging.getLogger("paneltec.integrations")
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
-Kind = Literal["simpro", "microsoft365", "textmagic", "navixy"]
-ALL_KINDS: list[Kind] = ["simpro", "microsoft365", "textmagic", "navixy"]
+Kind = Literal["simpro", "microsoft365", "textmagic", "navixy", "google_maps"]
+ALL_KINDS: list[Kind] = ["simpro", "microsoft365", "textmagic", "navixy", "google_maps"]
 
 
 class NavixyConfig(BaseModel):
@@ -47,6 +47,9 @@ def _mask(kind: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
             out["password"] = _last4(out["password"])
         if out.get("session_hash"):
             out["session_hash"] = _last4(out["session_hash"])
+    elif kind == "google_maps":
+        if out.get("api_key"):
+            out["api_key"] = _last4(out["api_key"])
     return out
 
 
@@ -100,6 +103,14 @@ async def put_integration(kind: Kind, body: dict, user: dict = Depends(require_r
             else:
                 log.info("navixy PUT: updating %s (new value, len=%d)", secret_key, len(v))
         config = NavixyConfig(**{**prev, **incoming}).model_dump()
+    elif kind == "google_maps":
+        existing = (await db.integration_configs.find_one({"org_id": user["org_id"], "kind": kind})) or {}
+        prev = existing.get("config") or {}
+        incoming = body or {}
+        v = incoming.get("api_key")
+        if v is None or (isinstance(v, str) and (v.startswith("••••") or v.startswith("****") or v.strip() == "")):
+            incoming["api_key"] = prev.get("api_key")
+        config = {"api_key": incoming.get("api_key")}
     else:
         config = body or {}
 
@@ -395,9 +406,59 @@ async def navixy_vehicles(
             "lng": pos["lng"],
             "speed_kph": pos["speed"],
             "last_seen": pos["last_seen"],
-            "status": "online" if s.get("connection_status") == "active" else "offline",
+            # Navixy reports connection_status as online/idle/offline/just_registered.
+            # Trust it directly — don't recompute from last_seen deltas.
+            # Pin colour: "online" + "idle" → green; "offline" → grey; unknown → green.
+            "status": ("offline" if s.get("connection_status") == "offline"
+                       else "online"),
+            "connection_status": s.get("connection_status"),
+            "movement_status": s.get("movement_status"),
             "address": s.get("address"),
             "tags": [tag_lookup[tid_] for tid_ in v_tag_ids if tid_ in tag_lookup],
         })
     return {"count": len(out), "total": len(out), "vehicles": out,
             "fetched_at": now_iso(), "filter_tag_ids": sorted(selected_tag_ids)}
+
+
+# ---------- Google Maps endpoints ----------
+
+@router.post("/google-maps/test-connection")
+async def google_maps_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "google_maps"})
+    cfg = (doc or {}).get("config") or {}
+    key = cfg.get("api_key")
+    if not key:
+        raise HTTPException(400, "API key not configured")
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as c:
+            r = await c.get(f"https://maps.googleapis.com/maps/api/js?key={key}")
+    except Exception as e:
+        raise HTTPException(502, f"Google Maps unreachable: {e}")
+    if r.status_code != 200 or ("InvalidKeyMapError" in r.text or "ApiNotActivatedMapError" in r.text):
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "google_maps"},
+            {"$set": {"status": "error",
+                      "last_error": f"HTTP {r.status_code}; check key is valid and Maps JavaScript API is enabled",
+                      "updated_at": now_iso()}},
+        )
+        raise HTTPException(400, "Key rejected by Google — make sure Maps JavaScript API is enabled and the key is unrestricted (or whitelisted to this domain).")
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "google_maps"},
+        {"$set": {"status": "connected", "last_tested_at": now_iso(),
+                  "last_error": None, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "tested_at": now_iso()}
+
+
+@router.get("/google-maps/public-key")
+async def google_maps_public_key(user: dict = Depends(get_current_user)):
+    """Return the cleartext API key for any logged-in user (needed to load Maps JS).
+    Returns 404 when not configured/connected, which the frontend treats as a soft 'not set up'.
+    """
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "google_maps"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(404, "Google Maps not connected")
+    key = (doc.get("config") or {}).get("api_key")
+    if not key:
+        raise HTTPException(404, "Google Maps key not set")
+    return {"api_key": key}

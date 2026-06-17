@@ -1,24 +1,10 @@
 import React from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import L from 'leaflet';
-import 'leaflet/dist/leaflet.css';
+import { GoogleMap, Marker, InfoWindow, useJsApiLoader } from '@react-google-maps/api';
 import { MapPin } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from './ui/dialog';
-
-function pinIcon(color, online) {
-  const fill = color || '#2C6BFF';
-  const ring = online ? '#10B981' : '#94A3B8';
-  const html = `
-    <div style="position:relative;width:28px;height:38px">
-      <div style="position:absolute;left:2px;top:2px;width:24px;height:24px;border-radius:50%;background:${fill};border:3px solid ${ring};box-shadow:0 2px 6px rgba(0,0,0,.4)"></div>
-      <div style="position:absolute;left:11px;top:22px;width:0;height:0;border-left:3px solid transparent;border-right:3px solid transparent;border-top:10px solid ${fill}"></div>
-    </div>`;
-  return L.divIcon({
-    html, className: 'paneltec-vehicle-pin-modal', iconSize: [28, 38], iconAnchor: [14, 36], popupAnchor: [0, -34],
-  });
-}
+import { useGoogleMapsKey } from '../lib/googleMaps';
 
 function relTime(iso) {
   if (!iso) return '—';
@@ -39,13 +25,50 @@ function statusPillClass(status) {
   }
 }
 
+function pinSymbol(color, isOnline) {
+  if (typeof window === 'undefined' || !window.google?.maps) return undefined;
+  return {
+    path: 'M12 2C7.6 2 4 5.6 4 10c0 6 8 12 8 12s8-6 8-12c0-4.4-3.6-8-8-8z',
+    fillColor: '#' + (color || '2C6BFF').replace('#', ''),
+    fillOpacity: 1,
+    strokeColor: isOnline ? '#10B981' : '#475569',
+    strokeWeight: 2,
+    scale: 1.6,
+    anchor: new window.google.maps.Point(12, 22),
+  };
+}
+
+function MapBody({ vehicle, apiKey }) {
+  const { isLoaded } = useJsApiLoader({ id: 'paneltec-gmaps', googleMapsApiKey: apiKey });
+  if (!isLoaded) return <div className="h-full flex items-center justify-center text-sm text-slate-500">Loading map…</div>;
+  const color = vehicle.tags?.[0]?.color;
+  return (
+    <GoogleMap
+      mapContainerStyle={{ width: '100%', height: '100%' }}
+      center={{ lat: vehicle.lat, lng: vehicle.lng }}
+      zoom={15}
+      options={{ mapTypeControl: true, streetViewControl: false, fullscreenControl: true }}
+    >
+      <Marker position={{ lat: vehicle.lat, lng: vehicle.lng }} icon={pinSymbol(color, vehicle.status === 'online')}>
+        <InfoWindow position={{ lat: vehicle.lat, lng: vehicle.lng }}>
+          <div className="text-xs space-y-1 min-w-[180px]" style={{ color: '#1F2937' }}>
+            <div className="font-semibold text-sm">{vehicle.label}</div>
+            <div>{vehicle.plate || '—'} · {relTime(vehicle.last_seen)}</div>
+            {vehicle.movement_status && <div className="capitalize">Movement: {vehicle.movement_status}</div>}
+            {vehicle.speed_kph != null && vehicle.speed_kph > 0 && <div>{vehicle.speed_kph} km/h</div>}
+            {vehicle.address && <div style={{ fontStyle: 'italic' }}>{vehicle.address}</div>}
+          </div>
+        </InfoWindow>
+      </Marker>
+    </GoogleMap>
+  );
+}
+
 export default function VehicleMapModal({ vehicle, open, onClose }) {
+  const apiKey = useGoogleMapsKey();
   if (!vehicle) return null;
   const hasGps = typeof vehicle.lat === 'number' && typeof vehicle.lng === 'number';
-  const color = vehicle.tags?.[0]?.color;
-  const lastReported = vehicle.last_seen
-    ? new Date(vehicle.last_seen).toLocaleString()
-    : null;
+  const lastReported = vehicle.last_seen ? new Date(vehicle.last_seen).toLocaleString() : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -73,25 +96,18 @@ export default function VehicleMapModal({ vehicle, open, onClose }) {
                 This vehicle has not reported a GPS position recently. Try again when the tracker is online.
               </p>
             </div>
+          ) : apiKey === null ? (
+            <div className="h-full flex flex-col items-center justify-center text-center px-6" data-testid="vehicle-map-no-key">
+              <MapPin size={28} className="text-slate-400 mb-3" />
+              <h4 className="font-display text-lg font-semibold">Google Maps not configured</h4>
+              <p className="mt-1 text-sm text-slate-600 max-w-sm">
+                Configure Google Maps in <a href="/app/settings/integrations/google-maps" className="text-brand-blue underline">Settings → Integrations</a> to enable map view.
+              </p>
+            </div>
+          ) : apiKey === undefined ? (
+            <div className="h-full flex items-center justify-center text-sm text-slate-500">Loading map…</div>
           ) : (
-            <MapContainer center={[vehicle.lat, vehicle.lng]} zoom={15} scrollWheelZoom className="w-full h-full">
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              />
-              <Marker position={[vehicle.lat, vehicle.lng]} icon={pinIcon(color, vehicle.status === 'online')}>
-                <Popup autoOpen autoClose={false} closeOnClick={false}>
-                  <div className="text-xs space-y-1 min-w-[180px]">
-                    <div className="font-semibold text-sm">{vehicle.label}</div>
-                    <div className="text-slate-500">{vehicle.plate || '—'} · {relTime(vehicle.last_seen)}</div>
-                    {vehicle.speed_kph != null && vehicle.speed_kph > 0 && (
-                      <div className="text-slate-500">{vehicle.speed_kph} km/h</div>
-                    )}
-                    {vehicle.address && <div className="text-slate-500 italic">{vehicle.address}</div>}
-                  </div>
-                </Popup>
-              </Marker>
-            </MapContainer>
+            <MapBody vehicle={vehicle} apiKey={apiKey} />
           )}
         </div>
 
