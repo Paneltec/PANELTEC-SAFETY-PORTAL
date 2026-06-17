@@ -9,6 +9,10 @@ export const USER_KEY = 'paneltec_user';
 
 const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
 
+// Global logout handler — set by AuthContext
+let _forceLogout: ((reason: string) => void) | null = null;
+export function setForceLogoutHandler(fn: (reason: string) => void) { _forceLogout = fn; }
+
 api.interceptors.request.use(async (config) => {
   const t = await AsyncStorage.getItem(TOKEN_KEY);
   if (t) config.headers.Authorization = `Bearer ${t}`;
@@ -19,9 +23,19 @@ api.interceptors.response.use(
   (r) => r,
   async (err) => {
     const status = err?.response?.status;
+    const reason = err?.response?.headers?.['x-auth-reason'];
     if (status === 401) {
       await AsyncStorage.removeItem(TOKEN_KEY);
       await AsyncStorage.removeItem(USER_KEY);
+      await AsyncStorage.removeItem('paneltec_perms');
+      if (reason && _forceLogout) {
+        const msg = reason === 'token-revoked'
+          ? 'Your session was ended by an administrator. Please log in again.'
+          : reason === 'jwt-expired'
+          ? 'Your session has expired. Please log in again.'
+          : 'Your session is no longer valid. Please log in again.';
+        _forceLogout(msg);
+      }
     }
     return Promise.reject(err);
   },

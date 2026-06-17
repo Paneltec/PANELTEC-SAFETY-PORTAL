@@ -30,6 +30,7 @@ class InviteUserIn(BaseModel):
 
 class UpdateUserIn(BaseModel):
     name: Optional[str] = None
+    email: Optional[EmailStr] = None
     role: Optional[Role] = None
     workspace_ids: Optional[List[str]] = None
     status: Optional[Literal["active", "invited", "disabled"]] = None

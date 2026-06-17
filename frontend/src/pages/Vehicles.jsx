@@ -9,6 +9,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
+import VehicleMapModal from '../components/VehicleMapModal';
 
 function RelTime({ iso }) {
   if (!iso) return <span className="text-slate-400">—</span>;
@@ -128,6 +129,7 @@ export default function Vehicles() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [view, setView] = useState('list'); // 'list' | 'map'
+  const [activeMapVehicle, setActiveMapVehicle] = useState(null);
 
   useEffect(() => {
     try { localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(Array.from(selected))); }
@@ -292,6 +294,26 @@ export default function Vehicles() {
                     <span className={`w-2 h-2 rounded-full ${v.status === 'online' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     <div className="font-medium text-sm truncate flex-1">{v.label}</div>
                     {v.speed_kph != null && v.speed_kph > 0 && <span className="text-xs text-slate-500">{v.speed_kph} km/h</span>}
+                    {(() => {
+                      const hasGps = typeof v.lat === 'number' && typeof v.lng === 'number';
+                      return (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); if (hasGps) setActiveMapVehicle(v); }}
+                          disabled={!hasGps}
+                          title={hasGps ? 'Show position on map' : 'No GPS position available'}
+                          aria-label={hasGps ? `Show ${v.label} on map` : 'No GPS position'}
+                          data-testid={`vehicle-pin-${v.id}`}
+                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-colors ${
+                            hasGps
+                              ? 'border-brand-blue/30 text-brand-blue hover:bg-brand-blue hover:text-white hover:border-brand-blue'
+                              : 'border-slate-200 text-slate-300 cursor-not-allowed'
+                          }`}
+                        >
+                          <MapPin size={13} />
+                        </button>
+                      );
+                    })()}
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">{v.plate || '—'} · <RelTime iso={v.last_seen} /></div>
                   {v.address && <div className="text-xs text-slate-400 mt-0.5 truncate">{v.address}</div>}
@@ -311,6 +333,12 @@ export default function Vehicles() {
           )}
         </div>
       </div>
+
+      <VehicleMapModal
+        vehicle={activeMapVehicle}
+        open={!!activeMapVehicle}
+        onClose={() => setActiveMapVehicle(null)}
+      />
     </div>
   );
 }
