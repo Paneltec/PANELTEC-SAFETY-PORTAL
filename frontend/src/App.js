@@ -27,6 +27,7 @@ import NavixyAdmin from '@/pages/NavixyAdmin';
 import Vehicles from '@/pages/Vehicles';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
+import MyProfile from '@/pages/MyProfile';
 
 function App() {
   return (
@@ -77,6 +78,7 @@ function App() {
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
               <Route path="outbox" element={<Outbox />} />
+              <Route path="profile" element={<MyProfile />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

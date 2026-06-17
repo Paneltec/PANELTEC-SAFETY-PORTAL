@@ -161,3 +161,81 @@ async def me(user: dict = Depends(get_current_user)):
 async def logout(user: dict = Depends(get_current_user)):
     # Stateless JWT — client just drops the token. Endpoint exists for parity.
     return {"ok": True}
+
+
+# ---------- Account self-service ----------
+
+import re as _re
+_EMAIL_RE = _re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _validate_password(pwd: str) -> Optional[str]:
+    if not pwd or len(pwd) < 8:
+        return "Password must be at least 8 characters."
+    has_letter = any(c.isalpha() for c in pwd)
+    has_digit = any(c.isdigit() for c in pwd)
+    has_special = any(not c.isalnum() for c in pwd)
+    if not has_letter or not (has_digit or has_special):
+        return "Password must contain a letter and at least one number or symbol."
+    return None
+
+
+@router.post("/change-password")
+async def change_password(body: dict, user: dict = Depends(get_current_user)):
+    current = (body or {}).get("current_password") or ""
+    new = (body or {}).get("new_password") or ""
+    # Re-fetch the user to get the password_hash (get_current_user strips it).
+    doc = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    if not doc or not verify_password(current, doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    err = _validate_password(new)
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    if verify_password(new, doc["password_hash"]):
+        raise HTTPException(status_code=400, detail="New password must differ from the current one")
+    new_hash = hash_password(new)
+    updated = await db.users.find_one_and_update(
+        {"id": user["id"]},
+        {"$set": {"password_hash": new_hash, "updated_at": now_iso()},
+         "$inc": {"token_version": 1}},
+        return_document=True,
+        projection={"_id": 0},
+    )
+    fresh_token = create_access_token(updated["id"], updated["email"], updated.get("token_version", 0))
+    return {"ok": True, "access_token": fresh_token}
+
+
+@router.post("/update-profile")
+async def update_profile(body: dict, user: dict = Depends(get_current_user)):
+    body = body or {}
+    patch: dict = {}
+    if "name" in body and body["name"] is not None:
+        name = str(body["name"]).strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        patch["name"] = name
+    if "email" in body and body["email"] is not None:
+        new_email = str(body["email"]).lower().strip()
+        if not _EMAIL_RE.match(new_email):
+            raise HTTPException(status_code=400, detail="Enter a valid email address")
+        if new_email != user["email"]:
+            clash = await db.users.find_one({"email": new_email, "id": {"$ne": user["id"]}})
+            if clash:
+                raise HTTPException(status_code=400, detail="Email already in use")
+            patch["email"] = new_email
+    if not patch:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    patch["updated_at"] = now_iso()
+    update_op: dict = {"$set": patch}
+    # Email change → bump token_version (existing tokens carry old email claim).
+    if "email" in patch:
+        update_op["$inc"] = {"token_version": 1}
+    updated = await db.users.find_one_and_update(
+        {"id": user["id"]},
+        update_op,
+        return_document=True,
+        projection={"_id": 0, "password_hash": 0},
+    )
+    fresh_token = create_access_token(updated["id"], updated["email"], updated.get("token_version", 0))
+    return {"ok": True, "access_token": fresh_token, "user": _to_user_out(updated)}

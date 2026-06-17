@@ -147,7 +147,9 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
             <div className="text-[10px] mt-1 uppercase tracking-wider text-brand-blue font-semibold">{user?.role}</div>
           </DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem data-testid="menu-profile">Profile</DropdownMenuItem>
+          <DropdownMenuItem asChild data-testid="menu-profile">
+            <Link to="/app/profile">My Profile</Link>
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleSignOut} data-testid="menu-sign-out">
             <LogOut size={14} className="mr-2" /> Sign out
           </DropdownMenuItem>
