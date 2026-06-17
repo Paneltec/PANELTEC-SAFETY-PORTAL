@@ -1,3 +1,11 @@
+# 2026-02-17 — User management opened to hseq_lead (verified)
+- `hseq_lead` now has `users.{open,view,edit}=true` (still `email=false`). Confirmed via `/api/auth/me`.
+- `GET /api/workspaces` (org-scoped list) wired and consumed by the user-edit drawer.
+- `UsersManagement.jsx` user drawer now renders a functional workspace multi-select (checkboxes per workspace).
+- Verified end-to-end as `hseq_lead`: invite → patch (rename + add workspace) → delete (soft-disable) → reactivate via PATCH status=active.
+- Regression: `worker` token still returns 403 on `GET /api/users` and `POST /api/users` (lower roles untouched).
+
+
 # Phase 5 — Permissions Matrix + Email Outbox (shipped 2026-02-17)
 
 ## Permission model

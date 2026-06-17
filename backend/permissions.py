@@ -63,7 +63,7 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "audit_exports": _all(True),
         "vehicles":      {**_all(True), "email": False},
         "integrations":  {**_all(True), "email": False},
-        "users":         {**_all(True), "edit": False, "email": False},
+        "users":         {**_all(True), "email": False},
     },
     "supervisor": {
         "swms":          _all(True),

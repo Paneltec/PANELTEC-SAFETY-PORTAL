@@ -16,6 +16,11 @@ from permissions import (
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+@router.get("/_workspaces", include_in_schema=False)
+async def _workspaces_shim():
+    raise HTTPException(404, "use /api/workspaces")
+
+
 class InviteUserIn(BaseModel):
     email: EmailStr
     name: str

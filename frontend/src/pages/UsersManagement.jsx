@@ -40,6 +40,12 @@ export default function UsersManagement() {
             <UserPlus size={14} /> Invite user
           </button>) : null} />
 
+      {!can('users', 'edit') && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900" data-testid="users-readonly-banner">
+          You can view users but not modify them. Contact an admin to make changes.
+        </div>
+      )}
+
       <div className="flex gap-2 mb-4">
         <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
           <option value="">All roles</option>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -83,16 +89,19 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
   const [tab, setTab] = useState('profile');
   const [detail, setDetail] = useState(null);
   const [perms, setPerms] = useState(null);
-  const [profile, setProfile] = useState({ name: '', role: '', status: '' });
+  const [profile, setProfile] = useState({ name: '', role: '', status: '', workspace_ids: [] });
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [workspaces, setWorkspaces] = useState([]);
 
   const load = async () => {
     try {
       const { data: u } = await api.get(`/users/${userRow.id}`);
       setDetail(u);
-      setProfile({ name: u.name, role: u.role, status: u.status || 'active' });
+      setProfile({ name: u.name, role: u.role, status: u.status || 'active', workspace_ids: u.workspace_ids || [] });
       const { data: p } = await api.get(`/users/${userRow.id}/permissions`);
       setPerms(p);
+      try { const { data: ws } = await api.get('/workspaces'); setWorkspaces(ws || []); } catch { /* ignore */ }
     } catch (e) { toast.error(apiError(e)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [userRow.id]);
@@ -163,9 +172,28 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
             <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Status</div>
               <select value={profile.status} onChange={(e) => setProfile({ ...profile, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" disabled={!canEdit}>
                 {['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
+            <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Workspaces</div>
+              {workspaces.length === 0 ? <div className="text-xs text-slate-400 italic">No workspaces in your org.</div> : (
+                <div className="space-y-1 border border-slate-200 rounded-lg p-2" data-testid="user-workspaces">
+                  {workspaces.map((w) => (
+                    <label key={w.id} className="flex items-center gap-2 text-sm px-1 py-0.5 hover:bg-slate-50 rounded cursor-pointer">
+                      <input type="checkbox" disabled={!canEdit}
+                        checked={profile.workspace_ids.includes(w.id)}
+                        onChange={(e) => setProfile((p) => ({ ...p, workspace_ids: e.target.checked
+                          ? [...p.workspace_ids, w.id]
+                          : p.workspace_ids.filter((x) => x !== w.id) }))}
+                        data-testid={`ws-toggle-${w.id}`} />
+                      <span>{w.name}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
             {canEdit && (
-              <div className="flex gap-2 pt-2"><button onClick={saveProfile} disabled={busy} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm inline-flex items-center gap-1.5"><Save size={13} /> Save</button>
-                <button onClick={disable} className="px-4 py-2 border border-red-300 text-red-700 rounded-lg text-sm">Disable user</button></div>
+              <div className="flex gap-2 pt-2 flex-wrap"><button onClick={saveProfile} disabled={busy} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="save-profile"><Save size={13} /> Save changes</button>
+                {profile.status === 'active' && <button onClick={() => setConfirmDelete(true)} className="px-4 py-2 border border-red-300 text-red-700 rounded-lg text-sm" data-testid="disable-user">Disable user</button>}
+                {profile.status === 'disabled' && <button onClick={() => { setProfile({ ...profile, status: 'active' }); setTimeout(saveProfile, 0); }} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm" data-testid="reactivate-user">Reactivate</button>}
+              </div>
             )}
           </div>
         )}
