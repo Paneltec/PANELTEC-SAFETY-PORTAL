@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapPin, RefreshCw, Radio, ArrowRight, Tag as TagIcon, X as XIcon, Loader2 } from 'lucide-react';
-import { toast } from 'sonner';
+import {
+  MapPin, RefreshCw, Radio, ArrowRight, Tag as TagIcon, X as XIcon,
+  Loader2, List as ListIcon, Map as MapIcon,
+} from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
 
@@ -17,6 +22,7 @@ function RelTime({ iso }) {
 }
 
 const TAG_FILTER_KEY = 'paneltec_vehicle_tag_filter';
+const SYDNEY = [-33.8688, 151.2093];
 
 function loadPersistedTagIds() {
   try {
@@ -27,6 +33,93 @@ function loadPersistedTagIds() {
   } catch { return []; }
 }
 
+// --- Leaflet ---------------------------------------------------------------
+
+// Color-coded pin via divIcon (avoids the broken default marker-image URLs
+// that ship with leaflet under webpack).
+function buildPinIcon(color, online) {
+  const fill = color || '#2C6BFF';
+  const ring = online ? '#10B981' : '#94A3B8';
+  const html = `
+    <div style="position:relative;width:24px;height:32px">
+      <div style="position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:${fill};border:2px solid ${ring};box-shadow:0 1px 3px rgba(0,0,0,.35)"></div>
+      <div style="position:absolute;left:9px;top:18px;width:0;height:0;border-left:3px solid transparent;border-right:3px solid transparent;border-top:8px solid ${fill}"></div>
+    </div>`;
+  return L.divIcon({
+    html, className: 'paneltec-vehicle-pin', iconSize: [24, 32], iconAnchor: [12, 30], popupAnchor: [0, -28],
+  });
+}
+
+function RecenterOnVehicles({ vehicles }) {
+  const map = useMap();
+  useEffect(() => {
+    const pts = (vehicles || [])
+      .filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number')
+      .map((v) => [v.lat, v.lng]);
+    if (pts.length === 0) {
+      map.setView(SYDNEY, 10);
+      return;
+    }
+    if (pts.length === 1) {
+      map.setView(pts[0], 14);
+      return;
+    }
+    map.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
+  }, [vehicles, map]);
+  return null;
+}
+
+function VehicleMap({ vehicles }) {
+  const withGps = vehicles.filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number');
+  return (
+    <div className="relative h-[70vh] rounded-b-2xl overflow-hidden" data-testid="vehicles-map">
+      <MapContainer center={SYDNEY} zoom={10} scrollWheelZoom className="w-full h-full">
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <RecenterOnVehicles vehicles={withGps} />
+        {withGps.map((v) => {
+          const color = v.tags?.[0]?.color;
+          return (
+            <Marker key={v.id} position={[v.lat, v.lng]} icon={buildPinIcon(color, v.status === 'online')}>
+              <Popup>
+                <div className="text-xs space-y-1 min-w-[180px]" data-testid={`vehicle-popup-${v.id}`}>
+                  <div className="font-semibold text-sm flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${v.status === 'online' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+                    {v.label}
+                  </div>
+                  <div className="text-slate-500">{v.plate || '—'} · <RelTime iso={v.last_seen} /></div>
+                  {v.speed_kph != null && v.speed_kph > 0 && <div className="text-slate-500">{v.speed_kph} km/h</div>}
+                  {v.address && <div className="text-slate-500 italic">{v.address}</div>}
+                  {v.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1 pt-1">
+                      {v.tags.map((t) => (
+                        <span key={t.id} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full border"
+                              style={{ borderColor: t.color || '#CBD5E1', color: t.color || '#475569' }}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: t.color || '#94A3B8' }} />
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </Popup>
+            </Marker>
+          );
+        })}
+      </MapContainer>
+      {withGps.length === 0 && vehicles.length > 0 && (
+        <div className="absolute inset-x-0 bottom-3 mx-auto w-fit px-3 py-1.5 rounded-full bg-white/90 border border-slate-200 text-xs text-slate-600 shadow-card">
+          None of the {vehicles.length} selected vehicles have current GPS positions
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Main page -------------------------------------------------------------
+
 export default function Vehicles() {
   const [data, setData] = useState(null);
   const [tags, setTags] = useState([]);
@@ -34,9 +127,8 @@ export default function Vehicles() {
   const [busy, setBusy] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [view, setView] = useState('list'); // 'list' | 'map'
 
-  // Persist selection on every change. Initial render writes back what we
-  // already hydrated (idempotent).
   useEffect(() => {
     try { localStorage.setItem(TAG_FILTER_KEY, JSON.stringify(Array.from(selected))); }
     catch { /* ignore quota errors */ }
@@ -47,7 +139,6 @@ export default function Vehicles() {
       const { data: d } = await api.get('/integrations/navixy/tags');
       const tagList = d.tags || [];
       setTags(tagList);
-      // Prune any persisted IDs that no longer exist in Navixy.
       setSelected((prev) => {
         const valid = new Set(tagList.map((t) => t.id));
         const filtered = new Set([...prev].filter((id) => valid.has(id)));
@@ -68,7 +159,6 @@ export default function Vehicles() {
 
   useEffect(() => { loadTags(); setBusy(false); }, []);
 
-  // Only fetch vehicles once tags are selected; clear data when filters cleared.
   useEffect(() => {
     if (selected.size === 0) { setData(null); return; }
     const t = setTimeout(() => loadVehicles(selected), 250);
@@ -93,7 +183,6 @@ export default function Vehicles() {
 
   if (busy && !data && !error) return <div className="text-sm text-slate-500" data-testid="vehicles-loading">Loading vehicles…</div>;
 
-  // Not connected → read-only empty-state card. Links to the integrations LIST, not the edit page.
   if (error) {
     return (
       <div className="max-w-3xl mx-auto text-center" data-testid="vehicles-not-connected">
@@ -159,8 +248,8 @@ export default function Vehicles() {
           )}
         </aside>
 
-        {/* RIGHT — fleet list */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white" data-testid="vehicles-list-panel">
+        {/* RIGHT — fleet list / map */}
+        <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white relative" data-testid="vehicles-list-panel">
           <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
             <div>
               <h3 className="font-display text-sm font-semibold">Fleet</h3>
@@ -168,7 +257,19 @@ export default function Vehicles() {
                 {filtered ? `${vehicles.length} of ${total} vehicles` : `${total} vehicles`}
               </div>
             </div>
+            {/* List/Map toggle */}
+            <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden text-xs" data-testid="vehicles-view-toggle">
+              <button onClick={() => setView('list')} data-testid="vehicles-view-list"
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 ${view === 'list' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                <ListIcon size={12} /> List
+              </button>
+              <button onClick={() => setView('map')} data-testid="vehicles-view-map"
+                className={`inline-flex items-center gap-1 px-2.5 py-1.5 ${view === 'map' ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                <MapIcon size={12} /> Map
+              </button>
+            </div>
           </div>
+
           {vehicles.length === 0 ? (
             <div className="p-10 text-center" data-testid="vehicles-empty-state">
               {selected.size === 0 ? (
@@ -181,6 +282,8 @@ export default function Vehicles() {
                 <div className="text-sm text-slate-500">No vehicles match the selected tags. Try clearing filters.</div>
               )}
             </div>
+          ) : view === 'map' ? (
+            <VehicleMap vehicles={vehicles} />
           ) : (
             <ul className="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
               {vehicles.map((v) => (
@@ -208,13 +311,11 @@ export default function Vehicles() {
           )}
         </div>
       </div>
-
-      {/* Map placeholder — Phase B */}
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-100 to-slate-50 p-10 flex flex-col items-center justify-center text-center" data-testid="vehicles-map-placeholder">
-        <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200 shadow-card flex items-center justify-center mb-3"><MapPin size={24} className="text-brand-blue" /></div>
-        <div className="font-display text-lg font-semibold">Map view coming soon</div>
-        <p className="mt-1 text-sm text-slate-600 max-w-md">Showing {vehicles.filter((v) => v.status === 'online').length} active of {vehicles.length} vehicles. Interactive map arrives in Phase B.</p>
-      </div>
     </div>
   );
 }
+
+// MapPin import is no longer used in the body but kept around in case the
+// empty-state copy ever references it again.
+// eslint-disable-next-line no-unused-vars
+const _MapPinFallback = MapPin;

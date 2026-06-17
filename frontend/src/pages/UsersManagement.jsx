@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
@@ -13,6 +13,24 @@ const RESOURCES = Object.keys(RESOURCE_LABELS);
 function StatusPill({ status }) {
   const map = { active: 'bg-emerald-100 text-emerald-800', invited: 'bg-amber-100 text-amber-800', disabled: 'bg-slate-200 text-slate-600' };
   return <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${map[status] || 'bg-slate-100'}`}>{status || 'active'}</span>;
+}
+
+function inviteMailtoHref(user) {
+  const loginUrl = `${window.location.origin}/login`;
+  const subject = 'Welcome to Paneltec Civil';
+  const body = [
+    `Hi ${user.name || ''},`,
+    '',
+    `You have been invited to join Paneltec Civil as a ${user.role}.`,
+    '',
+    'Sign in here to set your password and start using the platform:',
+    loginUrl,
+    '',
+    'If you have any questions, just reply to this email.',
+    '',
+    '— Paneltec Civil',
+  ].join('\n');
+  return `mailto:${user.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
 export default function UsersManagement() {
@@ -72,7 +90,23 @@ export default function UsersManagement() {
                 <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
                 <td className="px-4 py-3"><StatusPill status={u.status} /></td>
                 <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
-                <td className="px-4 py-3 text-xs text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td className="px-4 py-3 text-xs text-slate-500">
+                  <div className="flex items-center gap-2">
+                    <span>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
+                    {u.status === 'invited' && (
+                      <a
+                        href={inviteMailtoHref(u)}
+                        onClick={(e) => e.stopPropagation()}
+                        title="Send via your email client"
+                        aria-label={`Email invite to ${u.email}`}
+                        data-testid={`mailto-invite-${u.id}`}
+                        className="inline-flex items-center justify-center w-6 h-6 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300"
+                      >
+                        <Mail size={12} />
+                      </a>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
           </tbody>
