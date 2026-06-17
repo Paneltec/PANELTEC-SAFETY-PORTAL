@@ -41,10 +41,11 @@ function statusPillClass(status) {
 
 export default function VehicleMapModal({ vehicle, open, onClose }) {
   if (!vehicle) return null;
+  const hasGps = typeof vehicle.lat === 'number' && typeof vehicle.lng === 'number';
   const color = vehicle.tags?.[0]?.color;
   const lastReported = vehicle.last_seen
     ? new Date(vehicle.last_seen).toLocaleString()
-    : 'unknown';
+    : null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -62,29 +63,42 @@ export default function VehicleMapModal({ vehicle, open, onClose }) {
         </DialogHeader>
 
         <div className="h-[500px] bg-slate-100" data-testid="vehicle-map-body">
-          <MapContainer center={[vehicle.lat, vehicle.lng]} zoom={15} scrollWheelZoom className="w-full h-full">
-            <TileLayer
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
-            <Marker position={[vehicle.lat, vehicle.lng]}
-                    icon={pinIcon(color, vehicle.status === 'online')}>
-              <Popup autoOpen autoClose={false} closeOnClick={false}>
-                <div className="text-xs space-y-1 min-w-[180px]">
-                  <div className="font-semibold text-sm">{vehicle.label}</div>
-                  <div className="text-slate-500">{vehicle.plate || '—'} · {relTime(vehicle.last_seen)}</div>
-                  {vehicle.speed_kph != null && vehicle.speed_kph > 0 && (
-                    <div className="text-slate-500">{vehicle.speed_kph} km/h</div>
-                  )}
-                  {vehicle.address && <div className="text-slate-500 italic">{vehicle.address}</div>}
-                </div>
-              </Popup>
-            </Marker>
-          </MapContainer>
+          {!hasGps ? (
+            <div className="h-full flex flex-col items-center justify-center text-center px-6" data-testid="vehicle-map-no-gps">
+              <div className="w-16 h-16 rounded-2xl bg-white border border-slate-200 flex items-center justify-center mb-4">
+                <MapPin size={28} className="text-slate-400" />
+              </div>
+              <h4 className="font-display text-xl font-semibold">Position not currently available</h4>
+              <p className="mt-1.5 text-sm text-slate-600 max-w-sm">
+                This vehicle has not reported a GPS position recently. Try again when the tracker is online.
+              </p>
+            </div>
+          ) : (
+            <MapContainer center={[vehicle.lat, vehicle.lng]} zoom={15} scrollWheelZoom className="w-full h-full">
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              <Marker position={[vehicle.lat, vehicle.lng]} icon={pinIcon(color, vehicle.status === 'online')}>
+                <Popup autoOpen autoClose={false} closeOnClick={false}>
+                  <div className="text-xs space-y-1 min-w-[180px]">
+                    <div className="font-semibold text-sm">{vehicle.label}</div>
+                    <div className="text-slate-500">{vehicle.plate || '—'} · {relTime(vehicle.last_seen)}</div>
+                    {vehicle.speed_kph != null && vehicle.speed_kph > 0 && (
+                      <div className="text-slate-500">{vehicle.speed_kph} km/h</div>
+                    )}
+                    {vehicle.address && <div className="text-slate-500 italic">{vehicle.address}</div>}
+                  </div>
+                </Popup>
+              </Marker>
+            </MapContainer>
+          )}
         </div>
 
         <DialogFooter className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 flex-row items-center justify-between sm:justify-between gap-2">
-          <div className="text-[11px] text-slate-500">Last reported: <span className="font-medium text-slate-700">{lastReported}</span></div>
+          {lastReported ? (
+            <div className="text-[11px] text-slate-500">Last reported: <span className="font-medium text-slate-700">{lastReported}</span></div>
+          ) : <span />}
           <button onClick={onClose} data-testid="vehicle-map-close"
             className="px-3 py-1.5 text-xs rounded-lg border border-slate-300 hover:bg-white">
             Close
