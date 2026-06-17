@@ -6,11 +6,13 @@ import api from '../../src/lib/api';
 import StatusBadge from '../../src/components/StatusBadge';
 import EmptyState from '../../src/components/EmptyState';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 const CATS: Record<string, string> = { near_miss: 'Near miss', first_aid: 'First aid', medical: 'Medical', ltc: 'Lost-time', env: 'Environmental', property: 'Property' };
 
 export default function IncidentsListScreen() {
   const router = useRouter();
+  const can = useCan();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -22,14 +24,14 @@ export default function IncidentsListScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Incident Reports</Text>
-        <TouchableOpacity testID="incident-create-btn" style={s.addBtn} onPress={() => router.push('/incidents/new')}>
+        {can('incidents', 'open') && <TouchableOpacity testID="incident-create-btn" style={s.addBtn} onPress={() => router.push('/incidents/new')}>
           <Ionicons name="add" size={18} color="#fff" /><Text style={s.addText}>New</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :
        items.length === 0 ? <EmptyState title="No incidents" body="Log your first incident." /> :
        items.map(inc => (
-        <View key={inc.id} testID={`incident-row-${inc.id}`} style={s.card}>
+        <TouchableOpacity key={inc.id} testID={`incident-row-${inc.id}`} style={s.card} onPress={() => router.push(`/incidents/${inc.id}`)} activeOpacity={0.7}>
           <Text style={s.cardTitle}>{inc.title}</Text>
           <Text style={s.desc} numberOfLines={1}>{inc.description}</Text>
           <View style={s.cardBottom}>
@@ -37,7 +39,7 @@ export default function IncidentsListScreen() {
             <StatusBadge value={inc.follow_up_status} />
             <Text style={s.cardDate}>{(inc.occurred_at || '').slice(0, 10)}</Text>
           </View>
-        </View>
+        </TouchableOpacity>
        ))}
     </ScrollView>
   );

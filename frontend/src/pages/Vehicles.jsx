@@ -71,7 +71,6 @@ function RecenterOnVehicles({ vehicles }) {
 }
 
 function VehicleMap({ vehicles }) {
-  const withGps = vehicles.filter((v) => typeof v.lat === 'number' && typeof v.lng === 'number');
   return (
     <div className="relative h-[70vh] rounded-b-2xl overflow-hidden" data-testid="vehicles-map">
       <MapContainer center={SYDNEY} zoom={10} scrollWheelZoom className="w-full h-full">
@@ -79,8 +78,8 @@ function VehicleMap({ vehicles }) {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <RecenterOnVehicles vehicles={withGps} />
-        {withGps.map((v) => {
+        <RecenterOnVehicles vehicles={vehicles} />
+        {vehicles.map((v) => {
           const color = v.tags?.[0]?.color;
           return (
             <Marker key={v.id} position={[v.lat, v.lng]} icon={buildPinIcon(color, v.status === 'online')}>
@@ -110,11 +109,6 @@ function VehicleMap({ vehicles }) {
           );
         })}
       </MapContainer>
-      {withGps.length === 0 && vehicles.length > 0 && (
-        <div className="absolute inset-x-0 bottom-3 mx-auto w-fit px-3 py-1.5 rounded-full bg-white/90 border border-slate-200 text-xs text-slate-600 shadow-card">
-          None of the {vehicles.length} selected vehicles have current GPS positions
-        </div>
-      )}
     </div>
   );
 }
@@ -294,26 +288,16 @@ export default function Vehicles() {
                     <span className={`w-2 h-2 rounded-full ${v.status === 'online' ? 'bg-emerald-500' : 'bg-slate-300'}`} />
                     <div className="font-medium text-sm truncate flex-1">{v.label}</div>
                     {v.speed_kph != null && v.speed_kph > 0 && <span className="text-xs text-slate-500">{v.speed_kph} km/h</span>}
-                    {(() => {
-                      const hasGps = typeof v.lat === 'number' && typeof v.lng === 'number';
-                      return (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); if (hasGps) setActiveMapVehicle(v); }}
-                          disabled={!hasGps}
-                          title={hasGps ? 'Show position on map' : 'No GPS position available'}
-                          aria-label={hasGps ? `Show ${v.label} on map` : 'No GPS position'}
-                          data-testid={`vehicle-pin-${v.id}`}
-                          className={`inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-colors ${
-                            hasGps
-                              ? 'border-brand-blue/30 text-brand-blue hover:bg-brand-blue hover:text-white hover:border-brand-blue'
-                              : 'border-slate-200 text-slate-300 cursor-not-allowed'
-                          }`}
-                        >
-                          <MapPin size={13} />
-                        </button>
-                      );
-                    })()}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setActiveMapVehicle(v); }}
+                      title="Show position on map"
+                      aria-label={`Show ${v.label} on map`}
+                      data-testid={`vehicle-pin-${v.id}`}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-brand-blue/30 text-brand-blue hover:bg-brand-blue hover:text-white hover:border-brand-blue transition-colors"
+                    >
+                      <MapPin size={13} />
+                    </button>
                   </div>
                   <div className="text-xs text-slate-500 mt-0.5">{v.plate || '—'} · <RelTime iso={v.last_seen} /></div>
                   {v.address && <div className="text-xs text-slate-400 mt-0.5 truncate">{v.address}</div>}

@@ -5,9 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 export default function InspectionsListScreen() {
   const router = useRouter();
+  const can = useCan();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -20,10 +22,10 @@ export default function InspectionsListScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Inspection Reports</Text>
-        <TouchableOpacity testID="inspection-create-btn" style={s.addBtn} onPress={() => router.push('/inspections/new')}>
+        {can('inspections', 'open') && <TouchableOpacity testID="inspection-create-btn" style={s.addBtn} onPress={() => router.push('/inspections/new')}>
           <Ionicons name="add" size={18} color="#fff" />
           <Text style={s.addText}>New</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
 
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :

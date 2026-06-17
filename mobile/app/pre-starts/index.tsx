@@ -5,9 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 export default function PreStartsListScreen() {
   const router = useRouter();
+  const can = useCan();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,19 +21,19 @@ export default function PreStartsListScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Daily Pre-Starts</Text>
-        <TouchableOpacity testID="prestart-create-btn" style={s.addBtn} onPress={() => router.push('/pre-starts/new')}>
+        {can('pre_starts', 'open') && <TouchableOpacity testID="prestart-create-btn" style={s.addBtn} onPress={() => router.push('/pre-starts/new')}>
           <Ionicons name="add" size={18} color="#fff" /><Text style={s.addText}>New</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :
        items.length === 0 ? <EmptyState title="No pre-starts yet" body="Capture your first daily pre-start." /> :
        items.map(p => (
-        <View key={p.id} testID={`prestart-card-${p.id}`} style={s.card}>
+        <TouchableOpacity key={p.id} testID={`prestart-card-${p.id}`} style={s.card} onPress={() => router.push(`/pre-starts/${p.id}`)} activeOpacity={0.7}>
           <Text style={s.date}>{p.date}</Text>
           <Text style={s.lead}>{p.crew_lead}</Text>
           <Text style={s.summary} numberOfLines={2}>{p.work_summary}</Text>
           <Text style={s.signons}>{p.sign_ons?.length || 0} signed on</Text>
-        </View>
+        </TouchableOpacity>
        ))}
     </ScrollView>
   );

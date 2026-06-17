@@ -7,9 +7,11 @@ import StatusBadge from '../../src/components/StatusBadge';
 import EmptyState from '../../src/components/EmptyState';
 import PrimaryButton from '../../src/components/PrimaryButton';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 export default function SwmsListScreen() {
   const router = useRouter();
+  const can = useCan();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -25,10 +27,10 @@ export default function SwmsListScreen() {
           <Text style={s.heading}>Safe Work Method Statements</Text>
           <Text style={s.sub}>Draft, review and approve SWMS.</Text>
         </View>
-        <TouchableOpacity testID="swms-create-btn" style={s.addBtn} onPress={() => router.push('/swms/new')}>
+        {can('swms', 'open') && <TouchableOpacity testID="swms-create-btn" style={s.addBtn} onPress={() => router.push('/swms/new')}>
           <Ionicons name="add" size={18} color="#fff" />
           <Text style={s.addText}>Create</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
 
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :

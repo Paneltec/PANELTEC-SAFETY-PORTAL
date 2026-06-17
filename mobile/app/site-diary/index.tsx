@@ -5,9 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
 import { Colors } from '../../src/lib/colors';
+import { useCan } from '../../src/lib/AuthContext';
 
 export default function SiteDiaryListScreen() {
   const router = useRouter();
+  const can = useCan();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -19,20 +21,20 @@ export default function SiteDiaryListScreen() {
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Site Diary</Text>
-        <TouchableOpacity testID="diary-create-btn" style={s.addBtn} onPress={() => router.push('/site-diary/new')}>
+        {can('site_diary', 'open') && <TouchableOpacity testID="diary-create-btn" style={s.addBtn} onPress={() => router.push('/site-diary/new')}>
           <Ionicons name="add" size={18} color="#fff" /><Text style={s.addText}>New</Text>
-        </TouchableOpacity>
+        </TouchableOpacity>}
       </View>
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :
        items.length === 0 ? <EmptyState title="No diary entries" body="Capture your first daily diary entry." /> :
        items.map(d => (
-        <View key={d.id} testID={`diary-row-${d.id}`} style={s.card}>
+        <TouchableOpacity key={d.id} testID={`diary-row-${d.id}`} style={s.card} onPress={() => router.push(`/site-diary/${d.id}`)} activeOpacity={0.7}>
           <View style={s.cardHeader}>
             <Text style={s.date}>{d.date}</Text>
             {d.structured_log && <View style={s.aiBadge}><Text style={s.aiBadgeText}>AI STRUCTURED</Text></View>}
           </View>
           <Text style={s.notes} numberOfLines={2}>{d.raw_notes}</Text>
-        </View>
+        </TouchableOpacity>
        ))}
     </ScrollView>
   );
