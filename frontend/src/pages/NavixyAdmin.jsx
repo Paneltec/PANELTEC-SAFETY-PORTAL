@@ -12,6 +12,7 @@ const emptyState = {
   email: '',
   passwordInput: '',
   passwordOnFile: null,
+  hashInput: '',
   hashOnFile: null,
   poll_seconds: 30,
   auto_poll: true,
@@ -39,7 +40,7 @@ export default function NavixyAdmin() {
       hashOnFile: isMasked(cfg.session_hash) ? cfg.session_hash : (cfg.session_hash ? '••••' : null),
       poll_seconds: cfg.poll_seconds ?? 30,
       auto_poll: cfg.auto_poll ?? true,
-      // Never overwrite the user's in-progress typing.
+      // Never overwrite the user's in-progress typing for either secret.
     }));
   };
 
@@ -54,7 +55,7 @@ export default function NavixyAdmin() {
     account_id: s.account_id || null,
     email: s.email || null,
     password: s.passwordInput ? s.passwordInput : (s.passwordOnFile || null),
-    session_hash: s.hashOnFile || null,
+    session_hash: s.hashInput ? s.hashInput : (s.hashOnFile || null),
     poll_seconds: Number(s.poll_seconds) || 30,
     auto_poll: !!s.auto_poll,
   });
@@ -140,11 +141,11 @@ export default function NavixyAdmin() {
             </Field>
             <Field label="API key / session hash">
               <InputWithToggle
-                value={s.hashOnFile || ''}
-                onChange={() => {}}
-                placeholder={s.hashOnFile || 'none — click Get Hash'}
+                value={s.hashInput}
+                onChange={(v) => setS({ ...s, hashInput: v })}
+                placeholder={s.hashOnFile || 'paste a key, or click Get Hash'}
                 show={showHash} onToggle={() => setShowHash((x) => !x)}
-                readOnly mono testid="nav-hash"
+                mono testid="nav-hash"
               />
             </Field>
             <Field label="Poll · seconds">
@@ -154,7 +155,7 @@ export default function NavixyAdmin() {
 
           <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-slate-600 max-w-md">
-              If you see "Wrong hash", tap <strong>Get Hash</strong> to fetch a fresh session hash.
+              Paste your Navixy session hash, or click <strong>Get Hash</strong> to fetch a fresh one with your email + password.
             </p>
             <label className="inline-flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={!!s.auto_poll} onChange={(e) => setS({ ...s, auto_poll: e.target.checked })} data-testid="nav-auto-poll" />
