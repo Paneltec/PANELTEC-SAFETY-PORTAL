@@ -12,7 +12,7 @@ import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
 } from '../ui/dropdown-menu';
-import { Sheet, SheetContent } from '../ui/sheet';
+import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 
 const NAV = [
@@ -70,7 +70,9 @@ const SidebarNav = ({ collapsed, onItemClick }) => (
 
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const navigate = useNavigate();
-  const [workspace, setWorkspace] = useState(MOCK_WS[0]);
+  const { workspaceId, setWorkspaceId } = useWorkspace();
+  const options = [{ id: '*', name: 'All workspaces' }, ...MOCK_WS];
+  const active = options.find((o) => o.id === workspaceId) || options[0];
 
   const handleSignOut = async () => {
     await signOut();
@@ -90,15 +92,15 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm" data-testid="workspace-switcher">
             <span className="w-2 h-2 rounded-full bg-brand-blue" />
-            <span className="font-medium">{workspace.name}</span>
+            <span className="font-medium">{active.name}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
           <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {MOCK_WS.map((w) => (
-            <DropdownMenuItem key={w.id} onClick={() => setWorkspace(w)} data-testid={`workspace-option-${w.id}`}>{w.name}</DropdownMenuItem>
+          {options.map((w) => (
+            <DropdownMenuItem key={w.id} onClick={() => setWorkspaceId(w.id)} data-testid={`workspace-option-${w.id}`}>{w.name}</DropdownMenuItem>
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -173,6 +175,7 @@ export default function AppShell() {
       <SidebarShell collapsed={collapsed} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72">
+          <SheetTitle className="sr-only">Navigation menu</SheetTitle>
           <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200">
             <Logo size="sm" />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2"><X size={18} /></button>

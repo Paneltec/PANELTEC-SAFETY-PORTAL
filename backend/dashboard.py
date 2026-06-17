@@ -69,15 +69,34 @@ async def metrics(
     )
 
 
-# ---------- File serving (hazard photos) ----------
+# ---------- File serving ----------
 
-@files_router.get("/hazards/{name}")
-async def serve_hazard(name: str):
-    # prevent path traversal
-    if "/" in name or "\\" in name or ".." in name:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-    path = UPLOAD_ROOT / "hazards" / name
+def _serve(*parts: str):
+    for p in parts:
+        if "/" in p or "\\" in p or ".." in p:
+            raise HTTPException(status_code=400, detail="Invalid filename")
+    path = UPLOAD_ROOT.joinpath(*parts)
     if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="Not found")
     mime, _ = mimetypes.guess_type(str(path))
     return FileResponse(str(path), media_type=mime or "application/octet-stream")
+
+
+@files_router.get("/hazards/{name}")
+async def serve_hazard(name: str):
+    return _serve("hazards", name)
+
+
+@files_router.get("/contractor_docs/{name}")
+async def serve_contractor_doc(name: str):
+    return _serve("contractor_docs", name)
+
+
+@files_router.get("/renewals/{token}/{name}")
+async def serve_renewal(token: str, name: str):
+    return _serve("renewals", token, name)
+
+
+@files_router.get("/exports/{name}")
+async def serve_export(name: str):
+    return _serve("exports", name)

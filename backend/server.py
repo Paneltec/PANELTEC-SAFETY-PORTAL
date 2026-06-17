@@ -12,13 +12,17 @@ from fastapi import APIRouter, Depends, FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from ai import router as ai_router  # noqa: E402
+from ask import router as ask_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
+from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
     diary_router, hazards_router, incidents_router, inspections_router,
     prestarts_router, swms_router,
 )
 from dashboard import files_router, router as dashboard_router  # noqa: E402
 from db import close as close_db  # noqa: E402
+from exports import router as exports_router  # noqa: E402
+from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
@@ -64,6 +68,11 @@ api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
 api.include_router(inspections_router)
+api.include_router(contractors_router)
+api.include_router(renewals_router)
+api.include_router(renewals_public_router)
+api.include_router(exports_router)
+api.include_router(ask_router)
 
 app.include_router(api)
 

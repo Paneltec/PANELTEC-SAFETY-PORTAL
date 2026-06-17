@@ -1,0 +1,215 @@
+{
+  "meta": {
+    "export_id": "a0d6f216-d126-44bd-b6a4-4092f164de44",
+    "title": "Test pack",
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-30",
+    "scope": "All workspaces",
+    "generated_at": "2026-06-17T05:13:40.384228+00:00",
+    "generated_by": "demo@paneltec.com",
+    "counts": {
+      "hazards": 6,
+      "incidents": 4
+    }
+  },
+  "data": {
+    "hazards": [
+      {
+        "id": "9a715a5d-f71d-4209-bd27-3f5613f10524",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "54f4dcaa-6a01-4861-ba84-753d19584a94",
+        "title": "Unguarded penetration — bay 4 floor",
+        "description": "Detected on site walk on day -1.",
+        "photo_url": null,
+        "location": "Level 2",
+        "severity": "critical",
+        "controls": [
+          "Cover penetration",
+          "Add hi-vis signage",
+          "Notify all crews"
+        ],
+        "status": "open",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-16T04:26:52.254463+00:00",
+        "updated_at": "2026-06-16T04:26:52.254464+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "9fad6e70-f5f9-4f9d-bd04-628ef46be9f3",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "751d9aeb-60ca-476f-b8db-c387144c59b7",
+        "title": "Diesel spill near generator pad",
+        "description": "Detected on site walk on day -2.",
+        "photo_url": null,
+        "location": "Bay 3",
+        "severity": "high",
+        "controls": [
+          "Apply absorbent",
+          "Bund generator",
+          "Report to EHS"
+        ],
+        "status": "in_progress",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-15T04:26:52.254455+00:00",
+        "updated_at": "2026-06-15T04:26:52.254457+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "3e9d89d0-c26f-42d6-bdea-7357e547fbaf",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "54f4dcaa-6a01-4861-ba84-753d19584a94",
+        "title": "Stored materials blocking egress route",
+        "description": "Detected on site walk on day -3.",
+        "photo_url": null,
+        "location": "Laydown 1",
+        "severity": "medium",
+        "controls": [
+          "Relocate to laydown 2",
+          "Update site plan"
+        ],
+        "status": "open",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-14T04:26:52.254448+00:00",
+        "updated_at": "2026-06-14T04:26:52.254450+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "b574c46d-8e33-41fa-9cbc-8e8c6949d33c",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "751d9aeb-60ca-476f-b8db-c387144c59b7",
+        "title": "Damaged ladder — shed",
+        "description": "Detected on site walk on day -4.",
+        "photo_url": null,
+        "location": "Pit 14",
+        "severity": "low",
+        "controls": [
+          "Tag out",
+          "Replace ladder"
+        ],
+        "status": "closed",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-13T04:26:52.254442+00:00",
+        "updated_at": "2026-06-13T04:26:52.254444+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "fe0ab0a2-3e76-4bfb-aaa2-a5dcea135580",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "54f4dcaa-6a01-4861-ba84-753d19584a94",
+        "title": "Missing edge protection — slab edge level 2",
+        "description": "Detected on site walk on day -5.",
+        "photo_url": null,
+        "location": "Level 2",
+        "severity": "high",
+        "controls": [
+          "Install handrail kit",
+          "Mark exclusion zone"
+        ],
+        "status": "in_progress",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-12T04:26:52.254435+00:00",
+        "updated_at": "2026-06-12T04:26:52.254436+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "fbe4b531-ba40-4048-ae92-07121533eec5",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "751d9aeb-60ca-476f-b8db-c387144c59b7",
+        "title": "Trip hazard — cable run across walkway",
+        "description": "Detected on site walk on day -6.",
+        "photo_url": null,
+        "location": "Pit 14",
+        "severity": "medium",
+        "controls": [
+          "Re-route cable through trunking",
+          "Install yellow cable ramp"
+        ],
+        "status": "open",
+        "ai_analysis": null,
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-11T04:26:52.254425+00:00",
+        "updated_at": "2026-06-11T04:26:52.254428+00:00",
+        "deleted_at": null
+      }
+    ],
+    "incidents": [
+      {
+        "id": "18fd1c67-84eb-45f0-8e9f-82faa013c582",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "54f4dcaa-6a01-4861-ba84-753d19584a94",
+        "title": "Environmental — minor hydraulic oil leak",
+        "occurred_at": "2026-06-15T04:26:52.255114+00:00",
+        "location": "Laydown 2",
+        "category": "env",
+        "description": "Spill contained with bund and absorbent. EPA threshold not exceeded.",
+        "immediate_actions": "Area isolated, supervisor notified, photographs taken.",
+        "evidence_photos": [],
+        "follow_up_actions": [],
+        "follow_up_status": "closed",
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-15T04:26:52.255117+00:00",
+        "updated_at": "2026-06-15T04:26:52.255118+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "eb6f37cb-b5e9-4250-80ba-27455f3fbabb",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "751d9aeb-60ca-476f-b8db-c387144c59b7",
+        "title": "Property damage — fence panel struck by excavator",
+        "occurred_at": "2026-06-14T04:26:52.255106+00:00",
+        "location": "Laydown 2",
+        "category": "property",
+        "description": "Panel replaced same day. No injuries.",
+        "immediate_actions": "Area isolated, supervisor notified, photographs taken.",
+        "evidence_photos": [],
+        "follow_up_actions": [],
+        "follow_up_status": "in_progress",
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-14T04:26:52.255108+00:00",
+        "updated_at": "2026-06-14T04:26:52.255110+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "343b0230-0808-4edb-97c9-0d9d480a0fa4",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "54f4dcaa-6a01-4861-ba84-753d19584a94",
+        "title": "First aid — minor cut to forearm on flashing",
+        "occurred_at": "2026-06-13T04:26:52.255096+00:00",
+        "location": "Bay 4",
+        "category": "first_aid",
+        "description": "Worker treated on site, returned to duties.",
+        "immediate_actions": "Area isolated, supervisor notified, photographs taken.",
+        "evidence_photos": [],
+        "follow_up_actions": [],
+        "follow_up_status": "closed",
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-13T04:26:52.255099+00:00",
+        "updated_at": "2026-06-13T04:26:52.255101+00:00",
+        "deleted_at": null
+      },
+      {
+        "id": "b1848db3-2cf8-4f28-91fd-131c6ecfb285",
+        "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+        "workspace_id": "751d9aeb-60ca-476f-b8db-c387144c59b7",
+        "title": "Near miss — scaffold edge during material pass-up",
+        "occurred_at": "2026-06-12T04:26:52.255083+00:00",
+        "location": "Bay 4",
+        "category": "near_miss",
+        "description": "Worker dropped a bolt from level 2. No injury.",
+        "immediate_actions": "Area isolated, supervisor notified, photographs taken.",
+        "evidence_photos": [],
+        "follow_up_actions": [],
+        "follow_up_status": "open",
+        "created_by": "d4f6bcf6-9847-403a-abd6-9e8153fcfd87",
+        "created_at": "2026-06-12T04:26:52.255089+00:00",
+        "updated_at": "2026-06-12T04:26:52.255091+00:00",
+        "deleted_at": null
+      }
+    ]
+  }
+}

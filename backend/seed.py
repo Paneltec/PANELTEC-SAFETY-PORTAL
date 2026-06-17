@@ -306,6 +306,8 @@ async def seed_all() -> dict:
     org_id, ws_ids = await _ensure_org_and_workspaces()
     user_ids = await _ensure_users(org_id, ws_ids)
     await _seed_capture(org_id, ws_ids, user_ids)
+    from seed_phase3 import seed_phase3
+    phase3 = await seed_phase3(org_id, ws_ids, user_ids)
     counts = {
         "users": await db.users.count_documents({"org_id": org_id}),
         "workspaces": len(ws_ids),
@@ -315,6 +317,7 @@ async def seed_all() -> dict:
         "hazards": await db.hazards.count_documents({"org_id": org_id, "deleted_at": None}),
         "incidents": await db.incidents.count_documents({"org_id": org_id, "deleted_at": None}),
         "inspections": await db.inspections.count_documents({"org_id": org_id, "deleted_at": None}),
+        **phase3,
     }
     return {"org_id": org_id, "workspace_ids": ws_ids, "counts": counts}
 
