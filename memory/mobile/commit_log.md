@@ -47,3 +47,14 @@
   - `/app/mobile/app/(auth)/login.tsx` (disabled account banner)
   - `/app/mobile/src/lib/AuthContext.tsx` (force-logout handler registration)
 - **Web files referenced**: Swms.jsx, PreStarts.jsx, SiteDiary.jsx, Hazards.jsx, Incidents.jsx, Inspections.jsx, Outbox.jsx, Login.jsx, App.js, permissions.js, PdfActions.jsx, EmailButton.jsx
+
+
+## Iteration 4 — Phase 8 Track 4: Vehicles Screen
+- **Commit**: 5543d9fe9d96b3fd1ac667ed68bdd893bbd5316c
+- **Date**: 2026-06-17T10:17:00Z
+- **Changes**:
+  - Created `(tabs)/vehicles.tsx` — Full vehicles screen matching web Vehicles.jsx: tag picker, fleet list, empty states, pull-to-refresh
+  - Created `src/components/VehicleMapModal.tsx` — Full-screen modal with Google Maps iframe/WebView, GPS status, coordinates strip, Directions + Navixy links
+  - Updated `(tabs)/_layout.tsx` — Added Vehicles tab gated by `can('vehicles', 'open')` permission
+- **Files modified**: vehicles.tsx (new), VehicleMapModal.tsx (new), _layout.tsx (updated)
+- **Module count**: 1016 modules, all routes 200
