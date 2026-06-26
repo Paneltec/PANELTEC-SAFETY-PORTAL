@@ -83,10 +83,10 @@ async def mint_pdf_token(body: PdfTokenIn, request: Request,
         "type": "pdf-token",
     }
     token = jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
-    path_prefix = RESOURCE_TO_PATH[body.resource]
-    path = f"/api/{path_prefix}/{body.record_id}/pdf?token={token}"
-    if body.action == "download":
-        path += "&download=1"
+    # New URL pattern looks like a normal static .pdf fetch — sidesteps ad-blockers
+    # (Edge/Brave/etc.) that flag long ?token= query params as tracker beacons.
+    # Action (view/download) is embedded in the JWT claim, no query string needed.
+    path = f"/api/files/pdf/{token}.pdf"
     return {
         "token": token,
         "url": _build_absolute_url(request, path),
@@ -167,3 +167,48 @@ _build("site_diary",  "site-diary")
 _build("hazards",     "hazards")
 _build("incidents",   "incidents")
 _build("inspections", "inspections")
+
+
+# ---------- Path-based PDF endpoint (ad-blocker friendly) ----------
+#
+# Looks like a clean static file fetch ("...pdf"), no ?token= query, no varied
+# resource path — sidesteps Edge/Brave/uBlock heuristics that flag long-token
+# query strings as analytics beacons. The JWT carries the resource + record_id
+# + action so we don't need them in the URL.
+@router.get("/files/pdf/{token}.pdf")
+async def pdf_by_token(token: str):
+    try:
+        payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        # 404 (not 401/403) — ad-blockers escalate from anything that looks
+        # like an auth failure on a "static" URL.
+        raise HTTPException(status_code=404, detail="Not found")
+    if payload.get("type") != "pdf-token":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    resource = payload.get("resource")
+    record_id = payload.get("record_id")
+    action = payload.get("action") or "view"
+    if resource not in RENDERERS or not record_id:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0, "password_hash": 0})
+    if not user or user.get("status") == "disabled":
+        raise HTTPException(status_code=404, detail="Not found")
+    if not await can(user, resource, "view"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    renderer, collection = RENDERERS[resource]
+    doc = await db[collection].find_one(
+        {"id": record_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Not found")
+
+    pdf_bytes = renderer(doc)
+    fname = filename_for(doc, resource)
+    disp = "attachment" if action == "download" else "inline"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'{disp}; filename="{fname}"'},
+    )
