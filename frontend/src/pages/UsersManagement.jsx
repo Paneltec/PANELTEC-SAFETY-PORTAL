@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
@@ -388,3 +388,289 @@ function InviteModal({ onClose, onDone }) {
     </div>
   );
 }
+
+function ImportStatusBadge({ row }) {
+  if (row.is_already_imported) {
+    return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-slate-200 text-slate-600" title={row.already_imported_reason || ''}>Already imported</span>;
+  }
+  if (row.email_missing) {
+    return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-amber-100 text-amber-800" title="Add an email in Simpro to import">Email missing</span>;
+  }
+  return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-100 text-emerald-800">New</span>;
+}
+
+const ROLE_OPTIONS_IMPORT = [
+  { value: 'worker', label: 'Field Worker' },
+  { value: 'supervisor', label: 'Site Supervisor' },
+  { value: 'hseq_lead', label: 'HSEQ Lead' },
+  { value: 'admin', label: 'Admin' },
+];
+
+function ImportFromSimproDrawer({ companies, onClose, onDone }) {
+  const allCompanyIds = useMemo(() => companies.map((c) => String(c.id)), [companies]);
+  const [selectedCompanies, setSelectedCompanies] = useState(allCompanyIds);
+  const [filterMode, setFilterMode] = useState('whiteboard'); // 'whiteboard' | 'all'
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [employees, setEmployees] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [defaultRole, setDefaultRole] = useState('worker');
+  const [workspaces, setWorkspaces] = useState([]);
+  const [chosenWorkspaces, setChosenWorkspaces] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  // Load workspaces once
+  useEffect(() => {
+    (async () => {
+      try { const { data } = await api.get('/workspaces'); setWorkspaces(data || []); } catch { /* ignore */ }
+    })();
+  }, []);
+
+  // Fetch employees whenever companies/filter changes
+  const fetchEmployees = async () => {
+    if (selectedCompanies.length === 0) { setEmployees([]); return; }
+    setLoading(true);
+    try {
+      const qs = new URLSearchParams({
+        company_ids: selectedCompanies.join(','),
+        filter: filterMode,
+      });
+      const { data } = await api.get(`/integrations/simpro/employees?${qs.toString()}`);
+      setEmployees(data.employees || []);
+      setSelected(new Set());
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setLoading(false); }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchEmployees(); }, [selectedCompanies.join(','), filterMode]);
+
+  const toggleCompany = (cid) => {
+    const k = String(cid);
+    setSelectedCompanies((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
+  };
+  const toggleWorkspace = (wid) => {
+    setChosenWorkspaces((prev) => prev.includes(wid) ? prev.filter((x) => x !== wid) : [...prev, wid]);
+  };
+
+  const visible = useMemo(() => {
+    const s = search.trim().toLowerCase();
+    if (!s) return employees;
+    return employees.filter((e) =>
+      (e.name || '').toLowerCase().includes(s)
+      || (e.email || '').toLowerCase().includes(s)
+      || (e.position || '').toLowerCase().includes(s)
+    );
+  }, [employees, search]);
+
+  const importableVisible = visible.filter((e) => e.importable);
+
+  const toggleRow = (e) => {
+    if (!e.importable) return;
+    const k = String(e.id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+  const selectAllVisible = () => setSelected(new Set(importableVisible.map((e) => String(e.id))));
+  const clearSelection = () => setSelected(new Set());
+
+  const submit = async () => {
+    if (selected.size === 0) return;
+    setBusy(true);
+    try {
+      const payload = {
+        employees: employees.filter((e) => selected.has(String(e.id))).map((e) => ({
+          simpro_employee_id: String(e.id),
+          simpro_company_id: String(e.company_id),
+          email: e.email,
+          first_name: e.first_name || '',
+          last_name: e.last_name || '',
+          name: e.name,
+          mobile: e.phone || null,
+          position: e.position || null,
+          company_name: e.company_name || null,
+        })),
+        default_role: defaultRole,
+        workspace_ids: chosenWorkspaces,
+      };
+      const { data } = await api.post('/users/import-from-simpro', payload);
+      const parts = [`Imported ${data.created}`];
+      if (data.skipped?.length) parts.push(`Skipped ${data.skipped.length}`);
+      toast.success(parts.join(' · '), {
+        description: data.skipped?.length
+          ? data.skipped.slice(0, 3).map((s) => `${s.email}: ${s.reason}`).join('  ·  ')
+          : undefined,
+      });
+      onDone?.();
+      onClose();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex justify-end" onClick={onClose} data-testid="import-simpro-drawer">
+      <div className="bg-white w-full sm:max-w-4xl h-full flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-xl">Import users from Simpro</h2>
+            <p className="text-xs text-slate-500 mt-0.5">Pull staff from your connected Simpro companies into Users &amp; Permissions.</p>
+          </div>
+          <button onClick={onClose} className="text-2xl text-slate-400 hover:text-slate-700" aria-label="Close" data-testid="import-simpro-close">&times;</button>
+        </div>
+
+        <div className="px-6 py-4 border-b border-slate-200 space-y-3 bg-slate-50">
+          <div>
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1.5">Companies</div>
+            <div className="flex flex-wrap gap-1.5">
+              {companies.map((c) => {
+                const k = String(c.id);
+                const on = selectedCompanies.includes(k);
+                return (
+                  <button key={k} type="button" onClick={() => toggleCompany(c.id)}
+                    data-testid={`import-company-chip-${c.id}`}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}>
+                    {c.name || `Company ${c.id}`} <span className="opacity-70">#{c.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs" data-testid="import-filter-toggle">
+              {[['whiteboard', 'Only whiteboard-marked'], ['all', 'All employees']].map(([v, lbl]) => (
+                <button key={v} type="button" onClick={() => setFilterMode(v)}
+                  className={`px-3 py-1.5 font-medium ${filterMode === v ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
+                  data-testid={`import-filter-${v}`}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+            <div className="relative flex-1 min-w-[180px]">
+              <SearchIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, or position"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                data-testid="import-search"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-2 border-b border-slate-200 flex items-center justify-between text-xs">
+          <div className="text-slate-600">
+            <strong>{selected.size}</strong> selected · {importableVisible.length} importable · {visible.length} shown
+          </div>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={selectAllVisible} disabled={importableVisible.length === 0}
+              className="text-blue-600 hover:underline disabled:text-slate-400 disabled:no-underline"
+              data-testid="import-select-all">Select all (importable)</button>
+            <button type="button" onClick={clearSelection} disabled={selected.size === 0}
+              className="text-slate-500 hover:underline disabled:text-slate-400 disabled:no-underline"
+              data-testid="import-clear">Clear</button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          {loading ? (
+            <div className="px-6 py-12 text-center text-slate-500 text-sm inline-flex items-center gap-2 justify-center w-full">
+              <Loader2 size={14} className="animate-spin" /> Loading employees from Simpro…
+            </div>
+          ) : visible.length === 0 ? (
+            <div className="px-6 py-12 text-center text-slate-500 text-sm inline-flex items-center gap-2 justify-center w-full">
+              <AlertCircle size={14} /> No employees match your filters.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-white text-[11px] uppercase tracking-wider text-slate-500 sticky top-0 border-b border-slate-200">
+                <tr>
+                  <th className="text-left px-4 py-2.5 w-8"></th>
+                  <th className="text-left px-2 py-2.5">Name</th>
+                  <th className="text-left px-2 py-2.5">Email</th>
+                  <th className="text-left px-2 py-2.5">Mobile</th>
+                  <th className="text-left px-2 py-2.5">Position</th>
+                  <th className="text-left px-2 py-2.5">Company</th>
+                  <th className="text-left px-2 py-2.5">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((e) => {
+                  const k = String(e.id);
+                  const checked = selected.has(k);
+                  const disabled = !e.importable;
+                  return (
+                    <tr key={k} className={`border-t border-slate-100 ${disabled ? 'bg-slate-50/60 opacity-70' : 'hover:bg-slate-50 cursor-pointer'}`}
+                      onClick={() => toggleRow(e)} data-testid={`import-row-${e.id}`}>
+                      <td className="px-4 py-2.5">
+                        <input type="checkbox" checked={checked} disabled={disabled}
+                          onChange={() => toggleRow(e)}
+                          onClick={(ev) => ev.stopPropagation()}
+                          className="h-4 w-4 accent-blue-600 disabled:opacity-50"
+                          data-testid={`import-checkbox-${e.id}`} />
+                      </td>
+                      <td className="px-2 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <Avatar className="h-7 w-7"><AvatarFallback className="text-[10px]">{(e.name || '?')[0]}</AvatarFallback></Avatar>
+                          <span className="font-medium">{e.name || '—'}</span>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2.5 text-xs text-slate-600">{e.email || <span className="text-slate-400 italic">—</span>}</td>
+                      <td className="px-2 py-2.5 text-xs text-slate-600">{e.phone || '—'}</td>
+                      <td className="px-2 py-2.5 text-xs text-slate-600">{e.position || '—'}</td>
+                      <td className="px-2 py-2.5 text-xs text-slate-600">{e.company_name || `#${e.company_id}`}</td>
+                      <td className="px-2 py-2.5"><ImportStatusBadge row={e} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-end gap-4">
+          <div className="min-w-[180px]">
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Default role</div>
+            <Select value={defaultRole} onValueChange={setDefaultRole}>
+              <SelectTrigger className="w-full" data-testid="import-default-role"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {ROLE_OPTIONS_IMPORT.map((r) => (
+                  <SelectItem key={r.value} value={r.value} data-testid={`import-role-opt-${r.value}`}>{r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex-1 min-w-[200px]">
+            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Workspaces (optional)</div>
+            {workspaces.length === 0 ? (
+              <div className="text-xs text-slate-400 italic px-2 py-2">No workspaces in your org.</div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {workspaces.map((w) => {
+                  const on = chosenWorkspaces.includes(w.id);
+                  return (
+                    <button key={w.id} type="button" onClick={() => toggleWorkspace(w.id)}
+                      data-testid={`import-ws-chip-${w.id}`}
+                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${on ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}>
+                      {w.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <div className="ml-auto">
+            <button onClick={submit} disabled={busy || selected.size === 0}
+              data-testid="import-submit"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold uppercase tracking-[0.12em] disabled:opacity-50">
+              {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+              Import {selected.size} user{selected.size === 1 ? '' : 's'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
