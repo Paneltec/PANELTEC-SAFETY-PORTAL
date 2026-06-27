@@ -510,6 +510,15 @@ export default function SimproAdmin() {
         </div>
       </AdminCard>
 
+      <StaffPreview
+        configKey={JSON.stringify({
+          companies: s.company_ids,
+          field: s.whiteboard_custom_field,
+          positions: s.position_filter,
+        })}
+        companyIds={s.company_ids}
+      />
+
       <CompaniesModal
         open={companiesModal.open}
         items={companiesModal.items}
@@ -520,4 +529,97 @@ export default function SimproAdmin() {
       />
     </div>
   );
+}
+
+// ──────────────── Staff matching filter preview (debounced) ────────────────
+function StaffPreview({ configKey, companyIds }) {
+  const [rows, setRows] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [page, setPage] = React.useState(0);
+  const PAGE_SIZE = 10;
+
+  React.useEffect(() => {
+    setPage(0);
+    if (!companyIds || companyIds.length === 0) { setRows([]); return; }
+    setLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/integrations/simpro/employees', {
+          params: { company_ids: companyIds.join(','), filter: 'whiteboard' },
+        });
+        setRows(data?.employees || data || []);
+      } catch {
+        setRows([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [configKey]);
+
+  const pageRows = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+
+  return (
+    <div data-testid="simpro-staff-preview">
+    <AdminCard title="Staff matching your current filter"
+      subtitle="Preview of SimPRO employees the whiteboard filter would return right now.">
+      {loading ? (
+        <div className="space-y-2" data-testid="simpro-preview-loading">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="h-9 rounded bg-slate-100 animate-pulse" />
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-sm text-slate-500 py-8 text-center bg-slate-50 rounded-lg" data-testid="simpro-preview-empty">
+          No staff match your current filter — try adjusting it.
+        </div>
+      ) : (
+        <>
+          <div className="rounded-lg border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm" data-testid="simpro-preview-table">
+              <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+                <tr>
+                  <th className="text-left px-3 py-2">Name</th>
+                  <th className="text-left px-3 py-2 hidden md:table-cell">Email</th>
+                  <th className="text-left px-3 py-2 hidden lg:table-cell">Position</th>
+                  <th className="text-left px-3 py-2 hidden lg:table-cell">Company</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pageRows.map((e, i) => (
+                  <tr key={e.simpro_employee_id || i} className="border-t border-slate-100" data-testid={`preview-row-${i}`}>
+                    <td className="px-3 py-2 font-medium text-slate-900">{e.name || `${e.given_name || ''} ${e.family_name || ''}`.trim() || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{e.email || '—'}</td>
+                    <td className="px-3 py-2 text-slate-600 hidden lg:table-cell">{e.position || '—'}</td>
+                    <td className="px-3 py-2 text-slate-500 hidden lg:table-cell">{e.simpro_company_id || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+            <span>{rows.length} match{rows.length === 1 ? '' : 'es'}</span>
+            {pages > 1 && (
+              <div className="inline-flex items-center gap-1">
+                <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
+                  data-testid="preview-prev"
+                  className="px-2 py-1 rounded border border-slate-300 disabled:opacity-40">Prev</button>
+                <span>{page + 1} / {pages}</span>
+                <button onClick={() => setPage(Math.min(pages - 1, page + 1))} disabled={page >= pages - 1}
+                  data-testid="preview-next"
+                  className="px-2 py-1 rounded border border-slate-300 disabled:opacity-40">Next</button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </AdminCard>
+    </div>
+  );
+}
+
+function _SimproAdminEnd() {
+  return null;
 }

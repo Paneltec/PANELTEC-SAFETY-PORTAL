@@ -420,3 +420,78 @@ async def search(
             "folder": folder_map.get(f["folder_id"]),
         })
     return {"query": q, "count": len(results), "results": results}
+
+
+
+# ────────────────────── Supplier-scoped folders ──────────────────────
+# Sibling routes that filter `doc_folders` by `supplier_id`. Files reuse the
+# main `/api/document-library/folders/{id}/files` endpoints — once a folder
+# exists, supplier scoping is just a query filter on the listing side.
+
+from fastapi import APIRouter as _AR
+
+supplier_folders_router = _AR(prefix="/suppliers", tags=["supplier-folders"])
+
+
+@supplier_folders_router.get("/{supplier_id}/folders")
+async def supplier_list_folders(supplier_id: str, user: dict = Depends(get_current_user)):
+    cursor = db.doc_folders.find(
+        {"org_id": user["org_id"], "supplier_id": supplier_id, "deleted_at": None},
+        {"_id": 0},
+    ).sort([("sort_order", 1), ("name", 1)])
+    folders = await cursor.to_list(500)
+    counts = await _file_counts(user["org_id"])
+    return [_serialise_folder(f, counts.get(f["id"], 0)) for f in folders]
+
+
+@supplier_folders_router.post("/{supplier_id}/folders", status_code=201)
+async def supplier_create_folder(
+    supplier_id: str, body: FolderIn, user: dict = Depends(get_current_user),
+):
+    _require(user, WRITE_ROLES)
+    last = await db.doc_folders.find_one(
+        {"org_id": user["org_id"], "supplier_id": supplier_id, "deleted_at": None},
+        {"_id": 0, "sort_order": 1},
+        sort=[("sort_order", -1)],
+    )
+    next_order = ((last or {}).get("sort_order") or 0) + 10
+    color = (body.color_key or PASTEL_CYCLE[next_order // 10 % len(PASTEL_CYCLE)]).strip().lower()
+    doc = {
+        "id": new_id(), "org_id": user["org_id"],
+        "supplier_id": supplier_id,
+        "name": body.name.strip(), "color_key": color,
+        "sort_order": next_order, "is_system": False,
+        "created_at": now_iso(), "updated_at": now_iso(),
+        "created_by": user["id"], "deleted_at": None,
+    }
+    await db.doc_folders.insert_one(doc)
+    return _serialise_folder(doc, 0)
+
+
+async def supplier_folder_file_counts(org_id: str) -> dict:
+    """Total file count grouped by supplier_id (for the Folders chip badge)."""
+    pipeline = [
+        {"$match": {"org_id": org_id, "deleted_at": None,
+                    "supplier_id": {"$exists": True, "$ne": None}}},
+        {"$lookup": {
+            "from": "doc_files",
+            "let": {"fid": "$id"},
+            "pipeline": [
+                {"$match": {"$expr": {"$and": [
+                    {"$eq": ["$folder_id", "$$fid"]},
+                    {"$eq": ["$deleted_at", None]},
+                ]}}},
+                {"$count": "n"},
+            ],
+            "as": "files",
+        }},
+        {"$group": {
+            "_id": "$supplier_id",
+            "n": {"$sum": {"$ifNull": [{"$arrayElemAt": ["$files.n", 0]}, 0]}},
+        }},
+    ]
+    out: dict = {}
+    async for row in db.doc_folders.aggregate(pipeline):
+        if row["_id"]:
+            out[row["_id"]] = row["n"]
+    return out

@@ -303,14 +303,17 @@ async def panel_counts(user: dict = Depends(get_current_user)):
     tasks = await _agg(db.supplier_tasks, {"status": {"$in": ["open", "in_progress"]}})
     notes = await _agg(db.supplier_notes, {})
     members = await _agg(db.supplier_members, {})
+    # Folders count = total files across folders that are tied to this supplier.
+    from document_library import supplier_folder_file_counts
+    folders = await supplier_folder_file_counts(org_id)
 
-    sids = set(tasks) | set(notes) | set(members)
+    sids = set(tasks) | set(notes) | set(members) | set(folders)
     return {
         sid: {
             "tasks": tasks.get(sid, 0),
             "notes": notes.get(sid, 0),
             "members": members.get(sid, 0),
-            "folders": 0,
+            "folders": folders.get(sid, 0),
         }
         for sid in sids
     }

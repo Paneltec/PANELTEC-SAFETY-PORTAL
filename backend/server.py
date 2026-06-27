@@ -21,7 +21,10 @@ from crud import (  # noqa: E402
 )
 from dashboard import files_router, router as dashboard_router  # noqa: E402
 from db import close as close_db  # noqa: E402
-from document_library import router as document_library_router  # noqa: E402
+from document_library import (  # noqa: E402
+    router as document_library_router,
+    supplier_folders_router,
+)
 from suppliers import router as suppliers_router  # noqa: E402
 from supplier_panels import router as supplier_panels_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
@@ -101,6 +104,7 @@ api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(pdf_router)
 api.include_router(document_library_router)
+api.include_router(supplier_folders_router)
 api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)
 

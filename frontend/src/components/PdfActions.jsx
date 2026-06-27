@@ -1,58 +1,43 @@
 import React, { useState } from 'react';
-import { FileText, Download, Loader2 } from 'lucide-react';
+import { FileText, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Can } from '../lib/permissions';
 import api, { apiError } from '../lib/api';
 
-export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm' }) {
-  const [busy, setBusy] = useState(null); // 'view' | 'download' | null
+// Open every PDF in a single shared popup window. Re-opening another PDF
+// reuses the same window (named 'paneltec-pdf') so we never spawn a wall of
+// tabs. The PDF URL itself is a signed `/api/files/pdf/{token}.pdf` route
+// served by the browser's native PDF viewer.
+const POPUP_NAME = 'paneltec-pdf';
+const POPUP_FEATURES = 'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes,toolbar=no,location=no,menubar=no,status=no';
 
-  // VIEW — open a new tab synchronously during the user gesture, then redirect.
-  // Edge/Chrome won't block iframe-blob PDFs anymore because we're hitting a
-  // real signed URL handled by the browser's native PDF viewer.
-  const view = async (e) => {
+export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm' }) {
+  const [busy, setBusy] = useState(false);
+
+  const open = async (e) => {
     e?.stopPropagation();
-    setBusy('view');
-    const win = window.open('', '_blank');
-    if (!win) {
-      setBusy(null);
-      toast.error('Popup blocked — please allow popups for this site to view PDFs');
+    setBusy(true);
+    // Open the popup synchronously inside the user gesture, then redirect it
+    // once the signed URL is back. Popup blockers won't fire when triggered
+    // by a real click.
+    const win = window.open('about:blank', POPUP_NAME, POPUP_FEATURES);
+    if (!win || win.closed) {
+      setBusy(false);
+      toast.error('Popup blocked — please allow popups for this site to open PDF reports');
       return;
     }
     try {
       const { data } = await api.post('/pdf-token', {
-        resource: resourceKind,
-        record_id: recordId,
-        action: 'view',
+        resource: resourceKind, record_id: recordId, action: 'view',
       });
-      win.location.href = data.url;
+      win.location.replace(data.url);
+      win.focus();
     } catch (err) {
       try { win.close(); } catch { /* ignore */ }
       toast.error(apiError(err) || 'Failed to open PDF');
-    } finally { setBusy(null); }
-  };
-
-  // DOWNLOAD — anchor click hits Content-Disposition: attachment.
-  const dl = async (e) => {
-    e?.stopPropagation();
-    setBusy('download');
-    try {
-      const { data } = await api.post('/pdf-token', {
-        resource: resourceKind,
-        record_id: recordId,
-        action: 'download',
-      });
-      const a = document.createElement('a');
-      a.href = data.url;
-      a.download = '';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      toast.success('PDF download started');
-    } catch (err) {
-      toast.error(apiError(err) || 'Could not download PDF');
-    } finally { setBusy(null); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const ico = size === 'sm' ? 12 : 14;
@@ -63,11 +48,9 @@ export default function PdfActions({ resourceKind, recordId, title = '', size = 
   return (
     <Can resource={resourceKind} action="view">
       <div className="inline-flex gap-1" data-testid={`pdf-actions-${resourceKind}-${recordId}`}>
-        <button onClick={view} disabled={busy === 'view'} className={cls} title={title || 'View PDF'} data-testid={`pdf-view-${recordId}`}>
-          {busy === 'view' ? <Loader2 size={ico} className="animate-spin" /> : <FileText size={ico} />} View PDF
-        </button>
-        <button onClick={dl} disabled={busy === 'download'} className={cls} title="Download PDF" data-testid={`pdf-dl-${recordId}`}>
-          {busy === 'download' ? <Loader2 size={ico} className="animate-spin" /> : <Download size={ico} />} Download
+        <button onClick={open} disabled={busy} className={cls}
+          title={title || 'Open report'} data-testid={`pdf-open-${recordId}`}>
+          {busy ? <Loader2 size={ico} className="animate-spin" /> : <FileText size={ico} />} Open report
         </button>
       </div>
     </Can>
