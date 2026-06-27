@@ -110,3 +110,8 @@ async def serve_pdf(name: str):
 @files_router.get("/document_library/{folder_id}/{name}")
 async def serve_document_library(folder_id: str, name: str):
     return _serve("document_library", folder_id, name)
+
+
+@files_router.get("/form_photos/{submission_id}/{name}")
+async def serve_form_photo(submission_id: str, name: str):
+    return _serve("form_photos", submission_id, name)

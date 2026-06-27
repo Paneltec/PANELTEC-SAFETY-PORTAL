@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
-  Plus, FolderOpen, HardHat, Award,
+  Plus, FolderOpen, HardHat, Award, ClipboardList,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -31,6 +31,7 @@ const NAV = [
     { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
     { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
     { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
+    { to: '/app/forms', label: 'Forms', icon: ClipboardList, testid: 'nav-forms', pastel: 'sky' },
   ]},
   { section: 'Compliance', items: [
     { to: '/app/suppliers', label: 'Suppliers', icon: Users2, testid: 'nav-suppliers', pastel: 'sage' },

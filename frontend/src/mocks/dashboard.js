@@ -23,6 +23,13 @@ export const CAPTURE_TOOLS = [
     route: '/app/site-diary',
   },
   {
+    key: 'forms',
+    title: 'Forms Library',
+    desc: 'Inspection, incident, toolbox and permit templates — fillable on phone.',
+    icon: 'ClipboardList',
+    route: '/app/forms',
+  },
+  {
     key: 'hazards',
     title: 'Hazard Reports from Photos',
     desc: 'Snap a hazard — AI classifies risk and drafts the report.',

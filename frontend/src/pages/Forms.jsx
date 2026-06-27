@@ -1,13 +1,17 @@
-// Forms Library — Phase 1.
-// Templates list + import JSON + fill-out runner. Photo/signature/gps render
-// as Phase-2 placeholders; submissions store null for those.
+// Forms Library — Phase 2.
+// Templates list + import JSON + fill-out runner with real signature pad,
+// photo capture (camera on mobile) and GPS. Mobile-responsive (375px) with a
+// sticky submit bar at the bottom on small viewports.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import SignatureCanvas from 'react-signature-canvas';
 import {
-  Camera, ClipboardList, Download, Edit3, FileText, Loader2, MapPin,
-  Pencil, Plus, Search, Trash2, Upload, UploadCloud, X, FilePlus,
+  Camera, CheckCircle2, ClipboardList, Download, FileText, Loader2, MapPin,
+  Pencil, RefreshCw, Search, Trash2, Upload, UploadCloud, X, FilePlus, ListChecks,
+  Image as ImageIcon, Eraser,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import api, { apiError } from '../lib/api';
+import api, { apiError, API_BASE } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 
@@ -27,30 +31,182 @@ function categoryLabel(key) {
   return CATEGORIES.find((c) => c.key === key)?.label || 'General';
 }
 
-function FieldRunner({ field, value, onChange }) {
-  const phType = { photo: 'Photo capture', signature: 'Signature', gps: 'GPS capture' }[field.type];
-  if (phType) {
-    return (
-      <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-4 text-center text-xs text-slate-500"
-        data-testid={`field-placeholder-${field.id}`}>
-        {field.type === 'photo' && <Camera size={16} className="mx-auto mb-1 text-slate-400" />}
-        {field.type === 'signature' && <Pencil size={16} className="mx-auto mb-1 text-slate-400" />}
-        {field.type === 'gps' && <MapPin size={16} className="mx-auto mb-1 text-slate-400" />}
-        {phType} — coming in Phase 2
+// ─────────────── Field renderers (fill-out runner) ───────────────
+
+function PhotoField({ field, files, onChange }) {
+  const inputRef = useRef(null);
+  const previews = useMemo(() => (files || []).map((f) => ({
+    name: f.name, url: URL.createObjectURL(f),
+  })), [files]);
+  // Revoke object URLs on unmount
+  useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
+
+  const onPick = (e) => {
+    const picked = Array.from(e.target.files || []);
+    if (!picked.length) return;
+    onChange([...(files || []), ...picked]);
+    e.target.value = '';
+  };
+  const removeAt = (idx) => {
+    const next = [...(files || [])];
+    next.splice(idx, 1);
+    onChange(next);
+  };
+
+  return (
+    <div className="space-y-2" data-testid={`field-${field.id}`}>
+      <input ref={inputRef} type="file" accept="image/*" capture="environment"
+        multiple className="hidden" onChange={onPick}
+        data-testid={`photo-input-${field.id}`} />
+      <button type="button" onClick={() => inputRef.current?.click()}
+        data-testid={`photo-take-${field.id}`}
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] rounded-lg border-2 border-dashed border-[#b9d2ec] bg-[#eff5fc] text-[#1e4a8c] text-sm font-semibold hover:bg-[#d8e6f4]">
+        <Camera size={16} /> {previews.length ? 'Add another photo' : 'Take or choose photo'}
+      </button>
+      {previews.length > 0 && (
+        <div className="grid grid-cols-3 gap-2" data-testid={`photo-grid-${field.id}`}>
+          {previews.map((p, i) => (
+            <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
+              <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
+              <button type="button" onClick={() => removeAt(i)}
+                data-testid={`photo-remove-${field.id}-${i}`}
+                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 text-[#a8324c] flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition">
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SignatureField({ field, value, onChange }) {
+  const padRef = useRef(null);
+  const wrapRef = useRef(null);
+  const [size, setSize] = useState({ w: 400, h: 150 });
+
+  useEffect(() => {
+    const update = () => {
+      if (!wrapRef.current) return;
+      const w = Math.min(wrapRef.current.clientWidth, 600);
+      setSize({ w, h: Math.max(140, Math.min(180, Math.round(w * 0.4))) });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  // If value pre-exists (read-only view), draw it back into the pad.
+  useEffect(() => {
+    if (value && padRef.current && padRef.current.isEmpty()) {
+      try { padRef.current.fromDataURL(value); } catch { /* ignore */ }
+    }
+  }, [value]);
+
+  const clear = () => {
+    padRef.current?.clear();
+    onChange(null);
+  };
+  const onEnd = () => {
+    if (padRef.current && !padRef.current.isEmpty()) {
+      const data = padRef.current.toDataURL('image/png');
+      onChange(data);
+    }
+  };
+
+  return (
+    <div className="space-y-2" ref={wrapRef} data-testid={`field-${field.id}`}>
+      <div className="rounded-lg border border-slate-300 bg-white overflow-hidden">
+        <SignatureCanvas ref={padRef} penColor="#0f172a"
+          canvasProps={{ width: size.w, height: size.h, className: 'block w-full touch-none', 'data-testid': `signature-canvas-${field.id}` }}
+          onEnd={onEnd} />
       </div>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] text-slate-500">Sign with your finger or mouse.</span>
+        <button type="button" onClick={clear} data-testid={`signature-clear-${field.id}`}
+          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-[#a8324c] px-2 py-1">
+          <Eraser size={12} /> Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function GpsField({ field, value, onChange }) {
+  const [busy, setBusy] = useState(false);
+  const capture = () => {
+    if (!navigator.geolocation) {
+      toast.error('Geolocation not supported by this browser');
+      return;
+    }
+    setBusy(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        onChange({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy,
+          captured_at: new Date().toISOString(),
+        });
+        setBusy(false);
+      },
+      (err) => {
+        toast.error(`GPS error: ${err.message}`);
+        setBusy(false);
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
+  };
+
+  const hasFix = value && typeof value.lat === 'number' && typeof value.lng === 'number';
+  const mapSrc = hasFix
+    ? `https://www.google.com/maps?q=${value.lat},${value.lng}&hl=en&z=16&output=embed`
+    : null;
+
+  return (
+    <div className="space-y-2" data-testid={`field-${field.id}`}>
+      <button type="button" onClick={capture} disabled={busy}
+        data-testid={`gps-capture-${field.id}`}
+        className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-lg bg-[#eff5fc] border border-[#b9d2ec] text-[#1e4a8c] text-sm font-semibold hover:bg-[#d8e6f4] disabled:opacity-60">
+        {busy ? <Loader2 size={16} className="animate-spin" /> : (hasFix ? <RefreshCw size={16} /> : <MapPin size={16} />)}
+        {busy ? 'Capturing…' : (hasFix ? 'Re-capture GPS' : 'Capture GPS')}
+      </button>
+      {hasFix && (
+        <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <iframe title={`gps-map-${field.id}`} src={mapSrc} width="100%" height="160"
+            style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          <div className="px-3 py-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lat</span>{value.lat.toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lng</span>{value.lng.toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">± m</span>{Math.round(value.accuracy ?? 0)}</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange }) {
+  if (field.type === 'photo') {
+    return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} />;
+  }
+  if (field.type === 'signature') {
+    return <SignatureField field={field} value={value} onChange={onChange} />;
+  }
+  if (field.type === 'gps') {
+    return <GpsField field={field} value={value} onChange={onChange} />;
   }
   if (field.type === 'textarea') {
     return <textarea rows={4} value={value || ''} placeholder={field.placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      data-testid={`field-${field.id}`}
-      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />;
+      onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
+      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
   }
   if (field.type === 'select') {
     return (
       <select value={value || ''} onChange={(e) => onChange(e.target.value)}
         data-testid={`field-${field.id}`}
-        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+        className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm bg-white">
         <option value="">— Select —</option>
         {(field.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
@@ -58,12 +214,12 @@ function FieldRunner({ field, value, onChange }) {
   }
   if (field.type === 'radio') {
     return (
-      <div className="space-y-1.5" data-testid={`field-${field.id}`}>
+      <div className="space-y-1" data-testid={`field-${field.id}`}>
         {(field.options || []).map((o) => (
-          <label key={o} className="flex items-center gap-2 text-sm cursor-pointer">
+          <label key={o} className="flex items-center gap-2.5 px-2 py-2.5 min-h-[44px] rounded hover:bg-slate-50 cursor-pointer text-sm">
             <input type="radio" name={field.id} value={o} checked={value === o}
               onChange={(e) => onChange(e.target.value)}
-              className="w-4 h-4 text-[#1e4a8c]" />
+              className="w-5 h-5 text-[#1e4a8c]" />
             <span>{o}</span>
           </label>
         ))}
@@ -73,57 +229,87 @@ function FieldRunner({ field, value, onChange }) {
   if (field.type === 'date') {
     return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)}
       data-testid={`field-${field.id}`}
-      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />;
+      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
   }
   if (field.type === 'number') {
-    return <input type="number" value={value ?? ''} placeholder={field.placeholder}
-      onChange={(e) => onChange(e.target.value)}
-      data-testid={`field-${field.id}`}
-      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />;
+    return <input type="number" inputMode="decimal" value={value ?? ''} placeholder={field.placeholder}
+      onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
+      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
   }
   return <input type="text" value={value || ''} placeholder={field.placeholder}
-    onChange={(e) => onChange(e.target.value)}
-    data-testid={`field-${field.id}`}
-    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />;
+    onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
+    className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
 }
 
-function FillOutModal({ template, onClose }) {
-  const [values, setValues] = useState({});
+// ─────────────── Fill-out modal ───────────────
+
+function FillOutModal({ template, onClose, onSubmitted }) {
+  const [values, setValues] = useState({});       // non-photo
+  const [photoFiles, setPhotoFiles] = useState({}); // {field_id: File[]}
   const [saving, setSaving] = useState(false);
-  const requiredOk = (template.fields || [])
-    .filter((f) => f.required && !['photo', 'signature', 'gps'].includes(f.type))
-    .every((f) => values[f.id] && String(values[f.id]).trim());
+  const [progress, setProgress] = useState('');
+
+  const requiredOk = (template.fields || []).every((f) => {
+    if (!f.required) return true;
+    if (f.type === 'photo') return (photoFiles[f.id] || []).length > 0;
+    if (f.type === 'signature') return !!values[f.id];
+    if (f.type === 'gps') return !!values[f.id];
+    return values[f.id] && String(values[f.id]).trim();
+  });
 
   const submit = async () => {
     setSaving(true);
     try {
+      setProgress('Saving submission…');
       const payload = {
         fields: (template.fields || []).map((f) => ({
-          id: f.id, label: f.label, type: f.type, value: values[f.id] ?? null,
+          id: f.id, label: f.label, type: f.type,
+          value: f.type === 'photo' ? [] : (values[f.id] ?? null),
         })),
       };
-      await api.post(`/forms/templates/${template.id}/submissions`, payload);
-      toast.success('Form submitted');
+      const { data: sub } = await api.post(`/forms/templates/${template.id}/submissions`, payload);
+
+      // Upload photos for each photo field that has files.
+      const photoFieldIds = Object.keys(photoFiles).filter((fid) => (photoFiles[fid] || []).length > 0);
+      for (let i = 0; i < photoFieldIds.length; i++) {
+        const fid = photoFieldIds[i];
+        setProgress(`Uploading photos (${i + 1}/${photoFieldIds.length})…`);
+        const fd = new FormData();
+        fd.append('field_id', fid);
+        (photoFiles[fid] || []).forEach((file) => fd.append('files', file));
+        await api.post(`/forms/submissions/${sub.id}/photos`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+      }
+      toast.success('Form submitted', { description: `${template.name}` });
+      onSubmitted?.(sub);
       onClose();
-    } catch (e) { toast.error(apiError(e)); }
-    finally { setSaving(false); }
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setSaving(false);
+      setProgress('');
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="form-fillout-modal">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start gap-3">
-          <div className="rounded-xl bg-[#d8e6f4] p-2.5"><FileText size={18} className="text-[#1e4a8c]" /></div>
+      <div className="w-full sm:max-w-3xl bg-white sm:rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start gap-3">
+          <div className="rounded-xl bg-[#d8e6f4] p-2.5 hidden sm:block"><FileText size={18} className="text-[#1e4a8c]" /></div>
           <div className="flex-1 min-w-0">
             <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Fill out</div>
-            <h2 className="font-display text-lg font-semibold text-slate-900">{template.name}</h2>
+            <h2 className="font-display text-lg font-semibold text-slate-900 truncate">{template.name}</h2>
             {template.description && <p className="text-xs text-slate-600/80 mt-1 line-clamp-2">{template.description}</p>}
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-200"><X size={14} /></button>
+          <button onClick={onClose} data-testid="fillout-close"
+            className="p-2 -m-1 rounded hover:bg-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <X size={16} />
+          </button>
         </div>
-        <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
+        <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
           ) : (template.fields || []).map((f) => (
@@ -133,14 +319,23 @@ function FillOutModal({ template, onClose }) {
                 {f.required && <span className="text-[#a8324c] ml-1">*</span>}
                 <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
               </label>
-              <FieldRunner field={f} value={values[f.id]} onChange={(v) => setValues({ ...values, [f.id]: v })} />
+              <FieldRunner field={f}
+                value={values[f.id]}
+                onChange={(v) => setValues((p) => ({ ...p, [f.id]: v }))}
+                photoFiles={photoFiles[f.id]}
+                onPhotoChange={(files) => setPhotoFiles((p) => ({ ...p, [f.id]: files }))} />
             </div>
           ))}
         </div>
-        <div className="px-6 py-3 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2 sticky bottom-0">
+          {progress && <span className="text-xs text-slate-500 flex-1 truncate" data-testid="submit-progress">{progress}</span>}
+          {!progress && <div className="flex-1" />}
+          <button onClick={onClose} disabled={saving}
+            className="px-3 py-2 min-h-[44px] rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">
+            Cancel
+          </button>
           <button onClick={submit} disabled={saving || !requiredOk} data-testid="form-submit-btn"
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-50">
             {saving ? <Loader2 size={14} className="animate-spin" /> : null} Submit
           </button>
         </div>
@@ -149,7 +344,9 @@ function FillOutModal({ template, onClose }) {
   );
 }
 
-function DetailDrawer({ template, onClose, onChanged, canEdit, onFill }) {
+// ─────────────── Detail drawer ───────────────
+
+function DetailDrawer({ template, onClose, onFill, onViewSubmissions }) {
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -189,16 +386,22 @@ function DetailDrawer({ template, onClose, onChanged, canEdit, onFill }) {
             ))}
           </div>
         </div>
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50">
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 space-y-2">
           <button onClick={onFill} data-testid="open-fillout-btn"
             className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263]">
             <FilePlus size={14} /> Fill out this form
+          </button>
+          <button onClick={onViewSubmissions} data-testid="view-submissions-btn"
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-white">
+            <ListChecks size={14} /> View submissions ({template.submission_count ?? 0})
           </button>
         </div>
       </div>
     </div>
   );
 }
+
+// ─────────────── Import modal ───────────────
 
 function ImportModal({ onClose, onImported }) {
   const [text, setText] = useState('');
@@ -265,8 +468,11 @@ function ImportModal({ onClose, onImported }) {
   );
 }
 
+// ─────────────── Page ───────────────
+
 export default function Forms() {
   const user = getUser();
+  const navigate = useNavigate();
   const canEdit = WRITE_ROLES.has(user?.role);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -316,8 +522,7 @@ export default function Forms() {
       version: 1,
       count: rows.length,
       templates: rows.map((r) => ({
-        name: r.name, category: r.category, description: r.description,
-        fields: r.fields,
+        name: r.name, category: r.category, description: r.description, fields: r.fields,
       })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -336,8 +541,8 @@ export default function Forms() {
       <div className="mb-5 rounded-2xl border border-[#b9d2ec] bg-[#eff5fc] px-4 py-3 flex items-center gap-3">
         <div className="rounded-xl bg-[#d8e6f4] p-2.5"><ClipboardList size={20} className="text-[#1e4a8c]" /></div>
         <div className="flex-1">
-          <div className="text-sm font-semibold text-[#1e3a6b]">Bring your existing forms</div>
-          <div className="text-xs text-[#1e4a8c]/80 mt-0.5">Import JSON exported from another safety app, or build from scratch. Field types supported now: text, textarea, date, number, select, radio. Photo / signature / GPS arrive in Phase 2.</div>
+          <div className="text-sm font-semibold text-[#1e3a6b]">Field-ready forms with signature, photo &amp; GPS</div>
+          <div className="text-xs text-[#1e4a8c]/80 mt-0.5">Admins build templates on the web; workers fill them in on phones. Photos upload from the camera, signatures sign with a finger, and GPS pins drop straight into the submission PDF.</div>
         </div>
       </div>
 
@@ -392,6 +597,13 @@ export default function Forms() {
                   <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">imported</span>
                 )}
                 <div className="flex-1" />
+                {(t.submission_count ?? 0) > 0 && (
+                  <button onClick={(e) => { e.stopPropagation(); navigate(`/app/forms/templates/${t.id}/submissions`); }}
+                    data-testid={`badge-submissions-${t.id}`}
+                    className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#d8ecdd] text-[#1f7a3f] hover:bg-[#c2dfc8]">
+                    {t.submission_count} sent
+                  </button>
+                )}
                 {canEdit && (
                   <button onClick={(e) => { e.stopPropagation(); removeTemplate(t); }}
                     data-testid={`delete-${t.id}`}
@@ -406,7 +618,7 @@ export default function Forms() {
                 <div className="mt-2 text-[11px] text-slate-500">{(t.fields || []).length} fields</div>
               </button>
               <button onClick={() => setFillTemplate(t)} data-testid={`fillout-${t.id}`}
-                className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-xs font-semibold uppercase tracking-wider hover:bg-[#d8e6f4]">
+                className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[44px] rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-xs font-semibold uppercase tracking-wider hover:bg-[#d8e6f4]">
                 <FilePlus size={12} /> Fill out
               </button>
             </div>
@@ -417,10 +629,97 @@ export default function Forms() {
       {importing && <ImportModal onClose={() => setImporting(false)} onImported={load} />}
       {openDetail && (
         <DetailDrawer template={openDetail} onClose={() => setOpenDetail(null)}
-          onChanged={load} canEdit={canEdit}
-          onFill={() => { setFillTemplate(openDetail); setOpenDetail(null); }} />
+          onFill={() => { setFillTemplate(openDetail); setOpenDetail(null); }}
+          onViewSubmissions={() => navigate(`/app/forms/templates/${openDetail.id}/submissions`)} />
       )}
-      {fillTemplate && <FillOutModal template={fillTemplate} onClose={() => setFillTemplate(null)} />}
+      {fillTemplate && <FillOutModal template={fillTemplate} onClose={() => setFillTemplate(null)} onSubmitted={load} />}
+    </div>
+  );
+}
+
+// ─────────────── Read-only submission view modal ───────────────
+
+export function SubmissionViewModal({ submissionId, onClose }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/forms/submissions/${submissionId}`)
+      .then((r) => { if (alive) setData(r.data); })
+      .catch((e) => toast.error(apiError(e)))
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [submissionId]);
+
+  const renderValue = (f) => {
+    const v = f.value;
+    if (f.type === 'photo') {
+      if (!Array.isArray(v) || v.length === 0) return <span className="text-slate-400 italic text-sm">No photos.</span>;
+      return (
+        <div className="grid grid-cols-3 gap-2">
+          {v.map((p, i) => (
+            <a key={i} href={`${process.env.REACT_APP_BACKEND_URL}${p.file_url}`} target="_blank" rel="noreferrer"
+              className="aspect-square rounded-lg overflow-hidden border border-slate-200 hover:opacity-90">
+              <img src={`${process.env.REACT_APP_BACKEND_URL}${p.file_url}`}
+                alt={p.filename} className="w-full h-full object-cover" />
+            </a>
+          ))}
+        </div>
+      );
+    }
+    if (f.type === 'signature') {
+      if (!v) return <span className="text-slate-400 italic text-sm">Not signed.</span>;
+      return <img src={v} alt="signature" className="border border-slate-200 rounded-lg max-h-32 bg-white" />;
+    }
+    if (f.type === 'gps') {
+      if (!v || v.lat == null) return <span className="text-slate-400 italic text-sm">Not captured.</span>;
+      return (
+        <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <iframe title="gps-view" src={`https://www.google.com/maps?q=${v.lat},${v.lng}&hl=en&z=16&output=embed`}
+            width="100%" height="140" style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+          <div className="px-3 py-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lat</span>{Number(v.lat).toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lng</span>{Number(v.lng).toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">± m</span>{Math.round(v.accuracy ?? 0)}</div>
+          </div>
+        </div>
+      );
+    }
+    if (f.type === 'textarea') return <div className="text-sm text-slate-800 whitespace-pre-line">{v || '—'}</div>;
+    return <div className="text-sm text-slate-800">{v ?? '—'}</div>;
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      data-testid="submission-view-modal">
+      <div className="w-full sm:max-w-3xl bg-white sm:rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Submission</div>
+            <h2 className="font-display text-lg font-semibold text-slate-900 truncate">{data?.template_name_snapshot || '…'}</h2>
+            {data && (
+              <p className="text-xs text-slate-600/80 mt-1">By {data.submitted_by_name} · {(data.submitted_at || '').slice(0, 16).replace('T', ' ')}</p>
+            )}
+          </div>
+          <button onClick={onClose} className="p-2 -m-1 rounded hover:bg-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center" data-testid="submission-close">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
+          {loading ? <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+            : !data ? <div className="text-sm text-slate-500">Submission not found.</div>
+            : (data.fields || []).map((f) => (
+              <div key={f.id}>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  {f.label}
+                  <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+                </label>
+                {renderValue(f)}
+              </div>
+            ))}
+        </div>
+      </div>
     </div>
   );
 }

@@ -4,13 +4,14 @@ import {
   ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren,
   ShieldCheck, BarChart3, Download, Sparkles, Database, Radar, Eye, FileSearch,
   AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck,
+  ClipboardList,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 
-const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck };
+const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck, ClipboardList };
 
 // Filler widgets for the centre column — close the gap below the action row
 // so the Key Metrics column visually balances the Ask Intelligence column.
@@ -211,6 +212,7 @@ const TILE_BG_BY_KEY = {
   suppliers: '/tile-bgs/contractors.png',
   'document-library': '/tile-bgs/intelligence.png',
   vehicles: '/tile-bgs/prestarts.png',
+  forms: '/tile-bgs/diary.png',
 };
 const ICON_PASTEL_BY_KEY = {
   swms: 'pastel-icon-mint', 'ai-swms': 'pastel-icon-mint',
@@ -225,13 +227,14 @@ const ICON_PASTEL_BY_KEY = {
   suppliers: 'pastel-icon-mint',
   'document-library': 'pastel-icon-lavender',
   vehicles: 'pastel-icon-sky',
+  forms: 'pastel-icon-sky',
 };
 
 // Left-column grouping — each group renders a small uppercase tracking-wide
 // heading above its tiles so the column scrolls with rhythm rather than as a
 // flat unbroken stack.
 const CAPTURE_GROUPS = [
-  { heading: 'Capture & Records', keys: ['swms', 'pre-starts', 'site-diary'] },
+  { heading: 'Capture & Records', keys: ['swms', 'pre-starts', 'site-diary', 'forms'] },
   { heading: 'Risk & Incidents',  keys: ['hazards', 'incidents', 'inspections'] },
   { heading: 'People & Compliance', extras: [
     { key: 'workers',        title: 'Workers',              desc: 'Field crew directory synced from Simpro + manual adds.', icon: 'HardHat',  route: '/app/settings/workers' },

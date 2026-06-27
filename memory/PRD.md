@@ -199,3 +199,44 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 ## Backlog (Forms Phase 2/3)
 - Phase 2: real photo capture, signature pad, GPS picker, PDF export of submissions, submissions list page per template.
 - Phase 3: mobile mirror, worker assignment, scheduled reminders.
+
+
+# 2026-06-27 — Forms Library Phase 2 (shipped)
+
+## Backend
+- **Real field types**: photo upload (multipart, `POST /api/forms/submissions/{id}/photos`), signature (base64 PNG inline on field value), GPS (`{lat, lng, accuracy, captured_at}` dict).
+- **PDF generation**: `GET /api/forms/submissions/{id}/pdf` supports Bearer AND signed pdf-token (`POST /api/forms/submissions/pdf-token`). PDF embeds photos inline, signature as image, GPS as key-value block + Google Maps link. New `/app/backend/forms_pdf.py` reuses the brand frame from `pdf_renderer.py`.
+- **Submission status**: `complete` vs `draft` computed from required-field coverage (photo/signature/GPS counted as filled when present).
+- **Photo serving**: new public route `/api/files/form_photos/{submission_id}/{name}` added to `dashboard.py` for PDF embedding + `<img>` thumbnails.
+- **Delete**: submitter OR admin/hseq_lead can soft-delete their own submission.
+- Worker permissions verified via curl: list ✓, fill-out ✓, create template → 403, delete template → 403.
+
+## Frontend
+- **Forms.jsx (rewrite)**: real `PhotoField` (camera + file picker, multi-photo grid with previews), `SignatureField` (react-signature-canvas, responsive width, clear button), `GpsField` (browser geolocation + embedded Google Maps + lat/lng/accuracy). Mobile-responsive fill-out (sticky bottom submit bar, 44px+ tap targets, native keyboard hints).
+- **FormSubmissions.jsx (new)**: route `/app/forms/templates/:templateId/submissions` — banner uses category pastel, table with Status / Photos / Signature / GPS columns, View / PDF / Delete actions, status & search filters, CSV export, mobile-card stack below md breakpoint.
+- **SubmissionViewModal** (exported from Forms.jsx): read-only view with embedded photos / signature / GPS map snippet.
+- **PDF popup**: opens in the existing shared `paneltec-pdf` window via the form-specific pdf-token endpoint (preserves ad-blocker bypass).
+- Library: installed `react-signature-canvas`.
+
+## Nav & Dashboard
+- Sidebar (`AppShell.jsx`): added **Forms** entry under the **Capture** group (sky pastel, ClipboardList icon) — sits after Inspection Reports.
+- Dashboard CAPTURE_GROUPS: added `forms` key to the "Capture & Records" group, plus styling maps (tile bg + sky icon pastel).
+- `mocks/dashboard.js`: `CAPTURE_TOOLS` includes a Forms Library tile that routes to `/app/forms`.
+
+## SW
+- Bumped `CACHE_VERSION` to `paneltec-v30`.
+
+## Verified
+- Curl: photo upload (2 saved / 0 rejected), submission with text+sig+GPS+photo (status=draft because 11 other required fields unfilled, photo_count=2, has_signature/has_gps=True), PDF via Bearer (4741 bytes, `%PDF-1.4` magic ✓), PDF via pdf-token (same), list submissions (1 returned), worker 403 on create/delete.
+- UI: dashboard with Forms tile + Forms in sidebar, mobile fill-out modal at 375×812 with signature drawn, GPS captured (lat/lng visible on Google Map), photo button visible. Submissions table page with sub status pill, Photos/Signature/GPS columns and PDF action.
+
+## 22-template seed (complete)
+- Imported full 22 templates into Stephen's org:
+  - Part 1 (10): Incident Report, Daily Site Inspection, Toolbox Talk, Near Miss Report, Equipment Pre-Use Checklist, Test Hot Work Permit, site-safety-checklist, Vehicle Pre-Use Inspection, Plant Pre-Start Checklist, Heavy Vehicle Daily Check
+  - Part 2 (12): JSEA, SWMS Sign-On, Toolbox Talk Attendance, Hot Work Permit, Confined Space Entry Permit, Working at Heights Permit, Excavation / Trench Permit, Drug & Alcohol Test Record, Site Sign-In / Visitor Register, End of Day Site Sign-Off, Crane Lift / Rigging Plan, Asbestos Awareness / Class B Removal
+- Distribution: general:10, inspection:7, toolbox:2, incident:2, near_miss:1
+
+## Phase 3 backlog
+- Worker assignment + scheduled reminders on submissions
+- Mobile mirror (Expo specialist — dedicated turn)
+- Pin / favourite templates per-worker

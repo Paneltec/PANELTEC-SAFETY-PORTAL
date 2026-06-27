@@ -37,7 +37,8 @@ import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary'
 import Suppliers from '@/pages/Suppliers';
 import Workers from '@/pages/Workers';
 import Certifications from '@/pages/Certifications';
-import Forms from '@/pages/Forms';
+import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-line no-unused-vars
+import FormSubmissions from '@/pages/FormSubmissions';
 
 function App() {
   return (
@@ -98,6 +99,7 @@ function App() {
               <Route path="settings/workers" element={<Workers />} />
               <Route path="settings/certifications" element={<Certifications />} />
               <Route path="forms" element={<Forms />} />
+              <Route path="forms/templates/:templateId/submissions" element={<FormSubmissions />} />
               <Route path="outbox" element={<Outbox />} />
               <Route path="profile" element={<MyProfile />} />
             </Route>
