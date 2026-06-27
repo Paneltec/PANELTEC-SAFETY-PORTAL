@@ -1,0 +1,40 @@
+{
+  "summary": "Iteration 5 — Frontend-only verification of Microsoft 365 admin iframe-redirect fix. All critical flows pass: page renders, redirect URI card + Copy button work, Connect button correctly gates on setupReady, full-page redirect to login.microsoftonline.com fires with the correct OAuth params, and the Microsoft Sign-in page actually loads (confirming X-Frame-Options is bypassed via window.top.location.href).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "M365 redirect_uri displayed vs REACT_APP_BACKEND_URL",
+        "issue": "The redirect_uri returned by GET /api/integrations/microsoft365/redirect-uri and displayed in the admin card uses origin 'https://3dd7823d-4048-456d-b31d-e4cb598dc869.preview.emergentagent.com' while frontend's REACT_APP_BACKEND_URL is 'https://whs-compliance.preview.emergentagent.com'. The path suffix '/api/integrations/microsoft365/oauth/callback' is correct, but the origin does NOT match REACT_APP_BACKEND_URL as the spec required. Azure will need to register the backend-emitted URI exactly, so it functionally works, but the spec stated the URI must 'start with the same origin as REACT_APP_BACKEND_URL'. Likely backend BACKEND_URL/PUBLIC_BASE_URL env points to a different ingress hostname.",
+        "affected_selectors": ["[data-testid='m365-redirect-uri']"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Optional: reconcile backend BACKEND_URL (used to build redirect_uri) with frontend REACT_APP_BACKEND_URL so both reflect the same public origin. Functionally the OAuth flow still navigates correctly with the backend-emitted URI, but the spec said the displayed URI must share REACT_APP_BACKEND_URL's origin."
+  ],
+  "critical_code_review_comments": [
+    "Microsoft365Admin.jsx uses (window.top || window).location.href = data.authorize_url — correct iframe-busting pattern, verified by Microsoft sign-in page actually loading.",
+    "setupReady gating correctly checks all 4 fields including secretOnFile OR secretInput, so an already-saved secret still counts as ready.",
+    "Copy handler gracefully falls back when navigator.clipboard fails (toast.error)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested (per request)", "frontend": "100% on tested scenarios (6/6 functional checks)"},
+  "test_credentials": "admin@paneltec.com / demo123 (from request)",
+  "seed_data_creation": "None. Used existing test config saved from previous iteration; re-saved tenant_id='common', client_id='00000000-0000-0000-0000-000000001234', a fresh client_secret, sender_email='hseq@paneltec.com.au'.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iteration 5 confirmed: (1) redirect URI card shows URI ending in '/api/integrations/microsoft365/oauth/callback' with working Copy button + 'Redirect URI copied' toast; (2) Connect button background is rgb(44,107,255)=#2C6BFF and enabled when setupReady; (3) clicking Connect performs a full-page redirect to https://login.microsoftonline.com/common/oauth2/v2.0/authorize?... containing client_id, redirect_uri, response_type, response_mode, scope (offline_access+Mail.Send+User.Read), state, prompt — screenshot proves Microsoft Sign-in page actually rendered. The grey/disabled state (#94A3B8) for !setupReady was NOT directly observed in browser because previous iteration left all 4 fields saved (per agent-to-agent note); code review confirms the logic is correctly wired (style backgroundColor uses ternary on setupReady; data-testid='m365-setup-missing' renders only when !setupReady). Minor discrepancy: displayed redirect_uri origin differs from REACT_APP_BACKEND_URL — see integration_issues.",
+  "rca of the issue": {
+    "original_bug": "Clicking Connect to Microsoft showed 'login.microsoftonline.com refused to connect' because the app's React shell embeds pages in an iframe and Microsoft sets X-Frame-Options: DENY on its login page.",
+    "fix_applied": "Microsoft365Admin.jsx connect() now does `(window.top || window).location.href = data.authorize_url` to perform a full-page navigation that breaks out of the iframe shell. Setup gating added so the button is grey/disabled until all 4 fields are saved. Redirect URI surfaced with Copy button via GET /api/integrations/microsoft365/redirect-uri.",
+    "verification": "After clicking Connect, page.url() became 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize?...' and the Microsoft Sign-in form actually rendered (screenshot), confirming the iframe-bust succeeded and Microsoft did NOT refuse the connection."
+  }
+}

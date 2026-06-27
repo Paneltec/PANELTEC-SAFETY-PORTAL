@@ -65,11 +65,20 @@ def _purge_states() -> None:
             _OAUTH_STATE.pop(k, None)
 
 
+@router.get("/redirect-uri")
+async def m365_redirect_uri(user: dict = Depends(get_current_user)):
+    """Return the redirect URI to be registered in Azure AD. Always available
+    (independent of stored config) so the admin page can show it on first load.
+    """
+    return {"redirect_uri": _redirect_uri()}
+
+
 @router.get("/oauth/start")
 async def oauth_start(user: dict = Depends(require_roles("admin", "hseq_lead"))):
     cfg = await _cfg(user["org_id"])
-    if not cfg.get("tenant_id") or not cfg.get("client_id") or not cfg.get("client_secret"):
-        raise HTTPException(400, "Configure tenant_id, client_id, client_secret first.")
+    missing = [k for k in ("tenant_id", "client_id", "client_secret", "sender_email") if not cfg.get(k)]
+    if missing:
+        raise HTTPException(400, "Save Tenant ID, Client ID, Client Secret, and Sender Email first.")
     _purge_states()
     state = secrets.token_urlsafe(24)
     _OAUTH_STATE[state] = {

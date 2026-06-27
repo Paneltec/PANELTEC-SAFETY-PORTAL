@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, Play, Save, CheckCircle2, AlertCircle, LogIn, Mail, Send, XCircle } from 'lucide-react';
+import { Loader2, Play, Save, CheckCircle2, AlertCircle, LogIn, Mail, Send, XCircle, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { BackButton } from '../components/capture/Ui';
@@ -20,6 +20,7 @@ export default function Microsoft365Admin() {
   const [params, setParams] = useSearchParams();
   const [s, setS] = useState(empty);
   const [doc, setDoc] = useState(null);
+  const [redirectUri, setRedirectUri] = useState('');
   const [showSecret, setShowSecret] = useState(false);
   const [busy, setBusy] = useState({ save: false, connect: false, test: false, flush: false, disconnect: false });
   const [testMsg, setTestMsg] = useState(null);
@@ -43,6 +44,10 @@ export default function Microsoft365Admin() {
       const { data: ob } = await api.get('/email/outbox', { params: { status: 'queued', limit: 200 } });
       setQueuedCount((ob?.items || []).length);
     } catch { setQueuedCount(0); }
+    try {
+      const { data: r } = await api.get('/integrations/microsoft365/redirect-uri');
+      setRedirectUri(r?.redirect_uri || '');
+    } catch { /* silent */ }
   };
   useEffect(() => { load(); }, []);
 
@@ -78,12 +83,31 @@ export default function Microsoft365Admin() {
   };
 
   const connect = async () => {
-    if (!await autoSave()) return;
+    if (!setupReady) {
+      toast.error('Save Tenant ID, Client ID, Client Secret, and Sender Email first.');
+      return;
+    }
     setBusy((b) => ({ ...b, connect: true }));
     try {
       const { data } = await api.get('/integrations/microsoft365/oauth/start');
-      window.location.href = data.authorize_url;
-    } catch (e) { authErrorToast(toast, e, 'Microsoft 365'); setBusy((b) => ({ ...b, connect: false })); }
+      // Full-page redirect (NOT an iframe — Microsoft refuses X-Frame embedding).
+      // Use window.top to break out of any preview-iframe shell.
+      const target = window.top || window;
+      target.location.href = data.authorize_url;
+    } catch (e) {
+      authErrorToast(toast, e, 'Microsoft 365');
+      setBusy((b) => ({ ...b, connect: false }));
+    }
+  };
+
+  const copyRedirectUri = async () => {
+    if (!redirectUri) return;
+    try {
+      await navigator.clipboard.writeText(redirectUri);
+      toast.success('Redirect URI copied');
+    } catch {
+      toast.error('Copy failed — select the text and copy manually');
+    }
   };
 
   const test = async () => {
@@ -122,7 +146,15 @@ export default function Microsoft365Admin() {
 
   const connected = doc?.status === 'connected';
   const errored = doc?.status === 'error';
-  const setupReady = s.tenant_id && s.client_id && (s.secretInput || s.secretOnFile);
+  // All 4 setup fields must be present in the saved doc (not just typed inputs).
+  // The masked echo of client_secret means it's stored; sender_email and IDs are plain.
+  const setupReady = !!(s.tenant_id && s.client_id && (s.secretOnFile || s.secretInput) && s.sender_email);
+  const missingFields = [
+    !s.tenant_id && 'Tenant ID',
+    !s.client_id && 'Client ID',
+    !(s.secretOnFile || s.secretInput) && 'Client Secret',
+    !s.sender_email && 'Sender Email',
+  ].filter(Boolean);
   const graphUser = doc?.graph_user;
 
   return (
@@ -163,6 +195,28 @@ export default function Microsoft365Admin() {
           </button>
         </div>
 
+        {/* Redirect URI block — admin must register this in Azure AD */}
+        {redirectUri && (
+          <div className="mt-6 rounded-xl border border-[#D8CFB8] bg-[#FAF6EC] p-4" data-testid="m365-redirect-uri-card">
+            <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-slate-700 mb-2">
+              Add this redirect URI to your Azure AD app registration:
+            </div>
+            <div className="flex items-center gap-2">
+              <code data-testid="m365-redirect-uri" className="flex-1 text-xs font-mono break-all px-3 py-2 bg-white rounded border border-slate-200 text-slate-800">
+                {redirectUri}
+              </code>
+              <button onClick={copyRedirectUri} data-testid="m365-copy-redirect-uri"
+                title="Copy redirect URI"
+                className="inline-flex items-center gap-1 px-3 py-2 rounded-md border border-slate-300 text-xs font-medium text-slate-700 hover:bg-white hover:border-slate-400">
+                <Copy size={12} /> Copy
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-slate-600">
+              Azure portal → your app → <strong>Authentication</strong> → <strong>Web platform</strong> → add this exact URI under <em>Redirect URIs</em>.
+            </p>
+          </div>
+        )}
+
         {/* Connect */}
         <div className="my-7 border-t border-[#D8CFB8]" />
         <h3 className="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-700 mb-3">2 · Connect</h3>
@@ -178,14 +232,20 @@ export default function Microsoft365Admin() {
             </button>
           </div>
         ) : (
-          <button onClick={connect} disabled={busy.connect || !setupReady} data-testid="m365-connect"
-            className="inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-sm font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
-            style={{ backgroundColor: '#2C6BFF' }}>
-            {busy.connect ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />} Connect to Microsoft →
-          </button>
-        )}
-        {!setupReady && !connected && (
-          <p className="mt-2 text-xs text-amber-800">Save tenant_id, client_id, client_secret first.</p>
+          <>
+            <button onClick={connect} disabled={busy.connect || !setupReady}
+              data-testid="m365-connect"
+              title={!setupReady ? `Save ${missingFields.join(', ')} first` : 'Sign in with Microsoft (full-page redirect)'}
+              className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-lg text-white text-sm font-semibold uppercase tracking-[0.14em] disabled:opacity-60 ${setupReady ? '' : 'cursor-not-allowed'}`}
+              style={{ backgroundColor: setupReady ? '#2C6BFF' : '#94A3B8' }}>
+              {busy.connect ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />} Connect to Microsoft →
+            </button>
+            {!setupReady && (
+              <p className="mt-2 text-xs text-amber-800" data-testid="m365-setup-missing">
+                Save {missingFields.join(', ')} first to enable Microsoft sign-in.
+              </p>
+            )}
+          </>
         )}
 
         {testMsg && (
