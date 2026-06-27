@@ -6,6 +6,7 @@ import api, { apiError } from '../lib/api';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import EmailButton from '../components/EmailButton';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'], ['workers_comp', 'Workers comp'],
@@ -70,6 +71,7 @@ export default function Renewals() {
                         />
                         <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy size={12} /> Copy</button>
                         <button onClick={() => revoke(r.id)} className="px-2 py-1 text-xs rounded border border-red-200 text-red-700 hover:bg-red-50 inline-flex items-center gap-1" data-testid={`revoke-${r.id}`}><X size={12} /> Revoke</button>
+                        <DeleteRecordButton resourceKind="renewals" apiPath="renewals" recordId={r.id} label="Renewal link" recordTitle={r.contractor_name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                       </div>
                     )}
                   </td>

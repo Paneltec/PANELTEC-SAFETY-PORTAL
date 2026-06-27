@@ -6,6 +6,7 @@ import api, { API_BASE, apiError } from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'],
@@ -50,7 +51,7 @@ export default function ContractorsList() {
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Company</th><th className="text-left px-4 py-3">Trade</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Compliance</th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Company</th><th className="text-left px-4 py-3">Trade</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Compliance</th><th className="text-right px-4 py-3">Actions</th></tr></thead>
             <tbody>
               {items.map((c) => {
                 const s = c.compliance_summary || { valid: 0, expiring_soon: 0, expired: 0, total: 0 };
@@ -63,6 +64,9 @@ export default function ContractorsList() {
                       <span className="text-emerald-700 font-medium">{s.valid}</span>/{s.total} valid
                       {s.expiring_soon > 0 && <span className="ml-2 text-amber-700">· {s.expiring_soon} expiring</span>}
                       {s.expired > 0 && <span className="ml-2 text-red-700">· {s.expired} expired</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <DeleteRecordButton resourceKind="contractors" apiPath="contractors" recordId={c.id} label="Contractor" recordTitle={c.name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                     </td>
                   </tr>
                 );

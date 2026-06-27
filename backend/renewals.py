@@ -84,7 +84,7 @@ async def list_renewals(
     contractor_id: Optional[str] = Query(None),
     user: dict = Depends(get_current_user),
 ):
-    q = {"org_id": user["org_id"]}
+    q = {"org_id": user["org_id"], "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]}
     if status:
         q["status"] = status
     if contractor_id:
@@ -109,6 +109,19 @@ async def revoke_renewal(rid: str, user: dict = Depends(get_current_user)):
         raise HTTPException(404, "Renewal not found or already used")
     res["public_url"] = _public_url(res["token"])
     return res
+
+
+@router.delete("/{rid}")
+async def delete_renewal(rid: str, user: dict = Depends(get_current_user)):
+    """Soft-delete a renewal link. Hides it from the list but keeps the audit
+    trail in the DB (deleted_at timestamp)."""
+    res = await db.renewal_links.update_one(
+        {"id": rid, "org_id": user["org_id"]},
+        {"$set": {"deleted_at": now_iso()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Renewal not found")
+    return {"ok": True}
 
 
 # ---------- Public endpoints ----------
