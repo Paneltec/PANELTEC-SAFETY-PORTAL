@@ -182,3 +182,20 @@ Marketing landing, mock auth, app shell, dashboard, integrations register, 13 st
 ## Test credentials
 See `/app/memory/test_credentials.md`. JWT auth — Bearer `paneltec_token` in `localStorage`.
 All 5 seed accounts share password `demo123`. Idempotent seed re-applies on every backend startup.
+
+
+# 2026-06-27 — Forms Library Phase 1 (shipped)
+- **Backend** (`/app/backend/forms.py`): templates CRUD, JSON import (dedupe by lowercase name), submissions create/list/get.
+  - `GET/POST /api/forms/templates`, `GET/PATCH/DELETE /api/forms/templates/{id}`
+  - `POST /api/forms/templates/import` (idempotent — re-running skips existing names)
+  - `GET/POST /api/forms/templates/{id}/submissions`, `GET /api/forms/submissions/{id}`
+  - Field types: text, textarea, date, number, select, radio, photo, signature, gps. The last three are stored null in Phase 1.
+  - Write actions gated to `admin` / `hseq_lead`.
+- **Frontend** (`/app/frontend/src/pages/Forms.jsx`): list + category filter + search, detail drawer, fill-out runner modal, import/export JSON. Route `/app/forms`.
+- **Seeded**: 10 templates imported into Stephen's org from `/app/memory/forms_import.json` — Incident Report, Daily Site Inspection, Toolbox Talk, Near Miss Report, Equipment Pre-Use Checklist, Test Hot Work Permit, site-safety-checklist, Vehicle Pre-Use Inspection, Plant Pre-Start Checklist, Heavy Vehicle Daily Check. User can paste/upload the remaining 12 via the in-app Import modal.
+- **Verified**: import (10 created), re-import dedupe (0 created / 10 skipped), submission create + list, UI screenshots clean.
+- **Service worker**: bumped to `paneltec-v29` earlier in session.
+
+## Backlog (Forms Phase 2/3)
+- Phase 2: real photo capture, signature pad, GPS picker, PDF export of submissions, submissions list page per template.
+- Phase 3: mobile mirror, worker assignment, scheduled reminders.
