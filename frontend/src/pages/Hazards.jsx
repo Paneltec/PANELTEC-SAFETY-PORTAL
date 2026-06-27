@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 
@@ -44,6 +45,7 @@ export default function HazardsList() {
                     body={`A hazard has been reported.\n\nTitle: ${h.title}\nSeverity: ${h.severity}\nDescription: ${h.description || ''}`}
                     attachments={h.photo_url ? [{ file_url: h.photo_url, label: 'hazard-photo.jpg' }] : []}
                     variant="row" size="sm" label="Email" />
+                  <DeleteRecordButton resourceKind="hazards" apiPath="hazards" recordId={h.id} label="Hazard" recordTitle={h.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                 </div>
               </div>
             </div>

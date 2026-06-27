@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 
@@ -60,6 +61,7 @@ export default function InspectionsList() {
                           subject={`Inspection Report: ${it.template_name} — ${it.date}`}
                           body={`Inspection report.\n\nTemplate: ${it.template_name}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
                           variant="row" size="sm" label="Email" />
+                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} label="Inspection" recordTitle={`${it.template_name} · ${it.date}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                       </div>
                     </td>
                   </tr>

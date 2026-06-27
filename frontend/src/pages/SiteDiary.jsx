@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, AiButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -34,6 +35,7 @@ export default function SiteDiaryList() {
                   subject={`Site Diary — ${d.date}`}
                   body={`Site diary entry for ${d.date}.\n\n${d.raw_notes || ''}`}
                   variant="row" size="sm" label="Email" />
+                <DeleteRecordButton resourceKind="site_diary" apiPath="site-diary" recordId={d.id} label="Site Diary entry" recordTitle={d.date} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
               </div>
             </div>
           ))}

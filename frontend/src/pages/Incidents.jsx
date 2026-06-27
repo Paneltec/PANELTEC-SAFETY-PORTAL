@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 
@@ -58,6 +59,7 @@ export default function IncidentsList() {
                         subject={`Incident Summary: ${i.title}`}
                         body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
                         variant="row" size="sm" label="Email" />
+                      <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} label="Incident" recordTitle={i.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                     </div>
                   </td>
                 </tr>

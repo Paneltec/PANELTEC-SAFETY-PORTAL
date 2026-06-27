@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
+import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
@@ -51,6 +52,7 @@ export default function SwmsList() {
                         subject={`SWMS for Review: ${s.title} v${s.version || 1}`}
                         body={`Please review the attached SWMS.\n\nTitle: ${s.title}\nStatus: ${s.status}`}
                         variant="row" size="sm" label="Email" />
+                      <DeleteRecordButton resourceKind="swms" apiPath="swms" recordId={s.id} label="SWMS" recordTitle={s.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                     </div>
                   </td>
                 </tr>
