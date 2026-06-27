@@ -19,6 +19,7 @@ export const Colors = {
   textTertiary: '#94A3B8',
   emerald: '#10B981',
   emeraldDark: '#047857',
+  paneltecGold: '#F4C430',
 };
 
 export const StatusColors: Record<string, { bg: string; text: string; border: string }> = {

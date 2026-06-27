@@ -67,8 +67,30 @@ export default function LoginScreen() {
             <Text style={styles.logoText}>Paneltec <Text style={{ color: Colors.blue }}>Civil</Text></Text>
           </View>
 
-          <Text style={styles.heading}>Welcome back</Text>
-          <Text style={styles.sub}>Sign in to your Paneltec Civil workspace.</Text>
+          <Text style={styles.heading}>Build Safer.</Text>
+          <Text style={styles.heading}>Build Smarter.</Text>
+          <Text style={[styles.heading, { color: '#F4C430' }]}>Build Together.</Text>
+          <Text style={styles.sub}>All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.</Text>
+
+          {/* Value-prop chips */}
+          <View style={styles.valueGrid}>
+            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
+              <Ionicons name="shield-checkmark" size={14} color="#F4C430" />
+              <Text style={[styles.valueText, { color: '#F4C430' }]}>Real-time Compliance</Text>
+            </View>
+            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
+              <Ionicons name="sparkles" size={14} color="#F4C430" />
+              <Text style={[styles.valueText, { color: '#F4C430' }]}>AI-Powered Insights</Text>
+            </View>
+            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
+              <Ionicons name="ribbon" size={14} color="#F4C430" />
+              <Text style={[styles.valueText, { color: '#F4C430' }]}>Cert Tracking</Text>
+            </View>
+            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
+              <Ionicons name="bar-chart" size={14} color="#F4C430" />
+              <Text style={[styles.valueText, { color: '#F4C430' }]}>Live Analytics</Text>
+            </View>
+          </View>
 
           <View testID="demo-banner" style={styles.demoBanner}>
             <Ionicons name="information-circle" size={16} color={Colors.blue} />
@@ -159,8 +181,15 @@ const styles = StyleSheet.create({
   logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 32 },
   logoIcon: { width: 36, height: 36, borderRadius: 8, backgroundColor: Colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
   logoText: { fontSize: 20, fontWeight: '700', color: Colors.ink },
-  heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
-  sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 6 },
+  heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5, lineHeight: 34 },
+  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, lineHeight: 19 },
+  valueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  valueChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
+    borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  valueText: { fontSize: 11, fontWeight: '600', color: '#fff' },
   demoBanner: {
     flexDirection: 'row', gap: 10, marginTop: 20, padding: 12, borderRadius: 12,
     backgroundColor: Colors.blueSoft, borderWidth: 1, borderColor: '#BFDBFE', alignItems: 'flex-start',

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../lib/api';
 import { Colors } from '../lib/colors';
 import ClientPickerModal from './ClientPickerModal';
+import WorkerCertsSection from './WorkerCertsSection';
 
 const DAYS = [
   { key: 'mon', label: 'Mon' },
@@ -215,6 +216,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
             <View style={{ flex: 1 }}>
               <Text style={cs.headerOverline}>{isNew ? 'NEW WORKER' : 'EDIT WORKER'}</Text>
               <Text style={cs.headerTitle}>{isNew ? 'Add worker' : fullName(worker)}</Text>
+              {!isNew && <Text style={cs.headerSubtitle}>Manage identity, address, availability, client assignments and certifications. Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.</Text>}
             </View>
             <TouchableOpacity testID="worker-edit-close" onPress={onClose} style={{ padding: 6 }}>
               <Ionicons name="close" size={22} color={Colors.textTertiary} />
@@ -441,6 +443,13 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                 </View>
               )}
             </Section>
+
+            {/* 5. Certifications */}
+            {!isNew && (
+              <Section icon="ribbon" title="Certifications" testid="section-certifications" defaultOpen={false}>
+                <WorkerCertsSection workerId={worker.id} canEdit={canEdit} />
+              </Section>
+            )}
           </ScrollView>
 
           {/* Save footer */}
@@ -496,6 +505,7 @@ const cs = StyleSheet.create({
   },
   headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#1e4a8c' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 2 },
+  headerSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 4, lineHeight: 16 },
   simproBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,

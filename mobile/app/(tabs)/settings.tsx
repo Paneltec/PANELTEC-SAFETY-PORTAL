@@ -86,6 +86,7 @@ export default function ProfileScreen() {
         <View style={s.section}>
           {[
             { label: 'Workers', icon: 'people' as const, route: '/workers' },
+            { label: 'Certifications', icon: 'ribbon' as const, route: '/certifications' },
             { label: 'Organisation', icon: 'business' as const },
             { label: 'Integrations', icon: 'extension-puzzle' as const },
             { label: 'Users', icon: 'people-circle' as const, route: '/users' },
