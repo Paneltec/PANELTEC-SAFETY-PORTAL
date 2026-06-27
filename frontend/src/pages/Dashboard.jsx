@@ -213,6 +213,7 @@ const TILE_BG_BY_KEY = {
   'document-library': '/tile-bgs/intelligence.png',
   vehicles: '/tile-bgs/prestarts.png',
   forms: '/tile-bgs/diary.png',
+  'generate-ai': '/tile-bgs/diary.png',
 };
 const ICON_PASTEL_BY_KEY = {
   swms: 'pastel-icon-mint', 'ai-swms': 'pastel-icon-mint',
@@ -228,13 +229,14 @@ const ICON_PASTEL_BY_KEY = {
   'document-library': 'pastel-icon-lavender',
   vehicles: 'pastel-icon-sky',
   forms: 'pastel-icon-sky',
+  'generate-ai': 'pastel-icon-lavender',
 };
 
 // Left-column grouping — each group renders a small uppercase tracking-wide
 // heading above its tiles so the column scrolls with rhythm rather than as a
 // flat unbroken stack.
 const CAPTURE_GROUPS = [
-  { heading: 'Capture & Records', keys: ['swms', 'pre-starts', 'site-diary', 'forms'] },
+  { heading: 'Capture & Records', keys: ['swms', 'pre-starts', 'site-diary', 'forms', 'generate-ai'] },
   { heading: 'Risk & Incidents',  keys: ['hazards', 'incidents', 'inspections'] },
   { heading: 'People & Compliance', extras: [
     { key: 'workers',        title: 'Workers',              desc: 'Field crew directory synced from Simpro + manual adds.', icon: 'HardHat',  route: '/app/settings/workers' },

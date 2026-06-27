@@ -256,3 +256,27 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 ## Forms backlog
 - Inline template editor (toolbar "+ New Template" + card pencil icon currently toast "coming soon"). Add a builder modal with field add/remove/reorder.
 - `vehicle_reg` field type with Navixy integration (deferred per scope).
+
+
+# 2026-06-27 — Forms Template Builder (shipped)
+
+## TemplateBuilder modal (`/app/frontend/src/components/forms/TemplateBuilder.jsx`)
+- Full-screen modal with header strip (name + category + description), two-column body, and footer.
+- Three entry points wired in `Forms.jsx`:
+  1) "+ New Template" toolbar (orange-amber) → empty builder
+  2) Per-card pencil icon → builder pre-populated from existing template
+  3) Build with AI → on success the AI draft opens directly in the builder for refinement
+- Left column: drag-reorderable field list using `@dnd-kit/sortable` (`PointerSensor` 5px activation + `KeyboardSensor`). Each field card: drag handle, label, type dropdown (text/textarea/date/number/select/radio/photo/signature/gps), Required toggle, placeholder (text-likes only), options textarea (select/radio), trash.
+- Right column: sticky Live Preview pane reusing the exported `FieldRunner` in `readOnly` mode — the admin sees exactly what the worker sees.
+- Validation: name + category required, ≥1 field, each field has label, select/radio need ≥2 options. Inline error highlight + toast.
+- Saves via existing `POST /api/forms/templates` (new) or `PATCH /api/forms/templates/{id}` (edit). Both endpoints are admin/hseq_lead-gated (curl-verified — worker POST/PATCH return 403).
+
+## Wiring
+- `Forms.jsx`: exports `FieldRunner`, `CATEGORIES`, `CAT_PILL`, `categoryLabel`. Adds `builderTemplate` state and renders `TemplateBuilder` when set. Reads `?builder=ai` query param to auto-open the AI builder modal (used by the dashboard tile).
+- `Dashboard.jsx` + `mocks/dashboard.js`: new `generate-ai` tile with Sparkles icon, lavender pastel, routes to `/app/forms?builder=ai`. Added to CAPTURE_GROUPS "Capture & Records" row.
+- SW bumped to `paneltec-v32`.
+
+## Verified
+- Curl: admin POST + PATCH ✓; worker POST 403 + PATCH 403; admin DELETE 204.
+- UI screenshots (1440×900): empty builder with live preview (date + radio Yes/No/N/A both rendering in preview), edit builder populated from Vehicle Pre-Use Inspection (18 fields visible + live preview), Dashboard with Capture column header.
+- Lint clean.

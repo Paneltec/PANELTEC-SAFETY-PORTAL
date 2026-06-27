@@ -30,6 +30,13 @@ export const CAPTURE_TOOLS = [
     route: '/app/forms',
   },
   {
+    key: 'generate-ai',
+    title: 'Generate Form (AI)',
+    desc: 'Describe a checklist in plain English — AI drafts the template.',
+    icon: 'Sparkles',
+    route: '/app/forms?builder=ai',
+  },
+  {
     key: 'hazards',
     title: 'Hazard Reports from Photos',
     desc: 'Snap a hazard — AI classifies risk and drafts the report.',

@@ -3,7 +3,7 @@
 // icons + Preview/Fill buttons, AI-builder modal, redesigned Fill-Out modal
 // with coloured Yes/No/N-A radios + orange Submit, and Preview modal.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import {
   Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import TemplateBuilder from '../components/forms/TemplateBuilder';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -209,7 +210,7 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
   );
 }
 
-function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly }) {
   if (field.type === 'photo') return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} readOnly={readOnly} />;
   if (field.type === 'signature') return <SignatureField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
@@ -589,6 +590,7 @@ export default function Forms() {
   const [fillTemplate, setFillTemplate] = useState(null);
   const [importing, setImporting] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [builderTemplate, setBuilderTemplate] = useState(null);  // {} for new, {id,...} for edit
   const filterRef = useRef(null);
 
   const load = async () => {
@@ -598,6 +600,18 @@ export default function Forms() {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  // Auto-open the AI builder when the dashboard "Generate Form (AI)" tile
+  // (or any other entry point) lands here with ?builder=ai.
+  const location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('builder') === 'ai' && canEdit) {
+      setAiOpen(true);
+      navigate('/app/forms', { replace: true });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search]);
 
   useEffect(() => {
     if (!filterOpen) return;
@@ -640,9 +654,7 @@ export default function Forms() {
     URL.revokeObjectURL(url);
   };
 
-  const onEditTemplate = (t) => {
-    toast.message('Inline editor coming soon', { description: `For now, delete and re-import "${t.name}" or hand-edit the JSON via Export → Import.` });
-  };
+  const onEditTemplate = (t) => { setBuilderTemplate(t); };
 
   const currentFilterLabel = filter === 'all' ? `All categories (${counts.all})` : `${categoryLabel(filter)} (${counts[filter] ?? 0})`;
 
@@ -673,7 +685,7 @@ export default function Forms() {
           </button>
         )}
         {canEdit && (
-          <button onClick={() => toast.message('Template builder coming soon', { description: 'Use “Build with AI” to generate a draft, or import JSON.' })}
+          <button onClick={() => setBuilderTemplate({})}
             data-testid="toolbar-new"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-slate-900 text-sm font-bold shadow-md hover:shadow-lg">
             <Plus size={14} /> New Template
@@ -735,11 +747,14 @@ export default function Forms() {
       )}
 
       {importing && <ImportModal onClose={() => setImporting(false)} onImported={load} />}
-      {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t) => { load(); setPreviewT(t); }} />}
+      {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t) => { load(); setBuilderTemplate(t); }} />}
       {previewT && <PreviewModal template={previewT} onClose={() => setPreviewT(null)}
         onFill={() => { setFillTemplate(previewT); setPreviewT(null); }} />}
       {fillTemplate && <FillOutModal template={fillTemplate}
         onClose={() => setFillTemplate(null)} onSubmitted={load} />}
+      {builderTemplate !== null && <TemplateBuilder template={builderTemplate}
+        onClose={() => setBuilderTemplate(null)}
+        onSaved={() => load()} />}
     </div>
   );
 }
