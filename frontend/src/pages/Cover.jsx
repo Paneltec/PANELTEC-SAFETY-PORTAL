@@ -113,7 +113,7 @@ export default function Cover() {
                 One source of truth for Australian civil safety.
               </h1>
               <p className="mt-4 text-base lg:text-lg text-white/75 leading-relaxed">
-                SWMS, pre-starts, hazards, contractors, fleet — every operational record in one place.
+                SWMS, pre-starts, hazards, workers, certifications, suppliers, fleet — every operational record in one place.
               </p>
             </div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-white/60 font-semibold" data-testid="cover-trust">
