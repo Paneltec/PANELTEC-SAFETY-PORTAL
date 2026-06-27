@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Loader2, Play, Save, Plug, CheckCircle2, AlertCircle, X, ListChecks } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
@@ -11,7 +11,7 @@ const DEFAULT_BASE = 'https://demo.simprosuite.com';
 
 const empty = {
   api_base_url: DEFAULT_BASE,
-  company_id: '',
+  company_ids: [],
   tokenInput: '',
   tokenOnFile: null,
   staff_custom_field: '',
@@ -26,12 +26,24 @@ function Helper({ children }) {
   return <p className="text-xs text-slate-500 mt-1 leading-snug">{children}</p>;
 }
 
+function ChipPill({ label, onRemove, testid }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+      style={{ backgroundColor: '#0F1B2D', color: '#fff' }} data-testid={testid}>
+      {label}
+      <button type="button" onClick={onRemove} className="opacity-70 hover:opacity-100"
+        aria-label={`Remove ${label}`} data-testid={testid ? `${testid}-remove` : undefined}>
+        <X size={11} />
+      </button>
+    </span>
+  );
+}
+
 function PositionFilterInput({ tags, onChange, testid }) {
   const [text, setText] = useState('');
   const add = (raw) => {
     const v = raw.trim();
-    if (!v) return;
-    if (tags.includes(v)) return;
+    if (!v || tags.includes(v)) return;
     onChange([...tags, v]);
   };
   const remove = (t) => onChange(tags.filter((x) => x !== t));
@@ -51,14 +63,7 @@ function PositionFilterInput({ tags, onChange, testid }) {
       data-testid={testid}
     >
       {tags.map((t) => (
-        <span key={t} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-          style={{ backgroundColor: '#0F1B2D', color: '#fff' }} data-testid={`${testid}-tag-${t}`}>
-          {t}
-          <button type="button" onClick={() => remove(t)} className="opacity-70 hover:opacity-100"
-            aria-label={`Remove ${t}`} data-testid={`${testid}-remove-${t}`}>
-            <X size={11} />
-          </button>
-        </span>
+        <ChipPill key={t} label={t} onRemove={() => remove(t)} testid={`${testid}-tag-${t}`} />
       ))}
       <input
         type="text"
@@ -94,12 +99,27 @@ function Toggle({ checked, onChange, testid }) {
   );
 }
 
-function CompaniesModal({ open, items, loading, onPick, onClose }) {
+function CompaniesModal({ open, items, loading, initialSelected, onDone, onClose }) {
+  const [selected, setSelected] = useState(() => new Set(initialSelected.map(String)));
+
+  useEffect(() => {
+    if (open) setSelected(new Set(initialSelected.map(String)));
+  }, [open, initialSelected]);
+
   if (!open) return null;
+  const toggle = (id) => {
+    const next = new Set(selected);
+    const k = String(id);
+    if (next.has(k)) next.delete(k); else next.add(k);
+    setSelected(next);
+  };
+  const selectAll = () => setSelected(new Set(items.map((c) => String(c.id))));
+  const clearAll = () => setSelected(new Set());
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}
       data-testid="simpro-companies-modal">
-      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[70vh] flex flex-col"
+      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-800">Available Companies</h3>
@@ -107,7 +127,16 @@ function CompaniesModal({ open, items, loading, onPick, onClose }) {
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="px-6 py-2 border-b border-slate-100 flex items-center justify-between text-xs">
+          <span className="text-slate-500">{selected.size} selected of {items.length}</span>
+          <div className="flex items-center gap-3">
+            <button type="button" onClick={selectAll} className="text-blue-600 hover:underline"
+              data-testid="simpro-companies-select-all">Select all</button>
+            <button type="button" onClick={clearAll} className="text-slate-500 hover:underline"
+              data-testid="simpro-companies-clear-all">Clear</button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="px-4 py-8 text-center text-slate-500 text-sm inline-flex items-center gap-2 justify-center w-full">
               <Loader2 size={14} className="animate-spin" /> Loading companies…
@@ -116,23 +145,45 @@ function CompaniesModal({ open, items, loading, onPick, onClose }) {
             <p className="px-4 py-8 text-center text-slate-500 text-sm">No companies returned.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
-              {items.map((c) => (
-                <li key={c.id}>
-                  <button
-                    onClick={() => onPick(c)}
-                    className="w-full text-left px-4 py-3 hover:bg-slate-50 flex items-center justify-between gap-3"
-                    data-testid={`simpro-company-pick-${c.id}`}
-                  >
-                    <div>
-                      <div className="text-sm font-medium text-slate-800">{c.name || '—'}</div>
-                      {c.country && <div className="text-xs text-slate-500">{c.country}</div>}
-                    </div>
-                    <span className="text-xs font-mono px-2 py-1 rounded bg-slate-100 text-slate-700">ID {c.id}</span>
-                  </button>
-                </li>
-              ))}
+              {items.map((c) => {
+                const k = String(c.id);
+                const checked = selected.has(k);
+                return (
+                  <li key={k}>
+                    <label className="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 cursor-pointer"
+                      data-testid={`simpro-company-row-${c.id}`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(c.id)}
+                        className="h-4 w-4 accent-blue-600"
+                        data-testid={`simpro-company-checkbox-${c.id}`}
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-slate-800">{c.name || '—'}</div>
+                        {c.country && <div className="text-xs text-slate-500">{c.country}</div>}
+                      </div>
+                      <span className="text-xs font-mono px-2 py-1 rounded bg-slate-100 text-slate-700">ID {c.id}</span>
+                    </label>
+                  </li>
+                );
+              })}
             </ul>
           )}
+        </div>
+        <div className="px-6 py-3 border-t border-slate-200 flex items-center justify-end gap-3">
+          <button onClick={onClose}
+            className="px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 rounded-lg"
+            data-testid="simpro-companies-cancel">Cancel</button>
+          <button
+            onClick={() => onDone(Array.from(selected))}
+            disabled={selected.size === 0}
+            data-testid="simpro-companies-done"
+            className="px-5 py-2 text-sm font-semibold uppercase tracking-[0.14em] text-white rounded-lg disabled:opacity-60"
+            style={{ backgroundColor: '#2C6BFF' }}
+          >
+            Done ({selected.size})
+          </button>
         </div>
       </div>
     </div>
@@ -146,14 +197,18 @@ export default function SimproAdmin() {
   const [busy, setBusy] = useState({ save: false, test: false, connect: false, list: false });
   const [testMsg, setTestMsg] = useState(null);
   const [companiesModal, setCompaniesModal] = useState({ open: false, items: [], loading: false });
+  const [manualText, setManualText] = useState('');
 
   const apply = (data) => {
     setDoc(data);
     const cfg = data?.config || {};
+    const ids = Array.isArray(cfg.company_ids) && cfg.company_ids.length
+      ? cfg.company_ids.map(String)
+      : (cfg.company_id ? [String(cfg.company_id)] : []);
     setS((prev) => ({
       ...prev,
       api_base_url: cfg.api_base_url || DEFAULT_BASE,
-      company_id: cfg.company_id || '',
+      company_ids: ids,
       tokenOnFile: isMasked(cfg.api_token) ? cfg.api_token : (cfg.api_token ? '••••' : null),
       staff_custom_field: cfg.staff_custom_field || '',
       staff_field_value: cfg.staff_field_value || '',
@@ -172,7 +227,7 @@ export default function SimproAdmin() {
 
   const buildBody = () => ({
     api_base_url: s.api_base_url || DEFAULT_BASE,
-    company_id: s.company_id || null,
+    company_ids: s.company_ids,
     api_token: s.tokenInput ? s.tokenInput : (s.tokenOnFile || null),
     staff_custom_field: s.staff_custom_field || null,
     staff_field_value: s.staff_field_value || null,
@@ -194,13 +249,22 @@ export default function SimproAdmin() {
     setBusy((b) => ({ ...b, save: false }));
   };
 
+  const summariseCompanies = (data) => {
+    const ok = (data.companies || []).filter((c) => c.status === 'ok');
+    const bad = (data.companies || []).filter((c) => c.status !== 'ok');
+    const parts = [];
+    if (ok.length) parts.push(`${ok.length} verified (${ok.map((c) => c.id).join(', ')})`);
+    if (bad.length) parts.push(`${bad.length} failed (${bad.map((c) => c.id).join(', ')})`);
+    return parts.join(' · ');
+  };
+
   const test = async () => {
     if (!await autoSave()) return;
     setBusy((b) => ({ ...b, test: true }));
     setTestMsg(null);
     try {
       const { data } = await api.post('/integrations/simpro/test-connection');
-      const label = data.company_name ? `Verified · ${data.company_name}${data.country ? ' · ' + data.country : ''}` : 'Verified';
+      const label = summariseCompanies(data) || 'Verified';
       setTestMsg({ ok: true, text: label });
       toast.success(label);
       await load();
@@ -241,15 +305,33 @@ export default function SimproAdmin() {
     } finally { setBusy((b) => ({ ...b, list: false })); }
   };
 
-  const pickCompany = (c) => {
-    setS((p) => ({ ...p, company_id: String(c.id) }));
+  const removeCompanyId = (id) => {
+    setS((p) => ({ ...p, company_ids: p.company_ids.filter((x) => x !== id) }));
+  };
+
+  const commitModalSelection = (ids) => {
+    setS((p) => ({ ...p, company_ids: ids.map(String) }));
     setCompaniesModal({ open: false, items: [], loading: false });
-    toast.success(`Company set: ${c.name || c.id}`);
+    toast.success(`Selected ${ids.length} compan${ids.length === 1 ? 'y' : 'ies'}`);
+  };
+
+  const applyManual = () => {
+    const tokens = manualText.split(/[,\s]+/).map((t) => t.trim()).filter(Boolean);
+    if (!tokens.length) return;
+    const merged = Array.from(new Set([...s.company_ids, ...tokens]));
+    setS((p) => ({ ...p, company_ids: merged }));
+    setManualText('');
   };
 
   const connected = doc?.status === 'connected';
   const errored = doc?.status === 'error';
   const verified = connected && !!doc?.last_tested_at;
+
+  const perCompanyStatus = useMemo(() => {
+    const map = {};
+    (doc?.companies_status || []).forEach((c) => { map[String(c.id)] = c; });
+    return map;
+  }, [doc]);
 
   return (
     <div className="max-w-5xl mx-auto" data-testid="simpro-admin">
@@ -259,7 +341,7 @@ export default function SimproAdmin() {
         statusPill={<StatusPill connected={connected} errored={errored} testid="simpro-status-pill" />}
       >
         <p className="text-sm leading-relaxed mb-7">
-          Paste your SimPRO instance URL, Company ID, and a static API token. Tap <strong>Test Connection</strong> to verify, then <strong>Connect</strong> to run the first jobs sync.
+          Paste your SimPRO instance URL, pick one or more Company IDs, and a static API token. Tap <strong>Test Connection</strong> to verify each company, then <strong>Connect</strong> to run the first jobs sync.
         </p>
 
         <div className="grid sm:grid-cols-2 gap-x-7 gap-y-5">
@@ -271,21 +353,59 @@ export default function SimproAdmin() {
             <Helper>Your SimPRO instance URL (e.g. <code className="text-[11px]">https://yourcompany.simprosuite.com</code>).</Helper>
           </div>
           <div>
-            <Field label="Company ID">
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Input value={s.company_id} onChange={(v) => setS({ ...s, company_id: v })}
-                    placeholder="0" testid="simpro-company" />
-                </div>
+            <Field label="Company IDs">
+              <div
+                className="w-full px-2 py-2 text-sm rounded-lg flex flex-wrap items-center gap-1.5 min-h-[42px]"
+                style={{ backgroundColor: '#FAF6EC', border: '1px solid #D8CFB8' }}
+                data-testid="simpro-company-ids"
+              >
+                {s.company_ids.length === 0 && (
+                  <span className="text-xs text-slate-500 px-1.5">No companies selected — tap List or type below.</span>
+                )}
+                {s.company_ids.map((id) => {
+                  const st = perCompanyStatus[id];
+                  const bg = st?.status === 'ok' ? '#0F7B5A'
+                    : st && st.status !== 'ok' ? '#B23A3A'
+                      : '#0F1B2D';
+                  const label = st?.status === 'ok' && st.name ? `${id} · ${st.name}` : id;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                      style={{ backgroundColor: bg, color: '#fff' }} data-testid={`simpro-company-chip-${id}`}>
+                      {label}
+                      <button type="button" onClick={() => removeCompanyId(id)} className="opacity-70 hover:opacity-100"
+                        aria-label={`Remove ${id}`} data-testid={`simpro-company-remove-${id}`}>
+                        <X size={11} />
+                      </button>
+                    </span>
+                  );
+                })}
                 <button onClick={listCompanies} disabled={busy.list}
                   data-testid="simpro-list-companies"
-                  className="inline-flex items-center gap-1.5 px-3 rounded-lg text-white text-xs font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
+                  className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-white text-[10px] font-semibold uppercase tracking-[0.14em] disabled:opacity-60"
                   style={{ backgroundColor: '#2C6BFF' }}>
-                  {busy.list ? <Loader2 size={12} className="animate-spin" /> : <ListChecks size={12} />} List
+                  {busy.list ? <Loader2 size={11} className="animate-spin" /> : <ListChecks size={11} />} List
                 </button>
               </div>
             </Field>
-            <Helper>If &quot;Company does not exist&quot;, tap <strong>List</strong> to pick the right one.</Helper>
+            <Helper>Tap <strong>List</strong> to pick from your Simpro companies. Chips turn green when verified.</Helper>
+          </div>
+
+          <div className="sm:col-span-2 -mt-1">
+            <Field label="Or type Company IDs comma-separated">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  <Input value={manualText} onChange={setManualText}
+                    placeholder="e.g. 2, 3" testid="simpro-company-manual" />
+                </div>
+                <button onClick={applyManual}
+                  data-testid="simpro-company-manual-add"
+                  className="inline-flex items-center px-4 rounded-lg text-sm font-semibold uppercase tracking-[0.14em] hover:bg-black/5"
+                  style={{ color: '#0F1B2D', border: '1px solid #0F1B2D' }}>
+                  Add
+                </button>
+              </div>
+            </Field>
+            <Helper>Manual fallback. Comma- or space-separated IDs; merges into the list above.</Helper>
           </div>
 
           <div className="sm:col-span-2">
@@ -394,7 +514,8 @@ export default function SimproAdmin() {
         open={companiesModal.open}
         items={companiesModal.items}
         loading={companiesModal.loading}
-        onPick={pickCompany}
+        initialSelected={s.company_ids}
+        onDone={commitModalSelection}
         onClose={() => setCompaniesModal({ open: false, items: [], loading: false })}
       />
     </div>

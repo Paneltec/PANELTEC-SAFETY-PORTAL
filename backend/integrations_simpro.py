@@ -1,4 +1,5 @@
-"""Simpro staff + jobs integration. Uses a static Simpro API token (Bearer)."""
+"""Simpro staff + jobs integration. Uses a static Simpro API token (Bearer).
+Supports multiple Company IDs per org (fan-out across companies)."""
 from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
@@ -28,6 +29,19 @@ def _require(cfg: dict, *keys: str) -> None:
     missing = [k for k in keys if not cfg.get(k)]
     if missing:
         raise HTTPException(400, f"Missing required fields: {', '.join(missing)}")
+
+
+def _company_ids(cfg: dict) -> list[str]:
+    """Read multi-company list with legacy single-value fallback."""
+    raw = cfg.get("company_ids")
+    if isinstance(raw, list) and raw:
+        out = [str(x).strip() for x in raw if str(x).strip()]
+        if out:
+            return out
+    single = cfg.get("company_id")
+    if single is not None and str(single).strip():
+        return [str(single).strip()]
+    return []
 
 
 def _auth_headers(token: str) -> dict:
@@ -67,57 +81,81 @@ async def simpro_companies(user: dict = Depends(require_roles("admin", "hseq_lea
     return {"count": len(out), "companies": out}
 
 
-# ---------- Test connection ----------
+# ---------- Test connection (multi-company fan-out) ----------
 
-@router.post("/test-connection")
-async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
-    cfg = await _cfg(user["org_id"])
-    _require(cfg, "api_base_url", "api_token", "company_id")
-    base = cfg["api_base_url"].rstrip("/")
-    url = f"{base}/api/v1.0/companies/{cfg['company_id']}/info/"
+async def _fetch_company_info(c: httpx.AsyncClient, base: str, token: str, cid: str) -> dict:
+    url = f"{base}/api/v1.0/companies/{cid}/info/"
     try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get(url, headers=_auth_headers(cfg["api_token"]))
+        r = await c.get(url, headers=_auth_headers(token))
     except Exception as e:
-        await db.integration_configs.update_one(
-            {"org_id": user["org_id"], "kind": "simpro"},
-            {"$set": {"status": "error", "last_error": f"Unreachable: {e}", "updated_at": now_iso()}},
-        )
-        raise HTTPException(502, f"Simpro unreachable: {e}")
+        return {"id": cid, "status": "error", "error": f"Unreachable: {e}"}
+    if r.status_code == 404:
+        return {"id": cid, "status": "not_found", "error": "Company does not exist"}
     if r.status_code != 200:
-        msg = f"HTTP {r.status_code} {r.text[:200]}"
-        await db.integration_configs.update_one(
-            {"org_id": user["org_id"], "kind": "simpro"},
-            {"$set": {"status": "error", "last_error": msg, "updated_at": now_iso()}},
-        )
-        if r.status_code == 404:
-            raise HTTPException(400, "Company does not exist — tap 'List' to pick a valid Company ID.")
-        raise HTTPException(400, f"Simpro test failed: {msg}")
+        return {"id": cid, "status": "error", "error": f"HTTP {r.status_code} {r.text[:160]}"}
     try:
         data = r.json()
     except Exception:
         data = {}
     if isinstance(data, list) and data:
         data = data[0]
-    name = data.get("Name") or data.get("name") if isinstance(data, dict) else None
+    name = None
     country = None
     if isinstance(data, dict):
+        name = data.get("Name") or data.get("name")
         country_raw = data.get("Country")
         if isinstance(country_raw, str):
             country = country_raw
         elif isinstance(country_raw, dict):
             country = country_raw.get("Name")
+    return {"id": cid, "status": "ok", "name": name, "country": country}
+
+
+@router.post("/test-connection")
+async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    cfg = await _cfg(user["org_id"])
+    _require(cfg, "api_base_url", "api_token")
+    ids = _company_ids(cfg)
+    if not ids:
+        raise HTTPException(400, "At least one Company ID is required.")
+    base = cfg["api_base_url"].rstrip("/")
+    results: list[dict] = []
+    async with httpx.AsyncClient(timeout=15) as c:
+        for cid in ids:
+            results.append(await _fetch_company_info(c, base, cfg["api_token"], cid))
+
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    bad_not_found = [r["id"] for r in results if r["status"] == "not_found"]
+    primary_name = next((r.get("name") for r in results if r["status"] == "ok"), None)
+    primary_country = next((r.get("country") for r in results if r["status"] == "ok"), None)
+
+    if ok_count == 0:
+        # all failed
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "simpro"},
+            {"$set": {"status": "error", "last_tested_at": now_iso(),
+                      "last_error": f"All Company IDs failed: {[r['id'] for r in results]}",
+                      "companies_status": results, "updated_at": now_iso()}},
+        )
+        if bad_not_found:
+            raise HTTPException(400,
+                f"One or more Company IDs not found in this Simpro instance: {bad_not_found}. "
+                "Tap List to pick valid ones.")
+        raise HTTPException(400, f"All Company IDs failed: {results}")
+
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "simpro"},
         {"$set": {"status": "connected", "last_tested_at": now_iso(),
-                  "last_error": None,
-                  "company_name": name, "company_country": country,
+                  "last_error": (f"Some IDs not found: {bad_not_found}" if bad_not_found else None),
+                  "company_name": primary_name, "company_country": primary_country,
+                  "companies_status": results,
                   "updated_at": now_iso()}},
     )
-    return {"ok": True, "company_name": name, "country": country, "tested_at": now_iso()}
+    return {"ok": True, "ok_count": ok_count, "companies": results,
+            "tested_at": now_iso()}
 
 
-# ---------- Staff sync ----------
+# ---------- Staff (multi-company merge + dedupe) ----------
 
 def _custom_fields_map(s: dict) -> dict:
     out: dict = {}
@@ -137,7 +175,7 @@ def _custom_fields_map(s: dict) -> dict:
     return out
 
 
-def _normalise_employee(s: dict) -> dict:
+def _normalise_employee(s: dict, company_id: Optional[str] = None) -> dict:
     name = s.get("Name") or " ".join(filter(None, [s.get("GivenName"), s.get("FamilyName")])) or s.get("name")
     position = None
     pos_raw = s.get("Position")
@@ -153,8 +191,47 @@ def _normalise_employee(s: dict) -> dict:
         "position": position,
         "role": s.get("Type") or s.get("role"),
         "active": s.get("Active", True) if "Active" in s else s.get("active", True),
+        "company_id": company_id,
         "custom_fields": _custom_fields_map(s),
     }
+
+
+async def _refresh_staff_cache(cfg: dict, ids: list[str], token: str) -> tuple[list[dict], list[dict]]:
+    """Fetch employees from every company. Returns (raw_per_company, normalised_deduped)."""
+    base = cfg["api_base_url"].rstrip("/")
+    raw_per_company: list[dict] = []
+    merged: list[dict] = []
+    seen: set = set()
+    async with httpx.AsyncClient(timeout=15) as c:
+        for cid in ids:
+            url = f"{base}/api/v1.0/companies/{cid}/employees/"
+            try:
+                r = await c.get(url, headers=_auth_headers(token))
+            except Exception as e:
+                raw_per_company.append({"id": cid, "status": "error", "error": str(e), "raw": []})
+                continue
+            if r.status_code != 200:
+                raw_per_company.append({"id": cid, "status": "error",
+                                        "error": f"HTTP {r.status_code} {r.text[:120]}", "raw": []})
+                continue
+            try:
+                fresh = r.json()
+            except Exception:
+                fresh = []
+            if not isinstance(fresh, list):
+                fresh = fresh.get("data") or []
+            raw_per_company.append({"id": cid, "status": "ok", "raw": fresh})
+            for s in fresh:
+                if not isinstance(s, dict):
+                    continue
+                eid = s.get("ID") or s.get("id")
+                key = (eid, cid) if eid is None else eid
+                if eid is not None and key in seen:
+                    continue
+                if eid is not None:
+                    seen.add(key)
+                merged.append(_normalise_employee(s, company_id=cid))
+    return raw_per_company, merged
 
 
 @router.get("/staff")
@@ -163,7 +240,10 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
     cfg = doc.get("config") or {}
-    _require(cfg, "api_base_url", "api_token", "company_id")
+    _require(cfg, "api_base_url", "api_token")
+    ids = _company_ids(cfg)
+    if not ids:
+        raise HTTPException(400, "No Company IDs configured")
 
     cached_at = doc.get("staff_cached_at")
     is_stale = True
@@ -174,26 +254,19 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
         except Exception:
             pass
 
-    raw_staff = doc.get("staff_cache") or []
+    all_staff: list[dict] = doc.get("staff_cache_norm") or []
     if is_stale:
-        url = f"{cfg['api_base_url'].rstrip('/')}/api/v1.0/companies/{cfg['company_id']}/employees/"
         try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.get(url, headers=_auth_headers(cfg["api_token"]))
-            if r.status_code == 200:
-                fresh = r.json()
-                if not isinstance(fresh, list):
-                    fresh = fresh.get("data") or []
-                raw_staff = fresh
-                await db.integration_configs.update_one(
-                    {"org_id": user["org_id"], "kind": "simpro"},
-                    {"$set": {"staff_cache": fresh[:500], "staff_count": len(fresh),
-                              "staff_cached_at": now_iso(), "updated_at": now_iso()}},
-                )
+            _, merged = await _refresh_staff_cache(cfg, ids, cfg["api_token"])
+            all_staff = merged
+            await db.integration_configs.update_one(
+                {"org_id": user["org_id"], "kind": "simpro"},
+                {"$set": {"staff_cache_norm": merged[:1000],
+                          "staff_count": len(merged),
+                          "staff_cached_at": now_iso(), "updated_at": now_iso()}},
+            )
         except Exception:
             pass  # serve stale cache
-
-    all_staff = [_normalise_employee(s) for s in raw_staff if isinstance(s, dict)]
 
     # Primary filter: staff_custom_field / staff_field_value
     filter_field = (cfg.get("staff_custom_field") or "").strip()
@@ -206,7 +279,7 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
                    if any(k.lower() == ff_lc and str(v).lower() == fv_lc
                           for k, v in (m.get("custom_fields") or {}).items())]
 
-    # Fallback filter: position_filter (only if primary returned nothing)
+    # Fallback: position_filter (only if primary returned nothing)
     used_fallback = False
     position_filter = cfg.get("position_filter") or []
     if not primary and isinstance(position_filter, list) and position_filter:
@@ -219,6 +292,7 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
         "count": len(primary),
         "staff": primary,
         "cached_at": doc.get("staff_cached_at"),
+        "companies_queried": ids,
         "filtered_by": ({"field": filter_field, "value": filter_value}
                         if (filter_field and filter_value and not used_fallback) else None),
         "fallback_used": used_fallback,
@@ -226,17 +300,7 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
     }
 
 
-# ---------- Jobs sync ----------
-
-async def _fetch_jobs_page(client: httpx.AsyncClient, url: str, token: str) -> list:
-    r = await client.get(url, headers=_auth_headers(token))
-    if r.status_code != 200:
-        raise HTTPException(400, f"Simpro jobs fetch failed: HTTP {r.status_code} {r.text[:200]}")
-    data = r.json()
-    if not isinstance(data, list):
-        data = data.get("data") or []
-    return data
-
+# ---------- Jobs sync (multi-company fan-out) ----------
 
 def _job_status_bucket(stage: Optional[str]) -> str:
     if not stage:
@@ -247,22 +311,15 @@ def _job_status_bucket(stage: Optional[str]) -> str:
     return "active"
 
 
-@router.post("/sync-jobs")
-async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lead"))):
-    cfg = await _cfg(user["org_id"])
-    _require(cfg, "api_base_url", "api_token", "company_id")
-    history_days = int(cfg.get("completed_jobs_history_days") or 30)
-    history_days = max(7, min(365, history_days))
-    cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
-    base = cfg["api_base_url"].rstrip("/")
-    url = f"{base}/api/v1.0/companies/{cfg['company_id']}/jobs/"
-    try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            jobs = await _fetch_jobs_page(c, url, cfg["api_token"])
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Simpro unreachable: {e}")
+async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, cid: str,
+                                  org_id: str, cutoff: datetime) -> tuple[int, int]:
+    url = f"{base}/api/v1.0/companies/{cid}/jobs/"
+    r = await c.get(url, headers=_auth_headers(token))
+    if r.status_code != 200:
+        raise HTTPException(400, f"Simpro jobs fetch failed for company {cid}: HTTP {r.status_code} {r.text[:160]}")
+    jobs = r.json()
+    if not isinstance(jobs, list):
+        jobs = jobs.get("data") or []
 
     synced = 0
     completed_recent = 0
@@ -285,8 +342,8 @@ async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lea
             except Exception:
                 pass
         doc = {
-            "org_id": user["org_id"],
-            "company_id": cfg["company_id"],
+            "org_id": org_id,
+            "company_id": cid,
             "simpro_job_id": jid,
             "name": j.get("Name") or j.get("Description"),
             "stage": stage,
@@ -297,28 +354,56 @@ async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lea
             "synced_at": now_iso(),
         }
         await db.simpro_jobs.update_one(
-            {"org_id": user["org_id"], "simpro_job_id": jid},
+            {"org_id": org_id, "company_id": cid, "simpro_job_id": jid},
             {"$set": doc, "$setOnInsert": {"id": new_id(), "created_at": now_iso()}},
             upsert=True,
         )
         synced += 1
+    return synced, completed_recent
+
+
+@router.post("/sync-jobs")
+async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    cfg = await _cfg(user["org_id"])
+    _require(cfg, "api_base_url", "api_token")
+    ids = _company_ids(cfg)
+    if not ids:
+        raise HTTPException(400, "At least one Company ID is required.")
+    history_days = max(7, min(365, int(cfg.get("completed_jobs_history_days") or 30)))
+    cutoff = datetime.now(timezone.utc) - timedelta(days=history_days)
+    base = cfg["api_base_url"].rstrip("/")
+
+    per_company: list[dict] = []
+    total_synced = 0
+    total_recent = 0
+    async with httpx.AsyncClient(timeout=30) as c:
+        for cid in ids:
+            try:
+                s, rcnt = await _sync_jobs_for_company(c, base, cfg["api_token"], cid, user["org_id"], cutoff)
+                per_company.append({"id": cid, "status": "ok", "synced": s, "completed_recent": rcnt})
+                total_synced += s
+                total_recent += rcnt
+            except HTTPException as e:
+                per_company.append({"id": cid, "status": "error", "error": str(e.detail)})
+            except Exception as e:
+                per_company.append({"id": cid, "status": "error", "error": str(e)})
 
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "simpro"},
-        {"$set": {"last_sync_at": now_iso(), "last_sync_count": synced, "updated_at": now_iso()}},
+        {"$set": {"last_sync_at": now_iso(), "last_sync_count": total_synced,
+                  "last_sync_per_company": per_company, "updated_at": now_iso()}},
     )
-    return {"synced": synced, "completed_recent": completed_recent, "synced_at": now_iso()}
+    return {"synced": total_synced, "completed_recent": total_recent,
+            "per_company": per_company, "synced_at": now_iso()}
 
 
-# ---------- Connect: save + test + first sync ----------
+# ---------- Connect: test + first sync ----------
 
 @router.post("/connect")
 async def simpro_connect(user: dict = Depends(require_roles("admin", "hseq_lead"))):
-    # Test first; if it passes, run a job sync.
-    await simpro_test(user=user)  # raises if it fails
+    await simpro_test(user=user)  # raises if all companies fail
     try:
         result = await simpro_sync_jobs(user=user)
     except HTTPException as e:
-        # Connection is OK but sync failed — return partial success
         return {"ok": True, "connected": True, "sync_error": e.detail, "tested_at": now_iso()}
     return {"ok": True, "connected": True, **result}
