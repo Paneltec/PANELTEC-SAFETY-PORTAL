@@ -1,50 +1,80 @@
-## Iteration 5 — Phase A-C Mobile Parity
+# Iteration 5 — Phase A-C Mobile Parity
 
-### What was implemented
+## What was implemented
 
-**Phase A: Suppliers**
-- Wired `/suppliers` route in root `_layout.tsx`
-- Connected `SupplierDrawer` modal component (`/src/components/SupplierDrawer.tsx`) with 4 tabbed panels:
-  - **Tasks**: CRUD with status filters, priority badges, due dates, toggle done
-  - **Notes**: Add/edit/delete markdown notes with author attribution
-  - **Folders**: Create folders + nested file view with upload (`expo-document-picker`)
-  - **Members**: CRUD with primary contact flag, role, email, phone
-- Updated supplier cards: icon chips (Tasks, Notes, Folders, Members) now open the drawer on the corresponding panel
+### Phase A: Suppliers (replaces Contractors)
+- **Suppliers screen** (`/app/mobile/app/suppliers.tsx`) — Live read from `/api/integrations/simpro/suppliers`, merged with local meta overrides via `/api/suppliers/meta`
+- **SupplierDrawer** (`/app/mobile/src/components/SupplierDrawer.tsx`) — Modal-based drawer with 4 tabbed panels:
+  - **Tasks**: Full CRUD (add/edit/delete), status toggle, priority badges, due dates, overdue detection, status filters (all/open/in_progress/done)
+  - **Notes**: Add/edit/delete markdown notes with avatar and timestamps
+  - **Folders**: Create folders, nested file views with upload (expo-document-picker) and delete
+  - **Members**: Add/edit/delete members with name, role, email, phone, primary contact toggle
+- Supplier cards have icon chips (Tasks/Notes/Folders/Members) that open the drawer to the corresponding panel
+- Edit modal for meta overrides (tags, state, status, notes)
+- Renewal email sending modal
+- **Contractors renamed to "(Legacy)"** in Compliance Hub
 
-**Phase B: Document Library**
-- Wired `/document-library` route in root `_layout.tsx`
-- Pre-existing `document-library.tsx` already had full implementation (folder grid, file list, multi-part upload, AI Smart Search)
-- Now reachable from Compliance Hub
+### Phase B: Document Library
+- **Document Library screen** (`/app/mobile/app/document-library.tsx`) — Folder grid from `/api/document-library/folders`
+- AI Smart Search via `/api/document-library/search`
+- Folder detail view with file list
+- Multi-part file upload using `expo-document-picker`
+- File download via `Linking.openURL`
+- New folder creation
 
-**Phase C: Users & Ask Intelligence**
-- Wired `/users` route in root `_layout.tsx`
-- Pre-existing `users.tsx` already had full implementation (force sign-out, disable, import from Simpro)
-- **Ask Intelligence CRUD**: Rewrote `(tabs)/ask.tsx` to:
-  - Load suggestions from `/api/ask/suggestions` instead of hardcoded array
-  - Admin/HSEQ Lead can add, edit, delete suggestions inline
-  - Category picker modal for suggestions
-  - "+ Add question" dashed chip appears for authorized roles
-- **Simpro Login**: Added "Sign in with Simpro" button + `loginWithSimpro()` function to `auth.ts`
-  - OR divider between password and Simpro login
-  - Hint text explaining the flow
+### Phase C: Users & Ask Intelligence
+- **Users screen** (`/app/mobile/app/users.tsx`) — User list with role filter chips, force sign-out, disable user, Import from Simpro
+- **Ask Intelligence CRUD** (`/app/mobile/app/(tabs)/ask.tsx`) — Suggestions loaded from `/api/ask/suggestions`, editable/deletable chips for admin/hseq_lead
+- **Sign in with Simpro** — Button on login.tsx + `loginWithSimpro()` in auth.ts
 
-**Navigation Updates**
-- Updated Compliance Hub to show: Suppliers, Document Library, Contractors (Legacy), Renewal Links, Audit Exports
-- Each item has distinct pastel background icon tints
+### Navigation Updates
+- Root `_layout.tsx` — Added Stack.Screen entries for suppliers, document-library, users
+- Dashboard — Added "MANAGE & COMPLY" section with quick-access tiles
+- Compliance Hub — Added Suppliers + Document Library tiles, Contractors renamed to "(Legacy)"
 
-### Web-to-Mobile Mapping
-| Web File | Mobile File | Mapping |
-|----------|-------------|---------|
-| `pages/Suppliers.jsx` | `app/suppliers.tsx` | Full screen with Simpro API fetch + edit modal |
-| `components/suppliers/SupplierDrawer.jsx` | `src/components/SupplierDrawer.tsx` | Modal with 4 tabbed panels |
-| `pages/DocumentLibrary.jsx` | `app/document-library.tsx` | Folder grid + file list + upload |
-| `pages/UsersManagement.jsx` | `app/users.tsx` | User list + filters + import/disable/force-signout |
-| `pages/Ask.jsx` (suggestions section) | `(tabs)/ask.tsx` | API-loaded suggestions with CRUD |
-| `pages/Login.jsx` (Simpro button) | `(auth)/login.tsx` | "Sign in with Simpro" button |
+## Web-to-Mobile Mapping
 
-### Dependencies
-- No new dependencies added (expo-document-picker was already installed)
+| Web Page | Mobile Screen | Route |
+|----------|--------------|-------|
+| Suppliers.jsx | suppliers.tsx | /suppliers |
+| SupplierDrawer.jsx | SupplierDrawer.tsx | Modal overlay |
+| DocumentLibrary.jsx | document-library.tsx | /document-library |
+| UsersManagement.jsx | users.tsx | /users |
+| Ask.jsx (suggestions CRUD) | ask.tsx | /(tabs)/ask |
+| Login.jsx (Simpro button) | login.tsx | /(auth)/login |
 
-### Known Issues
-- CDN/tunnel DNS cache prevents external screenshot tool from resolving — localhost:3001 works fine
-- QR Sign-on remains MOCKED (pre-existing, intentionally deferred)
+## Known Issues
+- Simpro integration requires connected Simpro account (demo shows "Simpro isn't connected" — expected)
+- CDN/tunnel DNS cache issue persists (known recurring) — screenshots must use localhost:3001
+- QR Sign-on flow remains MOCKED (Phase 4 — intentionally deferred)
+
+## Dependencies
+- `expo-document-picker` (v56.0.4) — installed in previous iteration
+
+## API Endpoints Used
+- `GET /api/integrations/simpro/suppliers`
+- `GET /api/suppliers/meta`
+- `PATCH /api/suppliers/{id}/meta`
+- `POST /api/suppliers/{id}/renewal-email`
+- `GET/POST /api/suppliers/{id}/tasks`
+- `PATCH/DELETE /api/suppliers/tasks/{id}`
+- `GET/POST /api/suppliers/{id}/notes`
+- `PATCH/DELETE /api/suppliers/notes/{id}`
+- `GET/POST /api/suppliers/{id}/folders`
+- `GET/POST /api/suppliers/{id}/members`
+- `PATCH/DELETE /api/suppliers/members/{id}`
+- `GET /api/document-library/folders`
+- `POST /api/document-library/folders`
+- `GET /api/document-library/folders/{id}/files`
+- `POST /api/document-library/folders/{id}/files`
+- `DELETE /api/document-library/files/{id}`
+- `GET /api/document-library/search`
+- `GET /api/users`
+- `POST /api/users/{id}/force-signout`
+- `PATCH /api/users/{id}`
+- `GET /api/users/import-from-simpro`
+- `GET /api/ask/suggestions`
+- `POST /api/ask/suggestions`
+- `PATCH /api/ask/suggestions/{id}`
+- `DELETE /api/ask/suggestions/{id}`
+- `POST /api/auth/login-with-simpro`

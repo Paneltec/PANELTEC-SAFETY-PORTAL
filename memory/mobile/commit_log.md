@@ -78,3 +78,16 @@
   - `/app/mobile/app/(auth)/login.tsx` (added Simpro login button + divider)
   - `/app/mobile/src/lib/auth.ts` (added loginWithSimpro function)
 - **Web files referenced**: Suppliers.jsx, SupplierDrawer.jsx, DocumentLibrary.jsx, UsersManagement.jsx, Ask.jsx, Login.jsx
+
+## Iteration 5b — Dashboard Navigation + SupplierDrawer fixes
+- **Commit**: ce234bb997e053d428981256afe7ce5431466fe8
+- **Date**: 2026-06-27T10:30:00Z
+- **Changes**:
+  - Added MANAGE & COMPLY section to Dashboard with quick-access tiles for Suppliers, Document Library, Users, Compliance Hub
+  - Fixed duplicate state declaration in suppliers.tsx (drawerSupplier/drawerPanel)
+  - Created SupplierDrawer.tsx with full CRUD for Tasks/Notes/Folders/Members panels
+- **Files modified**:
+  - `/app/mobile/app/(tabs)/dashboard.tsx` (added MANAGE_TOOLS + nav tiles)
+  - `/app/mobile/app/suppliers.tsx` (removed duplicate state)
+  - `/app/mobile/src/components/SupplierDrawer.tsx` (new 500+ line component)
+- **All screens verified**: Login, Dashboard, Suppliers, Document Library, Users, Ask Intelligence, Compliance Hub, Outbox
