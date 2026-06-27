@@ -177,14 +177,14 @@ export default function Dashboard() {
       {/* Compliance Snapshot — value-prop cards (Thread B) */}
       <section className="mb-8" data-testid="compliance-snapshot">
         <h2 className="font-display text-lg font-semibold text-slate-900 mb-3">Compliance Snapshot</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {SNAPSHOT_CARDS.map((c) => <SnapshotCard key={c.key} card={c} />)}
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* LEFT — Create & Capture */}
-        <section className="lg:col-span-4 space-y-3" data-testid="capture-column">
+        <section className="xl:col-span-4 space-y-3" data-testid="capture-column">
           <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Create &amp; Capture</div>
           {CAPTURE_TOOLS.map((t) => <CaptureCard key={t.key} tool={t} onClick={() => navigate(t.route)} />)}
           <button onClick={() => navigate('/app/swms')} data-testid="view-all-features"
@@ -194,8 +194,8 @@ export default function Dashboard() {
         </section>
 
         {/* CENTER — Snapshot */}
-        <section className="lg:col-span-5 space-y-4" data-testid="snapshot-column">
-          <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Compliance Snapshot</div>
+        <section className="xl:col-span-5 space-y-4" data-testid="snapshot-column">
+          <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Key metrics</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {METRIC_ROWS.map((row) => (
               <MetricChip key={row.key} row={row} value={loading ? '…' : (m?.[row.field] ?? 0)} />
@@ -207,7 +207,7 @@ export default function Dashboard() {
               <div className={`text-[10px] uppercase tracking-[0.18em] font-semibold text-${bandColor}-700`}>Compliance Attention Score</div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full bg-white border border-${bandColor}-200 text-${bandColor}-700 font-semibold`}>Org-wide</span>
             </div>
-            <div className="flex items-center gap-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
               <div className="relative w-24 h-24 shrink-0">
                 <svg viewBox="0 0 36 36" className="w-24 h-24 -rotate-90">
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke={bandColor === 'emerald' ? '#A7F3D0' : bandColor === 'amber' ? '#FDE68A' : '#FECACA'} strokeWidth="3" />
@@ -218,8 +218,8 @@ export default function Dashboard() {
                   <div className={`text-[9px] uppercase tracking-wider text-${bandColor}-700 font-semibold`}>{band}</div>
                 </div>
               </div>
-              <div className="flex-1">
-                <div className="font-display text-2xl font-semibold">{band} · {score} / 100</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-xl sm:text-2xl font-semibold">{band} · {score} / 100</div>
                 <p className="mt-1.5 text-sm text-slate-700 leading-relaxed">
                   {band === 'Strong' && 'Compliance signal is strong across every workspace. No registers are flagged for management escalation.'}
                   {band === 'Watch' && 'A handful of records need attention — review the hazards and submitted SWMS this week.'}
@@ -237,15 +237,15 @@ export default function Dashboard() {
               ['Registers connected', m?.registers_connected ?? 26],
               ['Records needing attention', m?.records_needing_attention ?? 0],
             ].map(([k, v]) => (
-              <div key={k} className="rounded-xl border border-slate-200 bg-white p-3">
+              <div key={k} className="rounded-xl border border-slate-200 bg-white p-3.5">
                 <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-400">{k}</div>
-                <div className="mt-1 text-sm font-medium text-slate-800">{v}</div>
+                <div className="mt-1 text-sm font-medium text-slate-800 break-words">{v}</div>
               </div>
             ))}
           </div>
 
           <div className={`rounded-xl bg-${bandColor === 'emerald' ? 'brand-green-mint' : bandColor + '-50'} border border-${bandColor}-200 px-4 py-3 text-sm text-${bandColor}-800 flex items-center gap-2`} data-testid="strong-banner">
-            <ShieldCheck size={16} className={`text-${bandColor}-600`} />
+            <ShieldCheck size={16} className={`text-${bandColor}-600 shrink-0`} />
             {band === 'Strong' && 'Strong organisation-wide compliance monitoring signal.'}
             {band === 'Watch' && 'A few items need a look — see open hazards and submitted SWMS.'}
             {band === 'Action needed' && 'Compliance signal is below threshold — review action items.'}
@@ -264,7 +264,7 @@ export default function Dashboard() {
         </section>
 
         {/* RIGHT — Ask Intelligence (still MOCKED briefing copy) */}
-        <section className="lg:col-span-3 space-y-4" data-testid="ask-column">
+        <section className="xl:col-span-3 space-y-4" data-testid="ask-column">
           <div className="text-[11px] font-semibold tracking-[0.16em] text-brand-violet uppercase mb-1">Ask Intelligence</div>
           <p className="text-sm text-slate-600 leading-relaxed">Natural-language Q&amp;A grounded in your own records — every answer is cited to source evidence.</p>
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
@@ -312,7 +312,7 @@ export default function Dashboard() {
         </section>
       </div>
 
-      <div className="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="quick-actions">
+      <div className="mt-10 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" data-testid="quick-actions">
         {BOTTOM_STRIP.map((b) => {
           const Icon = ICONS[b.icon] || Sparkles;
           return (
