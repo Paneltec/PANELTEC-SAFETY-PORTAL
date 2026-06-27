@@ -72,8 +72,9 @@ async def simpro_companies(user: dict = Depends(require_roles("admin", "hseq_lea
     for c in data:
         if not isinstance(c, dict):
             continue
+        cid = c.get("ID") if c.get("ID") is not None else c.get("id")
         out.append({
-            "id": c.get("ID") or c.get("id"),
+            "id": cid,
             "name": c.get("Name") or c.get("name"),
             "country": (c.get("Country") if isinstance(c.get("Country"), str)
                         else (c.get("Country") or {}).get("Name") if isinstance(c.get("Country"), dict) else None),
@@ -81,34 +82,32 @@ async def simpro_companies(user: dict = Depends(require_roles("admin", "hseq_lea
     return {"count": len(out), "companies": out}
 
 
-# ---------- Test connection (multi-company fan-out) ----------
+# ---------- Test connection (multi-company validation via /companies/ list) ----------
 
-async def _fetch_company_info(c: httpx.AsyncClient, base: str, token: str, cid: str) -> dict:
-    url = f"{base}/api/v1.0/companies/{cid}/info/"
-    try:
-        r = await c.get(url, headers=_auth_headers(token))
-    except Exception as e:
-        return {"id": cid, "status": "error", "error": f"Unreachable: {e}"}
-    if r.status_code == 404:
-        return {"id": cid, "status": "not_found", "error": "Company does not exist"}
+async def _fetch_companies_index(c: httpx.AsyncClient, base: str, token: str) -> dict[str, dict]:
+    """Pull the authoritative /api/v1.0/companies/ list and return {id_str: {name, country}}."""
+    url = f"{base}/api/v1.0/companies/"
+    r = await c.get(url, headers=_auth_headers(token))
     if r.status_code != 200:
-        return {"id": cid, "status": "error", "error": f"HTTP {r.status_code} {r.text[:160]}"}
+        raise HTTPException(400, f"Simpro list failed: HTTP {r.status_code} {r.text[:200]}")
     try:
         data = r.json()
     except Exception:
-        data = {}
-    if isinstance(data, list) and data:
-        data = data[0]
-    name = None
-    country = None
-    if isinstance(data, dict):
-        name = data.get("Name") or data.get("name")
-        country_raw = data.get("Country")
-        if isinstance(country_raw, str):
-            country = country_raw
-        elif isinstance(country_raw, dict):
-            country = country_raw.get("Name")
-    return {"id": cid, "status": "ok", "name": name, "country": country}
+        data = []
+    if not isinstance(data, list):
+        data = data.get("data") or []
+    out: dict[str, dict] = {}
+    for c_ in data:
+        if not isinstance(c_, dict):
+            continue
+        cid = c_.get("ID") if c_.get("ID") is not None else c_.get("id")
+        if cid is None:
+            continue
+        country_raw = c_.get("Country")
+        country = (country_raw if isinstance(country_raw, str)
+                   else (country_raw or {}).get("Name") if isinstance(country_raw, dict) else None)
+        out[str(cid)] = {"name": c_.get("Name") or c_.get("name"), "country": country}
+    return out
 
 
 @router.post("/test-connection")
@@ -119,10 +118,28 @@ async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead")))
     if not ids:
         raise HTTPException(400, "At least one Company ID is required.")
     base = cfg["api_base_url"].rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            index = await _fetch_companies_index(c, base, cfg["api_token"])
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.integration_configs.update_one(
+            {"org_id": user["org_id"], "kind": "simpro"},
+            {"$set": {"status": "error", "last_tested_at": now_iso(),
+                      "last_error": f"Unreachable: {e}", "updated_at": now_iso()}},
+        )
+        raise HTTPException(502, f"Simpro unreachable: {e}")
+
     results: list[dict] = []
-    async with httpx.AsyncClient(timeout=15) as c:
-        for cid in ids:
-            results.append(await _fetch_company_info(c, base, cfg["api_token"], cid))
+    for cid in ids:
+        info = index.get(str(cid))
+        if info is None:
+            results.append({"id": cid, "status": "not_found",
+                            "error": "Company does not exist in this Simpro instance"})
+        else:
+            results.append({"id": cid, "status": "ok",
+                            "name": info.get("name"), "country": info.get("country")})
 
     ok_count = sum(1 for r in results if r["status"] == "ok")
     bad_not_found = [r["id"] for r in results if r["status"] == "not_found"]
@@ -130,7 +147,6 @@ async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead")))
     primary_country = next((r.get("country") for r in results if r["status"] == "ok"), None)
 
     if ok_count == 0:
-        # all failed
         await db.integration_configs.update_one(
             {"org_id": user["org_id"], "kind": "simpro"},
             {"$set": {"status": "error", "last_tested_at": now_iso(),
