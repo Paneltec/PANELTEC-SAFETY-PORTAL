@@ -42,7 +42,7 @@ def _last4(value: Optional[str]) -> Optional[str]:
 
 SECRETS_BY_KIND: dict[str, list[str]] = {
     "navixy": ["password", "session_hash"],
-    "simpro": ["client_secret", "access_token"],
+    "simpro": ["api_token"],
     "microsoft365": ["client_secret", "access_token", "refresh_token"],
     "textmagic": ["api_key"],
 }
@@ -100,24 +100,7 @@ async def list_integrations(user: dict = Depends(get_current_user)):
 @router.get("/{kind}")
 async def get_integration(kind: Kind, user: dict = Depends(get_current_user)):
     doc = await _get_or_default(user["org_id"], kind)
-    cfg = doc.get("config") or {}
-    if kind == "simpro":
-        token = cfg.get("access_token")
-        expires_at = cfg.get("token_expires_at")
-        expires_in_seconds = None
-        if expires_at:
-            try:
-                ts = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
-                expires_in_seconds = int((ts - datetime.now(timezone.utc)).total_seconds())
-            except Exception:
-                expires_in_seconds = None
-        doc["token_status"] = {
-            "present": bool(token),
-            "expires_at": expires_at,
-            "expires_in_seconds": expires_in_seconds,
-        }
-        cfg = {k: v for k, v in cfg.items() if k != "access_token"}
-    doc["config"] = _mask(kind, cfg)
+    doc["config"] = _mask(kind, doc.get("config") or {})
     return doc
 
 
