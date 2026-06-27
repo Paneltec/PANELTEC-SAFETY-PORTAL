@@ -4,13 +4,14 @@ import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
+  Plus,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
+import api from '../../lib/api';
 import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
-import { WORKSPACES as MOCK_WS } from '../../mocks/dashboard';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -85,8 +86,18 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { workspaceId, setWorkspaceId } = useWorkspace();
-  const options = [{ id: '*', name: 'All workspaces' }, ...MOCK_WS];
-  const active = options.find((o) => o.id === workspaceId) || options[0];
+  const [workspaces, setWorkspaces] = useState([]);
+  useEffect(() => {
+    let live = true;
+    api.get('/workspaces')
+      .then(({ data }) => { if (live) setWorkspaces(Array.isArray(data) ? data : []); })
+      .catch(() => { if (live) setWorkspaces([]); });
+    return () => { live = false; };
+  }, [location.pathname]);  // refetch when nav changes (cheap, makes deletes reflect)
+
+  const hasWorkspaces = workspaces.length > 0;
+  const options = hasWorkspaces ? [{ id: '*', name: 'All workspaces' }, ...workspaces] : [];
+  const active = options.find((o) => o.id === workspaceId) || options[0] || { id: '*', name: 'No workspaces' };
 
   const handleSignOut = async () => {
     await signOut();
@@ -124,17 +135,32 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm" data-testid="workspace-switcher">
-            <span className="w-2 h-2 rounded-full bg-brand-blue" />
+            <span className={`w-2 h-2 rounded-full ${hasWorkspaces ? 'bg-brand-blue' : 'bg-slate-300'}`} />
             <span className="font-medium">{active.name}</span>
             <ChevronDown size={14} className="text-slate-400" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent align="start" className="w-64">
           <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {options.map((w) => (
-            <DropdownMenuItem key={w.id} onClick={() => setWorkspaceId(w.id)} data-testid={`workspace-option-${w.id}`}>{w.name}</DropdownMenuItem>
-          ))}
+          {hasWorkspaces ? (
+            options.map((w) => (
+              <DropdownMenuItem key={w.id} onClick={() => setWorkspaceId(w.id)} data-testid={`workspace-option-${w.id}`}>
+                {w.name}
+              </DropdownMenuItem>
+            ))
+          ) : (
+            <div className="px-2 py-3 text-center" data-testid="workspace-empty-state">
+              <p className="text-xs text-slate-500 mb-2">No workspaces yet.</p>
+              <Link
+                to="/app/settings/workspaces"
+                data-testid="workspace-empty-create-link"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-brand-blue text-white text-xs font-medium hover:bg-blue-600"
+              >
+                <Plus size={12} /> Create your first workspace
+              </Link>
+            </div>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
