@@ -2,11 +2,11 @@
 // Phase 1: identity, contact, Simpro sync, manual CRUD, soft delete.
 // Phase 2: Personal section (birth date + address), Availability scheduler,
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
-  HardHat, Loader2, MapPin, Plug, Plus, RefreshCw, Search, Square,
-  Trash2, Users, X,
+  Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
+  FileText, HardHat, Loader2, MapPin, Plug, Plus, RefreshCw, Search, Square,
+  Trash2, Upload, UploadCloud, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -191,6 +191,269 @@ function ClientPicker({ company, onClose, selectedIds, onApply }) {
   );
 }
 
+// ─────────────────── Certifications ───────────────────
+
+const STATUS_BADGES = {
+  valid:         { bg: 'bg-[#d8ecdd]', ink: 'text-[#1f7a3f]', border: 'border-[#b6dcbf]' },
+  expiring_soon: { bg: 'bg-[#f7eed1]', ink: 'text-[#8c6a1a]', border: 'border-[#e6d995]' },
+  expired:       { bg: 'bg-[#f7d8dc]', ink: 'text-[#a8324c]', border: 'border-[#e69aa3]' },
+  no_expiry:     { bg: 'bg-[#d8e6f4]', ink: 'text-[#1e4a8c]', border: 'border-[#b9d2ec]' },
+  missing_file:  { bg: 'bg-slate-100', ink: 'text-slate-600',  border: 'border-slate-300' },
+};
+
+function StatusBadgeCert({ status }) {
+  const cfg = STATUS_BADGES[status?.key] || STATUS_BADGES.missing_file;
+  return (
+    <span data-testid={`cert-status-${status?.key}`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${cfg.bg} ${cfg.ink} ${cfg.border}`}>
+      {status?.label || '—'}
+    </span>
+  );
+}
+
+function CertificationsPanel({ workerId, canEdit }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/workers/${workerId}/certifications`);
+      setRows(data || []);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setLoading(false); }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) load(); }, [open, workerId]);
+
+  const upload = async (fileList) => {
+    if (!fileList || !fileList.length) return;
+    setUploading(true);
+    try {
+      let lastCertId = null;
+      for (const f of Array.from(fileList)) {
+        const form = new FormData();
+        form.append('file', f);
+        const { data } = await api.post(
+          `/workers/${workerId}/certifications/upload`,
+          form,
+          { headers: { 'Content-Type': 'multipart/form-data' } },
+        );
+        lastCertId = data?.cert?.id;
+      }
+      toast.success(`${fileList.length} certification${fileList.length === 1 ? '' : 's'} uploaded`);
+      await load();
+      // Auto-open inline edit on the last upload so the user fills in dates.
+      if (lastCertId) setEditingId(lastCertId);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setUploading(false); }
+  };
+
+  const onDrop = (e) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!canEdit) return;
+    if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);
+  };
+
+  const addManual = async () => {
+    try {
+      const { data } = await api.post(`/workers/${workerId}/certifications`,
+        { name: 'New certification' });
+      await load();
+      setEditingId(data.id);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  const removeCert = async (cert) => {
+    try {
+      await api.delete(`/workers/certifications/${cert.id}`);
+      toast.success(`${cert.name} removed`);
+      await load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  return (
+    <div className="border border-slate-200 rounded-xl overflow-hidden bg-white" data-testid="section-certifications">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
+        data-testid="section-certifications-toggle">
+        <Award size={14} className="text-slate-500" />
+        <span className="text-sm font-semibold text-slate-800 flex-1">Certifications</span>
+        {rows.length > 0 && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">{rows.length}</span>
+        )}
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="px-4 py-4 border-t border-slate-200 space-y-3">
+          {/* Drop zone */}
+          {canEdit && (
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="cert-dropzone"
+              className={`cursor-pointer rounded-xl border-2 border-dashed px-4 py-5 text-center transition-colors ${
+                dragOver ? 'border-[#1e4a8c] bg-[#e6eff9]' : 'border-[#b9d2ec] bg-[#e6eff9]/40 hover:bg-[#e6eff9]'
+              }`}
+            >
+              <UploadCloud size={22} className="mx-auto text-[#1e4a8c] mb-1.5" />
+              <div className="text-sm font-medium text-[#1e4a8c]">
+                {uploading ? 'Uploading…' : 'Drop certification files here (PDF, JPG, PNG) or click to browse'}
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Up to 50MB · auto-files to Document Library &quot;Licences &amp; Tickets&quot;</div>
+              <input
+                ref={fileInputRef} type="file" multiple
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={(e) => upload(e.target.files)}
+                className="hidden" data-testid="cert-file-input"
+              />
+            </div>
+          )}
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <button type="button" onClick={addManual} data-testid="cert-add-manual"
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+                <Plus size={12} /> Add certification (no file)
+              </button>
+            </div>
+          )}
+
+          {/* Table */}
+          {loading ? (
+            <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</div>
+          ) : rows.length === 0 ? (
+            <div className="text-center py-6 text-sm text-slate-400 italic" data-testid="cert-empty">
+              No certifications recorded yet. Drop a file above to add one.
+            </div>
+          ) : (
+            <div className="border border-slate-200 rounded-lg overflow-hidden">
+              <table className="w-full text-xs" data-testid="cert-table">
+                <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-3 py-2">Name</th>
+                    <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
+                    <th className="text-left px-3 py-2 hidden lg:table-cell">Issued</th>
+                    <th className="text-left px-3 py-2">Expiry</th>
+                    <th className="text-left px-3 py-2">Status</th>
+                    <th className="text-left px-3 py-2">File</th>
+                    <th className="text-right px-3 py-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((c) => (
+                    editingId === c.id
+                      ? <CertEditRow key={c.id} cert={c}
+                          onSaved={() => { setEditingId(null); load(); }}
+                          onCancel={() => setEditingId(null)} />
+                      : (
+                        <tr key={c.id} className="border-t border-slate-100" data-testid={`cert-row-${c.id}`}>
+                          <td className="px-3 py-2 font-semibold text-slate-900">{c.name}</td>
+                          <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{c.issuer || '—'}</td>
+                          <td className="px-3 py-2 text-slate-500 hidden lg:table-cell">{c.issue_date || '—'}</td>
+                          <td className="px-3 py-2 text-slate-500">{c.expiry_date || '—'}</td>
+                          <td className="px-3 py-2"><StatusBadgeCert status={c.status} /></td>
+                          <td className="px-3 py-2">
+                            {c.doc_file_id ? (
+                              <a href={`${process.env.REACT_APP_BACKEND_URL}/api/document-library/files/${c.doc_file_id}/download`}
+                                 target="_blank" rel="noreferrer"
+                                 data-testid={`cert-file-${c.id}`}
+                                 className="inline-flex items-center gap-1 text-[#1e4a8c] hover:underline">
+                                <FileText size={11} /> View
+                              </a>
+                            ) : <span className="text-[10px] text-slate-400 italic">no file</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {canEdit && (
+                              <div className="inline-flex gap-1 items-center">
+                                <button type="button" onClick={() => setEditingId(c.id)} data-testid={`cert-edit-${c.id}`}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 size={11} /></button>
+                                <button type="button" onClick={() => removeCert(c)} data-testid={`cert-delete-${c.id}`}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 size={11} /></button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CertEditRow({ cert, onSaved, onCancel }) {
+  const [f, setF] = useState({
+    name: cert.name || '',
+    issuer: cert.issuer || '',
+    issue_date: cert.issue_date || '',
+    expiry_date: cert.expiry_date || '',
+    notes: cert.notes || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    if (!f.name.trim()) { toast.error('Name is required'); return; }
+    setSaving(true);
+    try {
+      await api.patch(`/workers/certifications/${cert.id}`, {
+        name: f.name.trim(),
+        issuer: f.issuer.trim(),
+        issue_date: f.issue_date || null,
+        expiry_date: f.expiry_date || null,
+        notes: f.notes,
+      });
+      toast.success('Certification updated');
+      onSaved();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSaving(false); }
+  };
+  return (
+    <tr className="border-t border-slate-100 bg-[#e6eff9]/40" data-testid={`cert-edit-row-${cert.id}`}>
+      <td colSpan={7} className="px-3 py-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+          <label className="col-span-2 lg:col-span-1"><span className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Name *</span>
+            <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })}
+              data-testid="cert-form-name" className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded" /></label>
+          <label><span className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Issuer</span>
+            <input value={f.issuer} onChange={(e) => setF({ ...f, issuer: e.target.value })}
+              data-testid="cert-form-issuer" className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded" /></label>
+          <label><span className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Issue date</span>
+            <input type="date" value={f.issue_date} onChange={(e) => setF({ ...f, issue_date: e.target.value })}
+              data-testid="cert-form-issue-date" className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded" /></label>
+          <label><span className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Expiry date</span>
+            <input type="date" value={f.expiry_date} onChange={(e) => setF({ ...f, expiry_date: e.target.value })}
+              data-testid="cert-form-expiry-date" className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded" /></label>
+          <label className="col-span-2 lg:col-span-4"><span className="block text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Notes</span>
+            <textarea rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })}
+              data-testid="cert-form-notes" className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded" /></label>
+        </div>
+        <div className="mt-2 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} data-testid="cert-form-cancel"
+            className="px-3 py-1 text-xs border border-slate-300 bg-white rounded text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button type="button" onClick={save} disabled={saving} data-testid="cert-form-save"
+            className="px-3 py-1 text-xs bg-[#1e4a8c] text-white rounded font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+
+
 function EditModal({ worker, onClose, onSaved }) {
   const isNew = !worker.id;
   const isSimpro = worker.source === 'simpro';
@@ -241,6 +504,7 @@ function EditModal({ worker, onClose, onSaved }) {
         setClientCache((prev) => ({ ...prev, ...cache }));
       } catch (e) { /* silent — chips will fall back to raw id */ }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [f.client_ids.length]);
 
   const submit = async (e) => {
@@ -421,6 +685,11 @@ function EditModal({ worker, onClose, onSaved }) {
               </div>
             )}
           </Section>
+
+          {/* Certifications */}
+          {!isNew && (
+            <CertificationsPanel workerId={worker.id} canEdit={true} />
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-2 bg-slate-50">
