@@ -11,6 +11,26 @@ import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye };
 
+// Per-module pastel-tile mapping (Thread B theme).
+// Background images live in /public/tile-bgs/ — applied via inline style to
+// dodge webpack's css-loader root-relative URL resolution.
+const TILE_BG_BY_KEY = {
+  swms: '/tile-bgs/swms.png', 'ai-swms': '/tile-bgs/swms.png',
+  'pre-starts': '/tile-bgs/prestarts.png', prestarts: '/tile-bgs/prestarts.png',
+  'site-diary': '/tile-bgs/diary.png', diary: '/tile-bgs/diary.png',
+  hazards: '/tile-bgs/hazards.png',
+  incidents: '/tile-bgs/incidents.png',
+  inspections: '/tile-bgs/inspections.png',
+};
+const ICON_PASTEL_BY_KEY = {
+  swms: 'pastel-icon-mint', 'ai-swms': 'pastel-icon-mint',
+  'pre-starts': 'pastel-icon-sky', prestarts: 'pastel-icon-sky',
+  'site-diary': 'pastel-icon-butter', diary: 'pastel-icon-butter',
+  hazards: 'pastel-icon-peach',
+  incidents: 'pastel-icon-blush',
+  inspections: 'pastel-icon-lavender',
+};
+
 const METRIC_ROWS = [
   { key: 'swms', label: 'AI SWMS', field: 'swms_count', icon: 'FileText' },
   { key: 'pre-starts', label: 'Pre-starts', field: 'prestarts_count', icon: 'ClipboardCheck' },
@@ -22,11 +42,14 @@ const METRIC_ROWS = [
 
 function CaptureCard({ tool, onClick }) {
   const Icon = ICONS[tool.icon] || FileText;
+  const bgUrl = TILE_BG_BY_KEY[tool.key];
+  const iconClass = ICON_PASTEL_BY_KEY[tool.key] || 'bg-brand-blue-soft text-brand-blue';
   return (
     <button onClick={onClick} data-testid={`capture-card-${tool.key}`}
-      className="group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-blue/30 hover:shadow-card transition-all">
+      style={bgUrl ? { backgroundImage: `url(${bgUrl})` } : undefined}
+      className="tile-bg group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-blue/30 hover:shadow-card transition-all">
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl bg-brand-blue-soft text-brand-blue flex items-center justify-center shrink-0">
+        <div className={`w-10 h-10 rounded-xl ${iconClass} flex items-center justify-center shrink-0`}>
           <Icon size={18} />
         </div>
         <div className="flex-1 min-w-0">
@@ -34,7 +57,7 @@ function CaptureCard({ tool, onClick }) {
             <h3 className="font-display text-base font-semibold">{tool.title}</h3>
             <ArrowRight size={16} className="text-slate-300 group-hover:text-brand-blue group-hover:translate-x-0.5 transition-all" />
           </div>
-          <p className="mt-1 text-sm text-slate-500 leading-snug">{tool.desc}</p>
+          <p className="mt-1 text-sm text-slate-700 leading-snug">{tool.desc}</p>
         </div>
       </div>
     </button>

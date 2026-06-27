@@ -80,3 +80,100 @@ code {
         border-left-color: inherit; border-right-color: inherit; border-top-color: inherit; border-bottom-color: inherit;
     }
 }
+
+
+/* ─────────────── Paneltec pastel theme (Thread B) ─────────────── */
+
+:root {
+    --pastel-mint:     #d8ecdd;   /* SWMS */
+    --pastel-sky:      #d8e6f4;   /* Pre-Starts */
+    --pastel-peach:    #f7dfd1;   /* Hazards */
+    --pastel-blush:    #f7d8dc;   /* Incidents */
+    --pastel-lavender: #e2dcef;   /* Inspections */
+    --pastel-butter:   #f7eed1;   /* Site Diary */
+    --pastel-lilac:    #e8dff4;   /* Ask Intelligence */
+    --pastel-sage:     #dde7d8;   /* Contractors */
+    --pastel-coral:    #f7d8d1;   /* Compliance */
+
+    /* Deeper saturated icon colours per module — kept WCAG-AA on white */
+    --pastel-mint-ink:     #1f7a3f;
+    --pastel-sky-ink:      #1e4a8c;
+    --pastel-peach-ink:    #a8480f;
+    --pastel-blush-ink:    #a8324c;
+    --pastel-lavender-ink: #4f3a8c;
+    --pastel-butter-ink:   #8c6a1a;
+    --pastel-lilac-ink:    #6e3aa6;
+    --pastel-sage-ink:     #2e5e2e;
+    --pastel-coral-ink:    #a83a2e;
+}
+
+/* Per-module tile background utility.
+   The illustration anchors to the right; text overlays the white-overlay side. */
+.tile-bg {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-size: cover;
+    background-position: center right;
+    background-repeat: no-repeat;
+}
+.tile-bg::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.62);
+    z-index: 0;
+    pointer-events: none;
+    transition: background-color 220ms ease;
+}
+.tile-bg:hover::after { background-color: rgba(255, 255, 255, 0.48); }
+.tile-bg > * { position: relative; z-index: 1; }
+
+.tile-bg-swms        { /* image applied via JSX style prop */ }
+.tile-bg-prestarts   { }
+.tile-bg-hazards     { }
+.tile-bg-incidents   { }
+.tile-bg-inspections { }
+.tile-bg-diary       { }
+.tile-bg-intelligence{ }
+.tile-bg-contractors { }
+.tile-bg-compliance  { }
+.tile-bg-hero        { }
+
+/* List-page header banner (~120px). White overlay slightly stronger because
+   the heading text sits dead-centre over the illustration. */
+.page-banner {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+    background-size: cover;
+    background-position: center right;
+    background-repeat: no-repeat;
+    border-radius: 1rem;
+}
+.page-banner::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: rgba(255, 255, 255, 0.68);
+    z-index: 0;
+    pointer-events: none;
+}
+.page-banner > * { position: relative; z-index: 1; }
+
+/* Pastel icon chips for module cards */
+.pastel-icon-mint     { background-color: var(--pastel-mint);     color: var(--pastel-mint-ink); }
+.pastel-icon-sky      { background-color: var(--pastel-sky);      color: var(--pastel-sky-ink); }
+.pastel-icon-peach    { background-color: var(--pastel-peach);    color: var(--pastel-peach-ink); }
+.pastel-icon-blush    { background-color: var(--pastel-blush);    color: var(--pastel-blush-ink); }
+.pastel-icon-lavender { background-color: var(--pastel-lavender); color: var(--pastel-lavender-ink); }
+.pastel-icon-butter   { background-color: var(--pastel-butter);   color: var(--pastel-butter-ink); }
+.pastel-icon-lilac    { background-color: var(--pastel-lilac);    color: var(--pastel-lilac-ink); }
+.pastel-icon-sage     { background-color: var(--pastel-sage);     color: var(--pastel-sage-ink); }
+.pastel-icon-coral    { background-color: var(--pastel-coral);    color: var(--pastel-coral-ink); }
+
+/* Sonner toast pastel overrides — keep destructive on stronger blush red */
+[data-sonner-toast][data-type='success'] { background: var(--pastel-mint) !important; color: var(--pastel-mint-ink) !important; border-color: var(--pastel-mint-ink) !important; }
+[data-sonner-toast][data-type='warning'] { background: var(--pastel-butter) !important; color: var(--pastel-butter-ink) !important; border-color: var(--pastel-butter-ink) !important; }
+[data-sonner-toast][data-type='info']    { background: var(--pastel-sky) !important; color: var(--pastel-sky-ink) !important; border-color: var(--pastel-sky-ink) !important; }
+[data-sonner-toast][data-type='error']   { background: var(--pastel-blush) !important; color: #842a3a !important; border-color: #842a3a !important; }
