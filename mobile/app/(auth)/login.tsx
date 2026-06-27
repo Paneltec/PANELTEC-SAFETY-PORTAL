@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { login } from '../../src/lib/auth';
+import { login, loginWithSimpro } from '../../src/lib/auth';
 import { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
@@ -18,6 +18,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busySimpro, setBusySimpro] = useState(false);
 
   const submit = async () => {
     setError('');
@@ -37,6 +38,21 @@ export default function LoginScreen() {
       }
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitSimpro = async () => {
+    setError('');
+    if (!email) { setError('Enter your work email to sign in with Simpro.'); return; }
+    setBusySimpro(true);
+    try {
+      await loginWithSimpro(email);
+      setAuth(true);
+    } catch (err: any) {
+      const msg = apiError(err) || 'Could not sign in with Simpro.';
+      setError(msg);
+    } finally {
+      setBusySimpro(false);
     }
   };
 
@@ -101,6 +117,30 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Divider */}
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          {/* Sign in with Simpro */}
+          <TouchableOpacity
+            testID="login-with-simpro"
+            style={[styles.simproBtn, (busySimpro || !email) && { opacity: 0.6 }]}
+            onPress={submitSimpro}
+            disabled={busySimpro || !email}
+            activeOpacity={0.7}
+          >
+            {busySimpro ? (
+              <ActivityIndicator color={Colors.text} size="small" />
+            ) : (
+              <Ionicons name="briefcase" size={14} color={Colors.text} />
+            )}
+            <Text style={styles.simproBtnText}>Sign in with Simpro</Text>
+          </TouchableOpacity>
+          <Text style={styles.simproHint}>For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.</Text>
+
           <View style={styles.footer}>
             <Text style={styles.footerText}>No account yet? </Text>
             <TouchableOpacity testID="login-to-signup" onPress={() => router.push('/(auth)/signup')}>
@@ -142,4 +182,14 @@ const styles = StyleSheet.create({
   footer: { flexDirection: 'row', marginTop: 24, justifyContent: 'center' },
   footerText: { fontSize: 14, color: Colors.textSecondary },
   link: { fontSize: 14, fontWeight: '600', color: Colors.blue },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, marginBottom: 4 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText: { fontSize: 10, fontWeight: '600', letterSpacing: 1, color: Colors.textTertiary },
+  simproBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    paddingVertical: 14, marginTop: 12, backgroundColor: Colors.white, minHeight: 50,
+  },
+  simproBtnText: { fontSize: 15, fontWeight: '500', color: Colors.text },
+  simproHint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, textAlign: 'center' },
 });

@@ -16,6 +16,13 @@ const METRIC_ROWS = [
   { key: 'inspections', label: 'Inspections', field: 'inspections_count', icon: 'checkmark-circle' as const },
 ];
 
+const MANAGE_TOOLS = [
+  { key: 'suppliers', title: 'Suppliers', desc: 'Simpro suppliers, tasks, notes & folders', icon: 'business' as const, route: '/suppliers' },
+  { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents', icon: 'folder-open' as const, route: '/document-library' },
+  { key: 'users', title: 'Users', desc: 'Manage users, imports & permissions', icon: 'people-circle' as const, route: '/users' },
+  { key: 'compliance', title: 'Compliance Hub', desc: 'Contractor register & audit exports', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance' },
+];
+
 const CAPTURE_TOOLS = [
   { key: 'swms', title: 'AI SWMS', desc: 'Draft Safe Work Method Statements', icon: 'document-text' as const, route: '/swms' },
   { key: 'pre-starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks and sign-ons', icon: 'clipboard' as const, route: '/pre-starts' },
@@ -153,6 +160,27 @@ export default function DashboardScreen() {
             </View>
           ))}
         </View>
+
+        {/* Manage & comply */}
+        <Text style={styles.sectionLabel}>MANAGE & COMPLY</Text>
+        {MANAGE_TOOLS.map((t) => (
+          <TouchableOpacity
+            key={t.key}
+            testID={`manage-card-${t.key}`}
+            style={styles.captureCard}
+            onPress={() => router.push(t.route as any)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.captureIcon, { backgroundColor: '#ece6f4' }]}>
+              <Ionicons name={t.icon} size={18} color="#4f3a8c" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.captureTitle}>{t.title}</Text>
+              <Text style={styles.captureDesc}>{t.desc}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+          </TouchableOpacity>
+        ))}
 
         {/* Quick capture */}
         <Text style={styles.sectionLabel}>CREATE & CAPTURE</Text>

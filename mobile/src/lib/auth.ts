@@ -63,6 +63,24 @@ export async function fetchMe() {
   return data;
 }
 
+export async function loginWithSimpro(email: string) {
+  const { data } = await api.post('/auth/login-with-simpro', { email });
+  await persist(data.access_token, data.user);
+  try {
+    const { data: me } = await api.get('/auth/me');
+    await AsyncStorage.setItem(USER_KEY, JSON.stringify(me));
+    if (me.effective_permissions) {
+      await setPermissions(me.effective_permissions);
+    }
+    if (me.token_version !== undefined) {
+      await AsyncStorage.setItem('paneltec_token_version', String(me.token_version));
+    }
+    return me;
+  } catch {
+    return data.user;
+  }
+}
+
 export async function signOut() {
   try { await api.post('/auth/logout'); } catch { /* stateless */ }
   await AsyncStorage.removeItem(TOKEN_KEY);

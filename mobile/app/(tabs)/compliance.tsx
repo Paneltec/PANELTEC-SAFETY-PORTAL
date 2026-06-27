@@ -6,9 +6,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
 
 const ITEMS = [
-  { key: 'contractors', title: 'Contractor Register', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors' },
-  { key: 'renewals', title: 'Renewal Links', desc: 'Single-use links for contractor document uploads.', icon: 'link' as const, route: '/contractors' },
-  { key: 'audit-exports', title: 'Audit Exports', desc: 'Generate signed evidence packs for audits.', icon: 'download' as const, route: '/contractors' },
+  { key: 'suppliers', title: 'Suppliers', desc: 'Live from Simpro — org-local notes, tasks, folders and members.', icon: 'business' as const, route: '/suppliers', bg: '#e8efe2', tint: '#2e5e2e' },
+  { key: 'document-library', title: 'Document Library', desc: 'All risk & compliance documents, organised and AI-tagged.', icon: 'folder-open' as const, route: '/document-library', bg: '#e6eff9', tint: '#1e4a8c' },
+  { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
+  { key: 'renewals', title: 'Renewal Links', desc: 'Single-use links for contractor document uploads.', icon: 'link' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
+  { key: 'audit-exports', title: 'Audit Exports', desc: 'Generate signed evidence packs for audits.', icon: 'download' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
 ];
 
 export default function ComplianceScreen() {
@@ -19,7 +21,7 @@ export default function ComplianceScreen() {
       <ScrollView testID="compliance-page" style={styles.scroll} contentContainerStyle={styles.content}>
         <Text style={styles.overline}>COMPLIANCE</Text>
         <Text style={styles.heading}>Compliance Hub</Text>
-        <Text style={styles.sub}>Contractor management, renewals and audit packs.</Text>
+        <Text style={styles.sub}>Suppliers, documents, contractor management and audit packs.</Text>
 
         {ITEMS.map((item) => (
           <TouchableOpacity
@@ -29,8 +31,8 @@ export default function ComplianceScreen() {
             onPress={() => router.push(item.route as any)}
             activeOpacity={0.7}
           >
-            <View style={styles.iconWrap}>
-              <Ionicons name={item.icon} size={22} color={Colors.blue} />
+            <View style={[styles.iconWrap, item.bg ? { backgroundColor: item.bg } : undefined]}>
+              <Ionicons name={item.icon} size={22} color={item.tint || Colors.blue} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>{item.title}</Text>
