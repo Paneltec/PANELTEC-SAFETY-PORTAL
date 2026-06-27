@@ -28,6 +28,8 @@ import Vehicles from '@/pages/Vehicles';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
+import OrgSettings from '@/pages/OrgSettings';
+import Workspaces from '@/pages/Workspaces';
 
 function App() {
   return (
@@ -72,8 +74,8 @@ function App() {
               <Route path="audit-exports" element={<AuditExports />} />
               <Route path="vehicles" element={<Vehicles />} />
 
-              <Route path="settings/org" element={<Stub />} />
-              <Route path="settings/workspaces" element={<Stub />} />
+              <Route path="settings/org" element={<OrgSettings />} />
+              <Route path="settings/workspaces" element={<Workspaces />} />
               <Route path="settings/integrations" element={<Integrations />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />

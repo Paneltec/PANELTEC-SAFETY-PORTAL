@@ -29,6 +29,7 @@ from renewals import public_router as renewals_public_router, router as renewals
 from seed import ensure_indexes, seed_all  # noqa: E402
 from users import router as users_router  # noqa: E402
 from workspaces import router as workspaces_router  # noqa: E402
+from org_settings import router as org_router  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("paneltec")
@@ -86,6 +87,7 @@ api.include_router(integrations_router)
 api.include_router(ask_router)
 api.include_router(users_router)
 api.include_router(workspaces_router)
+app.include_router(org_router)
 api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(pdf_router)

@@ -1,0 +1,40 @@
+{
+  "summary": "Frontend e2e for Workspaces (full CRUD + admin gating) and OrgSettings (admin edit + worker read-only). All 9 scenarios passed end-to-end. Edit/Delete/+New buttons render with correct data-testids, create/edit/delete dialogs work, toasts surface correctly, backend 400 'Cannot delete — N user(s) assigned…' message appears in toast when deleting Newcastle Depot, worker correctly sees read-only banner with no action buttons, and Org PATCH persists across reload.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Settings → Workspaces", "issues": ["Seeded workspaces (Newcastle Depot, Sydney Metro) have no Description and no address text; both render '—'. Neither is flagged default_for_org, so the Default star badge is never exercised by seed data. Cosmetic / seed-data only — UI is correct."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Workspaces.jsx and OrgSettings.jsx are both well-structured, use api/apiError, surface backend detail in toasts (apiError pulls response.data.detail) and gate writes by getUser().role==='admin'. No issues found.",
+    "OrgSettings PATCH drops empty contact_email before submit — good defensive handling against backend EmailStr 422.",
+    "Worker view of /app/settings/org disables inputs AND hides save button — defence-in-depth is correct (backend also enforces admin-only)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "admin@paneltec.com / demo123, worker@paneltec.com / demo123",
+  "seed_data_creation": "Org ABN was set to '12345678901' during the admin save test (was empty before). Org name was restored to original 'Paneltec Civil Pty Ltd'. The Test Depot workspace was created → renamed → deleted, so no leftover workspace rows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Workspaces full CRUD + admin gating verified end-to-end. Backend already smoke-tested by main agent. If a future iteration touches /app/settings/workspaces or /app/settings/org, this Playwright flow (login admin → create/edit/delete workspace → attempt delete Newcastle for 400 toast → worker readonly banner check on both pages) is the canonical regression. The ABN field on the Paneltec Civil org is currently '12345678901' (set during this test); reset to '' if needed.",
+  "evidence": {
+    "create_toast": "Workspace created",
+    "edit_toast": "Workspace updated",
+    "delete_toast": "Workspace deleted",
+    "delete_with_users_toast": "Cannot delete — 6 user(s) assigned. Reassign them in Settings → Users first.",
+    "org_save_toast": "Organisation updated",
+    "org_name_persisted_after_reload": "Paneltec Civil Pty Ltd QA",
+    "worker_workspaces_readonly_banner": true,
+    "worker_workspaces_edit_buttons_count": 0,
+    "worker_workspaces_delete_buttons_count": 0,
+    "worker_workspaces_create_btn_present": false,
+    "worker_org_readonly_banner": true,
+    "worker_org_name_input_disabled": true,
+    "worker_org_save_btn_present": false
+  }
+}
