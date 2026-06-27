@@ -91,3 +91,23 @@
   - `/app/mobile/app/suppliers.tsx` (removed duplicate state)
   - `/app/mobile/src/components/SupplierDrawer.tsx` (new 500+ line component)
 - **All screens verified**: Login, Dashboard, Suppliers, Document Library, Users, Ask Intelligence, Compliance Hub, Outbox
+
+## Iteration 6 — Workers Feature (list + edit + client picker + sync)
+- **Commit**: 1f49ee0e6c9b3b1b928e21459f9200ed84679523
+- **Date**: 2026-06-27T11:05:00Z
+- **Changes**:
+  - Created Workers list screen (`/app/mobile/app/workers.tsx`) — sky pastel header, search, sync modal, add button, pull-to-refresh, empty state, worker card rows with active/inactive badge + company chip
+  - Created WorkerEditModal (`/app/mobile/src/components/WorkerEditModal.tsx`) — full-screen sheet with 4 collapsible sections: Identity & contact (always open), Personal (birth date, country/state, address), Availability (7-day scheduler with time inputs + validation), Clients (multi-select from Simpro)
+  - Created ClientPickerModal (`/app/mobile/src/components/ClientPickerModal.tsx`) — search, checkbox list, select/clear all, apply CTA
+  - Registered `workers` Stack.Screen in root `_layout.tsx`
+  - Added Workers link to Settings/Profile page (first item under SETTINGS)
+  - Added Workers tile to Dashboard MANAGE & COMPLY section
+- **Files modified**:
+  - `/app/mobile/app/workers.tsx` (new)
+  - `/app/mobile/src/components/WorkerEditModal.tsx` (new)
+  - `/app/mobile/src/components/ClientPickerModal.tsx` (new)
+  - `/app/mobile/app/_layout.tsx` (added Stack.Screen)
+  - `/app/mobile/app/(tabs)/settings.tsx` (added Workers link + router)
+  - `/app/mobile/app/(tabs)/dashboard.tsx` (added Workers to MANAGE_TOOLS)
+- **Web files referenced**: `/app/frontend/src/pages/Workers.jsx`
+- **All screens verified**: Workers list, Edit modal, Client Picker, Sync modal, Dashboard, Outbox (existing flow)
