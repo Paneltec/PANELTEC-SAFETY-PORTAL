@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getUser, signOut, initials } from '../../src/lib/auth';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
+import { useRouter } from 'expo-router';
 
 const WORKSPACES = [
   { id: '751d9aeb-60ca-476f-b8db-c387144c59b7', name: 'Sydney Metro' },
@@ -13,6 +14,7 @@ const WORKSPACES = [
 
 export default function ProfileScreen() {
   const { setAuth } = useAuth();
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [activeWs, setActiveWs] = useState(WORKSPACES[0].id);
 
@@ -83,13 +85,15 @@ export default function ProfileScreen() {
         <Text style={s.sectionLabel}>SETTINGS</Text>
         <View style={s.section}>
           {[
+            { label: 'Workers', icon: 'people' as const, route: '/workers' },
             { label: 'Organisation', icon: 'business' as const },
             { label: 'Integrations', icon: 'extension-puzzle' as const },
-            { label: 'Users', icon: 'people' as const },
-            { label: 'Compliance Hub', icon: 'shield-checkmark' as const },
-            { label: 'Ask Intelligence', icon: 'sparkles' as const },
+            { label: 'Users', icon: 'people-circle' as const, route: '/users' },
+            { label: 'Compliance Hub', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance' },
+            { label: 'Ask Intelligence', icon: 'sparkles' as const, route: '/(tabs)/ask' },
           ].map((item) => (
-            <TouchableOpacity key={item.label} testID={`settings-${item.label.toLowerCase().replace(/\s/g, '-')}`} style={s.row} activeOpacity={0.7}>
+            <TouchableOpacity key={item.label} testID={`settings-${item.label.toLowerCase().replace(/\s/g, '-')}`} style={s.row} activeOpacity={0.7}
+              onPress={() => item.route ? router.push(item.route as any) : undefined}>
               <Ionicons name={item.icon} size={20} color={Colors.textSecondary} />
               <Text style={s.rowText}>{item.label}</Text>
               <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />

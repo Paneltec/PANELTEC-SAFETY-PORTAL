@@ -46,6 +46,7 @@ function RootNav() {
         <Stack.Screen name="suppliers" />
         <Stack.Screen name="document-library" />
         <Stack.Screen name="users" />
+        <Stack.Screen name="workers" />
       </Stack>
     </>
   );

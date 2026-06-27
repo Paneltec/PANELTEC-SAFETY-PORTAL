@@ -17,6 +17,7 @@ const METRIC_ROWS = [
 ];
 
 const MANAGE_TOOLS = [
+  { key: 'workers', title: 'Workers', desc: 'Field crew synced from Simpro', icon: 'people' as const, route: '/workers' },
   { key: 'suppliers', title: 'Suppliers', desc: 'Simpro suppliers, tasks, notes & folders', icon: 'business' as const, route: '/suppliers' },
   { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents', icon: 'folder-open' as const, route: '/document-library' },
   { key: 'users', title: 'Users', desc: 'Manage users, imports & permissions', icon: 'people-circle' as const, route: '/users' },
