@@ -13,6 +13,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 
 from ai import CLAUDE_MODEL, _claude_json, _emergent_key
 from auth import get_current_user
@@ -144,3 +145,138 @@ async def history(limit: int = Query(10, ge=1, le=50), user: dict = Depends(get_
         {"_id": 0},
     ).sort("created_at", -1).limit(limit).to_list(limit)
     return docs
+
+
+# ────────────────────── Ask suggested questions (CRUD) ──────────────────────
+
+DEFAULT_SUGGESTIONS = [
+    ("Which contractors have docs expiring this month?", "contractors"),
+    ("What are the recurring incident categories last quarter?", "incidents"),
+    ("Show me open hazards by severity.", "hazards"),
+    ("Which inspections are overdue?", "inspections"),
+]
+
+WRITE_ROLES = {"admin", "hseq_lead"}
+
+
+def _require_write(user: dict):
+    if user.get("role") not in WRITE_ROLES:
+        raise HTTPException(status_code=403, detail="Permission denied: ask_suggestions.edit")
+
+
+async def _seed_default_suggestions(org_id: str, created_by: str) -> None:
+    """Lazy-seed the default suggestions for an org the first time the list is
+    fetched and the collection has no active rows for that org."""
+    has_any = await db.ask_suggestions.find_one(
+        {"org_id": org_id, "deleted_at": None}, {"_id": 1}
+    )
+    if has_any:
+        return
+    docs = []
+    for i, (question, category) in enumerate(DEFAULT_SUGGESTIONS):
+        docs.append({
+            "id": new_id(), "org_id": org_id,
+            "question": question, "category": category,
+            "sort_order": (i + 1) * 10,
+            "created_at": now_iso(), "updated_at": now_iso(),
+            "created_by": created_by, "deleted_at": None,
+        })
+    if docs:
+        await db.ask_suggestions.insert_many(docs)
+
+
+class SuggestionIn(BaseModel):
+    question: str = Field(min_length=3, max_length=240)
+    category: Optional[str] = Field(default=None, max_length=40)
+
+
+class SuggestionPatch(BaseModel):
+    question: Optional[str] = Field(default=None, min_length=3, max_length=240)
+    category: Optional[str] = Field(default=None, max_length=40)
+    sort_order: Optional[int] = Field(default=None, ge=0, le=100000)
+
+
+def _serialise(doc: dict) -> dict:
+    return {
+        "id": doc["id"],
+        "question": doc["question"],
+        "category": doc.get("category"),
+        "sort_order": doc.get("sort_order", 0),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("updated_at"),
+    }
+
+
+@router.get("/suggestions")
+async def list_suggestions(user: dict = Depends(get_current_user)):
+    await _seed_default_suggestions(user["org_id"], user["id"])
+    cursor = db.ask_suggestions.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    ).sort([("sort_order", 1), ("created_at", 1)])
+    docs = await cursor.to_list(200)
+    return [_serialise(d) for d in docs]
+
+
+@router.post("/suggestions", status_code=201)
+async def create_suggestion(body: SuggestionIn, user: dict = Depends(get_current_user)):
+    _require_write(user)
+    # Auto-increment sort_order: max existing + 10
+    last = await db.ask_suggestions.find_one(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "sort_order": 1},
+        sort=[("sort_order", -1)],
+    )
+    next_order = ((last or {}).get("sort_order") or 0) + 10
+    doc = {
+        "id": new_id(), "org_id": user["org_id"],
+        "question": body.question.strip(),
+        "category": (body.category or "").strip() or None,
+        "sort_order": next_order,
+        "created_at": now_iso(), "updated_at": now_iso(),
+        "created_by": user["id"], "deleted_at": None,
+    }
+    await db.ask_suggestions.insert_one(doc)
+    return _serialise(doc)
+
+
+@router.patch("/suggestions/{suggestion_id}")
+async def update_suggestion(
+    suggestion_id: str,
+    body: SuggestionPatch,
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user)
+    update: dict = {"updated_at": now_iso()}
+    if body.question is not None:
+        update["question"] = body.question.strip()
+    if body.category is not None:
+        update["category"] = body.category.strip() or None
+    if body.sort_order is not None:
+        update["sort_order"] = int(body.sort_order)
+    if len(update) == 1:
+        raise HTTPException(status_code=400, detail="No editable fields supplied")
+    result = await db.ask_suggestions.find_one_and_update(
+        {"id": suggestion_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": update},
+        projection={"_id": 0},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    return _serialise(result)
+
+
+@router.delete("/suggestions/{suggestion_id}", status_code=204)
+async def delete_suggestion(
+    suggestion_id: str,
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user)
+    result = await db.ask_suggestions.update_one(
+        {"id": suggestion_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"deleted_at": now_iso(), "updated_at": now_iso()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+    return None
