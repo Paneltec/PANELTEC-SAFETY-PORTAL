@@ -87,14 +87,25 @@ async def queue_email_doc(
         "updated_at": now_iso(),
     }
     if connected:
-        # TODO: real Microsoft Graph call:
-        #   POST https://graph.microsoft.com/v1.0/me/sendMail
-        #   Authorization: Bearer <m365_access_token>
-        #   { "message": {...}, "saveToSentItems": "true" }
-        # For now we optimistically mark as sent so the demo path works.
-        doc["status"] = "sent"
-        doc["provider"] = "microsoft365"
-        doc["sent_at"] = now_iso()
+        # Try real send via Microsoft Graph. If it fails, fall back to queued.
+        try:
+            from integrations_m365 import graph_send_mail  # local to avoid cycle
+            res = await graph_send_mail(
+                org_id,
+                to=doc["to"], cc=doc["cc"],
+                subject=doc["subject"], body_html=doc["body_html"],
+                attachments=doc["attachments"],
+            )
+            if res.get("ok"):
+                doc["status"] = "sent"
+                doc["provider"] = "microsoft365"
+                doc["sent_at"] = now_iso()
+            else:
+                doc["status"] = "queued"
+                doc["error"] = res.get("error", "graph_send_failed")
+        except Exception as e:
+            doc["status"] = "queued"
+            doc["error"] = f"graph_send_exception: {e}"
     await db.outbound_emails.insert_one(dict(doc))
     return doc
 

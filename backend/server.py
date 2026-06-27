@@ -24,6 +24,9 @@ from db import close as close_db  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
+from integrations_simpro import router as simpro_router  # noqa: E402
+from integrations_m365 import router as m365_router  # noqa: E402
+from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
 from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
@@ -84,6 +87,9 @@ api.include_router(renewals_router)
 api.include_router(renewals_public_router)
 api.include_router(exports_router)
 api.include_router(integrations_router)
+api.include_router(simpro_router)
+api.include_router(m365_router)
+api.include_router(textmagic_router)
 api.include_router(ask_router)
 api.include_router(users_router)
 api.include_router(workspaces_router)

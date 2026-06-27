@@ -1,72 +1,72 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plug, ArrowRight, ShieldAlert } from 'lucide-react';
-import { toast } from 'sonner';
+import { Plug, ArrowRight } from 'lucide-react';
 import { INTEGRATIONS } from '../mocks/dashboard';
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
-} from '../components/ui/dialog';
+import api from '../lib/api';
 
-function IntegrationCard({ integ, onConfigure }) {
-  const isLive = integ.key === 'navixy';
+// Map UI keys → backend `kind` strings + per-integration admin route.
+const KIND_MAP = {
+  simpro: { kind: 'simpro', route: '/app/settings/integrations/simpro' },
+  m365: { kind: 'microsoft365', route: '/app/settings/integrations/microsoft365' },
+  textmagic: { kind: 'textmagic', route: '/app/settings/integrations/textmagic' },
+  navixy: { kind: 'navixy', route: '/app/settings/integrations/navixy' },
+};
+
+const STATUS_STYLE = {
+  connected: 'bg-emerald-100 text-emerald-700',
+  error: 'bg-red-100 text-red-700',
+  not_connected: 'bg-amber-100 text-amber-700',
+};
+
+const STATUS_LABEL = {
+  connected: 'Connected',
+  error: 'Error',
+  not_connected: 'Not connected',
+};
+
+function Card({ integ, status }) {
+  const meta = KIND_MAP[integ.key] || {};
+  const route = meta.route;
+  const cls = STATUS_STYLE[status] || STATUS_STYLE.not_connected;
+  const label = STATUS_LABEL[status] || STATUS_LABEL.not_connected;
   return (
-    <div
-      className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col"
-      data-testid={`integration-card-${integ.key}`}
-    >
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 flex flex-col" data-testid={`integration-card-${integ.key}`}>
       <div className="flex items-start gap-3">
-        <div
-          className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-display font-bold text-lg shrink-0"
-          style={{ backgroundColor: integ.logoBg }}
-          aria-hidden="true"
-        >
+        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-white font-display font-bold text-lg shrink-0"
+             style={{ backgroundColor: integ.logoBg }} aria-hidden="true">
           {integ.logoChar}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h3 className="font-display text-lg font-semibold">{integ.name}</h3>
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider ${isLive ? 'bg-emerald-100 text-emerald-700' : 'bg-brand-amber-soft text-amber-700'}`}
-              data-testid={`integration-status-${integ.key}`}
-            >
-              {isLive ? 'Live API' : integ.status}
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider ${cls}`}
+                  data-testid={`integration-status-${integ.key}`}>
+              {label}
             </span>
           </div>
           <p className="mt-1 text-sm text-slate-600 leading-relaxed">{integ.purpose}</p>
         </div>
       </div>
       <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-        <span className="text-xs text-slate-400">{isLive ? 'Live · per-org session hash' : 'MOCKED · UI only'}</span>
-        {isLive ? (
-          <Link
-            to="/app/settings/integrations/navixy"
-            data-testid={`integration-configure-${integ.key}`}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline"
-          >
-            Configure <ArrowRight size={14} />
-          </Link>
-        ) : (
-          <button
-            onClick={onConfigure}
-            data-testid={`integration-configure-${integ.key}`}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline"
-          >
-            Configure <ArrowRight size={14} />
-          </button>
-        )}
+        <span className="text-xs text-slate-400">Live API · per-org credentials</span>
+        <Link to={route} data-testid={`integration-configure-${integ.key}`}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-blue hover:underline">
+          Configure <ArrowRight size={14} />
+        </Link>
       </div>
     </div>
   );
 }
 
 export default function Integrations() {
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(null);
-
-  const openModal = (integ) => {
-    setActive(integ);
-    setOpen(true);
-  };
+  const [statuses, setStatuses] = useState({});
+  useEffect(() => {
+    api.get('/integrations').then(({ data }) => {
+      const map = {};
+      (data || []).forEach((row) => { map[row.kind] = row.status; });
+      setStatuses(map);
+    }).catch(() => setStatuses({}));
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="integrations-page">
@@ -77,7 +77,8 @@ export default function Integrations() {
         <div>
           <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight">Integrations</h1>
           <p className="mt-2 text-slate-600 max-w-2xl">
-            Connect Paneltec Civil to the tools your team already uses. Configuration is provided by your admin.
+            Connect Paneltec Civil to the tools your team already uses. All 4 connectors below are live — paste your
+            own per-org credentials inside each admin page.
           </p>
         </div>
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-violet-soft text-brand-violet text-xs font-medium border border-violet-200">
@@ -86,46 +87,11 @@ export default function Integrations() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-        {INTEGRATIONS.map((integ) => (
-          <IntegrationCard key={integ.key} integ={integ} onConfigure={() => openModal(integ)} />
-        ))}
+        {INTEGRATIONS.map((integ) => {
+          const kind = (KIND_MAP[integ.key] || {}).kind;
+          return <Card key={integ.key} integ={integ} status={statuses[kind]} />;
+        })}
       </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-testid="integration-modal">
-          <DialogHeader>
-            <DialogTitle className="font-display flex items-center gap-2">
-              <ShieldAlert size={18} className="text-amber-500" />
-              Connect {active?.name}
-            </DialogTitle>
-            <DialogDescription className="pt-2">
-              Configuration will be provided by admin — API credentials pending.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            <span className="font-semibold text-slate-700">MOCKED:</span> {active?.purpose}
-          </div>
-          <DialogFooter>
-            <button
-              onClick={() => setOpen(false)}
-              data-testid="integration-modal-cancel"
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => {
-                setOpen(false);
-                toast.info('Request sent to admin', { description: 'MOCKED: no email is actually delivered.' });
-              }}
-              data-testid="integration-modal-request"
-              className="px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600"
-            >
-              Request access
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

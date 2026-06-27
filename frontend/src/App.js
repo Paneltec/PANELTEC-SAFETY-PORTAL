@@ -24,6 +24,9 @@ import AuditExports from '@/pages/AuditExports';
 import Ask from '@/pages/Ask';
 import PublicRenewal from '@/pages/PublicRenewal';
 import NavixyAdmin from '@/pages/NavixyAdmin';
+import SimproAdmin from '@/pages/SimproAdmin';
+import Microsoft365Admin from '@/pages/Microsoft365Admin';
+import TextMagicAdmin from '@/pages/TextMagicAdmin';
 import Vehicles from '@/pages/Vehicles';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
@@ -78,6 +81,9 @@ function App() {
               <Route path="settings/workspaces" element={<Workspaces />} />
               <Route path="settings/integrations" element={<Integrations />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
+              <Route path="settings/integrations/simpro" element={<SimproAdmin />} />
+              <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
+              <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
               <Route path="outbox" element={<Outbox />} />
               <Route path="profile" element={<MyProfile />} />

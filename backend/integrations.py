@@ -40,14 +40,35 @@ def _last4(value: Optional[str]) -> Optional[str]:
     return f"••••{value[-4:]}" if len(value) > 4 else "••••"
 
 
+SECRETS_BY_KIND: dict[str, list[str]] = {
+    "navixy": ["password", "session_hash"],
+    "simpro": ["client_secret", "access_token"],
+    "microsoft365": ["client_secret", "access_token", "refresh_token"],
+    "textmagic": ["api_key"],
+}
+
+
 def _mask(kind: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
-    if kind == "navixy":
-        if out.get("password"):
-            out["password"] = _last4(out["password"])
-        if out.get("session_hash"):
-            out["session_hash"] = _last4(out["session_hash"])
+    for secret_key in SECRETS_BY_KIND.get(kind, []):
+        if out.get(secret_key):
+            out[secret_key] = _last4(out[secret_key])
     return out
+
+
+def _mask_preserve(kind: str, existing: dict, incoming: dict) -> dict:
+    """Merge incoming config with existing, preserving stored secrets when the
+    incoming value is masked or empty. Returns the merged config dict.
+    """
+    merged = {**(existing or {}), **(incoming or {})}
+    for secret_key in SECRETS_BY_KIND.get(kind, []):
+        v = (incoming or {}).get(secret_key)
+        if v is None:
+            merged[secret_key] = (existing or {}).get(secret_key)
+        elif isinstance(v, str) and (v.startswith("••••") or v.startswith("****") or v.strip() == ""):
+            log.info("%s PUT: keeping stored %s (incoming was masked/empty)", kind, secret_key)
+            merged[secret_key] = (existing or {}).get(secret_key)
+    return merged
 
 
 async def _get_or_default(org_id: str, kind: str) -> dict:
@@ -85,23 +106,13 @@ async def get_integration(kind: Kind, user: dict = Depends(get_current_user)):
 
 @router.put("/{kind}")
 async def put_integration(kind: Kind, body: dict, user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    existing = (await db.integration_configs.find_one({"org_id": user["org_id"], "kind": kind})) or {}
+    prev = existing.get("config") or {}
+    merged = _mask_preserve(kind, prev, body or {})
     if kind == "navixy":
-        # Merge with existing so masked secrets coming back from the UI are not wiped
-        existing = (await db.integration_configs.find_one({"org_id": user["org_id"], "kind": kind})) or {}
-        prev = existing.get("config") or {}
-        incoming = body or {}
-        for secret_key in ("password", "session_hash"):
-            v = incoming.get(secret_key)
-            if v is None:
-                incoming[secret_key] = prev.get(secret_key)
-            elif isinstance(v, str) and (v.startswith("••••") or v.startswith("****") or v.strip() == ""):
-                log.info("navixy PUT: keeping stored %s (incoming was masked/empty)", secret_key)
-                incoming[secret_key] = prev.get(secret_key)
-            else:
-                log.info("navixy PUT: updating %s (new value, len=%d)", secret_key, len(v))
-        config = NavixyConfig(**{**prev, **incoming}).model_dump()
+        config = NavixyConfig(**merged).model_dump()
     else:
-        config = body or {}
+        config = merged
 
     doc = {
         "org_id": user["org_id"], "kind": kind, "config": config,
