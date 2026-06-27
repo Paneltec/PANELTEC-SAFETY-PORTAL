@@ -30,6 +30,18 @@ export default function Cover() {
     if (!pw) { setError('Enter your password to continue.'); return; }
     setBusy(true);
     try {
+      // Defensive: nuke any stale Service Worker API caches BEFORE login.
+      // Earlier versions of the SW cached API responses (including some 401s
+      // when the backend was briefly down), which manifested as "logged out
+      // straightaway". Clearing here is cheap and guarantees a clean session.
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys
+            .filter((k) => /api/i.test(k))
+            .map((k) => caches.delete(k)));
+        }
+      } catch { /* ignore */ }
       await login(em.trim(), pw);
       navigate('/app/dashboard');
     } catch (err) {

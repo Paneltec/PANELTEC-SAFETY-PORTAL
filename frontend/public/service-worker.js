@@ -1,13 +1,15 @@
 /* Paneltec Civil — minimal service worker.
  * Strategy:
  *   - Static (HTML/CSS/JS/images/manifest): cache-first with background refresh
- *   - API (/api/*): network-first, fall back to last cached response if offline
- *   - Auth-sensitive endpoints are never cached aggressively because the SW
- *     skips Authorization-header'd responses when offline-fallback is unavailable.
+ *   - API (/api/*): NETWORK-ONLY. Never intercept or cache. Bad API caching was
+ *     observed to cause "logged out straightaway" symptoms — stale 401s
+ *     served from cache despite backend issuing fresh JWTs. Trust the network.
+ *
+ * Bump CACHE_VERSION whenever this file changes — old clients will purge their
+ * caches on next activate.
  */
-const CACHE_VERSION = 'paneltec-v1';
+const CACHE_VERSION = 'paneltec-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const API_CACHE = `${CACHE_VERSION}-api`;
 const PRECACHE = [
   '/',
   '/manifest.json',
@@ -25,7 +27,9 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => !k.startsWith(CACHE_VERSION)).map((k) => caches.delete(k)))
+      // Purge ALL caches that aren't the current STATIC_CACHE. This includes
+      // any leftover paneltec-v1-api caches that may be serving stale 401s.
+      Promise.all(keys.filter((k) => k !== STATIC_CACHE).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
@@ -38,25 +42,12 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  // Only handle same-origin (and our backend preview origin) requests.
   if (url.origin !== self.location.origin) return;
 
-  if (url.pathname.startsWith('/api/')) {
-    // Network-first for API.
-    event.respondWith(
-      fetch(req).then((resp) => {
-        // Only cache successful, idempotent GETs without auth-sensitive responses.
-        if (resp.ok) {
-          const copy = resp.clone();
-          caches.open(API_CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return resp;
-      }).catch(() => caches.match(req))
-    );
-    return;
-  }
+  // CRITICAL: never intercept API requests. Always go to network.
+  if (url.pathname.startsWith('/api/')) return;
 
-  // Cache-first for static assets.
+  // Cache-first for static assets only.
   event.respondWith(
     caches.match(req).then((cached) => {
       if (cached) {

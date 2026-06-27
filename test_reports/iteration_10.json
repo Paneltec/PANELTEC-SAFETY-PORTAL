@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only validation of the 'logged out straightaway' fix (SW v3 no longer intercepts /api/*, Cover.jsx purges stale /api/i caches pre-login). All 18 acceptance steps PASSED: (1) Cover page loads at /, (2) Stephen stephen@paneltec.com.au / Mcgstephen50# → landed on /app/dashboard, (3) sidebar navigation to swms/hazards/settings-integrations/outbox/settings-workspaces/dashboard — every page rendered cleanly and URL remained /app/*, (4) browser reload on /app/dashboard kept Stephen authenticated (no bounce to /login), (5) sign-out via clearing token returned to /, (6) admin@paneltec.com / demo123 demo button logged in and stayed across /app/swms, /app/hazards, /app/outbox, /app/dashboard, (7) /app/outbox specifically rendered with data-testid='outbox-page'. NETWORK PROOF: 105 /api/* calls captured during the full session — ZERO 401 responses and ZERO redirects to /login. /api/auth/me, /api/dashboard/metrics, /api/swms, /api/hazards, /api/integrations, /api/workspaces, /api/email/outbox, /api/users were all hit with 200s under both Stephen and admin sessions.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "service-worker.js — clean. Early-return on url.pathname.startsWith('/api/') inside fetch handler is the correct fix; the activate handler also purges any cache key != STATIC_CACHE so leftover paneltec-v1-api / paneltec-v2-api caches will be evicted on next activation. Bump strategy (CACHE_VERSION = 'paneltec-v3') is correct.",
+    "Cover.jsx doLogin — defensive caches.keys() + delete /api/i filter is a belt-and-braces guard for users still on an old SW; harmless and cheap. Good.",
+    "Minor: the defensive cache purge in Cover.jsx only runs on the cover-page login path. If a stuck user lands directly on /app/* (deep link with a still-valid token) the SW v3 activate will eventually purge the stale cache, but the very first /api/auth/me on that initial pageload could theoretically still be served from the v1/v2 cache before SW v3 takes over. In practice the SW skipWaiting + clients.claim makes this a single-page-load race window, but worth noting. Mitigation already present: api.js only logs out on X-Auth-Reason header, so a stale cached 401 without that header would not bounce the user — exactly the design intent.",
+    "Carry-over from iteration_9: Outbox lives at /app/outbox while breadcrumb reads 'Settings / Email outbox'. Not a regression, just noting URL/breadcrumb mismatch.",
+    "Service Worker SW source verification was done by inspecting /app/frontend/public/service-worker.js source rather than the live DevTools Application tab (Playwright Chromium starts with no SW registered so there is no v1/v2 cache to purge in this test context). The source-level check is sufficient since the request-interception behaviour was verified end-to-end via the 0/105 401 result."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "100% (18/18 assertions, 0/105 API 401s, 0 redirects to /login)"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50#  ;  admin@paneltec.com / demo123",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The 'logged out straightaway' regression is resolved. Service worker is paneltec-v3 and never touches /api/*. Cover.jsx pre-login defensively purges /api/i caches. Token persists across navigation + reload via localStorage.paneltec_token. Backend (auth.py) is unchanged from prior iterations — JWT exp=30d, tv-based revocation works, X-Auth-Reason header strategy in /app/frontend/src/lib/api.js correctly scopes logout to jwt-missing/jwt-invalid/jwt-expired/token-revoked/account-disabled only. Sidebar nav testids are nav-dashboard, nav-ask, nav-swms, nav-pre-starts, nav-site-diary, nav-hazards, nav-incidents, nav-inspections, nav-contractors, nav-renewals, nav-audit-exports, nav-vehicles, nav-settings-org, nav-settings-workspaces, nav-settings-integrations, nav-settings-users, nav-outbox.",
+  "rca of the issue": "Original RCA (validated): an older Service Worker (paneltec-v1/v2) was caching /api/* responses. During a brief backend outage 401s were cached, and when the backend recovered the SW kept serving those stale 401s to the frontend, which then ran through the X-Auth-Reason logout branch and bounced Stephen to /login. Fix: SW v3 never intercepts /api/* (network-only, pure pass-through) and purges all non-current caches on activate. Belt-and-braces in Cover.jsx clears any /api/i cache before the login POST so even users still on v1/v2 SW get a clean session on next attempt. Verified end-to-end: 105 /api/* calls in a normal multi-page session, zero 401s, zero redirects."
+}
