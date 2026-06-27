@@ -1,6 +1,7 @@
 """Simpro staff + jobs integration. Uses a static Simpro API token (Bearer).
 Supports multiple Company IDs per org (fan-out across companies)."""
 from __future__ import annotations
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -203,13 +204,20 @@ def _normalise_employee(s: dict, company_id: Optional[str] = None) -> dict:
         position = pos_raw
     elif isinstance(pos_raw, dict):
         position = pos_raw.get("Name")
+    # Simpro's employee detail endpoint nests contact info under PrimaryContact.
+    primary = s.get("PrimaryContact") or {}
+    email = (s.get("Email") or s.get("email")
+             or (primary.get("Email") if isinstance(primary, dict) else None))
+    phone = (s.get("Phone") or s.get("phone") or s.get("CellPhone")
+             or (primary.get("CellPhone") if isinstance(primary, dict) else None)
+             or (primary.get("Phone") if isinstance(primary, dict) else None))
     return {
         "id": s.get("ID") or s.get("id"),
         "name": name,
         "first_name": given,
         "last_name": family,
-        "email": s.get("Email") or s.get("email"),
-        "phone": s.get("Phone") or s.get("phone"),
+        "email": email,
+        "phone": phone,
         "position": position,
         "role": s.get("Type") or s.get("role"),
         "active": s.get("Active", True) if "Active" in s else s.get("active", True),
@@ -219,12 +227,27 @@ def _normalise_employee(s: dict, company_id: Optional[str] = None) -> dict:
 
 
 async def _refresh_staff_cache(cfg: dict, ids: list[str], token: str) -> tuple[list[dict], list[dict]]:
-    """Fetch employees from every company. Returns (raw_per_company, normalised_deduped)."""
+    """Fetch employees from every company, hydrate each with detail (email, phone, position).
+    Simpro's list endpoint returns only {ID, Name} — detail at /employees/{id} (no trailing slash)
+    provides PrimaryContact.Email / .CellPhone / Position. Returns (raw_per_company, normalised_deduped)."""
     base = cfg["api_base_url"].rstrip("/")
     raw_per_company: list[dict] = []
     merged: list[dict] = []
     seen: set = set()
-    async with httpx.AsyncClient(timeout=15) as c:
+    sem = asyncio.Semaphore(8)  # cap parallel detail calls
+
+    async def fetch_detail(client: httpx.AsyncClient, cid: str, eid) -> Optional[dict]:
+        async with sem:
+            try:
+                r = await client.get(f"{base}/api/v1.0/companies/{cid}/employees/{eid}",
+                                     headers=_auth_headers(token))
+                if r.status_code == 200:
+                    return r.json()
+            except Exception:
+                return None
+        return None
+
+    async with httpx.AsyncClient(timeout=20) as c:
         for cid in ids:
             url = f"{base}/api/v1.0/companies/{cid}/employees/"
             try:
@@ -237,22 +260,28 @@ async def _refresh_staff_cache(cfg: dict, ids: list[str], token: str) -> tuple[l
                                         "error": f"HTTP {r.status_code} {r.text[:120]}", "raw": []})
                 continue
             try:
-                fresh = r.json()
+                summary = r.json()
             except Exception:
-                fresh = []
-            if not isinstance(fresh, list):
-                fresh = fresh.get("data") or []
-            raw_per_company.append({"id": cid, "status": "ok", "raw": fresh})
-            for s in fresh:
-                if not isinstance(s, dict):
+                summary = []
+            if not isinstance(summary, list):
+                summary = summary.get("data") or []
+            raw_per_company.append({"id": cid, "status": "ok", "raw": summary})
+
+            # Fan out detail calls in parallel (bounded by semaphore).
+            detail_tasks = [fetch_detail(c, cid, s.get("ID") or s.get("id"))
+                            for s in summary if isinstance(s, dict)]
+            details = await asyncio.gather(*detail_tasks, return_exceptions=False) if detail_tasks else []
+            for summary_row, detail in zip(summary, details):
+                if not isinstance(summary_row, dict):
                     continue
-                eid = s.get("ID") or s.get("id")
+                merged_row = {**summary_row, **(detail or {})}
+                eid = merged_row.get("ID") or merged_row.get("id")
                 key = (eid, cid) if eid is None else eid
                 if eid is not None and key in seen:
                     continue
                 if eid is not None:
                     seen.add(key)
-                merged.append(_normalise_employee(s, company_id=cid))
+                merged.append(_normalise_employee(merged_row, company_id=cid))
     return raw_per_company, merged
 
 

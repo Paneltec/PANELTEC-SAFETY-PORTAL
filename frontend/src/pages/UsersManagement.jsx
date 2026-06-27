@@ -408,7 +408,7 @@ const ROLE_OPTIONS_IMPORT = [
 
 function ImportFromSimproDrawer({ companies, onClose, onDone }) {
   const allCompanyIds = useMemo(() => companies.map((c) => String(c.id)), [companies]);
-  const [selectedCompanies, setSelectedCompanies] = useState(allCompanyIds);
+  const [selectedCompanies, setSelectedCompanies] = useState([]);
   const [filterMode, setFilterMode] = useState('whiteboard'); // 'whiteboard' | 'all'
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
@@ -418,6 +418,18 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
   const [workspaces, setWorkspaces] = useState([]);
   const [chosenWorkspaces, setChosenWorkspaces] = useState([]);
   const [busy, setBusy] = useState(false);
+  // Monotonically increasing request id used to discard stale responses
+  // when the filter / company selection flips faster than the network can keep up.
+  const reqIdRef = React.useRef(0);
+
+  // Sync selectedCompanies to the companies prop on first arrival (and when
+  // a new company appears that wasn't in the previous list — initial-population case).
+  useEffect(() => {
+    setSelectedCompanies((prev) => {
+      if (prev.length === 0 && allCompanyIds.length > 0) return allCompanyIds;
+      return prev;
+    });
+  }, [allCompanyIds]);
 
   // Load workspaces once
   useEffect(() => {
@@ -426,23 +438,28 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
     })();
   }, []);
 
-  // Fetch employees whenever companies/filter changes
-  const fetchEmployees = async () => {
-    if (selectedCompanies.length === 0) { setEmployees([]); return; }
+  // Fetch employees whenever companies/filter changes.
+  // Uses a request-id guard so a slow earlier fetch can't overwrite a newer one.
+  const fetchEmployees = async (ids, mode) => {
+    if (ids.length === 0) { setEmployees([]); setSelected(new Set()); return; }
+    reqIdRef.current += 1;
+    const myReq = reqIdRef.current;
     setLoading(true);
     try {
-      const qs = new URLSearchParams({
-        company_ids: selectedCompanies.join(','),
-        filter: filterMode,
-      });
+      const qs = new URLSearchParams({ company_ids: ids.join(','), filter: mode });
       const { data } = await api.get(`/integrations/simpro/employees?${qs.toString()}`);
+      // Only commit results if this is still the latest in-flight request.
+      if (reqIdRef.current !== myReq) return;
       setEmployees(data.employees || []);
       setSelected(new Set());
-    } catch (e) { toast.error(apiError(e)); }
-    finally { setLoading(false); }
+    } catch (e) {
+      if (reqIdRef.current === myReq) toast.error(apiError(e));
+    } finally {
+      if (reqIdRef.current === myReq) setLoading(false);
+    }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchEmployees(); }, [selectedCompanies.join(','), filterMode]);
+  useEffect(() => { fetchEmployees(selectedCompanies, filterMode); }, [selectedCompanies.join(','), filterMode]);
 
   const toggleCompany = (cid) => {
     const k = String(cid);

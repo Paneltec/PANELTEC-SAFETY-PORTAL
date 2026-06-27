@@ -1,0 +1,34 @@
+{
+  "summary": "Frontend retest of Thread A Simpro import flow bugs after backend (parallel detail fan-out) + frontend (request-id guard, useEffect prop sync, dynamic label) fixes. All 4 bugs PASS via interactive Playwright clicks. Drawer populates with employee rows on filter=all (30 rows shown, 20 importable), checkbox selection updates counter and submit label correctly with proper singular/plural grammar, Select all/Clear work, submit button disables at 0 selections.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "BUG_1_checkbox_selection": "PASS — Clicked import-checkbox-1077: checked=True, label='Import 1 user'. Clicked import-checkbox-1004: checked=True, label='Import 2 users'. Counter showed '2 selected · 20 importable · 30 shown'. Unchecking both reset to '0 selected' with submit disabled. Select all checked all 20 importable rows (label 'Import 20 users', counter '20 selected · 20 importable · 30 shown'). Clear returned to 0 with submit disabled.",
+    "BUG_2_sign_in_with_simpro": "PASS — [data-testid=login-with-simpro] rendered on /login. Button text 'Sign in with Simpro'. Helper text present: 'For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.'",
+    "BUG_3_dynamic_label": "PASS — Label inside [data-testid=import-submit-label] is correct at every step: 0 -> 'Import 0 users' (button disabled), 1 -> 'Import 1 user' (singular), 2 -> 'Import 2 users' (plural), 20 -> 'Import 20 users'. After Clear -> 'Import 0 users' and submit re-disabled.",
+    "BUG_4_filter_desync_regression": "PASS — After clicking [data-testid=import-filter-all], drawer populated within 3s with 30 rows (tr[data-testid^=import-row-] count=30). The request-id guard and useEffect-based selectedCompanies sync in UsersManagement.jsx (lines 423-462) work correctly. No reversion to whiteboard filter observed; counter shows '30 shown'."
+  },
+  "observations": [
+    "Drawer initially shows 30 rows under 'All employees' filter (not 60 as suggested in review brief). Counter explicitly says '30 shown · 20 importable'. May reflect filter for unique employees / dedup, or a per-page cap — not a regression but worth confirming with main agent if 60 was expected.",
+    "Route in review brief said /app/users but actual route is /app/settings/users (App.js line 87). Test was adjusted accordingly. Side nav 'Users' link works.",
+    "Sample importable employees observed: AARON FOSTER (AARONFOSTER002@ICLOUD.COM, Construction Worker L2), AARON HOLMES, ALEXANDER KINGSTON, AMANDA GUY, BOBBY MCGOWAN — emails and positions populated correctly, confirming backend PrimaryContact fan-out is working."
+  ],
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "UsersManagement.jsx is 694 lines — still under 700 soft limit but ImportFromSimproDrawer (~280 lines) should ideally be extracted to its own file for maintainability.",
+    "Review brief stated 60 employees would be shown; actual shown count is 30. Verify whether the importable count of 20 / shown 30 matches main agent's expectation (may be a separate filter or pagination behaviour, not a regression)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (frontend-only)", "frontend": "BUG1 PASS, BUG2 PASS, BUG3 PASS, BUG4 PASS (4/4)"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin) — login + drawer interactions all working.",
+  "seed_data_creation": "None.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "All Thread A bugs resolved. The previous iteration_12 blocker (drawer empty-state on filter=all) is fully fixed by the useEffect prop-sync + request-id guard. The 60 -> 30 row count discrepancy versus the review brief is the only open question (may be by design / pagination).",
+  "rca_of_the_issue": "Previous root causes (filter state desync from stale prop / stale fetch responses) are resolved. Live drawer interaction now matches design spec across all four scenarios (single select, multi select, select-all, clear)."
+}
