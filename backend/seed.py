@@ -309,6 +309,22 @@ async def seed_all() -> dict:
     await _seed_capture(org_id, ws_ids, user_ids)
     from seed_phase3 import seed_phase3
     phase3 = await seed_phase3(org_id, ws_ids, user_ids)
+    # Contractor seed wipe — soft-delete the seeded company rows so the
+    # legacy Contractors view shows them as gone. Idempotent via _seed_marks.
+    # Only touches rows created by the seed (identified by created_by ==
+    # admin/hseq seeded users); leaves user-created contractors alone.
+    mark = await db["seed_marks"].find_one({"key": "contractor_wipe_v1", "org_id": org_id})
+    if not mark:
+        seed_user_ids = [uid for uid in user_ids.values() if uid]
+        await db.contractors.update_many(
+            {"org_id": org_id, "deleted_at": None,
+             "created_by": {"$in": seed_user_ids}},
+            {"$set": {"deleted_at": now_iso(), "updated_at": now_iso()}},
+        )
+        await db["seed_marks"].insert_one({
+            "key": "contractor_wipe_v1", "org_id": org_id,
+            "applied_at": now_iso(),
+        })
     # Phase 5 — one override on auditor + 5 sample outbox emails (idempotent)
     auditor_id = user_ids.get("audit@paneltec.com")
     if auditor_id and not await db.user_permissions.find_one({"user_id": auditor_id}):

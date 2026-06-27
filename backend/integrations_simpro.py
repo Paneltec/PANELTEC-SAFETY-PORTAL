@@ -550,3 +550,136 @@ async def simpro_connect(user: dict = Depends(require_roles("admin", "hseq_lead"
     except HTTPException as e:
         return {"ok": True, "connected": True, "sync_error": e.detail, "tested_at": now_iso()}
     return {"ok": True, "connected": True, **result}
+
+
+
+# ────────────────────── Suppliers (Vendors) ──────────────────────
+# Simpro models suppliers under `/api/v1.0/companies/{cid}/vendors/`. We expose
+# them as "Suppliers" in the Paneltec UI. 5-minute TTL cache, deduped by
+# Simpro vendor ID across companies.
+
+def _normalise_supplier(raw: dict, company_id: str) -> dict:
+    if not isinstance(raw, dict):
+        raw = {}
+    addr = raw.get("Address") or {}
+    # Address blocks vary across Simpro accounts — try several shapes.
+    address_parts = [
+        raw.get("Address1") or addr.get("Address") or addr.get("Line1") or "",
+        raw.get("Address2") or addr.get("Line2") or "",
+        raw.get("City") or addr.get("City") or "",
+        raw.get("State") or addr.get("State") or "",
+        raw.get("PostalCode") or raw.get("Postcode") or addr.get("PostalCode") or "",
+    ]
+    address = ", ".join([str(p).strip() for p in address_parts if str(p).strip()])
+    phone = raw.get("Phone") or raw.get("Telephone") or raw.get("CellPhone") or ""
+    email = raw.get("Email") or raw.get("PrimaryEmail") or ""
+    contact = raw.get("PrimaryContact") or raw.get("ContactName") or ""
+    if isinstance(contact, dict):
+        contact = (contact.get("GivenName") or "") + " " + (contact.get("FamilyName") or "")
+        contact = contact.strip()
+    name = raw.get("CompanyName") or raw.get("Name") or raw.get("TradingName") or "(unnamed)"
+    return {
+        "simpro_supplier_id": str(raw.get("ID") or raw.get("id") or ""),
+        "simpro_company_id": str(company_id),
+        "name": str(name).strip(),
+        "phone": str(phone).strip(),
+        "email": str(email).strip(),
+        "address": address,
+        "state": str(raw.get("State") or addr.get("State") or "").strip(),
+        "contact_name": str(contact).strip(),
+        "active": bool(raw.get("Active", True)),
+    }
+
+
+async def _fetch_vendors_for_company(client: httpx.AsyncClient, base: str, token: str, cid: str) -> list[dict]:
+    headers = _auth_headers(token)
+    # Try /vendors/ first (current API), then fall back to /suppliers/.
+    for path in ("vendors", "suppliers"):
+        url = f"{base.rstrip('/')}/api/v1.0/companies/{cid}/{path}/"
+        try:
+            r = await client.get(url, headers=headers, params={"pageSize": 250})
+            if r.status_code == 200:
+                data = r.json()
+                rows = data if isinstance(data, list) else (data.get("data") or [])
+                return [row for row in rows if isinstance(row, dict)]
+            if r.status_code == 404:
+                continue
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            log.warning("simpro vendors fetch failed cid=%s path=%s err=%s", cid, path, e)
+            continue
+    return []
+
+
+async def _refresh_suppliers_cache(cfg: dict, ids: list[str], token: str) -> list[dict]:
+    base = cfg["api_base_url"].rstrip("/")
+    merged: list[dict] = []
+    seen: set[str] = set()
+    async with httpx.AsyncClient(timeout=30) as client:
+        for cid in ids:
+            rows = await _fetch_vendors_for_company(client, base, token, cid)
+            for r in rows:
+                norm = _normalise_supplier(r, cid)
+                sid = norm["simpro_supplier_id"]
+                if not sid or sid in seen:
+                    continue
+                seen.add(sid)
+                merged.append(norm)
+    return merged
+
+
+@router.get("/suppliers")
+async def simpro_suppliers(user: dict = Depends(get_current_user)):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        return {"count": 0, "suppliers": [], "connected": False, "cached_at": None}
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+    ids = _company_ids(cfg)
+    if not ids:
+        return {"count": 0, "suppliers": [], "connected": True, "cached_at": None}
+
+    cached_at = doc.get("suppliers_cached_at")
+    is_stale = True
+    if cached_at:
+        try:
+            ts = datetime.fromisoformat(cached_at.replace("Z", "+00:00"))
+            is_stale = (datetime.now(timezone.utc) - ts) > timedelta(minutes=5)
+        except Exception:
+            pass
+
+    suppliers: list[dict] = doc.get("suppliers_cache") or []
+    if is_stale:
+        try:
+            suppliers = await _refresh_suppliers_cache(cfg, ids, cfg["api_token"])
+            await db.integration_configs.update_one(
+                {"org_id": user["org_id"], "kind": "simpro"},
+                {"$set": {"suppliers_cache": suppliers[:2000],
+                          "suppliers_cached_at": now_iso(),
+                          "updated_at": now_iso()}},
+            )
+            cached_at = now_iso()
+        except Exception as e:
+            log.warning("Suppliers refresh failed, serving cached copy: %s", e)
+    return {"count": len(suppliers), "suppliers": suppliers,
+            "connected": True, "cached_at": cached_at}
+
+
+@router.post("/suppliers/sync")
+async def simpro_suppliers_sync(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(400, "Simpro not connected")
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+    ids = _company_ids(cfg)
+    if not ids:
+        raise HTTPException(400, "No Company IDs configured")
+    suppliers = await _refresh_suppliers_cache(cfg, ids, cfg["api_token"])
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+        {"$set": {"suppliers_cache": suppliers[:2000],
+                  "suppliers_cached_at": now_iso(),
+                  "updated_at": now_iso()}},
+    )
+    return {"ok": True, "count": len(suppliers), "synced_at": now_iso()}

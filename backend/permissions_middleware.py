@@ -46,6 +46,11 @@ SKIP_PATHS: list[re.Pattern] = [
     re.compile(r"^/api/dashboard(/|$)"),    # metrics — open to any logged-in user
     re.compile(r"^/api/email(/|$)"),        # email module enforces itself
     re.compile(r"^/api/ai(/|$)"),
+    re.compile(r"^/api/document-library(/|$)"),  # gates writes inside the router
+    # Suppliers (Simpro vendor view): readable for everyone, writes gated by
+    # the route handlers themselves (`_require_write` and `require_roles`).
+    re.compile(r"^/api/suppliers(/|$)"),
+    re.compile(r"^/api/integrations/simpro/suppliers(/|$)"),
 ]
 
 

@@ -34,6 +34,7 @@ import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
 import Workspaces from '@/pages/Workspaces';
 import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
+import Suppliers from '@/pages/Suppliers';
 
 function App() {
   return (
@@ -73,6 +74,8 @@ function App() {
               <Route path="contractors" element={<ContractorsList />} />
               <Route path="contractors/new" element={<ContractorNew />} />
               <Route path="contractors/:id" element={<ContractorDetail />} />
+              <Route path="contractors-legacy" element={<ContractorsList />} />
+              <Route path="suppliers" element={<Suppliers />} />
 
               <Route path="renewals" element={<Renewals />} />
               <Route path="audit-exports" element={<AuditExports />} />

@@ -33,7 +33,7 @@ const NAV = [
     { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
   ]},
   { section: 'Compliance', items: [
-    { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors', resource: 'contractors', pastel: 'sage' },
+    { to: '/app/suppliers', label: 'Suppliers', icon: Users2, testid: 'nav-suppliers', pastel: 'sage' },
     { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
