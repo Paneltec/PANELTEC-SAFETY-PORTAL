@@ -23,6 +23,7 @@ export default function Workspaces() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);   // { id?, name, description, address, default_for_org }
   const [toDelete, setToDelete] = useState(null); // workspace doc
+  const [forceDelete, setForceDelete] = useState(null); // workspace doc with user_count
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -80,6 +81,30 @@ export default function Workspaces() {
       await api.delete(`/workspaces/${toDelete.id}`);
       toast.success('Workspace deleted');
       setToDelete(null);
+      await load();
+    } catch (e) {
+      const detail = e?.response?.data?.detail || '';
+      // Surface the blocked-by-users case as a force-delete confirmation
+      if (e?.response?.status === 400 && /user\(s\) assigned/i.test(detail)) {
+        const m = detail.match(/(\d+)\s+user/);
+        const n = m ? Number(m[1]) : 0;
+        setBusy(false);
+        setToDelete(null);
+        setForceDelete({ ...toDelete, user_count: n });
+        return;
+      }
+      toast.error(apiError(e));
+    }
+    finally { setBusy(false); }
+  };
+
+  const submitForceDelete = async () => {
+    if (!forceDelete) return;
+    setBusy(true);
+    try {
+      const { data } = await api.delete(`/workspaces/${forceDelete.id}?force=true`);
+      toast.success(`Workspace deleted · ${data.users_updated || 0} user(s) unassigned`);
+      setForceDelete(null);
       await load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
@@ -250,8 +275,8 @@ export default function Workspaces() {
             <AlertDialogDescription>
               {toDelete && <span className="block font-medium text-slate-900 mb-2">{toDelete.name}</span>}
               This soft-deletes the workspace. The backend will refuse if it is the last
-              workspace in the org, or if any users are still assigned to it — reassign them
-              in Settings → Users first.
+              workspace in the org, or if any users are still assigned to it — you&apos;ll get
+              an option to force-unassign them.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -264,6 +289,36 @@ export default function Workspaces() {
             >
               {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Force-delete (unassign all users) confirmation */}
+      <AlertDialog open={!!forceDelete} onOpenChange={(o) => { if (!o) setForceDelete(null); }}>
+        <AlertDialogContent data-testid="workspace-force-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force delete · unassign all users?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {forceDelete && (
+                <span className="block font-medium text-slate-900 mb-2">{forceDelete.name}</span>
+              )}
+              <strong className="text-rose-700">{forceDelete?.user_count || 0}</strong> user(s) are still
+              assigned to this workspace. Force delete will remove this workspace from each of
+              their <code>workspace_ids</code>, then soft-delete the workspace. Users left with
+              zero workspaces will need to be reassigned manually in Settings → Users.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy} data-testid="workspace-force-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={submitForceDelete}
+              disabled={busy}
+              data-testid="workspace-force-delete-confirm"
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              Force delete · unassign {forceDelete?.user_count || 0}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

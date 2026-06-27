@@ -82,7 +82,14 @@ async def update_workspace(wid: str, body: WsIn, user: dict = Depends(get_curren
 
 
 @router.delete("/{wid}")
-async def delete_workspace(wid: str, user: dict = Depends(get_current_user)):
+async def delete_workspace(wid: str, force: bool = False, user: dict = Depends(get_current_user)):
+    """Soft-delete a workspace. Refuses if it is the last workspace in the org.
+
+    By default also refuses if any users are still assigned — admin must reassign
+    them first. Passing `?force=true` (admin only) unassigns all users from this
+    workspace before soft-deleting it. Users left with zero workspaces are NOT
+    auto-reassigned; they will need to be placed manually in Settings → Users.
+    """
     _require_admin(user)
     active = await db.workspaces.count_documents({
         "org_id": user["org_id"],
@@ -90,13 +97,40 @@ async def delete_workspace(wid: str, user: dict = Depends(get_current_user)):
     })
     if active <= 1:
         raise HTTPException(400, "Cannot delete the only workspace — create another one first")
-    in_use = await db.users.count_documents({"org_id": user["org_id"], "workspace_ids": wid})
-    if in_use:
-        raise HTTPException(400, f"Cannot delete — {in_use} user(s) assigned. Reassign them in Settings → Users first.")
+
+    users_updated = 0
+    if force:
+        res = await db.users.update_many(
+            {"org_id": user["org_id"], "workspace_ids": wid},
+            {"$pull": {"workspace_ids": wid}, "$set": {"updated_at": now_iso()}},
+        )
+        users_updated = res.modified_count
+    else:
+        in_use = await db.users.count_documents({"org_id": user["org_id"], "workspace_ids": wid})
+        if in_use:
+            raise HTTPException(
+                400,
+                f"Cannot delete — {in_use} user(s) assigned. Reassign them in Settings → Users first, "
+                "or re-call with ?force=true to unassign them automatically.",
+            )
+
     res = await db.workspaces.update_one(
         {"id": wid, "org_id": user["org_id"]},
         {"$set": {"deleted_at": now_iso()}},
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Workspace not found")
-    return {"ok": True}
+    return {"ok": True, "deleted": True, "users_updated": users_updated}
+
+
+@router.post("/{wid}/unassign-all")
+async def unassign_all_from_workspace(wid: str, user: dict = Depends(get_current_user)):
+    """Admin-only convenience: remove this workspace from every user's
+    workspace_ids without deleting the workspace itself. Used by the UI when an
+    admin wants to clear assignments before reviewing the workspace."""
+    _require_admin(user)
+    res = await db.users.update_many(
+        {"org_id": user["org_id"], "workspace_ids": wid},
+        {"$pull": {"workspace_ids": wid}, "$set": {"updated_at": now_iso()}},
+    )
+    return {"ok": True, "users_updated": res.modified_count}
