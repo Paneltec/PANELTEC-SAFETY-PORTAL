@@ -66,6 +66,7 @@ export default function DocumentLibrary() {
   const [renamingId, setRenamingId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // Smart Search state
   const [searchQ, setSearchQ] = useState('');
@@ -116,10 +117,10 @@ export default function DocumentLibrary() {
   };
 
   const deleteFolder = async (f) => {
-    if (!window.confirm(`Delete "${f.name}" and all its files? This cannot be undone.`)) return;
     try {
       await api.delete(`/document-library/folders/${f.id}`);
-      toast.success('Folder deleted');
+      toast.success(`"${f.name}" deleted`);
+      setConfirmDeleteId(null);
       await load();
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -277,7 +278,7 @@ export default function DocumentLibrary() {
                     {f.file_count} {f.file_count === 1 ? 'file' : 'files'}
                   </div>
                 </button>
-                {canEdit && !f.is_system && (
+                {canEdit && !f.is_system && confirmDeleteId !== f.id && (
                   <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5">
                     <button onClick={() => startRename(f)} data-testid={`folder-rename-btn-${f.id}`}
                       title="Rename"
@@ -285,12 +286,24 @@ export default function DocumentLibrary() {
                       <Pencil size={11} />
                     </button>
                     {canDeleteFolder && (
-                      <button onClick={() => deleteFolder(f)} data-testid={`folder-delete-btn-${f.id}`}
+                      <button onClick={() => setConfirmDeleteId(f.id)} data-testid={`folder-delete-btn-${f.id}`}
                         title="Delete"
                         className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-red hover:bg-white">
                         <X size={11} />
                       </button>
                     )}
+                  </div>
+                )}
+                {canEdit && confirmDeleteId === f.id && (
+                  <div className="absolute inset-x-1.5 top-1.5 flex items-center justify-between gap-1 bg-[#fbe4e7] border border-[#e69aa3] rounded px-2 py-1"
+                    data-testid={`folder-delete-confirm-${f.id}`}>
+                    <span className="text-[10px] font-semibold text-[#7a1f33] uppercase tracking-wider">Delete?</span>
+                    <div className="flex gap-0.5">
+                      <button onClick={() => deleteFolder(f)} data-testid={`folder-delete-confirm-yes-${f.id}`}
+                        className="p-1 rounded text-[#7a1f33] hover:bg-white"><Check size={11} /></button>
+                      <button onClick={() => setConfirmDeleteId(null)} data-testid={`folder-delete-confirm-no-${f.id}`}
+                        className="p-1 rounded text-slate-500 hover:bg-white"><X size={11} /></button>
+                    </div>
                   </div>
                 )}
                 {f.is_system && (
