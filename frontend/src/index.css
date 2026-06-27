@@ -121,12 +121,12 @@ code {
     content: '';
     position: absolute;
     inset: 0;
-    background-color: rgba(255, 255, 255, 0.62);
+    background-color: rgba(255, 255, 255, 0.30);
     z-index: 0;
     pointer-events: none;
     transition: background-color 220ms ease;
 }
-.tile-bg:hover::after { background-color: rgba(255, 255, 255, 0.48); }
+.tile-bg:hover::after { background-color: rgba(255, 255, 255, 0.18); }
 .tile-bg > * { position: relative; z-index: 1; }
 
 .tile-bg-swms        { /* image applied via JSX style prop */ }
@@ -155,11 +155,27 @@ code {
     content: '';
     position: absolute;
     inset: 0;
-    background-color: rgba(255, 255, 255, 0.68);
+    background-color: rgba(255, 255, 255, 0.55);
     z-index: 0;
     pointer-events: none;
 }
 .page-banner > * { position: relative; z-index: 1; }
+
+/* Table row pastel hover — 6% module tint applied via inline data attribute */
+.row-pastel-hover { transition: background-color 160ms ease; }
+.row-pastel-hover:hover { background-color: rgba(44, 107, 255, 0.04); }
+
+/* Sidebar active item — subtle pastel tint per module (8-12%) */
+.nav-active-mint     { background-color: rgba(216, 236, 221, 0.55); color: var(--pastel-mint-ink); }
+.nav-active-sky      { background-color: rgba(216, 230, 244, 0.55); color: var(--pastel-sky-ink); }
+.nav-active-peach    { background-color: rgba(247, 223, 209, 0.55); color: var(--pastel-peach-ink); }
+.nav-active-blush    { background-color: rgba(247, 216, 220, 0.55); color: var(--pastel-blush-ink); }
+.nav-active-lavender { background-color: rgba(226, 220, 239, 0.55); color: var(--pastel-lavender-ink); }
+.nav-active-butter   { background-color: rgba(247, 238, 209, 0.55); color: var(--pastel-butter-ink); }
+.nav-active-lilac    { background-color: rgba(232, 223, 244, 0.55); color: var(--pastel-lilac-ink); }
+.nav-active-sage     { background-color: rgba(221, 231, 216, 0.55); color: var(--pastel-sage-ink); }
+.nav-active-coral    { background-color: rgba(247, 216, 209, 0.55); color: var(--pastel-coral-ink); }
+.nav-active-slate    { background-color: rgba(241, 245, 249, 1);    color: #0f172a; }
 
 /* Pastel icon chips for module cards */
 .pastel-icon-mint     { background-color: var(--pastel-mint);     color: var(--pastel-mint-ink); }
@@ -173,6 +189,12 @@ code {
 .pastel-icon-coral    { background-color: var(--pastel-coral);    color: var(--pastel-coral-ink); }
 
 /* Sonner toast pastel overrides — keep destructive on stronger blush red */
+
+/* Premium text-shadow for content sitting on lower-opacity tile backgrounds */
+.tile-bg h3, .tile-bg .text-display, .page-banner h1, .page-banner h2 {
+    text-shadow: 0 1px 2px rgba(255, 255, 255, 0.7);
+}
+
 [data-sonner-toast][data-type='success'] { background: var(--pastel-mint) !important; color: var(--pastel-mint-ink) !important; border-color: var(--pastel-mint-ink) !important; }
 [data-sonner-toast][data-type='warning'] { background: var(--pastel-butter) !important; color: var(--pastel-butter-ink) !important; border-color: var(--pastel-butter-ink) !important; }
 [data-sonner-toast][data-type='info']    { background: var(--pastel-sky) !important; color: var(--pastel-sky-ink) !important; border-color: var(--pastel-sky-ink) !important; }

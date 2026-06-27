@@ -11,6 +11,33 @@ import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye };
 
+// Compliance Snapshot — value-prop cards above the capture grid.
+const SNAPSHOT_CARDS = [
+  { key: 'one-source', title: 'One source of truth', icon: Database, pastel: 'sage',
+    desc: 'Every record across every workspace in one connected platform.' },
+  { key: 'risk-early', title: 'Risk surfaced early', icon: TriangleAlert, pastel: 'peach',
+    desc: 'AI flags recurring issues before they escalate.' },
+  { key: 'oversight', title: 'Built for oversight', icon: ShieldCheck, pastel: 'sky',
+    desc: 'Roles, audit trails and exports designed for HSE leaders.' },
+  { key: 'ask-intel', title: 'Ask Intelligence', icon: Sparkles, pastel: 'lilac',
+    desc: 'Natural-language questions answered instantly across every safety record.' },
+];
+
+function SnapshotCard({ card }) {
+  const Icon = card.icon;
+  return (
+    <div data-testid={`snapshot-card-${card.key}`}
+      className="group rounded-2xl bg-white p-4 transition-all hover:-translate-y-0.5 hover:shadow-card"
+      style={{ borderLeft: `4px solid var(--pastel-${card.pastel}-ink)`, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div className={`w-9 h-9 rounded-xl pastel-icon-${card.pastel} flex items-center justify-center mb-2.5`}>
+        <Icon size={16} />
+      </div>
+      <h3 className="font-display text-base font-semibold text-slate-900">{card.title}</h3>
+      <p className="mt-1 text-sm text-slate-600 leading-snug">{card.desc}</p>
+    </div>
+  );
+}
+
 // Per-module pastel-tile mapping (Thread B theme).
 // Background images live in /public/tile-bgs/ — applied via inline style to
 // dodge webpack's css-loader root-relative URL resolution.
@@ -137,11 +164,23 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-[1400px] mx-auto" data-testid="dashboard-page">
-      <div className="mb-8">
+      <div
+        className="page-banner mb-8 px-6 sm:px-8 py-7 sm:py-9 border border-slate-200 shadow-sm"
+        style={{ backgroundImage: 'url(/tile-bgs/compliance.png)' }}
+        data-testid="dashboard-banner"
+      >
         <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase">Paneltec Civil Intelligence Centre</div>
-        <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight">Live Compliance Dashboard</h1>
-        <p className="mt-3 text-slate-600 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
+        <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900">Live Compliance Dashboard</h1>
+        <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
       </div>
+
+      {/* Compliance Snapshot — value-prop cards (Thread B) */}
+      <section className="mb-8" data-testid="compliance-snapshot">
+        <h2 className="font-display text-lg font-semibold text-slate-900 mb-3">Compliance Snapshot</h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {SNAPSHOT_CARDS.map((c) => <SnapshotCard key={c.key} card={c} />)}
+        </div>
+      </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* LEFT — Create & Capture */}

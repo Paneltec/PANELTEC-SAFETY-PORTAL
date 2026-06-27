@@ -8,7 +8,7 @@
  * Bump CACHE_VERSION whenever this file changes — old clients will purge their
  * caches on next activate.
  */
-const CACHE_VERSION = 'paneltec-v9';
+const CACHE_VERSION = 'paneltec-v11';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/',

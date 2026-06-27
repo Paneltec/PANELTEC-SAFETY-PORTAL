@@ -21,29 +21,29 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 
 const NAV = [
   { section: 'Overview', items: [
-    { to: '/app/dashboard', label: 'Intelligence Centre', icon: LayoutDashboard, testid: 'nav-dashboard' },
-    { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkles, testid: 'nav-ask' },
+    { to: '/app/dashboard', label: 'Intelligence Centre', icon: LayoutDashboard, testid: 'nav-dashboard', pastel: 'coral' },
+    { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkles, testid: 'nav-ask', pastel: 'lilac' },
   ]},
   { section: 'Capture', items: [
-    { to: '/app/swms', label: 'AI SWMS', icon: FileText, testid: 'nav-swms', resource: 'swms' },
-    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheck, testid: 'nav-pre-starts', resource: 'pre_starts' },
-    { to: '/app/site-diary', label: 'Site Diary', icon: NotebookPen, testid: 'nav-site-diary', resource: 'site_diary' },
-    { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards', resource: 'hazards' },
-    { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents', resource: 'incidents' },
-    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections' },
+    { to: '/app/swms', label: 'AI SWMS', icon: FileText, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
+    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheck, testid: 'nav-pre-starts', resource: 'pre_starts', pastel: 'sky' },
+    { to: '/app/site-diary', label: 'Site Diary', icon: NotebookPen, testid: 'nav-site-diary', resource: 'site_diary', pastel: 'butter' },
+    { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
+    { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
+    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
   ]},
   { section: 'Compliance', items: [
-    { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors', resource: 'contractors' },
-    { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals' },
-    { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports' },
-    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'vehicles' },
+    { to: '/app/contractors', label: 'Contractor Register', icon: Users2, testid: 'nav-contractors', resource: 'contractors', pastel: 'sage' },
+    { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
+    { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
+    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'vehicles', pastel: 'sky' },
   ]},
   { section: 'Settings', items: [
-    { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org' },
-    { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces' },
-    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations' },
-    { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users', resource: 'users' },
-    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true },
+    { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },
+    { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces', pastel: 'slate' },
+    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
+    { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users', resource: 'users', pastel: 'slate' },
+    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true, pastel: 'slate' },
   ]},
 ];
 
@@ -60,12 +60,13 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
             <ul className="space-y-0.5">
               {visible.map((it) => {
                 const Icon = it.icon;
+                const activeCls = `nav-active-${it.pastel || 'slate'}`;
                 return (
                   <li key={it.to}>
                     <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
                       className={({ isActive }) =>
                         `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                          isActive ? 'bg-brand-blue-soft text-brand-blue font-medium' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          isActive ? `${activeCls} font-semibold` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                         }`} title={collapsed ? it.label : undefined}>
                       <Icon size={18} className="shrink-0" />
                       {!collapsed && <span className="truncate flex-1">{it.label}</span>}
