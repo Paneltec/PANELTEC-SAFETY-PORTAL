@@ -12,6 +12,7 @@ const DEFAULT_BASE = 'https://demo.simprosuite.com';
 const empty = {
   api_base_url: DEFAULT_BASE,
   company_id: '',
+  company_id_2: '',
   client_id: '',
   secretInput: '',
   secretOnFile: null,
@@ -39,6 +40,7 @@ export default function SimproAdmin() {
       ...prev,
       api_base_url: cfg.api_base_url || DEFAULT_BASE,
       company_id: cfg.company_id || '',
+      company_id_2: cfg.company_id_2 || '',
       client_id: cfg.client_id || '',
       secretOnFile: isMasked(cfg.client_secret) ? cfg.client_secret : (cfg.client_secret ? '••••' : null),
       accessTokenOnFile: isMasked(cfg.access_token) ? cfg.access_token : (cfg.access_token ? '••••' : null),
@@ -57,6 +59,7 @@ export default function SimproAdmin() {
   const buildBody = () => ({
     api_base_url: s.api_base_url || DEFAULT_BASE,
     company_id: s.company_id || null,
+    company_id_2: s.company_id_2 || null,
     client_id: s.client_id || null,
     client_secret: s.secretInput ? s.secretInput : (s.secretOnFile || null),
     poll_seconds: Number(s.poll_seconds) || 900,
@@ -125,10 +128,16 @@ export default function SimproAdmin() {
             <Helper>Your Simpro API endpoint (e.g. <code className="text-[11px]">https://yourcompany.simprosuite.com</code>).</Helper>
           </div>
           <div>
-            <Field label="Company ID">
+            <Field label="Company ID (Primary)">
               <Input value={s.company_id} onChange={(v) => setS({ ...s, company_id: v })} placeholder="0" testid="simpro-company" />
             </Field>
-            <Helper>Your Simpro builder/account ID (e.g. <code className="text-[11px]">0</code> for the default builder). Found in <strong>Setup → System → Info &amp; Licence</strong>.</Helper>
+            <Helper>Your primary Simpro builder/account ID. <strong>Required</strong>. Found in <strong>Setup → System → Info &amp; Licence</strong>.</Helper>
+          </div>
+          <div>
+            <Field label="Company ID 2 (Optional)">
+              <Input value={s.company_id_2} onChange={(v) => setS({ ...s, company_id_2: v })} placeholder="—" testid="simpro-company-2" />
+            </Field>
+            <Helper>Second Simpro builder/account ID, if you have one.</Helper>
           </div>
           <div>
             <Field label="Client ID">

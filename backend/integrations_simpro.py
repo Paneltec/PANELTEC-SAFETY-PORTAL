@@ -79,38 +79,60 @@ async def simpro_get_token(user: dict = Depends(require_roles("admin", "hseq_lea
 async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
     cfg = await _cfg(user["org_id"])
     token = cfg.get("access_token")
-    company_id = cfg.get("company_id")
     if not token:
         raise HTTPException(400, "No access token — click Get Token first.")
-    if not company_id:
-        raise HTTPException(400, "company_id required.")
-    url = f"{cfg['api_base_url'].rstrip('/')}/api/v1.0/companies/{company_id}/employees/"
-    try:
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.get(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
-    except Exception as e:
-        raise HTTPException(502, f"Simpro unreachable: {e}")
-    if r.status_code != 200:
-        msg = r.text[:200]
-        await db.integration_configs.update_one(
-            {"org_id": user["org_id"], "kind": "simpro"},
-            {"$set": {"status": "error", "last_error": msg, "updated_at": now_iso()}},
-        )
-        raise HTTPException(400, f"Simpro test failed: HTTP {r.status_code} {msg}")
-    try:
-        staff = r.json()
-        if not isinstance(staff, list):
-            staff = staff.get("data") or []
-    except Exception:
-        staff = []
+    company_ids = [c for c in [cfg.get("company_id"), cfg.get("company_id_2")] if c]
+    if not company_ids:
+        raise HTTPException(400, "At least one Company ID required.")
+    base = cfg["api_base_url"].rstrip("/")
+    merged: list = []
+    per_company: list = []
+    seen_ids: set = set()
+    async with httpx.AsyncClient(timeout=15) as c:
+        for cid in company_ids:
+            url = f"{base}/api/v1.0/companies/{cid}/employees/"
+            try:
+                r = await c.get(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+            except Exception as e:
+                per_company.append({"id": cid, "status": "error", "error": str(e), "employee_count": 0})
+                continue
+            if r.status_code != 200:
+                per_company.append({"id": cid, "status": "error",
+                                    "error": f"HTTP {r.status_code} {r.text[:120]}",
+                                    "employee_count": 0})
+                continue
+            try:
+                staff = r.json()
+                if not isinstance(staff, list):
+                    staff = staff.get("data") or []
+            except Exception:
+                staff = []
+            for s in staff:
+                if isinstance(s, dict):
+                    s["__company_id"] = cid
+                    eid = s.get("ID") or s.get("id")
+                    if eid is not None and eid in seen_ids:
+                        continue
+                    if eid is not None:
+                        seen_ids.add(eid)
+                    merged.append(s)
+            per_company.append({"id": cid, "status": "ok", "employee_count": len(staff)})
+
+    any_ok = any(p["status"] == "ok" for p in per_company)
+    status = "connected" if any_ok else "error"
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "simpro"},
-        {"$set": {"status": "connected", "last_tested_at": now_iso(),
-                  "last_error": None, "staff_count": len(staff),
-                  "staff_cache": staff[:200],
-                  "staff_cached_at": now_iso(), "updated_at": now_iso()}},
+        {"$set": {"status": status, "last_tested_at": now_iso(),
+                  "last_error": None if any_ok else "All companies failed",
+                  "staff_count": len(merged),
+                  "staff_cache": merged[:500],
+                  "staff_cached_at": now_iso(),
+                  "companies_status": per_company,
+                  "updated_at": now_iso()}},
     )
-    return {"staff_count": len(staff), "tested_at": now_iso()}
+    if not any_ok:
+        raise HTTPException(400, f"All companies failed: {per_company}")
+    return {"ok": True, "companies": per_company, "merged_count": len(merged), "tested_at": now_iso()}
 
 
 @router.get("/staff")
@@ -159,10 +181,12 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
             "phone": s.get("Phone") or s.get("phone"),
             "role": s.get("Type") or s.get("role"),
             "active": s.get("Active", True) if "Active" in s else s.get("active", True),
+            "company_id": s.get("__company_id") or s.get("company_id"),
             "custom_fields": _custom_fields_map(s),
         })
 
     cfg = doc.get("config") or {}
+    companies_queried = [c for c in [cfg.get("company_id"), cfg.get("company_id_2")] if c]
     filter_field = (cfg.get("staff_custom_field") or "").strip()
     filter_value = (cfg.get("staff_field_value") or "").strip()
     if filter_field and filter_value:
@@ -173,7 +197,8 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
                       for k, v in (m.get("custom_fields") or {}).items())]
 
     return {"count": len(out), "staff": out, "cached_at": doc.get("staff_cached_at"),
-            "filtered_by": {"field": filter_field or None, "value": filter_value or None}}
+            "companies_queried": companies_queried,
+            "filtered_by": {"field": filter_field, "value": filter_value} if (filter_field and filter_value) else None}
 
 
 def _custom_fields_map(s: dict) -> dict:
