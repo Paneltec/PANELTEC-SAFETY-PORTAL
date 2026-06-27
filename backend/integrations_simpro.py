@@ -683,3 +683,141 @@ async def simpro_suppliers_sync(user: dict = Depends(require_roles("admin", "hse
                   "updated_at": now_iso()}},
     )
     return {"ok": True, "count": len(suppliers), "synced_at": now_iso()}
+
+
+
+# ────────────────────── Customers ──────────────────────
+# Simpro customers live at `/api/v1.0/companies/{cid}/customers/`. We cache the
+# normalised list inside `integration_configs.customers_cache` with a 5-minute
+# TTL — mirrors the suppliers pattern. Workers reference these via `client_ids`.
+
+COMPANY_LABEL = {"2": "Paneltec", "3": "Viatec"}
+
+
+def _normalise_customer(raw: dict, company_id: str) -> dict:
+    if not isinstance(raw, dict):
+        raw = {}
+    cid = str(raw.get("ID") or raw.get("id") or "")
+    name = (raw.get("CompanyName") or raw.get("Name") or raw.get("TradingName")
+            or raw.get("DisplayName") or "(unnamed)")
+    # Some Simpro tenants return customers as `Type: "Company"` vs people; we
+    # keep everything but tag the type for the picker.
+    ctype = raw.get("Type") or raw.get("CustomerType") or "Company"
+    if isinstance(ctype, dict):
+        ctype = ctype.get("Name") or "Company"
+    return {
+        "simpro_customer_id": cid,
+        "simpro_company_id": str(company_id),
+        "company_label": COMPANY_LABEL.get(str(company_id), "Simpro"),
+        "name": str(name).strip(),
+        "type": str(ctype).strip(),
+        "active": bool(raw.get("Active", True)),
+    }
+
+
+async def _fetch_customers_for_company(client: httpx.AsyncClient, base: str,
+                                       token: str, cid: str) -> list[dict]:
+    """Paginated customer list — Simpro caps at 250/page."""
+    headers = _auth_headers(token)
+    url = f"{base.rstrip('/')}/api/v1.0/companies/{cid}/customers/"
+    rows: list[dict] = []
+    page = 1
+    while page <= 20:  # hard cap ~5000 customers per company
+        try:
+            r = await client.get(url, headers=headers,
+                                 params={"pageSize": 250, "page": page})
+        except httpx.HTTPError as e:
+            log.warning("simpro customers fetch failed cid=%s page=%s err=%s", cid, page, e)
+            break
+        if r.status_code == 404:
+            break
+        if r.status_code != 200:
+            log.warning("simpro customers cid=%s page=%s HTTP %s %s",
+                        cid, page, r.status_code, r.text[:120])
+            break
+        try:
+            data = r.json()
+        except Exception:
+            break
+        batch = data if isinstance(data, list) else (data.get("data") or [])
+        if not batch:
+            break
+        rows.extend([row for row in batch if isinstance(row, dict)])
+        if len(batch) < 250:
+            break
+        page += 1
+    return rows
+
+
+async def _refresh_customers_cache(cfg: dict, ids: list[str], token: str) -> list[dict]:
+    base = cfg["api_base_url"].rstrip("/")
+    merged: list[dict] = []
+    seen: set[tuple] = set()
+    async with httpx.AsyncClient(timeout=30) as client:
+        for cid in ids:
+            rows = await _fetch_customers_for_company(client, base, token, cid)
+            for r in rows:
+                norm = _normalise_customer(r, cid)
+                key = (norm["simpro_customer_id"], norm["simpro_company_id"])
+                if not norm["simpro_customer_id"] or key in seen:
+                    continue
+                seen.add(key)
+                merged.append(norm)
+    return merged
+
+
+@router.get("/customers")
+async def simpro_customers(
+    company: str = "both",
+    user: dict = Depends(get_current_user),
+):
+    """List Simpro customers across one or both companies.
+
+    Query params:
+      - company: "paneltec" | "viatec" | "both" (default).
+    """
+    doc = await db.integration_configs.find_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+    )
+    if not doc or doc.get("status") != "connected":
+        return {"count": 0, "customers": [], "connected": False, "cached_at": None}
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+
+    company_map = {"paneltec": "2", "viatec": "3"}
+    if company == "both":
+        target_ids = ["2", "3"]
+    elif company in company_map:
+        target_ids = [company_map[company]]
+    else:
+        raise HTTPException(400, "company must be paneltec, viatec or both")
+
+    cached_at = doc.get("customers_cached_at")
+    is_stale = True
+    if cached_at:
+        try:
+            ts = datetime.fromisoformat(cached_at.replace("Z", "+00:00"))
+            is_stale = (datetime.now(timezone.utc) - ts) > timedelta(minutes=5)
+        except Exception:
+            pass
+
+    customers: list[dict] = doc.get("customers_cache") or []
+    if is_stale or not customers:
+        try:
+            # Always refresh both companies; cheaper than picking apart cache.
+            customers = await _refresh_customers_cache(cfg, ["2", "3"], cfg["api_token"])
+            await db.integration_configs.update_one(
+                {"org_id": user["org_id"], "kind": "simpro"},
+                {"$set": {"customers_cache": customers[:5000],
+                          "customers_cached_at": now_iso(),
+                          "updated_at": now_iso()}},
+            )
+            cached_at = now_iso()
+        except Exception as e:
+            log.warning("Customers refresh failed, serving cached copy: %s", e)
+
+    # Filter to the requested company set.
+    filtered = [c for c in customers if c.get("simpro_company_id") in target_ids]
+    return {"count": len(filtered), "customers": filtered,
+            "connected": True, "cached_at": cached_at, "company": company}
+

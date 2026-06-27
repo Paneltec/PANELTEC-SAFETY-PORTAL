@@ -1,13 +1,14 @@
 """Workers — field-ops people imported from Simpro or created manually.
 
-Phase 1: identity + contact + sync. Address / availability / clients live as
-empty fields for Phase 2 so we don't need a migration later.
+Phase 1: identity + contact + sync.
+Phase 2: address + birth date + 7-day availability + Simpro client_ids.
 """
 from __future__ import annotations
-from typing import Optional, Literal
+import re
+from typing import Optional, Literal, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 
 from auth import get_current_user
@@ -17,6 +18,10 @@ from models import new_id, now_iso
 router = APIRouter(prefix="/workers", tags=["workers"])
 
 WRITE_ROLES = {"admin", "hseq_lead"}
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+AU_STATES = {"NSW", "VIC", "QLD", "WA", "SA", "TAS", "ACT", "NT"}
+TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
+ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # Simpro company IDs (Paneltec instance reality — these are stable in prod).
 COMPANY_MAP = {"paneltec": "2", "viatec": "3"}
@@ -41,6 +46,30 @@ def _serialise(doc: dict) -> dict:
     return out
 
 
+def _validate_availability(av: Any) -> Optional[dict]:
+    """Coerce an availability blob into the canonical shape.
+    Returns None when input is None (means "clear")."""
+    if av is None:
+        return None
+    if not isinstance(av, dict):
+        raise HTTPException(400, "availability must be an object")
+    out: dict = {}
+    for day in DAYS:
+        row = av.get(day) or {}
+        if not isinstance(row, dict):
+            raise HTTPException(400, f"availability.{day} must be an object")
+        enabled = bool(row.get("enabled", False))
+        start = (row.get("start") or "").strip()
+        end = (row.get("end") or "").strip()
+        if enabled:
+            if not (TIME_RE.match(start) and TIME_RE.match(end)):
+                raise HTTPException(400, f"availability.{day} requires HH:MM start/end when enabled")
+            if start >= end:  # lexicographic == numeric for HH:MM zero-padded
+                raise HTTPException(400, f"availability.{day} end time must be after start time")
+        out[day] = {"enabled": enabled, "start": start, "end": end}
+    return out
+
+
 class WorkerIn(BaseModel):
     first_name: str = Field(min_length=1, max_length=80)
     last_name: Optional[str] = Field(default="", max_length=80)
@@ -49,6 +78,17 @@ class WorkerIn(BaseModel):
     mobile: Optional[str] = Field(default="", max_length=40)
     position: Optional[str] = Field(default="", max_length=120)
     active: bool = True
+    # Personal
+    birth_date: Optional[str] = Field(default=None, max_length=10)
+    country: Optional[str] = Field(default=None, max_length=80)
+    state: Optional[str] = Field(default=None, max_length=8)
+    street_address: Optional[str] = Field(default=None, max_length=200)
+    suburb: Optional[str] = Field(default=None, max_length=120)
+    postal_code: Optional[str] = Field(default=None, max_length=10)
+    additional_notes: Optional[str] = Field(default=None, max_length=2000)
+    # Phase 2
+    availability: Optional[dict] = None
+    client_ids: Optional[list[str]] = None
 
 
 class WorkerPatch(BaseModel):
@@ -59,6 +99,42 @@ class WorkerPatch(BaseModel):
     mobile: Optional[str] = Field(default=None, max_length=40)
     position: Optional[str] = Field(default=None, max_length=120)
     active: Optional[bool] = None
+    birth_date: Optional[str] = Field(default=None, max_length=10)
+    country: Optional[str] = Field(default=None, max_length=80)
+    state: Optional[str] = Field(default=None, max_length=8)
+    street_address: Optional[str] = Field(default=None, max_length=200)
+    suburb: Optional[str] = Field(default=None, max_length=120)
+    postal_code: Optional[str] = Field(default=None, max_length=10)
+    additional_notes: Optional[str] = Field(default=None, max_length=2000)
+    availability: Optional[dict] = None
+    client_ids: Optional[list[str]] = None
+
+    @field_validator("birth_date")
+    @classmethod
+    def _bd(cls, v):
+        if v in (None, ""):
+            return v
+        if not ISO_DATE_RE.match(v):
+            raise ValueError("birth_date must be YYYY-MM-DD")
+        return v
+
+    @field_validator("state")
+    @classmethod
+    def _state(cls, v):
+        if v in (None, ""):
+            return v
+        if v.upper() not in AU_STATES:
+            raise ValueError(f"state must be one of {sorted(AU_STATES)}")
+        return v.upper()
+
+    @field_validator("postal_code")
+    @classmethod
+    def _pc(cls, v):
+        if v in (None, ""):
+            return v
+        if not re.match(r"^\d{4}$", v):
+            raise ValueError("postal_code must be 4 digits")
+        return v
 
 
 class SyncRequest(BaseModel):
@@ -77,17 +153,16 @@ async def list_workers(user: dict = Depends(get_current_user)):
 @router.post("", status_code=201)
 async def create_worker(body: WorkerIn, user: dict = Depends(get_current_user)):
     _require_write(user)
+    payload = body.model_dump()
+    payload["availability"] = _validate_availability(payload.get("availability"))
     doc = {
         "id": new_id(), "org_id": user["org_id"],
         "simpro_employee_id": None, "simpro_company_id": None,
         "source": "manual",
-        **body.model_dump(),
-        # Phase 2 placeholders — leave as None / [] so the upcoming edit
-        # modal can flip them on without a schema change.
-        "birth_date": None, "country": None, "state": None,
-        "street_address": None, "suburb": None, "postal_code": None,
-        "additional_notes": None,
-        "availability": None, "client_ids": [],
+        **payload,
+        # Default country to Australia when absent.
+        "country": payload.get("country") or "Australia",
+        "client_ids": payload.get("client_ids") or [],
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
     }
@@ -101,6 +176,8 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(400, "No fields supplied")
+    if "availability" in payload:
+        payload["availability"] = _validate_availability(payload["availability"])
     payload["updated_at"] = now_iso()
     result = await db.workers.find_one_and_update(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
@@ -129,14 +206,11 @@ async def delete_worker(worker_id: str, user: dict = Depends(get_current_user)):
 @router.post("/sync-from-simpro")
 async def sync_from_simpro(body: SyncRequest, user: dict = Depends(get_current_user)):
     _require_write(user, action="sync")
-    # Resolve which Simpro company IDs to pull from.
     if body.company == "both":
         target_ids = [COMPANY_MAP["paneltec"], COMPANY_MAP["viatec"]]
     else:
         target_ids = [COMPANY_MAP[body.company]]
 
-    # Reuse the existing staff-cache helper — it already fan-outs to /employees/{id}
-    # for email/phone/position.
     doc = await db.integration_configs.find_one(
         {"org_id": user["org_id"], "kind": "simpro"},
     )
@@ -185,7 +259,7 @@ async def sync_from_simpro(body: SyncRequest, user: dict = Depends(get_current_u
                 "id": new_id(),
                 "created_by": user["id"],
                 "created_at": now_iso(),
-                "birth_date": None, "country": None, "state": None,
+                "birth_date": None, "country": "Australia", "state": None,
                 "street_address": None, "suburb": None, "postal_code": None,
                 "additional_notes": None,
                 "availability": None, "client_ids": [],
