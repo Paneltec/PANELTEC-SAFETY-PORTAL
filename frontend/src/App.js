@@ -33,6 +33,7 @@ import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
 import Workspaces from '@/pages/Workspaces';
+import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
 
 function App() {
   return (
@@ -76,6 +77,9 @@ function App() {
               <Route path="renewals" element={<Renewals />} />
               <Route path="audit-exports" element={<AuditExports />} />
               <Route path="vehicles" element={<Vehicles />} />
+
+              <Route path="document-library" element={<DocumentLibrary />} />
+              <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />
 
               <Route path="settings/org" element={<OrgSettings />} />
               <Route path="settings/workspaces" element={<Workspaces />} />

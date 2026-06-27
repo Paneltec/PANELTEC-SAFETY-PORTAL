@@ -105,3 +105,8 @@ async def serve_export(name: str):
 @files_router.get("/pdfs/{name}")
 async def serve_pdf(name: str):
     return _serve("pdfs", name)
+
+
+@files_router.get("/document_library/{folder_id}/{name}")
+async def serve_document_library(folder_id: str, name: str):
+    return _serve("document_library", folder_id, name)
