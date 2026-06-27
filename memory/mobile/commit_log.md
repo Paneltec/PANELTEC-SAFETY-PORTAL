@@ -111,3 +111,27 @@
   - `/app/mobile/app/(tabs)/dashboard.tsx` (added Workers to MANAGE_TOOLS)
 - **Web files referenced**: `/app/frontend/src/pages/Workers.jsx`
 - **All screens verified**: Workers list, Edit modal, Client Picker, Sync modal, Dashboard, Outbox (existing flow)
+
+
+## Iteration 7 — Worker Certifications tab, Global Certifications page, Cover screen updates
+- **Commit**: 837c8e0
+- **Date**: 2026-06-27T12:19:00Z
+- **Changes**:
+  - Created `WorkerCertsSection.tsx` — 5th collapsible section in Worker Edit Modal with upload (expo-document-picker), manual add, edit, delete, send-reminder, status badges
+  - Created `certifications.tsx` — Global Certifications page: butter pastel header, search, filter chips (All/Expired/Expiring Soon/Missing File/Valid/No Expiry), CSV export, cert cards, empty state
+  - Updated `login.tsx` with 3-stack headline ("Build Safer./Build Smarter./Build Together."), gold accent, 4 value-prop chips
+  - Added subtitle to Worker Edit Modal header for existing workers
+  - Fixed first value-prop chip visibility (was white-on-white, changed to gold)
+  - Added `headerSubtitle` style to WorkerEditModal StyleSheet
+  - Added `certifications` Stack.Screen in root `_layout.tsx`
+  - Added Certifications link to Settings/Profile page
+- **Files modified**:
+  - `/app/mobile/app/certifications.tsx` (new)
+  - `/app/mobile/src/components/WorkerCertsSection.tsx` (new)
+  - `/app/mobile/src/components/WorkerEditModal.tsx` (updated)
+  - `/app/mobile/app/(auth)/login.tsx` (updated)
+  - `/app/mobile/app/_layout.tsx` (updated)
+  - `/app/mobile/app/(tabs)/settings.tsx` (updated)
+  - `/app/mobile/src/lib/colors.ts` (updated)
+- **Web files referenced**: Workers.jsx, Certifications.jsx, Login.jsx
+- **All screens verified**: Login (4 chips visible), Global Certifications (butter pastel header, filters), Workers list, Worker Edit Modal (subtitle + 5 sections), Certifications section expanded (upload/add/empty state)
