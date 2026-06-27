@@ -602,12 +602,11 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
                   const disabled = !e.importable;
                   return (
                     <tr key={k} className={`border-t border-slate-100 ${disabled ? 'bg-slate-50/60 opacity-70' : 'hover:bg-slate-50 cursor-pointer'}`}
-                      onClick={() => toggleRow(e)} data-testid={`import-row-${e.id}`}>
-                      <td className="px-4 py-2.5">
+                      onClick={() => { if (!disabled) toggleRow(e); }} data-testid={`import-row-${e.id}`}>
+                      <td className="px-4 py-2.5" onClick={(ev) => ev.stopPropagation()}>
                         <input type="checkbox" checked={checked} disabled={disabled}
                           onChange={() => toggleRow(e)}
-                          onClick={(ev) => ev.stopPropagation()}
-                          className="h-4 w-4 accent-blue-600 disabled:opacity-50"
+                          className="h-4 w-4 accent-blue-600 disabled:opacity-50 cursor-pointer"
                           data-testid={`import-checkbox-${e.id}`} />
                       </td>
                       <td className="px-2 py-2.5">
@@ -665,7 +664,9 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
               data-testid="import-submit"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold uppercase tracking-[0.12em] disabled:opacity-50">
               {busy ? <Loader2 size={14} className="animate-spin" /> : null}
-              Import {selected.size} user{selected.size === 1 ? '' : 's'}
+              <span data-testid="import-submit-label">
+                Import {selected.size} {selected.size === 1 ? 'user' : 'users'}
+              </span>
             </button>
           </div>
         </div>
