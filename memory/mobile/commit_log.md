@@ -58,3 +58,23 @@
   - Updated `(tabs)/_layout.tsx` — Added Vehicles tab gated by `can('vehicles', 'open')` permission
 - **Files modified**: vehicles.tsx (new), VehicleMapModal.tsx (new), _layout.tsx (updated)
 - **Module count**: 1016 modules, all routes 200
+
+## Iteration 5 — Phase A-C Mobile Parity (Suppliers, Document Library, Users, Ask CRUD, Simpro Login)
+- **Commit**: a59449127c9c83a8a3c56fb76496b8ef4d79fbb8
+- **Date**: 2026-06-27T10:27:00Z
+- **Changes**:
+  - Wired `suppliers`, `document-library`, `users` Stack.Screens in root `_layout.tsx`
+  - Created `SupplierDrawer.tsx` component with 4 panels (Tasks, Notes, Folders, Members) — full CRUD
+  - Updated supplier card icon chips to open drawer on corresponding panel
+  - Updated Compliance Hub: added Suppliers & Document Library links, renamed Contractors to Legacy
+  - Rewrote `ask.tsx` with API-loaded suggestions CRUD (add/edit/delete) for admin/hseq_lead roles
+  - Added `loginWithSimpro()` to `auth.ts` + "Sign in with Simpro" button in `login.tsx`
+- **Files modified**:
+  - `/app/mobile/app/_layout.tsx` (added Stack.Screen entries)
+  - `/app/mobile/app/suppliers.tsx` (wired SupplierDrawer import + state)
+  - `/app/mobile/src/components/SupplierDrawer.tsx` (NEW — 500+ line drawer component)
+  - `/app/mobile/app/(tabs)/compliance.tsx` (added Suppliers + Document Library + renamed Contractors)
+  - `/app/mobile/app/(tabs)/ask.tsx` (rewritten with suggestions CRUD)
+  - `/app/mobile/app/(auth)/login.tsx` (added Simpro login button + divider)
+  - `/app/mobile/src/lib/auth.ts` (added loginWithSimpro function)
+- **Web files referenced**: Suppliers.jsx, SupplierDrawer.jsx, DocumentLibrary.jsx, UsersManagement.jsx, Ask.jsx, Login.jsx
