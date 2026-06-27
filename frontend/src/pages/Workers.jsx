@@ -37,6 +37,12 @@ const CLIENT_SOURCES = [
 
 function fullName(w) { return `${w.first_name || ''} ${w.last_name || ''}`.trim() || '(unnamed)'; }
 
+// DD/MM/YY — saves ~6 chars vs ISO and matches AU date convention.
+function shortDate(iso) {
+  if (!iso || iso.length < 10) return '—';
+  return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
+}
+
 function emptyAvailability() {
   const a = {};
   DAYS.forEach((d) => { a[d.key] = { enabled: false, start: '07:00', end: '17:00' }; });
@@ -337,17 +343,17 @@ function CertificationsPanel({ workerId, canEdit }) {
               No certifications recorded yet. Drop a file above to add one.
             </div>
           ) : (
-            <div className="border border-slate-200 rounded-lg overflow-hidden">
+            <div className="border border-slate-200 rounded-lg overflow-x-auto">
               <table className="w-full text-xs" data-testid="cert-table">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
                   <tr>
                     <th className="text-left px-3 py-2">Name</th>
                     <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
-                    <th className="text-left px-3 py-2 hidden lg:table-cell">Issued</th>
-                    <th className="text-left px-3 py-2">Expiry</th>
-                    <th className="text-left px-3 py-2">Status</th>
-                    <th className="text-left px-3 py-2">File</th>
-                    <th className="text-right px-3 py-2">Action</th>
+                    <th className="text-left px-3 py-2 hidden lg:table-cell whitespace-nowrap">Issued</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Expiry</th>
+                    <th className="text-left px-3 py-2 whitespace-nowrap">Status</th>
+                    <th className="text-center px-3 py-2 w-12">File</th>
+                    <th className="px-3 py-2 w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -358,27 +364,29 @@ function CertificationsPanel({ workerId, canEdit }) {
                           onCancel={() => setEditingId(null)} />
                       : (
                         <tr key={c.id} className="border-t border-slate-100" data-testid={`cert-row-${c.id}`}>
-                          <td className="px-3 py-2 font-semibold text-slate-900">{c.name}</td>
-                          <td className="px-3 py-2 text-slate-600 hidden md:table-cell">{c.issuer || '—'}</td>
-                          <td className="px-3 py-2 text-slate-500 hidden lg:table-cell">{c.issue_date || '—'}</td>
-                          <td className="px-3 py-2 text-slate-500">{c.expiry_date || '—'}</td>
-                          <td className="px-3 py-2"><StatusBadgeCert status={c.status} /></td>
-                          <td className="px-3 py-2">
+                          <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">{c.name}</td>
+                          <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">{c.issuer || '—'}</td>
+                          <td className="px-3 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">{shortDate(c.issue_date)}</td>
+                          <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{shortDate(c.expiry_date)}</td>
+                          <td className="px-3 py-2 whitespace-nowrap"><StatusBadgeCert status={c.status} /></td>
+                          <td className="px-3 py-2 text-center">
                             {c.doc_file_id ? (
                               <a href={`${process.env.REACT_APP_BACKEND_URL}/api/document-library/files/${c.doc_file_id}/download`}
-                                 target="_blank" rel="noreferrer"
+                                 target="_blank" rel="noreferrer" title="View file"
                                  data-testid={`cert-file-${c.id}`}
-                                 className="inline-flex items-center gap-1 text-[#1e4a8c] hover:underline">
-                                <FileText size={11} /> View
+                                 className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
+                                <FileText size={11} />
                               </a>
-                            ) : <span className="text-[10px] text-slate-400 italic">no file</span>}
+                            ) : <span className="text-[10px] text-slate-400 italic" title="no file">—</span>}
                           </td>
-                          <td className="px-3 py-2 text-right">
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
                             {canEdit && (
                               <div className="inline-flex gap-1 items-center">
                                 <button type="button" onClick={() => setEditingId(c.id)} data-testid={`cert-edit-${c.id}`}
+                                  title="Edit"
                                   className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 size={11} /></button>
                                 <button type="button" onClick={() => removeCert(c)} data-testid={`cert-delete-${c.id}`}
+                                  title="Delete"
                                   className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 size={11} /></button>
                               </div>
                             )}
@@ -565,10 +573,16 @@ function EditModal({ worker, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="worker-edit-modal">
-      <form onSubmit={submit} className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
+      <form onSubmit={submit} className="w-full max-w-5xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9]">
           <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
           <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>
+          {!isNew && (
+            <p className="mt-1.5 text-xs text-slate-600/80 leading-relaxed max-w-3xl">
+              Manage identity, address, availability, client assignments and certifications.
+              Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.
+            </p>
+          )}
         </div>
         {isSimpro && (
           <div className="px-6 py-2 text-xs text-[#1e4a8c] bg-[#e6eff9]/60 border-b border-[#b9d2ec] flex items-center gap-1.5">
