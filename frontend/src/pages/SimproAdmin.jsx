@@ -17,7 +17,13 @@ const empty = {
   secretOnFile: null,
   accessTokenOnFile: null,
   poll_seconds: 900,
+  staff_custom_field: '',
+  staff_field_value: '',
 };
+
+function Helper({ children }) {
+  return <p className="text-xs text-slate-500 mt-1 leading-snug">{children}</p>;
+}
 
 export default function SimproAdmin() {
   const [s, setS] = useState(empty);
@@ -37,12 +43,15 @@ export default function SimproAdmin() {
       secretOnFile: isMasked(cfg.client_secret) ? cfg.client_secret : (cfg.client_secret ? '••••' : null),
       accessTokenOnFile: isMasked(cfg.access_token) ? cfg.access_token : (cfg.access_token ? '••••' : null),
       poll_seconds: cfg.poll_seconds ?? 900,
+      staff_custom_field: cfg.staff_custom_field || '',
+      staff_field_value: cfg.staff_field_value || '',
     }));
   };
 
   const load = async () => {
     try { const { data } = await api.get('/integrations/simpro'); apply(data); } catch { /* silent */ }
   };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, []);
 
   const buildBody = () => ({
@@ -51,6 +60,8 @@ export default function SimproAdmin() {
     client_id: s.client_id || null,
     client_secret: s.secretInput ? s.secretInput : (s.secretOnFile || null),
     poll_seconds: Number(s.poll_seconds) || 900,
+    staff_custom_field: s.staff_custom_field || null,
+    staff_field_value: s.staff_field_value || null,
   });
 
   const autoSave = async () => {
@@ -107,28 +118,62 @@ export default function SimproAdmin() {
         </p>
 
         <div className="grid sm:grid-cols-2 gap-x-7 gap-y-5">
-          <Field label="API base URL">
-            <Input value={s.api_base_url} onChange={(v) => setS({ ...s, api_base_url: v })} placeholder={DEFAULT_BASE} testid="simpro-base" />
-          </Field>
-          <Field label="Company ID">
-            <Input value={s.company_id} onChange={(v) => setS({ ...s, company_id: v })} placeholder="0" testid="simpro-company" />
-          </Field>
-          <Field label="Client ID">
-            <Input value={s.client_id} onChange={(v) => setS({ ...s, client_id: v })} placeholder="abc123…" testid="simpro-client-id" />
-          </Field>
-          <Field label="Client Secret" rightSlot={<SavedChip savedValue={s.secretOnFile} hasInput={!!s.secretInput} testid="simpro-secret-saved" />}>
-            <InputWithToggle
-              value={s.secretInput} onChange={(v) => setS({ ...s, secretInput: v })}
-              placeholder={s.secretOnFile || '••••••••'} show={showSecret} onToggle={() => setShowSecret((x) => !x)}
-              testid="simpro-secret"
-            />
-          </Field>
-          <Field label="Access token (read-only)" rightSlot={<SavedChip savedValue={s.accessTokenOnFile} hasInput={false} testid="simpro-token-saved" />}>
-            <Input value={s.accessTokenOnFile || ''} onChange={() => {}} placeholder="click Get Token" disabled testid="simpro-access-token" />
-          </Field>
-          <Field label="Poll · seconds">
-            <Input type="number" value={String(s.poll_seconds)} onChange={(v) => setS({ ...s, poll_seconds: Number(v) || 900 })} testid="simpro-poll" />
-          </Field>
+          <div>
+            <Field label="API base URL">
+              <Input value={s.api_base_url} onChange={(v) => setS({ ...s, api_base_url: v })} placeholder={DEFAULT_BASE} testid="simpro-base" />
+            </Field>
+            <Helper>Your Simpro API endpoint (e.g. <code className="text-[11px]">https://yourcompany.simprosuite.com</code>).</Helper>
+          </div>
+          <div>
+            <Field label="Company ID">
+              <Input value={s.company_id} onChange={(v) => setS({ ...s, company_id: v })} placeholder="0" testid="simpro-company" />
+            </Field>
+            <Helper>Your Simpro builder/account ID (e.g. <code className="text-[11px]">0</code> for the default builder). Found in <strong>Setup → System → Info &amp; Licence</strong>.</Helper>
+          </div>
+          <div>
+            <Field label="Client ID">
+              <Input value={s.client_id} onChange={(v) => setS({ ...s, client_id: v })} placeholder="abc123…" testid="simpro-client-id" />
+            </Field>
+            <Helper>The Client ID from your Simpro OAuth API key. Create one in <strong>Setup → System → Integrations → OAuth2 Clients</strong>.</Helper>
+          </div>
+          <div>
+            <Field label="Client Secret" rightSlot={<SavedChip savedValue={s.secretOnFile} hasInput={!!s.secretInput} testid="simpro-secret-saved" />}>
+              <InputWithToggle
+                value={s.secretInput} onChange={(v) => setS({ ...s, secretInput: v })}
+                placeholder={s.secretOnFile || '••••••••'} show={showSecret} onToggle={() => setShowSecret((x) => !x)}
+                testid="simpro-secret"
+              />
+            </Field>
+            <Helper>The Client Secret paired with the Client ID above. Shown only once when the OAuth client is created.</Helper>
+          </div>
+          <div>
+            <Field label="Access token (read-only)" rightSlot={<SavedChip savedValue={s.accessTokenOnFile} hasInput={false} testid="simpro-token-saved" />}>
+              <Input value={s.accessTokenOnFile || ''} onChange={() => {}} placeholder="click Get Token" disabled testid="simpro-access-token" />
+            </Field>
+            <Helper>Auto-fetched by Simpro using your Client ID + Secret when you click <strong>Get Token</strong>. We use it on every Simpro API call. If you see "Token expired", click Get Token again to refresh.</Helper>
+          </div>
+          <div>
+            <Field label="Poll · seconds">
+              <Input type="number" value={String(s.poll_seconds)} onChange={(v) => setS({ ...s, poll_seconds: Number(v) || 900 })} testid="simpro-poll" />
+            </Field>
+            <Helper>How often to refresh the cached staff list from Simpro (default: <code className="text-[11px]">600</code> = 10 minutes).</Helper>
+          </div>
+
+          {/* Whiteboard staff filter */}
+          <div>
+            <Field label="Staff custom field">
+              <Input value={s.staff_custom_field} onChange={(v) => setS({ ...s, staff_custom_field: v })}
+                placeholder="Show on Whiteboard" testid="simpro-staff-custom-field" />
+            </Field>
+            <Helper>Simpro custom field name used to mark which staff appear on the whiteboard (optional). Example: <code className="text-[11px]">Show on Whiteboard</code>.</Helper>
+          </div>
+          <div>
+            <Field label="Staff field value">
+              <Input value={s.staff_field_value} onChange={(v) => setS({ ...s, staff_field_value: v })}
+                placeholder="Yes" testid="simpro-staff-field-value" />
+            </Field>
+            <Helper>The value that marks a staff member as visible on the whiteboard. Example: <code className="text-[11px]">Yes</code> or <code className="text-[11px]">True</code>.</Helper>
+          </div>
         </div>
 
         {testMsg && (

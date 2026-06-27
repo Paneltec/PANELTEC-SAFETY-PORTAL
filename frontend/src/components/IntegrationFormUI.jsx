@@ -61,9 +61,13 @@ export function InputWithToggle({ value, onChange, placeholder, show, onToggle, 
         className={`w-full pl-3 pr-9 py-2.5 text-sm rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-600/30 disabled:opacity-60 ${mono ? 'font-mono' : ''}`}
         style={{ backgroundColor: '#FAF6EC', border: '1px solid #D8CFB8' }}
       />
-      <button type="button" onClick={onToggle}
+      <button
+        type="button"
+        onClick={onToggle}
+        data-testid={testid ? `${testid}-eye` : undefined}
+        aria-label={show ? 'Hide value' : 'Show value'}
         className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 p-1"
-        aria-label="toggle visibility">
+      >
         {show ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
     </div>

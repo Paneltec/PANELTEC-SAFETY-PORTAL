@@ -159,5 +159,37 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
             "phone": s.get("Phone") or s.get("phone"),
             "role": s.get("Type") or s.get("role"),
             "active": s.get("Active", True) if "Active" in s else s.get("active", True),
+            "custom_fields": _custom_fields_map(s),
         })
-    return {"count": len(out), "staff": out, "cached_at": doc.get("staff_cached_at")}
+
+    cfg = doc.get("config") or {}
+    filter_field = (cfg.get("staff_custom_field") or "").strip()
+    filter_value = (cfg.get("staff_field_value") or "").strip()
+    if filter_field and filter_value:
+        fv_lc = filter_value.lower()
+        ff_lc = filter_field.lower()
+        out = [m for m in out
+               if any(k.lower() == ff_lc and str(v).lower() == fv_lc
+                      for k, v in (m.get("custom_fields") or {}).items())]
+
+    return {"count": len(out), "staff": out, "cached_at": doc.get("staff_cached_at"),
+            "filtered_by": {"field": filter_field or None, "value": filter_value or None}}
+
+
+def _custom_fields_map(s: dict) -> dict:
+    """Best-effort flatten of Simpro's `CustomFields` array into {Name: Value}."""
+    out: dict = {}
+    raw = s.get("CustomFields") or s.get("customFields") or []
+    if isinstance(raw, list):
+        for cf in raw:
+            if not isinstance(cf, dict):
+                continue
+            field = cf.get("CustomField") or cf.get("customField") or {}
+            name = (field.get("Name") if isinstance(field, dict) else None) or cf.get("Name") or cf.get("name")
+            value = cf.get("Value") or cf.get("value")
+            if name:
+                out[str(name)] = value
+    elif isinstance(raw, dict):
+        for k, v in raw.items():
+            out[str(k)] = v
+    return out
