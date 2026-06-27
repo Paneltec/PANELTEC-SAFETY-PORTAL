@@ -95,6 +95,9 @@ code {
     --pastel-sage:     #dde7d8;   /* Contractors */
     --pastel-coral:    #f7d8d1;   /* Compliance */
 
+    /* Brand accent for hero / safety-yellow accents (matches AU hi-vis hard-hat amber). */
+    --paneltec-gold:   #F4C430;
+
     /* Deeper saturated icon colours per module — kept WCAG-AA on white */
     --pastel-mint-ink:     #1f7a3f;
     --pastel-sky-ink:      #1e4a8c;

@@ -490,7 +490,7 @@ async def search_certs(q: str = "", user: dict = Depends(get_current_user)):
 
 # ────────────────────── Reminders ──────────────────────
 
-NOTICE_OFFSETS = [30, 14, 7, 1, 0]  # days before expiry
+NOTICE_OFFSETS = [60, 30, 14, 7, 1, 0]  # days before expiry
 
 
 def _classify_notice(expiry: date, today: date) -> Optional[str]:
@@ -506,13 +506,35 @@ def _classify_notice(expiry: date, today: date) -> Optional[str]:
     return None
 
 
-def _build_messages(cert: dict, worker: dict, app_base: str) -> tuple[str, str, str]:
+def _build_messages(cert: dict, worker: dict, app_base: str,
+                    audience: str = "admin") -> tuple[str, str, str]:
+    """Returns (subject, body_html, sms). `audience='worker'` uses softer copy
+    aimed at the cert holder; `audience='admin'` keeps the existing wording."""
     worker_label = f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip()
+    first = (worker.get("first_name") or "there").strip() or "there"
     cert_label = cert.get("name") or "Certification"
     expiry = cert.get("expiry_date") or "—"
     status = _status_for(cert, date.today())
-    subject = f"Cert expiry reminder: {worker_label} – {cert_label}"
-    body_html = f"""
+    if audience == "worker":
+        subject = f"Heads up: your {cert_label} expires {expiry}"
+        body_html = f"""
+<p>Hi {first},</p>
+<p>Your <strong>{cert_label}</strong> is approaching its expiry date —
+please arrange renewal so your site work isn't interrupted.</p>
+<table cellpadding="6" style="border-collapse:collapse">
+  <tr><td><b>Certification</b></td><td>{cert_label}</td></tr>
+  <tr><td><b>Issuer</b></td><td>{cert.get('issuer') or '—'}</td></tr>
+  <tr><td><b>Expiry</b></td><td>{expiry}</td></tr>
+  <tr><td><b>Status</b></td><td>{status['label']}</td></tr>
+</table>
+<p>Your HSEQ lead has been notified too — they'll be in touch if anything is needed from them.</p>
+<p>– Paneltec Civil compliance reminders</p>
+""".strip()
+        sms = (f"Hi {first}, your {cert_label} expires {expiry}. "
+               f"Please arrange renewal — your HSEQ lead has been notified.")
+    else:
+        subject = f"Cert expiry reminder: {worker_label} – {cert_label}"
+        body_html = f"""
 <p>Hi team,</p>
 <p>This is a reminder that <strong>{worker_label}</strong>'s certification
 <strong>{cert_label}</strong> is approaching expiry.</p>
@@ -526,8 +548,8 @@ def _build_messages(cert: dict, worker: dict, app_base: str) -> tuple[str, str, 
 <p><a href="{app_base}/app/settings/workers?worker={worker.get('id')}">Open worker profile in Paneltec Civil →</a></p>
 <p>– Paneltec Civil compliance reminders</p>
 """.strip()
-    sms = (f"Paneltec WHS: {worker_label} {cert_label} expires {expiry}. "
-           f"Renew at app.paneltec.com.au")
+        sms = (f"Paneltec WHS: {worker_label} {cert_label} expires {expiry}. "
+               f"Renew at app.paneltec.com.au")
     return subject, body_html, sms[:160]
 
 
@@ -540,67 +562,125 @@ async def _admin_and_hseq(org_id: str) -> list[dict]:
     return await cursor.to_list(200)
 
 
+async def _resolve_worker_user(worker: dict, org_id: str) -> Optional[dict]:
+    """Find the `users` record that represents this worker for self-notification."""
+    queries: list[dict] = []
+    if worker.get("simpro_employee_id"):
+        queries.append({"simpro_employee_id": str(worker["simpro_employee_id"])})
+    if worker.get("email"):
+        queries.append({"email": worker["email"].lower().strip()})
+    for q in queries:
+        q.update({"org_id": org_id, "deleted_at": None})
+        row = await db.users.find_one(q, {"_id": 0, "email": 1, "mobile": 1, "id": 1, "name": 1})
+        if row:
+            return row
+    return None
+
+
 async def _send_one_reminder(
     cert: dict, worker: dict, recipients: list[dict],
     notice_type: str, *, dry_run: bool = False, manual_by: Optional[str] = None,
 ) -> dict:
-    """Queue email + SMS for a single cert. Returns a summary dict."""
+    """Queue email + SMS for a single cert. Dispatches TWO notices:
+       - `{notice_type}_admin` → admins + HSEQ Lead
+       - `{notice_type}_worker` → the worker themselves (if a `users` row exists
+         OR a mobile/email is set on the worker record).
+    Each audience is tracked separately in `cert_reminders_sent` so worker
+    spam can't piggyback on admin re-notices."""
     from email_outbox import queue_email_doc
     org_id = cert["org_id"]
     app_base = "https://app.paneltec.com.au"
-    subject, body_html, sms = _build_messages(cert, worker, app_base)
-    summary = {"cert_id": cert["id"], "notice_type": notice_type,
-               "email_to": [], "sms_to": [], "errors": []}
 
-    to_emails = sorted({u["email"] for u in recipients if u.get("email")})
-    if to_emails:
+    summary = {"cert_id": cert["id"], "notice_type": notice_type,
+               "email_to": [], "sms_to": [], "errors": [],
+               "worker_email_to": [], "worker_sms_to": []}
+
+    # TextMagic config used by both audiences.
+    tm = await db.integration_configs.find_one(
+        {"org_id": org_id, "kind": "textmagic"}, {"_id": 0},
+    )
+    tm_cfg = (tm.get("config") if tm and tm.get("status") == "connected" else None) or {}
+    tm_ready = bool(tm_cfg.get("username") and tm_cfg.get("api_key"))
+
+    async def _send_sms(mobiles: list[str], sms_text: str) -> tuple[list[str], Optional[str]]:
+        if not (tm_ready and mobiles):
+            return [], None
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=15) as c:
+                r = await c.post(
+                    "https://rest.textmagic.com/api/v2/messages",
+                    headers={"X-TM-Username": tm_cfg["username"], "X-TM-Key": tm_cfg["api_key"]},
+                    data={"text": sms_text, "phones": ",".join(mobiles)},
+                )
+            if r.status_code in (200, 201):
+                return mobiles, None
+            return [], f"sms: HTTP {r.status_code} {r.text[:120]}"
+        except Exception as e:
+            return [], f"sms: {e}"
+
+    # ── Admin / HSEQ Lead audience ─────────────────────
+    admin_subject, admin_html, admin_sms = _build_messages(cert, worker, app_base, "admin")
+    admin_emails = sorted({u["email"] for u in recipients if u.get("email")})
+    if admin_emails:
         try:
             await queue_email_doc(
-                org_id=org_id, to=to_emails, subject=subject,
-                body_html=body_html, attachments=[],
+                org_id=org_id, to=admin_emails, subject=admin_subject,
+                body_html=admin_html, attachments=[],
                 related_record_type="worker_certification",
                 related_record_id=cert["id"],
                 created_by=manual_by or "system",
                 resource_kind="renewal_links",
             )
-            summary["email_to"] = to_emails
+            summary["email_to"] = admin_emails
         except Exception as e:
-            summary["errors"].append(f"email: {e}")
+            summary["errors"].append(f"admin email: {e}")
+    admin_mobiles = sorted({u["mobile"] for u in recipients if u.get("mobile")})
+    sent_sms, sms_err = await _send_sms(admin_mobiles, admin_sms)
+    summary["sms_to"] = sent_sms
+    if sms_err:
+        summary["errors"].append(f"admin {sms_err}")
 
-    # SMS: only when TextMagic is connected.
-    tm = await db.integration_configs.find_one(
-        {"org_id": org_id, "kind": "textmagic"}, {"_id": 0},
-    )
-    if tm and tm.get("status") == "connected":
-        cfg = tm.get("config") or {}
-        to_mobiles = sorted({u["mobile"] for u in recipients if u.get("mobile")})
-        if to_mobiles and cfg.get("username") and cfg.get("api_key"):
-            import httpx
+    # ── Worker self-notify audience ────────────────────
+    worker_user = await _resolve_worker_user(worker, org_id)
+    worker_email = (worker_user or {}).get("email") or worker.get("email") or ""
+    worker_mobile = (worker_user or {}).get("mobile") or worker.get("mobile") or ""
+    if worker_email or worker_mobile:
+        wk_subject, wk_html, wk_sms = _build_messages(cert, worker, app_base, "worker")
+        if worker_email:
             try:
-                async with httpx.AsyncClient(timeout=15) as c:
-                    r = await c.post(
-                        "https://rest.textmagic.com/api/v2/messages",
-                        headers={"X-TM-Username": cfg["username"], "X-TM-Key": cfg["api_key"]},
-                        data={"text": sms, "phones": ",".join(to_mobiles)},
-                    )
-                if r.status_code in (200, 201):
-                    summary["sms_to"] = to_mobiles
-                else:
-                    summary["errors"].append(f"sms: HTTP {r.status_code} {r.text[:120]}")
+                await queue_email_doc(
+                    org_id=org_id, to=[worker_email], subject=wk_subject,
+                    body_html=wk_html, attachments=[],
+                    related_record_type="worker_certification",
+                    related_record_id=cert["id"],
+                    created_by=manual_by or "system",
+                    resource_kind="renewal_links",
+                )
+                summary["worker_email_to"] = [worker_email]
             except Exception as e:
-                summary["errors"].append(f"sms: {e}")
+                summary["errors"].append(f"worker email: {e}")
+        sent_sms, sms_err = await _send_sms([worker_mobile] if worker_mobile else [], wk_sms)
+        summary["worker_sms_to"] = sent_sms
+        if sms_err:
+            summary["errors"].append(f"worker {sms_err}")
 
     if not dry_run:
-        await db.cert_reminders_sent.insert_one({
-            "id": new_id(),
-            "org_id": org_id,
-            "cert_id": cert["id"],
-            "notice_type": notice_type,
-            "email_to": summary["email_to"],
-            "sms_to": summary["sms_to"],
-            "manual_by": manual_by,
-            "sent_at": now_iso(),
-        })
+        ts = now_iso()
+        rows = [{
+            "id": new_id(), "org_id": org_id,
+            "cert_id": cert["id"], "notice_type": f"{notice_type}_admin",
+            "email_to": summary["email_to"], "sms_to": summary["sms_to"],
+            "manual_by": manual_by, "sent_at": ts,
+        }]
+        if summary["worker_email_to"] or summary["worker_sms_to"]:
+            rows.append({
+                "id": new_id(), "org_id": org_id,
+                "cert_id": cert["id"], "notice_type": f"{notice_type}_worker",
+                "email_to": summary["worker_email_to"], "sms_to": summary["worker_sms_to"],
+                "manual_by": manual_by, "sent_at": ts,
+            })
+        await db.cert_reminders_sent.insert_many(rows)
     return summary
 
 
@@ -650,9 +730,10 @@ async def run_reminder_scan() -> dict:
         notice = _classify_notice(expiry, today)
         if not notice:
             continue
-        # Dedupe by (cert_id, notice_type).
+        # Dedupe by (cert_id, notice_type_admin). The admin audience is the
+        # canonical "did we send for this offset?" marker — workers piggyback.
         existing = await db.cert_reminders_sent.find_one(
-            {"cert_id": c["id"], "notice_type": notice}, {"_id": 1},
+            {"cert_id": c["id"], "notice_type": f"{notice}_admin"}, {"_id": 1},
         )
         if existing:
             stats["skipped_duplicate"] += 1
