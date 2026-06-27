@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren,
   ShieldCheck, BarChart3, Download, Sparkles, Database, Radar, Eye, FileSearch,
-  AlertTriangle, Award, Clock,
+  AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 
-const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye };
+const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck };
 
 // Filler widgets for the centre column — close the gap below the action row
 // so the Key Metrics column visually balances the Ask Intelligence column.
@@ -203,6 +203,14 @@ const TILE_BG_BY_KEY = {
   hazards: '/tile-bgs/hazards.png',
   incidents: '/tile-bgs/incidents.png',
   inspections: '/tile-bgs/inspections.png',
+  // New "People & Compliance" + "Contractors & Docs" tiles reuse existing
+  // illustrations whose colour temperatures match the pastel target.
+  workers: '/tile-bgs/prestarts.png',
+  certifications: '/tile-bgs/compliance.png',
+  users: '/tile-bgs/contractors.png',
+  suppliers: '/tile-bgs/contractors.png',
+  'document-library': '/tile-bgs/intelligence.png',
+  vehicles: '/tile-bgs/prestarts.png',
 };
 const ICON_PASTEL_BY_KEY = {
   swms: 'pastel-icon-mint', 'ai-swms': 'pastel-icon-mint',
@@ -211,7 +219,33 @@ const ICON_PASTEL_BY_KEY = {
   hazards: 'pastel-icon-peach',
   incidents: 'pastel-icon-blush',
   inspections: 'pastel-icon-lavender',
+  workers: 'pastel-icon-sky',
+  certifications: 'pastel-icon-butter',
+  users: 'pastel-icon-slate',
+  suppliers: 'pastel-icon-mint',
+  'document-library': 'pastel-icon-lavender',
+  vehicles: 'pastel-icon-sky',
 };
+
+// Left-column grouping — each group renders a small uppercase tracking-wide
+// heading above its tiles so the column scrolls with rhythm rather than as a
+// flat unbroken stack.
+const CAPTURE_GROUPS = [
+  { heading: 'Capture & Records', keys: ['swms', 'pre-starts', 'site-diary'] },
+  { heading: 'Risk & Incidents',  keys: ['hazards', 'incidents', 'inspections'] },
+  { heading: 'People & Compliance', extras: [
+    { key: 'workers',        title: 'Workers',              desc: 'Field crew directory synced from Simpro + manual adds.', icon: 'HardHat',  route: '/app/settings/workers' },
+    { key: 'certifications', title: 'Certifications',       desc: 'White Card, First Aid, Heights — expiries at a glance.', icon: 'Award',    route: '/app/settings/certifications' },
+    { key: 'users',          title: 'Users & Permissions',  desc: 'Org members, roles and workspace access.',                icon: 'UserCog',  route: '/app/users' },
+  ] },
+  { heading: 'Contractors & Docs', extras: [
+    { key: 'suppliers',        title: 'Suppliers',         desc: 'Vendor directory with tasks, notes and renewal links.', icon: 'Users2',   route: '/app/suppliers' },
+    { key: 'document-library', title: 'Document Library',  desc: '46 seed folders for licences, SDS, manuals and more.',   icon: 'FolderOpen', route: '/app/document-library' },
+  ] },
+  { heading: 'Ops & Fleet', extras: [
+    { key: 'vehicles', title: 'Vehicles & Fleet', desc: 'Live GPS tracking via Navixy when configured.', icon: 'Truck', route: '/app/vehicles' },
+  ] },
+];
 
 const METRIC_ROWS = [
   { key: 'swms', label: 'AI SWMS', field: 'swms_count', icon: 'FileText' },
@@ -338,10 +372,24 @@ export default function Dashboard() {
       </section>
 
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-        {/* LEFT — Create & Capture */}
+        {/* LEFT — Create & Capture, grouped */}
         <section className="xl:col-span-4 space-y-3" data-testid="capture-column">
-          <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Create &amp; Capture</div>
-          {CAPTURE_TOOLS.map((t) => <CaptureCard key={t.key} tool={t} onClick={() => navigate(t.route)} />)}
+          {CAPTURE_GROUPS.map((group, gi) => {
+            // Resolve tiles: explicit `extras` for new groups, otherwise look
+            // up from the existing CAPTURE_TOOLS mock by key.
+            const tiles = group.extras
+              ? group.extras
+              : group.keys.map((k) => CAPTURE_TOOLS.find((t) => t.key === k)).filter(Boolean);
+            if (tiles.length === 0) return null;
+            return (
+              <div key={group.heading} className="space-y-2" data-testid={`capture-group-${group.heading.toLowerCase().replace(/[^a-z]/g,'-')}`}>
+                <div className={`text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase ${gi === 0 ? 'mb-1' : 'mt-4 mb-1 pt-3 border-t border-slate-200/70'}`}>
+                  {group.heading}
+                </div>
+                {tiles.map((t) => <CaptureCard key={t.key} tool={t} onClick={() => navigate(t.route)} />)}
+              </div>
+            );
+          })}
           <button onClick={() => navigate('/app/swms')} data-testid="view-all-features"
             className="w-full mt-2 text-sm text-brand-blue hover:underline inline-flex items-center justify-center gap-1.5 py-2">
             View all features <ArrowRight size={14} />
