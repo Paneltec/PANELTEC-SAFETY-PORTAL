@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
-import { fetchMe, getToken, getUser, initials, signOut } from '../../lib/auth';
+import { fetchMe, getToken, getUser, initials, signOut, refreshToken } from '../../lib/auth';
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
