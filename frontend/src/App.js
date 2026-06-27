@@ -35,6 +35,7 @@ import OrgSettings from '@/pages/OrgSettings';
 import Workspaces from '@/pages/Workspaces';
 import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
 import Suppliers from '@/pages/Suppliers';
+import Workers from '@/pages/Workers';
 
 function App() {
   return (
@@ -92,6 +93,7 @@ function App() {
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
               <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
+              <Route path="settings/workers" element={<Workers />} />
               <Route path="outbox" element={<Outbox />} />
               <Route path="profile" element={<MyProfile />} />
             </Route>

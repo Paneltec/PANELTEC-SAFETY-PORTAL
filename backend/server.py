@@ -27,6 +27,7 @@ from document_library import (  # noqa: E402
 )
 from suppliers import router as suppliers_router  # noqa: E402
 from supplier_panels import router as supplier_panels_router  # noqa: E402
+from workers import router as workers_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
@@ -107,6 +108,7 @@ api.include_router(document_library_router)
 api.include_router(supplier_folders_router)
 api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)
+api.include_router(workers_router)
 
 app.include_router(api)
 
