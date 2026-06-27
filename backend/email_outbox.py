@@ -8,7 +8,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
 
-from auth import get_current_user
+from auth import get_current_user, require_roles
 from db import db
 from models import new_id, now_iso
 from permissions import PERMISSIONS_SCHEMA, RESOURCES, require_permission
@@ -143,7 +143,7 @@ async def list_outbox(
     limit: int = Query(200, ge=1, le=500),
     user: dict = Depends(get_current_user),
 ):
-    q: dict = {"org_id": user["org_id"]}
+    q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
     if status:
         q["status"] = status
     if related_record_type:
@@ -195,6 +195,56 @@ async def cancel_outbox(email_id: str, user: dict = Depends(get_current_user)):
     )
     saved = await db.outbound_emails.find_one({"id": email_id}, {"_id": 0})
     return _strip(saved)
+
+
+@router.delete("/outbox/{email_id}")
+async def delete_outbox(email_id: str, user: dict = Depends(get_current_user)):
+    """Soft-delete an outbox email. Admins can delete any in their org;
+    everyone else can only delete the ones they themselves created."""
+    doc = await db.outbound_emails.find_one(
+        {"id": email_id, "org_id": user["org_id"], "deleted_at": {"$exists": False}}
+    )
+    if not doc:
+        raise HTTPException(404, "Not found")
+    if user.get("role") != "admin" and doc.get("created_by") != user["id"]:
+        raise HTTPException(403, "Only the sender or an admin can delete this email")
+    await db.outbound_emails.update_one(
+        {"id": email_id},
+        {"$set": {"deleted_at": now_iso(), "updated_at": now_iso()}},
+    )
+    return {"ok": True, "status": "deleted"}
+
+
+class BulkDeleteFilter(BaseModel):
+    status: Optional[EmailStatus] = None
+
+
+class BulkDeleteIn(BaseModel):
+    ids: Optional[List[str]] = None
+    filter: Optional[BulkDeleteFilter] = None
+
+
+@router.post("/outbox/bulk-delete")
+async def bulk_delete_outbox(body: BulkDeleteIn,
+                             user: dict = Depends(require_roles("admin"))):
+    """Admin-only bulk soft-delete. Either `ids` or `filter.status` must be set.
+    Never auto-deletes queued items via filter — they may still send. To delete
+    a queued item, pass it explicitly by id (or cancel it first).
+    """
+    q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
+    if body.ids:
+        q["id"] = {"$in": body.ids}
+    elif body.filter and body.filter.status:
+        if body.filter.status == "queued":
+            raise HTTPException(400, "Queued emails cannot be bulk-deleted by filter — cancel them first or delete by id.")
+        q["status"] = body.filter.status
+    else:
+        # No ids and no filter => delete every non-queued email (clear all).
+        q["status"] = {"$ne": "queued"}
+    res = await db.outbound_emails.update_many(
+        q, {"$set": {"deleted_at": now_iso(), "updated_at": now_iso()}},
+    )
+    return {"deleted": res.modified_count}
 
 
 # ---------- Convenience email endpoints ----------
