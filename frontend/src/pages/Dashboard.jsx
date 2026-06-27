@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren,
   ShieldCheck, BarChart3, Download, Sparkles, Database, Radar, Eye, FileSearch,
+  AlertTriangle, Award, Clock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
@@ -10,6 +11,160 @@ import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye };
+
+// Filler widgets for the centre column — close the gap below the action row
+// so the Key Metrics column visually balances the Ask Intelligence column.
+const CERT_STATUS_CHIP = {
+  expired:       'bg-[#f7d8dc] text-[#a8324c] border-[#e69aa3]',
+  expiring_soon: 'bg-[#f7eed1] text-[#8c6a1a] border-[#e6d995]',
+  missing_file:  'bg-[#f7eed1] text-[#8c6a1a] border-[#e6d995]',
+};
+const CERT_STATUS_RANK = { expired: 0, expiring_soon: 1, missing_file: 2 };
+
+function UpcomingCertExpiriesCard() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/workers/certifications/all')
+      .then((r) => {
+        if (!alive) return;
+        const flagged = (r.data || []).filter((c) =>
+          ['expired', 'expiring_soon', 'missing_file'].includes(c.status?.key)
+        );
+        flagged.sort((a, b) => {
+          const ra = CERT_STATUS_RANK[a.status?.key] ?? 9;
+          const rb = CERT_STATUS_RANK[b.status?.key] ?? 9;
+          if (ra !== rb) return ra - rb;
+          return (a.expiry_date || 'z').localeCompare(b.expiry_date || 'z');
+        });
+        setRows(flagged.slice(0, 5));
+      })
+      .catch(() => { if (alive) setRows([]); });
+    return () => { alive = false; };
+  }, []);
+
+  const count = rows?.length ?? 0;
+  return (
+    <div className="rounded-2xl border border-[#e6d995] bg-[#fffaeb] p-4" data-testid="dashboard-cert-expiries">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="rounded-lg bg-[#f7eed1] p-1.5"><AlertTriangle size={14} className="text-[#8c6a1a]" /></div>
+        <div className="text-sm font-semibold text-[#5c4810] flex-1">Upcoming cert expiries</div>
+        {rows !== null && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#f7eed1] text-[#8c6a1a]">
+            {count} at risk
+          </span>
+        )}
+      </div>
+      {rows === null ? (
+        <div className="text-xs text-slate-500">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-[#d8ecdd] text-[#1f7a3f] border border-[#b6dcbf]">
+          <ShieldCheck size={11} /> No certs need attention. Nice.
+        </div>
+      ) : (
+        <ul className="space-y-1" data-testid="cert-expiry-list">
+          {rows.map((c) => (
+            <li key={c.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/70 transition-colors">
+              <Award size={12} className="text-[#8c6a1a] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-slate-900 truncate">
+                  {c.worker_first_name} {c.worker_last_name}
+                </div>
+                <div className="text-[11px] text-slate-500 truncate">{c.name}</div>
+              </div>
+              <span className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border whitespace-nowrap ${CERT_STATUS_CHIP[c.status?.key] || CERT_STATUS_CHIP.missing_file}`}>
+                {c.status?.label}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button onClick={() => navigate('/app/settings/certifications')}
+        data-testid="view-all-certs-link"
+        className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#8c6a1a] hover:underline">
+        View all certs <ArrowRight size={11} />
+      </button>
+    </div>
+  );
+}
+
+const MODULE_META = {
+  swms:      { label: 'SWMS',      icon: FileText,        tint: 'bg-[#d8ecdd] text-[#1f7a3f]', route: '/app/swms' },
+  hazards:   { label: 'Hazard',    icon: TriangleAlert,   tint: 'bg-[#f8d7c3] text-[#9c4f1a]', route: '/app/hazards' },
+  incidents: { label: 'Incident',  icon: Siren,           tint: 'bg-[#f7d8dc] text-[#a8324c]', route: '/app/incidents' },
+};
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const now = Date.now();
+  const then = new Date(iso).getTime();
+  const diff = Math.max(0, Math.floor((now - then) / 1000));
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 30) return `${Math.floor(diff / 86400)}d ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function RecentActivityCard() {
+  const navigate = useNavigate();
+  const [rows, setRows] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    Promise.all([
+      api.get('/swms').then((r) => (r.data || []).slice(0, 3).map((x) => ({ ...x, _module: 'swms' }))).catch(() => []),
+      api.get('/hazards').then((r) => (r.data || []).slice(0, 3).map((x) => ({ ...x, _module: 'hazards' }))).catch(() => []),
+      api.get('/incidents').then((r) => (r.data || []).slice(0, 2).map((x) => ({ ...x, _module: 'incidents' }))).catch(() => []),
+    ]).then((batches) => {
+      if (!alive) return;
+      const merged = batches.flat()
+        .filter((r) => r.created_at)
+        .sort((a, b) => b.created_at.localeCompare(a.created_at))
+        .slice(0, 5);
+      setRows(merged);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  return (
+    <div className="rounded-2xl border border-[#b9d2ec] bg-[#eff5fc] p-4" data-testid="dashboard-recent-activity">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="rounded-lg bg-[#d8e6f4] p-1.5"><Clock size={14} className="text-[#1e4a8c]" /></div>
+        <div className="text-sm font-semibold text-[#1e3a6b]">Recent activity</div>
+      </div>
+      {rows === null ? (
+        <div className="text-xs text-slate-500">Loading…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-xs text-slate-500 italic">Nothing new yet — capture your first record.</div>
+      ) : (
+        <ul className="space-y-1" data-testid="recent-activity-list">
+          {rows.map((r) => {
+            const meta = MODULE_META[r._module];
+            const Icon = meta.icon;
+            return (
+              <li key={`${r._module}-${r.id}`}>
+                <button onClick={() => navigate(meta.route)}
+                  data-testid={`activity-${r._module}-${r.id}`}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/70 transition-colors text-left">
+                  <div className={`rounded-md p-1.5 shrink-0 ${meta.tint}`}><Icon size={11} /></div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-slate-900 truncate">
+                      {meta.label} · {r.title || r.reference || r.ref || '(untitled)'}
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      {r.created_by_name || 'Someone'} · {timeAgo(r.created_at)}
+                    </div>
+                  </div>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // Compliance Snapshot — value-prop cards above the capture grid.
 const SNAPSHOT_CARDS = [
@@ -261,6 +416,10 @@ export default function Dashboard() {
               <Download size={16} /> {pdfBusy ? 'Generating…' : 'Download PDF report'}
             </button>
           </div>
+
+          {/* Filler widgets — close the dead-space gap with the Ask column. */}
+          <UpcomingCertExpiriesCard />
+          <RecentActivityCard />
         </section>
 
         {/* RIGHT — Ask Intelligence (still MOCKED briefing copy) */}
