@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 7 — Verified the 'signed out too quickly' fixes. All scenarios pass: JWT exp is exactly 30 days; M365/Simpro/TextMagic /test-connection return HTTP 400 with NO X-Auth-Reason header; no-op PATCH of self does NOT bump token_version (GET /me stays 200); real role change DOES bump token_version (GET /me → 401 X-Auth-Reason=token-revoked); PUT /api/integrations/{simpro,microsoft365,textmagic,navixy} keep the user logged in; stale PDF token request does not carry a platform X-Auth-Reason. Frontend end-to-end session: logged in as admin@paneltec.com, clicked Test Connection on M365 + Simpro + TextMagic (all surfaced 400 upstream errors), fetched an invalid PDF (404), then navigated to /app/dashboard — user remained authenticated, token preserved in localStorage, never redirected to /login.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_persistence.py",
+    "/app/test_reports/pytest/iteration_7.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "users.py update_user normalisation is correct: status None→'active', email lowercased before comparison, prevents spurious tv bumps on no-op resaves of the user list.",
+    "auth.py JWT_EXP_DAYS=30 matches review; verified live token's exp claim is 30.00 days in the future.",
+    "api.js PLATFORM_AUTH_REASONS allow-list is tight (5 entries: jwt-missing/invalid/expired, token-revoked, account-disabled). Stale PDF tokens, upstream provider 401s and any other non-platform reason are correctly ignored.",
+    "Minor (pre-existing, not in scope): frontend eslint warnings about missing 'load' dep in useEffect across SimproAdmin/TextMagicAdmin/Contractors — non-blocking."
+  ],
+  "updated_files": ["/app/backend/tests/test_auth_persistence.py"],
+  "success_rate": {
+    "backend": "100% (11/11 pytest cases)",
+    "frontend": "100% (5/5 in-app actions — no premature logout observed)"
+  },
+  "test_credentials": "admin@paneltec.com / demo123",
+  "seed_data_creation": "PUT integration tests resaved dummy creds for simpro/microsoft365/textmagic/navixy via the existing config docs; values are non-secret dummies (TEST-SECRET-ABCDEFGH, dummy@example.com etc).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "The 'logged out too quickly' regression suite lives in /app/backend/tests/test_auth_persistence.py (11 cases: JWT-exp, 3x upstream-test-connection header check, no-op PATCH, 4x PUT integrations, real role change, stale PDF). It is self-contained, restores admin role at the end, and reads REACT_APP_BACKEND_URL from /app/frontend/.env if not exported. Re-run with: pytest /app/backend/tests/test_auth_persistence.py -v --junitxml=/app/test_reports/pytest/iteration_N.xml",
+  "rca of the issue": "Original logout-too-quickly RCA was a combination of (a) frontend axios interceptor force-logging-out on ANY 401 carrying any X-Auth-Reason — including non-platform reasons like 'pdf-token-invalid' — and (b) users.py update_user $inc'ing token_version on every PATCH that included status/email/role keys even when values were unchanged. Both are now fixed (allow-list in api.js, value-diff check in users.py). Combined with the JWT_EXP_DAYS bump 7→30 and the explicit no-X-Auth-Reason behaviour of the three new integration test-connection endpoints, the user no longer gets bounced to /login during a normal admin session."
+}

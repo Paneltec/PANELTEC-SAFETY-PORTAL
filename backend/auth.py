@@ -12,7 +12,7 @@ from db import db
 from models import LoginIn, SignupIn, TokenOut, UserOut, new_id, now_iso
 
 JWT_ALGORITHM = "HS256"
-JWT_EXP_DAYS = 7
+JWT_EXP_DAYS = 30
 
 bearer_scheme = HTTPBearer(auto_error=False)
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -143,7 +143,8 @@ async def login(body: LoginIn):
     if not user or not verify_password(body.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.get("status") == "disabled":
-        raise HTTPException(status_code=401, detail="Account disabled — contact your administrator")
+        raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
+                            headers={"X-Auth-Reason": "account-disabled"})
     token = create_access_token(user["id"], user["email"], user.get("token_version", 0))
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
 

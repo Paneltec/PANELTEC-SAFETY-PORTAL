@@ -95,11 +95,26 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
             raise HTTPException(400, "Email already in use")
         patch["email"] = new_email
     patch["updated_at"] = now_iso()
-    # Status / email / role changes revoke any existing JWTs for that user
-    # (status was already doing this; email and role changes also justify it).
+    # Status / email / role changes revoke any existing JWTs for that user.
+    # Only bump token_version if the value ACTUALLY changes (not on a no-op resave).
+    existing = await db.users.find_one(
+        {"id": user_id, "org_id": actor["org_id"]},
+        {"_id": 0, "status": 1, "email": 1, "role": 1},
+    )
     update_op: dict = {"$set": patch}
-    if any(k in patch for k in ("status", "email", "role")):
-        update_op["$inc"] = {"token_version": 1}
+    if existing:
+        def _norm(key, val):
+            if key == "status" and not val:
+                return "active"  # missing/None defaults to active in the model
+            if key == "email" and isinstance(val, str):
+                return val.lower().strip()
+            return val
+        revocable_changed = any(
+            k in patch and _norm(k, patch[k]) != _norm(k, existing.get(k))
+            for k in ("status", "email", "role")
+        )
+        if revocable_changed:
+            update_op["$inc"] = {"token_version": 1}
     result = await db.users.find_one_and_update(
         {"id": user_id, "org_id": actor["org_id"]},
         update_op,

@@ -16,14 +16,23 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Only platform-JWT auth failures should force a sign-out. Anything else
+// (upstream provider 401s, stale PDF tokens, expired share links, etc.) is
+// surfaced as a regular API error and must NOT log the user out.
+const PLATFORM_AUTH_REASONS = new Set([
+  'jwt-missing',
+  'jwt-invalid',
+  'jwt-expired',
+  'token-revoked',
+  'account-disabled',
+]);
+
 api.interceptors.response.use(
   (r) => r,
   (err) => {
     const status = err?.response?.status;
     const reason = err?.response?.headers?.['x-auth-reason'];
-    // Only log out when *our own* JWT middleware said so.
-    // Upstream-provider 401s (Navixy, LLM, etc.) bubble through unchanged.
-    if (status === 401 && reason) {
+    if (status === 401 && PLATFORM_AUTH_REASONS.has(reason)) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
