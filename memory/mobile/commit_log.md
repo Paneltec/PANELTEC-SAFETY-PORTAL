@@ -135,3 +135,23 @@
   - `/app/mobile/src/lib/colors.ts` (updated)
 - **Web files referenced**: Workers.jsx, Certifications.jsx, Login.jsx
 - **All screens verified**: Login (4 chips visible), Global Certifications (butter pastel header, filters), Workers list, Worker Edit Modal (subtitle + 5 sections), Certifications section expanded (upload/add/empty state)
+
+## Iteration 8 — Forms Library Navigation Wiring + expo-location fix
+- **Commit**: 6cbf96cdeb8bb3f5eb622ae34d8e33fa5e550963
+- **Date**: 2026-06-27T13:33:00Z
+- **Changes**:
+  - Registered `<Stack.Screen name="forms" />` in root `_layout.tsx` (was missing, causing "Unmatched Route")
+  - Added "Forms Library" entry to **Capture** tab tools list (always visible, no permission gating since forms are accessible to all roles)
+  - Added "Forms Library" as first entry in **Compliance Hub** 
+  - Added "Forms Library" as first tile in **Dashboard** MANAGE & COMPLY section
+  - Fixed `expo-location` version: downgraded from v56 (SDK 56) to v18 (SDK 54 compatible) to fix `createPermissionHook is not a function` error
+  - Imported 3 test templates (Site Induction Checklist, Incident Report Form, Daily Plant Inspection) to verify full flow
+- **Files modified**:
+  - `/app/mobile/app/_layout.tsx` (added forms Stack.Screen)
+  - `/app/mobile/app/(tabs)/capture.tsx` (added Forms Library tool + permission bypass)
+  - `/app/mobile/app/(tabs)/compliance.tsx` (added Forms Library as first item)
+  - `/app/mobile/app/(tabs)/dashboard.tsx` (added Forms Library to MANAGE_TOOLS)
+  - `/app/mobile/package.json` (expo-location version fix via yarn)
+- **Web files referenced**: Forms.jsx, FormSubmissions.jsx
+- **All screens verified**: Forms List (3 templates, category counts correct), Template Detail (6 fields with types, description, CTAs), Fill-Out Screen (text/textarea/select/photo/signature inputs, auto-save badge, submit bar)
+- **Note**: Previous agent had already implemented complete UI for all Forms route files (not just boilerplates as originally reported). The only missing pieces were: route registration, navigation links, and the expo-location version fix.

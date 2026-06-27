@@ -17,7 +17,7 @@ import { getUser } from '../lib/auth';
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 // Pastel pills per the new spec: tint background + ink text.
-const CATEGORIES = [
+export const CATEGORIES = [
   { key: 'all',        label: 'All categories', pill: 'bg-slate-100 text-slate-700' },
   { key: 'incident',   label: 'Incident',       pill: 'bg-[#fde2e4] text-rose-700' },
   { key: 'inspection', label: 'Inspection',     pill: 'bg-[#dbeafe] text-blue-700' },
@@ -25,8 +25,8 @@ const CATEGORIES = [
   { key: 'near_miss',  label: 'Near Miss',      pill: 'bg-[#fed7aa] text-orange-700' },
   { key: 'general',    label: 'General',        pill: 'bg-[#e2e8f0] text-slate-700' },
 ];
-const CAT_PILL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.pill]));
-const categoryLabel = (key) => (CATEGORIES.find((c) => c.key === key)?.label || 'General').replace('All categories', 'General');
+export const CAT_PILL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.pill]));
+export const categoryLabel = (key) => (CATEGORIES.find((c) => c.key === key)?.label || 'General').replace('All categories', 'General');
 
 // ─────────────── Field renderers ───────────────
 
