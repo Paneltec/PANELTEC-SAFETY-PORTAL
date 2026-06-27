@@ -7,7 +7,6 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-
 from auth import require_roles, get_current_user
 from db import db
 from models import now_iso, new_id
@@ -192,7 +191,12 @@ def _custom_fields_map(s: dict) -> dict:
 
 
 def _normalise_employee(s: dict, company_id: Optional[str] = None) -> dict:
-    name = s.get("Name") or " ".join(filter(None, [s.get("GivenName"), s.get("FamilyName")])) or s.get("name")
+    given = s.get("GivenName") or ""
+    family = s.get("FamilyName") or ""
+    name = s.get("Name") or " ".join(filter(None, [given, family])) or s.get("name") or ""
+    if not given and not family and name and " " in name:
+        parts = name.strip().split(" ", 1)
+        given, family = parts[0], parts[1] if len(parts) > 1 else ""
     position = None
     pos_raw = s.get("Position")
     if isinstance(pos_raw, str):
@@ -202,6 +206,8 @@ def _normalise_employee(s: dict, company_id: Optional[str] = None) -> dict:
     return {
         "id": s.get("ID") or s.get("id"),
         "name": name,
+        "first_name": given,
+        "last_name": family,
         "email": s.get("Email") or s.get("email"),
         "phone": s.get("Phone") or s.get("phone"),
         "position": position,
@@ -248,6 +254,98 @@ async def _refresh_staff_cache(cfg: dict, ids: list[str], token: str) -> tuple[l
                     seen.add(key)
                 merged.append(_normalise_employee(s, company_id=cid))
     return raw_per_company, merged
+
+
+@router.get("/employees")
+async def simpro_employees(
+    company_ids: Optional[str] = None,
+    filter: str = "whiteboard",  # noqa: A002 — accepted as the API field name
+    user: dict = Depends(require_roles("admin", "hseq_lead")),
+):
+    """List Simpro staff with import-status flags, ready for the Users import drawer.
+
+    Query params:
+      - company_ids: comma-separated subset of the configured company IDs.
+        Defaults to all configured company IDs.
+      - filter: "whiteboard" (apply staff_custom_field/value filter, default)
+                or "all" (return everyone, no filter).
+    """
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(400, "Simpro not connected")
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+
+    configured = _company_ids(cfg)
+    if company_ids:
+        requested = [c.strip() for c in company_ids.split(",") if c.strip()]
+        ids = [c for c in requested if c in configured]
+        if not ids:
+            raise HTTPException(400, "No matching company_ids in your Simpro config.")
+    else:
+        ids = configured
+
+    if not ids:
+        raise HTTPException(400, "No Company IDs configured.")
+
+    _, merged = await _refresh_staff_cache(cfg, ids, cfg["api_token"])
+
+    if filter == "whiteboard":
+        ff = (cfg.get("staff_custom_field") or "").strip().lower()
+        fv = (cfg.get("staff_field_value") or "").strip().lower()
+        if ff and fv:
+            merged = [m for m in merged
+                      if any(k.lower() == ff and str(v).lower() == fv
+                             for k, v in (m.get("custom_fields") or {}).items())]
+
+    existing = await db.users.find(
+        {"org_id": user["org_id"]},
+        {"_id": 0, "email": 1, "simpro_employee_id": 1, "simpro_company_id": 1},
+    ).to_list(2000)
+    existing_emails = {str(u.get("email") or "").lower() for u in existing if u.get("email")}
+    existing_simpro = {(str(u["simpro_employee_id"]), str(u["simpro_company_id"]))
+                       for u in existing
+                       if u.get("simpro_employee_id") and u.get("simpro_company_id")}
+
+    company_names = {}
+    for cs in (doc.get("companies_status") or []):
+        if cs.get("status") == "ok":
+            company_names[str(cs.get("id"))] = cs.get("name") or str(cs.get("id"))
+
+    out = []
+    importable_count = 0
+    for m in merged:
+        email = (m.get("email") or "").strip()
+        eid = str(m.get("id")) if m.get("id") is not None else None
+        cid = str(m.get("company_id") or "")
+        already = False
+        already_reason = None
+        if eid and (eid, cid) in existing_simpro:
+            already = True
+            already_reason = "Already imported (Simpro ID match)"
+        elif email and email.lower() in existing_emails:
+            already = True
+            already_reason = "Already imported (email match)"
+        email_missing = not email
+        importable = not already and not email_missing
+        if importable:
+            importable_count += 1
+        out.append({
+            **m,
+            "company_name": company_names.get(cid, cid),
+            "is_already_imported": already,
+            "already_imported_reason": already_reason,
+            "email_missing": email_missing,
+            "importable": importable,
+        })
+
+    return {
+        "count": len(out),
+        "importable_count": importable_count,
+        "employees": out,
+        "companies_queried": ids,
+        "filter": filter,
+    }
 
 
 @router.get("/staff")

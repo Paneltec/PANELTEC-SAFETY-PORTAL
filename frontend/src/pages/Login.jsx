@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowRight, Info, Loader2 } from 'lucide-react';
+import { ArrowRight, Info, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
-import { login } from '../lib/auth';
+import { login, loginWithSimpro } from '../lib/auth';
 import { apiError } from '../lib/api';
 
 export default function Login() {
@@ -11,6 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [busySimpro, setBusySimpro] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -24,6 +25,20 @@ export default function Login() {
       setError(apiError(err) || 'Invalid email or password.');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const submitSimpro = async () => {
+    setError('');
+    if (!email) { setError('Enter your work email to sign in with Simpro.'); return; }
+    setBusySimpro(true);
+    try {
+      await loginWithSimpro(email);
+      navigate('/app/dashboard');
+    } catch (err) {
+      setError(apiError(err) || 'Could not sign in with Simpro.');
+    } finally {
+      setBusySimpro(false);
     }
   };
 
@@ -60,6 +75,21 @@ export default function Login() {
               {busy ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : <>Sign in <ArrowRight size={16} /></>}
             </button>
           </form>
+
+          <div className="mt-4 flex items-center gap-3 text-[11px] uppercase tracking-wider text-slate-400">
+            <div className="flex-1 h-px bg-slate-200" /><span>or</span><div className="flex-1 h-px bg-slate-200" />
+          </div>
+          <button
+            type="button"
+            onClick={submitSimpro}
+            disabled={busySimpro || !email}
+            data-testid="login-with-simpro"
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          >
+            {busySimpro ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={14} />} Sign in with Simpro
+          </button>
+          <p className="mt-1 text-[11px] text-slate-500">For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.</p>
+
           <p className="mt-6 text-sm text-slate-600">
             No account yet?{' '}
             <Link to="/signup" className="text-brand-blue font-medium hover:underline" data-testid="login-to-signup">Start your free trial</Link>

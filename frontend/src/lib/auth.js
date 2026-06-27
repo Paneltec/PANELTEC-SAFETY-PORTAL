@@ -25,6 +25,26 @@ export async function login(email, password) {
   return data.user;
 }
 
+export async function loginWithSimpro(email) {
+  const { data } = await api.post('/auth/login-with-simpro', { email });
+  persist(data.access_token, data.user);
+  return data.user;
+}
+
+export async function refreshToken() {
+  // Silent rolling refresh. Called on app mount. Fails silently if invalid.
+  try {
+    const { data } = await api.post('/auth/refresh');
+    if (data?.access_token) {
+      localStorage.setItem(TOKEN_KEY, data.access_token);
+      if (data.user) localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function signup(payload) {
   const { data } = await api.post('/auth/signup', payload);
   persist(data.access_token, data.user);

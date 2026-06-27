@@ -223,10 +223,13 @@ export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(getUser());
 
-  // refresh user from server on mount so role/name stays accurate
+  // refresh user from server on mount so role/name stays accurate, and slide
+  // the JWT window via a silent /auth/refresh so long-idle sessions don't 401.
   useEffect(() => {
     if (getToken()) {
-      fetchMe().then(setUser).catch(() => { /* 401 interceptor redirects */ });
+      refreshToken().finally(() => {
+        fetchMe().then(setUser).catch(() => { /* 401 interceptor redirects */ });
+      });
     }
   }, []);
 

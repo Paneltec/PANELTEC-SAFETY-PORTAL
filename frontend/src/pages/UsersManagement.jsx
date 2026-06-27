@@ -45,9 +45,20 @@ export default function UsersManagement() {
   const [filters, setFilters] = useState({ role: '', status: '' });
   const [active, setActive] = useState(null);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
 
   const load = async () => { try { const { data } = await api.get('/users'); setUsers(data); } catch (e) { toast.error(apiError(e)); } };
-  useEffect(() => { load(); }, []);
+  const loadSimpro = async () => {
+    try {
+      const { data } = await api.get('/integrations/simpro');
+      const ok = data?.status === 'connected';
+      const companies = (data?.companies_status || []).filter((c) => c.status === 'ok');
+      setSimproStatus({ connected: ok && companies.length > 0, companies });
+    } catch { setSimproStatus({ connected: false, companies: [] }); }
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); loadSimpro(); }, []);
 
   if (!can('users', 'view')) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
@@ -59,10 +70,21 @@ export default function UsersManagement() {
       <PageHeader crumb="Settings / Users" title="Users & permissions"
         subtitle={`${users.length} users in your org`}
         action={can('users', 'edit') ? (
-          <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
-            <UserPlus size={14} /> Invite user
-          </button>) : null} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setImportOpen(true)}
+              disabled={!simproStatus.connected}
+              data-testid="import-from-simpro-btn"
+              title={simproStatus.connected ? 'Import employees from Simpro' : 'Connect Simpro in Settings → Integrations first'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Download size={14} /> Import from Simpro
+            </button>
+            <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
+              <UserPlus size={14} /> Invite user
+            </button>
+          </div>) : null} />
 
       {!can('users', 'edit') && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900" data-testid="users-readonly-banner">
@@ -92,7 +114,19 @@ export default function UsersManagement() {
             {filtered.map((u) => (
               <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => setActive(u)} data-testid={`user-row-${u.id}`}>
                 <td className="px-4 py-3"><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{(u.name || u.email)[0]}</AvatarFallback></Avatar>
-                  <div><div className="font-medium">{u.name}</div><div className="text-xs text-slate-500">{u.email}</div></div></div></td>
+                  <div>
+                    <div className="font-medium flex items-center gap-1.5">{u.name}
+                      {u.imported_from === 'simpro' && (
+                        <span
+                          className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
+                          title={`Imported from Simpro${u.simpro_company_name ? ` · ${u.simpro_company_name}` : ''}${u.created_at ? ` · ${new Date(u.created_at).toLocaleDateString()}` : ''}`}
+                          data-testid={`simpro-badge-${u.id}`}
+                        >Simpro</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-slate-500">{u.email}</div>
+                  </div>
+                </div></td>
                 <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
                 <td className="px-4 py-3"><StatusPill status={u.status} /></td>
                 <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
@@ -121,6 +155,11 @@ export default function UsersManagement() {
 
       {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} />}
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
+      {importOpen && <ImportFromSimproDrawer
+        companies={simproStatus.companies}
+        onClose={() => setImportOpen(false)}
+        onDone={() => { load(); }}
+      />}
     </div>
   );
 }

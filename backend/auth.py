@@ -7,6 +7,7 @@ import bcrypt
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from pydantic import BaseModel
 
 from db import db
 from models import LoginIn, SignupIn, TokenOut, UserOut, new_id, now_iso
@@ -240,3 +241,92 @@ async def update_profile(body: dict, user: dict = Depends(get_current_user)):
     )
     fresh_token = create_access_token(updated["id"], updated["email"], updated.get("token_version", 0))
     return {"ok": True, "access_token": fresh_token, "user": _to_user_out(updated)}
+
+
+@router.post("/refresh")
+async def refresh_token(user: dict = Depends(get_current_user)):
+    """Rolling refresh — re-issue a fresh JWT from the user's current valid one.
+
+    JWT TTL is already 30 days; this just gives the frontend a safe way to slide
+    the window on app mount and after long idle periods. Does NOT bump
+    token_version. Will fail with 401 if the existing token is already expired
+    or revoked (then the user must sign in again).
+    """
+    fresh = create_access_token(user["id"], user["email"], user.get("token_version", 0))
+    return {"access_token": fresh, "user": _to_user_out(user)}
+
+
+# ---------- Simpro identity-based login ----------
+
+class LoginWithSimproIn(BaseModel):
+    email: str
+
+
+@router.post("/login-with-simpro")
+async def login_with_simpro(body: LoginWithSimproIn) -> TokenOut:
+    """Sign in a Simpro-imported user by matching their email against the live
+    Simpro `/employees` list. The org's stored Simpro API token IS the trust
+    boundary — if the email shows up in Simpro for this org's configured
+    companies, we trust them.
+
+    Existing email+password users are NOT affected by this endpoint.
+    """
+    email = (body.email or "").lower().strip()
+    if not email:
+        raise HTTPException(400, "Email is required")
+
+    # Find a matching app user (must already be imported with auth_provider=simpro)
+    candidates = await db.users.find(
+        {"email": email, "auth_provider": "simpro"},
+        {"_id": 0, "password_hash": 0},
+    ).to_list(10)
+    if not candidates:
+        raise HTTPException(404, "Not in Simpro — contact your admin to be imported.")
+    if len(candidates) > 1:
+        # Multiple orgs with same email — pick the first active one, prefer most recently used.
+        candidates = sorted(
+            candidates,
+            key=lambda u: (u.get("status") != "active", u.get("last_login_at") or "", u.get("created_at") or ""),
+            reverse=True,
+        )
+    user = candidates[0]
+
+    if user.get("status") not in (None, "active", "invited"):
+        raise HTTPException(401, "Account disabled — contact your admin",
+                            headers={"X-Auth-Reason": "account-disabled"})
+
+    # Verify against live Simpro using the org's saved config.
+    from integrations_simpro import _company_ids, _refresh_staff_cache  # local to avoid cycle
+    cfg_doc = await db.integration_configs.find_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+    )
+    if not cfg_doc or cfg_doc.get("status") != "connected":
+        raise HTTPException(503, "Simpro is not connected for this organisation — sign in with email/password.")
+    cfg = cfg_doc.get("config") or {}
+    ids = _company_ids(cfg)
+    if not ids or not cfg.get("api_token") or not cfg.get("api_base_url"):
+        raise HTTPException(503, "Simpro is not fully configured — sign in with email/password.")
+    try:
+        _, merged = await _refresh_staff_cache(cfg, ids, cfg["api_token"])
+    except Exception as e:
+        raise HTTPException(502, f"Simpro unreachable: {e}")
+
+    hit = next(
+        (m for m in merged if (m.get("email") or "").lower().strip() == email),
+        None,
+    )
+    if not hit:
+        raise HTTPException(401, "Your email is not active in Simpro right now — contact your admin.",
+                            headers={"X-Auth-Reason": "simpro-not-found"})
+
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_login_at": now_iso(),
+                  "status": "active",
+                  "simpro_employee_id": str(hit.get("id")) if hit.get("id") is not None else user.get("simpro_employee_id"),
+                  "simpro_company_id": str(hit.get("company_id")) if hit.get("company_id") is not None else user.get("simpro_company_id"),
+                  "updated_at": now_iso()}},
+    )
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0, "password_hash": 0})
+    token = create_access_token(fresh["id"], fresh["email"], fresh.get("token_version", 0))
+    return TokenOut(access_token=token, user=_to_user_out(fresh))

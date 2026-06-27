@@ -52,7 +52,22 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "last_login_at": doc.get("last_login_at"),
         "created_at": doc.get("created_at"),
         "has_permission_overrides": has_overrides,
+        "imported_from": doc.get("imported_from"),
+        "simpro_employee_id": doc.get("simpro_employee_id"),
+        "simpro_company_id": doc.get("simpro_company_id"),
+        "simpro_company_name": doc.get("simpro_company_name"),
+        "mobile": doc.get("mobile"),
+        "position": doc.get("position"),
     }
+
+
+async def _other_active_admins_count(org_id: str, exclude_user_id: Optional[str] = None) -> int:
+    """How many active admins remain if we exclude one (or none)?"""
+    q = {"org_id": org_id, "role": "admin",
+         "$or": [{"status": "active"}, {"status": {"$exists": False}}]}
+    if exclude_user_id:
+        q["id"] = {"$ne": exclude_user_id}
+    return await db.users.count_documents(q)
 
 
 @router.get("")
@@ -191,7 +206,6 @@ async def invite_user(body: InviteUserIn, actor: dict = Depends(require_permissi
 
     # Queue invitation email via outbox (bypasses normal permission check).
     from email_outbox import queue_email_doc  # local import to avoid cycle
-    backend_url = ""  # filled by frontend link
     signup_path = f"/signup?invite={invite_token}"
     body_html = (
         f"<p>Hi {body.name},</p>"
@@ -213,6 +227,17 @@ async def invite_user(body: InviteUserIn, actor: dict = Depends(require_permissi
 async def disable_user(user_id: str, actor: dict = Depends(require_permission("users", "edit"))):
     if user_id == actor["id"]:
         raise HTTPException(400, "Can't disable your own account")
+    target = await db.users.find_one(
+        {"id": user_id, "org_id": actor["org_id"]},
+        {"_id": 0, "role": 1, "status": 1},
+    )
+    if not target:
+        raise HTTPException(404, "User not found")
+    # Last-admin guard: refuse to disable the only active admin in the org.
+    if target.get("role") == "admin" and target.get("status", "active") == "active":
+        remaining = await _other_active_admins_count(actor["org_id"], exclude_user_id=user_id)
+        if remaining == 0:
+            raise HTTPException(400, "Cannot delete the last active admin in this org")
     result = await db.users.update_one(
         {"id": user_id, "org_id": actor["org_id"]},
         {"$set": {"status": "disabled", "updated_at": now_iso()},
@@ -221,3 +246,92 @@ async def disable_user(user_id: str, actor: dict = Depends(require_permission("u
     if result.matched_count == 0:
         raise HTTPException(404, "User not found")
     return {"ok": True, "status": "disabled"}
+
+
+# ---------- Simpro bulk import ----------
+
+class SimproEmployeeIn(BaseModel):
+    simpro_employee_id: str
+    simpro_company_id: str
+    email: EmailStr
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    name: Optional[str] = None
+    mobile: Optional[str] = None
+    position: Optional[str] = None
+    company_name: Optional[str] = None
+
+
+class ImportFromSimproIn(BaseModel):
+    employees: List[SimproEmployeeIn]
+    default_role: Role = "worker"
+    workspace_ids: List[str] = Field(default_factory=list)
+
+
+@router.post("/import-from-simpro", status_code=201)
+async def import_from_simpro(
+    body: ImportFromSimproIn,
+    actor: dict = Depends(require_permission("users", "edit")),
+):
+    if not body.employees:
+        raise HTTPException(400, "No employees provided")
+    if len(body.employees) > 500:
+        raise HTTPException(400, "Too many employees in one batch (max 500)")
+
+    existing = await db.users.find(
+        {"org_id": actor["org_id"]},
+        {"_id": 0, "email": 1, "simpro_employee_id": 1, "simpro_company_id": 1},
+    ).to_list(2000)
+    by_email = {str(u.get("email") or "").lower(): u for u in existing if u.get("email")}
+    by_simpro = {(str(u["simpro_employee_id"]), str(u["simpro_company_id"]))
+                 for u in existing
+                 if u.get("simpro_employee_id") and u.get("simpro_company_id")}
+
+    created = 0
+    created_ids: list[str] = []
+    skipped: list[dict] = []
+
+    for emp in body.employees:
+        email = emp.email.lower().strip()
+        key = (str(emp.simpro_employee_id), str(emp.simpro_company_id))
+        if key in by_simpro:
+            skipped.append({"email": email, "reason": "Already imported (Simpro ID match)"})
+            continue
+        if email in by_email:
+            skipped.append({"email": email, "reason": "Email already in use"})
+            continue
+
+        name = emp.name or " ".join(filter(None, [emp.first_name, emp.last_name])).strip() or email
+        user_id = new_id()
+        # Random throwaway password — Simpro-imported users sign in via /auth/login-with-simpro.
+        throwaway_pwd = new_id() + new_id()
+        doc = {
+            "id": user_id, "email": email, "name": name, "role": body.default_role,
+            "org_id": actor["org_id"], "workspace_ids": list(body.workspace_ids),
+            "password_hash": hash_password(throwaway_pwd),
+            "status": "active",
+            "token_version": 0,
+            "auth_provider": "simpro",
+            "mobile": emp.mobile,
+            "position": emp.position,
+            "imported_from": "simpro",
+            "simpro_employee_id": str(emp.simpro_employee_id),
+            "simpro_company_id": str(emp.simpro_company_id),
+            "simpro_company_name": emp.company_name,
+            "created_at": now_iso(),
+        }
+        try:
+            await db.users.insert_one(dict(doc))
+            created += 1
+            created_ids.append(user_id)
+            by_email[email] = doc
+            by_simpro.add(key)
+        except Exception as e:
+            skipped.append({"email": email, "reason": f"Insert failed: {e}"})
+            continue
+
+    return {
+        "created": created,
+        "created_ids": created_ids,
+        "skipped": skipped,
+    }
