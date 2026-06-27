@@ -119,3 +119,36 @@ async def upsert_meta(
         return_document=ReturnDocument.AFTER,
     )
     return _serialise(result)
+
+
+# ────────────────────── Renewal email ──────────────────────
+
+class RenewalEmailIn(BaseModel):
+    subject: str = Field(min_length=1, max_length=200)
+    body_html: str = Field(min_length=1, max_length=20000)
+    recipient_email: str = Field(min_length=3, max_length=160)
+    cc: Optional[list[str]] = None
+
+
+@router.post("/{simpro_supplier_id}/send-renewal", status_code=201)
+async def send_renewal(
+    simpro_supplier_id: str,
+    body: RenewalEmailIn,
+    user: dict = Depends(get_current_user),
+):
+    """Queue a compliance-renewal email to this supplier via the org's M365
+    outbox (or stash it for later send when M365 isn't connected)."""
+    _require_write(user)
+    from email_outbox import queue_email_doc
+    doc = await queue_email_doc(
+        org_id=user["org_id"],
+        to=[body.recipient_email],
+        cc=body.cc or [],
+        subject=body.subject,
+        body_html=body.body_html,
+        related_record_type="supplier",
+        related_record_id=simpro_supplier_id,
+        resource_kind="contractors",
+        created_by=user["id"],
+    )
+    return {"ok": True, "status": doc["status"], "outbox_id": doc["id"]}

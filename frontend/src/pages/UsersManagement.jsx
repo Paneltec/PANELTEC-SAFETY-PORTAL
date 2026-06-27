@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
@@ -108,6 +108,7 @@ export default function UsersManagement() {
               <th className="text-left px-4 py-2.5">User</th><th className="text-left px-4 py-2.5">Role</th>
               <th className="text-left px-4 py-2.5">Status</th><th className="text-left px-4 py-2.5">Permissions</th>
               <th className="text-left px-4 py-2.5">Created</th>
+              {can('users', 'edit') && <th className="text-right px-4 py-2.5">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -147,6 +148,43 @@ export default function UsersManagement() {
                     )}
                   </div>
                 </td>
+                {can('users', 'edit') && (
+                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="inline-flex gap-1 items-center">
+                      <button
+                        title="Force sign-out everywhere"
+                        data-testid={`force-signout-${u.id}`}
+                        onClick={async () => {
+                          if (!window.confirm(`Force sign-out ${u.name || u.email}? They'll need to sign in again.`)) return;
+                          try {
+                            const { data } = await api.post(`/users/${u.id}/force-signout`);
+                            toast.success(`${u.name || u.email}'s sessions revoked.`);
+                            if (data?.new_token_version) console.info('new token_version:', data.new_token_version);
+                          } catch (e) { toast.error(apiError(e)); }
+                        }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbf3df] text-[#8c6a1a] hover:bg-[#f7eed1]">
+                        <LogOut size={13} />
+                      </button>
+                      <button
+                        title="Delete user (soft)"
+                        data-testid={`delete-user-${u.id}`}
+                        onClick={async () => {
+                          const extra = u.imported_from === 'simpro'
+                            ? ' (This user came from Simpro and can be re-imported later.)'
+                            : '';
+                          if (!window.confirm(`Permanently disable ${u.name || u.email}? They will lose access immediately. This is reversible by re-enabling them.${extra}`)) return;
+                          try {
+                            await api.delete(`/users/${u.id}`);
+                            toast.success(`${u.name || u.email} deleted.`);
+                            await load();
+                          } catch (e) { toast.error(apiError(e)); }
+                        }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

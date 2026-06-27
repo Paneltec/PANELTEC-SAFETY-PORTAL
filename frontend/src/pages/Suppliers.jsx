@@ -11,12 +11,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   CheckSquare, ChevronDown, Download, Edit3, Eye, FolderOpen, Loader2,
-  MapPin, Plug, RefreshCw, Search, StickyNote, Trash2, Users, X,
+  Mail, MapPin, Plug, RefreshCw, Search, StickyNote, Trash2, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
+import SupplierDrawer from '../components/suppliers/SupplierDrawer';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
@@ -77,7 +78,7 @@ function StatusBadge({ active }) {
   return <span data-testid="status-inactive" className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider border bg-slate-100 text-slate-600 border-slate-200">Inactive</span>;
 }
 
-function IconChip({ pastel, title, onClick, children, testid }) {
+function IconChip({ pastel, title, onClick, children, testid, count }) {
   const tints = {
     butter:   'bg-[#fbf3df] text-[#8c6a1a] hover:bg-[#f7eed1]',
     sky:      'bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]',
@@ -88,8 +89,13 @@ function IconChip({ pastel, title, onClick, children, testid }) {
   };
   return (
     <button type="button" onClick={onClick} title={title} data-testid={testid}
-      className={`inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${tints[pastel] || tints.sky}`}>
+      className={`relative inline-flex items-center justify-center w-7 h-7 rounded-md transition-colors ${tints[pastel] || tints.sky}`}>
       {children}
+      {count > 0 && (
+        <span className={`absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[9px] font-bold rounded-full bg-slate-900 text-white inline-flex items-center justify-center leading-none`}>
+          {count > 99 ? '99+' : count}
+        </span>
+      )}
     </button>
   );
 }
@@ -237,9 +243,13 @@ export default function Suppliers() {
   const [connected, setConnected] = useState(true);
   const [rawSuppliers, setRawSuppliers] = useState([]);
   const [metaMap, setMetaMap] = useState({});
+  const [counts, setCounts] = useState({});
   const [cachedAt, setCachedAt] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [drawerSupplier, setDrawerSupplier] = useState(null);
+  const [drawerPanel, setDrawerPanel] = useState('tasks');
+  const [renewalFor, setRenewalFor] = useState(null);
   const [selected, setSelected] = useState(new Set());
 
   const [searchBy, setSearchBy] = useState('name');
@@ -317,6 +327,8 @@ export default function Suppliers() {
   };
 
   const phase2 = (label) => () => toast.info(`${label} — coming in Phase 2`);
+
+  const openDrawer = (s, panel) => { setDrawerSupplier(s); setDrawerPanel(panel); };
 
   const exportCsv = () => downloadCsv(filtered, cachedAt);
 
@@ -439,16 +451,20 @@ export default function Suppliers() {
                   <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">Simpro</td>
                   <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">{(cachedAt || '').slice(0, 10) || '—'}</td>
                   <td className="px-3 py-3"><div className="flex justify-center">
-                    <IconChip pastel="butter" title="Tasks (coming in Phase 2)" onClick={phase2('Tasks')} testid={`tasks-${s.simpro_supplier_id}`}><CheckSquare size={14} /></IconChip>
+                    <IconChip pastel="butter" title="Tasks" count={counts[s.simpro_supplier_id]?.tasks || 0}
+                      onClick={() => openDrawer(s, 'tasks')} testid={`tasks-${s.simpro_supplier_id}`}><CheckSquare size={14} /></IconChip>
                   </div></td>
                   <td className="px-3 py-3"><div className="flex justify-center">
-                    <IconChip pastel="sky" title="Notes (coming in Phase 2)" onClick={phase2('Notes')} testid={`notes-${s.simpro_supplier_id}`}><StickyNote size={14} /></IconChip>
+                    <IconChip pastel="sky" title="Notes" count={counts[s.simpro_supplier_id]?.notes || 0}
+                      onClick={() => openDrawer(s, 'notes')} testid={`notes-${s.simpro_supplier_id}`}><StickyNote size={14} /></IconChip>
                   </div></td>
                   <td className="px-3 py-3"><div className="flex justify-center">
-                    <IconChip pastel="lavender" title="Folders (coming in Phase 2)" onClick={phase2('Folders')} testid={`folders-${s.simpro_supplier_id}`}><FolderOpen size={14} /></IconChip>
+                    <IconChip pastel="lavender" title="Folders (Phase 2)" count={counts[s.simpro_supplier_id]?.folders || 0}
+                      onClick={() => openDrawer(s, 'folders')} testid={`folders-${s.simpro_supplier_id}`}><FolderOpen size={14} /></IconChip>
                   </div></td>
                   <td className="px-3 py-3"><div className="flex justify-center">
-                    <IconChip pastel="peach" title="Members (coming in Phase 2)" onClick={phase2('Members')} testid={`members-${s.simpro_supplier_id}`}><Users size={14} /></IconChip>
+                    <IconChip pastel="peach" title="Members" count={counts[s.simpro_supplier_id]?.members || 0}
+                      onClick={() => openDrawer(s, 'members')} testid={`members-${s.simpro_supplier_id}`}><Users size={14} /></IconChip>
                   </div></td>
                   <td className="px-3 py-3"><div className="flex justify-center items-center gap-1">
                     <MapPin size={12} className="text-slate-400" />
@@ -458,7 +474,10 @@ export default function Suppliers() {
                   <td className="px-3 py-3 text-right">
                     <div className="inline-flex gap-1 items-center">
                       <IconChip pastel="sky" title="Edit" onClick={() => canEdit && setEditing(s)} testid={`edit-${s.simpro_supplier_id}`}><Edit3 size={13} /></IconChip>
-                      <IconChip pastel="blush" title="Delete (coming in Phase 2)" onClick={phase2('Delete supplier')} testid={`delete-${s.simpro_supplier_id}`}><Trash2 size={13} /></IconChip>
+                      {canEdit && s.email && (
+                        <IconChip pastel="lavender" title="Send renewal email" onClick={() => setRenewalFor(s)} testid={`renewal-${s.simpro_supplier_id}`}><Mail size={13} /></IconChip>
+                      )}
+                      <IconChip pastel="blush" title="Delete (Phase 2)" onClick={phase2('Delete supplier')} testid={`delete-${s.simpro_supplier_id}`}><Trash2 size={13} /></IconChip>
                       <IconChip pastel="coral" title="View" onClick={() => setEditing(s)} testid={`view-${s.simpro_supplier_id}`}><Eye size={13} /></IconChip>
                     </div>
                   </td>
@@ -480,6 +499,90 @@ export default function Suppliers() {
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
       )}
+      {drawerSupplier && (
+        <SupplierDrawer supplier={drawerSupplier} initialPanel={drawerPanel}
+          onClose={() => setDrawerSupplier(null)}
+          onChanged={load} />
+      )}
+      {renewalFor && (
+        <RenewalEmailModal supplier={renewalFor}
+          onClose={() => setRenewalFor(null)}
+          onSent={() => setRenewalFor(null)} />
+      )}
+    </div>
+  );
+}
+
+// ────────────────────── Renewal email modal ──────────────────────
+
+function RenewalEmailModal({ supplier, onClose, onSent }) {
+  const today = new Date();
+  const due = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const [form, setForm] = useState({
+    recipient_email: supplier.email || '',
+    subject: `Annual compliance renewal — ${supplier.name}`,
+    body_html: `<p>Hi ${supplier.contact_name || supplier.name},</p>
+<p>As part of our ongoing supplier compliance review, please confirm or update the following by <strong>${due}</strong>:</p>
+<ul>
+  <li>Current insurance certificates (public liability, workers compensation)</li>
+  <li>Relevant licences and tickets for personnel performing work on site</li>
+  <li>Safe Work Method Statements (SWMS) for high-risk activities</li>
+  <li>Any other safety documentation we have on file</li>
+</ul>
+<p>You can reply to this email with attached documents, or upload them via the link we send separately.</p>
+<p>Thanks for keeping us up to date.</p>
+<p>— Paneltec Civil</p>`,
+  });
+  const [sending, setSending] = useState(false);
+
+  const send = async (e) => {
+    e?.preventDefault();
+    if (!form.recipient_email.trim()) return;
+    setSending(true);
+    try {
+      await api.post(`/suppliers/${supplier.simpro_supplier_id}/send-renewal`, form);
+      toast.success(`Renewal email queued for ${supplier.name}`);
+      onSent();
+    } catch (err) { toast.error(apiError(err)); }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="renewal-modal">
+      <form onSubmit={send} className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col" style={{ maxHeight: '90vh' }}>
+        <div className="px-6 py-4 border-b border-slate-200 bg-[#ece6f4]">
+          <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#4f3a8c]">Send renewal email</div>
+          <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{supplier.name}</h2>
+        </div>
+        <div className="px-6 py-5 space-y-3 overflow-y-auto">
+          <label className="block">
+            <span className="block text-xs font-medium text-slate-700 mb-1">Recipient email</span>
+            <input value={form.recipient_email} onChange={(e) => setForm({ ...form, recipient_email: e.target.value })}
+              data-testid="renewal-recipient"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-medium text-slate-700 mb-1">Subject</span>
+            <input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })}
+              data-testid="renewal-subject"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg" />
+          </label>
+          <label className="block">
+            <span className="block text-xs font-medium text-slate-700 mb-1">Body (HTML)</span>
+            <textarea rows={10} value={form.body_html} onChange={(e) => setForm({ ...form, body_html: e.target.value })}
+              data-testid="renewal-body"
+              className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg" />
+          </label>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-200 flex justify-end gap-2 bg-slate-50">
+          <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+          <button type="submit" disabled={sending} data-testid="renewal-send"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4f3a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#3f2e70] disabled:opacity-60">
+            {sending ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />} Send
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

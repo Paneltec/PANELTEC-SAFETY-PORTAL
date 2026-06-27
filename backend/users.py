@@ -238,14 +238,36 @@ async def disable_user(user_id: str, actor: dict = Depends(require_permission("u
         remaining = await _other_active_admins_count(actor["org_id"], exclude_user_id=user_id)
         if remaining == 0:
             raise HTTPException(400, "Cannot delete the last active admin in this org")
+    ts = now_iso()
     result = await db.users.update_one(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"$set": {"status": "disabled", "updated_at": now_iso()},
+        {"$set": {"status": "disabled", "deleted_at": ts, "updated_at": ts},
          "$inc": {"token_version": 1}},
     )
     if result.matched_count == 0:
         raise HTTPException(404, "User not found")
-    return {"ok": True, "status": "disabled"}
+    return {"ok": True, "status": "disabled", "deleted_at": ts}
+
+
+@router.post("/{user_id}/force-signout")
+async def force_signout(user_id: str, actor: dict = Depends(require_permission("users", "edit"))):
+    """Bump the user's token_version which immediately invalidates every JWT
+    they currently hold. The user can still sign in fresh; we don't touch
+    their `status` field here."""
+    target = await db.users.find_one(
+        {"id": user_id, "org_id": actor["org_id"]},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "token_version": 1},
+    )
+    if not target:
+        raise HTTPException(404, "User not found")
+    result = await db.users.find_one_and_update(
+        {"id": user_id, "org_id": actor["org_id"]},
+        {"$inc": {"token_version": 1}, "$set": {"updated_at": now_iso()}},
+        projection={"_id": 0, "token_version": 1},
+        return_document=True,
+    )
+    return {"ok": True, "user_id": user_id,
+            "new_token_version": (result or {}).get("token_version", 0)}
 
 
 # ---------- Simpro bulk import ----------
