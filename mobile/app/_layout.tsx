@@ -48,6 +48,7 @@ function RootNav() {
         <Stack.Screen name="users" />
         <Stack.Screen name="workers" />
         <Stack.Screen name="certifications" />
+        <Stack.Screen name="forms" />
       </Stack>
     </>
   );

@@ -1,45 +1,43 @@
-// Forms Library — Phase 2.
-// Templates list + import JSON + fill-out runner with real signature pad,
-// photo capture (camera on mobile) and GPS. Mobile-responsive (375px) with a
-// sticky submit bar at the bottom on small viewports.
+// Forms Library — UI restyle (matches user reference screenshots).
+// Page header with 4-button toolbar, redesigned template cards with action
+// icons + Preview/Fill buttons, AI-builder modal, redesigned Fill-Out modal
+// with coloured Yes/No/N-A radios + orange Submit, and Preview modal.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import {
-  Camera, CheckCircle2, ClipboardList, Download, FileText, Loader2, MapPin,
-  Pencil, RefreshCw, Search, Trash2, Upload, UploadCloud, X, FilePlus, ListChecks,
-  Image as ImageIcon, Eraser,
+  Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
+  Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Upload,
+  UploadCloud, X, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import api, { apiError, API_BASE } from '../lib/api';
+import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
-import { PageHeader } from '../components/capture/Ui';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
+// Pastel pills per the new spec: tint background + ink text.
 const CATEGORIES = [
-  { key: 'all',        label: 'All',        cls: 'bg-slate-100 text-slate-700' },
-  { key: 'incident',   label: 'Incident',   cls: 'bg-[#f7d8dc] text-[#a8324c]' },
-  { key: 'inspection', label: 'Inspection', cls: 'bg-[#ece6f4] text-[#4f3a8c]' },
-  { key: 'toolbox',    label: 'Toolbox',    cls: 'bg-[#f7eed1] text-[#8c6a1a]' },
-  { key: 'near_miss',  label: 'Near Miss',  cls: 'bg-[#f8d7c3] text-[#9c4f1a]' },
-  { key: 'general',    label: 'General',    cls: 'bg-slate-100 text-slate-700' },
+  { key: 'all',        label: 'All categories', pill: 'bg-slate-100 text-slate-700' },
+  { key: 'incident',   label: 'Incident',       pill: 'bg-[#fde2e4] text-rose-700' },
+  { key: 'inspection', label: 'Inspection',     pill: 'bg-[#dbeafe] text-blue-700' },
+  { key: 'toolbox',    label: 'Toolbox',        pill: 'bg-[#fef3c7] text-amber-800' },
+  { key: 'near_miss',  label: 'Near Miss',      pill: 'bg-[#fed7aa] text-orange-700' },
+  { key: 'general',    label: 'General',        pill: 'bg-[#e2e8f0] text-slate-700' },
 ];
-const CAT_CHIP = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.cls]));
+const CAT_PILL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.pill]));
+const categoryLabel = (key) => (CATEGORIES.find((c) => c.key === key)?.label || 'General').replace('All categories', 'General');
 
-function categoryLabel(key) {
-  return CATEGORIES.find((c) => c.key === key)?.label || 'General';
-}
+// ─────────────── Field renderers ───────────────
 
-// ─────────────── Field renderers (fill-out runner) ───────────────
-
-function PhotoField({ field, files, onChange }) {
+function PhotoField({ field, files, onChange, readOnly }) {
   const inputRef = useRef(null);
   const previews = useMemo(() => (files || []).map((f) => ({
     name: f.name, url: URL.createObjectURL(f),
   })), [files]);
-  // Revoke object URLs on unmount
   useEffect(() => () => previews.forEach((p) => URL.revokeObjectURL(p.url)), [previews]);
+
+  if (readOnly) return <div className="text-xs text-slate-400 italic">Photo capture (preview disabled)</div>;
 
   const onPick = (e) => {
     const picked = Array.from(e.target.files || []);
@@ -60,17 +58,16 @@ function PhotoField({ field, files, onChange }) {
         data-testid={`photo-input-${field.id}`} />
       <button type="button" onClick={() => inputRef.current?.click()}
         data-testid={`photo-take-${field.id}`}
-        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] rounded-lg border-2 border-dashed border-[#b9d2ec] bg-[#eff5fc] text-[#1e4a8c] text-sm font-semibold hover:bg-[#d8e6f4]">
+        className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 min-h-[44px] rounded-xl border-2 border-dashed border-blue-200 bg-blue-50 text-blue-700 text-sm font-semibold hover:bg-blue-100">
         <Camera size={16} /> {previews.length ? 'Add another photo' : 'Take or choose photo'}
       </button>
       {previews.length > 0 && (
-        <div className="grid grid-cols-3 gap-2" data-testid={`photo-grid-${field.id}`}>
+        <div className="grid grid-cols-3 gap-2">
           {previews.map((p, i) => (
             <div key={i} className="relative aspect-square rounded-lg overflow-hidden border border-slate-200 group">
               <img src={p.url} alt={p.name} className="w-full h-full object-cover" />
               <button type="button" onClick={() => removeAt(i)}
-                data-testid={`photo-remove-${field.id}-${i}`}
-                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 text-[#a8324c] flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition">
+                className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 text-rose-700 flex items-center justify-center shadow opacity-0 group-hover:opacity-100 transition">
                 <X size={12} />
               </button>
             </div>
@@ -81,7 +78,7 @@ function PhotoField({ field, files, onChange }) {
   );
 }
 
-function SignatureField({ field, value, onChange }) {
+function SignatureField({ field, value, onChange, readOnly }) {
   const padRef = useRef(null);
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ w: 400, h: 150 });
@@ -97,35 +94,36 @@ function SignatureField({ field, value, onChange }) {
     return () => window.removeEventListener('resize', update);
   }, []);
 
-  // If value pre-exists (read-only view), draw it back into the pad.
   useEffect(() => {
     if (value && padRef.current && padRef.current.isEmpty()) {
       try { padRef.current.fromDataURL(value); } catch { /* ignore */ }
     }
   }, [value]);
 
-  const clear = () => {
-    padRef.current?.clear();
-    onChange(null);
-  };
+  if (readOnly) {
+    return value
+      ? <img src={value} alt="signature" className="border border-slate-200 rounded-lg max-h-32 bg-white" />
+      : <div className="text-xs text-slate-400 italic">Signature pad (preview disabled)</div>;
+  }
+
+  const clear = () => { padRef.current?.clear(); onChange(null); };
   const onEnd = () => {
     if (padRef.current && !padRef.current.isEmpty()) {
-      const data = padRef.current.toDataURL('image/png');
-      onChange(data);
+      onChange(padRef.current.toDataURL('image/png'));
     }
   };
 
   return (
     <div className="space-y-2" ref={wrapRef} data-testid={`field-${field.id}`}>
-      <div className="rounded-lg border border-slate-300 bg-white overflow-hidden">
+      <div className="rounded-xl border border-slate-300 bg-white overflow-hidden">
         <SignatureCanvas ref={padRef} penColor="#0f172a"
           canvasProps={{ width: size.w, height: size.h, className: 'block w-full touch-none', 'data-testid': `signature-canvas-${field.id}` }}
           onEnd={onEnd} />
       </div>
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-slate-500">Sign with your finger or mouse.</span>
-        <button type="button" onClick={clear} data-testid={`signature-clear-${field.id}`}
-          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-[#a8324c] px-2 py-1">
+        <button type="button" onClick={clear}
+          className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-rose-700 px-2 py-1">
           <Eraser size={12} /> Clear
         </button>
       </div>
@@ -133,49 +131,37 @@ function SignatureField({ field, value, onChange }) {
   );
 }
 
-function GpsField({ field, value, onChange }) {
+function GpsField({ field, value, onChange, readOnly }) {
   const [busy, setBusy] = useState(false);
   const capture = () => {
-    if (!navigator.geolocation) {
-      toast.error('Geolocation not supported by this browser');
-      return;
-    }
+    if (readOnly) return;
+    if (!navigator.geolocation) { toast.error('Geolocation not supported'); return; }
     setBusy(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        onChange({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          accuracy: pos.coords.accuracy,
-          captured_at: new Date().toISOString(),
-        });
+        onChange({ lat: pos.coords.latitude, lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy, captured_at: new Date().toISOString() });
         setBusy(false);
       },
-      (err) => {
-        toast.error(`GPS error: ${err.message}`);
-        setBusy(false);
-      },
+      (err) => { toast.error(`GPS error: ${err.message}`); setBusy(false); },
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   };
-
-  const hasFix = value && typeof value.lat === 'number' && typeof value.lng === 'number';
-  const mapSrc = hasFix
-    ? `https://www.google.com/maps?q=${value.lat},${value.lng}&hl=en&z=16&output=embed`
-    : null;
-
+  const hasFix = value && typeof value.lat === 'number';
   return (
     <div className="space-y-2" data-testid={`field-${field.id}`}>
-      <button type="button" onClick={capture} disabled={busy}
-        data-testid={`gps-capture-${field.id}`}
-        className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-lg bg-[#eff5fc] border border-[#b9d2ec] text-[#1e4a8c] text-sm font-semibold hover:bg-[#d8e6f4] disabled:opacity-60">
-        {busy ? <Loader2 size={16} className="animate-spin" /> : (hasFix ? <RefreshCw size={16} /> : <MapPin size={16} />)}
-        {busy ? 'Capturing…' : (hasFix ? 'Re-capture GPS' : 'Capture GPS')}
-      </button>
+      {!readOnly && (
+        <button type="button" onClick={capture} disabled={busy}
+          data-testid={`gps-capture-${field.id}`}
+          className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[44px] rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-sm font-semibold hover:bg-blue-100 disabled:opacity-60">
+          {busy ? <Loader2 size={16} className="animate-spin" /> : (hasFix ? <RefreshCw size={16} /> : <MapPin size={16} />)}
+          {busy ? 'Capturing…' : (hasFix ? 'Re-capture GPS' : 'Capture GPS')}
+        </button>
+      )}
       {hasFix && (
-        <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
-          <iframe title={`gps-map-${field.id}`} src={mapSrc} width="100%" height="160"
-            style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+        <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+          <iframe title={`gps-${field.id}`} src={`https://www.google.com/maps?q=${value.lat},${value.lng}&hl=en&z=16&output=embed`}
+            width="100%" height="160" style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
           <div className="px-3 py-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
             <div><span className="block text-slate-400 uppercase tracking-wider">Lat</span>{value.lat.toFixed(5)}</div>
             <div><span className="block text-slate-400 uppercase tracking-wider">Lng</span>{value.lng.toFixed(5)}</div>
@@ -187,65 +173,78 @@ function GpsField({ field, value, onChange }) {
   );
 }
 
-function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange }) {
-  if (field.type === 'photo') {
-    return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} />;
-  }
-  if (field.type === 'signature') {
-    return <SignatureField field={field} value={value} onChange={onChange} />;
-  }
-  if (field.type === 'gps') {
-    return <GpsField field={field} value={value} onChange={onChange} />;
-  }
-  if (field.type === 'textarea') {
-    return <textarea rows={4} value={value || ''} placeholder={field.placeholder}
+// New: coloured pill-button radios per Vehicle Pre-Use reference.
+function ColouredRadioGroup({ field, value, onChange, readOnly }) {
+  const style = (opt, selected) => {
+    const norm = String(opt).toLowerCase();
+    let palette;
+    if (norm === 'yes') palette = selected
+      ? 'bg-emerald-50 border-emerald-500 text-emerald-700 ring-2 ring-emerald-200'
+      : 'bg-white border-emerald-300 text-emerald-700 hover:bg-emerald-50';
+    else if (norm === 'no' || norm === 'defective' || norm.startsWith('fail')) palette = selected
+      ? 'bg-rose-50 border-rose-500 text-rose-700 ring-2 ring-rose-200'
+      : 'bg-white border-rose-300 text-rose-700 hover:bg-rose-50';
+    else if (norm === 'n/a' || norm === 'na' || norm === 'not applicable') palette = selected
+      ? 'bg-slate-100 border-slate-500 text-slate-700 ring-2 ring-slate-200'
+      : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50';
+    else palette = selected
+      ? 'bg-slate-100 border-slate-500 text-slate-800 ring-2 ring-slate-200'
+      : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50';
+    return palette;
+  };
+  return (
+    <div className="flex flex-wrap gap-2" data-testid={`field-${field.id}`}>
+      {(field.options || []).map((opt) => {
+        const selected = value === opt;
+        return (
+          <button key={opt} type="button" disabled={readOnly}
+            onClick={() => !readOnly && onChange(opt)}
+            data-testid={`radio-${field.id}-${String(opt).toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+            className={`px-4 py-2.5 min-h-[44px] min-w-[80px] rounded-xl border-2 text-sm font-semibold transition-all disabled:opacity-70 disabled:cursor-not-allowed ${style(opt, selected)}`}>
+            {opt}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly }) {
+  if (field.type === 'photo') return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} readOnly={readOnly} />;
+  if (field.type === 'signature') return <SignatureField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  if (field.type === 'textarea')
+    return <textarea rows={4} value={value || ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
-      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
-  }
-  if (field.type === 'select') {
+      className="w-full px-3 py-3 min-h-[88px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
+  if (field.type === 'select')
     return (
-      <select value={value || ''} onChange={(e) => onChange(e.target.value)}
+      <select value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={readOnly}
         data-testid={`field-${field.id}`}
-        className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm bg-white">
+        className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50">
         <option value="">— Select —</option>
         {(field.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
       </select>
     );
-  }
-  if (field.type === 'radio') {
-    return (
-      <div className="space-y-1" data-testid={`field-${field.id}`}>
-        {(field.options || []).map((o) => (
-          <label key={o} className="flex items-center gap-2.5 px-2 py-2.5 min-h-[44px] rounded hover:bg-slate-50 cursor-pointer text-sm">
-            <input type="radio" name={field.id} value={o} checked={value === o}
-              onChange={(e) => onChange(e.target.value)}
-              className="w-5 h-5 text-[#1e4a8c]" />
-            <span>{o}</span>
-          </label>
-        ))}
-      </div>
-    );
-  }
-  if (field.type === 'date') {
-    return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)}
+  if (field.type === 'radio') return <ColouredRadioGroup field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  if (field.type === 'date')
+    return <input type="date" value={value || ''} onChange={(e) => onChange(e.target.value)} disabled={readOnly}
       data-testid={`field-${field.id}`}
-      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
-  }
-  if (field.type === 'number') {
-    return <input type="number" inputMode="decimal" value={value ?? ''} placeholder={field.placeholder}
+      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
+  if (field.type === 'number')
+    return <input type="number" inputMode="decimal" value={value ?? ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
-      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
-  }
-  return <input type="text" value={value || ''} placeholder={field.placeholder}
+      className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
+  return <input type="text" value={value || ''} placeholder={field.placeholder} disabled={readOnly}
     onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
-    className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-lg text-sm" />;
+    className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
 }
 
-// ─────────────── Fill-out modal ───────────────
+// ─────────────── Fill-Out modal ───────────────
 
 function FillOutModal({ template, onClose, onSubmitted }) {
-  const [values, setValues] = useState({});       // non-photo
-  const [photoFiles, setPhotoFiles] = useState({}); // {field_id: File[]}
+  const [values, setValues] = useState({});
+  const [photoFiles, setPhotoFiles] = useState({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState('');
 
@@ -257,19 +256,23 @@ function FillOutModal({ template, onClose, onSubmitted }) {
     return values[f.id] && String(values[f.id]).trim();
   });
 
+  // Aggregate any captured GPS for the top indicator pill.
+  const capturedGps = useMemo(() => {
+    for (const f of template.fields || []) {
+      if (f.type === 'gps' && values[f.id]?.lat != null) return values[f.id];
+    }
+    return null;
+  }, [template, values]);
+
   const submit = async () => {
     setSaving(true);
     try {
       setProgress('Saving submission…');
-      const payload = {
-        fields: (template.fields || []).map((f) => ({
-          id: f.id, label: f.label, type: f.type,
-          value: f.type === 'photo' ? [] : (values[f.id] ?? null),
-        })),
-      };
+      const payload = { fields: (template.fields || []).map((f) => ({
+        id: f.id, label: f.label, type: f.type,
+        value: f.type === 'photo' ? [] : (values[f.id] ?? null),
+      })) };
       const { data: sub } = await api.post(`/forms/templates/${template.id}/submissions`, payload);
-
-      // Upload photos for each photo field that has files.
       const photoFieldIds = Object.keys(photoFiles).filter((fid) => (photoFiles[fid] || []).length > 0);
       for (let i = 0; i < photoFieldIds.length; i++) {
         const fid = photoFieldIds[i];
@@ -277,46 +280,50 @@ function FillOutModal({ template, onClose, onSubmitted }) {
         const fd = new FormData();
         fd.append('field_id', fid);
         (photoFiles[fid] || []).forEach((file) => fd.append('files', file));
-        await api.post(`/forms/submissions/${sub.id}/photos`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        await api.post(`/forms/submissions/${sub.id}/photos`, fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } });
       }
-      toast.success('Form submitted', { description: `${template.name}` });
+      toast.success('Form submitted', { description: template.name });
       onSubmitted?.(sub);
       onClose();
-    } catch (e) {
-      toast.error(apiError(e));
-    } finally {
-      setSaving(false);
-      setProgress('');
-    }
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSaving(false); setProgress(''); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="form-fillout-modal">
-      <div className="w-full sm:max-w-3xl bg-white sm:rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start gap-3">
-          <div className="rounded-xl bg-[#d8e6f4] p-2.5 hidden sm:block"><FileText size={18} className="text-[#1e4a8c]" /></div>
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Fill out</div>
-            <h2 className="font-display text-lg font-semibold text-slate-900 truncate">{template.name}</h2>
-            {template.description && <p className="text-xs text-slate-600/80 mt-1 line-clamp-2">{template.description}</p>}
+      <div className="w-full sm:max-w-3xl bg-white sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
+        <div className="px-4 sm:px-6 py-5 border-b border-slate-200 bg-white flex items-start gap-3">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full ${CAT_PILL[template.category] || CAT_PILL.general}`}>
+              {categoryLabel(template.category)}
+            </span>
+            <h2 className="font-display text-2xl font-bold text-slate-900 leading-tight">{template.name}</h2>
+            {template.description && <p className="text-sm text-slate-500 leading-snug">{template.description}</p>}
           </div>
           <button onClick={onClose} data-testid="fillout-close"
-            className="p-2 -m-1 rounded hover:bg-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center">
-            <X size={16} />
+            className="p-2 -m-1 rounded-xl hover:bg-slate-100 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <X size={18} />
           </button>
         </div>
+        {capturedGps && (
+          <div className="px-4 sm:px-6 py-2 border-b border-emerald-100 bg-emerald-50 flex items-center gap-2" data-testid="gps-captured-indicator">
+            <MapPin size={14} className="text-emerald-700" />
+            <span className="text-xs font-semibold text-emerald-800">
+              GPS captured: {capturedGps.lat.toFixed(5)}, {capturedGps.lng.toFixed(5)}
+            </span>
+          </div>
+        )}
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
           ) : (template.fields || []).map((f) => (
             <div key={f.id} data-testid={`field-row-${f.id}`}>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
                 {f.label}
-                {f.required && <span className="text-[#a8324c] ml-1">*</span>}
+                {f.required && <span className="text-rose-600 ml-1">*</span>}
                 <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
               </label>
               <FieldRunner field={f}
@@ -331,12 +338,13 @@ function FillOutModal({ template, onClose, onSubmitted }) {
           {progress && <span className="text-xs text-slate-500 flex-1 truncate" data-testid="submit-progress">{progress}</span>}
           {!progress && <div className="flex-1" />}
           <button onClick={onClose} disabled={saving}
-            className="px-3 py-2 min-h-[44px] rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">
+            className="px-4 py-2.5 min-h-[44px] rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">
             Cancel
           </button>
           <button onClick={submit} disabled={saving || !requiredOk} data-testid="form-submit-btn"
-            className="inline-flex items-center gap-1.5 px-4 py-2 min-h-[44px] rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-50">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : null} Submit
+            className="inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-bold uppercase tracking-wide shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none">
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            Submit Form
           </button>
         </div>
       </div>
@@ -344,56 +352,53 @@ function FillOutModal({ template, onClose, onSubmitted }) {
   );
 }
 
-// ─────────────── Detail drawer ───────────────
+// ─────────────── Preview modal ───────────────
 
-function DetailDrawer({ template, onClose, onFill, onViewSubmissions }) {
+function PreviewModal({ template, onClose, onFill }) {
   return (
-    <div className="fixed inset-0 z-40 flex justify-end bg-slate-900/30 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      data-testid="form-detail-drawer">
-      <div className="w-full max-w-xl bg-white shadow-xl border-l border-slate-200 h-full flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center gap-3 bg-[#e6eff9]">
-          <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${CAT_CHIP[template.category] || CAT_CHIP.general}`}>
-            {categoryLabel(template.category)}
-          </span>
-          <div className="flex-1 min-w-0">
-            <h2 className="font-display text-lg font-semibold text-slate-900 truncate">{template.name}</h2>
+      data-testid="form-preview-modal">
+      <div className="w-full sm:max-w-3xl bg-white sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
+        <div className="px-4 sm:px-6 py-5 border-b border-slate-200 bg-white flex items-start gap-3">
+          <div className="flex-1 min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full ${CAT_PILL[template.category] || CAT_PILL.general}`}>
+                {categoryLabel(template.category)}
+              </span>
+              <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                <Phone size={10} /> Preview
+              </span>
+            </div>
+            <h2 className="font-display text-2xl font-bold text-slate-900 leading-tight">Preview · {template.name}</h2>
+            {template.description && <p className="text-sm text-slate-500">{template.description}</p>}
           </div>
-          <button onClick={onClose} className="p-1.5 rounded hover:bg-slate-200"><X size={14} /></button>
-        </div>
-        <div className="px-6 py-5 overflow-y-auto space-y-4 flex-1">
-          {template.description && (
-            <p className="text-sm text-slate-700 leading-relaxed">{template.description}</p>
-          )}
-          <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Fields ({(template.fields || []).length})</div>
-          <div className="space-y-2">
-            {(template.fields || []).map((f) => (
-              <div key={f.id} className="rounded-lg border border-slate-200 bg-white p-3" data-testid={`detail-field-${f.id}`}>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">{f.type}</span>
-                  <span className="text-sm font-semibold text-slate-900">{f.label}</span>
-                  {f.required && <span className="text-[10px] text-[#a8324c] font-semibold">required</span>}
-                </div>
-                {f.placeholder && <div className="text-xs text-slate-500 mt-1">Placeholder: {f.placeholder}</div>}
-                {(f.options || []).length > 0 && (
-                  <div className="mt-1.5 flex flex-wrap gap-1">
-                    {f.options.map((o) => (
-                      <span key={o} className="text-[10px] px-1.5 py-0.5 rounded bg-slate-50 text-slate-700 border border-slate-200">{o}</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 space-y-2">
-          <button onClick={onFill} data-testid="open-fillout-btn"
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263]">
-            <FilePlus size={14} /> Fill out this form
+          <button onClick={onClose} data-testid="preview-close"
+            className="p-2 -m-1 rounded-xl hover:bg-slate-100 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <X size={18} />
           </button>
-          <button onClick={onViewSubmissions} data-testid="view-submissions-btn"
-            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-700 hover:bg-white">
-            <ListChecks size={14} /> View submissions ({template.submission_count ?? 0})
+        </div>
+        <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1 bg-slate-50/50">
+          {(template.fields || []).map((f) => (
+            <div key={f.id}>
+              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
+                {f.label}
+                {f.required && <span className="text-rose-600 ml-1">*</span>}
+                <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+              </label>
+              <FieldRunner field={f} value={null} onChange={() => {}} readOnly />
+            </div>
+          ))}
+        </div>
+        <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2">
+          <div className="flex-1" />
+          <button onClick={onClose}
+            className="px-4 py-2.5 min-h-[44px] rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100">
+            Close
+          </button>
+          <button onClick={onFill} data-testid="preview-fill-cta"
+            className="inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800">
+            <Pencil size={14} /> Fill out this form
           </button>
         </div>
       </div>
@@ -401,68 +406,169 @@ function DetailDrawer({ template, onClose, onFill, onViewSubmissions }) {
   );
 }
 
-// ─────────────── Import modal ───────────────
+// ─────────────── Import + Build-with-AI modals ───────────────
 
 function ImportModal({ onClose, onImported }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
-
   const onFile = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setText(String(reader.result || ''));
-    reader.readAsText(file);
+    const r = new FileReader();
+    r.onload = () => setText(String(r.result || ''));
+    r.readAsText(file);
   };
-
   const doImport = async () => {
     let parsed;
-    try { parsed = JSON.parse(text); }
-    catch { toast.error('Invalid JSON'); return; }
-    if (!parsed || !Array.isArray(parsed.templates)) {
-      toast.error('JSON must include a "templates" array');
-      return;
-    }
+    try { parsed = JSON.parse(text); } catch { toast.error('Invalid JSON'); return; }
+    if (!parsed || !Array.isArray(parsed.templates)) { toast.error('JSON must have a "templates" array'); return; }
     setBusy(true);
     try {
       const { data } = await api.post('/forms/templates/import', parsed);
       const skippedN = (data.skipped || []).length;
       toast.success(`Imported ${data.created} template${data.created === 1 ? '' : 's'}${skippedN ? ` · skipped ${skippedN}` : ''}`);
-      onImported();
-      onClose();
+      onImported(); onClose();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="forms-import-modal">
-      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
-        <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9]">
-          <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Import</div>
-          <h2 className="font-display text-lg font-semibold text-slate-900">Import form templates</h2>
-          <p className="text-xs text-slate-600/80 mt-1">Paste a JSON payload or upload a .json file. Existing templates with the same name are skipped.</p>
+      <div className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+        <div className="px-6 py-5 border-b border-slate-200">
+          <h2 className="font-display text-2xl font-bold text-slate-900">Import Civil Library</h2>
+          <p className="text-sm text-slate-500 mt-1">Paste a JSON payload or upload a .json file. Templates with names already in your library are skipped.</p>
         </div>
         <div className="px-6 py-4 space-y-3 flex-1 overflow-y-auto">
           <button onClick={() => fileRef.current?.click()} data-testid="import-file-btn"
-            className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+            className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
             <UploadCloud size={12} /> Upload .json file
           </button>
           <input ref={fileRef} type="file" accept=".json,application/json" className="hidden" onChange={onFile} />
           <textarea value={text} onChange={(e) => setText(e.target.value)}
             placeholder='{"templates":[{"name":"...","category":"...","fields":[...]}]}'
             data-testid="import-textarea"
-            className="w-full h-64 px-3 py-2 border border-slate-300 rounded-lg font-mono text-xs" />
+            className="w-full h-64 px-3 py-2 border border-slate-300 rounded-xl font-mono text-xs" />
         </div>
         <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
-          <button onClick={onClose} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100">Cancel</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100">Cancel</button>
           <button onClick={doImport} disabled={busy || !text.trim()} data-testid="import-confirm"
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-50">
+            className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl bg-slate-900 text-white text-sm font-bold hover:bg-slate-800 disabled:opacity-50">
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Import
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function AiBuilderModal({ onClose, onCreated }) {
+  const [prompt, setPrompt] = useState('');
+  const [category, setCategory] = useState('general');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (prompt.trim().length < 10) { toast.error('Describe the form in a bit more detail'); return; }
+    setBusy(true);
+    try {
+      const { data } = await api.post('/forms/templates/ai-generate', { prompt: prompt.trim(), category });
+      toast.success('AI draft created', { description: data.name });
+      onCreated(data);
+      onClose();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && !busy && onClose()}
+      data-testid="ai-builder-modal">
+      <div className="w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
+        <div className="px-6 py-5 border-b border-slate-200 bg-gradient-to-br from-purple-50 to-pink-50">
+          <div className="flex items-center gap-2 text-xs font-semibold text-purple-700 uppercase tracking-wider mb-1">
+            <Sparkles size={12} /> AI form builder
+          </div>
+          <h2 className="font-display text-2xl font-bold text-slate-900">Build a form with AI</h2>
+          <p className="text-sm text-slate-500 mt-1">Describe what you need, AI generates a draft template you can refine.</p>
+        </div>
+        <div className="px-6 py-5 space-y-3">
+          <label className="block text-xs font-semibold text-slate-700">Describe the form you want to build</label>
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={5}
+            placeholder='e.g. "A daily scaffold inspection with sign-on, weather check, anchor points, photo evidence and supervisor signature"'
+            data-testid="ai-prompt-input"
+            className="w-full px-3 py-3 border border-slate-300 rounded-xl text-sm bg-white" />
+          <label className="block text-xs font-semibold text-slate-700 mt-2">Category</label>
+          <select value={category} onChange={(e) => setCategory(e.target.value)}
+            data-testid="ai-category-select"
+            className="w-full px-3 py-2.5 border border-slate-300 rounded-xl text-sm bg-white">
+            {CATEGORIES.filter((c) => c.key !== 'all').map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
+        </div>
+        <div className="px-6 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy} className="px-4 py-2 rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={busy || !prompt.trim()} data-testid="ai-generate-btn"
+            className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-bold hover:opacity-95 disabled:opacity-50">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />} Generate
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────── Template card ───────────────
+
+function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenSubmissions }) {
+  return (
+    <div className="group rounded-3xl border border-slate-200 bg-white p-5 hover:border-slate-300 hover:shadow-card transition-all flex flex-col"
+      data-testid={`template-card-${t.id}`}>
+      <div className="flex items-start gap-2 mb-3">
+        <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${CAT_PILL[t.category] || CAT_PILL.general}`}>
+          {categoryLabel(t.category)}
+        </span>
+        <div className="flex-1" />
+        <button onClick={onPreview} data-testid={`card-icon-preview-${t.id}`} title="Preview"
+          className="w-8 h-8 rounded-xl flex items-center justify-center text-blue-600 hover:bg-blue-50">
+          <Phone size={14} />
+        </button>
+        {canEdit && (
+          <button onClick={onEdit} data-testid={`card-icon-edit-${t.id}`} title="Edit"
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100">
+            <Pencil size={14} />
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={onDelete} data-testid={`card-icon-delete-${t.id}`} title="Delete"
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-rose-600 hover:bg-rose-50">
+            <Trash2 size={14} />
+          </button>
+        )}
+      </div>
+      <h3 className="font-display text-2xl font-bold text-slate-900 leading-tight">{t.name}</h3>
+      <p className="mt-2 text-sm text-slate-500 leading-relaxed">{t.description || '—'}</p>
+      <div className="mt-3 flex items-center gap-3 text-[11px] text-slate-400">
+        <span>{(t.fields || []).length} fields</span>
+        {(t.submission_count ?? 0) > 0 && (
+          <button onClick={onOpenSubmissions} data-testid={`card-subs-${t.id}`}
+            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+            {t.submission_count} sent
+          </button>
+        )}
+        {t.source === 'ai' && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+            <Sparkles size={9} /> AI draft
+          </span>
+        )}
+      </div>
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <button onClick={onPreview} data-testid={`card-preview-${t.id}`}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl border-2 border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50">
+          <Phone size={13} /> Preview
+        </button>
+        <button onClick={onFill} data-testid={`card-fill-${t.id}`}
+          className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
+          <Pencil size={13} /> Fill This Form
+        </button>
       </div>
     </div>
   );
@@ -478,19 +584,27 @@ export default function Forms() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
-  const [openDetail, setOpenDetail] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [previewT, setPreviewT] = useState(null);
   const [fillTemplate, setFillTemplate] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const filterRef = useRef(null);
 
   const load = async () => {
     setLoading(true);
-    try {
-      const { data } = await api.get('/forms/templates');
-      setRows(data || []);
-    } catch (e) { toast.error(apiError(e)); }
+    try { const { data } = await api.get('/forms/templates'); setRows(data || []); }
+    catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onDoc = (e) => { if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [filterOpen]);
 
   const counts = useMemo(() => {
     const c = { all: rows.length, incident: 0, inspection: 0, toolbox: 0, near_miss: 0, general: 0 };
@@ -508,22 +622,15 @@ export default function Forms() {
 
   const removeTemplate = async (t) => {
     if (!window.confirm(`Delete "${t.name}"?`)) return;
-    try {
-      await api.delete(`/forms/templates/${t.id}`);
-      toast.success(`${t.name} deleted`);
-      load();
-    } catch (e) { toast.error(apiError(e)); }
+    try { await api.delete(`/forms/templates/${t.id}`); toast.success(`${t.name} deleted`); load(); }
+    catch (e) { toast.error(apiError(e)); }
   };
 
   const exportAll = () => {
     const payload = {
-      app: 'Paneltec Civil',
-      exported_at: new Date().toISOString(),
-      version: 1,
+      app: 'Paneltec Civil', exported_at: new Date().toISOString(), version: 1,
       count: rows.length,
-      templates: rows.map((r) => ({
-        name: r.name, category: r.category, description: r.description, fields: r.fields,
-      })),
+      templates: rows.map((r) => ({ name: r.name, category: r.category, description: r.description, fields: r.fields })),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -533,111 +640,111 @@ export default function Forms() {
     URL.revokeObjectURL(url);
   };
 
+  const onEditTemplate = (t) => {
+    toast.message('Inline editor coming soon', { description: `For now, delete and re-import "${t.name}" or hand-edit the JSON via Export → Import.` });
+  };
+
+  const currentFilterLabel = filter === 'all' ? `All categories (${counts.all})` : `${categoryLabel(filter)} (${counts[filter] ?? 0})`;
+
   return (
     <div className="max-w-7xl mx-auto" data-testid="forms-page">
-      <PageHeader crumb="Compliance / Forms" title="Forms Library"
-        subtitle="Inspection, incident, toolbox and permit templates — fillable from the office or the field." />
-
-      <div className="mb-5 rounded-2xl border border-[#b9d2ec] bg-[#eff5fc] px-4 py-3 flex items-center gap-3">
-        <div className="rounded-xl bg-[#d8e6f4] p-2.5"><ClipboardList size={20} className="text-[#1e4a8c]" /></div>
-        <div className="flex-1">
-          <div className="text-sm font-semibold text-[#1e3a6b]">Field-ready forms with signature, photo &amp; GPS</div>
-          <div className="text-xs text-[#1e4a8c]/80 mt-0.5">Admins build templates on the web; workers fill them in on phones. Photos upload from the camera, signatures sign with a finger, and GPS pins drop straight into the submission PDF.</div>
-        </div>
+      {/* Page header */}
+      <div className="mb-6">
+        <h1 className="font-display text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">Form Templates</h1>
+        <p className="mt-2 text-base text-slate-500">Choose a form to fill, build your own, or generate with AI</p>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap gap-1.5">
-          {CATEGORIES.map((c) => (
-            <button key={c.key} onClick={() => setFilter(c.key)} data-testid={`filter-${c.key}`}
-              className={`text-xs font-semibold uppercase tracking-wider px-3 py-1.5 rounded-full transition ${
-                filter === c.key ? `${c.cls} ring-2 ring-offset-1 ring-[#1e4a8c]/30` : `${c.cls} opacity-70 hover:opacity-100`
-              }`}>
-              {c.label} <span className="ml-1 opacity-70">{counts[c.key] ?? 0}</span>
-            </button>
-          ))}
-        </div>
-        <div className="flex-1" />
-        <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)}
-            data-testid="forms-search" placeholder="Search by name…"
-            className="pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg bg-white w-64" />
-        </div>
-        <button onClick={exportAll} disabled={rows.length === 0} data-testid="export-forms-btn"
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-          <Download size={14} /> Export
+      {/* Toolbar */}
+      <div className="mb-5 flex flex-wrap items-center gap-2">
+        {canEdit && (
+          <button onClick={() => setImporting(true)} data-testid="toolbar-import"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            <Download size={14} /> Import Civil Library
+          </button>
+        )}
+        <button onClick={exportAll} disabled={rows.length === 0} data-testid="toolbar-export"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          <Share2 size={14} /> Export All Forms
         </button>
         {canEdit && (
-          <button onClick={() => setImporting(true)} data-testid="import-forms-btn"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-sm font-medium hover:bg-[#d8e6f4]">
-            <Upload size={14} /> Import
+          <button onClick={() => setAiOpen(true)} data-testid="toolbar-ai"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm font-semibold shadow-md hover:shadow-lg">
+            <Sparkles size={14} /> Build with AI
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => toast.message('Template builder coming soon', { description: 'Use “Build with AI” to generate a draft, or import JSON.' })}
+            data-testid="toolbar-new"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-orange-500 to-amber-500 text-slate-900 text-sm font-bold shadow-md hover:shadow-lg">
+            <Plus size={14} /> New Template
           </button>
         )}
       </div>
 
+      {/* Search + category dropdown */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            data-testid="forms-search" placeholder="Search forms..."
+            className="w-full pl-10 pr-3 py-2.5 text-sm border border-slate-300 rounded-2xl bg-white" />
+        </div>
+        <div className="relative" ref={filterRef}>
+          <button onClick={() => setFilterOpen((o) => !o)} data-testid="filter-dropdown"
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            {currentFilterLabel} <ChevronDown size={14} />
+          </button>
+          {filterOpen && (
+            <div className="absolute right-0 mt-1 w-64 rounded-2xl border border-slate-200 bg-white shadow-xl z-10 overflow-hidden" data-testid="filter-dropdown-menu">
+              {CATEGORIES.map((c) => (
+                <button key={c.key} onClick={() => { setFilter(c.key); setFilterOpen(false); }}
+                  data-testid={`filter-opt-${c.key}`}
+                  className={`w-full px-4 py-2.5 text-left text-sm font-medium hover:bg-slate-50 flex items-center justify-between ${filter === c.key ? 'bg-slate-100' : ''}`}>
+                  <span className="flex items-center gap-2">
+                    {c.key !== 'all' && <span className={`inline-block w-2.5 h-2.5 rounded-full ${c.pill.split(' ')[0]}`} />}
+                    {c.label}
+                  </span>
+                  <span className="text-xs text-slate-500">{counts[c.key] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Cards */}
       {loading ? (
         <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</div>
       ) : filtered.length === 0 ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center" data-testid="forms-empty">
+        <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center" data-testid="forms-empty">
           <FileText size={28} className="mx-auto text-slate-300 mb-2" />
-          <div className="text-sm font-medium text-slate-700">No templates yet</div>
-          <div className="text-xs text-slate-500 mt-1">Import your existing JSON or build a new template from scratch.</div>
+          <div className="text-sm font-medium text-slate-700">No templates match</div>
+          <div className="text-xs text-slate-500 mt-1">Try a different category or clear the search.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" data-testid="forms-grid">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="forms-grid">
           {filtered.map((t) => (
-            <div key={t.id} className="group rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-blue/40 hover:shadow-card transition-all"
-              data-testid={`template-card-${t.id}`}>
-              <div className="flex items-start gap-2 mb-2">
-                <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${CAT_CHIP[t.category] || CAT_CHIP.general}`}>
-                  {categoryLabel(t.category)}
-                </span>
-                {t.source === 'imported' && (
-                  <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">imported</span>
-                )}
-                <div className="flex-1" />
-                {(t.submission_count ?? 0) > 0 && (
-                  <button onClick={(e) => { e.stopPropagation(); navigate(`/app/forms/templates/${t.id}/submissions`); }}
-                    data-testid={`badge-submissions-${t.id}`}
-                    className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#d8ecdd] text-[#1f7a3f] hover:bg-[#c2dfc8]">
-                    {t.submission_count} sent
-                  </button>
-                )}
-                {canEdit && (
-                  <button onClick={(e) => { e.stopPropagation(); removeTemplate(t); }}
-                    data-testid={`delete-${t.id}`}
-                    className="opacity-0 group-hover:opacity-100 inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
-                    <Trash2 size={11} />
-                  </button>
-                )}
-              </div>
-              <button onClick={() => setOpenDetail(t)} className="block w-full text-left">
-                <h3 className="font-display text-base font-semibold text-slate-900 leading-snug">{t.name}</h3>
-                <p className="mt-1 text-xs text-slate-600 leading-relaxed line-clamp-2">{t.description || '—'}</p>
-                <div className="mt-2 text-[11px] text-slate-500">{(t.fields || []).length} fields</div>
-              </button>
-              <button onClick={() => setFillTemplate(t)} data-testid={`fillout-${t.id}`}
-                className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 min-h-[44px] rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-xs font-semibold uppercase tracking-wider hover:bg-[#d8e6f4]">
-                <FilePlus size={12} /> Fill out
-              </button>
-            </div>
+            <TemplateCard key={t.id} t={t} canEdit={canEdit}
+              onPreview={() => setPreviewT(t)}
+              onFill={() => setFillTemplate(t)}
+              onDelete={() => removeTemplate(t)}
+              onEdit={() => onEditTemplate(t)}
+              onOpenSubmissions={() => navigate(`/app/forms/templates/${t.id}/submissions`)} />
           ))}
         </div>
       )}
 
       {importing && <ImportModal onClose={() => setImporting(false)} onImported={load} />}
-      {openDetail && (
-        <DetailDrawer template={openDetail} onClose={() => setOpenDetail(null)}
-          onFill={() => { setFillTemplate(openDetail); setOpenDetail(null); }}
-          onViewSubmissions={() => navigate(`/app/forms/templates/${openDetail.id}/submissions`)} />
-      )}
-      {fillTemplate && <FillOutModal template={fillTemplate} onClose={() => setFillTemplate(null)} onSubmitted={load} />}
+      {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t) => { load(); setPreviewT(t); }} />}
+      {previewT && <PreviewModal template={previewT} onClose={() => setPreviewT(null)}
+        onFill={() => { setFillTemplate(previewT); setPreviewT(null); }} />}
+      {fillTemplate && <FillOutModal template={fillTemplate}
+        onClose={() => setFillTemplate(null)} onSubmitted={load} />}
     </div>
   );
 }
 
-// ─────────────── Read-only submission view modal ───────────────
+// ─────────────── Read-only submission view (used by FormSubmissions) ───────────────
 
 export function SubmissionViewModal({ submissionId, onClose }) {
   const [data, setData] = useState(null);
@@ -690,20 +797,18 @@ export function SubmissionViewModal({ submissionId, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/30 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="submission-view-modal">
-      <div className="w-full sm:max-w-3xl bg-white sm:rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
-        <div className="px-4 sm:px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start gap-3">
+      <div className="w-full sm:max-w-3xl bg-white sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
+        <div className="px-4 sm:px-6 py-5 border-b border-slate-200 bg-white flex items-start gap-3">
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Submission</div>
-            <h2 className="font-display text-lg font-semibold text-slate-900 truncate">{data?.template_name_snapshot || '…'}</h2>
-            {data && (
-              <p className="text-xs text-slate-600/80 mt-1">By {data.submitted_by_name} · {(data.submitted_at || '').slice(0, 16).replace('T', ' ')}</p>
-            )}
+            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Submission</div>
+            <h2 className="font-display text-xl font-bold text-slate-900 truncate">{data?.template_name_snapshot || '…'}</h2>
+            {data && <p className="text-xs text-slate-500 mt-1">By {data.submitted_by_name} · {(data.submitted_at || '').slice(0, 16).replace('T', ' ')}</p>}
           </div>
-          <button onClick={onClose} className="p-2 -m-1 rounded hover:bg-slate-200 min-w-[44px] min-h-[44px] flex items-center justify-center" data-testid="submission-close">
-            <X size={16} />
+          <button onClick={onClose} className="p-2 -m-1 rounded-xl hover:bg-slate-100 min-w-[44px] min-h-[44px] flex items-center justify-center" data-testid="submission-close">
+            <X size={18} />
           </button>
         </div>
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">

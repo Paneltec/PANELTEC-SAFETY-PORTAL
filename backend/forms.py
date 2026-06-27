@@ -219,6 +219,98 @@ async def import_templates(body: ImportPayload, user: dict = Depends(get_current
             "skipped": skipped}
 
 
+# ──────────────── AI template generation ────────────────
+
+class AiGenerateIn(BaseModel):
+    prompt: str = Field(min_length=10, max_length=4000)
+    category: Optional[str] = "general"
+
+
+AI_FORM_SYSTEM = """You are an expert Australian WHS (Work Health & Safety) consultant for civil construction.
+
+You design DIGITAL FORM TEMPLATES for safety, inspection, toolbox, near-miss and permit workflows.
+
+Given a plain-English description, output STRICT JSON describing a fillable form template.
+
+You MUST respond with ONLY a JSON object — no prose, no markdown fences, no explanations.
+
+The JSON schema is exactly:
+{
+  "name": "<short clear template name, max 80 chars>",
+  "description": "<one-sentence description, max 200 chars>",
+  "category": "<one of: incident|inspection|toolbox|near_miss|general>",
+  "fields": [
+    {
+      "id": "f1",
+      "label": "<field label>",
+      "type": "<one of: text|textarea|date|number|select|radio|photo|signature|gps>",
+      "required": true|false,
+      "options": ["<option1>", "<option2>"],
+      "placeholder": "<optional hint, only for text/textarea/number>"
+    }
+  ]
+}
+
+Rules:
+- Use sequential field ids: f1, f2, f3, ...
+- "options" is REQUIRED for select/radio, omit otherwise (or use [])
+- For radio fields use 2-4 short options (e.g. ["Yes","No"] or ["Yes","No","N/A"])
+- Include 1-2 "photo" fields for visible-condition forms
+- Include exactly 1 "signature" field as the last field for any sign-off form
+- Include 1 "gps" field for site-specific forms
+- Always include a "date" field as the first or second field
+- 6 to 20 fields total
+- Use Australian English (e.g. "tyres", "kerb", "Hi-Vis")
+"""
+
+
+@router.post("/templates/ai-generate", status_code=201)
+async def ai_generate_template(body: AiGenerateIn, user: dict = Depends(get_current_user)):
+    """Generate a draft form template from a natural-language prompt using Claude Sonnet 4.5.
+    The generated template is persisted with source='ai' and returned for the
+    user to refine."""
+    _require_write(user, action="create")
+    from ai import _claude_json  # reuse existing emergent-integrations helper
+    requested_category = _norm_category(body.category or "general")
+    user_text = (
+        f"Build a form template for the following requirement.\n\n"
+        f"Requirement: {body.prompt.strip()}\n\n"
+        f"Suggested category (use unless clearly wrong): {requested_category}\n"
+    )
+    raw = await _claude_json(AI_FORM_SYSTEM, user_text)
+
+    # Validate + sanitise the response into our model.
+    name = str(raw.get("name") or "").strip()[:200]
+    if not name:
+        raise HTTPException(503, "AI did not return a usable template name")
+    description = str(raw.get("description") or "").strip()[:2000]
+    category = _norm_category(raw.get("category") or requested_category)
+    raw_fields = raw.get("fields")
+    if not isinstance(raw_fields, list) or not raw_fields:
+        raise HTTPException(503, "AI did not return any fields")
+    fields = [_clean_field(f) for f in raw_fields[:50]]
+
+    # Dedupe name within org by appending a suffix.
+    existing = await db.form_templates.find_one(
+        {"org_id": user["org_id"], "deleted_at": None, "name": name}, {"_id": 1},
+    )
+    if existing:
+        name = f"{name} (AI draft)"
+
+    ts = now_iso()
+    doc = {
+        "id": new_id(), "org_id": user["org_id"],
+        "name": name, "category": category, "description": description,
+        "fields": fields,
+        "source": "ai",
+        "imported_at": None,
+        "created_by": user["id"],
+        "created_at": ts, "updated_at": ts, "deleted_at": None,
+    }
+    await db.form_templates.insert_one(doc)
+    return {**_serialise(doc), "submission_count": 0}
+
+
 # ──────────────── Submissions ────────────────
 
 def _submission_status(template_fields: list, fields: list) -> str:

@@ -14,13 +14,14 @@ const TOOLS = [
   { key: 'hazards', resource: 'hazards', title: 'Hazard Reports from Photos', desc: 'Snap a hazard — AI classifies risk and drafts the report.', icon: 'warning' as const, route: '/hazards' },
   { key: 'incidents', resource: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture with witness statements and evidence.', icon: 'alert-circle' as const, route: '/incidents' },
   { key: 'inspections', resource: 'inspections', title: 'Inspection Reports', desc: 'Plant, scaffold and site walk inspections with pass/fail items.', icon: 'checkmark-circle' as const, route: '/inspections' },
+  { key: 'forms', resource: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const, route: '/forms' },
 ];
 
 export default function CaptureScreen() {
   const router = useRouter();
   const can = useCan();
 
-  const visibleTools = TOOLS.filter(t => can(t.resource, 'open'));
+  const visibleTools = TOOLS.filter(t => t.resource === 'forms' || can(t.resource, 'open'));
 
   return (
     <SafeAreaView style={styles.safe}>

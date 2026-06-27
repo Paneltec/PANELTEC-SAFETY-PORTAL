@@ -240,3 +240,19 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 - Worker assignment + scheduled reminders on submissions
 - Mobile mirror (Expo specialist — dedicated turn)
 - Pin / favourite templates per-worker
+
+
+# 2026-06-27 — Forms UI restyle (shipped)
+- **Page header** rewritten to match user references: title "Form Templates" + subtitle + 4-button toolbar (Import Civil Library / Export All Forms / **Build with AI** purple-pink gradient / **+ New Template** orange-amber gradient) + search + categorical dropdown showing "All categories (N)".
+- **Template cards** redesigned: pastel category pill (incident blush, inspection sky, toolbox butter, near_miss peach, general slate) on top-left + 3 action icons (Phone/Edit/Trash) on top-right (Edit/Trash hidden for non-admins). Big title, description, "N fields" subtitle + optional "X sent" pill + "AI draft" badge. 2-col grid bottom CTAs: Preview (white, blue border) + Fill This Form (dark navy).
+- **Coloured Yes/No/N/A radio buttons** in the Fill-Out modal: Yes=emerald, No=rose, N/A=slate, Other=slate. Selected state filled with matching pastel + ring.
+- **Submit button** is now orange-amber gradient with CheckCircle2 icon.
+- **GPS captured indicator** banner at the top of the modal (mint pill) shows lat/lng once captured.
+- **Preview modal (NEW)**: read-only view of all fields with disabled inputs, "Preview · {name}" title + PREVIEW badge, "Fill out this form" CTA at the bottom.
+- **Build-with-AI (NEW)**: backend `POST /api/forms/templates/ai-generate` uses existing `_claude_json` helper (Claude Sonnet 4.5 via emergentintegrations). Prompt + category in, persisted template with source='ai' out. Validated AI generated a 19-field Daily Scaffold Inspection. Permission-gated: workers get 403.
+- SW bumped to `paneltec-v31`.
+- All 5 reference screenshots verified at 1440×900 + mobile at 375×812.
+
+## Forms backlog
+- Inline template editor (toolbar "+ New Template" + card pencil icon currently toast "coming soon"). Add a builder modal with field add/remove/reorder.
+- `vehicle_reg` field type with Navixy integration (deferred per scope).

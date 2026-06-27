@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
 
 const ITEMS = [
+  { key: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const, route: '/forms', bg: '#e6eff9', tint: '#1e4a8c' },
   { key: 'suppliers', title: 'Suppliers', desc: 'Live from Simpro — org-local notes, tasks, folders and members.', icon: 'business' as const, route: '/suppliers', bg: '#e8efe2', tint: '#2e5e2e' },
   { key: 'document-library', title: 'Document Library', desc: 'All risk & compliance documents, organised and AI-tagged.', icon: 'folder-open' as const, route: '/document-library', bg: '#e6eff9', tint: '#1e4a8c' },
   { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
