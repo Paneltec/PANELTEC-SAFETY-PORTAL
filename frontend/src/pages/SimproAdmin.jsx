@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Key, Loader2, Play, Save, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Key, Loader2, Play, Save, CheckCircle2, AlertCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { BackButton } from '../components/capture/Ui';
@@ -26,6 +26,40 @@ function Helper({ children }) {
   return <p className="text-xs text-slate-500 mt-1 leading-snug">{children}</p>;
 }
 
+function formatRelative(seconds) {
+  if (seconds == null) return '';
+  const abs = Math.abs(seconds);
+  if (abs < 60) return `${abs}s`;
+  if (abs < 3600) return `${Math.round(abs / 60)} min`;
+  if (abs < 86400) return `${Math.round(abs / 3600)} h`;
+  return `${Math.round(abs / 86400)} d`;
+}
+
+function TokenStatusLine({ status }) {
+  if (!status) return null;
+  const { present, expires_in_seconds } = status;
+  if (!present) {
+    return (
+      <p className="text-xs text-slate-500 mt-3" data-testid="simpro-token-status">
+        No token yet — click Get Token after saving credentials.
+      </p>
+    );
+  }
+  const expired = expires_in_seconds != null && expires_in_seconds <= 0;
+  if (expired) {
+    return (
+      <p className="text-xs text-amber-700 mt-3 inline-flex items-center gap-1.5" data-testid="simpro-token-status">
+        <AlertTriangle size={13} /> Token expired — click Get Token to refresh.
+      </p>
+    );
+  }
+  return (
+    <p className="text-xs text-emerald-700 mt-3 inline-flex items-center gap-1.5" data-testid="simpro-token-status">
+      <CheckCircle2 size={13} /> Token active{expires_in_seconds != null ? ` · expires in ${formatRelative(expires_in_seconds)}` : ''}
+    </p>
+  );
+}
+
 export default function SimproAdmin() {
   const [s, setS] = useState(empty);
   const [doc, setDoc] = useState(null);
@@ -43,7 +77,6 @@ export default function SimproAdmin() {
       company_id_2: cfg.company_id_2 || '',
       client_id: cfg.client_id || '',
       secretOnFile: isMasked(cfg.client_secret) ? cfg.client_secret : (cfg.client_secret ? '••••' : null),
-      accessTokenOnFile: isMasked(cfg.access_token) ? cfg.access_token : (cfg.access_token ? '••••' : null),
       poll_seconds: cfg.poll_seconds ?? 900,
       staff_custom_field: cfg.staff_custom_field || '',
       staff_field_value: cfg.staff_field_value || '',
@@ -156,12 +189,6 @@ export default function SimproAdmin() {
             <Helper>The Client Secret paired with the Client ID above. Shown only once when the OAuth client is created.</Helper>
           </div>
           <div>
-            <Field label="Access token (read-only)" rightSlot={<SavedChip savedValue={s.accessTokenOnFile} hasInput={false} testid="simpro-token-saved" />}>
-              <Input value={s.accessTokenOnFile || ''} onChange={() => {}} placeholder="click Get Token" disabled testid="simpro-access-token" />
-            </Field>
-            <Helper>Auto-fetched by Simpro using your Client ID + Secret when you click <strong>Get Token</strong>. We use it on every Simpro API call. If you see "Token expired", click Get Token again to refresh.</Helper>
-          </div>
-          <div>
             <Field label="Poll · seconds">
               <Input type="number" value={String(s.poll_seconds)} onChange={(v) => setS({ ...s, poll_seconds: Number(v) || 900 })} testid="simpro-poll" />
             </Field>
@@ -208,6 +235,8 @@ export default function SimproAdmin() {
             {busy.test ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />} Test Connection
           </button>
         </div>
+
+        <TokenStatusLine status={doc?.token_status} />
       </AdminCard>
     </div>
   );
