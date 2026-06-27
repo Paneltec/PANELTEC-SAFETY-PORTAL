@@ -155,3 +155,33 @@
 - **Web files referenced**: Forms.jsx, FormSubmissions.jsx
 - **All screens verified**: Forms List (3 templates, category counts correct), Template Detail (6 fields with types, description, CTAs), Fill-Out Screen (text/textarea/select/photo/signature inputs, auto-save badge, submit bar)
 - **Note**: Previous agent had already implemented complete UI for all Forms route files (not just boilerplates as originally reported). The only missing pieces were: route registration, navigation links, and the expo-location version fix.
+
+
+## Iteration 9 — Forms UI Catch-up: Template Builder, AI Builder, Preview Modal, Dashboard AI Tile
+- **Commit**: 5a8eee1de8295dbd5a33660d88f31ecd1315df09
+- **Date**: 2026-06-27T14:05:00Z
+- **Changes**:
+  - Verified compilation of 5 newly created/modified files from previous agent (PreviewModal, AiBuilderModal, TemplateBuilder, forms/index.tsx, forms/fill/[id].tsx)
+  - Fixed toolbar layout bug: horizontal ScrollView was stretching toolbar buttons vertically on web — replaced with View+flexWrap
+  - Added `Dashboard "Generate Form (AI)"` tile in CREATE & CAPTURE section (lavender pastel, Sparkles icon, gated to admin/hseq_lead)
+  - Dashboard AI tile opens AiBuilderModal → on AI generation, opens TemplateBuilder for refinement
+  - Verified all 3 modals work: PreviewModal (read-only fields), AiBuilderModal (prompt + category → POST /api/forms/templates/ai-generate), TemplateBuilder (field CRUD, up/down reorder, type picker, save)
+  - Verified fill-out screen redesign: Yes/No/N/A colored outline radio buttons, GPS banner, auto-save badge, photo/signature/GPS field types
+  - Role-based visibility enforced: Workers cannot see Import/Export/AI Builder/New Template buttons, Edit/Delete icons, or Dashboard AI tile
+  - Retained forms/[id].tsx for deep-link/direct navigation use case
+- **Files modified**:
+  - `/app/mobile/app/forms/index.tsx` (toolbar layout fix: ScrollView→View+flexWrap)
+  - `/app/mobile/app/(tabs)/dashboard.tsx` (added AI Form tile + AiBuilderModal + TemplateBuilder imports + styles)
+- **Files verified (created by previous agent)**:
+  - `/app/mobile/src/components/forms/PreviewModal.tsx` ✅
+  - `/app/mobile/src/components/forms/AiBuilderModal.tsx` ✅
+  - `/app/mobile/src/components/forms/TemplateBuilder.tsx` ✅
+  - `/app/mobile/app/forms/fill/[id].tsx` ✅
+- **Web files referenced**: Forms.jsx (for UI parity check)
+- **All screens verified via screenshot**:
+  - Forms List: 4-button toolbar, category dropdown with counts, template cards with pills/icons/Preview+Fill CTAs
+  - Preview Modal: read-only field rendering, category pill, PREVIEW badge, Close + Fill CTA
+  - AI Builder Modal: prompt textarea, category picker, Generate button, purple theme
+  - Template Builder Modal: form name input, category dot, description, field cards with up/down reorder + type picker + required toggle, Save button
+  - Fill-Out Screen: colored radio buttons (green Yes, red Fail, gray N/A), GPS capture, photo Camera/Library, signature pad, auto-save, Submit Form
+  - Dashboard: Generate Form (AI) tile with lavender styling in CREATE & CAPTURE section

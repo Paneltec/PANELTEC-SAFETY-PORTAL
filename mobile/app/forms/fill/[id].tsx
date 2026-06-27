@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image, Modal,
@@ -12,6 +12,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import SignatureScreen from 'react-native-signature-canvas';
 import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
+
+/* ─── Colour helper for radio buttons ─── */
+function radioColor(opt: string, selected: boolean) {
+  const norm = opt.toLowerCase();
+  if (norm === 'yes')
+    return selected
+      ? { bg: '#ecfdf5', border: '#10b981', text: '#047857' }
+      : { bg: '#fff', border: '#6ee7b7', text: '#047857' };
+  if (norm === 'no' || norm === 'defective' || norm.startsWith('fail'))
+    return selected
+      ? { bg: '#fef2f2', border: '#ef4444', text: '#b91c1c' }
+      : { bg: '#fff', border: '#fca5a5', text: '#b91c1c' };
+  if (norm === 'n/a' || norm === 'na' || norm === 'not applicable')
+    return selected
+      ? { bg: '#f1f5f9', border: '#64748b', text: '#334155' }
+      : { bg: '#fff', border: '#cbd5e1', text: '#475569' };
+  return selected
+    ? { bg: '#f1f5f9', border: '#64748b', text: '#1e293b' }
+    : { bg: '#fff', border: '#cbd5e1', text: '#475569' };
+}
 
 /* ─── Select picker modal ─── */
 function SelectModal({ visible, options, selected, onSelect, onClose }: any) {
@@ -38,7 +58,6 @@ function SelectModal({ visible, options, selected, onSelect, onClose }: any) {
 /* ─── Signature modal ─── */
 function SignatureModal({ visible, onSave, onClose }: any) {
   const sigRef = useRef<any>(null);
-  const handleOK = (sig: string) => { onSave(sig); };
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
@@ -48,7 +67,7 @@ function SignatureModal({ visible, onSave, onClose }: any) {
         </View>
         <SignatureScreen
           ref={sigRef}
-          onOK={handleOK}
+          onOK={(sig: string) => onSave(sig)}
           onEmpty={() => Alert.alert('Please sign first')}
           descriptionText=""
           clearText="Clear"
@@ -75,7 +94,10 @@ function PhotoField({ photos, onChange, testId }: any) {
       ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], quality: 0.7, base64: true })
       : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7, base64: true, allowsMultipleSelection: true });
     if (result.canceled || !result.assets?.length) return;
-    const newPhotos = result.assets.map((a) => ({ uri: a.uri, base64: a.base64, name: a.fileName || `photo_${Date.now()}.jpg`, mimeType: a.mimeType || 'image/jpeg' }));
+    const newPhotos = result.assets.map((a) => ({
+      uri: a.uri, base64: a.base64, name: a.fileName || `photo_${Date.now()}.jpg`,
+      mimeType: a.mimeType || 'image/jpeg',
+    }));
     onChange([...(photos || []), ...newPhotos]);
   };
   return (
@@ -165,15 +187,12 @@ export default function FillOutScreen() {
   useEffect(() => {
     AsyncStorage.getItem(draftKey).then((raw) => {
       if (raw) {
-        try {
-          const d = JSON.parse(raw);
-          if (d.values) setValues(d.values);
-        } catch { /* ignore */ }
+        try { const d = JSON.parse(raw); if (d.values) setValues(d.values); } catch { /* ignore */ }
       }
     });
   }, [draftKey]);
 
-  // Auto-save draft every 5s
+  // Auto-save every 5s
   const valRef = useRef(values);
   valRef.current = values;
   useEffect(() => {
@@ -185,6 +204,15 @@ export default function FillOutScreen() {
 
   const setVal = useCallback((fid: string, v: any) => setValues((p) => ({ ...p, [fid]: v })), []);
   const setPhotoField = useCallback((fid: string, v: any[]) => setPhotos((p) => ({ ...p, [fid]: v })), []);
+
+  // Aggregate captured GPS for banner
+  const capturedGps = useMemo(() => {
+    if (!tpl) return null;
+    for (const f of tpl.fields || []) {
+      if (f.type === 'gps' && values[f.id]?.lat != null) return values[f.id];
+    }
+    return null;
+  }, [tpl, values]);
 
   const submit = async () => {
     if (!tpl) return;
@@ -198,7 +226,6 @@ export default function FillOutScreen() {
         })),
       };
       const { data: sub } = await api.post(`/forms/templates/${id}/submissions`, payload);
-      // Upload photos
       const photoFieldIds = Object.keys(photos).filter((fid) => (photos[fid] || []).length > 0);
       for (let i = 0; i < photoFieldIds.length; i++) {
         const fid = photoFieldIds[i];
@@ -226,6 +253,7 @@ export default function FillOutScreen() {
   return (
     <SafeAreaView style={fs.safe} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* Header */}
         <View testID="fill-header" style={fs.header}>
           <TouchableOpacity testID="fill-back" onPress={() => router.back()} style={{ padding: 4 }}>
             <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
@@ -234,8 +262,21 @@ export default function FillOutScreen() {
             <Text style={fs.headerOverline}>FILL OUT</Text>
             <Text style={fs.headerTitle} numberOfLines={1}>{tpl.name}</Text>
           </View>
-          <View style={fs.draftBadge}><Ionicons name="save" size={10} color="#8c6a1a" /><Text style={fs.draftBadgeText}>auto-save</Text></View>
+          <View style={fs.draftBadge}>
+            <Ionicons name="save" size={10} color="#8c6a1a" />
+            <Text style={fs.draftBadgeText}>auto-save</Text>
+          </View>
         </View>
+
+        {/* GPS captured banner */}
+        {capturedGps && (
+          <View testID="gps-captured-indicator" style={fs.gpsBanner}>
+            <Ionicons name="location" size={14} color="#047857" />
+            <Text style={fs.gpsBannerText}>
+              GPS captured: {capturedGps.lat.toFixed(5)}, {capturedGps.lng.toFixed(5)}
+            </Text>
+          </View>
+        )}
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled">
@@ -245,9 +286,10 @@ export default function FillOutScreen() {
             <View key={f.id} testID={`field-row-${f.id}`} style={fs.fieldWrap}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
                 <Text style={fs.fieldLabel}>{f.label}</Text>
-                {f.required && <View style={fs.reqDot} />}
+                {f.required && <Text style={fs.reqStar}>*</Text>}
                 <Text style={fs.fieldType}>{f.type}</Text>
               </View>
+
               {f.type === 'text' && (
                 <TextInput testID={`field-${f.id}`} style={fs.input} value={values[f.id] || ''}
                   onChangeText={(v) => setVal(f.id, v)} placeholder={f.placeholder || ''}
@@ -259,7 +301,8 @@ export default function FillOutScreen() {
                   placeholder={f.placeholder || ''} placeholderTextColor={Colors.textTertiary} />
               )}
               {f.type === 'number' && (
-                <TextInput testID={`field-${f.id}`} style={fs.input} value={values[f.id] != null ? String(values[f.id]) : ''}
+                <TextInput testID={`field-${f.id}`} style={fs.input}
+                  value={values[f.id] != null ? String(values[f.id]) : ''}
                   onChangeText={(v) => setVal(f.id, v)} keyboardType="numeric"
                   placeholder={f.placeholder || ''} placeholderTextColor={Colors.textTertiary} />
               )}
@@ -277,19 +320,24 @@ export default function FillOutScreen() {
                   <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
                 </TouchableOpacity>
               )}
+
+              {/* Coloured radio buttons */}
               {f.type === 'radio' && (
-                <View testID={`field-${f.id}`} style={{ gap: 4 }}>
-                  {(f.options || []).map((o: string) => (
-                    <TouchableOpacity key={o} testID={`radio-${f.id}-${o}`}
-                      style={[fs.radioRow, values[f.id] === o && fs.radioRowActive]}
-                      onPress={() => setVal(f.id, o)}>
-                      <Ionicons name={values[f.id] === o ? 'radio-button-on' : 'radio-button-off'}
-                        size={18} color={values[f.id] === o ? '#1e4a8c' : Colors.textTertiary} />
-                      <Text style={[fs.radioText, values[f.id] === o && { color: '#1e4a8c', fontWeight: '600' }]}>{o}</Text>
-                    </TouchableOpacity>
-                  ))}
+                <View testID={`field-${f.id}`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {(f.options || []).map((o: string) => {
+                    const sel = values[f.id] === o;
+                    const c = radioColor(o, sel);
+                    return (
+                      <TouchableOpacity key={o} testID={`radio-${f.id}-${o}`}
+                        style={[fs.colorRadio, { borderColor: c.border, backgroundColor: c.bg }]}
+                        onPress={() => setVal(f.id, o)}>
+                        <Text style={[fs.colorRadioText, { color: c.text, fontWeight: sel ? '700' : '600' }]}>{o}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               )}
+
               {f.type === 'photo' && (
                 <PhotoField photos={photos[f.id]} onChange={(v: any) => setPhotoField(f.id, v)} testId={`field-${f.id}`} />
               )}
@@ -320,23 +368,21 @@ export default function FillOutScreen() {
           ))}
         </ScrollView>
 
-        {/* Submit bar */}
+        {/* Submit bar — orange-amber */}
         <View style={fs.submitBar}>
           {progress ? <Text style={fs.progressText}>{progress}</Text> : null}
           <TouchableOpacity testID="form-submit-btn" style={[fs.submitBtn, saving && { opacity: 0.6 }]}
             onPress={submit} disabled={saving}>
             {saving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark-circle" size={16} color="#fff" />}
-            <Text style={fs.submitBtnText}>Submit</Text>
+            <Text style={fs.submitBtnText}>Submit Form</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
-      {/* Signature modal */}
       <SignatureModal visible={!!sigModalField}
         onSave={(sig: string) => { if (sigModalField) setVal(sigModalField, sig); setSigModalField(null); }}
         onClose={() => setSigModalField(null)} />
 
-      {/* Select modal */}
       {activeSelectField && (
         <SelectModal visible={!!selectModalField} options={activeSelectField.options}
           selected={values[selectModalField!]}
@@ -361,10 +407,16 @@ const fs = StyleSheet.create({
     backgroundColor: '#f7eed1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
   },
   draftBadgeText: { fontSize: 9, fontWeight: '600', color: '#8c6a1a' },
+  gpsBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 16, paddingVertical: 8,
+    backgroundColor: '#ecfdf5', borderBottomWidth: 1, borderBottomColor: '#a7f3d0',
+  },
+  gpsBannerText: { fontSize: 12, fontWeight: '600', color: '#047857' },
   fieldWrap: { marginBottom: 20 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink },
   fieldType: { fontSize: 9, fontWeight: '600', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  reqDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#a8324c' },
+  reqStar: { fontSize: 14, color: '#dc2626', fontWeight: '700' },
   input: {
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, color: Colors.text, minHeight: 48,
@@ -375,12 +427,12 @@ const fs = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 12, minHeight: 48,
   },
   selectBtnText: { fontSize: 14, color: Colors.text },
-  radioRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 8, paddingVertical: 10, borderRadius: 10, minHeight: 48,
+  colorRadio: {
+    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
+    borderWidth: 2, minHeight: 48, minWidth: 80,
+    alignItems: 'center', justifyContent: 'center',
   },
-  radioRowActive: { backgroundColor: '#e6eff9' },
-  radioText: { fontSize: 14, color: Colors.text },
+  colorRadioText: { fontSize: 14 },
   photoBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1,
     backgroundColor: '#eff5fc', borderWidth: 2, borderStyle: 'dashed', borderColor: '#b9d2ec',
@@ -424,7 +476,7 @@ const fs = StyleSheet.create({
   progressText: { fontSize: 11, color: Colors.textTertiary, marginBottom: 6 },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#1e4a8c', borderRadius: 12, paddingVertical: 14, minHeight: 50,
+    backgroundColor: '#d97706', borderRadius: 12, paddingVertical: 14, minHeight: 50,
   },
   submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },

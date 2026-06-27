@@ -6,6 +6,10 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import { getUser, initials } from '../../src/lib/auth';
 import { Colors } from '../../src/lib/colors';
+import AiBuilderModal from '../../src/components/forms/AiBuilderModal';
+import TemplateBuilder from '../../src/components/forms/TemplateBuilder';
+
+const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 const METRIC_ROWS = [
   { key: 'swms', label: 'AI SWMS', field: 'swms_count', icon: 'document-text' as const },
@@ -42,6 +46,10 @@ export default function DashboardScreen() {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [builderTemplate, setBuilderTemplate] = useState<any | null>(null);
+
+  const canEdit = WRITE_ROLES.has(user?.role);
 
   const loadData = async () => {
     try {
@@ -186,6 +194,23 @@ export default function DashboardScreen() {
 
         {/* Quick capture */}
         <Text style={styles.sectionLabel}>CREATE & CAPTURE</Text>
+        {canEdit && (
+          <TouchableOpacity
+            testID="dashboard-generate-form-ai"
+            style={styles.aiFormTile}
+            onPress={() => setAiOpen(true)}
+            activeOpacity={0.7}
+          >
+            <View style={styles.aiFormIcon}>
+              <Ionicons name="sparkles" size={18} color="#7c3aed" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiFormTitle}>Generate Form (AI)</Text>
+              <Text style={styles.aiFormDesc}>Describe what you need — AI builds a draft template</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#a78bfa" />
+          </TouchableOpacity>
+        )}
         {CAPTURE_TOOLS.map((t) => (
           <TouchableOpacity
             key={t.key}
@@ -205,6 +230,16 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* AI + Builder modals */}
+      {aiOpen && (
+        <AiBuilderModal onClose={() => setAiOpen(false)}
+          onCreated={(t: any) => { setBuilderTemplate(t); }} />
+      )}
+      {builderTemplate !== null && (
+        <TemplateBuilder template={builderTemplate}
+          onClose={() => setBuilderTemplate(null)} onSaved={() => setBuilderTemplate(null)} />
+      )}
     </SafeAreaView>
   );
 }
@@ -270,4 +305,12 @@ const styles = StyleSheet.create({
   captureIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
   captureTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   captureDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  aiFormTile: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#f5f3ff', borderWidth: 2, borderColor: '#ddd6fe',
+    borderRadius: 14, padding: 14, marginBottom: 8,
+  },
+  aiFormIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#ede9fe', alignItems: 'center', justifyContent: 'center' },
+  aiFormTitle: { fontSize: 15, fontWeight: '600', color: '#5b21b6' },
+  aiFormDesc: { fontSize: 12, color: '#7c3aed', marginTop: 2 },
 });
