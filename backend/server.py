@@ -120,6 +120,15 @@ async def on_startup():
     await ensure_indexes()
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
+    # Daily reminder scan — runs once at startup for now (true cron requires
+    # APScheduler in production). Wrapped so a failure here can't take down
+    # the rest of the API.
+    try:
+        from worker_certifications import run_reminder_scan
+        stats = await run_reminder_scan()
+        log.info("Cert reminder scan: %s", stats)
+    except Exception as e:
+        log.warning("Cert reminder scan failed at startup: %s", e)
 
 
 @app.on_event("shutdown")

@@ -327,6 +327,7 @@ export function DocumentLibraryFolder() {
   const canEdit = WRITE_ROLES.has(user?.role);
 
   const [folder, setFolder] = useState(null);
+  const [subfolders, setSubfolders] = useState([]);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState(false);
@@ -337,15 +338,15 @@ export function DocumentLibraryFolder() {
 
   const loadFolder = useCallback(async () => {
     try {
-      const { data } = await api.get('/document-library/folders');
-      const match = (data || []).find((f) => f.id === folderId);
-      if (!match) {
-        toast.error('Folder not found');
-        navigate('/app/document-library');
-        return;
-      }
-      setFolder(match);
-    } catch (e) { toast.error(apiError(e)); }
+      // Fetch folder + its child folders via the subfolders endpoint so this
+      // works for both root folders and per-worker certification subfolders.
+      const { data } = await api.get(`/document-library/folders/${folderId}/subfolders`);
+      setFolder(data?.parent || null);
+      setSubfolders(data?.children || []);
+    } catch (e) {
+      toast.error(apiError(e));
+      navigate('/app/document-library');
+    }
   }, [folderId, navigate]);
 
   const loadFiles = useCallback(async () => {
@@ -524,6 +525,28 @@ export function DocumentLibraryFolder() {
           </div>
           <div className="text-xs text-slate-500 mt-1.5">
             Up to 50MB · PDF, DOC/DOCX, XLS/XLSX, PNG, JPG, JPEG, TXT, CSV
+          </div>
+        </div>
+      )}
+
+      {/* Per-worker subfolders (e.g. cert uploads land in `Workers/{Name}`). */}
+      {subfolders.length > 0 && (
+        <div className="mb-5" data-testid="folder-subfolders">
+          <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500 mb-2">
+            Subfolders · {subfolders.length}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {subfolders.map((sf) => (
+              <button key={sf.id} onClick={() => navigate(`/app/document-library/${sf.id}`)}
+                data-testid={`subfolder-${sf.id}`}
+                className="flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-brand-blue/40 hover:bg-brand-blue-soft/20 rounded-xl text-left transition">
+                <div className="rounded-lg bg-[#e6eff9] p-2.5 shrink-0"><FolderOpen size={16} className="text-[#1e4a8c]" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-slate-900 truncate">{sf.name}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{sf.file_count} {sf.file_count === 1 ? 'file' : 'files'}</div>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )}

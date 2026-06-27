@@ -1,11 +1,15 @@
-"""Worker Certifications — Phase 1.
+"""Worker Certifications — Phase 1+2.
 
-Tracks compliance docs (White Card, First Aid, Working at Heights, etc.) for
-each worker. Files land in the Document Library's "Licences & Tickets" folder
-so they remain discoverable from there. Status (`valid` / `expiring_soon` /
-`expired` / `no_expiry` / `missing_file`) is derived per request — never stored.
+Phase 1: identity + status derivation + Document Library upload.
+Phase 2 additions:
+  - Smart folder routing (cert name → matching seed folder by keyword).
+  - Per-worker subfolder inside the matched folder (Workers/{First Last}).
+  - Send-Reminder endpoint (email via M365 outbox + SMS via TextMagic).
+  - Background reminder scheduler (30/14/7/1 days + day-of + weekly post-expiry).
+  - Idempotent send dedupe (cert_reminders_sent collection).
 """
 from __future__ import annotations
+import logging
 import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -19,17 +23,70 @@ from auth import get_current_user
 from db import db
 from models import new_id, now_iso
 from document_library import (
-    ALLOWED_EXTS, ALLOWED_MIMES, MAX_FILE_BYTES, UPLOAD_DIR,
-    _safe_ext, _serialise_file, _stub_ai_tags,
+    MAX_FILE_BYTES, UPLOAD_DIR, _safe_ext, _serialise_file, _stub_ai_tags,
 )
 
+log = logging.getLogger("paneltec.worker_certs")
 router = APIRouter(prefix="/workers", tags=["worker-certifications"])
 
 WRITE_ROLES = {"admin", "hseq_lead"}
-TARGET_FOLDER_NAME = "Licences & Tickets"
+DEFAULT_FOLDER_NAME = "Licences & Tickets"
 FALLBACK_FOLDER_NAME = "Uncategorised"
 EXPIRING_SOON_DAYS = 30
 ISO_DATE_RE = r"^\d{4}-\d{2}-\d{2}$"
+
+# Keyword → seed folder mapping. First match (lowercased substring) wins.
+# Ordered so longer/more-specific keywords resolve first.
+CERT_FOLDER_KEYWORDS: list[tuple[str, str]] = [
+    ("data sheet", "SDS (Safety Data Sheets)"),
+    ("safety data", "SDS (Safety Data Sheets)"),
+    ("sds", "SDS (Safety Data Sheets)"),
+    ("alcohol", "Alcohol & Drug Screening"),
+    ("drug", "Alcohol & Drug Screening"),
+    ("first aid", "First Aid"),
+    ("confined space", "Confined Space"),
+    ("working at heights", "Working at Heights"),
+    ("heights", "Working at Heights"),
+    ("hot work", "Hot Work"),
+    ("hot-work", "Hot Work"),
+    ("white card", "Inductions"),
+    ("induction", "Inductions"),
+    ("ppe", "PPE"),
+    ("calibration", "Calibration Certificates"),
+    ("swms", "SWMS"),
+    ("competencies", "Competencies Matrices"),
+    ("competency", "Competencies Matrices"),
+    ("competence", "Competencies Matrices"),
+    ("training", "Training Records"),
+    ("asbestos", "Asbestos"),
+    ("byda", "BYDA (Before You Dig)"),
+    ("before you dig", "BYDA (Before You Dig)"),
+    ("electrical", "Electrical Safety"),
+    ("permit", "Permits to Work"),
+    ("audit", "Audits"),
+    ("checklist", "Checklists"),
+    ("traffic", "Traffic Management"),
+    ("plant", "Plant & Equipment"),
+    ("equipment", "Plant & Equipment"),
+    ("chemical", "Chemical Storage & Handling"),
+    ("rehabilitation", "Rehabilitation & RTW"),
+    ("return to work", "Rehabilitation & RTW"),
+    ("insurance", "Insurance"),
+    ("policy", "Company Policies"),
+    ("policies", "Company Policies"),
+    ("itp", "ITPs (Inspection & Test Plans)"),
+    ("inspection", "ITPs (Inspection & Test Plans)"),
+    ("jsea", "JSEA / Risk Assessments"),
+    ("risk assessment", "JSEA / Risk Assessments"),
+    ("environmental", "Environmental Management"),
+    ("emergency", "Emergency Management"),
+    ("toolbox", "Toolbox Talks"),
+    ("manual", "Manuals & Procedures"),
+    ("procedure", "Manuals & Procedures"),
+    ("licence", "Licences & Tickets"),
+    ("license", "Licences & Tickets"),
+    ("ticket", "Licences & Tickets"),
+]
 
 
 def _require_write(user: dict, action: str = "edit"):
@@ -46,21 +103,72 @@ async def _require_worker(worker_id: str, org_id: str) -> dict:
     return worker
 
 
-async def _resolve_licences_folder(org_id: str, created_by: str) -> dict:
-    """Find the seed `Licences & Tickets` folder, falling back to Uncategorised."""
-    for name in (TARGET_FOLDER_NAME, FALLBACK_FOLDER_NAME):
+def _match_folder_name(cert_name: str) -> str:
+    # Normalise so filenames like "First_Aid_Cert" and "Hot-Work" match the
+    # same keywords as "First Aid Card".
+    lower = (cert_name or "").lower().replace("_", " ").replace("-", " ")
+    for kw, target in CERT_FOLDER_KEYWORDS:
+        if kw in lower:
+            return target
+    return DEFAULT_FOLDER_NAME
+
+
+async def _resolve_seed_folder(org_id: str, name: str, created_by: str) -> dict:
+    """Find the canonical seed folder by name (top-level only)."""
+    folder = await db.doc_folders.find_one(
+        {"org_id": org_id, "name": name, "deleted_at": None,
+         "supplier_id": {"$exists": False},
+         "$or": [{"parent_folder_id": None}, {"parent_folder_id": {"$exists": False}}]},
+        {"_id": 0},
+        sort=[("created_at", 1)],
+    )
+    if folder:
+        return folder
+    # Last resort: fall back to "Licences & Tickets" then Uncategorised.
+    for fb in (DEFAULT_FOLDER_NAME, FALLBACK_FOLDER_NAME):
         folder = await db.doc_folders.find_one(
-            {"org_id": org_id, "name": name, "deleted_at": None,
-             "supplier_id": {"$exists": False}},  # exclude supplier-scoped clones
+            {"org_id": org_id, "name": fb, "deleted_at": None,
+             "supplier_id": {"$exists": False},
+             "$or": [{"parent_folder_id": None}, {"parent_folder_id": {"$exists": False}}]},
             {"_id": 0},
+            sort=[("created_at", 1)],
         )
         if folder:
             return folder
-    # Last-resort: create a new Uncategorised root folder. The Document Library
-    # auto-seeds these on first list call, so this branch is virtually unreachable.
+    # Bare-bones create.
     doc = {
         "id": new_id(), "org_id": org_id, "name": FALLBACK_FOLDER_NAME,
         "color_key": "slate", "sort_order": 999000, "is_system": True,
+        "parent_folder_id": None,
+        "created_at": now_iso(), "updated_at": now_iso(),
+        "created_by": created_by, "deleted_at": None,
+    }
+    await db.doc_folders.insert_one(doc)
+    return doc
+
+
+async def _find_or_create_worker_subfolder(
+    parent: dict, worker: dict, created_by: str,
+) -> dict:
+    label = (
+        f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip()
+        or "Unnamed worker"
+    )
+    existing = await db.doc_folders.find_one(
+        {"org_id": parent["org_id"], "parent_folder_id": parent["id"],
+         "name": label, "deleted_at": None},
+        {"_id": 0},
+        sort=[("created_at", 1)],
+    )
+    if existing:
+        return existing
+    doc = {
+        "id": new_id(), "org_id": parent["org_id"], "name": label,
+        "parent_folder_id": parent["id"],
+        "worker_id": worker["id"],
+        "color_key": parent.get("color_key") or "sky",
+        "sort_order": (parent.get("sort_order") or 0) + 1,
+        "is_system": False,
         "created_at": now_iso(), "updated_at": now_iso(),
         "created_by": created_by, "deleted_at": None,
     }
@@ -78,7 +186,6 @@ def _parse_iso(value: Optional[str]) -> Optional[date]:
 
 
 def _status_for(cert: dict, today: date) -> dict:
-    """Return {key, label, days} — pure function of expiry + file presence."""
     if not cert.get("doc_file_id"):
         return {"key": "missing_file", "label": "Missing file", "days": None}
     expiry = _parse_iso(cert.get("expiry_date"))
@@ -166,6 +273,7 @@ async def create_cert(
         "issue_date": body.issue_date,
         "expiry_date": body.expiry_date,
         "doc_file_id": None, "doc_folder_id": None,
+        "doc_seed_folder": _match_folder_name(body.name),
         "notes": (body.notes or "").strip(),
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
@@ -182,6 +290,10 @@ async def update_cert(
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(400, "No fields supplied")
+    # If name changed, recompute `doc_seed_folder` so the dashboard reflects
+    # where future uploads would land. The file itself is NOT moved.
+    if "name" in payload:
+        payload["doc_seed_folder"] = _match_folder_name(payload["name"])
     payload["updated_at"] = now_iso()
     result = await db.worker_certifications.find_one_and_update(
         {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
@@ -208,8 +320,6 @@ async def delete_cert(cert_id: str, user: dict = Depends(get_current_user)):
         {"id": cert_id, "org_id": user["org_id"]},
         {"$set": {"deleted_at": ts, "updated_at": ts}},
     )
-    # Cascade: soft-delete the doc_file ONLY if (a) it was created via this
-    # certification flow AND (b) no other live cert references the same file.
     file_id = existing.get("doc_file_id")
     if file_id:
         file_doc = await db.doc_files.find_one(
@@ -238,13 +348,8 @@ async def upload_cert_file(
     file: UploadFile = File(...),
     user: dict = Depends(get_current_user),
 ):
-    """Multipart upload — saves the file under Document Library "Licences &
-    Tickets" with `uploaded_via=worker_certification` AND creates a stub cert
-    row with `name = filename without extension` so the UI can render an inline
-    edit form for issuer/dates immediately."""
     _require_write(user, action="upload")
     worker = await _require_worker(worker_id, user["org_id"])
-    folder = await _resolve_licences_folder(user["org_id"], user["id"])
 
     ext = _safe_ext(file.filename)
     if not ext:
@@ -253,7 +358,13 @@ async def upload_cert_file(
             "Unsupported file type — allowed: PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, JPEG, TXT, CSV",
         )
 
-    folder_dir = UPLOAD_DIR / folder["id"]
+    # Smart routing: filename stem → seed folder → per-worker subfolder.
+    cert_name = Path(file.filename or "").stem[:160] or "Certification"
+    seed_name = _match_folder_name(cert_name)
+    seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
+    sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
+
+    folder_dir = UPLOAD_DIR / sub_folder["id"]
     folder_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid.uuid4().hex}{ext}"
     target = folder_dir / stored_name
@@ -275,33 +386,32 @@ async def upload_cert_file(
     file_doc = {
         "id": new_id(),
         "org_id": user["org_id"],
-        "folder_id": folder["id"],
+        "folder_id": sub_folder["id"],
         "filename": file.filename or stored_name,
         "stored_name": stored_name,
         "mime": file.content_type or "application/octet-stream",
         "size": size,
-        "file_url": f"/api/files/document_library/{folder['id']}/{stored_name}",
+        "file_url": f"/api/files/document_library/{sub_folder['id']}/{stored_name}",
         "uploaded_by": user["id"],
         "uploaded_by_name": user.get("name") or user.get("email"),
         "uploaded_at": now_iso(),
         "updated_at": now_iso(),
         "ai_tags": _stub_ai_tags(file.filename or stored_name) + [f"worker:{worker_label}"],
-        # Markers so we can identify cert-sourced files in the Document Library
-        # (and so cert-delete can safely cascade).
         "uploaded_via": "worker_certification",
         "worker_id": worker_id,
         "worker_name": worker_label,
+        "seed_folder": seed_folder["name"],
         "deleted_at": None,
     }
     await db.doc_files.insert_one(file_doc)
 
-    cert_name = Path(file.filename or stored_name).stem[:160] or "Certification"
     cert_doc = {
         "id": new_id(), "org_id": user["org_id"], "worker_id": worker_id,
         "name": cert_name,
         "issuer": "", "issue_date": None, "expiry_date": None,
         "doc_file_id": file_doc["id"],
-        "doc_folder_id": folder["id"],
+        "doc_folder_id": sub_folder["id"],
+        "doc_seed_folder": seed_folder["name"],
         "notes": "",
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
@@ -312,19 +422,46 @@ async def upload_cert_file(
         "ok": True,
         "cert": _serialise_cert(cert_doc),
         "file": _serialise_file(file_doc),
-        "folder": {"id": folder["id"], "name": folder["name"]},
+        "folder": {"id": sub_folder["id"], "name": sub_folder["name"],
+                   "parent_id": seed_folder["id"], "parent_name": seed_folder["name"]},
     }
 
 
-# ────────────────────── Global view (for Phase 2 page) ──────────────────────
+# ────────────────────── Global view + search ──────────────────────
 
 @router.get("/certifications/all")
 async def list_all_certs(user: dict = Depends(get_current_user)):
-    """Returns ALL certs across the org, each enriched with worker name."""
     today = date.today()
     cursor = db.worker_certifications.find(
         {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
     ).sort([("expiry_date", 1)])
+    certs = await cursor.to_list(5000)
+    worker_ids = list({c["worker_id"] for c in certs})
+    worker_map: dict = {}
+    if worker_ids:
+        async for w in db.workers.find(
+            {"id": {"$in": worker_ids}, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "mobile": 1, "email": 1},
+        ):
+            worker_map[w["id"]] = w
+    out = []
+    for c in certs:
+        w = worker_map.get(c["worker_id"]) or {}
+        row = _serialise_cert(c, today)
+        row["worker_first_name"] = w.get("first_name", "")
+        row["worker_last_name"] = w.get("last_name", "")
+        out.append(row)
+    return out
+
+
+@router.get("/certifications/search")
+async def search_certs(q: str = "", user: dict = Depends(get_current_user)):
+    """Lightweight text search across cert name, issuer, worker name, tags."""
+    q = (q or "").strip().lower()
+    today = date.today()
+    cursor = db.worker_certifications.find(
+        {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+    )
     certs = await cursor.to_list(5000)
     worker_ids = list({c["worker_id"] for c in certs})
     worker_map: dict = {}
@@ -337,8 +474,215 @@ async def list_all_certs(user: dict = Depends(get_current_user)):
     out = []
     for c in certs:
         w = worker_map.get(c["worker_id"]) or {}
+        blob = " ".join([
+            c.get("name", ""), c.get("issuer", ""), c.get("notes", ""),
+            c.get("doc_seed_folder", ""),
+            w.get("first_name", ""), w.get("last_name", ""),
+        ]).lower()
+        if q and q not in blob:
+            continue
         row = _serialise_cert(c, today)
         row["worker_first_name"] = w.get("first_name", "")
         row["worker_last_name"] = w.get("last_name", "")
         out.append(row)
     return out
+
+
+# ────────────────────── Reminders ──────────────────────
+
+NOTICE_OFFSETS = [30, 14, 7, 1, 0]  # days before expiry
+
+
+def _classify_notice(expiry: date, today: date) -> Optional[str]:
+    if not expiry:
+        return None
+    delta = (expiry - today).days
+    if delta in NOTICE_OFFSETS:
+        return f"day-{delta}" if delta > 0 else "expired-today"
+    if -30 <= delta < 0:
+        # Weekly nudge after expiry: only when |delta| is a multiple of 7.
+        if abs(delta) % 7 == 0:
+            return f"post-{abs(delta)}d"
+    return None
+
+
+def _build_messages(cert: dict, worker: dict, app_base: str) -> tuple[str, str, str]:
+    worker_label = f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip()
+    cert_label = cert.get("name") or "Certification"
+    expiry = cert.get("expiry_date") or "—"
+    status = _status_for(cert, date.today())
+    subject = f"Cert expiry reminder: {worker_label} – {cert_label}"
+    body_html = f"""
+<p>Hi team,</p>
+<p>This is a reminder that <strong>{worker_label}</strong>'s certification
+<strong>{cert_label}</strong> is approaching expiry.</p>
+<table cellpadding="6" style="border-collapse:collapse">
+  <tr><td><b>Worker</b></td><td>{worker_label}</td></tr>
+  <tr><td><b>Certification</b></td><td>{cert_label}</td></tr>
+  <tr><td><b>Issuer</b></td><td>{cert.get('issuer') or '—'}</td></tr>
+  <tr><td><b>Expiry</b></td><td>{expiry}</td></tr>
+  <tr><td><b>Status</b></td><td>{status['label']}</td></tr>
+</table>
+<p><a href="{app_base}/app/settings/workers?worker={worker.get('id')}">Open worker profile in Paneltec Civil →</a></p>
+<p>– Paneltec Civil compliance reminders</p>
+""".strip()
+    sms = (f"Paneltec WHS: {worker_label} {cert_label} expires {expiry}. "
+           f"Renew at app.paneltec.com.au")
+    return subject, body_html, sms[:160]
+
+
+async def _admin_and_hseq(org_id: str) -> list[dict]:
+    cursor = db.users.find(
+        {"org_id": org_id, "role": {"$in": ["admin", "hseq_lead"]},
+         "deleted_at": None},
+        {"_id": 0, "email": 1, "mobile": 1, "name": 1, "id": 1},
+    )
+    return await cursor.to_list(200)
+
+
+async def _send_one_reminder(
+    cert: dict, worker: dict, recipients: list[dict],
+    notice_type: str, *, dry_run: bool = False, manual_by: Optional[str] = None,
+) -> dict:
+    """Queue email + SMS for a single cert. Returns a summary dict."""
+    from email_outbox import queue_email_doc
+    org_id = cert["org_id"]
+    app_base = "https://app.paneltec.com.au"
+    subject, body_html, sms = _build_messages(cert, worker, app_base)
+    summary = {"cert_id": cert["id"], "notice_type": notice_type,
+               "email_to": [], "sms_to": [], "errors": []}
+
+    to_emails = sorted({u["email"] for u in recipients if u.get("email")})
+    if to_emails:
+        try:
+            await queue_email_doc(
+                org_id=org_id, to=to_emails, subject=subject,
+                body_html=body_html, attachments=[],
+                related_record_type="worker_certification",
+                related_record_id=cert["id"],
+                created_by=manual_by or "system",
+                resource_kind="renewal_links",
+            )
+            summary["email_to"] = to_emails
+        except Exception as e:
+            summary["errors"].append(f"email: {e}")
+
+    # SMS: only when TextMagic is connected.
+    tm = await db.integration_configs.find_one(
+        {"org_id": org_id, "kind": "textmagic"}, {"_id": 0},
+    )
+    if tm and tm.get("status") == "connected":
+        cfg = tm.get("config") or {}
+        to_mobiles = sorted({u["mobile"] for u in recipients if u.get("mobile")})
+        if to_mobiles and cfg.get("username") and cfg.get("api_key"):
+            import httpx
+            try:
+                async with httpx.AsyncClient(timeout=15) as c:
+                    r = await c.post(
+                        "https://rest.textmagic.com/api/v2/messages",
+                        headers={"X-TM-Username": cfg["username"], "X-TM-Key": cfg["api_key"]},
+                        data={"text": sms, "phones": ",".join(to_mobiles)},
+                    )
+                if r.status_code in (200, 201):
+                    summary["sms_to"] = to_mobiles
+                else:
+                    summary["errors"].append(f"sms: HTTP {r.status_code} {r.text[:120]}")
+            except Exception as e:
+                summary["errors"].append(f"sms: {e}")
+
+    if not dry_run:
+        await db.cert_reminders_sent.insert_one({
+            "id": new_id(),
+            "org_id": org_id,
+            "cert_id": cert["id"],
+            "notice_type": notice_type,
+            "email_to": summary["email_to"],
+            "sms_to": summary["sms_to"],
+            "manual_by": manual_by,
+            "sent_at": now_iso(),
+        })
+    return summary
+
+
+@router.post("/certifications/{cert_id}/send-reminder")
+async def manual_send_reminder(
+    cert_id: str, user: dict = Depends(get_current_user),
+):
+    _require_write(user, action="send_reminder")
+    cert = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not cert:
+        raise HTTPException(404, "Certification not found")
+    worker = await db.workers.find_one(
+        {"id": cert["worker_id"], "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    recipients = await _admin_and_hseq(user["org_id"])
+    summary = await _send_one_reminder(
+        cert, worker, recipients, notice_type="manual",
+        manual_by=user["id"],
+    )
+    return {"ok": True, **summary}
+
+
+async def run_reminder_scan() -> dict:
+    """Cron-style scan across all orgs. Safe to call on startup or via APScheduler.
+    Idempotent via `cert_reminders_sent.{cert_id, notice_type}` unique key.
+    """
+    today = date.today()
+    stats = {"checked": 0, "queued": 0, "skipped_duplicate": 0, "skipped_no_expiry": 0}
+    cursor = db.worker_certifications.find(
+        {"deleted_at": None, "expiry_date": {"$ne": None}},
+        {"_id": 0},
+    )
+    certs = await cursor.to_list(20000)
+    by_org: dict[str, list[dict]] = {}
+    for c in certs:
+        stats["checked"] += 1
+        expiry = _parse_iso(c.get("expiry_date"))
+        if not expiry:
+            stats["skipped_no_expiry"] += 1
+            continue
+        notice = _classify_notice(expiry, today)
+        if not notice:
+            continue
+        # Dedupe by (cert_id, notice_type).
+        existing = await db.cert_reminders_sent.find_one(
+            {"cert_id": c["id"], "notice_type": notice}, {"_id": 1},
+        )
+        if existing:
+            stats["skipped_duplicate"] += 1
+            continue
+        by_org.setdefault(c["org_id"], []).append((c, notice))
+
+    for org_id, items in by_org.items():
+        recipients = await _admin_and_hseq(org_id)
+        worker_ids = list({c["worker_id"] for c, _ in items})
+        workers = {}
+        async for w in db.workers.find(
+            {"id": {"$in": worker_ids}, "org_id": org_id, "deleted_at": None},
+            {"_id": 0},
+        ):
+            workers[w["id"]] = w
+        for cert, notice in items:
+            worker = workers.get(cert["worker_id"])
+            if not worker:
+                continue
+            try:
+                await _send_one_reminder(cert, worker, recipients, notice)
+                stats["queued"] += 1
+            except Exception as e:
+                log.warning("Reminder send failed cert=%s err=%s", cert["id"], e)
+    return stats
+
+
+@router.post("/certifications/scan-reminders")
+async def trigger_reminder_scan(user: dict = Depends(get_current_user)):
+    """Manual trigger of the daily scan — admin-only."""
+    _require_write(user, action="scan_reminders")
+    stats = await run_reminder_scan()
+    return {"ok": True, **stats}

@@ -74,7 +74,7 @@ def _require(user: dict, roles: set, action: str = "edit"):
         raise HTTPException(403, f"Permission denied: document_library.{action}")
 
 
-def _serialise_folder(doc: dict, file_count: int = 0) -> dict:
+def _serialise_folder(doc: dict, file_count: int = 0, subfolder_count: int = 0) -> dict:
     return {
         "id": doc["id"],
         "name": doc["name"],
@@ -82,6 +82,9 @@ def _serialise_folder(doc: dict, file_count: int = 0) -> dict:
         "sort_order": doc.get("sort_order", 0),
         "is_system": bool(doc.get("is_system")),
         "file_count": file_count,
+        "subfolder_count": subfolder_count,
+        "parent_folder_id": doc.get("parent_folder_id"),
+        "worker_id": doc.get("worker_id"),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
     }
@@ -157,14 +160,52 @@ class FolderPatch(BaseModel):
 
 @router.get("/folders")
 async def list_folders(user: dict = Depends(get_current_user)):
+    """Top-level folders only. Per-worker subfolders (created via the
+    Worker Certifications upload flow) are returned via
+    `GET /folders/{id}/subfolders`."""
     await _seed_default_folders(user["org_id"], user["id"])
     cursor = db.doc_folders.find(
-        {"org_id": user["org_id"], "deleted_at": None},
+        {"org_id": user["org_id"], "deleted_at": None,
+         "$or": [{"parent_folder_id": None}, {"parent_folder_id": {"$exists": False}}]},
         {"_id": 0},
     ).sort([("sort_order", 1), ("name", 1)])
     folders = await cursor.to_list(500)
     counts = await _file_counts(user["org_id"])
-    return [_serialise_folder(f, counts.get(f["id"], 0)) for f in folders]
+    # Sub-folder counts so the UI can decorate "N subfolders" if it wants.
+    sub_pipeline = [
+        {"$match": {"org_id": user["org_id"], "deleted_at": None,
+                    "parent_folder_id": {"$ne": None}}},
+        {"$group": {"_id": "$parent_folder_id", "n": {"$sum": 1}}},
+    ]
+    sub_counts: dict = {}
+    async for row in db.doc_folders.aggregate(sub_pipeline):
+        sub_counts[row["_id"]] = row["n"]
+    return [
+        _serialise_folder(f, counts.get(f["id"], 0), sub_counts.get(f["id"], 0))
+        for f in folders
+    ]
+
+
+@router.get("/folders/{folder_id}/subfolders")
+async def list_subfolders(folder_id: str, user: dict = Depends(get_current_user)):
+    """Children of a single folder (used by the Document Library to navigate
+    into per-worker certification folders)."""
+    parent = await db.doc_folders.find_one(
+        {"id": folder_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not parent:
+        raise HTTPException(404, "Folder not found")
+    cursor = db.doc_folders.find(
+        {"org_id": user["org_id"], "parent_folder_id": folder_id, "deleted_at": None},
+        {"_id": 0},
+    ).sort([("name", 1)])
+    children = await cursor.to_list(2000)
+    counts = await _file_counts(user["org_id"])
+    return {
+        "parent": _serialise_folder(parent, counts.get(parent["id"], 0)),
+        "children": [_serialise_folder(c, counts.get(c["id"], 0)) for c in children],
+    }
 
 
 @router.post("/folders", status_code=201)

@@ -4,8 +4,8 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
-  FileText, HardHat, Loader2, MapPin, Plug, Plus, RefreshCw, Search, Square,
+  AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
+  FileText, HardHat, Loader2, Mail, MapPin, Plug, Plus, RefreshCw, Search, Square,
   Trash2, Upload, UploadCloud, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -198,15 +198,17 @@ const STATUS_BADGES = {
   expiring_soon: { bg: 'bg-[#f7eed1]', ink: 'text-[#8c6a1a]', border: 'border-[#e6d995]' },
   expired:       { bg: 'bg-[#f7d8dc]', ink: 'text-[#a8324c]', border: 'border-[#e69aa3]' },
   no_expiry:     { bg: 'bg-[#d8e6f4]', ink: 'text-[#1e4a8c]', border: 'border-[#b9d2ec]' },
-  missing_file:  { bg: 'bg-slate-100', ink: 'text-slate-600',  border: 'border-slate-300' },
+  // Butter pastel so a worker with no file uploaded reads as a warning, not neutral.
+  missing_file:  { bg: 'bg-[#f7eed1]', ink: 'text-[#8c6a1a]', border: 'border-[#e6d995]' },
 };
 
 function StatusBadgeCert({ status }) {
   const cfg = STATUS_BADGES[status?.key] || STATUS_BADGES.missing_file;
+  const Icon = status?.key === 'missing_file' ? AlertTriangle : null;
   return (
     <span data-testid={`cert-status-${status?.key}`}
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${cfg.bg} ${cfg.ink} ${cfg.border}`}>
-      {status?.label || '—'}
+      {Icon && <Icon size={9} />} {status?.label || '—'}
     </span>
   );
 }

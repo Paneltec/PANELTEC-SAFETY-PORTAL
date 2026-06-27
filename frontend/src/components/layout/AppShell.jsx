@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
-  Plus, FolderOpen, HardHat,
+  Plus, FolderOpen, HardHat, Award,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -45,6 +45,7 @@ const NAV = [
     { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users', resource: 'users', pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: HardHat, testid: 'nav-settings-workers', pastel: 'sky' },
+    { to: '/app/settings/certifications', label: 'Certifications', icon: Award, testid: 'nav-settings-certifications', pastel: 'butter' },
     { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true, pastel: 'slate' },
   ]},
 ];
