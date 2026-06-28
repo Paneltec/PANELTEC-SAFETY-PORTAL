@@ -106,8 +106,39 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     reminder_lead_km: initial?.reminder_lead_km ?? '',
     last_done_value: initial?.last_done_value ?? '',
     status: initial?.status || 'active',
+    // Phase 3.5 — set "now" as the baseline
+    service_done_today: false,
   }));
   const [saving, setSaving] = useState(false);
+
+  // Phase 3.5 — helper line shows the projected next-due based on the
+  // asset's current meter (or today's date) the moment the user changes
+  // the interval value.
+  const currentMeter = form.interval_kind === 'hours'
+    ? asset?.hours_meter
+    : form.interval_kind === 'km'
+      ? asset?.odo_km
+      : null;
+  const intervalNum = Number(form.interval_value);
+  const helperLine = (() => {
+    if (form.interval_kind === 'calendar') {
+      if (!intervalNum || isNaN(intervalNum)) return null;
+      const now = new Date();
+      const dt = new Date(now);
+      const unit = form.calendar_unit;
+      if (unit === 'days') dt.setDate(dt.getDate() + intervalNum);
+      else if (unit === 'weeks') dt.setDate(dt.getDate() + intervalNum * 7);
+      else if (unit === 'months') dt.setMonth(dt.getMonth() + intervalNum);
+      else if (unit === 'years') dt.setFullYear(dt.getFullYear() + intervalNum);
+      return `Currently ${now.toLocaleDateString()} → next due ${dt.toLocaleDateString()}`;
+    }
+    if (currentMeter == null || isNaN(intervalNum) || intervalNum <= 0) return null;
+    const next = Number(currentMeter) + intervalNum;
+    const unit = form.interval_kind === 'hours' ? 'hrs' : 'km';
+    const fmtCur = Number(currentMeter).toLocaleString(undefined, { maximumFractionDigits: 1 });
+    const fmtNext = next.toLocaleString(undefined, { maximumFractionDigits: 1 });
+    return `Currently ${fmtCur} ${unit} → next due at ${fmtNext} ${unit}`;
+  })();
 
   const save = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
@@ -121,6 +152,18 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
         reminder_lead_km: form.reminder_lead_km === '' ? null : Number(form.reminder_lead_km),
         last_done_value: form.last_done_value === '' ? null : Number(form.last_done_value),
       };
+      // Phase 3.5 — checkbox override: baseline this schedule on today's
+      // current meter (or current date for calendar intervals).
+      if (form.service_done_today) {
+        if (form.interval_kind === 'hours' && asset?.hours_meter != null) {
+          payload.last_done_value = Number(asset.hours_meter);
+        } else if (form.interval_kind === 'km' && asset?.odo_km != null) {
+          payload.last_done_value = Number(asset.odo_km);
+        }
+        payload.last_done_at = new Date().toISOString();
+      }
+      // Remove UI-only field before sending
+      delete payload.service_done_today;
       if (isEdit) await api.put(`/assets/${asset.id}/schedules/${initial.id}`, payload);
       else await api.post(`/assets/${asset.id}/schedules`, payload);
       toast.success(isEdit ? 'Schedule updated' : 'Schedule created');
@@ -173,6 +216,28 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg" data-testid="sch-last-done" placeholder={form.interval_kind === 'hours' ? 'e.g. 0' : '—'} />
             </div>
           </div>
+          {/* Phase 3.5 — live helper line + service-done-today checkbox */}
+          {helperLine && (
+            <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-[11px] text-blue-800" data-testid="sch-helper-line">
+              {helperLine}
+            </div>
+          )}
+          <label className="flex items-start gap-2 cursor-pointer" data-testid="sch-baseline-today-label">
+            <input type="checkbox" checked={form.service_done_today}
+              onChange={(e) => setForm({ ...form, service_done_today: e.target.checked })}
+              className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              data-testid="sch-baseline-today" />
+            <span className="text-xs text-slate-700">
+              <span className="font-semibold">Service done today — set this as the baseline</span>
+              <span className="block text-[10px] text-slate-500 mt-0.5">
+                On save, last-done is set to the current
+                {form.interval_kind === 'hours' ? ' engine hours' : form.interval_kind === 'km' ? ' odometer' : ' date'}
+                {currentMeter != null && form.interval_kind !== 'calendar' && (
+                  <> ({Number(currentMeter).toLocaleString(undefined, { maximumFractionDigits: 1 })}{form.interval_kind === 'hours' ? ' hrs' : ' km'})</>
+                )}.
+              </span>
+            </span>
+          </label>
         </div>
         <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="sch-cancel">Cancel</button>

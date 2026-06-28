@@ -15,6 +15,7 @@ from ai import router as ai_router  # noqa: E402
 from ask import router as ask_router  # noqa: E402
 from assets import router as assets_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router  # noqa: E402
+from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
@@ -118,6 +119,7 @@ api.include_router(forms_router)
 api.include_router(assets_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
+api.include_router(asset_navixy_sync_router)
 
 app.include_router(api)
 
@@ -137,7 +139,29 @@ async def on_startup():
     except Exception as e:
         log.warning("Cert reminder scan failed at startup: %s", e)
 
+    # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        scheduler = AsyncIOScheduler(timezone="UTC")
+        scheduler.add_job(sync_navixy_counters, "interval", minutes=15,
+                          id="navixy_sync_counters", max_instances=1,
+                          coalesce=True, replace_existing=True)
+        scheduler.start()
+        app.state.scheduler = scheduler
+        # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
+        import asyncio as _asyncio
+        _asyncio.create_task(sync_navixy_counters())
+        log.info("APScheduler started — navixy_sync_counters every 15 min")
+    except Exception as e:
+        log.warning("APScheduler failed to start: %s", e)
+
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    sched = getattr(app.state, "scheduler", None)
+    if sched is not None:
+        try:
+            sched.shutdown(wait=False)
+        except Exception as e:
+            log.warning("Scheduler shutdown error: %s", e)
     close_db()

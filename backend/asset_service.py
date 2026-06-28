@@ -339,6 +339,22 @@ async def create_record(asset_id: str, body: RecordIn, user: dict = Depends(get_
     # Meter capture: a service or meter_update with hours_at/km_at also updates
     # the asset's current meter reading.
     meter_patch: dict[str, Any] = {}
+    # Phase 3.5: meter values for Navixy-linked assets are synced from the
+    # tracker every 15 min — reject manual updates that disagree with the
+    # current Navixy reading so on-site overrides can't silently drift.
+    if asset.get("navixy_device_id"):
+        if body.type == "meter_update":
+            cur_h = asset.get("hours_meter")
+            cur_k = asset.get("odo_km")
+            disagrees = (
+                (body.hours_at is not None and cur_h is not None and abs(float(body.hours_at) - float(cur_h)) > 0.01)
+                or (body.km_at is not None and cur_k is not None and abs(float(body.km_at) - float(cur_k)) > 0.01)
+            )
+            if disagrees:
+                raise HTTPException(
+                    422,
+                    "Asset meters are synced from Navixy. Update the device in Navixy or use the override (POST /api/assets/{id}/meter/reset).",
+                )
     # Meter is monotonic — reject decreases so an operator typo doesn't wipe
     # service history. Use POST /meter/reset (admin) for legitimate rewinds.
     if body.type == "meter_update":

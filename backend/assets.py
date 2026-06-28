@@ -94,6 +94,12 @@ def _sanitize_public(doc: dict) -> dict:
         "last_known_lng": doc.get("last_known_lng"),
         "workspace_id": doc.get("workspace_id"),
         "status": doc.get("status"),
+        "hours_meter": doc.get("hours_meter"),
+        "hours_meter_updated_at": doc.get("hours_meter_updated_at"),
+        "hours_meter_source": doc.get("hours_meter_source"),
+        "odo_km": doc.get("odo_km"),
+        "odo_km_updated_at": doc.get("odo_km_updated_at"),
+        "odo_km_source": doc.get("odo_km_source"),
     }
 
 

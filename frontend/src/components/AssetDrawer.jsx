@@ -7,6 +7,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
+import LiveCountersPanel from './LiveCountersPanel';
 
 const KIND_OPTIONS = [
   { v: 'vehicle', label: 'Vehicle', icon: Truck },
@@ -225,6 +226,7 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
                     data-testid="asset-rego" />
                 </div>
               </div>
+              {current && <LiveCountersPanel asset={current} onAssetUpdated={(a) => { setCurrent(a); }} />}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">Make</label>

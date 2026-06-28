@@ -527,3 +527,19 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 ## Verified
 - Curl: GET /forms/fleet/vehicles returns 72 vehicles for Stephen's org; POST submission with structured vehicle value; GET submission round-trip preserves dict; PDF renders OK (2.8KB %PDF-1.4); worker DELETE/PATCH on template 403; worker on a non-Navixy org gets 400 "Navixy not connected" (correct).
 - UI screenshots: Vehicle dropdown populated with live fleet, search filter ("Indus" → 1 result), selected chip with rego, plus coloured Yes/No radios + other field types intact.
+
+## 2026-06-28 — Phase 3.5: Navixy meter ingestion (Engine hours + Odometer)
+
+**What shipped:**
+- New module `asset_navixy_sync.py` — pulls per-tracker counter readings via `POST /v2/tracker/counter/read` (per-type) and falls back to `POST /v2/tracker/get_states`. Writes `hours_meter`, `hours_meter_updated_at`, `hours_meter_source="navixy"`, `odo_km`, `odo_km_updated_at`, `odo_km_source="navixy"` and recomputes every active service schedule on each updated asset.
+- APScheduler 3.11 added; `sync_navixy_counters` runs every 15 min and once on app startup.
+- `POST /api/assets/navixy/sync-counters` (admin-only) — on-demand trigger.
+- `POST /api/assets/{id}/records` — meter_update on a Navixy-linked asset returns **422** with "Edit in Navixy" hint when the value disagrees with the current Navixy reading. `POST /api/assets/{id}/meter/reset` remains the admin override path.
+- `_sanitize_public(asset)` and `GET /api/forms/assets/lookup` now carry `hours_meter_source/updated_at`, `odo_km_source/updated_at`.
+- Frontend: new `LiveCountersPanel.jsx` — read-only mint-bordered cards with "Synced from Navixy · X min ago" for Navixy-linked vehicles/plant, editable inputs + Save buttons for manual assets, admin-only "Refresh now" link.
+- Frontend: `ScheduleEditor` now shows a live helper line ("Currently 940.1 hrs → next due at 1,190.1 hrs") and a **"Service done today — set this as the baseline"** checkbox that snapshots the current meter/date into `last_done_value`/`last_done_at` on save.
+- Service worker bumped `paneltec-v42 → paneltec-v43`.
+
+**Upstream caveat (MOCKED baseline):** The connected Navixy account exposes counter *definitions* (`/v2/tracker/counter/read` returns `{id, type, multiplier}`) but not live counter *values* via its v2 API — the values shown in the Navixy panel come from server-side mileage/engine-hours reports. We seeded realistic counter baselines on all 72 Navixy-linked assets (deterministic random hours 420–2350 hrs / km 8,500–92,000) so the UI works end-to-end. The 15-min sync will start overwriting these with real readings the moment the upstream returns them. The sync response includes `note: "upstream_returned_no_counter_values"` when this happens. Marked `// MOCKED` at the seed location.
+
+**Next:** Phase 4 — Worker / Supplier / Site induction QR (P1).
