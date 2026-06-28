@@ -8,6 +8,70 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
 import LiveCountersPanel from './LiveCountersPanel';
+import { Link, useNavigate } from 'react-router-dom';
+import { getUser } from '../lib/auth';
+
+// Phase 3.9b — Available forms (collapsible) inside the asset drawer.
+function AvailableFormsSection({ asset }) {
+  const me = getUser();
+  const canManage = me?.role === 'admin' || me?.role === 'manager';
+  const [open, setOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [forms, setForms] = React.useState(null);
+  const navigate = useNavigate();
+
+  React.useEffect(() => {
+    if (!open || forms !== null) return;
+    setLoading(true);
+    api.get(`/scan/${asset.scan_token}/forms`)
+      .then((r) => setForms(r.data?.forms || []))
+      .catch(() => setForms([]))
+      .finally(() => setLoading(false));
+  }, [open, forms, asset.scan_token]);
+
+  return (
+    <section className="space-y-2 pt-1 border-t border-slate-100" data-testid="drawer-available-forms">
+      <button type="button" onClick={() => setOpen((p) => !p)}
+        className="w-full flex items-center justify-between py-2 text-left"
+        data-testid="drawer-available-forms-toggle">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">Available forms</div>
+          <div className="text-sm font-bold text-slate-900">{forms?.length ?? '—'} form{forms?.length === 1 ? '' : 's'} for this asset type</div>
+        </div>
+        <span className={`text-slate-400 text-xs ${open ? 'rotate-180' : ''}`}>▾</span>
+      </button>
+      {open && (
+        <div className="space-y-1.5">
+          {loading && <div className="text-xs text-slate-500 px-2 py-1"><Loader2 size={12} className="inline animate-spin mr-1" /> Loading…</div>}
+          {!loading && (forms || []).length === 0 && (
+            <div className="text-xs text-slate-500 px-2 py-2">
+              No forms assigned to this asset type yet.
+              {canManage && <> <Link to="/app/settings/form-assignments" className="font-semibold text-blue-700 hover:text-blue-800 underline">Manage assignments →</Link></>}
+            </div>
+          )}
+          {!loading && (forms || []).map((f) => (
+            <button key={f.template_id} type="button"
+              onClick={() => navigate(`/app/forms?template=${encodeURIComponent(f.template_id)}&scan=${encodeURIComponent(asset.scan_token)}`)}
+              data-testid={`drawer-form-${f.template_id}`}
+              className="w-full text-left flex items-center gap-2 px-2.5 py-2 rounded-lg border border-slate-200 hover:bg-slate-50">
+              <span className={`w-1.5 h-1.5 rounded-full ${f.recommended ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-slate-900 truncate">{f.name}</div>
+                <div className="text-[10px] uppercase tracking-wider text-slate-400">{f.category || 'general'}</div>
+              </div>
+              <span className="text-[10px] font-bold text-blue-700">Open →</span>
+            </button>
+          ))}
+          {canManage && (forms || []).length > 0 && (
+            <Link to="/app/settings/form-assignments" className="block text-[11px] font-semibold text-blue-700 hover:text-blue-800 px-2 pt-1">
+              Manage assignments →
+            </Link>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
 
 const KIND_OPTIONS = [
   { v: 'vehicle', label: 'Vehicle', icon: Truck },
@@ -391,6 +455,12 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                 data-testid="asset-notes" />
             </div>
+          )}
+
+          {/* Phase 3.9b — Available forms for this asset's scan_token. Workers
+              see this read-only; admins also see a "Manage assignments" link. */}
+          {isEdit && asset?.scan_token && (
+            <AvailableFormsSection asset={asset} />
           )}
         </div>
 
