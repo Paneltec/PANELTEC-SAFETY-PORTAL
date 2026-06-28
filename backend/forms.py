@@ -32,7 +32,7 @@ router = APIRouter(prefix="/forms", tags=["forms"])
 WRITE_ROLES = {"admin", "hseq_lead"}
 ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
-                       "photo", "signature", "gps"}
+                       "photo", "signature", "gps", "vehicle_navixy"}
 PHOTO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 
@@ -89,6 +89,22 @@ class ImportPayload(BaseModel):
 
 class SubmissionIn(BaseModel):
     fields: list[dict]
+
+
+@router.get("/fleet/vehicles")
+async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
+    """Lightweight proxy to the Navixy fleet list — any authenticated user
+    (including workers) can list vehicles for use in vehicle_navixy form
+    fields. Returns the same shape as /integrations/navixy/vehicles but
+    bypasses the integrations role gate, since filling out a form is open to
+    all org members."""
+    from integrations import navixy_vehicles
+    try:
+        return await navixy_vehicles(tag_ids=None, user=user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(502, f"Navixy fleet unavailable: {e}")
 
 
 # ──────────────── Templates ────────────────

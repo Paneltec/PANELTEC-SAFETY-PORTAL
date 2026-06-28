@@ -33,6 +33,7 @@ const FIELD_TYPES = [
   { key: 'photo',     label: 'Photo capture' },
   { key: 'signature', label: 'Signature pad' },
   { key: 'gps',       label: 'GPS location' },
+  { key: 'vehicle_navixy', label: 'Vehicle (Navixy)' },
 ];
 
 const newFieldId = () => `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

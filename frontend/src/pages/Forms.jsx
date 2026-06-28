@@ -7,7 +7,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import {
   Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
-  Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Upload,
+  Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Truck, Upload,
   UploadCloud, X, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -210,10 +210,120 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
   );
 }
 
+// Vehicle (Navixy) — searchable dropdown of org's fleet trackers.
+function VehicleNavixyField({ field, value, onChange, readOnly }) {
+  const [vehicles, setVehicles] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+  const [mode, setMode] = useState(value?.navixy_id === null && value?.registration ? 'manual' : 'list');
+  const [manualReg, setManualReg] = useState(value?.registration || '');
+
+  useEffect(() => {
+    if (readOnly) return;
+    setLoading(true);
+    api.get('/forms/fleet/vehicles')
+      .then((r) => setVehicles(r.data?.vehicles || []))
+      .catch((e) => setError(apiError(e)))
+      .finally(() => setLoading(false));
+  }, [readOnly]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return vehicles;
+    return vehicles.filter((v) => `${v.label || ''} ${v.plate || ''}`.toLowerCase().includes(q));
+  }, [vehicles, search]);
+
+  if (readOnly) {
+    if (!value) return <div className="text-xs text-slate-400 italic">No vehicle selected</div>;
+    const reg = value.registration || '—';
+    return (
+      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-sm">
+        <Truck size={13} className="text-slate-500" />
+        <span className="font-medium text-slate-900">{value.label || 'Manual entry'}</span>
+        <span className="text-slate-500">·</span>
+        <span className="font-mono font-semibold text-slate-800">{reg}</span>
+      </div>
+    );
+  }
+
+  if (value) {
+    return (
+      <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-sm" data-testid={`field-${field.id}`}>
+        <Truck size={14} className="text-blue-700" />
+        <span className="font-medium text-slate-900">{value.label || 'Manual entry'}</span>
+        <span className="text-slate-400">·</span>
+        <span className="font-mono font-semibold text-slate-800">{value.registration || '—'}</span>
+        <button type="button" onClick={() => onChange(null)}
+          data-testid={`vehicle-clear-${field.id}`}
+          className="ml-2 p-1 rounded hover:bg-blue-100 text-slate-500">
+          <X size={12} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2" data-testid={`field-${field.id}`}>
+      <div className="flex gap-2 items-center">
+        <button type="button" onClick={() => setMode('list')}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${mode === 'list' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+          From fleet
+        </button>
+        <button type="button" onClick={() => setMode('manual')}
+          data-testid={`vehicle-manual-${field.id}`}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg ${mode === 'manual' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+          Other (manual entry)
+        </button>
+        {loading && <Loader2 size={12} className="animate-spin text-slate-400" />}
+      </div>
+      {mode === 'list' ? (
+        <div className="space-y-1">
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by label or rego…"
+            data-testid={`vehicle-search-${field.id}`}
+            className="w-full px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white" />
+          {error && <div className="text-xs text-rose-600">{error}</div>}
+          {!error && (
+            <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
+              {filtered.length === 0 ? (
+                <div className="px-3 py-3 text-xs text-slate-500 italic">{loading ? 'Loading fleet…' : 'No vehicles match.'}</div>
+              ) : filtered.map((v) => (
+                <button key={v.id} type="button"
+                  onClick={() => onChange({ navixy_id: v.id, label: v.label || null, registration: v.plate || '' })}
+                  data-testid={`vehicle-opt-${v.id}`}
+                  className="w-full px-3 py-2.5 text-left text-sm hover:bg-blue-50 flex items-center gap-2">
+                  <Truck size={13} className="text-slate-400" />
+                  <span className="font-medium text-slate-900">{v.label || 'Vehicle'}</span>
+                  {v.plate && <span className="ml-auto text-xs font-mono font-semibold text-slate-700">{v.plate}</span>}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <input value={manualReg} onChange={(e) => setManualReg(e.target.value)}
+            placeholder="Enter registration manually"
+            data-testid={`vehicle-manual-input-${field.id}`}
+            className="flex-1 px-3 py-2 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white" />
+          <button type="button" disabled={!manualReg.trim()}
+            onClick={() => onChange({ navixy_id: null, label: null, registration: manualReg.trim() })}
+            data-testid={`vehicle-manual-save-${field.id}`}
+            className="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm font-semibold disabled:opacity-50">
+            Save
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly }) {
   if (field.type === 'photo') return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} readOnly={readOnly} />;
   if (field.type === 'signature') return <SignatureField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  if (field.type === 'vehicle_navixy') return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'textarea')
     return <textarea rows={4} value={value || ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
@@ -808,6 +918,16 @@ export function SubmissionViewModal({ submissionId, onClose }) {
       );
     }
     if (f.type === 'textarea') return <div className="text-sm text-slate-800 whitespace-pre-line">{v || '—'}</div>;
+    if (f.type === 'vehicle_navixy') {
+      if (!v || typeof v !== 'object') return <span className="text-slate-400 italic text-sm">No vehicle selected.</span>;
+      return (
+        <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-sm">
+          <span className="font-medium text-slate-900">{v.label || 'Manual entry'}</span>
+          <span className="text-slate-500">·</span>
+          <span className="font-mono font-semibold text-slate-800">{v.registration || '—'}</span>
+        </div>
+      );
+    }
     return <div className="text-sm text-slate-800">{v ?? '—'}</div>;
   };
 

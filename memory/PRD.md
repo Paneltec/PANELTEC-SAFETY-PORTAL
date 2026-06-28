@@ -336,3 +336,31 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 ## Verified
 - Curl: GET seed (4 → 6 after update), POST custom (`Public Liability` → slug `public_liability`, sort=50), PATCH label + sort, DELETE blocked **409** when 2 pending links still reference the slug; admin DELETE 200 after revoke, worker POST/PATCH/DELETE all **403**.
 - UI: Manage modal showing 6 seeds + the newly-added "Trade Licence"; Create modal showing all 7 active types as live checkboxes including the brand-new "Trade Licence" — proving the registry is genuinely dynamic.
+
+
+# 2026-06-28 — Forms field type: `vehicle_navixy` (shipped)
+
+## Backend
+- `forms.py`: added `vehicle_navixy` to `ALLOWED_FIELD_TYPES`.
+- `forms.py`: new `GET /api/forms/fleet/vehicles` — thin proxy to `integrations.navixy_vehicles`, accessible to **any authenticated org user** (so workers can fill vehicle forms even though `/integrations/navixy/*` is admin-gated).
+- `forms_pdf.py`: vehicle_navixy fields render as "Vehicle: {label} · {registration}".
+- Submission storage: value is a structured dict `{ navixy_id, label, registration }`. `navixy_id=null` indicates manual entry.
+
+## Frontend
+- `Forms.jsx`: new `VehicleNavixyField` component with:
+  - "From fleet" / "Other (manual entry)" toggle (44px min targets).
+  - Live search of the org's Navixy fleet (filtered by label or rego).
+  - Selected chip with truck icon, label, rego, and ✕ to clear.
+  - Read-only render (used by Preview + SubmissionViewModal).
+- `TemplateBuilder.jsx`: added "Vehicle (Navixy)" to the field-type dropdown.
+
+## Seeded templates upgraded
+- ✅ **Heavy Vehicle Daily Check** · f2 "Vehicle Rego" → `vehicle_navixy`
+- ✅ **Vehicle Pre-Use Inspection** · f2 "Vehicle Registration" → `vehicle_navixy`
+- ✅ **Plant Pre-Start Checklist (Heavy Equipment)** · f4 "Plant Serial / Fleet #" → `vehicle_navixy`
+
+## SW bumped to `paneltec-v36`.
+
+## Verified
+- Curl: GET /forms/fleet/vehicles returns 72 vehicles for Stephen's org; POST submission with structured vehicle value; GET submission round-trip preserves dict; PDF renders OK (2.8KB %PDF-1.4); worker DELETE/PATCH on template 403; worker on a non-Navixy org gets 400 "Navixy not connected" (correct).
+- UI screenshots: Vehicle dropdown populated with live fleet, search filter ("Indus" → 1 result), selected chip with rego, plus coloured Yes/No radios + other field types intact.

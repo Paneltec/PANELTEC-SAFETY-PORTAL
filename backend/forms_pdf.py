@@ -137,6 +137,17 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
                 else:
                     story.append(_para("Location not captured.", "PtMuted"))
 
+            elif ftype == "vehicle_navixy":
+                if isinstance(val, dict) and (val.get("registration") or val.get("label")):
+                    parts = []
+                    if val.get("label"):
+                        parts.append(str(val["label"]))
+                    if val.get("registration"):
+                        parts.append(str(val["registration"]))
+                    story.append(_para(f"Vehicle: {' · '.join(parts)}"))
+                else:
+                    story.append(_para("No vehicle selected.", "PtMuted"))
+
             else:
                 story.append(_para(_value_to_text(val)))
 
