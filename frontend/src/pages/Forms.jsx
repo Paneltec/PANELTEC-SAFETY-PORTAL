@@ -210,14 +210,18 @@ function ColouredRadioGroup({ field, value, onChange, readOnly }) {
   );
 }
 
-// Vehicle (Navixy) — searchable dropdown of org's fleet trackers.
-function VehicleNavixyField({ field, value, onChange, readOnly }) {
+// Vehicle (Navixy) — searchable dropdown of org's fleet trackers. When a
+// sibling `select` field labelled "Vehicle Type" / "Plant Type" /
+// "Equipment Type" is filled in, the fleet list filters to vehicles whose
+// derived `vehicle_type` slug matches the selected option.
+function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allValues }) {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [mode, setMode] = useState(value?.navixy_id === null && value?.registration ? 'manual' : 'list');
   const [manualReg, setManualReg] = useState(value?.registration || '');
+  const [filterDisabled, setFilterDisabled] = useState(false);
 
   useEffect(() => {
     if (readOnly) return;
@@ -228,21 +232,43 @@ function VehicleNavixyField({ field, value, onChange, readOnly }) {
       .finally(() => setLoading(false));
   }, [readOnly]);
 
+  // Detect sibling Vehicle/Plant/Equipment Type field value.
+  const siblingTypeValue = useMemo(() => {
+    if (!allFields) return null;
+    const sibling = allFields.find((f) =>
+      (f.type === 'select' || f.type === 'radio') &&
+      /\b(vehicle|plant|equipment)\s+type\b/i.test(f.label || ''),
+    );
+    if (!sibling) return null;
+    return allValues?.[sibling.id] || null;
+  }, [allFields, allValues]);
+
+  const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+  const filterSlug = filterDisabled ? null : (siblingTypeValue ? norm(siblingTypeValue) : null);
+
+  const typeFiltered = useMemo(() => {
+    if (!filterSlug) return vehicles;
+    return vehicles.filter((v) => {
+      const slug = v.vehicle_type || 'other';
+      // Match exact slug OR substring (e.g. "vacuum" matches "vacuum_truck")
+      return slug === filterSlug || slug.includes(filterSlug) || filterSlug.includes(slug);
+    });
+  }, [vehicles, filterSlug]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return vehicles;
-    return vehicles.filter((v) => `${v.label || ''} ${v.plate || ''}`.toLowerCase().includes(q));
-  }, [vehicles, search]);
+    if (!q) return typeFiltered;
+    return typeFiltered.filter((v) => `${v.label || ''} ${v.plate || ''}`.toLowerCase().includes(q));
+  }, [typeFiltered, search]);
 
   if (readOnly) {
     if (!value) return <div className="text-xs text-slate-400 italic">No vehicle selected</div>;
-    const reg = value.registration || '—';
     return (
       <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-sm">
         <Truck size={13} className="text-slate-500" />
         <span className="font-medium text-slate-900">{value.label || 'Manual entry'}</span>
         <span className="text-slate-500">·</span>
-        <span className="font-mono font-semibold text-slate-800">{reg}</span>
+        <span className="font-mono font-semibold text-slate-800">{value.registration || '—'}</span>
       </div>
     );
   }
@@ -279,6 +305,19 @@ function VehicleNavixyField({ field, value, onChange, readOnly }) {
       </div>
       {mode === 'list' ? (
         <div className="space-y-1">
+          {siblingTypeValue && !filterDisabled && (
+            <div className="flex items-center gap-2 text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-1.5 rounded-lg" data-testid={`vehicle-filter-hint-${field.id}`}>
+              <span>Showing {typeFiltered.length} vehicle{typeFiltered.length === 1 ? '' : 's'} matching <strong>{siblingTypeValue}</strong></span>
+              <button type="button" onClick={() => setFilterDisabled(true)} data-testid={`vehicle-filter-clear-${field.id}`}
+                className="ml-auto underline hover:text-blue-900">Clear filter</button>
+            </div>
+          )}
+          {filterDisabled && siblingTypeValue && (
+            <div className="flex items-center gap-2 text-[11px] text-slate-600 bg-slate-50 border border-slate-200 px-2.5 py-1.5 rounded-lg">
+              <span>Showing all {vehicles.length} vehicles · filter disabled</span>
+              <button type="button" onClick={() => setFilterDisabled(false)} className="ml-auto underline hover:text-slate-900">Re-enable</button>
+            </div>
+          )}
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by label or rego…"
             data-testid={`vehicle-search-${field.id}`}
@@ -287,7 +326,9 @@ function VehicleNavixyField({ field, value, onChange, readOnly }) {
           {!error && (
             <div className="max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100">
               {filtered.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-slate-500 italic">{loading ? 'Loading fleet…' : 'No vehicles match.'}</div>
+                <div className="px-3 py-3 text-xs text-slate-500 italic">
+                  {loading ? 'Loading fleet…' : (filterSlug ? `No "${siblingTypeValue}" vehicles match.` : 'No vehicles match.')}
+                </div>
               ) : filtered.map((v) => (
                 <button key={v.id} type="button"
                   onClick={() => onChange({ navixy_id: v.id, label: v.label || null, registration: v.plate || '' })}
@@ -319,11 +360,13 @@ function VehicleNavixyField({ field, value, onChange, readOnly }) {
   );
 }
 
-export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues }) {
   if (field.type === 'photo') return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} readOnly={readOnly} />;
   if (field.type === 'signature') return <SignatureField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
-  if (field.type === 'vehicle_navixy') return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  if (field.type === 'vehicle_navixy')
+    return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly}
+      allFields={allFields} allValues={allValues} />;
   if (field.type === 'textarea')
     return <textarea rows={4} value={value || ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
@@ -441,7 +484,9 @@ function FillOutModal({ template, onClose, onSubmitted }) {
                 value={values[f.id]}
                 onChange={(v) => setValues((p) => ({ ...p, [f.id]: v }))}
                 photoFiles={photoFiles[f.id]}
-                onPhotoChange={(files) => setPhotoFiles((p) => ({ ...p, [f.id]: files }))} />
+                onPhotoChange={(files) => setPhotoFiles((p) => ({ ...p, [f.id]: files }))}
+                allFields={template.fields || []}
+                allValues={values} />
             </div>
           ))}
         </div>

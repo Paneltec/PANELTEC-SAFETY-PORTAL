@@ -95,16 +95,106 @@ class SubmissionIn(BaseModel):
 async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
     """Lightweight proxy to the Navixy fleet list — any authenticated user
     (including workers) can list vehicles for use in vehicle_navixy form
-    fields. Returns the same shape as /integrations/navixy/vehicles but
-    bypasses the integrations role gate, since filling out a form is open to
-    all org members."""
+    fields. Annotates each vehicle with a derived `vehicle_type` slug used to
+    filter the picker by a sibling "Vehicle Type" select."""
     from integrations import navixy_vehicles
     try:
-        return await navixy_vehicles(tag_ids=None, user=user)
+        raw = await navixy_vehicles(tag_ids=None, user=user)
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(502, f"Navixy fleet unavailable: {e}")
+
+    # Load admin overrides once.
+    overrides_by_id: dict = {}
+    async for row in db.vehicle_categorisation_overrides.find(
+        {"org_id": user["org_id"]}, {"_id": 0, "navixy_id": 1, "vehicle_type": 1},
+    ):
+        try:
+            overrides_by_id[int(row["navixy_id"])] = row["vehicle_type"]
+        except (TypeError, ValueError):
+            pass
+
+    out = []
+    for v in raw.get("vehicles", []) or []:
+        tag_names = [
+            t.get("name") for t in (v.get("tags") or [])
+            if isinstance(t, dict) and t.get("name")
+        ]
+        vt = (
+            overrides_by_id.get(v.get("id"))
+            or _classify_vehicle_type(v.get("label") or "", tag_names)
+        )
+        out.append({**v, "vehicle_type": vt, "registration": v.get("plate")})
+    return {**raw, "vehicles": out}
+
+
+VEHICLE_TYPE_KEYWORDS = [
+    # order matters — first match wins
+    ("dump truck", "dump_truck"),
+    ("tipper", "tipper"),
+    ("vacuum", "vacuum_truck"),
+    ("vac", "vacuum_truck"),
+    ("service truck", "service_truck"),
+    ("semi", "semi_trailer"),
+    ("trailer", "semi_trailer"),
+    ("crane", "crane_truck"),
+    ("grader", "grader"),
+    ("compactor", "compactor"),
+    ("bulldozer", "bulldozer"),
+    ("dozer", "bulldozer"),
+    ("skid steer", "skid_steer"),
+    ("backhoe", "backhoe"),
+    ("excavator", "excavator"),
+    (" exc ", "excavator"),
+    ("loader", "loader"),
+    ("d-max", "ute"),
+    ("dmax", "ute"),
+    ("hilux", "ute"),
+    ("ranger", "ute"),
+    ("navara", "ute"),
+    ("triton", "ute"),
+    ("plumber", "ute"),
+]
+
+
+def _classify_vehicle_type(label: str, tag_names: Optional[list] = None) -> str:
+    """Pick a vehicle_type slug from Navixy label + tag names.
+    Tags are checked first because operators tend to label vehicles by free-form
+    names (e.g. "Industrial - XT02AX", "Cap Recycler") but tag them with the
+    function (e.g. "Vac Truck Dumping"). Falls back to label keyword matching."""
+    haystacks = []
+    for tn in tag_names or []:
+        if isinstance(tn, str) and tn.strip():
+            haystacks.append(f" {tn.lower()} ")
+    haystacks.append(f" {(label or '').lower()} ")
+    for hay in haystacks:
+        for keyword, slug in VEHICLE_TYPE_KEYWORDS:
+            if keyword in hay:
+                return slug
+    return "other"
+
+
+class VehicleOverrideIn(BaseModel):
+    navixy_id: int
+    vehicle_type: str = Field(min_length=1, max_length=50)
+
+
+@router.post("/fleet/vehicle-overrides")
+async def set_vehicle_override(body: VehicleOverrideIn,
+                               user: dict = Depends(get_current_user)):
+    _require_write(user, action="vehicle_override")
+    ts = now_iso()
+    await db.vehicle_categorisation_overrides.update_one(
+        {"org_id": user["org_id"], "navixy_id": body.navixy_id},
+        {"$set": {
+            "org_id": user["org_id"], "navixy_id": body.navixy_id,
+            "vehicle_type": body.vehicle_type.strip().lower(),
+            "updated_at": ts, "updated_by": user["id"],
+        }, "$setOnInsert": {"created_at": ts}},
+        upsert=True,
+    )
+    return {"ok": True}
 
 
 # ──────────────── Templates ────────────────

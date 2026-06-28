@@ -1,3 +1,16 @@
+# 2026-02-18 — Vehicle Type → Filtered Navixy Fleet (verified)
+- `_classify_vehicle_type(label, tag_names=None)` in `/app/backend/forms.py` now searches Navixy **tags first**, label second. This lifted vac-truck detection from 2 → 13 (Cap Recycler, Industrial, Cappelotto, RSP, VW Crafter, etc. all carry the "Vac Truck Dumping" tag but have free-form labels).
+- `/api/forms/fleet/vehicles` proxy passes each vehicle's `tags[].name` array into the classifier.
+- Frontend `Forms.jsx` `FieldRunner` was restored to its proper dispatch (the previous "duplicate cleanup" had accidentally left only the VehicleNavixyField body inside, breaking every non-vehicle field render). `FieldRunner` now correctly delegates `photo/signature/gps/vehicle_navixy/textarea/select/radio/date/number/text` and threads `allFields` + `allValues` into the vehicle picker.
+- Service Worker bumped `paneltec-v37 → paneltec-v38`.
+- Verified on **Heavy Vehicle Daily Check**:
+  - Field order Date → Vehicle Type → Vehicle Rego (migration intact).
+  - No selection → 72 vehicles shown.
+  - "Vacuum Truck" → "Showing 13 vehicles matching Vacuum Truck" (Cap Recycler ✓, Industrial ✓, Cappelotto 1/2/3 ✓, Vacvator 1/2 ✓, RSP, VW Crafter CCTV, Kroll Recycler, DW FX50/FX60, "Other" w/ Vac tag).
+  - "Tipper" → "Showing 11 vehicles matching Tipper" (UD/500/200/HINO/450 Tippers).
+  - Clear filter → all 72 vehicles return.
+
+
 # 2026-02-17 — PDF viewer Edge-block fix
 - `POST /api/pdf-token` mints a 90s JWT (claims: sub/org_id/resource/record_id/action/exp, type=pdf-token).
 - Each `/api/{resource}/{id}/pdf` accepts EITHER `Authorization: Bearer <user-jwt>` OR `?token=<pdf-token>`.
