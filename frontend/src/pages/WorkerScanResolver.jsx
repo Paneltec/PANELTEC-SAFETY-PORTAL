@@ -42,10 +42,10 @@ export default function WorkerScanResolver() {
 
   useEffect(() => {
     if (!signInOpen || !isAuthed) return;
-    api.get('/forms/pickers/sites', { params: { q: siteQ || undefined, limit: 12 } })
+    api.get('/forms/pickers/sites', { params: { q: debouncedQ || undefined, limit: 12 } })
       .then((r) => setSites(r.data?.sites || []))
       .catch(() => setSites([]));
-  }, [signInOpen, isAuthed, siteQ]);
+  }, [signInOpen, isAuthed, debouncedQ]);
 
   const doSignIn = async (site) => {
     setSigning(true);
@@ -189,7 +189,7 @@ export default function WorkerScanResolver() {
                 <li key={s.id}>
                   <button onClick={() => doSignIn(s)} disabled={signing}
                     className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-slate-50 border border-slate-200 disabled:opacity-50"
-                    data-testid={`signin-site-${s.id}`}>
+                    data-testid={`signin-site-${slug(s.id)}`}>
                     <MapPin size={13} className="text-emerald-600" />
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-bold text-slate-900 truncate">{s.name}</div>

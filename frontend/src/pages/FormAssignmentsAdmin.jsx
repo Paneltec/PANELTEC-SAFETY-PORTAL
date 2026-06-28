@@ -11,6 +11,7 @@ import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import {
   Loader2, Save, Search, AlertTriangle, Check, Truck, Wrench, Hammer, Box,
   LayoutGrid, Mail as ListPaneIcon, Circle, RotateCcw, Sparkles, CheckSquare, Square,
+  HardHat, Users, Building2, X, Send,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -46,12 +47,18 @@ export default function FormAssignmentsAdmin() {
   const [view, setView] = useState('pane');       // 'pane' (default) | 'matrix'
   const [templates, setTemplates] = useState([]);
   const [columns, setColumns] = useState({});
-  const [draft, setDraft] = useState({});         // {tid: {kinds:Set, asset_types:Set}}
+  const [roleOptions, setRoleOptions] = useState([]);
+  const [companyOptions, setCompanyOptions] = useState([]);
+  const [draft, setDraft] = useState({});         // {tid: {kinds:Set, asset_types:Set, worker_ids:Set, roles:Set, companies:Set}}
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [multiOn, setMultiOn] = useState(false);
   const [bulkIds, setBulkIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
+  const [recipientPreview, setRecipientPreview] = useState({ count: 0, sample: [] });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [workerSearch, setWorkerSearch] = useState('');
+  const [workerResults, setWorkerResults] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,12 +66,17 @@ export default function FormAssignmentsAdmin() {
       const { data } = await api.get('/form-templates/assignments');
       setTemplates(data.templates || []);
       setColumns(data.asset_type_columns || {});
+      setRoleOptions(data.roles || []);
+      setCompanyOptions(data.companies || []);
       const next = {};
       (data.templates || []).forEach((t) => {
         const a = t.applies_to || {};
         next[t.id] = {
           kinds: new Set((a.kinds || []).map((k) => k.toLowerCase())),
           asset_types: new Set((a.asset_types || []).map((x) => x.toLowerCase())),
+          worker_ids: new Set((a.worker_ids || []).map((w) => w.worker_id || w)),
+          roles: new Set((a.roles || []).map((r) => (r.role || r).toLowerCase())),
+          companies: new Set((a.companies || []).map((c) => String(c.simpro_company_id || c))),
         };
       });
       setDraft(next);
@@ -85,11 +97,20 @@ export default function FormAssignmentsAdmin() {
   const dirtyCount = useMemo(() => {
     let n = 0;
     templates.forEach((t) => {
-      const orig = t.applies_to || { kinds: [], asset_types: [] };
+      const orig = t.applies_to || { kinds: [], asset_types: [], worker_ids: [], roles: [], companies: [] };
       const d = draft[t.id];
       if (!d) return;
-      const eqArr = (a, b) => a.size === b.length && [...a].every((x) => b.includes(x));
-      if (!eqArr(d.kinds, (orig.kinds || [])) || !eqArr(d.asset_types, (orig.asset_types || []))) n += 1;
+      const eqSet = (a, b) => a.size === b.length && [...a].every((x) => b.includes(x));
+      const origWorkers = (orig.worker_ids || []).map((w) => w.worker_id || w);
+      const origRoles = (orig.roles || []).map((r) => (r.role || r).toLowerCase());
+      const origCompanies = (orig.companies || []).map((c) => String(c.simpro_company_id || c));
+      if (
+        !eqSet(d.kinds, (orig.kinds || []))
+        || !eqSet(d.asset_types, (orig.asset_types || []))
+        || !eqSet(d.worker_ids, origWorkers)
+        || !eqSet(d.roles, origRoles)
+        || !eqSet(d.companies, origCompanies)
+      ) n += 1;
     });
     return n;
   }, [templates, draft]);
@@ -126,7 +147,7 @@ export default function FormAssignmentsAdmin() {
       const next = { ...prev };
       const allOn = ids.every((id) => next[id]?.asset_types.has(at));
       ids.forEach((id) => {
-        const d = next[id] ?? { kinds: new Set(), asset_types: new Set() };
+        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
         const asset_types = new Set(d.asset_types);
         if (allOn) asset_types.delete(at); else asset_types.add(at);
         next[id] = { ...d, asset_types };
@@ -135,6 +156,54 @@ export default function FormAssignmentsAdmin() {
     });
   };
 
+  // Generic toggler for Phase 3.9c target sets (worker_ids / roles / companies).
+  const toggleTarget = (setName, value) => {
+    if (!canEdit) return;
+    const ids = targetIds();
+    if (!ids.length) return;
+    setDraft((prev) => {
+      const next = { ...prev };
+      const allOn = ids.every((id) => next[id]?.[setName]?.has(value));
+      ids.forEach((id) => {
+        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
+        const s = new Set(d[setName]);
+        if (allOn) s.delete(value); else s.add(value);
+        next[id] = { ...d, [setName]: s };
+      });
+      return next;
+    });
+  };
+
+  // Debounced worker search → `/forms/pickers/workers`.
+  useEffect(() => {
+    const q = workerSearch.trim();
+    if (!q) { setWorkerResults([]); return; }
+    const t = setTimeout(() => {
+      api.get('/forms/pickers/workers', { params: { q, limit: 8 } })
+        .then((r) => setWorkerResults(r.data?.workers || []))
+        .catch(() => setWorkerResults([]));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [workerSearch]);
+
+  // Live "Visible to N workers" counter for the SELECTED single template.
+  useEffect(() => {
+    if (!selectedId || multiOn) { setRecipientPreview({ count: 0, sample: [] }); return; }
+    const d = draft[selectedId];
+    if (!d) return;
+    const payload = appliesToPayload(d);
+    const t = setTimeout(() => {
+      api.post(`/form-templates/${selectedId}/preview-recipients`, payload)
+        .then((r) => setRecipientPreview({
+          count: r.data?.next_count || 0,
+          newlyAdded: r.data?.newly_added_count || 0,
+          sample: r.data?.newly_added_sample || [],
+        }))
+        .catch(() => {});
+    }, 350);
+    return () => clearTimeout(t);
+  }, [selectedId, multiOn, draft]);
+
   const applyPreset = (preset) => {
     if (!canEdit) return;
     const ids = targetIds();
@@ -142,27 +211,80 @@ export default function FormAssignmentsAdmin() {
     setDraft((prev) => {
       const next = { ...prev };
       ids.forEach((id) => {
-        if (preset === 'clear')        next[id] = { kinds: new Set(),                  asset_types: new Set() };
-        else if (preset === 'any')     next[id] = { kinds: new Set(['any']),           asset_types: new Set() };
-        else if (preset === 'vehicle') next[id] = { kinds: new Set(['vehicle']),       asset_types: new Set() };
-        else if (preset === 'plant')   next[id] = { kinds: new Set(['plant']),         asset_types: new Set() };
+        const keep = next[id] || { worker_ids: new Set(), roles: new Set(), companies: new Set() };
+        if (preset === 'clear')        next[id] = { kinds: new Set(),                  asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
+        else if (preset === 'any')     next[id] = { kinds: new Set(['any']),           asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
+        else if (preset === 'vehicle') next[id] = { kinds: new Set(['vehicle']),       asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
+        else if (preset === 'plant')   next[id] = { kinds: new Set(['plant']),         asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
       });
       return next;
     });
   };
 
-  const save = async () => {
+  // Convert a draft cell → backend payload (with expires_at = null since the
+  // UI ships persistent assignments only; expiry support is in the backend
+  // model and ready for a future picker).
+  const appliesToPayload = (v) => ({
+    kinds: Array.from(v.kinds),
+    asset_types: Array.from(v.asset_types),
+    worker_ids: Array.from(v.worker_ids).map((w) => ({ worker_id: w })),
+    roles: Array.from(v.roles).map((r) => ({ role: r })),
+    companies: Array.from(v.companies).map((c) => ({ simpro_company_id: c })),
+  });
+
+  // Actually persist; `skip_notifications` opts out of the email + SMS fanout.
+  const persistSave = async (skipNotifications) => {
     setSaving(true);
     try {
       const assignments = Object.entries(draft).map(([template_id, v]) => ({
-        template_id, kinds: Array.from(v.kinds), asset_types: Array.from(v.asset_types),
+        template_id, ...appliesToPayload(v),
       }));
-      await api.post('/form-templates/assignments/bulk', { assignments });
-      toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated`);
+      const r = await api.post('/form-templates/assignments/bulk', {
+        assignments, skip_notifications: !!skipNotifications,
+      });
+      const totals = r.data?.notify || {};
+      if (skipNotifications) {
+        toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated (notifications muted)`);
+      } else if (totals.newly_added_total > 0) {
+        toast.success(`Saved · notifying ${totals.newly_added_total} worker${totals.newly_added_total === 1 ? '' : 's'} by email + SMS`);
+      } else {
+        toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated`);
+      }
       setBulkIds(new Set());
+      setConfirmOpen(false);
       await load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setSaving(false); }
+  };
+
+  const save = async () => {
+    if (!canEdit || dirtyCount === 0) return;
+    // If any newly-added recipients would be notified, open the confirm
+    // dialog. Otherwise persist directly.
+    try {
+      let total = 0;
+      for (const [tid, v] of Object.entries(draft)) {
+        const orig = templates.find((t) => t.id === tid)?.applies_to;
+        // Cheap skip: if NOTHING changed for this template, don't preview.
+        const same = (
+          (orig?.worker_ids?.length || 0) === v.worker_ids.size
+          && (orig?.roles?.length || 0) === v.roles.size
+          && (orig?.companies?.length || 0) === v.companies.size
+        );
+        if (same) continue;
+        const r = await api.post(`/form-templates/${tid}/preview-recipients`, appliesToPayload(v));
+        total += (r.data?.newly_added_count || 0);
+      }
+      if (total > 0) {
+        setRecipientPreview((p) => ({ ...p, totalForConfirm: total }));
+        setConfirmOpen(true);
+      } else {
+        await persistSave(false);
+      }
+    } catch {
+      // Fail open — still save without the preview.
+      await persistSave(false);
+    }
   };
 
   if (isLockedOut) {
@@ -316,6 +438,96 @@ export default function FormAssignmentsAdmin() {
                   )}
                 </section>
 
+                {/* Phase 3.9c — Workers (direct assignment) */}
+                <section className="mt-6" data-testid="section-workers">
+                  <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 inline-flex items-center gap-1.5"><HardHat size={11} /> Applies to WORKERS (direct)</h3>
+                  <div className="flex flex-wrap gap-1.5 mb-2" data-testid="worker-chips">
+                    {Array.from(selDraft.worker_ids).length === 0 && (
+                      <span className="text-[11px] text-slate-400 italic">No direct worker assignments.</span>
+                    )}
+                    {Array.from(selDraft.worker_ids).map((wid) => (
+                      <button key={wid} type="button" onClick={() => toggleTarget('worker_ids', wid)}
+                        data-testid={`chip-worker-${wid.slice(0, 8)}`}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-800 text-[11px] font-semibold hover:bg-blue-100">
+                        {wid.slice(0, 8)}… <X size={10} />
+                      </button>
+                    ))}
+                  </div>
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input type="search" value={workerSearch} onChange={(e) => setWorkerSearch(e.target.value)}
+                      placeholder="Search workers by name or email…"
+                      data-testid="worker-search"
+                      className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-slate-300 text-xs" />
+                  </div>
+                  {workerResults.length > 0 && (
+                    <ul className="mt-1 rounded-lg border border-slate-200 max-h-44 overflow-y-auto" data-testid="worker-results">
+                      {workerResults.map((w) => {
+                        const on = selDraft.worker_ids.has(w.id);
+                        return (
+                          <li key={w.id}>
+                            <button type="button" onClick={() => toggleTarget('worker_ids', w.id)}
+                              data-testid={`worker-row-${w.id.slice(0, 8)}`}
+                              className={`w-full text-left px-2.5 py-1.5 text-[12px] flex items-center gap-2 hover:bg-slate-50 ${on ? 'bg-emerald-50' : ''}`}>
+                              {on ? <CheckSquare size={12} className="text-emerald-700" /> : <Square size={12} className="text-slate-300" />}
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-slate-900 truncate">{w.name}</div>
+                                <div className="text-[10px] text-slate-500 truncate">{[w.trade, w.phone].filter(Boolean).join(' · ')}</div>
+                              </div>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </section>
+
+                {/* Phase 3.9c — Roles */}
+                <section className="mt-6" data-testid="section-roles">
+                  <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 inline-flex items-center gap-1.5"><Users size={11} /> Applies to ROLES</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(roleOptions.length ? roleOptions : ['admin','manager','hseq_lead','foreman','operator','driver','worker']).map((r) => (
+                      <CheckChip key={r}
+                        on={selDraft.roles.has(r)}
+                        onClick={() => toggleTarget('roles', r)}
+                        disabled={!canEdit}
+                        label={r.replace(/_/g, ' ')}
+                        testid={`chip-role-${r}`} />
+                    ))}
+                  </div>
+                </section>
+
+                {/* Phase 3.9c — Companies */}
+                <section className="mt-6" data-testid="section-companies">
+                  <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 inline-flex items-center gap-1.5"><Building2 size={11} /> Applies to COMPANIES</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {companyOptions.length === 0 && (
+                      <span className="text-[11px] text-slate-400 italic">No Simpro companies synced yet.</span>
+                    )}
+                    {companyOptions.map((c) => (
+                      <CheckChip key={c.simpro_company_id}
+                        on={selDraft.companies.has(c.simpro_company_id)}
+                        onClick={() => toggleTarget('companies', c.simpro_company_id)}
+                        disabled={!canEdit}
+                        label={c.company_label}
+                        hint={`#${c.simpro_company_id}`}
+                        testid={`chip-company-${c.simpro_company_id}`} />
+                    ))}
+                  </div>
+                </section>
+
+                {/* Phase 3.9c — Live recipient counter */}
+                {!multiOn && (
+                  <section className="mt-5 px-3 py-2 rounded-lg bg-slate-100 text-[11px] text-slate-700 inline-flex items-center gap-2 flex-wrap"
+                           data-testid="visible-counter">
+                    <Users size={12} className="text-slate-500" />
+                    Currently <b data-testid="visible-count">{recipientPreview.count}</b> workers would see this form
+                    {recipientPreview.newlyAdded > 0 && (
+                      <span className="text-blue-700 font-bold">· +{recipientPreview.newlyAdded} newly added</span>
+                    )}
+                  </section>
+                )}
+
                 {/* Presets */}
                 <section className="mt-6 flex flex-wrap items-center gap-2">
                   <span className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mr-2">Presets:</span>
@@ -328,6 +540,41 @@ export default function FormAssignmentsAdmin() {
             ) : (
               <div className="m-auto text-sm text-slate-500">Select a template on the left to edit its assignments.</div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Phase 3.9c — Notification confirm dialog. Asks the admin whether to
+          fire the email + SMS fanout for the workers who would be newly
+          exposed by this save. Cancel saves silently (skip_notifications). */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-slate-900/50 p-4"
+             onClick={(e) => e.target === e.currentTarget && setConfirmOpen(false)}
+             data-testid="notify-confirm">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200">
+            <div className="px-5 py-4 border-b">
+              <h3 className="font-display font-bold text-slate-900">Notify newly-assigned workers?</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                This save adds <b data-testid="notify-count">{recipientPreview.totalForConfirm || 0}</b> worker{(recipientPreview.totalForConfirm || 0) === 1 ? '' : 's'} to one or more templates.
+              </p>
+            </div>
+            <div className="px-5 py-3 text-[12px] text-slate-700 space-y-1.5">
+              <div>· Email to each worker (Microsoft 365 outbox)</div>
+              <div>· SMS via TextMagic (where mobile is on file)</div>
+              <div>· Deduped per worker + template for 24&nbsp;h</div>
+            </div>
+            <div className="px-5 py-3 border-t bg-slate-50 flex items-center gap-2 justify-end">
+              <button onClick={() => persistSave(true)} disabled={saving}
+                data-testid="notify-skip"
+                className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                Save · skip notifications
+              </button>
+              <button onClick={() => persistSave(false)} disabled={saving}
+                data-testid="notify-send"
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60">
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Save &amp; notify
+              </button>
+            </div>
           </div>
         </div>
       )}

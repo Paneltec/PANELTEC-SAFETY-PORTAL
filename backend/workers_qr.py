@@ -371,8 +371,9 @@ async def scan_worker_site_signin(
     scan_token: str, body: SiteSignInIn,
     user: dict = Depends(get_current_user),
 ):
-    """Record an attendance row. The scanning user (admin/manager/safety officer
-    OR the worker themselves) signs the worker in to a site."""
+    """Record an attendance row. **Phase 3.9c RBAC fix**: only admin/manager/
+    hseq_lead may sign in another worker. Workers themselves may sign in
+    only their *own* lanyard (worker.email == user.email)."""
     w = await db.workers.find_one(
         {"scan_token": scan_token, "deleted_at": None},
         {"_id": 0},
@@ -381,6 +382,26 @@ async def scan_worker_site_signin(
         raise HTTPException(404, "Unknown worker scan token")
     if w["org_id"] != user["org_id"]:
         raise HTTPException(403, "Cross-org sign-in is not allowed")
+
+    role = user.get("role")
+    is_supervisor = role in {"admin", "manager", "hseq_lead"}
+    is_self = (
+        user.get("email") and w.get("email")
+        and user["email"].lower() == w["email"].lower()
+    )
+    if not (is_supervisor or is_self):
+        raise HTTPException(
+            403,
+            "Only admin/manager/HSEQ leads can sign in another worker; "
+            "workers can only sign themselves in.",
+        )
+
+    # Phase 3.9c — prefer the WORKER's workspace_id so attendance lands on the
+    # right site even when the supervisor is logged into multiple workspaces.
+    workspace_id = (
+        w.get("workspace_id")
+        or (user.get("workspace_ids") or [None])[0]
+    )
 
     now = datetime.now(timezone.utc).isoformat()
     doc = {
@@ -396,7 +417,8 @@ async def scan_worker_site_signin(
         "signed_in_by_name": user.get("name") or user.get("email"),
         "gps": body.gps,
         "source": "worker_qr",
-        "workspace_id": (user.get("workspace_ids") or [None])[0],
+        "workspace_id": workspace_id,
+        "self_signin": bool(is_self and not is_supervisor),
     }
     await db.site_signins.insert_one(doc)
     doc.pop("_id", None)

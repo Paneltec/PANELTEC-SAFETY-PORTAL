@@ -221,55 +221,44 @@ async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
     """Return the curated list of form templates a worker can launch for the
     scanned asset.
 
-    Phase 3.9b — selection is driven by each template's `applies_to`
-    metadata (kinds + asset_types) maintained by admins under Settings →
-    Form Assignments. A template appears when:
-        • "any" ∈ applies_to.kinds                       (universal)
-        • OR asset.kind ∈ applies_to.kinds              (e.g. all vehicles)
-        • OR asset.asset_type ∈ applies_to.asset_types  (specific subtype)
-    Templates with empty kinds AND asset_types don't appear on any scan —
-    workers can still launch them manually from /app/forms.
-
-    Ordering: `recommended` first (category matches the asset kind), then
-    alphabetical.
+    Phase 3.9c — selection now combines asset-type rules with the worker's
+    direct/role/company assignments via `resolve_forms_for_worker`. The
+    `recommended` badge is computed locally from the asset kind so daily
+    pre-starts still float to the top for pre-use checks.
     """
     asset = await _resolve_asset_for_user(user, scan_token)
     kind = (asset.get("kind") or "").lower()
-    asset_type = (asset.get("asset_type") or "").lower()
+
+    # Pull the calling user's worker record (if any) by matching email — same
+    # lookup the form auto-prefill uses in Forms.jsx.
+    worker = None
+    if user.get("email"):
+        worker = await db.workers.find_one(
+            {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+            {"_id": 0, "id": 1, "role": 1, "simpro_company_id": 1},
+        )
+
+    from form_assignment_notifier import resolve_forms_for_worker
+    resolved = await resolve_forms_for_worker(
+        org_id=user["org_id"], worker=worker, asset=asset,
+    )
 
     forms: list[dict] = []
-    async for tpl in db.form_templates.find(
-        {"org_id": user["org_id"], "deleted_at": None},
-        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1,
-         "fields": 1, "applies_to": 1},
-    ):
-        applies_to = tpl.get("applies_to") or {}
-        kinds_set = {k.lower() for k in (applies_to.get("kinds") or [])}
-        types_set = {t.lower() for t in (applies_to.get("asset_types") or [])}
-        matches = (
-            "any" in kinds_set
-            or (kind and kind in kinds_set)
-            or (asset_type and asset_type in types_set)
-        )
-        if not matches:
-            continue
-        cat = (tpl.get("category") or "").lower()
-        # Recommended badge: modern category keys + a small legacy-label
-        # fallback so templates that still carry "Vehicle"/"Plant"/etc don't
-        # silently lose their flag if the backfill hasn't run for whatever
-        # reason.
+    for r in resolved:
+        cat = r["category"]
         recommended = (
             (kind == "vehicle" and cat in {"pre_use", "daily_check", "vehicle"})
-            or (kind == "plant"   and cat in {"plant_pre_start", "plant"})
+            or (kind == "plant" and cat in {"plant_pre_start", "plant"})
         )
         forms.append({
-            "template_id": tpl["id"],
-            "name": tpl["name"],
-            "description": tpl.get("description") or "",
+            "template_id": r["template_id"],
+            "name": r["name"],
+            "description": r["description"],
             "category": cat,
             "icon": _icon_for_category(cat),
-            "field_count": len(tpl.get("fields") or []),
+            "field_count": r["field_count"],
             "recommended": bool(recommended),
+            "match_reasons": r["match_reasons"],
         })
     forms.sort(key=lambda f: (not f["recommended"], f["name"].lower()))
 
@@ -311,19 +300,49 @@ def _require_assignments_role(user: dict, write: bool = False) -> None:
         raise HTTPException(403, "Admin or manager role required")
 
 
+class TargetWorker(BaseModel):
+    worker_id: str
+    expires_at: Optional[str] = None
+    assigned_at: Optional[str] = None
+    assigned_by_user_id: Optional[str] = None
+
+
+class TargetRole(BaseModel):
+    role: str
+    expires_at: Optional[str] = None
+    assigned_at: Optional[str] = None
+    assigned_by_user_id: Optional[str] = None
+
+
+class TargetCompany(BaseModel):
+    simpro_company_id: str
+    expires_at: Optional[str] = None
+    assigned_at: Optional[str] = None
+    assigned_by_user_id: Optional[str] = None
+
+
 class AppliesToIn(BaseModel):
     kinds: list[str] = Field(default_factory=list)
     asset_types: list[str] = Field(default_factory=list)
+    worker_ids: list[TargetWorker] = Field(default_factory=list)
+    roles: list[TargetRole] = Field(default_factory=list)
+    companies: list[TargetCompany] = Field(default_factory=list)
+    # When true, mute the email/SMS dispatcher for this save (admin opt-out).
+    skip_notifications: bool = False
 
 
 class BulkAssignmentEntry(BaseModel):
     template_id: str
     kinds: list[str] = Field(default_factory=list)
     asset_types: list[str] = Field(default_factory=list)
+    worker_ids: list[TargetWorker] = Field(default_factory=list)
+    roles: list[TargetRole] = Field(default_factory=list)
+    companies: list[TargetCompany] = Field(default_factory=list)
 
 
 class BulkAssignmentsIn(BaseModel):
     assignments: list[BulkAssignmentEntry]
+    skip_notifications: bool = False
 
 
 assignments_router = APIRouter(prefix="/form-templates", tags=["form-assignments"])
@@ -341,7 +360,10 @@ async def list_assignments(user: dict = Depends(get_current_user)):
             "id": t["id"], "name": t["name"],
             "description": t.get("description") or "",
             "category": t.get("category") or "general",
-            "applies_to": t.get("applies_to") or {"kinds": [], "asset_types": []},
+            "applies_to": t.get("applies_to") or {
+                "kinds": [], "asset_types": [],
+                "worker_ids": [], "roles": [], "companies": [],
+            },
         })
     rows.sort(key=lambda r: (r["category"], r["name"].lower()))
 
@@ -356,24 +378,106 @@ async def list_assignments(user: dict = Depends(get_current_user)):
         k = (doc["_id"]["kind"] or "other")
         type_index.setdefault(k, set()).add(doc["_id"]["asset_type"])
     columns = {k: sorted(v) for k, v in type_index.items()}
-    return {"templates": rows, "asset_type_columns": columns}
+
+    # Phase 3.9c — distinct roles + companies currently active on workers.
+    roles = sorted({(r or "").lower() for r in await db.workers.distinct(
+        "role", {"org_id": user["org_id"], "deleted_at": None}) if r})
+    companies: list[dict] = []
+    seen_ids: set[str] = set()
+    async for w in db.workers.find(
+        {"org_id": user["org_id"], "deleted_at": None,
+         "simpro_company_id": {"$ne": None}},
+        {"_id": 0, "simpro_company_id": 1, "company_label": 1},
+    ):
+        cid = str(w["simpro_company_id"])
+        if cid in seen_ids:
+            continue
+        seen_ids.add(cid)
+        companies.append({
+            "simpro_company_id": cid,
+            "company_label": w.get("company_label") or f"Company #{cid}",
+        })
+    companies.sort(key=lambda c: c["company_label"].lower())
+
+    return {
+        "templates": rows,
+        "asset_type_columns": columns,
+        "roles": roles or ["admin", "manager", "hseq_lead", "foreman",
+                           "operator", "driver", "worker"],
+        "companies": companies,
+    }
+
+
+async def _validate_targets(org_id: str, body) -> None:
+    """422 if any referenced worker_id doesn't exist in our register."""
+    wids = [w.worker_id for w in (body.worker_ids or [])]
+    if not wids:
+        return
+    count = await db.workers.count_documents({
+        "org_id": org_id, "id": {"$in": wids}, "deleted_at": None,
+    })
+    if count != len(wids):
+        raise HTTPException(422, "One or more worker_ids do not exist")
+
+
+def _serialise_applies_to(body, user: dict) -> dict:
+    """Convert pydantic model → dict suitable for $set, stamping
+    assigned_at/by where the caller didn't supply them."""
+    now = datetime.now(timezone.utc).isoformat()
+    return {
+        "kinds": [k.lower() for k in (body.kinds or [])],
+        "asset_types": [t.lower() for t in (body.asset_types or [])],
+        "worker_ids": [{
+            "worker_id": w.worker_id,
+            "expires_at": w.expires_at,
+            "assigned_at": w.assigned_at or now,
+            "assigned_by_user_id": w.assigned_by_user_id or user["id"],
+        } for w in (body.worker_ids or [])],
+        "roles": [{
+            "role": r.role.lower(),
+            "expires_at": r.expires_at,
+            "assigned_at": r.assigned_at or now,
+            "assigned_by_user_id": r.assigned_by_user_id or user["id"],
+        } for r in (body.roles or [])],
+        "companies": [{
+            "simpro_company_id": str(c.simpro_company_id),
+            "expires_at": c.expires_at,
+            "assigned_at": c.assigned_at or now,
+            "assigned_by_user_id": c.assigned_by_user_id or user["id"],
+        } for c in (body.companies or [])],
+    }
 
 
 @assignments_router.put("/{template_id}/applies-to")
 async def update_applies_to(template_id: str, body: AppliesToIn,
                             user: dict = Depends(get_current_user)):
     _require_assignments_role(user, write=True)
-    res = await db.form_templates.update_one(
+    await _validate_targets(user["org_id"], body)
+
+    prior = await db.form_templates.find_one(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
-        {"$set": {"applies_to": {
-            "kinds": [k.lower() for k in body.kinds],
-            "asset_types": [t.lower() for t in body.asset_types],
-        }}},
+        {"_id": 0, "applies_to": 1},
     )
-    if res.matched_count == 0:
+    if prior is None:
         raise HTTPException(404, "Template not found")
+
+    next_applies = _serialise_applies_to(body, user)
+    await db.form_templates.update_one(
+        {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"applies_to": next_applies}},
+    )
+
+    # Phase 3.9c — fire email + SMS for newly-exposed workers.
+    from form_assignment_notifier import dispatch_diff
+    notify = await dispatch_diff(
+        org_id=user["org_id"], template_id=template_id,
+        prior_applies_to=prior.get("applies_to") or {},
+        next_applies_to=next_applies,
+        skip=body.skip_notifications,
+    )
+
     return {"ok": True, "template_id": template_id,
-            "applies_to": {"kinds": body.kinds, "asset_types": body.asset_types}}
+            "applies_to": next_applies, "notify": notify}
 
 
 @assignments_router.post("/assignments/bulk")
@@ -381,19 +485,82 @@ async def bulk_save_assignments(body: BulkAssignmentsIn,
                                 user: dict = Depends(get_current_user)):
     _require_assignments_role(user, write=True)
     saved, missing = 0, []
+    notify_totals = {"sent": 0, "queued_templates": 0, "newly_added_total": 0}
+    from form_assignment_notifier import dispatch_diff
+
     for entry in body.assignments:
-        res = await db.form_templates.update_one(
-            {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
-            {"$set": {"applies_to": {
-                "kinds": [k.lower() for k in entry.kinds],
-                "asset_types": [t.lower() for t in entry.asset_types],
-            }}},
-        )
-        if res.matched_count:
-            saved += 1
-        else:
+        # Per-template validation so a bad worker_id only fails that row.
+        try:
+            await _validate_targets(user["org_id"], entry)
+        except HTTPException:
             missing.append(entry.template_id)
-    return {"ok": True, "saved": saved, "missing": missing}
+            continue
+
+        prior = await db.form_templates.find_one(
+            {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0, "applies_to": 1},
+        )
+        if not prior:
+            missing.append(entry.template_id)
+            continue
+
+        next_applies = _serialise_applies_to(entry, user)
+        await db.form_templates.update_one(
+            {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
+            {"$set": {"applies_to": next_applies}},
+        )
+        saved += 1
+        diff = await dispatch_diff(
+            org_id=user["org_id"], template_id=entry.template_id,
+            prior_applies_to=prior.get("applies_to") or {},
+            next_applies_to=next_applies,
+            skip=body.skip_notifications,
+        )
+        if diff["queued"]:
+            notify_totals["queued_templates"] += 1
+            notify_totals["newly_added_total"] += diff["newly_added_count"]
+
+    return {"ok": True, "saved": saved, "missing": missing, "notify": notify_totals}
+
+
+@assignments_router.post("/{template_id}/preview-recipients")
+async def preview_recipients(template_id: str, body: AppliesToIn,
+                             user: dict = Depends(get_current_user)):
+    """Compute who WOULD be newly notified if this `applies_to` payload were
+    saved (without persisting anything). Used by the front-end confirm toast."""
+    _require_assignments_role(user, write=False)
+    prior = await db.form_templates.find_one(
+        {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "applies_to": 1},
+    )
+    if not prior:
+        raise HTTPException(404, "Template not found")
+    from form_assignment_notifier import _resolve_audience
+    next_applies = _serialise_applies_to(body, user)
+    prior_audience = await _resolve_audience(user["org_id"], prior.get("applies_to") or {})
+    next_audience = await _resolve_audience(user["org_id"], next_applies)
+    newly = next_audience - prior_audience
+    # Resolve to {id, name, email, role} for the dialog preview.
+    sample = []
+    if newly:
+        async for w in db.workers.find(
+            {"id": {"$in": list(newly)}, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "name": 1,
+             "email": 1, "role": 1, "position": 1, "phone": 1},
+        ).limit(10):
+            sample.append({
+                "id": w["id"],
+                "name": w.get("name") or " ".join(filter(None, [w.get("first_name"), w.get("last_name")])).strip(),
+                "email": w.get("email"),
+                "role": w.get("role") or w.get("position"),
+                "phone": w.get("phone"),
+            })
+    return {
+        "prior_count": len(prior_audience),
+        "next_count": len(next_audience),
+        "newly_added_count": len(newly),
+        "newly_added_sample": sample,
+    }
 
 
 # ────────────────── Schedules ──────────────────

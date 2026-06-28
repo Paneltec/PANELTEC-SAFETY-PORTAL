@@ -12,6 +12,10 @@ from db import db
 
 _SEED_KEY = "forms.applies_to_seeded_at"
 _CAT_KEY  = "forms.categories_backfilled_at"
+# Phase 3.9c — add empty worker_ids/roles/companies arrays to existing
+# applies_to docs so the new pydantic models don't have to .get(...) every
+# field. Idempotent — re-running is a no-op.
+_TARGETS_KEY = "forms.applies_to_targets_seeded_at"
 
 _APPLIES_TO_RULES: dict[str, dict] = {
     "Vehicle Pre-Use Inspection":
@@ -92,7 +96,40 @@ async def _backfill_categories() -> dict:
     return {"already_done": False, "at": now, "renamed": updated}
 
 
+async def _seed_target_arrays() -> dict:
+    """Phase 3.9c — backfill `worker_ids/roles/companies = []` on every
+    `applies_to` document that's missing them. Safe to run repeatedly."""
+    state = await db.migration_state.find_one({"_id": _TARGETS_KEY})
+    if state and state.get("at"):
+        return {"already_done": True, "at": state["at"]}
+    updated = 0
+    async for t in db.form_templates.find(
+        {"deleted_at": None},
+        {"_id": 0, "id": 1, "applies_to": 1},
+    ):
+        a = t.get("applies_to") or {}
+        changed = False
+        for k in ("worker_ids", "roles", "companies"):
+            if k not in a:
+                a[k] = []
+                changed = True
+        if changed:
+            a.setdefault("kinds", [])
+            a.setdefault("asset_types", [])
+            await db.form_templates.update_one(
+                {"id": t["id"]}, {"$set": {"applies_to": a}},
+            )
+            updated += 1
+    now = datetime.now(timezone.utc).isoformat()
+    await db.migration_state.update_one(
+        {"_id": _TARGETS_KEY},
+        {"$set": {"at": now, "updated": updated}}, upsert=True,
+    )
+    return {"already_done": False, "at": now, "updated": updated}
+
+
 async def run_migration() -> dict:
     a = await _seed_applies_to()
     b = await _backfill_categories()
-    return {"applies_to": a, "categories": b}
+    c = await _seed_target_arrays()
+    return {"applies_to": a, "categories": b, "targets": c}

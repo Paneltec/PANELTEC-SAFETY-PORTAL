@@ -1,0 +1,48 @@
+{
+  "summary": "Phase 3.9c backend: 10/10 new tests pass + 12/12 Phase 4.1 regression pass (22/22 total via pytest). list_assignments returns roles+companies arrays, PUT applies-to with workers+roles+companies returns notify.newly_added_count + queued=true, unknown worker_id → 422, bulk skip_notifications mutes dispatcher, preview-recipients computes counts without persisting, /api/forms/templates?for_worker= returns match_reasons (admin self/me works, non-admin asking for someone else → 403), /api/scan/{asset_token}/forms forms carry match_reasons, site-signin RBAC enforces worker→403 cross-signin & admin→200 with worker's workspace_id. FormAssignmentsAdmin UI verified: section-workers/section-roles/section-companies/visible-counter all render, toggling foreman role updates counter from '0' → '1 workers · +1 newly added', Save opens notify-confirm dialog with notify-skip + notify-send buttons, skip path mutes notifications and shows toast 'Saved · 1 template updated (notifications muted)'. Service-worker CACHE_VERSION confirmed as paneltec-v59. CRITICAL FRONTEND REGRESSION: WorkerScanResolver.jsx is broken — useDebounced hook + slug() helper were announced in the receipt but NOT actually added to the file; `debouncedQ` and `slug` are undefined identifiers and the component throws `ReferenceError: debouncedQ is not defined` on every render, taking down the entire worker QR scan flow including the Phase 4.1 worker-signin-btn / signin-modal that previously worked in iteration 18.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "WorkerScanResolver.jsx",
+        "issue": "ReferenceError: debouncedQ is not defined at render-time. The file uses `debouncedQ` on lines 45 & 48 and `slug(s.id)` on line 192, but neither `useDebounced` hook nor `slug` helper are declared in the file (or imported from anywhere). Webpack emits only an eslint WARNING ('unnecessary dependency: debouncedQ') so the build passes, but the page crashes for every authenticated visitor. Public anon scan happens to bypass the crash because the offending useEffect early-returns on `!isAuthed`, but the moment a logged-in user opens /scan/worker/<token> React throws and the whole worker-signin-btn / signin-modal / signin-site-* flow is unreachable. Phase 4.1 regression.",
+        "selector": "ReferenceError thrown by component itself",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "Authenticated worker QR scan → site sign-in",
+        "issue": "Cannot test signin-site-<slug> testid stability because the page crashes before the modal opens. The slug() helper is also missing — even if debouncedQ is fixed, line 192 will still throw.",
+        "affected_selectors": ["worker-signin-btn", "signin-modal", "signin-site-*"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_39c_form_assignments.py",
+    "/app/backend/tests/test_phase_41_worker_qr.py",
+    "/app/test_reports/pytest/phase_39c_results.xml"
+  ],
+  "action_items": [
+    "URGENT — Add the missing `useDebounced` hook + `slug` helper to /app/frontend/src/pages/WorkerScanResolver.jsx (or import them). Suggested impl mirroring PickerFields.jsx:\n    function useDebounced(value, ms=300){const [v,setV]=useState(value);useEffect(()=>{const t=setTimeout(()=>setV(value),ms);return()=>clearTimeout(t);},[value,ms]);return v;}\n    const slug = (s) => String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/(^-|-$)/g,'') || 'unknown';\n  then `const debouncedQ = useDebounced(siteQ, 300);` inside the component. Without this the entire /scan/worker/* route is dead for logged-in users.",
+    "Re-run iteration 18's WorkerScanResolver Playwright suite after the fix to confirm the signin-modal + 12 signin-site-* rows render."
+  ],
+  "critical_code_review_comments": [
+    "WorkerScanResolver.jsx ships with two undefined references (`debouncedQ`, `slug`) that would have been caught by `eslint --no-eslintrc --rule 'no-undef:error'` or `tsc --noEmit`. CI should fail on no-undef instead of treating it as warning. CRA's default eslint flags it but does not fail the build.",
+    "Receipts in this iteration's plan claim `useDebounced hook, slug() helper` are in WorkerScanResolver.jsx, but `grep -n 'useDebounced\\|const slug' /app/frontend/src/pages/WorkerScanResolver.jsx` returns nothing. The implementer appears to have left the call-sites in place after a rebase but lost the declarations — please double-check the diff went in cleanly.",
+    "form_assignment_notifier.dispatch_diff uses asyncio.create_task without binding the task to a long-lived set — the GC can drop the reference before the dispatcher finishes if the loop is idle. Consider keeping a module-level WeakSet of tasks (or using add_done_callback) so unit tests / restart-during-dispatch never silently lose notifications.",
+    "asset_service._validate_targets only validates worker_ids; role names and simpro_company_id values are persisted blindly. Acceptable for now since both come from the picker, but an explicit whitelist would prevent stale role chips from creating dead assignments.",
+    "preview_recipients eagerly calls _resolve_audience twice for every save (PUT also calls it via dispatch_diff). For large orgs this is two full scans of the workers collection — consider memoising or passing the resolved audience from preview → save."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_39c_form_assignments.py (new pytest module — 10 tests)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "~50% — Form Assignments UI 100% pass, WorkerScanResolver fully broken"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin); worker_stephen@paneltec.com.au / WorkerTest123! (worker user, no worker register row)",
+  "seed_data_creation": "Tests insert two TEST_ site_signins rows on the RBAC test; PUT/preview side-effects toggle Heavy Vehicle Daily Check applies_to on the org's real template — left in the worker_ids=[Stephen]+roles=[foreman]+companies=[#3] state at end of run. Form Assignment dialog click left the Heavy Vehicle Daily Check with notifications muted (skip clicked).",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run with: REACT_APP_BACKEND_URL=https://whs-compliance.preview.emergentagent.com python -m pytest backend/tests/test_phase_39c_form_assignments.py backend/tests/test_phase_41_worker_qr.py -v. For UI, FormAssignmentsAdmin lives at /app/settings/form-assignments — page.goto works here (unlike /app/workers which needs sidebar click). After E1 fixes the WorkerScanResolver missing-hook bug, re-test by logging in as stephen, navigating to /scan/worker/i4UmjUBzsi, clicking worker-signin-btn, asserting signin-modal contains ≥1 signin-site-<slug> testid with no spaces. The 12-site picker hits /api/forms/pickers/sites and takes ~3s.",
+  "rca of the issue": "WorkerScanResolver.jsx call-sites for `debouncedQ` (lines 45, 48) and `slug()` (line 192) reference identifiers that are not declared anywhere in the module. ESLint flags them only as warnings (no-undef downgraded to warning in CRA's default config + react-hooks/exhaustive-deps misreporting `debouncedQ` as an 'outer scope value'). The component throws ReferenceError on the first render that hits the useEffect at line 43-48 (signInOpen=false short-circuits before debouncedQ on line 45 but the dependency-array read on line 48 still evaluates `debouncedQ` because React reads each dep — that's where the throw originates). Reproduction: login → visit /scan/worker/i4UmjUBzsi → React error overlay 'debouncedQ is not defined'. Mitigation: add `function useDebounced(v,ms){...}`, `const slug = s => ...`, and `const debouncedQ = useDebounced(siteQ, 300);` to the file (5 LOC patch). After patch, re-run /scan/worker UI smoke + iteration 18's worker_qr Playwright suite."
+}

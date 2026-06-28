@@ -1006,7 +1006,15 @@ export default function Forms() {
 
   const load = async () => {
     setLoading(true);
-    try { const { data } = await api.get('/forms/templates'); setRows(data || []); }
+    try {
+      // Phase 3.9c — workers see only forms applicable to them by default.
+      // Admins/managers/hseq see the full library.
+      const role = user?.role;
+      const isWorker = role && !['admin', 'manager', 'hseq_lead'].includes(role);
+      const params = isWorker ? { for_worker: 'me' } : {};
+      const { data } = await api.get('/forms/templates', { params });
+      setRows(data || []);
+    }
     catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };

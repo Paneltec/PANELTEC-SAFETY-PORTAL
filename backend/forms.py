@@ -295,14 +295,23 @@ async def set_vehicle_override(body: VehicleOverrideIn,
 
 @router.get("/templates")
 async def list_templates(category: Optional[str] = None,
+                         for_worker: Optional[str] = None,
+                         show_all: bool = False,
                          user: dict = Depends(get_current_user)):
+    """List form templates.
+
+    Phase 3.9c — `for_worker` filters templates to the audience visible to
+    that worker (universal `kinds:["any"]` + direct/role/company match).
+    `for_worker=me` resolves to the calling user's worker record.
+    `show_all=true` (admin/manager only) bypasses the filter for the
+    "Show all" toolbar toggle in the Forms library.
+    """
     q: dict = {"org_id": user["org_id"], "deleted_at": None}
     if category and category != "all":
         q["category"] = _norm_category(category)
     rows = await db.form_templates.find(q, {"_id": 0}).sort("name", 1).to_list(2000)
     if not rows:
         return []
-    # Decorate with submission counts in one aggregate.
     ids = [r["id"] for r in rows]
     counts: dict = {}
     pipeline = [
@@ -312,6 +321,35 @@ async def list_templates(category: Optional[str] = None,
     ]
     async for c in db.form_submissions.aggregate(pipeline):
         counts[c["_id"]] = c["n"]
+
+    if for_worker and not show_all:
+        worker = None
+        if for_worker == "me":
+            if user.get("email"):
+                worker = await db.workers.find_one(
+                    {"org_id": user["org_id"], "email": user["email"],
+                     "deleted_at": None},
+                    {"_id": 0, "id": 1, "role": 1, "simpro_company_id": 1},
+                )
+        else:
+            # Admin/manager can ask about a specific worker.
+            if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+                raise HTTPException(403, "Only admins can browse another worker's forms")
+            worker = await db.workers.find_one(
+                {"id": for_worker, "org_id": user["org_id"], "deleted_at": None},
+                {"_id": 0, "id": 1, "role": 1, "simpro_company_id": 1},
+            )
+        from form_assignment_notifier import resolve_forms_for_worker
+        resolved = await resolve_forms_for_worker(
+            org_id=user["org_id"], worker=worker, asset=None,
+        )
+        reasons_by_id = {r["template_id"]: r["match_reasons"] for r in resolved}
+        rows = [r for r in rows if r["id"] in reasons_by_id]
+        return [
+            {**_serialise(r), "submission_count": counts.get(r["id"], 0),
+             "match_reasons": reasons_by_id.get(r["id"], [])}
+            for r in rows
+        ]
     return [{**_serialise(r), "submission_count": counts.get(r["id"], 0)} for r in rows]
 
 
