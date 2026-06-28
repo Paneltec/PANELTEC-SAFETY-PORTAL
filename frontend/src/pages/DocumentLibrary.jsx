@@ -9,7 +9,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Check, ClipboardPaste, Download, FileSpreadsheet, FileText, FolderOpen,
+  Check, ClipboardPaste, Download, Eye, FileSpreadsheet, FileText, FolderOpen,
   Image as ImageIcon, Loader2, Pencil, Plus, Search, Sparkles, Trash2,
   Upload, X,
 } from 'lucide-react';
@@ -19,6 +19,7 @@ import { getToken, getUser } from '../lib/auth';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
+import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const DELETE_FOLDER_ROLES = new Set(['admin']);
@@ -415,6 +416,7 @@ export function DocumentLibraryFolder() {
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
+  const [previewFile, setPreviewFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
@@ -671,8 +673,50 @@ export function DocumentLibraryFolder() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1">
+                      {(() => {
+                        const ok = isPdfPreviewable(f.mime, f.filename);
+                        const tip = ok ? 'View as PDF' : 'PDF preview not available for this format';
+                        return (
+                          <button onClick={() => ok && setPreviewFile(f)} disabled={!ok}
+                            data-testid={`file-view-pdf-${f.id}`} title={tip}
+                            className={`p-1.5 rounded ${ok
+                              ? 'text-slate-500 hover:text-brand-blue hover:bg-slate-100'
+                              : 'text-slate-300 cursor-not-allowed'}`}>
+                            <Eye size={14} />
+                          </button>
+                        );
+                      })()}
+                      {(() => {
+                        const ok = isPdfPreviewable(f.mime, f.filename);
+                        const tip = ok ? 'Download as PDF' : 'PDF preview not available for this format';
+                        const onClick = async () => {
+                          if (!ok) return;
+                          try {
+                            const res = await fetch(`${API_BASE}/files/${f.id}/pdf?dl=1`, {
+                              headers: { Authorization: `Bearer ${getToken()}` },
+                            });
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            const blob = await res.blob();
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = (f.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+                            document.body.appendChild(a); a.click(); a.remove();
+                            URL.revokeObjectURL(url);
+                          } catch (e) { toast.error(e.message || 'Could not download PDF'); }
+                        };
+                        return (
+                          <button onClick={onClick} disabled={!ok}
+                            data-testid={`file-download-pdf-${f.id}`} title={tip}
+                            className={`p-1.5 rounded ${ok
+                              ? 'text-slate-500 hover:text-purple-700 hover:bg-slate-100'
+                              : 'text-slate-300 cursor-not-allowed'}`}>
+                            <FileText size={14} />
+                          </button>
+                        );
+                      })()}
                       <button onClick={() => downloadFile(f)} data-testid={`file-download-${f.id}`}
-                        className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download">
+                        className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
                         <Download size={14} />
                       </button>
                       {canEdit && (
@@ -688,6 +732,9 @@ export function DocumentLibraryFolder() {
             </tbody>
           </table>
         </div>
+      )}
+      {previewFile && (
+        <PdfPreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
       )}
     </div>
   );

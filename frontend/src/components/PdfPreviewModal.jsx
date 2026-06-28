@@ -1,0 +1,148 @@
+// Phase 3.10 — Universal PDF preview modal.
+//
+// Opens an in-app iframe of `GET /api/files/{id}/pdf`. Bearer-auth is
+// supplied via a one-shot blob fetch (axios attaches the JWT through the
+// interceptor) so the iframe loads an object URL instead of relying on
+// cookies, which the iframe's child request context doesn't share.
+//
+// Header shows filename + pipeline chip (from response header `X-Pipeline`).
+// Footer: "Download PDF" (forces ?dl=1), "Open in new tab", "Close".
+// ESC closes. Mobile: full-screen below 768 px via Tailwind responsive utilities.
+import { useEffect, useState } from 'react';
+import { X, Download, ExternalLink, Loader2, FileWarning } from 'lucide-react';
+import { toast } from 'sonner';
+import api, { apiError } from '../lib/api';
+
+// File types that the backend can convert to PDF (mirrors file_pdf.py `_pipeline_for`).
+const PDF_OK = (mime, name) => {
+  const m = (mime || '').toLowerCase();
+  const n = (name || '').toLowerCase();
+  if (m === 'application/pdf' || n.endsWith('.pdf')) return true;
+  if (m === 'application/octet-stream') {
+    // Octet-stream is often an .docx upload — trust the filename extension.
+    return /\.(docx|jpg|jpeg|png|webp|heic|heif|txt|csv|md)$/.test(n);
+  }
+  if (m.startsWith('image/jpeg') || m.startsWith('image/png') || m.startsWith('image/webp')) return true;
+  if (m === 'image/heic' || m === 'image/heif') return true;
+  if (m === 'text/csv' || m === 'text/plain' || m === 'text/markdown') return true;
+  if (n.endsWith('.docx') || m.includes('officedocument.wordprocessingml')) return true;
+  if (/\.(jpg|jpeg|png|webp|heic|heif|txt|csv|md|docx)$/.test(n)) return true;
+  return false;
+};
+
+export const isPdfPreviewable = PDF_OK;
+
+export default function PdfPreviewModal({ file, onClose }) {
+  const [src, setSrc] = useState(null);
+  const [pipeline, setPipeline] = useState(null);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!file) return;
+    let url = null;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await api.get(`/files/${file.id}/pdf`, { responseType: 'blob' });
+        if (!alive) return;
+        url = URL.createObjectURL(r.data);
+        setSrc(url);
+        setPipeline(r.headers?.['x-pipeline'] || null);
+      } catch (e) {
+        setErr(apiError(e));
+      }
+    })();
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+  }, [file]);
+
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const downloadPdf = async () => {
+    try {
+      const r = await api.get(`/files/${file.id}/pdf`, {
+        params: { dl: 1 }, responseType: 'blob',
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  const openInNewTab = () => {
+    if (!src) return;
+    window.open(src, '_blank');
+  };
+
+  if (!file) return null;
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
+         onClick={(e) => e.target === e.currentTarget && onClose?.()}
+         data-testid="pdf-preview-modal">
+      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 bg-slate-50">
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-slate-900 truncate" data-testid="pdf-modal-filename">
+              {file.filename || 'Document'}
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              <span>PDF preview</span>
+              {pipeline && (
+                <span data-testid="pdf-modal-pipeline"
+                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-mono text-[10px]">
+                  pipeline:{pipeline}
+                </span>
+              )}
+            </div>
+          </div>
+          <button onClick={downloadPdf} title="Download as PDF"
+            data-testid="pdf-modal-download"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-white hover:border-slate-400">
+            <Download size={12} /> <span className="hidden sm:inline">Download PDF</span>
+          </button>
+          <button onClick={openInNewTab} disabled={!src} title="Open in new tab"
+            data-testid="pdf-modal-newtab"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-white hover:border-slate-400 disabled:opacity-50">
+            <ExternalLink size={12} /> <span className="hidden sm:inline">New tab</span>
+          </button>
+          <button onClick={onClose} title="Close (Esc)"
+            data-testid="pdf-modal-close"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-200">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 bg-slate-100 relative">
+          {err ? (
+            <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-error">
+              <div className="text-center max-w-sm px-6">
+                <FileWarning size={28} className="text-amber-600 mx-auto mb-3" />
+                <div className="font-semibold text-slate-900">PDF preview failed</div>
+                <p className="text-[12px] text-slate-600 mt-1.5">{err}</p>
+              </div>
+            </div>
+          ) : !src ? (
+            <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-loading">
+              <div className="text-center">
+                <Loader2 size={24} className="text-blue-600 animate-spin mx-auto" />
+                <div className="text-[12px] text-slate-600 mt-2">Preparing PDF…</div>
+              </div>
+            </div>
+          ) : (
+            <iframe data-testid="pdf-modal-iframe"
+              title={file.filename || 'PDF preview'}
+              src={src} className="w-full h-full border-0" />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
