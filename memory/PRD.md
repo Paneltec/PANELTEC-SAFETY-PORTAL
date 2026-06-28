@@ -310,3 +310,29 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 ## Verified
 - Curl: admin PATCH (subject/message/doc_types/expires_at) returns 200 with new fields + unchanged token; worker PATCH 403; worker DELETE 403; worker revoke 403; admin DELETE 200 cleanup.
 - UI screenshots: renewals table with new Subject/Docs column + pencil/trash icons; edit modal open with all 5 editable fields populated.
+
+
+# 2026-06-28 — Renewal Doc Types: admin-managed registry (shipped)
+
+## Backend (`renewals.py`)
+- New collection `renewal_doc_types`: `{id, org_id, label, slug, description, active, sort_order, created_at, updated_at, deleted_at}`.
+- New endpoints (admin/hseq_lead writes; org reads):
+  - `GET    /api/renewals/doc-types` — seeds 6 standard types on first hit per org, then backfills any legacy slugs found in existing renewals.
+  - `POST   /api/renewals/doc-types`   `{label, description?}` — auto-slugifies label, auto-increments sort_order +10.
+  - `PATCH  /api/renewals/doc-types/{id}`  `{label?, description?, active?, sort_order?}`.
+  - `DELETE /api/renewals/doc-types/{id}` — soft-delete; **blocks with 409** if any pending non-deleted renewal still references the slug, with a clear message.
+- Standard seed (in order, sort 10–60): **Public liability** (`public_liability`), **Workers comp** (`workers_comp`), **White card** (`white_card`), **SafeWork licence** (`safework_licence`), **Induction** (`induction`), **Other** (`other`) — matches the existing hardcoded checkboxes.
+- **Legacy backfill**: on seed, scans `renewal_links.doc_types_requested` for slugs not yet in the registry and creates active entries (label = `slug.title().replace("_"," ")`, description = "Legacy doc type — auto-imported…"). Existing data continues working seamlessly.
+- One-time DB cleanup: removed the earlier (wrong) seeds `insurance/licence/whs_policy` from Stephen's org because nothing referenced them.
+
+## Frontend (`Renewals.jsx`)
+- New toolbar button **"⚙️ Manage doc types"** (admin/hseq_lead only) opens `ManageDocTypesDialog`.
+- Modal rows: editable Label, optional Description, `active` toggle, **Save** per-row (only enabled when dirty), Trash icon. Bottom card to "Add a new doc type" with Label + optional Description + Add button.
+- Create + Edit Renewal modals now load checkboxes from `GET /api/renewals/doc-types` (only `active=true`). Both refresh whenever doc types change.
+- Renewal table now renders the slug chips using the live label map; **unknown/legacy slugs render with an amber HelpCircle icon** so admins can spot legacy data.
+- Edit modal also exposes any legacy slug on the current record as a checkable (amber-styled) chip so the admin can keep or drop it.
+- SW bumped to `paneltec-v35`.
+
+## Verified
+- Curl: GET seed (4 → 6 after update), POST custom (`Public Liability` → slug `public_liability`, sort=50), PATCH label + sort, DELETE blocked **409** when 2 pending links still reference the slug; admin DELETE 200 after revoke, worker POST/PATCH/DELETE all **403**.
+- UI: Manage modal showing 6 seeds + the newly-added "Trade Licence"; Create modal showing all 7 active types as live checkboxes including the brand-new "Trade Licence" — proving the registry is genuinely dynamic.
