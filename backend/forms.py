@@ -32,7 +32,7 @@ router = APIRouter(prefix="/forms", tags=["forms"])
 WRITE_ROLES = {"admin", "hseq_lead"}
 ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
-                       "photo", "signature", "gps", "vehicle_navixy"}
+                       "photo", "signature", "gps", "vehicle_navixy", "asset_scan"}
 PHOTO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 
@@ -55,6 +55,9 @@ def _norm_category(cat: str) -> str:
 
 
 def _clean_field(f: dict) -> dict:
+    cfg = f.get("config") or {}
+    if not isinstance(cfg, dict):
+        cfg = {}
     return {
         "id": str(f.get("id") or new_id())[:60],
         "label": str(f.get("label") or "").strip()[:200] or "Untitled",
@@ -62,6 +65,7 @@ def _clean_field(f: dict) -> dict:
         "required": bool(f.get("required", False)),
         "options": list(f.get("options") or []),
         "placeholder": str(f.get("placeholder") or "")[:200],
+        "config": cfg,
     }
 
 
@@ -127,6 +131,85 @@ async def list_fleet_for_forms(user: dict = Depends(get_current_user)):
         )
         out.append({**v, "vehicle_type": vt, "registration": v.get("plate")})
     return {**raw, "vehicles": out}
+
+
+# ──────────────── Asset Scan helpers (Phase 2) ────────────────
+
+# asset_type slug → vehicle_type slug surfaced on form `select` Vehicle Type
+# fields. Mirror of the keyword classifier above so a scan can resolve to the
+# same enum the existing Heavy Vehicle Daily Check expects.
+_ASSET_TO_VEHICLE_TYPE = {
+    "vacuum_truck": "vacuum_truck", "tipper": "tipper", "dump_truck": "dump_truck",
+    "semi_trailer": "semi_trailer", "ute": "ute", "crane_truck": "crane_truck",
+    "service_truck": "service_truck", "excavator": "excavator", "loader": "loader",
+    "bulldozer": "bulldozer", "grader": "grader", "compactor": "compactor",
+    "skid_steer": "skid_steer", "backhoe": "backhoe",
+}
+
+
+@router.get("/assets/lookup")
+async def asset_lookup(token: str = Query(min_length=1, max_length=64),
+                      user: dict = Depends(get_current_user)):
+    """Authed wrapper around the public scan resolver. Same 404/410 semantics
+    but adds enrichment (vehicle_type slug, GPS, odo/hours)."""
+    doc = await db.assets.find_one(
+        {"org_id": user["org_id"], "scan_token": token, "deleted_at": None},
+        {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(404, "Unknown scan token")
+    if doc.get("status") == "retired":
+        raise HTTPException(410, "Asset has been retired")
+    asset_type = doc.get("asset_type") or "other"
+    vehicle_type_slug = _ASSET_TO_VEHICLE_TYPE.get(asset_type, asset_type if asset_type in {"other"} else "other")
+    return {
+        "id": doc.get("id"),
+        "name": doc.get("name"),
+        "kind": doc.get("kind"),
+        "asset_type": asset_type,
+        "rego_serial": doc.get("rego_serial"),
+        "navixy_device_id": doc.get("navixy_device_id"),
+        "last_known_lat": doc.get("last_known_lat"),
+        "last_known_lng": doc.get("last_known_lng"),
+        "last_known_at": doc.get("last_known_at"),
+        "odo_km": doc.get("odo_km"),
+        "hours_meter": doc.get("hours_meter"),
+        "vehicle_type_slug": vehicle_type_slug,
+        "scan_token": doc.get("scan_token"),
+    }
+
+
+@router.get("/assets/picker")
+async def asset_picker(q: Optional[str] = Query(None),
+                       kind: Optional[str] = Query(None),
+                       asset_type: Optional[str] = Query(None),
+                       limit: int = Query(50, ge=1, le=200),
+                       user: dict = Depends(get_current_user)):
+    """Trimmed asset list for the manual-pick fallback inside an asset_scan
+    field. Workspace-scoped: only returns assets the user can see."""
+    ws_ids = user.get("workspace_ids") or []
+    query: dict = {"org_id": user["org_id"], "deleted_at": None, "status": "active"}
+    if kind and kind != "any":
+        query["kind"] = kind
+    if asset_type and asset_type != "any":
+        query["asset_type"] = asset_type
+    if q:
+        rx = re.escape(q.strip())
+        query["$or"] = [
+            {"name": {"$regex": rx, "$options": "i"}},
+            {"rego_serial": {"$regex": rx, "$options": "i"}},
+        ]
+    # Show workspace-scoped manual assets + org-wide Navixy-tracked vehicles.
+    query["$and"] = [{"$or": [
+        {"workspace_id": None},
+        {"workspace_id": {"$in": ws_ids}} if ws_ids else {"workspace_id": None},
+    ]}]
+    rows: list[dict] = []
+    fields_proj = {"_id": 0, "id": 1, "name": 1, "kind": 1, "asset_type": 1,
+                   "rego_serial": 1, "navixy_device_id": 1, "scan_token": 1}
+    async for row in db.assets.find(query, fields_proj).sort("name", 1).limit(limit):
+        rows.append(row)
+    return {"assets": rows, "returned": len(rows)}
 
 
 VEHICLE_TYPE_KEYWORDS = [

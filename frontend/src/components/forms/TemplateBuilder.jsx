@@ -34,6 +34,7 @@ const FIELD_TYPES = [
   { key: 'signature', label: 'Signature pad' },
   { key: 'gps',       label: 'GPS location' },
   { key: 'vehicle_navixy', label: 'Vehicle (Navixy)' },
+  { key: 'asset_scan', label: 'Asset scan (QR / NFC / pick)' },
 ];
 
 const newFieldId = () => `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -178,6 +179,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
           required: !!f.required,
           options: (f.type === 'select' || f.type === 'radio') ? f.options : [],
           placeholder: f.placeholder || '',
+          config: f.config || {},
         })),
       };
       if (isEdit) {

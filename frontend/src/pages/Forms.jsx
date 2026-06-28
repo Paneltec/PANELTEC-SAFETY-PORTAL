@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
+import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -367,6 +368,22 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
   if (field.type === 'vehicle_navixy')
     return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly}
       allFields={allFields} allValues={allValues} />;
+  if (field.type === 'asset_scan')
+    return <AssetScanField field={field} value={value} readOnly={readOnly}
+      onChange={(v) => {
+        // Commit the scanned asset, then auto-fill any dependent siblings.
+        if (typeof onChange !== 'function') return;
+        onChange(v);
+        if (v && typeof window !== 'undefined') {
+          // The autofill targets sibling fields by id, which can't be set via
+          // the current onChange (it only writes our own field). Defer to the
+          // parent through a CustomEvent so the FillOutModal can apply it.
+          const auto = buildAutofillFromAsset(allFields || [], v, field.config || {});
+          if (Object.keys(auto).length) {
+            window.dispatchEvent(new CustomEvent('paneltec:asset-autofill', { detail: { sourceFieldId: field.id, values: auto } }));
+          }
+        }
+      }} />;
   if (field.type === 'textarea')
     return <textarea rows={4} value={value || ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
@@ -396,11 +413,29 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
 
 // ─────────────── Fill-Out modal ───────────────
 
-function FillOutModal({ template, onClose, onSubmitted }) {
-  const [values, setValues] = useState({});
+function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
+  const [values, setValues] = useState(initialValues || {});
   const [photoFiles, setPhotoFiles] = useState({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState('');
+  const [lockedFields, setLockedFields] = useState({});
+
+  // Apply autofill values pushed by an `asset_scan` field elsewhere on the
+  // template. The runner dispatches `paneltec:asset-autofill` on commit.
+  useEffect(() => {
+    const handler = (ev) => {
+      const { sourceFieldId, values: auto } = ev.detail || {};
+      if (!auto) return;
+      setValues((prev) => ({ ...prev, ...auto }));
+      setLockedFields((p) => ({ ...p, ...Object.fromEntries(Object.keys(auto).map((k) => [k, sourceFieldId])) }));
+    };
+    window.addEventListener('paneltec:asset-autofill', handler);
+    return () => window.removeEventListener('paneltec:asset-autofill', handler);
+  }, []);
+
+  // Unlock an autofilled field so the worker can override the prefill.
+  const overrideField = (fid) =>
+    setLockedFields((p) => { const next = { ...p }; delete next[fid]; return next; });
 
   const requiredOk = (template.fields || []).every((f) => {
     if (!f.required) return true;
@@ -473,12 +508,18 @@ function FillOutModal({ template, onClose, onSubmitted }) {
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
-          ) : (template.fields || []).map((f) => (
+          ) : (template.fields || []).map((f) => {
+            const isLocked = !!lockedFields[f.id];
+            return (
             <div key={f.id} data-testid={`field-row-${f.id}`}>
-              <label className="block text-sm font-semibold text-slate-800 mb-1.5">
-                {f.label}
-                {f.required && <span className="text-rose-600 ml-1">*</span>}
-                <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5">
+                <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
+                <span className="text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+                {isLocked && (
+                  <button type="button" onClick={() => overrideField(f.id)}
+                    className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100"
+                    data-testid={`override-${f.id}`}>Override</button>
+                )}
               </label>
               <FieldRunner field={f}
                 value={values[f.id]}
@@ -486,9 +527,10 @@ function FillOutModal({ template, onClose, onSubmitted }) {
                 photoFiles={photoFiles[f.id]}
                 onPhotoChange={(files) => setPhotoFiles((p) => ({ ...p, [f.id]: files }))}
                 allFields={template.fields || []}
-                allValues={values} />
+                allValues={values}
+                readOnly={isLocked} />
             </div>
-          ))}
+          );})}
         </div>
         <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2 sticky bottom-0">
           {progress && <span className="text-xs text-slate-500 flex-1 truncate" data-testid="submit-progress">{progress}</span>}
@@ -756,9 +798,38 @@ export default function Forms() {
   };
   useEffect(() => { load(); }, []);
 
-  // Auto-open the AI builder when the dashboard "Generate Form (AI)" tile
-  // (or any other entry point) lands here with ?builder=ai.
   const location = useLocation();
+
+  // Deep-link from /scan/{token}?form={id} → auto-open the fill-out modal and
+  // pre-fill the first asset_scan field with the scanned asset.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tid = params.get('template');
+    const tok = params.get('scan');
+    if (!tid || !tok || !rows.length) return;
+    const tpl = rows.find((t) => t.id === tid);
+    if (!tpl) return;
+    (async () => {
+      try {
+        const { data: asset } = await api.get('/forms/assets/lookup', { params: { token: tok } });
+        const scanField = (tpl.fields || []).find((f) => f.type === 'asset_scan');
+        const initial = {};
+        if (scanField) initial[scanField.id] = {
+          asset_id: asset.id, scan_token: asset.scan_token, name: asset.name,
+          rego_serial: asset.rego_serial, asset_type: asset.asset_type,
+          vehicle_type_slug: asset.vehicle_type_slug, kind: asset.kind,
+          last_known_lat: asset.last_known_lat, last_known_lng: asset.last_known_lng,
+          resolved_via: 'qr', resolved_at: new Date().toISOString(),
+        };
+        // Schedule autofill of dependent fields after the modal mounts.
+        const auto = buildAutofillFromAsset(tpl.fields || [], { ...asset });
+        setFillTemplate({ ...tpl, _initialValues: { ...initial, ...auto } });
+      } catch (e) { toast.error(apiError(e)); }
+      navigate('/app/forms', { replace: true });
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, rows.length]);
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.get('builder') === 'ai' && canEdit) {
@@ -905,7 +976,7 @@ export default function Forms() {
       {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t) => { load(); setBuilderTemplate(t); }} />}
       {previewT && <PreviewModal template={previewT} onClose={() => setPreviewT(null)}
         onFill={() => { setFillTemplate(previewT); setPreviewT(null); }} />}
-      {fillTemplate && <FillOutModal template={fillTemplate}
+      {fillTemplate && <FillOutModal template={fillTemplate} initialValues={fillTemplate._initialValues}
         onClose={() => setFillTemplate(null)} onSubmitted={load} />}
       {builderTemplate !== null && <TemplateBuilder template={builderTemplate}
         onClose={() => setBuilderTemplate(null)}

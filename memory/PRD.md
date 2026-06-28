@@ -1,3 +1,53 @@
+# 2026-02-18 — Phase 2: Scan-to-fill on Forms (`asset_scan` field)
+
+## Backend
+- `forms.py`:
+  - `asset_scan` added to `ALLOWED_FIELD_TYPES`; `_clean_field` now preserves a `config` blob (per-field settings: `requireScan`, `kindFilter`, `autofillTargets`).
+  - `GET /api/forms/assets/lookup?token=…` (JWT) — authed wrapper around the public scan resolver, also returns `vehicle_type_slug`, `last_known_lat/lng/at`, `odo_km`, `hours_meter`. 404 on unknown, 410 on retired.
+  - `GET /api/forms/assets/picker?q=&kind=&asset_type=` (JWT) — trimmed picker list, workspace-scoped (org-wide Navixy + workspace manual assets).
+
+## Frontend
+- **New** `src/components/forms/AssetScanField.jsx`:
+  - Segmented control with capability auto-detect (`'NDEFReader' in window`, `navigator.mediaDevices`, `'BarcodeDetector' in window`).
+  - **QR Camera**: `BarcodeDetector` first, `jsQR` fallback on hidden canvas; environment-facing camera; overlay box and Start/Stop controls.
+  - **NFC Tap**: `NDEFReader().scan()` listens for the first `url` record; abort-controller for clean stop; gracefully hides on unsupported browsers.
+  - **Manual Pick**: debounced `/api/forms/assets/picker` calls.
+  - Resolve flow: any input → `/api/forms/assets/lookup` → green confirmation card ("Resolved · PLANT · EXCAVATOR …") with **Use this** / **Scan again**.
+  - On confirm, dispatches `paneltec:asset-autofill` event with target field values.
+  - Exports `buildAutofillFromAsset(allFields, asset)` — maps vehicle_type/rego/gps/odo/hours into sibling field ids by label heuristics.
+- `Forms.jsx`:
+  - `FieldRunner` adds `asset_scan` case and routes the autofill event.
+  - `FillOutModal` listens for the autofill event, locks affected fields, and renders an inline **Override** link to unlock individual fields.
+  - URL handler: `?template={id}&scan={token}` auto-opens FillOutModal with `_initialValues` pre-set (asset card + dependent autofill applied).
+- `pages/ScanResolver.jsx`:
+  - When `?form={id}` is present **and** user is authed, the resolver stashes `{scan_token, form_id, at}` in `sessionStorage.paneltec.activeScan` and navigates to `/app/forms?template={id}&scan={token}` for a seamless landing.
+- `components/forms/TemplateBuilder.jsx`:
+  - `asset_scan` added to `FIELD_TYPES` palette.
+  - Save payload now persists `config` per field.
+- Service Worker bumped `paneltec-v40 → paneltec-v41`.
+
+## Heavy Vehicle Daily Check migration
+- Patched template `be6e01d5-1e98-4d81-bb4a-33fd607f0d20`: inserted an `asset_scan` field at position 0 ("Scan asset", `requireScan=false`, `kindFilter=any`). Field order: Scan asset → Date → Vehicle Type → Vehicle Rego.
+
+## Dependencies
+- `jsqr@1.4.0` added to `package.json` (`yarn add jsqr`).
+
+## Verification
+- curl smoke: `GET /api/forms/assets/lookup?token=EFLdyI3Thc` returns enriched payload (vehicle_type_slug: "excavator"); bad token → 404. `GET /api/forms/assets/picker?q=exc&kind=plant&limit=5` returns CAT 320.
+- Playwright e2e (5 screenshots `/app/test_reports/p2_01..p2_05_*.png`):
+  1. Heavy Vehicle Daily Check opens with Scan asset segmented control (QR Camera / Manual pick).
+  2. Manual pick lists workspace assets.
+  3. Search "CAT 320" → green Resolved card with Use this / Scan again.
+  4. Use this → asset chip persisted ("via manual"); Vehicle Rego auto-filled to "CAT 320 Excavator (Yard) · EX-320-007" and shows **Override** link (locked).
+  5. Deep-link `/scan/EFLdyI3Thc?form={tpl}` → modal auto-opens with asset chip pre-filled ("via qr").
+
+## Deferred (out of scope for Phase 2)
+- Vehicle Type auto-select when the template's `select` options don't include an "Excavator" / matching slug (autofill correctly no-ops). Templates that want auto-Vehicle-Type should add the matching option label.
+- Service & Maintenance schedules (Phase 3).
+- Worker/Supplier/Site QR (Phase 4).
+- UHF sled (Phase 5).
+
+
 # 2026-02-18 — Phase 1: Plant & Vehicles Register (Asset Register backbone)
 
 ## New backend module `/app/backend/assets.py`

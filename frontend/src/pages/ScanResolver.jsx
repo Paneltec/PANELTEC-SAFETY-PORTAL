@@ -20,7 +20,21 @@ export default function ScanResolver() {
     let alive = true;
     // Public endpoint — no Bearer needed.
     axios.get(`${PUBLIC_BASE}/assets/scan/${token}`)
-      .then((r) => { if (alive) setState({ status: 'ok', asset: r.data, err: null }); })
+      .then((r) => {
+        // Deep-link to a form fill: stash in sessionStorage and redirect.
+        try {
+          const sp = new URLSearchParams(window.location.search);
+          const formId = sp.get('form');
+          if (formId && getToken()) {
+            sessionStorage.setItem('paneltec.activeScan', JSON.stringify({
+              scan_token: token, at: Date.now(), form_id: formId,
+            }));
+            navigate(`/app/forms?template=${encodeURIComponent(formId)}&scan=${encodeURIComponent(token)}`, { replace: true });
+            return;
+          }
+        } catch { /* fall through to default view */ }
+        if (alive) setState({ status: 'ok', asset: r.data, err: null });
+      })
       .catch((e) => {
         if (!alive) return;
         const code = e?.response?.status;
