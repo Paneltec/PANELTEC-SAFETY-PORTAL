@@ -70,7 +70,7 @@ class DiaryStructureIn(BaseModel):
 
 class SwmsIn(BaseModel):
     title: str
-    job_description: str
+    job_description: str = ""
     workspace_id: str
     location: Optional[str] = None
     tasks: List[dict] = Field(default_factory=list)
@@ -78,6 +78,28 @@ class SwmsIn(BaseModel):
     controls: List[dict] = Field(default_factory=list)
     ppe: List[str] = Field(default_factory=list)
     status: SwmsStatus = "draft"
+
+    # Phase 4.x — rich SWMS schema (all optional so the legacy AI-draft
+    # path keeps working untouched).
+    code: Optional[str] = None
+    version: Optional[str] = None
+    slug: Optional[str] = None
+    scope: Optional[str] = None
+    high_risk_construction_work: Optional[str] = None
+    prepared_by: Optional[dict] = None
+    approved_by: Optional[dict] = None
+    review_date: Optional[str] = None
+    activity_analysis: List[dict] = Field(default_factory=list)
+    environmental_risks: List[dict] = Field(default_factory=list)
+    training_requirements: List[str] = Field(default_factory=list)
+    equipment_list: List[str] = Field(default_factory=list)
+    emergency_procedures: Optional[dict] = None
+    legislation_and_codes: List[str] = Field(default_factory=list)
+    attendance_sheet_template: bool = True
+    source_file: Optional[dict] = None
+    applies_to: Optional[dict] = None      # {asset_kinds, asset_types, worker_ids, roles, companies}
+    superseded_by: Optional[str] = None
+    supersedes: Optional[str] = None
 
 
 class SwmsReview(BaseModel):

@@ -126,6 +126,9 @@ api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
 api.include_router(asset_navixy_sync_router)
+
+from swms_extras import router as swms_extras_router  # noqa: E402
+api.include_router(swms_extras_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
 
@@ -163,6 +166,15 @@ async def on_startup():
         log.info("Misplaced pickers v3: %s", mig3)
     except Exception as e:
         log.warning("Misplaced pickers v3 migration failed: %s", e)
+
+    # Phase 4.x — seed the SWMS-06 Concrete/Asphalt Cutting V12.0 record
+    # exactly once per org. Idempotent — re-running is a no-op.
+    try:
+        from swms_extras import seed_swms_06
+        r = await seed_swms_06()
+        log.info("SWMS-06 seed: %s", r)
+    except Exception as e:
+        log.warning("SWMS-06 seed failed: %s", e)
 
     # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
     try:

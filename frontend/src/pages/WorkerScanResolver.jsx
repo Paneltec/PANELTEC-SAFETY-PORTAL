@@ -11,6 +11,18 @@ import Logo from '../components/brand/Logo';
 
 const PUBLIC = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
+// Slugify free-text IDs (Simpro returns site IDs with spaces / punctuation,
+// which become invalid as data-testid attribute selectors verbatim).
+const slug = (v) =>
+  String(v || '').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'unknown';
+
+// Tiny debounce — we don't want to hammer /pickers/sites on every keystroke.
+function useDebounced(value, ms = 300) {
+  const [v, setV] = useState(value);
+  useEffect(() => { const t = setTimeout(() => setV(value), ms); return () => clearTimeout(t); }, [value, ms]);
+  return v;
+}
+
 const certTone = (status) => {
   const s = (status || '').toLowerCase();
   if (s === 'expired') return 'bg-rose-50 text-rose-700 ring-rose-200';
@@ -25,6 +37,7 @@ export default function WorkerScanResolver() {
   const [signInOpen, setSignInOpen] = useState(false);
   const [sites, setSites] = useState([]);
   const [siteQ, setSiteQ] = useState('');
+  const debouncedQ = useDebounced(siteQ, 300);
   const [signing, setSigning] = useState(false);
   const isAuthed = !!getToken();
 

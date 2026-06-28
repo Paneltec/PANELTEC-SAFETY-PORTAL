@@ -242,7 +242,151 @@ def _crumb(record: dict, kind: str) -> str:
 
 # ---------- Renderers ----------
 
-def render_swms_pdf(swms: dict) -> bytes:
+def _render_swms_rich(swms: dict, layout: str = "civil") -> bytes:
+    """Phase 4.x SWMS layout for structured documents (activity_analysis +
+    environmental_risks + emergency_procedures). Honours `layout`:
+      - 'civil'    → pastel, lighter typography, mint approval badge
+      - 'original' → traditional Paneltec SWMS table layout with formal borders
+    Falls back to the civil styling for unknown layout values.
+    """
+    from reportlab.lib import colors
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import PageBreak, Table, TableStyle, Spacer, Paragraph
+    from reportlab.lib.units import mm
+
+    is_original = (layout == "original")
+    accent_hex = "#1e4a8c" if is_original else "#2C6BFF"
+    border_hex = "#1e293b" if is_original else "#cbd5e1"
+
+    buf = io.BytesIO()
+    title = f"{swms.get('code') or 'SWMS'} · {swms.get('title', '')}"
+    doc = _make_doc(buf, title, swms.get("status"), _crumb(swms, "SWMS"))
+    story: list = []
+    story += [_section(title)]
+    story += [_kv_table([
+        ("Code", swms.get("code")),
+        ("Version", swms.get("version")),
+        ("High-risk construction work", swms.get("high_risk_construction_work")),
+        ("Scope", swms.get("scope")),
+        ("Status", (swms.get("status") or "").upper()),
+        ("Review date", swms.get("review_date")),
+    ])]
+    pb = swms.get("prepared_by") or {}
+    ab = swms.get("approved_by") or {}
+    if pb or ab:
+        story += [_section("Prepared / Approved")]
+        story += [_kv_table([
+            ("Prepared by", f"{pb.get('name','')} · {pb.get('role','')} · {pb.get('organisation','')}".strip(" ·")),
+            ("Date prepared", pb.get("date_prepared")),
+            ("Approved by", f"{ab.get('name','')} · {ab.get('position','')}".strip(" ·")),
+            ("Contact", ab.get("contact")),
+            ("Date approved", ab.get("date_approved")),
+        ])]
+
+    cell_style = ParagraphStyle("PtCell",  fontName="Helvetica",      fontSize=7,   leading=9)
+    hdr_style  = ParagraphStyle("PtHdr",   fontName="Helvetica-Bold", fontSize=7.5, leading=9, textColor=colors.white)
+    def _wrap(row, hdr=False):
+        return [Paragraph(str(c).replace("\n", "<br/>"), hdr_style if hdr else cell_style) for c in row]
+
+    aa = swms.get("activity_analysis") or []
+    if aa:
+        story += [_section("Activity & hazard analysis")]
+        rows = [["#", "Step", "Hazards", "Before", "Controls", "Resp.", "After"]]
+        for i, a in enumerate(aa, start=1):
+            rows.append([
+                str(i), a.get("step", ""),
+                "\n".join(f"· {h}" for h in (a.get("potential_hazards") or [])),
+                str(a.get("risk_class_before", "—")),
+                "\n".join(f"· {c}" for c in (a.get("controls") or [])),
+                ", ".join(a.get("responsible") or []),
+                str(a.get("risk_class_after", "—")),
+            ])
+        data = [_wrap(rows[0], hdr=True)] + [_wrap(r) for r in rows[1:]]
+        t = Table(data, colWidths=[8*mm, 30*mm, 38*mm, 12*mm, 60*mm, 22*mm, 12*mm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(accent_hex)),
+            ("BOX",        (0,0), (-1,-1), 0.4, colors.HexColor(border_hex)),
+            ("INNERGRID",  (0,0), (-1,-1), 0.25, colors.HexColor(border_hex)),
+            ("VALIGN",     (0,0), (-1,-1), "TOP"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+        ]))
+        story += [t]
+
+    er = swms.get("environmental_risks") or []
+    if er:
+        story += [Spacer(1, 6), _section("Environmental risks")]
+        rows = [["Activity", "Risk", "Before", "Controls", "Resp.", "After"]]
+        for e in er:
+            rows.append([
+                e.get("work_activity", ""), e.get("risk", ""),
+                str(e.get("risk_class_before", "—")),
+                "\n".join(f"· {c}" for c in (e.get("controls") or [])),
+                ", ".join(e.get("responsible") or []),
+                str(e.get("risk_class_after", "—")),
+            ])
+        data = [_wrap(rows[0], hdr=True)] + [_wrap(r) for r in rows[1:]]
+        t = Table(data, colWidths=[30*mm, 38*mm, 12*mm, 70*mm, 22*mm, 12*mm], repeatRows=1)
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#10B981" if not is_original else accent_hex)),
+            ("BOX",        (0,0), (-1,-1), 0.4, colors.HexColor(border_hex)),
+            ("INNERGRID",  (0,0), (-1,-1), 0.25, colors.HexColor(border_hex)),
+            ("VALIGN",     (0,0), (-1,-1), "TOP"),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+        ]))
+        story += [t]
+
+    if swms.get("ppe"):                   story += [_section("Personal protective equipment")] + _bullets(swms.get("ppe"))
+    if swms.get("training_requirements"): story += [_section("Training requirements")]         + _bullets(swms.get("training_requirements"))
+    if swms.get("equipment_list"):        story += [_section("Equipment list")]                + _bullets(swms.get("equipment_list"))
+    if swms.get("legislation_and_codes"): story += [_section("Legislation & codes")]           + _bullets(swms.get("legislation_and_codes"))
+
+    ep = swms.get("emergency_procedures") or {}
+    if ep:
+        story += [_section("Emergency procedures")]
+        for k, label in [("general","General"), ("accident_incident","Accident / Incident"),
+                          ("fire","Fire"), ("spill","Spill")]:
+            v = ep.get(k)
+            if v: story += [_para(f"<b>{label}:</b> {v}")]
+
+    if swms.get("attendance_sheet_template", True):
+        story += [PageBreak(), _section("Attendance & sign-off")]
+        story += [_para("All workers must read this SWMS and sign below, confirming they understand the controls and accept their responsibilities.", "PtMuted")]
+        rows = [["Name", "Trade / Role", "Date", "Signature"]] + [["", "", "", ""] for _ in range(12)]
+        t = Table(rows, colWidths=[55*mm, 45*mm, 25*mm, 55*mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(accent_hex)),
+            ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
+            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0,0), (-1,0), 8),
+            ("BOX",        (0,0), (-1,-1), 0.5, colors.HexColor(border_hex)),
+            ("INNERGRID",  (0,0), (-1,-1), 0.3, colors.HexColor(border_hex)),
+        ]))
+        story += [t]
+
+    sf = swms.get("source_file") or {}
+    story += [Spacer(1, 6), _para(
+        f"{swms.get('code','SWMS')} {swms.get('version','')} · Layout: {layout} · "
+        f"{('Source: ' + sf.get('filename','')) if sf.get('filename') else 'Generated by Paneltec Civil'}",
+        "PtSmall")]
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+
+
+def render_swms_pdf(swms: dict, layout: str = "civil") -> bytes:
+    """Render an SWMS PDF.
+
+    layout="civil"  → modern Paneltec Civil layout (default; also used when a
+                       record lacks the structured `activity_analysis` field).
+    layout="original" → traditional Paneltec SWMS layout (formal title block,
+                       full hazard/control table with risk-class columns).
+    Records that include `activity_analysis` get the rich Phase 4.x layout
+    regardless of layout choice; the layout flag only affects styling.
+    """
+    if (swms.get("activity_analysis") or swms.get("environmental_risks")):
+        return _render_swms_rich(swms, layout=layout)
     buf = io.BytesIO()
     doc = _make_doc(buf, swms.get("title", "SWMS"), swms.get("status"),
                     _crumb(swms, "SWMS"))

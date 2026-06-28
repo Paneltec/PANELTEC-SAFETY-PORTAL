@@ -1,3 +1,61 @@
+# 2026-02-19 — Phase 3.9c + SWMS-06 ingest
+
+## Phase 3.9c — Per-worker / per-role / per-company Form Assignments
+**Backend** (`asset_service.py`, `forms.py`, `workers_qr.py`, new `form_assignment_notifier.py`, migration `migrate_seed_form_applies_to.py`):
+- Extended `form_templates.applies_to` with `worker_ids`, `roles`, `companies` (each with optional `expires_at`).
+- New `resolve_forms_for_worker()` combines asset-type + direct/role/company rules and decorates with `match_reasons`.
+- `PUT /api/form-templates/{id}/applies-to` and `POST /assignments/bulk` accept the new fields; unknown `worker_id` → 422; `skip_notifications:true` mutes the dispatcher.
+- New `POST /preview-recipients` returns prior/next/newly-added counts + sample without persisting.
+- `GET /api/forms/templates?for_worker=me|<id>` filters the library to that worker; admins see `?show_all=true` bypass.
+- `GET /api/scan/{token}/forms` now returns `match_reasons` per form.
+- Notification dispatcher fires email (Microsoft 365 outbox) + SMS (TextMagic) within ~1 s of save, deduped per (worker_id, template_id) for 24 h via `form_assignment_notifications`.
+
+**Frontend** (`FormAssignmentsAdmin.jsx`, `Forms.jsx`, `WorkerScanResolver.jsx`, `service-worker.js` → `v60`):
+- Three new right-pane sections in FormAssignmentsAdmin (`section-workers/section-roles/section-companies`) + live "Visible to N workers" counter (`visible-counter`) + Save → Notify confirm dialog (`notify-confirm` / `notify-skip` / `notify-send`).
+- `/app/forms` for workers calls `?for_worker=me` automatically; admins see the full library.
+- WorkerScanResolver site search debounced 300 ms; site IDs slugified into testids.
+
+**Phase 4.1 code-review fixes:**
+1. RBAC on `/api/scan/worker/{token}/site-signin` — workers can only sign themselves in (cross-worker → 403). Admin/manager/hseq_lead unrestricted.
+2. WorkerScanResolver picker testids slugified.
+3. Site-search debounced 300 ms.
+4. site_signins row's `workspace_id` now prefers the WORKER's own workspace.
+5. No `dangerouslySetInnerHTML` usage in Workers.jsx (confirmed via grep).
+
+**Receipts:** list_assignments returns roles+companies; PUT with worker+role+company → `notify.newly_added_count=30 queued=true`; unknown worker_id → 422; `email_outbox` row "New safety form: Equipment Pre-Use Checklist · sent" + 17 dedupe rows; admin signing another worker → 200 with worker's workspace_id; worker→ 403 cross-signin; CACHE_VERSION = `paneltec-v60`.
+
+**Regression follow-up:** iteration 19 caught a missing-hook bug in `WorkerScanResolver.jsx` (`debouncedQ`/`slug` undefined). Patched — hook + helper now declared at module scope.
+
+## SWMS-06 ingest (queued after Phase 3.9c)
+
+**Module:** pre-existing — `swms` collection + `crud.build_router("swms", "swms", SwmsIn, "swms")` + `pdf_renderer.render_swms_pdf`. Extended, not duplicated.
+
+**Backend changes:**
+- `models.SwmsIn` extended with optional rich fields (`code, version, slug, scope, high_risk_construction_work, prepared_by, approved_by, review_date, activity_analysis, environmental_risks, training_requirements, equipment_list, emergency_procedures, legislation_and_codes, attendance_sheet_template, source_file, applies_to, superseded_by, supersedes`). Legacy AI-draft path unaffected.
+- New `swms_extras.py` — full SWMS-06 V12.0 payload + `seed_swms_06()` (idempotent, runs on startup, one record per org) + `POST /api/swms/import-docx` (admin-only; fetches .docx, parses via `python-docx`, returns inferred payload for review — does NOT auto-save).
+- `pdf_renderer.render_swms_pdf(doc, layout='civil')` — modern Paneltec Civil layout by default; `layout='original'` switches to traditional Paneltec table layout with formal borders. Both branches render activity/hazard table, environmental risks table, PPE/training/equipment/legislation bullets, emergency procedures, and a 12-row attendance sign-off sheet.
+- `pdf_routes._build` now accepts `?layout=civil|original` query on the SWMS endpoint.
+- Installed `python-docx==1.2.0` + `lxml==6.1.1` (added to requirements.txt).
+- Startup registration: `swms_extras_router` mounted + `seed_swms_06()` called from `on_startup`.
+
+**Receipts (stephen@paneltec org, seed id `c05bd7ee-8f7d-40fc-b4ad-719dcab25e4b`):**
+- `GET /api/swms` → 7 records, includes SWMS-06 V12.0 status=approved review_date=2026-08-31.
+- `GET /api/swms/{id}` → full payload returns prepared_by=Patrick Monaghan, approved_by=John Guy, 11 activity_analysis rows, 9 environmental_risks, applies_to.asset_types=[concrete_saw, slab_cutter], source_file URL preserved.
+- `GET /api/swms/{id}/pdf?layout=civil` → 200, 17 458 bytes, `%PDF-1.4` magic.
+- `GET /api/swms/{id}/pdf?layout=original` → 200, 17 502 bytes (different size confirms layout branch).
+- `POST /api/swms/import-docx` → 200, parses the .docx into 16 paragraphs + 14 tables, returns inferred title="2018 SWMS-06 Concrete or Asphalt Cutting".
+- Frontend `/app/swms` list shows the new record at top (APPROVED · vV12.0 · Open report / Email).
+- Frontend `/app/swms/{id}` detail renders the title, status pill, PPE block.
+
+**Deferred to a future phase (P1):**
+- SWMS Assignments admin page at `/app/settings/swms-assignments` (two-pane like FormAssignmentsAdmin, targeting asset_types/workers/roles/companies). Backend `applies_to` already accepts the same shape — wire the UI when the user greenlights Phase 4.2.
+- SWMS detail view currently doesn't render the structured activity_analysis / environmental_risks tables in-app (the PDF does). Add a `RichSwmsDetail` component when prioritised.
+- `superseded_by`/`supersedes` archive flow (auto-archive on new version).
+- "Civil PDF" + "Original layout PDF" split-button on the detail page (the URL param is wired; the dropdown UI ships when SWMS frontend is rebuilt).
+
+---
+
+
 # 2026-02-19 — Phase 4.1: Worker Induction QR + Printable ID Cards
 
 ## Backend (`/app/backend/workers_qr.py`)

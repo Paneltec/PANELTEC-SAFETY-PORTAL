@@ -130,13 +130,13 @@ def _build(resource: str, path_prefix: str):
         record_id: str,
         request: Request,
         download: int = Query(0, description="1 → attachment, 0 → inline"),
+        layout: Optional[str] = Query(None, description="SWMS only — 'civil' (default) or 'original'"),
         token: Optional[str] = Query(None, description="signed pdf-token; alternative to Bearer auth"),
     ):
         # Resolve user: pdf-token query wins, then fall back to Bearer JWT.
         if token:
             user = await _user_from_pdf_token(token, resource, record_id)
         else:
-            # Manually invoke the user-JWT resolver (no FastAPI Depends here).
             user = await get_current_user(request, creds=None)
             if not await can(user, resource, "view"):
                 raise HTTPException(403, f"Permission denied: {resource}.view")
@@ -145,7 +145,12 @@ def _build(resource: str, path_prefix: str):
             {"id": record_id, "org_id": user["org_id"]}, {"_id": 0})
         if not doc:
             raise HTTPException(404, "Record not found")
-        pdf_bytes = renderer(doc)
+        # Phase 4.x — SWMS endpoint honours ?layout=civil|original. Other
+        # renderers don't accept kwargs.
+        if resource == "swms":
+            pdf_bytes = renderer(doc, layout=(layout or "civil"))
+        else:
+            pdf_bytes = renderer(doc)
         fname = filename_for(doc, resource)
         disp = "attachment" if download else "inline"
         return Response(
