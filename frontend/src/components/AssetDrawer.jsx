@@ -5,7 +5,8 @@ import {
   Printer, AlertTriangle, Check, CheckCircle2,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import api, { apiError, API_BASE } from '../lib/api';
+import api, { apiError } from '../lib/api';
+import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
 
 const KIND_OPTIONS = [
   { v: 'vehicle', label: 'Vehicle', icon: Truck },
@@ -25,6 +26,8 @@ const TYPE_OPTIONS = [
 const TABS = [
   { key: 'details', label: 'Details' },
   { key: 'pairing', label: 'Pairing' },
+  { key: 'schedules', label: 'Schedules' },
+  { key: 'service_log', label: 'Service log' },
   { key: 'photo', label: 'Photo' },
   { key: 'notes', label: 'Notes' },
 ];
@@ -353,6 +356,17 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
                 </>
               )}
             </div>
+          )}
+
+          {tab === 'schedules' && (
+            current?.id
+              ? <ServiceSchedulesTab asset={current} canEdit />
+              : <div className="text-sm text-slate-500">Save the asset first to add service schedules.</div>
+          )}
+          {tab === 'service_log' && (
+            current?.id
+              ? <ServiceLogTab asset={current} canEdit />
+              : <div className="text-sm text-slate-500">Save the asset first to log service or defects.</div>
           )}
 
           {tab === 'photo' && (

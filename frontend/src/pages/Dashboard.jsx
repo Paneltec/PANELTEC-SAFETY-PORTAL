@@ -90,6 +90,61 @@ function UpcomingCertExpiriesCard() {
   );
 }
 
+function PlantDueWidget() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    import('../lib/api').then(({ default: api }) =>
+      api.get('/assets/service/summary')
+        .then((r) => { if (alive) setData(r.data); })
+        .catch(() => { if (alive) setData({ overdue: 0, due_soon: 0, items: [] }); })
+    );
+    return () => { alive = false; };
+  }, []);
+  const total = (data?.overdue || 0) + (data?.due_soon || 0);
+  return (
+    <div className="rounded-2xl border border-[#f1c7c7] bg-[#fff5f5] p-4" data-testid="dashboard-plant-due">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="rounded-lg bg-[#fadbdb] p-1.5"><AlertTriangle size={14} className="text-[#9c2a2a]" /></div>
+        <div className="text-sm font-semibold text-[#5c1818] flex-1">Plant due for service</div>
+        {data && (
+          <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#fadbdb] text-[#9c2a2a]" data-testid="plant-due-counter">
+            {data.overdue} overdue · {data.due_soon} due soon
+          </span>
+        )}
+      </div>
+      {!data ? (
+        <div className="text-xs text-slate-500">Loading…</div>
+      ) : total === 0 ? (
+        <div className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-[#d8ecdd] text-[#1f7a3f] border border-[#b6dcbf]">
+          <ShieldCheck size={11} /> All plant on schedule.
+        </div>
+      ) : (
+        <ul className="space-y-1" data-testid="plant-due-list">
+          {data.items.map((it) => (
+            <li key={it.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/70" data-testid={`plant-due-${it.id}`}>
+              <Award size={12} className="text-[#9c2a2a] shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-slate-900 truncate">{it.asset?.name}</div>
+                <div className="text-[11px] text-slate-500 truncate">{it.name}</div>
+              </div>
+              <span className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full border whitespace-nowrap ${it.status === 'overdue' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
+                {it.status === 'overdue' ? 'Overdue' : 'Due soon'}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <button onClick={() => navigate('/app/vehicles')}
+        data-testid="view-all-plant-link"
+        className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#9c2a2a] hover:underline">
+        View all plant <ArrowRight size={11} />
+      </button>
+    </div>
+  );
+}
+
 const MODULE_META = {
   swms:      { label: 'SWMS',      icon: FileText,        tint: 'bg-[#d8ecdd] text-[#1f7a3f]', route: '/app/swms' },
   hazards:   { label: 'Hazard',    icon: TriangleAlert,   tint: 'bg-[#f8d7c3] text-[#9c4f1a]', route: '/app/hazards' },
@@ -472,6 +527,7 @@ export default function Dashboard() {
 
           {/* Filler widgets — close the dead-space gap with the Ask column. */}
           <UpcomingCertExpiriesCard />
+          <PlantDueWidget />
           <RecentActivityCard />
         </section>
 

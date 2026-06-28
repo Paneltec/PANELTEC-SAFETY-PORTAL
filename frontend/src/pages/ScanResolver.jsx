@@ -3,10 +3,11 @@
 // extend this to push assets into an active form-fill session via sessionStorage.
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Loader2, MapPin, Copy, ArrowRight, AlertTriangle, Truck, Wrench, Archive } from 'lucide-react';
+import { Loader2, MapPin, Copy, ArrowRight, AlertTriangle, Truck, Wrench, Archive, Wrench as ServiceIcon, Gauge, AlertOctagon, X, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { getToken } from '../lib/auth';
+import api, { apiError } from '../lib/api';
 import Logo from '../components/brand/Logo';
 
 const PUBLIC_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -117,6 +118,9 @@ export default function ScanResolver() {
               )}
 
               <div className="mt-5 space-y-2">
+                {isAuthed && (
+                  <ScanQuickActions assetToken={token} assetName={state.asset.name} />
+                )}
                 {isAuthed ? (
                   <Link to={`/app/vehicles?focus=${state.asset.id}`}
                     className="flex items-center justify-between px-3 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50"
@@ -158,5 +162,91 @@ export default function ScanResolver() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ────────────────── Scan quick actions (Phase 3) ──────────────────
+
+function ScanQuickActions({ assetToken, assetName }) {
+  const [open, setOpen] = useState(null); // 'service' | 'defect' | 'meter' | null
+  const [form, setForm] = useState({ description: '', hours: '', km: '', defect_severity: 'minor', title: '' });
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const payload = {};
+      if (open === 'service') Object.assign(payload, { title: form.title || 'Service log', description: form.description, hours_at: form.hours || null, km_at: form.km || null });
+      if (open === 'defect') Object.assign(payload, { title: form.title || 'Defect reported', description: form.description, defect_severity: form.defect_severity });
+      if (open === 'meter') Object.assign(payload, { hours: form.hours || null, km: form.km || null });
+      const r = await api.post('/scan/quick-action', { scan_token: assetToken, action: open === 'meter' ? 'update_meter' : open === 'service' ? 'log_service' : 'report_defect', payload });
+      if (open === 'defect' && r.data.linked_hazard_id) toast.success(`Done · Hazard raised on ${assetName}`);
+      else toast.success(`Done · added to ${assetName}`);
+      setOpen(null);
+      setForm({ description: '', hours: '', km: '', defect_severity: 'minor', title: '' });
+    } catch (e) { toast.error(apiError(e)); } finally { setBusy(false); }
+  };
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-2 mb-2" data-testid="scan-quick-actions">
+        <button onClick={() => setOpen('service')}
+          className="flex flex-col items-center gap-1 py-3 rounded-xl border border-slate-200 bg-white hover:bg-blue-50"
+          data-testid="quick-log-service">
+          <ServiceIcon size={18} className="text-blue-700" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Log service</span>
+        </button>
+        <button onClick={() => setOpen('defect')}
+          className="flex flex-col items-center gap-1 py-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100"
+          data-testid="quick-report-defect">
+          <AlertOctagon size={18} className="text-rose-600" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-rose-700">Report defect</span>
+        </button>
+        <button onClick={() => setOpen('meter')}
+          className="flex flex-col items-center gap-1 py-3 rounded-xl border border-slate-200 bg-white hover:bg-blue-50"
+          data-testid="quick-update-meter">
+          <Gauge size={18} className="text-slate-600" />
+          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">Update hours/km</span>
+        </button>
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 p-3" onClick={(e) => e.target === e.currentTarget && setOpen(null)} data-testid="quick-action-form">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200">
+            <div className="px-5 py-3 border-b flex items-center">
+              <h3 className="font-display font-bold text-slate-900 flex-1">{open === 'service' ? 'Log service' : open === 'defect' ? 'Report defect' : 'Update hours/km'}</h3>
+              <button onClick={() => setOpen(null)} data-testid="quick-close"><X size={16} /></button>
+            </div>
+            <div className="px-5 py-4 space-y-3 text-sm">
+              {open !== 'meter' && (
+                <>
+                  <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Title" className="w-full px-3 py-2 border border-slate-300 rounded-lg" data-testid="qa-title" />
+                  <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Description" className="w-full px-3 py-2 border border-slate-300 rounded-lg" data-testid="qa-desc" />
+                </>
+              )}
+              {open === 'defect' && (
+                <div className="flex gap-2">
+                  {['minor', 'major', 'critical'].map((s) => (
+                    <button key={s} onClick={() => setForm({ ...form, defect_severity: s })}
+                      className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-bold uppercase border ${form.defect_severity === s ? (s === 'critical' ? 'bg-rose-600 text-white border-rose-600' : s === 'major' ? 'bg-amber-600 text-white border-amber-600' : 'bg-slate-600 text-white border-slate-600') : 'bg-white border-slate-200'}`}
+                      data-testid={`qa-sev-${s}`}>{s}</button>
+                  ))}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" value={form.hours} onChange={(e) => setForm({ ...form, hours: e.target.value })} placeholder="Hours" className="px-3 py-2 border border-slate-300 rounded-lg" data-testid="qa-hours" />
+                <input type="number" value={form.km} onChange={(e) => setForm({ ...form, km: e.target.value })} placeholder="Km" className="px-3 py-2 border border-slate-300 rounded-lg" data-testid="qa-km" />
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2">
+              <button onClick={() => setOpen(null)} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="qa-cancel">Cancel</button>
+              <button onClick={submit} disabled={busy} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold disabled:opacity-50" data-testid="qa-submit">
+                {busy ? <Loader2 size={14} className="inline animate-spin" /> : <Check size={14} className="inline" />} Submit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

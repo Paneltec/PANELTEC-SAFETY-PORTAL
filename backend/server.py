@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from ai import router as ai_router  # noqa: E402
 from ask import router as ask_router  # noqa: E402
 from assets import router as assets_router  # noqa: E402
+from asset_service import router as asset_service_router, scan_router as asset_scan_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
@@ -115,6 +116,8 @@ api.include_router(worker_certifications_router)
 api.include_router(workers_router)
 api.include_router(forms_router)
 api.include_router(assets_router)
+api.include_router(asset_service_router)
+api.include_router(asset_scan_router)
 
 app.include_router(api)
 

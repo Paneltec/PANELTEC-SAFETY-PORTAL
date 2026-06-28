@@ -1,3 +1,48 @@
+# 2026-02-18 — Phase 3: Service & Maintenance for Plant & Vehicles
+
+## Backend (new `/app/backend/asset_service.py`)
+- **Collections** (with indexes wired in `seed.ensure_indexes`):
+  - `asset_service_schedules` — name, interval_kind (hours|km|calendar), interval_value, calendar_unit, last_done_at/value, computed next_due_at/value, status_cached, reminder_lead_*, status, soft delete.
+  - `asset_service_records` — type (service|defect|meter_update), title, description, performed_at/by, hours_at/km_at, cost, technician, photo_file_ids, defect_severity, linked_hazard_id, schedule_id.
+  - `asset_reminders_sent` — dedupe key (schedule_id, status, sent_at).
+- **Endpoints under `/api/assets/{asset_id}/...`**: CRUD for schedules + records, `POST /meter` quick endpoint, `GET /records?type=`, `DELETE /records/{rid}` (admin only).
+- **`POST /api/assets/service/scan-reminders`** — walks active schedules, computes due/overdue using `_compute_next_due`, queues M365 email via existing `email_outbox.queue_email_doc` and SMS via TextMagic API, deduplicates within 24h per (schedule, status).
+- **`GET /api/assets/service/summary`** — dashboard payload: `{overdue, due_soon, items:[top-5]}`.
+- **`POST /api/scan/quick-action`** — public-scan-driven endpoint (JWT) for the worker's three actions: `log_service` / `report_defect` / `update_meter`. Resolves token → asset and dispatches into `create_record`.
+- **Defect → Hazard auto-link**: `_maybe_raise_hazard` checks workspace setting `settings.defectAutoCreatesHazard` (default true). Major/critical defects insert a `hazards` row with `source="asset_defect"`, `linked_asset_id`, severity mapped (critical→high, major→medium). The defect record stores `linked_hazard_id`.
+- **Schedule recompute**: `create_record(type=service, schedule_id=…)` updates `last_done_at/value` and recomputes `next_due_*`. Meter-only updates also recompute *all* active schedules on the asset.
+- Permissions middleware leverages existing `assets` resource gate; worker `POST /api/assets/{id}/schedules` → 403 (verified).
+
+## Frontend
+- **New `components/AssetServiceTabs.jsx`** — `ServiceSchedulesTab` (list with OK/DUE SOON/OVERDUE pills + add/edit modal) and `ServiceLogTab` (chronological feed with severity chips and `Hazard raised` badge linking to the auto-created hazard).
+- **`AssetDrawer.jsx`** — added `Schedules` and `Service log` tabs.
+- **`pages/ScanResolver.jsx`** — added `ScanQuickActions` panel: three buttons (Log service / Report defect / Update hours/km) rendered above the existing View / Copy actions. Slide-up form posts to `/api/scan/quick-action` and toasts "Done · added to {asset}" (or "Hazard raised" when applicable).
+- **`pages/Dashboard.jsx`** — new `PlantDueWidget` next to the existing certs widget. Counts overdue + due-soon, lists top 5, links to `/app/vehicles`.
+- Service worker bumped `paneltec-v41 → v42`.
+
+## Workspace setting
+- `workspaces.settings.defectAutoCreatesHazard` (bool, default true). Updated directly via MongoDB in this phase — UI toggle (Settings → Compliance) deferred to follow-up.
+
+## Verification (curl + screenshots)
+- **Schedule lifecycle**: POST `/api/assets/{id}/schedules` `{name:"250hr service",interval_kind:"hours",interval_value:250}` → status `ok` (cur=0, next=250). After POST `/meter {hours:260}` schedule cache flips to `overdue`. Dashboard summary now returns `overdue:1`.
+- **Scan-reminders**: 1st call `{scanned:1, overdue:1, emails_sent:1+}`. 2nd call within 24h `{emails_sent:0}` (dedupe). ✓
+- **Defect→Hazard**: critical defect via `/api/scan/quick-action` → hazards count 5→6, `linked_hazard_id` populated on the defect record. ✓
+- **Toggle OFF** `defectAutoCreatesHazard=false`: critical defect → `linked_hazard_id:null`, hazards count unchanged. ✓
+- **Worker (non-admin)**: `POST /api/assets/{id}/schedules` → 403. ✓
+- Playwright screenshots (`/app/test_reports/p3_01..04_*.png`):
+  - `p3_01_dashboard` — Plant due widget visible, counter "1 OVERDUE · 0 DUE SOON".
+  - `p3_02_schedules_tab` — AssetDrawer Schedules tab with header and Add button.
+  - `p3_03_service_log` — Service log tab with Log service + Report defect buttons.
+  - `p3_04_scan_quick_actions` — `/scan/EFLdyI3Thc` page now shows three quick-action buttons above View / Copy.
+
+## Out of scope (deferred)
+- Plant & Vehicles list status chip per row + sort/filter by service status.
+- Bulk "Scan reminders now" toolbar button in PlantVehicles header.
+- Settings → Compliance UI toggle for `defectAutoCreatesHazard` (workspace-level direct DB update works today).
+- Service-record PDF (acceptance criterion — falls back to existing `forms_pdf.py` for any forms attached, no separate `asset_service_pdf.py` yet).
+- Worker / Site / Supplier QR (Phase 4) and UHF (Phase 5) — explicitly out of scope.
+
+
 # 2026-02-18 — Phase 2: Scan-to-fill on Forms (`asset_scan` field)
 
 ## Backend
