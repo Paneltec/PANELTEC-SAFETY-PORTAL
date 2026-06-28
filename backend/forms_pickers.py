@@ -254,14 +254,6 @@ async def sites(q: Optional[str] = None, customer_id: Optional[str] = None,
                "sorted_by_distance": (lat is not None and lng is not None)}
     _cache_set(key, payload)
     return payload
-        rows.append({
-            "id": sname, "simpro_site_id": sname, "name": sname,
-            "address": None, "customer_id": r.get("customer_name"),
-            "customer_name": r.get("customer_name"), "jobs": r.get("n", 0),
-        })
-    payload = {"sites": rows[:limit], "count": len(rows)}
-    _cache_set(key, payload)
-    return payload
 
 
 # ─────────────── Customers ───────────────
