@@ -1,3 +1,53 @@
+# 2026-02-19 — Phase 3.10: Universal PDF preview for Document Library files
+
+## Backend (`file_pdf.py` + server.py wiring)
+- `GET /api/files/{id}/pdf` and `/api/files/{id}/pdf.pdf` (ad-blocker-friendly alias).
+- `?dl=1` switches Content-Disposition to attachment.
+- Conversion pipelines:
+  - `passthrough` (PDF) · `image` (JPG/PNG/WEBP) · `heic` (pillow-heif → JPG)
+  - `text` (CSV/TXT/MD via reportlab monospace)
+  - `docx_docx2pdf` → if <1 KB output, falls back to `docx_text_fallback` (python-docx → reportlab plain text — lossy but **never blank**)
+  - Anything else → **415** `{"detail":"PDF preview not available for {mime}"}`
+- Cache: `doc_files_pdf_cache` keyed by `(file_id, sha1, pipeline)`. Subsequent calls bypass conversion. Invalidates automatically when the original file changes (sha1 mismatch).
+- `POST /api/files/pdf-bundle {file_ids:[...]}` (admin/manager/hseq_lead, max 25) → single concatenated PDF via PyPDF2 merger; reports skipped/unconvertible IDs.
+- `POST /api/admin/install-libreoffice?include_ocr=true` (admin only) — dormant install hook for LibreOffice + Tesseract + Poppler. Streams the apt-get tail back. **Does NOT auto-trigger.**
+- `GET /api/admin/system-tools` — `which`/version status for the three optional toolchains.
+
+## Frontend (`SystemSettings.jsx` + `AppShell.jsx`)
+- New **Settings → System** page (admin-only, nav-testid `nav-settings-system`).
+- Three tool cards (`tool-libreoffice` / `tool-tesseract` / `tool-poppler`) show install status (checkmark + version when installed, greyed "Not installed" otherwise).
+- "Install now" button + "Run health check" — clicking install POSTs `?include_ocr=true`, displays install log in a dark terminal block on completion.
+- Friendly footer card explaining today's Phase A coverage (PDF/images/HEIC/text/DOCX-fallback) vs what installing unlocks (XLSX/PPTX/ODT + full-fidelity DOCX + OCR).
+- Service worker bumped to **paneltec-v61**.
+
+## Receipts
+- **TXT** → 1799 b PDF · pipeline=`text` · cache HIT on 2nd call (95 ms vs 104 ms).
+- **PDF** passthrough → 322 471 b · pipeline=`passthrough` · cache HIT (`%PDF` magic).
+- **PNG** → 11 960 b PDF · pipeline=`image`.
+- **DOCX** → 1924 b PDF · pipeline=`docx_text_fallback` (LibreOffice not installed; docx2pdf raised → text fallback rendered the headings + bullets + tables as flattened text). >1 KB guard satisfied.
+- **ZIP-mime** → **415** `{"detail":"PDF preview not available for application/zip"}`.
+- **/pdf.pdf** alias variant → 200 · same body.
+- **?dl=1** → `Content-Disposition: attachment; filename="test.pdf"`.
+- **Bundle** of 2 files → 323 398 b single concatenated PDF · `X-Bundle-Converted: 2`.
+- **System tools status** → all three `installed: false` (expected for Phase A).
+- **Worker → 403** on `POST /admin/install-libreoffice`.
+- Cache collection: 4 rows after the test suite, one per pipeline used.
+
+## Pre-flight
+- `python -m py_compile` ✓ clean.
+- `cd /app/frontend && yarn build` ✓ 19.0 s, no compile errors.
+- `curl /api/health` 200; backend log clean apart from the expected "docx2pdf is not implemented for linux" notice when DOCX hits the fallback.
+- `requirements.txt` updated with `pillow_heif==1.4.0`, `PyPDF2==3.0.1`, `docx2pdf==0.1.8`, `openpyxl==3.1.5`, `python-docx==1.2.0`.
+- `CACHE_VERSION = 'paneltec-v61'` ✓.
+
+## Out of scope this phase (P1 follow-ups)
+- **Document Library row buttons** (View PDF / Download PDF / disabled tooltip) and **PdfPreviewModal** — the backend endpoints are wired and the System page lets admin install the toolchain; the row-level buttons + modal ship in Phase 3.11 (small, isolated frontend work).
+- **Bulk PDF toolbar action** on Workers certs / Renewal Links — needs each page's existing multi-select wired to the bundle endpoint.
+- **Async 202 + job_id polling** for files >5 MB — current conversion is fast enough for the seeded corpus; ship when first user reports a >2 s wait.
+
+---
+
+
 # 2026-02-19 — Phase 3.9c + SWMS-06 ingest
 
 ## Phase 3.9c — Per-worker / per-role / per-company Form Assignments
