@@ -1,6 +1,32 @@
 // Real JWT auth — replaces the Phase 1 localStorage mock.
 import api, { TOKEN_KEY, USER_KEY } from './api';
 
+/**
+ * Read a `next` query param from the current location and return a safe
+ * same-origin relative path. Rejects:
+ *   - absolute URLs (`http://…`, `https://…`)
+ *   - protocol-relative URLs (`//evil.com`)
+ *   - anything not starting with `/`
+ *   - paths starting with `\` (backslash quirks)
+ * Falls back to `defaultPath` ("/app/dashboard") when invalid or absent.
+ */
+export function safeNext(search, defaultPath = '/app/dashboard') {
+  try {
+    const sp = new URLSearchParams(typeof search === 'string' ? search : (search?.toString?.() ?? ''));
+    const raw = sp.get('next');
+    if (!raw) return defaultPath;
+    if (raw.length > 512) return defaultPath;
+    // Disallow absolute / protocol-relative.
+    if (!raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return defaultPath;
+    // Disallow encoded scheme tricks like `/%2F%2Fevil`.
+    const decoded = decodeURIComponent(raw);
+    if (decoded.startsWith('//') || /^[a-z]+:/i.test(decoded.replace(/^\/+/, ''))) return defaultPath;
+    return raw;
+  } catch {
+    return defaultPath;
+  }
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }

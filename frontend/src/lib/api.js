@@ -36,7 +36,10 @@ api.interceptors.response.use(
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-        window.location.assign('/login');
+        // Preserve where the user was so the login screen can send them back.
+        const here = window.location.pathname + window.location.search;
+        const safeHere = here.startsWith('/') && !here.startsWith('//') ? here : '/app/dashboard';
+        window.location.assign(`/login?next=${encodeURIComponent(safeHere)}`);
       }
     }
     return Promise.reject(err);

@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2 } from 'lucide-react';
 import Logo from '../components/brand/Logo';
-import { signup } from '../lib/auth';
+import { signup, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
 
 export default function Signup() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const nextPath = safeNext(location.search);
   const [form, setForm] = useState({ name: '', org_name: '', email: '', password: '' });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -21,7 +23,7 @@ export default function Signup() {
     setBusy(true);
     try {
       await signup(form);
-      navigate('/app/dashboard');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(apiError(err) || 'Could not create account.');
     } finally {

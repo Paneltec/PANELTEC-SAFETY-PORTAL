@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Info, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
-import { login, loginWithSimpro } from '../lib/auth';
+import { login, loginWithSimpro, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const nextPath = safeNext(location.search);
   const [email, setEmail] = useState('demo@paneltec.com');
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
@@ -20,7 +22,7 @@ export default function Login() {
     setBusy(true);
     try {
       await login(email, password);
-      navigate('/app/dashboard');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(apiError(err) || 'Invalid email or password.');
     } finally {
@@ -34,7 +36,7 @@ export default function Login() {
     setBusySimpro(true);
     try {
       await loginWithSimpro(email);
-      navigate('/app/dashboard');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       setError(apiError(err) || 'Could not sign in with Simpro.');
     } finally {

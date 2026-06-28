@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog, Download, Share, Plus, X, Sparkles, Award, BarChart3 } from 'lucide-react';
-import { login } from '../lib/auth';
+import { login, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
 
@@ -9,6 +9,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Cover() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const nextPath = safeNext(location.search);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -43,7 +45,7 @@ export default function Cover() {
         }
       } catch { /* ignore */ }
       await login(em.trim(), pw);
-      navigate('/app/dashboard');
+      navigate(nextPath, { replace: true });
     } catch (err) {
       const msg = apiError(err) || '';
       if (msg.toLowerCase().includes('disabled')) setError(msg);
