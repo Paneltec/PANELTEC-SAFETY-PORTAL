@@ -1,0 +1,32 @@
+{
+  "summary": "Verified bug fix for form submission field metadata persistence on the Heavy Vehicle Daily Check template. All 7 backend tests passed (login, full-metadata submit, GET persistence, config preservation on asset_scan, id+value-only snapshot from template, PDF for new submission, PDF for minimal submission, PDF for legacy submission). The backend now correctly snapshots {id, label, type, value, config?} from the template even when client omits label/type.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_submission_metadata.py",
+    "/app/test_reports/pytest/submission_metadata.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "forms.py create_submission correctly uses tpl_field_by_id snapshot — label/type/config sourced from template, with client fallback for ad-hoc fields. ALLOWED_FIELD_TYPES whitelist applied to type before persistence. Good defensive coding.",
+    "forms_pdf.py uses `f.get('label') or 'Untitled'` and `f.get('type') or 'text'` — graceful for legacy rows lacking metadata. Verified by test_7 (legacy submission PDF renders 200).",
+    "Minor: submission docs persist `template_name_snapshot` and `template_category_snapshot` but not a full `template_version_snapshot`. If the template fields are later edited (label rename), existing submissions retain their original label snapshot (good), but reading PDF for them keeps label as captured. This is correct & intended behavior — flagging for awareness only."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_submission_metadata.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin) — works",
+  "seed_data_creation": "Created 2 new submissions against template be6e01d5-1e98-4d81-bb4a-33fd607f0d20 during testing (one full-metadata, one minimal id+value). Not cleaned up — they serve as regression data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Test file at /app/backend/tests/test_submission_metadata.py is a regression suite for the submission metadata snapshot fix. Re-run with `pytest backend/tests/test_submission_metadata.py -v`. The Heavy Vehicle Daily Check template_id is be6e01d5-1e98-4d81-bb4a-33fd607f0d20. Auth uses POST /api/auth/login returning {access_token}. PDF endpoint is GET /api/forms/submissions/{id}/pdf and was verified to return 200 + application/pdf + %PDF- magic + expected labels present in PDF text (extracted via pdfplumber).",
+  "rca of the issue": "Original bug: create_submission accepted client-supplied label/type but did not look them up from the template, and previous regression caused them to be overwritten with '' and 'text'. Fix at /app/backend/forms.py:575-605 builds `tpl_field_by_id` map from the template's `fields` array and prefers template's label/type/config over client-supplied values (client values used only as fallback). Verified by: (1) test_1 confirms response has correct label/type, (2) test_2 GETs and confirms persisted, (3) test_3 confirms config blob preserved on asset_scan, (4) test_4 confirms minimal client payload still gets full metadata stamped, (5-7) confirm PDF endpoint renders 200 with %PDF- magic for new + legacy submissions and contains real labels in PDF text (e.g. 'Date', 'Vehicle Type')."
+}

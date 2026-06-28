@@ -568,9 +568,24 @@ async def create_submission(template_id: str, body: SubmissionIn,
     )
     if not template:
         raise HTTPException(404, "Template not found")
+    # Snapshot the template fields by id so each answer keeps `{id, label,
+    # type, value, config?}` even if the template is later edited. The client
+    # may send the field metadata, but we always overwrite from the template
+    # snapshot — this is the authoritative source for downstream PDF/exports.
+    tpl_field_by_id = {f.get("id"): f for f in (template.get("fields") or []) if f.get("id")}
     cleaned: list[dict] = []
     for f in body.fields or []:
-        t = f.get("type") if f.get("type") in ALLOWED_FIELD_TYPES else "text"
+        fid = str(f.get("id") or "")
+        tpl_field = tpl_field_by_id.get(fid) or {}
+        # Prefer template-snapshot label/type/config; fall back to whatever the
+        # client supplied (handles ad-hoc fields submitted before the template
+        # caught up).
+        label = str(tpl_field.get("label") or f.get("label") or "")
+        type_raw = tpl_field.get("type") or f.get("type") or "text"
+        t = type_raw if type_raw in ALLOWED_FIELD_TYPES else "text"
+        cfg = tpl_field.get("config") or f.get("config") or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
         v: Any = f.get("value")
         # Photo arrays may be empty at submit-time; they get filled by the
         # subsequent /photos endpoint. Signature is base64 PNG. GPS is a dict.
@@ -579,12 +594,15 @@ async def create_submission(template_id: str, body: SubmissionIn,
                 v = []
             elif not isinstance(v, list):
                 v = []
-        cleaned.append({
-            "id": str(f.get("id") or ""),
-            "label": str(f.get("label") or ""),
+        entry: dict[str, Any] = {
+            "id": fid,
+            "label": label,
             "type": t,
             "value": v,
-        })
+        }
+        if cfg:
+            entry["config"] = cfg
+        cleaned.append(entry)
     doc = {
         "id": new_id(), "org_id": user["org_id"],
         "template_id": template_id,
