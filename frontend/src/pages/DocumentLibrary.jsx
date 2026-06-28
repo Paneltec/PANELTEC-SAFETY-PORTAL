@@ -51,6 +51,89 @@ function humanSize(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// ────────────────────── Subfolder card with edit/delete ──────────────────────
+function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(sf.name);
+  const [busy, setBusy] = useState(false);
+
+  const saveRename = async () => {
+    const next = name.trim();
+    if (!next || next === sf.name) { setRenaming(false); setName(sf.name); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/document-library/folders/${sf.id}`, { name: next });
+      sf.name = next;
+      toast.success('Folder renamed');
+      setRenaming(false);
+      onChanged?.();
+    } catch (e) { toast.error(apiError(e)); setName(sf.name); }
+    finally { setBusy(false); }
+  };
+
+  const handleDelete = async (e) => {
+    e.stopPropagation();
+    const fileLine = sf.file_count
+      ? `\n\nThis will also delete the ${sf.file_count} file${sf.file_count === 1 ? '' : 's'} inside it.`
+      : '';
+    if (!window.confirm(`Delete folder "${sf.name}"?${fileLine}`)) return;
+    setBusy(true);
+    try {
+      await api.delete(`/document-library/folders/${sf.id}`);
+      toast.success(`Deleted "${sf.name}"`);
+      onChanged?.();
+    } catch (err) { toast.error(apiError(err)); }
+    finally { setBusy(false); }
+  };
+
+  if (renaming) {
+    return (
+      <div className="p-3 bg-white border border-[#b9d2ec] rounded-xl" data-testid={`subfolder-rename-${sf.id}`}>
+        <input autoFocus value={name} maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={saveRename}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+            else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); setName(sf.name); }
+          }}
+          data-testid={`subfolder-rename-input-${sf.id}`}
+          className="w-full px-2 py-1.5 text-sm font-semibold border border-slate-300 rounded bg-white" />
+        <div className="text-[10px] text-slate-500 mt-1">Press Enter to save · Esc to cancel</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-brand-blue/40 hover:bg-brand-blue-soft/20 rounded-xl transition"
+      data-testid={`subfolder-${sf.id}`}>
+      <button onClick={onOpen} disabled={busy}
+        className="flex items-center gap-3 flex-1 min-w-0 text-left disabled:opacity-60">
+        <div className="rounded-lg bg-[#e6eff9] p-2.5 shrink-0"><FolderOpen size={16} className="text-[#1e4a8c]" /></div>
+        <div className="min-w-0 flex-1 pr-12">
+          <div className="text-sm font-semibold text-slate-900 truncate">{sf.name}</div>
+          <div className="text-[11px] text-slate-500 mt-0.5">{sf.file_count} {sf.file_count === 1 ? 'file' : 'files'}</div>
+        </div>
+      </button>
+      {canEdit && !sf.is_system && (
+        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button onClick={(e) => { e.stopPropagation(); setRenaming(true); }} disabled={busy}
+            data-testid={`subfolder-rename-${sf.id}`}
+            title="Rename folder" aria-label="Rename folder"
+            className="w-7 h-7 rounded-md bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200 flex items-center justify-center">
+            <Pencil size={11} />
+          </button>
+          <button onClick={handleDelete} disabled={busy}
+            data-testid={`subfolder-delete-${sf.id}`}
+            title="Delete folder" aria-label="Delete folder"
+            className="w-7 h-7 rounded-md bg-white text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 flex items-center justify-center">
+            <Trash2 size={11} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ────────────────────── Folder list page ──────────────────────
 
 export default function DocumentLibrary() {
@@ -537,15 +620,9 @@ export function DocumentLibraryFolder() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
             {subfolders.map((sf) => (
-              <button key={sf.id} onClick={() => navigate(`/app/document-library/${sf.id}`)}
-                data-testid={`subfolder-${sf.id}`}
-                className="flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-brand-blue/40 hover:bg-brand-blue-soft/20 rounded-xl text-left transition">
-                <div className="rounded-lg bg-[#e6eff9] p-2.5 shrink-0"><FolderOpen size={16} className="text-[#1e4a8c]" /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-900 truncate">{sf.name}</div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">{sf.file_count} {sf.file_count === 1 ? 'file' : 'files'}</div>
-                </div>
-              </button>
+              <SubfolderCard key={sf.id} sf={sf} canEdit={canEdit}
+                onOpen={() => navigate(`/app/document-library/${sf.id}`)}
+                onChanged={loadFolder} />
             ))}
           </div>
         </div>

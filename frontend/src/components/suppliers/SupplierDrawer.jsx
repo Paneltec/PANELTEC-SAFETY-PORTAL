@@ -481,6 +481,88 @@ export default function SupplierDrawer({ supplier, initialPanel, onClose, onChan
   );
 }
 
+// FolderCard — supplier folder with hover-revealed rename + delete affordances.
+function FolderCard({ folder, canEdit, onOpen, onRenamed, onDeleted }) {
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(folder.name);
+  const [busy, setBusy] = useState(false);
+
+  const saveRename = async () => {
+    const next = name.trim();
+    if (!next || next === folder.name) { setRenaming(false); setName(folder.name); return; }
+    setBusy(true);
+    try {
+      await api.patch(`/document-library/folders/${folder.id}`, { name: next });
+      toast.success('Folder renamed');
+      setRenaming(false);
+      onRenamed?.({ ...folder, name: next });
+    } catch (e) { toast.error(apiError(e)); setName(folder.name); }
+    finally { setBusy(false); }
+  };
+
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+    else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); setName(folder.name); }
+  };
+
+  const handleDelete = async () => {
+    const fileLine = folder.file_count
+      ? `\n\nThis will also delete the ${folder.file_count} file${folder.file_count === 1 ? '' : 's'} inside it.`
+      : '';
+    if (!window.confirm(`Delete folder "${folder.name}"?${fileLine}`)) return;
+    setBusy(true);
+    try {
+      await api.delete(`/document-library/folders/${folder.id}`);
+      toast.success(`Deleted "${folder.name}"`);
+      onDeleted?.(folder);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  if (renaming) {
+    return (
+      <div className="rounded-lg border border-[#c8bce0] bg-[#ece6f4]/60 p-3" data-testid={`supplier-folder-rename-${folder.id}`}>
+        <input autoFocus value={name} maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={onKey}
+          onBlur={saveRename}
+          data-testid={`folder-rename-input-${folder.id}`}
+          className="w-full px-2 py-1.5 text-xs font-semibold border border-slate-300 rounded bg-white" />
+        <div className="text-[10px] text-slate-500 mt-1">Press Enter to save · Esc to cancel</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative rounded-lg border border-slate-200 bg-[#ece6f4]/40 hover:shadow-sm transition-shadow"
+      data-testid={`supplier-folder-${folder.id}`}>
+      <button onClick={() => onOpen(folder)} disabled={busy}
+        data-testid={`supplier-folder-open-${folder.id}`}
+        className="w-full p-3 text-left disabled:opacity-60">
+        <FolderOpen size={20} className="text-[#4f3a8c] mb-1.5" />
+        <div className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug min-h-[2.25rem] pr-12">{folder.name}</div>
+        <div className="text-[10px] text-slate-500 mt-1">{folder.file_count} file{folder.file_count === 1 ? '' : 's'}</div>
+      </button>
+      {canEdit && !folder.is_system && (
+        <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+          <button onClick={(e) => { e.stopPropagation(); setRenaming(true); }} disabled={busy}
+            data-testid={`folder-rename-${folder.id}`}
+            title="Rename folder" aria-label="Rename folder"
+            className="w-7 h-7 rounded-md bg-white/80 backdrop-blur text-slate-600 hover:text-slate-900 hover:bg-white border border-slate-200 flex items-center justify-center">
+            <Pencil size={11} />
+          </button>
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} disabled={busy}
+            data-testid={`folder-delete-${folder.id}`}
+            title="Delete folder" aria-label="Delete folder"
+            className="w-7 h-7 rounded-md bg-white/80 backdrop-blur text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 flex items-center justify-center">
+            <Trash2 size={11} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ────────────────────── Folders panel + file sub-view ──────────────────────
 function FoldersPanel({ supplierId, canEdit, onChanged }) {
   const [folders, setFolders] = useState([]);
@@ -550,12 +632,10 @@ function FoldersPanel({ supplierId, canEdit, onChanged }) {
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {folders.map((f) => (
-            <button key={f.id} onClick={() => setOpenFolder(f)} data-testid={`supplier-folder-${f.id}`}
-              className="rounded-lg border border-slate-200 bg-[#ece6f4]/40 hover:shadow-sm p-3 text-left transition-shadow">
-              <FolderOpen size={20} className="text-[#4f3a8c] mb-1.5" />
-              <div className="text-xs font-semibold text-slate-900 line-clamp-2 leading-snug min-h-[2.25rem]">{f.name}</div>
-              <div className="text-[10px] text-slate-500 mt-1">{f.file_count} file{f.file_count === 1 ? '' : 's'}</div>
-            </button>
+            <FolderCard key={f.id} folder={f} canEdit={canEdit}
+              onOpen={() => setOpenFolder(f)}
+              onRenamed={(next) => { setFolders((prev) => prev.map((x) => (x.id === next.id ? { ...x, name: next.name } : x))); onChanged?.(); }}
+              onDeleted={() => { load(); onChanged?.(); }} />
           ))}
         </div>
       )}
@@ -567,6 +647,8 @@ function FolderFiles({ folder, canEdit, onBack }) {
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(folder.name);
   const fileInputRef = React.useRef(null);
 
   const load = async () => {
@@ -578,6 +660,29 @@ function FolderFiles({ folder, canEdit, onBack }) {
     finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [folder.id]);
+
+  const saveRename = async () => {
+    const next = name.trim();
+    if (!next || next === folder.name) { setRenaming(false); setName(folder.name); return; }
+    try {
+      await api.patch(`/document-library/folders/${folder.id}`, { name: next });
+      folder.name = next; // mutate so the back-button list refresh shows new name
+      toast.success('Folder renamed');
+      setRenaming(false);
+    } catch (e) { toast.error(apiError(e)); setName(folder.name); }
+  };
+
+  const deleteFolder = async () => {
+    const fileLine = files.length
+      ? `\n\nThis will also delete the ${files.length} file${files.length === 1 ? '' : 's'} inside it.`
+      : '';
+    if (!window.confirm(`Delete folder "${folder.name}"?${fileLine}`)) return;
+    try {
+      await api.delete(`/document-library/folders/${folder.id}`);
+      toast.success(`Deleted "${folder.name}"`);
+      onBack();
+    } catch (e) { toast.error(apiError(e)); }
+  };
 
   const upload = async (fileList) => {
     if (!fileList?.length) return;
@@ -623,7 +728,35 @@ function FolderFiles({ folder, canEdit, onBack }) {
           </>
         )}
       </div>
-      <div className="text-sm font-display font-semibold text-slate-900">{folder.name}</div>
+      <div className="flex items-center gap-2">
+        {renaming ? (
+          <input autoFocus value={name} maxLength={80}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={saveRename}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') { e.preventDefault(); saveRename(); }
+              else if (e.key === 'Escape') { e.preventDefault(); setRenaming(false); setName(folder.name); }
+            }}
+            data-testid="folder-rename-input"
+            className="flex-1 px-2 py-1.5 text-sm font-display font-semibold text-slate-900 border border-slate-300 rounded bg-white" />
+        ) : (
+          <div className="text-sm font-display font-semibold text-slate-900 flex-1">{folder.name}</div>
+        )}
+        {canEdit && !renaming && !folder.is_system && (
+          <>
+            <button onClick={() => setRenaming(true)} data-testid="folder-header-rename"
+              title="Rename folder" aria-label="Rename folder"
+              className="p-1.5 rounded text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+              <Pencil size={12} />
+            </button>
+            <button onClick={deleteFolder} data-testid="folder-header-delete"
+              title="Delete folder" aria-label="Delete folder"
+              className="p-1.5 rounded text-rose-600 hover:text-rose-700 hover:bg-rose-50">
+              <Trash2 size={12} />
+            </button>
+          </>
+        )}
+      </div>
       {loading ? (
         <div className="text-xs text-slate-500"><Loader2 size={12} className="inline animate-spin" /> Loading…</div>
       ) : files.length === 0 ? (

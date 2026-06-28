@@ -280,3 +280,33 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 - Curl: admin POST + PATCH ✓; worker POST 403 + PATCH 403; admin DELETE 204.
 - UI screenshots (1440×900): empty builder with live preview (date + radio Yes/No/N/A both rendering in preview), edit builder populated from Vehicle Pre-Use Inspection (18 fields visible + live preview), Dashboard with Capture column header.
 - Lint clean.
+
+
+# 2026-06-28 — Supplier + Document Library folder edit/delete (shipped)
+- **SupplierDrawer**: per-folder card now has hover-revealed Pencil (rename) + Trash (delete) icons (admin/hseq_lead only). New `FolderCard` component supports inline rename (text input replaces the card, Enter saves / Esc cancels, blur also saves) and confirm-dialog delete with a warning when the folder has files. Calls `PATCH /api/document-library/folders/{id}` and `DELETE /api/document-library/folders/{id}` (existing endpoints — cascade soft-deletes files in `delete_folder`).
+- **FolderFiles header**: same rename + delete affordances next to the folder title when an admin opens a folder to view its files. Delete returns the user to the folder list and refreshes counts.
+- **DocumentLibrary subfolder cards** (per-worker Cert subfolders + any nested folders): hover-revealed rename + delete on each subfolder tile via new `SubfolderCard` component, mirroring the supplier pattern. Both fall back to the existing PATCH/DELETE endpoints, preserving the cascade-soft-delete-files behaviour.
+- Worker role gets `403` on PATCH/DELETE per backend; UI hides the icons for non-admins so workers never see the affordance.
+- SW bumped to `paneltec-v33`.
+
+## Verified (this turn)
+- Curl: create supplier folder (201), PATCH rename (200), upload file (1 saved), DELETE folder (204 cascade), list-after-delete (404), worker PATCH 403, worker DELETE 403.
+- UI screenshots: default supplier folders panel, hover-revealed pencil+trash, inline rename input with helper text. The FolderFiles header rename/delete is wired but wasn't separately screenshotted (the existing folder selector changed when rename mode swapped the open button).
+
+
+# 2026-06-28 — Renewal Links: edit + role gating (shipped)
+- **Backend `renewals.py`**:
+  - New `PATCH /api/renewals/{id}` — admin/hseq_lead only. Editable fields: contractor_id, doc_types_requested, subject, message, expires_at. **Public token is preserved** so the contractor's existing link keeps working. Rejects edits on `used` submissions (409). If `expires_at` is extended past now and the link was `expired`, it auto-flips back to `pending`.
+  - Added `subject` + `message` fields to `RenewalCreate` and the persisted document (used as the default email subject/body when re-emailing the link).
+  - Role gate (`admin` + `hseq_lead`) added to `POST /` (create), `POST /{id}/revoke`, `DELETE /{id}`. Workers get 403.
+  - DELETE now also flips status to `revoked` alongside the soft-delete, so any cached token immediately stops working at the public endpoint.
+- **Frontend `Renewals.jsx`** rewrite:
+  - New `EditRenewalDialog` invoked by a Pencil icon on every editable row (admin/hseq_lead only). Lets the admin change contractor, subject/title, doc types, custom message, and expiry date. PATCHes the link and refreshes the table.
+  - Table columns updated: "Subject / Docs" replaces "Docs requested" (subject bold, docs underneath).
+  - Create modal also gains Subject + Custom message fields.
+  - Non-admin/HSEQ users no longer see Create / Edit / Revoke / Delete buttons (UI gate matches backend).
+- **SW** bumped to `paneltec-v34`.
+
+## Verified
+- Curl: admin PATCH (subject/message/doc_types/expires_at) returns 200 with new fields + unchanged token; worker PATCH 403; worker DELETE 403; worker revoke 403; admin DELETE 200 cleanup.
+- UI screenshots: renewals table with new Subject/Docs column + pencil/trash icons; edit modal open with all 5 editable fields populated.

@@ -1,25 +1,31 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Copy, X } from 'lucide-react';
+import { Copy, Pencil, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import { getUser } from '../lib/auth';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'], ['workers_comp', 'Workers comp'],
   ['white_card', 'White card'], ['sw_license', 'SafeWork licence'],
   ['induction', 'Induction'], ['other', 'Other'],
 ];
+const DOC_TYPE_LABEL = Object.fromEntries(DOC_TYPES);
+
+const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 export default function Renewals() {
+  const user = getUser();
+  const canEdit = WRITE_ROLES.has(user?.role);
   const [items, setItems] = useState([]);
   const [contractors, setContractors] = useState([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ contractor_id: '', doc_types_requested: [], expires_in_days: 14 });
+  const [form, setForm] = useState({ contractor_id: '', doc_types_requested: [], expires_in_days: 14, subject: '', message: '' });
   const [created, setCreated] = useState(null);
+  const [editing, setEditing] = useState(null);
 
   const load = () => api.get('/renewals').then((r) => setItems(r.data));
   useEffect(() => { load(); api.get('/contractors').then((r) => setContractors(r.data)); }, []);
@@ -42,38 +48,58 @@ export default function Renewals() {
     <div className="max-w-6xl mx-auto" data-testid="renewals-list">
       <PageHeader crumb="Compliance / Renewal Links" title="Renewal Links"
         subtitle="Single-use links contractors can use to upload renewed documents without a login."
-        action={<button onClick={() => { setOpen(true); setCreated(null); }} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600" data-testid="renewal-create-btn">+ Create renewal link</button>} />
+        action={canEdit && <button onClick={() => { setOpen(true); setCreated(null); setForm({ contractor_id: '', doc_types_requested: [], expires_in_days: 14, subject: '', message: '' }); }} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600" data-testid="renewal-create-btn">+ Create renewal link</button>} />
 
       {items.length === 0 ? <EmptyState title="No renewal links yet" body="Create a link and send it to a contractor." />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Contractor</th><th className="text-left px-4 py-3">Docs requested</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Expires</th><th className="text-left px-4 py-3"></th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Contractor</th><th className="text-left px-4 py-3">Subject / Docs</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Expires</th><th className="text-left px-4 py-3"></th></tr></thead>
             <tbody>
               {items.map((r) => (
                 <tr key={r.id} className="border-t border-slate-100" data-testid={`renewal-row-${r.id}`}>
                   <td className="px-4 py-3 font-medium">{r.contractor_name}</td>
-                  <td className="px-4 py-3 text-slate-600 text-xs">{(r.doc_types_requested || []).join(' · ')}</td>
+                  <td className="px-4 py-3 text-slate-600 text-xs">
+                    {r.subject && <div className="font-semibold text-slate-700 mb-0.5">{r.subject}</div>}
+                    <div className="text-slate-500">{(r.doc_types_requested || []).map((t) => DOC_TYPE_LABEL[t] || t).join(' · ')}</div>
+                  </td>
                   <td className="px-4 py-3"><StatusBadge value={r.status} /></td>
                   <td className="px-4 py-3 text-slate-500 text-xs">{(r.expires_at || '').slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">
-                    {r.status === 'pending' && (
-                      <div className="inline-flex gap-1 items-center">
-                        <EmailButton
-                          resourceKind="renewals"
-                          recordId={r.id}
-                          subject={`Document Renewal Request — Paneltec Civil`}
-                          body={`Hi ${r.contractor_name},\n\nPlease re-submit the following document(s) via the secure link below:\n${(r.doc_types_requested || []).join(', ')}\n\nThe link expires on ${(r.expires_at || '').slice(0, 10)}.\n\nThanks,\nPaneltec Civil`}
-                          recipients={r.contractor_email ? [r.contractor_email] : []}
-                          variant="primary"
-                          size="sm"
-                          label="Email link"
-                        />
-                        <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy size={12} /> Copy</button>
+                    <div className="inline-flex gap-1 items-center">
+                      {r.status === 'pending' && (
+                        <>
+                          <EmailButton
+                            resourceKind="renewals"
+                            recordId={r.id}
+                            subject={r.subject || `Document Renewal Request — Paneltec Civil`}
+                            body={r.message || `Hi ${r.contractor_name},\n\nPlease re-submit the following document(s) via the secure link below:\n${(r.doc_types_requested || []).map((t) => DOC_TYPE_LABEL[t] || t).join(', ')}\n\nThe link expires on ${(r.expires_at || '').slice(0, 10)}.\n\nThanks,\nPaneltec Civil`}
+                            recipients={r.contractor_email ? [r.contractor_email] : []}
+                            variant="primary"
+                            size="sm"
+                            label="Email link"
+                          />
+                          <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy size={12} /> Copy</button>
+                        </>
+                      )}
+                      {canEdit && r.status !== 'used' && (
+                        <button onClick={() => setEditing({
+                          ...r,
+                          expires_date: (r.expires_at || '').slice(0, 10),
+                        })}
+                          data-testid={`renewal-edit-${r.id}`}
+                          title="Edit renewal link"
+                          className="p-1.5 rounded text-[#1e4a8c] bg-[#e6eff9] hover:bg-[#d8e6f4]">
+                          <Pencil size={12} />
+                        </button>
+                      )}
+                      {canEdit && r.status === 'pending' && (
                         <button onClick={() => revoke(r.id)} className="px-2 py-1 text-xs rounded border border-red-200 text-red-700 hover:bg-red-50 inline-flex items-center gap-1" data-testid={`revoke-${r.id}`}><X size={12} /> Revoke</button>
+                      )}
+                      {canEdit && (
                         <DeleteRecordButton resourceKind="renewals" apiPath="renewals" recordId={r.id} label="Renewal link" recordTitle={r.contractor_name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -96,6 +122,9 @@ export default function Renewals() {
                   {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </Field>
+              <Field label="Subject / title">
+                <input type="text" className={inputClass} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Annual COI renewal" data-testid="renewal-subject" />
+              </Field>
               <Field label="Documents requested" required>
                 <div className="grid grid-cols-2 gap-1 mt-1">
                   {DOC_TYPES.map(([k, l]) => (
@@ -104,6 +133,9 @@ export default function Renewals() {
                     </label>
                   ))}
                 </div>
+              </Field>
+              <Field label="Custom message">
+                <textarea rows={3} className={inputClass} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} placeholder="Optional — overrides the default email body" data-testid="renewal-message" />
               </Field>
               <Field label="Expires in (days)"><input type="number" min={1} max={90} className={inputClass} value={form.expires_in_days} onChange={(e) => setForm({ ...form, expires_in_days: Number(e.target.value) })} /></Field>
             </div>
@@ -121,6 +153,90 @@ export default function Renewals() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EditRenewalDialog open={!!editing} record={editing} contractors={contractors}
+        onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
     </div>
+  );
+}
+
+function EditRenewalDialog({ open, record, contractors, onClose, onSaved }) {
+  const [form, setForm] = useState({ contractor_id: '', doc_types_requested: [], subject: '', message: '', expires_date: '' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!record) return;
+    setForm({
+      contractor_id: record.contractor_id || '',
+      doc_types_requested: [...(record.doc_types_requested || [])],
+      subject: record.subject || '',
+      message: record.message || '',
+      expires_date: record.expires_date || (record.expires_at || '').slice(0, 10),
+    });
+  }, [record]);
+
+  const toggleType = (t) => setForm((f) => ({ ...f, doc_types_requested: f.doc_types_requested.includes(t) ? f.doc_types_requested.filter((x) => x !== t) : [...f.doc_types_requested, t] }));
+
+  const save = async () => {
+    if (!form.contractor_id || form.doc_types_requested.length === 0) { toast.error('Pick contractor + at least one doc type'); return; }
+    setSaving(true);
+    try {
+      // Convert local date back to ISO at end-of-day UTC so the existing link still
+      // works through the chosen day.
+      const expires_at = form.expires_date ? `${form.expires_date}T23:59:59Z` : undefined;
+      await api.patch(`/renewals/${record.id}`, {
+        contractor_id: form.contractor_id,
+        doc_types_requested: form.doc_types_requested,
+        subject: form.subject,
+        message: form.message,
+        ...(expires_at ? { expires_at } : {}),
+      });
+      toast.success('Renewal link updated');
+      onSaved?.();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent data-testid="renewal-edit-modal">
+        <DialogHeader>
+          <DialogTitle className="font-display">Edit renewal link</DialogTitle>
+          <DialogDescription>The public token stays the same — only the displayed info changes.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <Field label="Contractor" required>
+            <select className={inputClass} value={form.contractor_id} onChange={(e) => setForm({ ...form, contractor_id: e.target.value })} data-testid="renewal-edit-contractor">
+              <option value="">Select…</option>
+              {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </Field>
+          <Field label="Subject / title">
+            <input type="text" className={inputClass} value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Annual COI renewal" data-testid="renewal-edit-subject" />
+          </Field>
+          <Field label="Documents requested" required>
+            <div className="grid grid-cols-2 gap-1 mt-1">
+              {DOC_TYPES.map(([k, l]) => (
+                <label key={k} className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.doc_types_requested.includes(k)} onChange={() => toggleType(k)} data-testid={`renewal-edit-doc-${k}`} /> {l}
+                </label>
+              ))}
+            </div>
+          </Field>
+          <Field label="Custom message">
+            <textarea rows={3} className={inputClass} value={form.message} onChange={(e) => setForm({ ...form, message: e.target.value })} data-testid="renewal-edit-message" />
+          </Field>
+          <Field label="Expires on">
+            <input type="date" className={inputClass} value={form.expires_date} onChange={(e) => setForm({ ...form, expires_date: e.target.value })} data-testid="renewal-edit-expires" />
+          </Field>
+        </div>
+        <DialogFooter>
+          <GhostButton onClick={onClose}>Cancel</GhostButton>
+          <PrimaryButton onClick={save} disabled={saving} testid="renewal-edit-save">
+            {saving ? 'Saving…' : 'Save changes'}
+          </PrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
