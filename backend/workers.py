@@ -273,5 +273,10 @@ async def sync_from_simpro(body: SyncRequest, user: dict = Depends(get_current_u
         else:
             skipped += 1
 
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+        {"$set": {"last_synced_at.employees": now_iso(), "updated_at": now_iso()}},
+    )
     return {"ok": True, "created": created, "updated": updated, "skipped": skipped,
-            "total": len(employees), "company": body.company}
+            "total": len(employees), "company": body.company,
+            "synced_at": now_iso()}

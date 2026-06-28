@@ -510,6 +510,8 @@ export default function SimproAdmin() {
         </div>
       </AdminCard>
 
+      <SimproSyncCard connected={connected} />
+
       <StaffPreview
         configKey={JSON.stringify({
           companies: s.company_ids,
@@ -622,4 +624,100 @@ function StaffPreview({ configKey, companyIds }) {
 
 function _SimproAdminEnd() {
   return null;
+}
+
+// ────────────── Sync now card (Customers / Vendors / Employees / Sites) ──────────────
+
+function relTime(iso) {
+  if (!iso) return 'never';
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const mins = Math.round(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins} min ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs} h ago`;
+    return `${Math.round(hrs / 24)} d ago`;
+  } catch { return iso; }
+}
+
+function SimproSyncCard({ connected }) {
+  const [lastSynced, setLastSynced] = React.useState({});
+  const [busy, setBusy] = React.useState({});
+  const [counts, setCounts] = React.useState({});
+
+  const refresh = React.useCallback(async () => {
+    try {
+      const { data } = await api.get('/integrations/simpro/last-synced');
+      setLastSynced(data?.last_synced_at || {});
+    } catch { /* keep silent — connection card already surfaces errors */ }
+  }, []);
+  React.useEffect(() => { refresh(); }, [refresh]);
+
+  const doSync = async (kind, label, url, post = true) => {
+    setBusy((b) => ({ ...b, [kind]: true }));
+    try {
+      const { data } = post ? await api.post(url, kind === 'employees' ? { company: 'both' } : {}) : await api.get(url);
+      const n = data?.total ?? data?.count ?? data?.updated ?? 0;
+      const verb = kind === 'sites' ? 'sites'
+        : kind === 'employees' ? 'employees'
+        : kind === 'vendors' ? 'vendors'
+        : 'customers';
+      const withCoords = data?.with_coords;
+      toast.success(`Synced ${n} ${verb} from Simpro${
+        withCoords != null ? ` · ${withCoords} with coords` : ''}`);
+      setCounts((c) => ({ ...c, [kind]: { n, withCoords } }));
+      refresh();
+    } catch (e) {
+      toast.error(`${label} sync failed — ${e?.response?.data?.detail || e.message}`);
+    } finally {
+      setBusy((b) => ({ ...b, [kind]: false }));
+    }
+  };
+
+  const Row = ({ kind, label, hint, url, post }) => (
+    <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200 bg-white"
+      data-testid={`simpro-sync-row-${kind}`}>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold text-slate-900">{label}</div>
+        <div className="text-[11px] text-slate-500">
+          Last synced: <span data-testid={`simpro-last-${kind}`}>{relTime(lastSynced[kind])}</span>
+          {counts[kind] && (
+            <span className="ml-1 text-emerald-700"> · {counts[kind].n} {counts[kind].withCoords != null ? `(${counts[kind].withCoords} with coords)` : ''}</span>
+          )}
+          <span className="ml-1 text-slate-400">· {hint}</span>
+        </div>
+      </div>
+      <button type="button" disabled={!connected || busy[kind]}
+        onClick={() => doSync(kind, label, url, post)}
+        data-testid={`simpro-sync-${kind}`}
+        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-white text-xs font-semibold uppercase tracking-[0.1em] disabled:opacity-50"
+        style={{ backgroundColor: '#2C6BFF' }}>
+        {busy[kind] ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+        Sync now
+      </button>
+    </div>
+  );
+
+  return (
+    <AdminCard
+      title={<>Resources <span className="text-slate-400 mx-2">·</span> Sync now</>}
+      subtitle="One-tap pulls of the four Simpro resources surfaced inside form pickers. Last-synced times persist per organisation.">
+      <div className="grid gap-2.5">
+        <Row kind="customers" label="Customers" hint="Used by Customer pickers"
+          url="/integrations/simpro/sync-customers" post />
+        <Row kind="vendors" label="Vendors" hint="Used by Supplier pickers"
+          url="/integrations/simpro/suppliers/sync" post />
+        <Row kind="employees" label="Employees" hint="Used by Worker pickers"
+          url="/workers/sync-from-simpro" post />
+        <Row kind="sites" label="Sites" hint="Used by Site pickers (with coords)"
+          url="/integrations/simpro/sync-sites" post />
+      </div>
+      {!connected && (
+        <p className="text-xs text-amber-700 mt-3 flex items-center gap-1.5">
+          <AlertCircle size={12} /> Connect Simpro above before running a sync.
+        </p>
+      )}
+    </AdminCard>
+  );
 }

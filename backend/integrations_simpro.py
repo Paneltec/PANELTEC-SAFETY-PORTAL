@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import require_roles, get_current_user
 from db import db
 from models import now_iso, new_id
@@ -680,6 +680,7 @@ async def simpro_suppliers_sync(user: dict = Depends(require_roles("admin", "hse
         {"org_id": user["org_id"], "kind": "simpro"},
         {"$set": {"suppliers_cache": suppliers[:2000],
                   "suppliers_cached_at": now_iso(),
+                  "last_synced_at.vendors": now_iso(),
                   "updated_at": now_iso()}},
     )
     return {"ok": True, "count": len(suppliers), "synced_at": now_iso()}
@@ -752,7 +753,8 @@ def _normalise_site(raw: dict, customer_id: str, company_id: str) -> dict:
 
 
 @router.post("/sync-sites")
-async def simpro_sync_sites(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_sync_sites(limit: int = Query(50, ge=1, le=500),
+                            user: dict = Depends(require_roles("admin", "hseq_lead"))):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
@@ -761,22 +763,33 @@ async def simpro_sync_sites(user: dict = Depends(require_roles("admin", "hseq_le
     token = cfg["api_token"]
     base = cfg["api_base_url"].rstrip("/")
 
-    # Customers present in our jobs cache for this org.
-    distinct_names = await db.simpro_jobs.distinct("customer_name", {"org_id": user["org_id"]})
-    distinct_names = [n for n in distinct_names if n]
+    distinct_names = [n for n in await db.simpro_jobs.distinct(
+        "customer_name", {"org_id": user["org_id"]}) if n]
+    cust_cache = (doc.get("customers_cache") or [])
     customer_lookup: dict[str, list[tuple[str, str]]] = {}
-    for c in (doc.get("customers_cache") or []):
+    for c in cust_cache:
         n = (c.get("name") or "").strip().lower()
         if not n:
             continue
         customer_lookup.setdefault(n, []).append(
             (c.get("simpro_customer_id"), c.get("simpro_company_id")))
-    targets: list[tuple[str, str]] = []  # (company_id, customer_id)
-    for name in distinct_names:
-        for cust_id, comp_id in customer_lookup.get(name.lower(), []):
-            if cust_id:
-                targets.append((comp_id, cust_id))
-    targets = list({(c, cust): None for c, cust in targets}.keys())  # dedupe
+    targets: list[tuple[str, str]] = []
+    if distinct_names:
+        for name in distinct_names:
+            for cust_id, comp_id in customer_lookup.get(name.lower(), []):
+                if cust_id:
+                    targets.append((comp_id, cust_id))
+    else:
+        # Jobs collection has no customer_name → fall back to walking the
+        # whole cache, capped at `limit` to keep the first run cheap.
+        for c in cust_cache:
+            cid = c.get("simpro_customer_id")
+            comp = c.get("simpro_company_id")
+            if cid and comp and c.get("active", True):
+                targets.append((comp, cid))
+            if len(targets) >= limit:
+                break
+    targets = list({(c, cust): None for c, cust in targets}.keys())
 
     total = 0
     with_coords = 0
@@ -818,6 +831,17 @@ async def simpro_sync_sites(user: dict = Depends(require_roles("admin", "hseq_le
 
 # Lightweight wrappers so the UI has a single endpoint per sync kind that also
 # stamps `integration_configs.last_synced_at`.
+
+@router.get("/last-synced")
+async def simpro_last_synced(user: dict = Depends(get_current_user)):
+    """Per-resource `last_synced_at` map for the Simpro card UI."""
+    doc = await db.integration_configs.find_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+        {"_id": 0, "last_synced_at": 1, "status": 1},
+    )
+    return {"last_synced_at": (doc or {}).get("last_synced_at") or {},
+            "connected": bool(doc and doc.get("status") == "connected")}
+
 
 @router.post("/sync-customers")
 async def simpro_sync_customers(user: dict = Depends(require_roles("admin", "hseq_lead"))):
