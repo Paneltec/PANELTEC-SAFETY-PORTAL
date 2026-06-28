@@ -2,7 +2,7 @@
 // Page header with 4-button toolbar, redesigned template cards with action
 // icons + Preview/Fill buttons, AI-builder modal, redesigned Fill-Out modal
 // with coloured Yes/No/N-A radios + orange Submit, and Preview modal.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 import {
@@ -426,10 +426,45 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
 
 // ─────────────── Fill-Out modal ───────────────
 
+// Shape-aware validator. Re-exported here for legacy imports — canonical
+// implementation lives in `src/lib/isAnswerValid.js` (so the unit-test suite
+// can import it without dragging in this whole page module).
+import { isAnswerValid } from '../lib/isAnswerValid';
+export { isAnswerValid };
+
+function _draftKey(template, userId) {
+  return `paneltec.draft.${template.id}.${userId || 'anon'}`;
+}
+
+function _readDraft(template, userId) {
+  try {
+    const raw = localStorage.getItem(_draftKey(template, userId));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d?.savedAt) return null;
+    if (Date.now() - d.savedAt > 7 * 86400 * 1000) {
+      localStorage.removeItem(_draftKey(template, userId));
+      return null;
+    }
+    return d;
+  } catch { return null; }
+}
+
 function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
+  const userId = (() => {
+    try { return JSON.parse(localStorage.getItem('paneltec.user') || 'null')?.id; }
+    catch { return null; }
+  })();
+  const draftKey = _draftKey(template, userId);
+  const existingDraft = useMemo(() => _readDraft(template, userId), [template.id, userId]);
+  const [draftBanner, setDraftBanner] = useState(!!existingDraft);
+  const [dirty, setDirty] = useState(false);
+  const [touched, setTouched] = useState({});
+  const [confirmClose, setConfirmClose] = useState(false);
+  const firstMissingRef = useRef(null);
+
   const [values, setValues] = useState(() => {
     const base = { ...(initialValues || {}) };
-    // Default any empty date field to today (YYYY-MM-DD in local TZ).
     const today = new Date();
     const isoDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     (template.fields || []).forEach((f) => {
@@ -442,6 +477,38 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
   const [progress, setProgress] = useState('');
   const [lockedFields, setLockedFields] = useState({});
 
+  // Draft auto-save (debounced 800ms).
+  useEffect(() => {
+    if (!dirty) return;
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(draftKey, JSON.stringify({
+          values, savedAt: Date.now(),
+        }));
+      } catch { /* quota exceeded — fail silent */ }
+    }, 800);
+    return () => clearTimeout(t);
+  }, [values, dirty, draftKey]);
+
+  // beforeunload guard while dirty.
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  // ESC -> confirm if dirty.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (dirty) { e.stopPropagation(); setConfirmClose(true); }
+      else onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [dirty, onClose]);
+
   // Apply autofill values pushed by an `asset_scan` field elsewhere on the
   // template. The runner dispatches `paneltec:asset-autofill` on commit.
   useEffect(() => {
@@ -450,24 +517,47 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
       if (!auto) return;
       setValues((prev) => ({ ...prev, ...auto }));
       setLockedFields((p) => ({ ...p, ...Object.fromEntries(Object.keys(auto).map((k) => [k, sourceFieldId])) }));
+      setDirty(true);
     };
     window.addEventListener('paneltec:asset-autofill', handler);
     return () => window.removeEventListener('paneltec:asset-autofill', handler);
   }, []);
 
-  // Unlock an autofilled field so the worker can override the prefill.
   const overrideField = (fid) =>
     setLockedFields((p) => { const next = { ...p }; delete next[fid]; return next; });
 
-  const requiredOk = (template.fields || []).every((f) => {
-    if (!f.required) return true;
-    if (f.type === 'photo') return (photoFiles[f.id] || []).length > 0;
-    if (f.type === 'signature') return !!values[f.id];
-    if (f.type === 'gps') return !!values[f.id];
-    return values[f.id] && String(values[f.id]).trim();
-  });
+  const setField = useCallback((fid, v) => {
+    setDirty(true);
+    setTouched((p) => ({ ...p, [fid]: true }));
+    setValues((p) => ({ ...p, [fid]: v }));
+  }, []);
+  const setPhotoField = useCallback((fid, files) => {
+    setDirty(true);
+    setTouched((p) => ({ ...p, [fid]: true }));
+    setPhotoFiles((p) => ({ ...p, [fid]: files }));
+  }, []);
 
-  // Aggregate any captured GPS for the top indicator pill.
+  const missingFields = useMemo(() => (template.fields || []).filter((f) => {
+    if (!f.required) return false;
+    return !isAnswerValid(f, values[f.id], photoFiles[f.id]);
+  }), [template.fields, values, photoFiles]);
+  const requiredOk = missingFields.length === 0;
+
+  const onSubmitClick = () => {
+    if (!requiredOk) {
+      const first = missingFields[0];
+      const node = document.querySelector(`[data-testid="field-row-${first.id}"]`);
+      if (node) {
+        node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        node.classList.add('paneltec-field-missing-pulse');
+        setTimeout(() => node.classList.remove('paneltec-field-missing-pulse'), 1500);
+      }
+      toast.error(`Missing: ${missingFields.slice(0, 3).map((f) => f.label).join(', ')}${missingFields.length > 3 ? '…' : ''}`);
+      return;
+    }
+    submit();
+  };
+
   const capturedGps = useMemo(() => {
     for (const f of template.fields || []) {
       if (f.type === 'gps' && values[f.id]?.lat != null) return values[f.id];
@@ -495,15 +585,36 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
           { headers: { 'Content-Type': 'multipart/form-data' } });
       }
       toast.success('Form submitted', { description: template.name });
+      try { localStorage.removeItem(draftKey); } catch { /* noop */ }
       onSubmitted?.(sub);
       onClose();
     } catch (e) { toast.error(apiError(e)); }
     finally { setSaving(false); setProgress(''); }
   };
 
+  const resumeDraft = () => {
+    if (!existingDraft?.values) return;
+    setValues((p) => ({ ...p, ...existingDraft.values }));
+    setDraftBanner(false);
+    toast.success('Draft restored');
+  };
+  const discardDraft = () => {
+    try { localStorage.removeItem(draftKey); } catch { /* noop */ }
+    setDraftBanner(false);
+  };
+
+  const handleBackdropClick = (e) => {
+    if (e.target !== e.currentTarget) return;
+    if (dirty) setConfirmClose(true); else onClose();
+  };
+
+  const guardedClose = () => {
+    if (dirty) setConfirmClose(true); else onClose();
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={handleBackdropClick}
       data-testid="form-fillout-modal">
       <div className="w-full sm:max-w-3xl bg-white sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden h-full sm:h-auto sm:max-h-[92vh] flex flex-col">
         <div className="px-4 sm:px-6 py-5 border-b border-slate-200 bg-white flex items-start gap-3">
@@ -514,11 +625,23 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
             <h2 className="font-display text-2xl font-bold text-slate-900 leading-tight">{template.name}</h2>
             {template.description && <p className="text-sm text-slate-500 leading-snug">{template.description}</p>}
           </div>
-          <button onClick={onClose} data-testid="fillout-close"
+          <button onClick={guardedClose} data-testid="fillout-close"
             className="p-2 -m-1 rounded-xl hover:bg-slate-100 min-w-[44px] min-h-[44px] flex items-center justify-center">
             <X size={18} />
           </button>
         </div>
+        {draftBanner && existingDraft && (
+          <div className="px-4 sm:px-6 py-2.5 border-b border-slate-200 bg-slate-50 flex items-center gap-2"
+            data-testid="draft-banner">
+            <span className="text-xs text-slate-600 flex-1">
+              You have a draft from {Math.max(1, Math.round((Date.now() - existingDraft.savedAt) / 60000))} min ago.
+            </span>
+            <button onClick={resumeDraft} data-testid="draft-resume"
+              className="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold">Resume</button>
+            <button onClick={discardDraft} data-testid="draft-discard"
+              className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700">Discard</button>
+          </div>
+        )}
         {capturedGps && (
           <div className="px-4 sm:px-6 py-2 border-b border-emerald-100 bg-emerald-50 flex items-center gap-2" data-testid="gps-captured-indicator">
             <MapPin size={14} className="text-emerald-700" />
@@ -545,9 +668,9 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
               </label>
               <FieldRunner field={f}
                 value={values[f.id]}
-                onChange={(v) => setValues((p) => ({ ...p, [f.id]: v }))}
+                onChange={(v) => setField(f.id, v)}
                 photoFiles={photoFiles[f.id]}
-                onPhotoChange={(files) => setPhotoFiles((p) => ({ ...p, [f.id]: files }))}
+                onPhotoChange={(files) => setPhotoField(f.id, files)}
                 allFields={template.fields || []}
                 allValues={values}
                 readOnly={isLocked} />
@@ -557,17 +680,36 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
         <div className="px-4 sm:px-6 py-3 border-t border-slate-200 bg-white flex items-center gap-2 sticky bottom-0">
           {progress && <span className="text-xs text-slate-500 flex-1 truncate" data-testid="submit-progress">{progress}</span>}
           {!progress && <div className="flex-1" />}
-          <button onClick={onClose} disabled={saving}
+          <button onClick={guardedClose} disabled={saving}
             className="px-4 py-2.5 min-h-[44px] rounded-xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-100 disabled:opacity-50">
             Cancel
           </button>
-          <button onClick={submit} disabled={saving || !requiredOk} data-testid="form-submit-btn"
-            className="inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-bold uppercase tracking-wide shadow-md hover:shadow-lg disabled:opacity-50 disabled:shadow-none">
+          <button onClick={onSubmitClick} disabled={saving} data-testid="form-submit-btn"
+            title={!requiredOk ? `Missing: ${missingFields.map((f) => f.label).join(', ')}` : ''}
+            className={`inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-white text-sm font-bold uppercase tracking-wide shadow-md hover:shadow-lg disabled:shadow-none ${requiredOk ? 'bg-gradient-to-r from-orange-500 to-amber-500' : 'bg-slate-300 cursor-not-allowed'}`}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-            Submit Form
+            {!requiredOk
+              ? `${missingFields.length} required field${missingFields.length === 1 ? '' : 's'} missing`
+              : 'Submit Form'}
           </button>
         </div>
       </div>
+      {confirmClose && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50"
+          onClick={(e) => e.target === e.currentTarget && setConfirmClose(false)}
+          data-testid="discard-confirm-dialog">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
+            <h3 className="font-display font-bold text-slate-900">Discard your changes?</h3>
+            <p className="text-xs text-slate-500">Your draft will still be saved — you can resume next time you open this template.</p>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setConfirmClose(false)} data-testid="discard-cancel"
+                className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold">Cancel</button>
+              <button onClick={() => { setConfirmClose(false); onClose(); }} data-testid="discard-confirm"
+                className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold">Discard</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

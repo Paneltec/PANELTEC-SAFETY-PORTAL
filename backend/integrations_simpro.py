@@ -713,7 +713,18 @@ async def _fetch_sites_for_customer(client: httpx.AsyncClient, base: str,
             data = r.json()
         except Exception:
             break
-        batch = data if isinstance(data, list) else (data.get("data") or [])
+        if isinstance(data, list):
+            batch = data
+        elif isinstance(data, dict):
+            batch = (data.get("data") or data.get("sites") or data.get("Sites")
+                     or data.get("Data") or [])
+        else:
+            batch = []
+        if page == 1 and not batch:
+            log.info("simpro sites raw shape cust=%s keys=%s sample=%s",
+                     customer_id,
+                     list(data.keys()) if isinstance(data, dict) else "list",
+                     str(data)[:400])
         if not batch:
             break
         rows.extend([b for b in batch if isinstance(b, dict)])
