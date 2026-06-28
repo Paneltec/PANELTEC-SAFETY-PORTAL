@@ -1,0 +1,81 @@
+{
+  "summary": "Phase 3.9 form preferences — backend pytest (12 passed, 2 xfail) + admin frontend smoke. Found ONE CRITICAL backend bug: PermissionsMiddleware blocks /api/users/* for the worker role (users.view=False), so workers cannot reach GET/PUT /api/users/me/form-preferences (returns 403). This breaks the entire personal-launcher feature for the role it was designed for. Admin path (and admin-managing-worker path) works correctly. Frontend gear icon + dialog (device-only toggle + Reset to defaults + Save preferences), /app/forms toolbar gear, 'Show N hidden by prefs' toggle, and 'Filtered by your preferences · edit' label all render for admin.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET/PUT /api/users/me/form-preferences and GET/PUT /api/users/{self_id}/form-preferences (worker role)",
+        "issue": "PermissionsMiddleware (permissions_middleware.py) intercepts every /api/users/* path, checks PERMISSIONS_SCHEMA[users] which is _grant(open=False, view=False, edit=False) for worker. Worker therefore gets 403 BEFORE the route handler can apply its own user_id==self.id self-access carve-out. End result: workers cannot read or save their own personal whitelist, defeating the purpose of Phase 3.9 for the worker role. Verified live: 'GET /api/users/me/form-preferences HTTP/1.1 403 Forbidden' in backend log for worker_stephen, with body {\"detail\":\"Permission denied: users.view\"}.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Worker role using gear-icon on /scan/:token and toolbar gear on /app/forms",
+        "issue": "Because the backend returns 403 for workers on /api/users/me/form-preferences, the dialog will fail to load and saves will silently fail. The UI itself renders the gear button (admin verified), but the data path is broken for the worker role. Not retested in browser as admin token passes — fix the middleware then re-test as worker.",
+        "affected_selectors": ["[data-testid=\"scan-forms-prefs-btn\"]", "[data-testid=\"form-prefs-dialog\"]", "[data-testid=\"toolbar-my-forms\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_results_summary": {
+    "backend_passed": [
+      "GET /api/users/me/form-preferences returns valid record (admin)",
+      "PUT /api/users/me/form-preferences upserts and persists",
+      "PUT /api/users/me/form-preferences with device_only=true is a server-side no-op",
+      "Admin GET /api/users/{worker_id}/form-preferences works",
+      "Admin PUT /api/users/{worker_id}/form-preferences works",
+      "Worker GET /api/users/{admin_id}/form-preferences → 403",
+      "Worker PUT /api/users/{admin_id}/form-preferences → 403",
+      "Scan-forms with full whitelist returns full curated list + applied_preferences=true",
+      "Scan-forms with narrowed whitelist filters Plant Pre-Start out of plant scan, plant Incident/Near Miss + vehicle curated list unchanged, applied_preferences=true",
+      "Scan-forms ?include_disabled=true bypasses the personal filter (Plant Pre-Start returns + applied_preferences=false)",
+      "Empty-intersection falls back to unfiltered list with applied_preferences=false (no foot-gun)",
+      "Reset path restores admin/worker prefs to all-enabled"
+    ],
+    "backend_xfail_documenting_bug": [
+      "Worker GET /api/users/{self_id}/form-preferences → 403 (should be 200)",
+      "Worker GET /api/users/me/form-preferences → 403 (should be 200)"
+    ],
+    "frontend_admin_verified": [
+      "[data-testid=scan-forms-prefs-btn] visible on /scan/EFLdyI3Thc Forms header",
+      "[data-testid=form-prefs-dialog] opens on gear click",
+      "[data-testid=form-prefs-device-only] checkbox visible in dialog footer",
+      "[data-testid=toolbar-my-forms] visible on /app/forms",
+      "Dialog opens from /app/forms toolbar too",
+      "[data-testid=scan-forms-prefs-applied] 'Filtered by your preferences · edit' label rendered on vehicle scan (yTtV1KWWmE)",
+      "'Show 18 hidden by prefs' toggle visible on /app/forms when prefs narrowed",
+      "Plant scan (EFLdyI3Thc) rendered with 3 tiles + filtered-by-prefs label after narrow PUT"
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_39_form_prefs.py",
+    "/app/test_reports/pytest/phase_39_results.xml",
+    "/app/test_reports/p39_dialog_scan.png",
+    "/app/test_reports/p39_dialog_forms.png"
+  ],
+  "action_items": [
+    "Fix permissions_middleware.py to allow workers (and any logged-in user) to call /api/users/me/form-preferences and /api/users/{self_id}/form-preferences. Two options: (a) add `re.compile(r'^/api/users/[^/]+/form-preferences$')` and `re.compile(r'^/api/users/me/form-preferences$')` to SKIP_PATHS (since the route handler already enforces RBAC and self-access), or (b) special-case form-preferences in the middleware before the users-resource check.",
+    "After the middleware fix, manually re-test as worker_stephen@paneltec.com.au / WorkerTest123! to verify the gear icon flow (read + save with device_only=false and device_only=true) end-to-end. The pytest tests will then auto-upgrade from xfail→pass.",
+    "Optionally tighten the seed-on-first-call path: if the existing record has an empty enabled_template_ids list AND seeded was never set, consider re-seeding so a worker with a corrupt/empty doc isn't stuck with applied_preferences=false forever (the fallback handles it gracefully, but UX-wise the dialog will show every box pre-ticked which is fine)."
+  ],
+  "critical_code_review_comments": [
+    "form_preferences.py is clean and well-documented; the empty-list sentinel and intersection-empty fallback are both correct and have explicit comments.",
+    "asset_service.py scan_forms intersection logic is correct: include_disabled bypass, applied_preferences flag, fallback-to-unfiltered all match the spec.",
+    "form_preferences_router mounts at /users prefix — this collides with the global PermissionsMiddleware which guards anything under /api/users. The new endpoints rely on the route handler's own RBAC but the middleware short-circuits earlier. Either rename the prefix (e.g., /me/form-preferences as a top-level router) or whitelist in SKIP_PATHS.",
+    "PUT /me with device_only=true returns _load_or_seed(user) instead of the existing doc directly — minor: if no doc exists yet, this WILL insert a seed row. That's the documented behaviour but worth noting it's not a strict 'no server side mutation' contract."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_39_form_prefs.py (new — 14 tests, 12 pass + 2 xfail)"
+  ],
+  "success_rate": {"backend": "86% (12/14, 2 xfail documenting the worker-self-access bug)", "frontend": "100% admin-side rendering smoke (worker path not retested due to backend block)"},
+  "test_credentials": "Admin stephen@paneltec.com.au / Mcgstephen50# — works. Worker worker_stephen@paneltec.com.au / WorkerTest123! — works for login but blocked by middleware on /api/users/* endpoints.",
+  "seed_data_creation": "Test left admin + worker form-preferences docs at all-enabled (reset step in TestScanFormsApplyPrefs.test_reset_admin_to_all_for_cleanup). No other seed data added.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Re-run with `python -m pytest backend/tests/test_phase_39_form_prefs.py -v`. After the middleware fix the 2 xfail tests should turn into PASS — change `pytest.xfail(...)` to a hard `assert r.status_code == 200`. Tokens: vehicle=yTtV1KWWmE, plant=EFLdyI3Thc. Worker bug repro: `curl -H 'Authorization: Bearer <worker_token>' https://whs-compliance.preview.emergentagent.com/api/users/me/form-preferences` → returns 403 'Permission denied: users.view'.",
+  "rca_of_the_issue": "Root cause: PermissionsMiddleware in /app/backend/permissions_middleware.py runs BEFORE any route handler and applies a coarse-grained 'users.view' / 'users.edit' resource check based on PATH_RESOURCE regex `^/api/users(/|$)`. The worker role's default in permissions.py line 83 is `_grant(open=False, view=False, edit=False)`. Because the new form_preferences_router was mounted with prefix `/users`, every request — including the intended-self-access /me/form-preferences — gets intercepted and denied before the handler's own `if user_id == user['id']` carve-out runs. Reproduction: login as worker_stephen, GET /api/users/me/form-preferences → 403 with body {\"detail\":\"Permission denied: users.view\"}. Mitigation (for main agent): add `re.compile(r'^/api/users/(me|[^/]+)/form-preferences$')` to SKIP_PATHS in permissions_middleware.py — the form_preferences handlers already enforce role checks (admin write, hseq_lead/manager read, self always allowed)."
+}

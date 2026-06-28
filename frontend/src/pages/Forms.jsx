@@ -8,7 +8,7 @@ import SignatureCanvas from 'react-signature-canvas';
 import {
   Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
   Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Truck, Upload,
-  UploadCloud, X, ChevronDown,
+  UploadCloud, X, ChevronDown, Settings as SettingsIcon, Eye, EyeOff,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -16,6 +16,8 @@ import { getUser } from '../lib/auth';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
 import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
 import { WorkerPicker, JobPicker, SitePicker, CustomerPicker } from '../components/forms/PickerFields';
+import FormPreferencesDialog from '../components/forms/FormPreferencesDialog';
+import { getDevicePrefs } from '../lib/formPrefs';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -1002,7 +1004,27 @@ export default function Forms() {
   const [importing, setImporting] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
   const [builderTemplate, setBuilderTemplate] = useState(null);  // {} for new, {id,...} for edit
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [enabledIds, setEnabledIds] = useState(null); // null = unfiltered (show all)
+  const [showAll, setShowAll] = useState(false);
   const filterRef = useRef(null);
+
+  // Phase 3.9 — pull preferences once so we can dim/hide templates the user
+  // hasn't opted into. Device override wins over server prefs.
+  const reloadPrefs = React.useCallback(async () => {
+    try {
+      const dev = getDevicePrefs();
+      if (dev?.enabled_template_ids?.length) {
+        setEnabledIds(dev.enabled_template_ids);
+        return;
+      }
+      const { data } = await api.get('/users/me/form-preferences');
+      const ids = data?.enabled_template_ids || [];
+      // Empty list (sentinel for "all enabled") → no filter.
+      setEnabledIds(ids.length ? ids : null);
+    } catch { setEnabledIds(null); }
+  }, []);
+  useEffect(() => { reloadPrefs(); }, [reloadPrefs]);
 
   const load = async () => {
     setLoading(true);
@@ -1115,11 +1137,19 @@ export default function Forms() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const allow = (enabledIds && !showAll) ? new Set(enabledIds) : null;
     return rows
       .filter((r) => filter === 'all' ? true : r.category === filter)
       .filter((r) => !q || `${r.name} ${r.description || ''}`.toLowerCase().includes(q))
+      .filter((r) => !allow || allow.has(r.id))
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [rows, filter, search]);
+  }, [rows, filter, search, enabledIds, showAll]);
+
+  const hiddenByPrefs = useMemo(() => {
+    if (!enabledIds) return 0;
+    const allow = new Set(enabledIds);
+    return rows.filter((r) => !allow.has(r.id)).length;
+  }, [rows, enabledIds]);
 
   const removeTemplate = async (t) => {
     if (!window.confirm(`Delete "${t.name}"?`)) return;
@@ -1178,6 +1208,17 @@ export default function Forms() {
             <Plus size={14} /> New Template
           </button>
         )}
+        <button onClick={() => setPrefsOpen(true)}
+          data-testid="toolbar-my-forms"
+          title="My forms preferences"
+          className="ml-auto inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <SettingsIcon size={14} /> My forms
+          {enabledIds && !showAll && (
+            <span className="ml-1 inline-flex items-center justify-center min-w-[20px] px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-blue-100 text-blue-700">
+              {enabledIds.length}
+            </span>
+          )}
+        </button>
       </div>
 
       {/* Search + category dropdown */}
@@ -1209,6 +1250,16 @@ export default function Forms() {
             </div>
           )}
         </div>
+        {/* Phase 3.9 — "Show all" toggle visible when prefs are actively hiding rows. */}
+        {enabledIds && hiddenByPrefs > 0 && (
+          <button onClick={() => setShowAll((s) => !s)}
+            data-testid="toolbar-show-all"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50">
+            {showAll
+              ? <><EyeOff size={12} /> Hide {hiddenByPrefs} unchecked</>
+              : <><Eye size={12} /> Show {hiddenByPrefs} hidden by prefs</>}
+          </button>
+        )}
       </div>
 
       {/* Cards */}
@@ -1244,6 +1295,8 @@ export default function Forms() {
       {builderTemplate !== null && <TemplateBuilder template={builderTemplate}
         onClose={() => setBuilderTemplate(null)}
         onSaved={() => load()} />}
+      <FormPreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)}
+        onSaved={() => reloadPrefs()} />
     </div>
   );
 }

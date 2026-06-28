@@ -217,9 +217,19 @@ async def _resolve_asset_for_user(user: dict, scan_token: str) -> dict:
 
 
 @scan_router.get("/{scan_token}/forms")
-async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
+async def scan_forms(
+    scan_token: str,
+    include_disabled: bool = False,
+    user: dict = Depends(get_current_user),
+):
     """Return the curated list of form templates a worker can launch for
-    the scanned asset, plus a slim asset card for the header."""
+    the scanned asset, plus a slim asset card for the header.
+
+    Phase 3.9 — applies the user's `form_preferences` whitelist on top of the
+    asset-type filter. Pass `?include_disabled=true` to bypass the personal
+    filter (used when the client is enforcing a per-device override and wants
+    the full curated list so it can filter itself).
+    """
     asset = await _resolve_asset_for_user(user, scan_token)
     kind = asset.get("kind") or "vehicle"
     asset_type = (asset.get("asset_type") or "").lower()
@@ -252,6 +262,21 @@ async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
             "recommended": False,
         })
 
+    # Phase 3.9 — intersect with the user's personal whitelist *after* the
+    # asset-type filter. Empty allow-list (or `include_disabled=true`) skips
+    # the intersection entirely. If the intersection happens to be empty,
+    # fall back to the unfiltered list so the page never shows a blank state.
+    applied_preferences = False
+    if not include_disabled:
+        from form_preferences import get_effective_enabled_ids
+        enabled_ids, has_filter = await get_effective_enabled_ids(user)
+        if has_filter:
+            filtered = [f for f in forms if f["template_id"] in set(enabled_ids)]
+            if filtered:
+                forms = filtered
+                applied_preferences = True
+            # else: fall through with the unfiltered list (applied_preferences stays False)
+
     # Recommendation rules:
     #   • Vehicles → first form (Vehicle Pre-Use Inspection) is the headline.
     #     Heavy/truck-like assets *also* get Heavy Vehicle Daily Check flagged.
@@ -275,6 +300,7 @@ async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
             "last_known_lng": asset.get("last_known_lng"),
         },
         "forms": forms,
+        "applied_preferences": applied_preferences,
     }
 
 

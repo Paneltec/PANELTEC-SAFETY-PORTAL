@@ -12,6 +12,65 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
+import FormPreferencesDialog from '../components/forms/FormPreferencesDialog';
+
+// Phase 3.9 — Forms preferences sub-panel inside the worker edit drawer.
+// Resolves worker.email → user record, then offers a one-click button to
+// review/edit that user's form-launcher whitelist.
+function WorkerFormPrefsSection({ workerEmail, workerName }) {
+  const me = getUser();
+  const canEdit = me?.role === 'admin';
+  const [matchedUser, setMatchedUser] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [count, setCount] = React.useState(null);
+  const [open, setOpen] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    setLoading(true);
+    try {
+      const users = await api.get('/users').then((r) => r.data || []);
+      const u = users.find((x) => (x.email || '').toLowerCase() === workerEmail.toLowerCase());
+      setMatchedUser(u || null);
+      if (u) {
+        const { data } = await api.get(`/users/${u.id}/form-preferences`);
+        setCount((data?.enabled_template_ids || []).length);
+      }
+    } catch { /* swallow — section is non-critical */ }
+    finally { setLoading(false); }
+  }, [workerEmail]);
+  React.useEffect(() => { load(); }, [load]);
+
+  return (
+    <Section icon={CheckSquare} title="Forms" testid="section-forms"
+      badge={loading ? '…' : matchedUser ? `${count ?? 0} enabled` : 'No account'}
+      defaultOpen={false}>
+      {!matchedUser ? (
+        <p className="text-xs text-slate-500">
+          This worker has no Paneltec user account, so they don&apos;t have personal
+          form preferences. Preferences only apply to people who sign in to the
+          app.
+        </p>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-slate-600">
+            <strong>{count ?? 0}</strong> form{count === 1 ? '' : 's'} enabled for {workerName}.
+            {' '}This filter applies on top of the asset-type rules when they scan a QR.
+          </p>
+          <button type="button" onClick={() => setOpen(true)} disabled={!canEdit}
+            data-testid="worker-edit-form-prefs"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            {canEdit ? 'Edit preferences →' : 'View only (admin to edit)'}
+          </button>
+        </div>
+      )}
+      {open && matchedUser && (
+        <FormPreferencesDialog open={open} onClose={() => setOpen(false)}
+          targetUser={{ id: matchedUser.id, name: workerName, role: matchedUser.role }}
+          onSaved={() => load()} />
+      )}
+    </Section>
+  );
+}
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const SYNC_OPTIONS = [
@@ -705,6 +764,11 @@ function EditModal({ worker, onClose, onSaved }) {
           {/* Certifications */}
           {!isNew && (
             <CertificationsPanel workerId={worker.id} canEdit={true} />
+          )}
+
+          {/* Phase 3.9 — Form preferences (admin view of another user) */}
+          {!isNew && worker.email && (
+            <WorkerFormPrefsSection workerEmail={worker.email} workerName={fullName(worker)} />
           )}
         </div>
 
