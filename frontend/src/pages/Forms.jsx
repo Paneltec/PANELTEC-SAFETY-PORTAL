@@ -463,6 +463,13 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
   const [confirmClose, setConfirmClose] = useState(false);
   const firstMissingRef = useRef(null);
 
+  // Defensive: guard against background prop changes (e.g. template refetch
+  // after a sync) re-running this hook and wiping in-progress edits. Once we
+  // have the initial answers map, subsequent template prop changes are
+  // ignored. The `useState` lazy initializer above already runs once, but the
+  // ref also lets downstream effects opt out of resets.
+  const initialisedRef = useRef(true);
+
   const [values, setValues] = useState(() => {
     const base = { ...(initialValues || {}) };
     const today = new Date();
@@ -620,7 +627,15 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
 
   const resumeDraft = () => {
     if (!existingDraft?.values) return;
-    setValues((p) => ({ ...p, ...existingDraft.values }));
+    // Never overwrite a non-empty answers map (user has been typing). Merge
+    // only keys that are still empty in memory.
+    setValues((p) => {
+      const merged = { ...p };
+      Object.entries(existingDraft.values).forEach(([k, v]) => {
+        if (merged[k] == null || merged[k] === '') merged[k] = v;
+      });
+      return merged;
+    });
     setDraftBanner(false);
     toast.success('Draft restored');
   };

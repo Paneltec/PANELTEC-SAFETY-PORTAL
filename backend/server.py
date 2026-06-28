@@ -151,6 +151,15 @@ async def on_startup():
     except Exception as e:
         log.warning("Form pickers migration failed: %s", e)
 
+    # Phase 3.7 v3 — strip misplaced pickers from HR-style templates (D&A,
+    # Fatigue, Leave, Behavioural). Idempotent.
+    try:
+        from migrate_strip_misplaced import migrate_strip_misplaced_pickers
+        mig3 = await migrate_strip_misplaced_pickers()
+        log.info("Misplaced pickers v3: %s", mig3)
+    except Exception as e:
+        log.warning("Misplaced pickers v3 migration failed: %s", e)
+
     # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler

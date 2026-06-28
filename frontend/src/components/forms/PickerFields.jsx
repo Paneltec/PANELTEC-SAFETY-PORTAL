@@ -36,7 +36,8 @@ function _resolveDepValue(allValues, depFieldId) {
   return v.name || v.customer_name || v.simpro_customer_id || v.id || null;
 }
 
-function ChipDisplay({ icon, primary, secondary, onClear, readOnly, testId }) {
+function ChipDisplay({ icon, primary, secondary, onClear, readOnly, testId,
+                       autoPinned, sourceJobId, onOverride }) {
   return (
     <div data-testid={testId}
       className="w-full flex items-center gap-2 px-3 py-2.5 min-h-[44px] rounded-xl border border-emerald-300 bg-emerald-50 text-emerald-900">
@@ -45,7 +46,24 @@ function ChipDisplay({ icon, primary, secondary, onClear, readOnly, testId }) {
       </div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-semibold leading-tight truncate">{primary}</div>
-        {secondary && <div className="text-[11px] text-emerald-700/80 truncate">{secondary}</div>}
+        {(secondary || autoPinned) && (
+          <div className="text-[11px] text-emerald-700/80 truncate flex items-center gap-1 flex-wrap">
+            {autoPinned && (
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900 text-[10px] font-bold uppercase tracking-[0.06em]"
+                data-testid={`${testId}-auto-pin-badge`}>
+                Auto-pinned{sourceJobId ? ` from Job #${sourceJobId}` : ''}
+              </span>
+            )}
+            {autoPinned && onOverride && !readOnly && (
+              <button type="button" onClick={onOverride}
+                data-testid={`${testId}-override`}
+                className="underline text-emerald-800 text-[11px] font-semibold hover:text-emerald-900">
+                Override
+              </button>
+            )}
+            {secondary && <span className="truncate">{secondary}</span>}
+          </div>
+        )}
       </div>
       {!readOnly && (
         <button type="button" onClick={onClear}
@@ -148,6 +166,9 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
         secondary={displaySecondary(value)}
         onClear={() => onChange(null)}
         readOnly={readOnly}
+        autoPinned={!!value.auto_pinned}
+        sourceJobId={value.source_job_id}
+        onOverride={() => { onChange({ ...value, auto_pinned: false }); setOpen(true); }}
         testId={`${testId}-chip`} />
     );
   }
