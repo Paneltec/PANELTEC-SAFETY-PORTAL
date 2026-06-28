@@ -181,33 +181,79 @@ async def sites(q: Optional[str] = None, customer_id: Optional[str] = None,
                 lat: Optional[float] = None, lng: Optional[float] = None,
                 limit: int = Query(200, ge=1, le=500),
                 user: dict = Depends(get_current_user)):
-    """Sites are derived from simpro_jobs.site_name (and customer_name) until a
-    dedicated Simpro sites cache is wired. Empty list is a valid response when
-    no Simpro job-detail data is available yet."""
+    """Sites — prefer the `simpro_sites` collection (real Simpro data with
+    coords). Fall back to deriving from `simpro_jobs.site_name` only when the
+    collection is empty for this org."""
     key = ("sites", user["org_id"], _norm(q), customer_id or "",
            round(lat or 0, 3), round(lng or 0, 3), limit)
     cached = _cache_get(key)
     if cached:
         return cached
-    match: dict = {"org_id": user["org_id"], "site_name": {"$nin": [None, ""]}}
-    if customer_id:
-        match["customer_name"] = customer_id
-    cur = db.simpro_jobs.aggregate([
-        {"$match": match},
-        {"$group": {"_id": "$site_name",
-                    "customer_name": {"$first": "$customer_name"},
-                    "n": {"$sum": 1}}},
-        {"$sort": {"_id": 1}},
-        {"$limit": 500},
-    ])
     qn = _norm(q)
-    rows = []
-    async for r in cur:
-        sname = r.get("_id")
-        if not sname:
-            continue
-        if qn and qn not in (_norm(sname) + " " + _norm(r.get("customer_name"))):
-            continue
+    rows: list[dict] = []
+    sites_count = await db.simpro_sites.count_documents({"org_id": user["org_id"]})
+    if sites_count > 0:
+        flt: dict = {"org_id": user["org_id"]}
+        if customer_id:
+            cust_doc = await db.integration_configs.find_one(
+                {"org_id": user["org_id"], "kind": "simpro"},
+                {"_id": 0, "customers_cache": 1},
+            )
+            cust_ids = [str(c.get("simpro_customer_id"))
+                        for c in (cust_doc or {}).get("customers_cache") or []
+                        if (c.get("name") or "").strip().lower() == customer_id.lower()]
+            if cust_ids:
+                flt["simpro_customer_id"] = {"$in": cust_ids}
+        async for s in db.simpro_sites.find(flt, {"_id": 0}):
+            name = s.get("name") or "(unnamed)"
+            hay = f"{_norm(name)} {_norm(s.get('address_full'))} {_norm(s.get('suburb'))}"
+            if qn and qn not in hay:
+                continue
+            row = {
+                "id": s.get("simpro_site_id"),
+                "simpro_site_id": s.get("simpro_site_id"),
+                "name": name,
+                "address": s.get("address_full") or s.get("address"),
+                "customer_id": s.get("simpro_customer_id"),
+                "lat": s.get("latitude"), "lng": s.get("longitude"),
+            }
+            if (lat is not None and lng is not None
+                    and row["lat"] is not None and row["lng"] is not None):
+                row["distance_km"] = round(_haversine_km(lat, lng, row["lat"], row["lng"]), 1)
+            rows.append(row)
+        rows.sort(key=lambda r: (
+            0 if r.get("distance_km") is not None else 1,
+            r.get("distance_km") if r.get("distance_km") is not None else 0,
+            (r.get("name") or "").lower(),
+        ))
+    else:
+        match: dict = {"org_id": user["org_id"], "site_name": {"$nin": [None, ""]}}
+        if customer_id:
+            match["customer_name"] = customer_id
+        cur = db.simpro_jobs.aggregate([
+            {"$match": match},
+            {"$group": {"_id": "$site_name",
+                        "customer_name": {"$first": "$customer_name"},
+                        "n": {"$sum": 1}}},
+            {"$sort": {"_id": 1}},
+            {"$limit": 500},
+        ])
+        async for r in cur:
+            sname = r.get("_id")
+            if not sname:
+                continue
+            if qn and qn not in (_norm(sname) + " " + _norm(r.get("customer_name"))):
+                continue
+            rows.append({
+                "id": sname, "simpro_site_id": sname, "name": sname,
+                "address": None, "customer_id": r.get("customer_name"),
+                "customer_name": r.get("customer_name"), "jobs": r.get("n", 0),
+            })
+    payload = {"sites": rows[:limit], "count": len(rows),
+               "source": "simpro_sites" if sites_count > 0 else "simpro_jobs_fallback",
+               "sorted_by_distance": (lat is not None and lng is not None)}
+    _cache_set(key, payload)
+    return payload
         rows.append({
             "id": sname, "simpro_site_id": sname, "name": sname,
             "address": None, "customer_id": r.get("customer_name"),

@@ -685,6 +685,158 @@ async def simpro_suppliers_sync(user: dict = Depends(require_roles("admin", "hse
     return {"ok": True, "count": len(suppliers), "synced_at": now_iso()}
 
 
+# ────────────────────── Sites sync ──────────────────────
+# Pulls per-customer site lists from Simpro and persists into `simpro_sites`.
+# Only iterates customers that already appear in our `simpro_jobs` cache
+# (massive cost reducer — 2k+ customers, only ~tens have jobs).
+
+async def _fetch_sites_for_customer(client: httpx.AsyncClient, base: str,
+                                    token: str, cid: str, customer_id: str) -> list[dict]:
+    headers = _auth_headers(token)
+    url = f"{base.rstrip('/')}/api/v1.0/companies/{cid}/customers/{customer_id}/sites/"
+    rows: list[dict] = []
+    page = 1
+    while page <= 10:
+        try:
+            r = await client.get(url, headers=headers,
+                                 params={"pageSize": 250, "page": page})
+        except httpx.HTTPError as e:
+            log.warning("simpro sites fetch failed cid=%s cust=%s err=%s", cid, customer_id, e)
+            break
+        if r.status_code in (404, 204):
+            break
+        if r.status_code != 200:
+            log.warning("simpro sites cust=%s HTTP %s %s", customer_id, r.status_code, r.text[:120])
+            break
+        try:
+            data = r.json()
+        except Exception:
+            break
+        batch = data if isinstance(data, list) else (data.get("data") or [])
+        if not batch:
+            break
+        rows.extend([b for b in batch if isinstance(b, dict)])
+        if len(batch) < 250:
+            break
+        page += 1
+    return rows
+
+
+def _normalise_site(raw: dict, customer_id: str, company_id: str) -> dict:
+    addr = raw.get("Address") or {}
+    if not isinstance(addr, dict):
+        addr = {}
+    parts = [addr.get("Address"), addr.get("City"), addr.get("State"),
+             addr.get("PostalCode"), addr.get("Country")]
+    addr_full = ", ".join([str(p).strip() for p in parts if p])
+    lat = raw.get("Latitude") or addr.get("Latitude")
+    lng = raw.get("Longitude") or addr.get("Longitude")
+    try:
+        lat = float(lat) if lat not in (None, "", 0) else None
+        lng = float(lng) if lng not in (None, "", 0) else None
+    except (TypeError, ValueError):
+        lat, lng = None, None
+    return {
+        "simpro_site_id": str(raw.get("ID") or raw.get("id") or ""),
+        "simpro_customer_id": str(customer_id),
+        "simpro_company_id": str(company_id),
+        "name": (raw.get("Name") or raw.get("SiteName") or "").strip() or None,
+        "address": addr.get("Address"),
+        "address_full": addr_full or None,
+        "suburb": addr.get("City"),
+        "state": addr.get("State"),
+        "postcode": addr.get("PostalCode"),
+        "latitude": lat,
+        "longitude": lng,
+    }
+
+
+@router.post("/sync-sites")
+async def simpro_sync_sites(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(400, "Simpro not connected")
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+    token = cfg["api_token"]
+    base = cfg["api_base_url"].rstrip("/")
+
+    # Customers present in our jobs cache for this org.
+    distinct_names = await db.simpro_jobs.distinct("customer_name", {"org_id": user["org_id"]})
+    distinct_names = [n for n in distinct_names if n]
+    customer_lookup: dict[str, list[tuple[str, str]]] = {}
+    for c in (doc.get("customers_cache") or []):
+        n = (c.get("name") or "").strip().lower()
+        if not n:
+            continue
+        customer_lookup.setdefault(n, []).append(
+            (c.get("simpro_customer_id"), c.get("simpro_company_id")))
+    targets: list[tuple[str, str]] = []  # (company_id, customer_id)
+    for name in distinct_names:
+        for cust_id, comp_id in customer_lookup.get(name.lower(), []):
+            if cust_id:
+                targets.append((comp_id, cust_id))
+    targets = list({(c, cust): None for c, cust in targets}.keys())  # dedupe
+
+    total = 0
+    with_coords = 0
+    errors = 0
+    async with httpx.AsyncClient(timeout=30) as client:
+        for comp_id, cust_id in targets:
+            try:
+                rows = await _fetch_sites_for_customer(client, base, token, comp_id, cust_id)
+            except Exception as e:
+                log.warning("sites fetch error cust=%s: %s", cust_id, e)
+                errors += 1
+                continue
+            for s in rows:
+                doc_site = _normalise_site(s, cust_id, comp_id)
+                if not doc_site["simpro_site_id"]:
+                    continue
+                doc_site["org_id"] = user["org_id"]
+                doc_site["updated_at"] = now_iso()
+                if doc_site["latitude"] is not None and doc_site["longitude"] is not None:
+                    with_coords += 1
+                await db.simpro_sites.update_one(
+                    {"org_id": user["org_id"], "simpro_site_id": doc_site["simpro_site_id"]},
+                    {"$set": doc_site, "$setOnInsert": {"created_at": now_iso()}},
+                    upsert=True,
+                )
+                total += 1
+
+    # Stamp last_synced_at.sites
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+        {"$set": {"last_synced_at.sites": now_iso(), "updated_at": now_iso()}},
+    )
+    log.info("simpro sync-sites org=%s customers=%d total=%d with_coords=%d errors=%d",
+             user["org_id"], len(targets), total, with_coords, errors)
+    return {"ok": True, "updated": total, "with_coords": with_coords,
+            "customers_checked": len(targets), "errors": errors,
+            "synced_at": now_iso()}
+
+
+# Lightweight wrappers so the UI has a single endpoint per sync kind that also
+# stamps `integration_configs.last_synced_at`.
+
+@router.post("/sync-customers")
+async def simpro_sync_customers(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        raise HTTPException(400, "Simpro not connected")
+    cfg = doc.get("config") or {}
+    _require(cfg, "api_base_url", "api_token")
+    customers = await _refresh_customers_cache(cfg, ["2", "3"], cfg["api_token"])
+    await db.integration_configs.update_one(
+        {"org_id": user["org_id"], "kind": "simpro"},
+        {"$set": {"customers_cache": customers[:5000],
+                  "customers_cached_at": now_iso(),
+                  "last_synced_at.customers": now_iso(),
+                  "updated_at": now_iso()}},
+    )
+    return {"ok": True, "count": len(customers), "synced_at": now_iso()}
+
+
 
 # ────────────────────── Customers ──────────────────────
 # Simpro customers live at `/api/v1.0/companies/{cid}/customers/`. We cache the
