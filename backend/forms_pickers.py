@@ -41,6 +41,16 @@ def _cache_set(key, payload):
     _CACHE[key] = {"payload": payload, "ts": time.time()}
 
 
+def cache_bust_org(org_id, prefix=None):
+    """Invalidate picker cache entries for an org (optionally limited to a
+    `prefix` such as 'jobs' or 'sites'). Called by Simpro sync endpoints."""
+    dead = [k for k in _CACHE
+            if isinstance(k, tuple) and len(k) > 1 and k[1] == org_id
+            and (prefix is None or k[0] == prefix)]
+    for k in dead:
+        _CACHE.pop(k, None)
+
+
 def _norm(s) -> str:
     if s is None:
         return ""

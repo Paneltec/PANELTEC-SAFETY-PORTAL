@@ -457,7 +457,11 @@ def _job_status_bucket(stage: Optional[str]) -> str:
 async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, cid: str,
                                   org_id: str, cutoff: datetime) -> tuple[int, int]:
     url = f"{base}/api/v1.0/companies/{cid}/jobs/"
-    r = await c.get(url, headers=_auth_headers(token))
+    # `display=detail` returns full Name/Site/Customer/Stage on the list call so we
+    # don't need a per-job round-trip (otherwise the response is a stub).
+    r = await c.get(url, headers=_auth_headers(token),
+                    params={"columns": "ID,Name,Description,Site,Customer,Stage,Status,DateModified",
+                            "pageSize": 250})
     if r.status_code != 200:
         raise HTTPException(400, f"Simpro jobs fetch failed for company {cid}: HTTP {r.status_code} {r.text[:160]}")
     jobs = r.json()
@@ -534,8 +538,15 @@ async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lea
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "simpro"},
         {"$set": {"last_sync_at": now_iso(), "last_sync_count": total_synced,
-                  "last_sync_per_company": per_company, "updated_at": now_iso()}},
+                  "last_sync_per_company": per_company,
+                  "last_synced_at.jobs": now_iso(),
+                  "updated_at": now_iso()}},
     )
+    try:
+        from forms_pickers import cache_bust_org
+        cache_bust_org(user["org_id"])  # blow the jobs+sites cache
+    except Exception:
+        pass
     return {"synced": total_synced, "completed_recent": total_recent,
             "per_company": per_company, "synced_at": now_iso()}
 
