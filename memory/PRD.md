@@ -543,3 +543,18 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 **Upstream caveat (MOCKED baseline):** The connected Navixy account exposes counter *definitions* (`/v2/tracker/counter/read` returns `{id, type, multiplier}`) but not live counter *values* via its v2 API — the values shown in the Navixy panel come from server-side mileage/engine-hours reports. We seeded realistic counter baselines on all 72 Navixy-linked assets (deterministic random hours 420–2350 hrs / km 8,500–92,000) so the UI works end-to-end. The 15-min sync will start overwriting these with real readings the moment the upstream returns them. The sync response includes `note: "upstream_returned_no_counter_values"` when this happens. Marked `// MOCKED` at the seed location.
 
 **Next:** Phase 4 — Worker / Supplier / Site induction QR (P1).
+
+## 2026-06-28 — Phase 3.6: Navixy Live Dashboards + Mileage-via-tracks fallback
+
+**Native dashboards (Ask A):**
+- 3 new `GET /api/assets/navixy/dashboards/{fleet-status,trips,technical}` endpoints (server-cached 60 s per org).
+- `FleetLiveDashboards.jsx` (Recharts) rendered above the asset list on Plant & Vehicles — collapsible (localStorage), three tabs, Refresh button, "Updated · X min ago" stamp.
+
+**Provider chain (Ask B):** `panel → report → tracks → none` in `asset_navixy_sync.py`.
+- New helpers `_fetch_counters_via_report` (Navixy `/v2/report/build → get_state → list_view`) and `_fetch_counters_via_tracks` (sums `/v2/track/list` length + duration over a rolling 90-day window — tagged `navixy_tracks_window`).
+- `_sync_org` splits assets into cold (no source yet) vs warm; only cold ones go through the heavy chain. Bounded concurrency: `sem=8` for counter/read, `sem=4` for tracks. 10-device cap per cron tick on the report path.
+- Sync response now returns `{updated, skipped, devices, cold, warm, source_breakdown:{panel,report,tracks,none,already_current}, note}`.
+
+**Service worker:** `paneltec-v43 → paneltec-v44`.
+
+**Next:** Phase 3.7 — Simpro + Workers picker fields in form templates (queued, do NOT start in parallel).

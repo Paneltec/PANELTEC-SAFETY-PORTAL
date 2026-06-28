@@ -16,6 +16,7 @@ from ask import router as ask_router  # noqa: E402
 from assets import router as assets_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router  # noqa: E402
 from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
+from asset_navixy_dashboards import router as asset_navixy_dashboards_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
@@ -120,6 +121,7 @@ api.include_router(assets_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(asset_navixy_sync_router)
+api.include_router(asset_navixy_dashboards_router)
 
 app.include_router(api)
 

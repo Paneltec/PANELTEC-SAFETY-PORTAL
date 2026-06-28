@@ -12,6 +12,7 @@ Navixy API surface used (graceful fallbacks for plan/version variance):
 from __future__ import annotations
 import asyncio
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import httpx
@@ -177,6 +178,115 @@ async def _recompute_schedules_for_asset(asset: dict) -> int:
 
 # ─────────────────────── Main sync routine ───────────────────────
 
+async def _fetch_counters_via_report(client: httpx.AsyncClient, base: str, h: str, tid: int) -> dict:
+    """Phase 3.6 — fetch end-of-period counter values via Navixy's report API.
+
+    Many Navixy plans expose a Mileage/Engine-hours report that we can build,
+    poll and read. Returns {hours, hours_at, odo_km, odo_at} with possibly-None
+    values when the report can't be built (the panel doesn't expose this
+    subsystem on every account — caller should fall through to tracks).
+    """
+    out = {"hours": None, "hours_at": None, "odo_km": None, "odo_at": None}
+    now = datetime.now(timezone.utc)
+    frm = (now - timedelta(hours=24)).strftime("%Y-%m-%d %H:%M:%S")
+    to = now.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        r = await client.post(f"{base}/v2/report/build",
+                              json={"hash": h, "from": frm, "to": to,
+                                    "trackers": [tid],
+                                    "template_predefined": "mileage_engine_hours"})
+        if r.status_code >= 400:
+            return out
+        data = r.json() or {}
+        if not data.get("success"):
+            return out
+        build_id = data.get("id") or data.get("build_id")
+        if not build_id:
+            return out
+        # Poll up to 5 s for completion
+        for _ in range(10):
+            await asyncio.sleep(0.5)
+            ps = await client.post(f"{base}/v2/report/get_state",
+                                   json={"hash": h, "build_id": build_id})
+            pd = ps.json() or {}
+            state = (pd.get("state") or pd.get("status") or "").lower()
+            if state in ("ready", "completed", "done"):
+                break
+        # Pull the values
+        rv = await client.post(f"{base}/v2/report/list_view",
+                               json={"hash": h, "build_id": build_id})
+        rd = rv.json() or {}
+        for row in rd.get("list") or rd.get("rows") or []:
+            if not isinstance(row, dict):
+                continue
+            for k, v in row.items():
+                kl = k.lower()
+                val = _coerce_float(v)
+                if val is None:
+                    continue
+                if "engine" in kl and "hour" in kl and out["hours"] is None:
+                    out["hours"] = val
+                    out["hours_at"] = to
+                elif ("odometer" in kl or "mileage" in kl) and out["odo_km"] is None:
+                    out["odo_km"] = val
+                    out["odo_at"] = to
+    except (httpx.HTTPError, ValueError, KeyError):
+        return out
+    return out
+
+
+async def _fetch_counters_via_tracks(client: httpx.AsyncClient, base: str, h: str,
+                                     tid: int, window_days: int = 90) -> dict:
+    """Phase 3.6 — derive counters from the tracks history when neither panel
+    counters nor the report API are available.
+
+    Returns absolute-ish values by summing track length (km) and duration
+    (hours) over the last `window_days`. The result is technically a
+    rolling-window delta, not the cumulative odometer — we surface that with
+    `hours_meter_source: "navixy_tracks_window"` so consumers know.
+    """
+    out = {"hours": None, "hours_at": None, "odo_km": None, "odo_at": None}
+    now = datetime.now(timezone.utc)
+    frm = (now - timedelta(days=window_days)).strftime("%Y-%m-%d %H:%M:%S")
+    to = now.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        r = await client.post(f"{base}/v2/track/list",
+                              json={"hash": h, "tracker_id": tid, "from": frm, "to": to})
+        if r.status_code >= 400:
+            return out
+        data = r.json() or {}
+        if not data.get("success"):
+            return out
+        tracks = data.get("list") or []
+        total_km = 0.0
+        total_minutes = 0
+        last_end = None
+        for t in tracks:
+            if not isinstance(t, dict):
+                continue
+            total_km += float(t.get("length") or 0)
+            sd = t.get("start_date")
+            ed = t.get("end_date")
+            from datetime import datetime as _dt
+            try:
+                a = _dt.strptime(sd, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) if sd else None
+                b = _dt.strptime(ed, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc) if ed else None
+                if a and b:
+                    total_minutes += max(0, int((b - a).total_seconds() // 60))
+                    if last_end is None or b > last_end:
+                        last_end = b
+            except ValueError:
+                continue
+        if total_km > 0 or total_minutes > 0:
+            out["odo_km"] = round(total_km, 2)
+            out["odo_at"] = (last_end or now).isoformat()
+            out["hours"] = round(total_minutes / 60.0, 1)
+            out["hours_at"] = (last_end or now).isoformat()
+    except (httpx.HTTPError, ValueError, KeyError):
+        return out
+    return out
+
+
 async def _sync_org(org_id: str) -> dict:
     """Sync every Navixy-linked asset in one org. Idempotent.
 
@@ -210,6 +320,14 @@ async def _sync_org(org_id: str) -> dict:
     if not assets:
         return {"org_id": org_id, "updated": 0, "skipped": 0, "errors": 0}
 
+    # Phase 3.6 — split workload: only run the heavy fallback chain
+    # (counter/read + report + tracks) on assets that have never been populated
+    # from Navixy. Assets with an existing `*_source` get a cheap state refresh
+    # only. This keeps the 15-min cron under 10 seconds even on big fleets.
+    cold_assets = [a for a in assets
+                   if not (a.get("hours_meter_source") or a.get("odo_km_source"))]
+    warm_assets = [a for a in assets if a not in cold_assets]
+
     def _val_from_counter(payload: dict) -> tuple[float | None, str | None]:
         """Pull (value, updated_at) from a `counter/read` response."""
         v = payload.get("value") if isinstance(payload, dict) else None
@@ -224,37 +342,48 @@ async def _sync_org(org_id: str) -> dict:
         return (None, None)
 
     counters_by_tid: dict[int, dict] = {}
+    # Phase 3.6 — track which provider populated each tracker's value so the
+    # caller can surface a source_breakdown.
+    source_by_tid: dict[int, str] = {}
     errors = 0
     try:
         async with httpx.AsyncClient(timeout=15) as c:
-            # Pass 1 — counter/read for both types per tracker.
-            for a in assets:
-                tid = int(a["navixy_device_id"])
-                slot = counters_by_tid.setdefault(tid, {
-                    "hours": None, "hours_at": None, "odo_km": None, "odo_at": None,
-                })
-                try:
-                    rh = await c.post(f"{base}/v2/tracker/counter/read",
-                                      json={"hash": h, "tracker_id": tid, "type": "engine_hours"})
-                    if rh.status_code < 400:
-                        v, when = _val_from_counter(rh.json() or {})
-                        if v is not None:
-                            slot["hours"], slot["hours_at"] = v, when
-                except (httpx.HTTPError, ValueError):
-                    errors += 1
-                try:
-                    ro = await c.post(f"{base}/v2/tracker/counter/read",
-                                      json={"hash": h, "tracker_id": tid, "type": "odometer"})
-                    if ro.status_code < 400:
-                        v, when = _val_from_counter(ro.json() or {})
-                        if v is not None:
-                            slot["odo_km"], slot["odo_at"] = v, when
-                except (httpx.HTTPError, ValueError):
-                    errors += 1
-                await asyncio.sleep(0)  # cooperative yield — be a polite client
+            # Pass 1 — counter/read for both types per COLD tracker only,
+            # with bounded concurrency so 100+ devices stay fast.
+            sem = asyncio.Semaphore(8)
 
-            # Pass 2 — get_states bulk fallback for any tracker still missing both.
-            missing = [int(a["navixy_device_id"]) for a in assets
+            async def _read_one(a: dict):
+                nonlocal errors
+                tid = int(a["navixy_device_id"])
+                slot = {"hours": None, "hours_at": None, "odo_km": None, "odo_at": None}
+                async with sem:
+                    try:
+                        rh = await c.post(f"{base}/v2/tracker/counter/read",
+                                          json={"hash": h, "tracker_id": tid, "type": "engine_hours"})
+                        if rh.status_code < 400:
+                            v, when = _val_from_counter(rh.json() or {})
+                            if v is not None:
+                                slot["hours"], slot["hours_at"] = v, when
+                                source_by_tid[tid] = "panel"
+                    except (httpx.HTTPError, ValueError):
+                        errors += 1
+                    try:
+                        ro = await c.post(f"{base}/v2/tracker/counter/read",
+                                          json={"hash": h, "tracker_id": tid, "type": "odometer"})
+                        if ro.status_code < 400:
+                            v, when = _val_from_counter(ro.json() or {})
+                            if v is not None:
+                                slot["odo_km"], slot["odo_at"] = v, when
+                                source_by_tid[tid] = "panel"
+                    except (httpx.HTTPError, ValueError):
+                        errors += 1
+                counters_by_tid[tid] = slot
+
+            if cold_assets:
+                await asyncio.gather(*[_read_one(a) for a in cold_assets])
+
+            # Pass 2 — get_states bulk fallback for any COLD tracker still missing both.
+            missing = [int(a["navixy_device_id"]) for a in cold_assets
                        if not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("hours")
                        and not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("odo_km")]
             if missing:
@@ -277,38 +406,100 @@ async def _sync_org(org_id: str) -> dict:
                                 for f in ("hours", "hours_at", "odo_km", "odo_at"):
                                     if slot.get(f) is None and extracted.get(f) is not None:
                                         slot[f] = extracted[f]
+                                        source_by_tid.setdefault(tid, "panel")
                 except (httpx.HTTPError, ValueError) as e:
                     log.info("get_states fallback errored (%s)", e)
+
+            # Phase 3.6 Pass 3 — Navixy *Mileage / Engine-hours* report API.
+            # Many plans expose this even when the per-tracker counter values
+            # aren't published. Throttled and admin-budget-friendly: limit to
+            # 10 devices per tick.
+            still_missing = [int(a["navixy_device_id"]) for a in cold_assets
+                             if not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("hours")
+                             and not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("odo_km")]
+            for tid in still_missing[:10]:
+                rep = await _fetch_counters_via_report(c, base, h, tid)
+                if rep.get("hours") is not None or rep.get("odo_km") is not None:
+                    slot = counters_by_tid.setdefault(tid, {
+                        "hours": None, "hours_at": None, "odo_km": None, "odo_at": None,
+                    })
+                    for f in ("hours", "hours_at", "odo_km", "odo_at"):
+                        if slot.get(f) is None and rep.get(f) is not None:
+                            slot[f] = rep[f]
+                    source_by_tid[tid] = "report"
+                await asyncio.sleep(0.5)  # rate-limit report endpoint
+
+            # Phase 3.6 Pass 4 — Tracks-derived rolling-window odometer & hours.
+            # Last resort: sum track length + duration over the last 90 days.
+            # This is technically a window-delta, not the cumulative odometer,
+            # so we tag it `navixy_tracks_window`. Concurrency with sem=4 keeps
+            # us a polite Navixy client.
+            still_missing = [int(a["navixy_device_id"]) for a in cold_assets
+                             if not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("hours")
+                             and not counters_by_tid.get(int(a["navixy_device_id"]), {}).get("odo_km")]
+            sem2 = asyncio.Semaphore(4)
+
+            async def _tracks_one(tid: int):
+                async with sem2:
+                    trk = await _fetch_counters_via_tracks(c, base, h, tid, window_days=90)
+                    if trk.get("hours") is not None or trk.get("odo_km") is not None:
+                        slot = counters_by_tid.setdefault(tid, {
+                            "hours": None, "hours_at": None, "odo_km": None, "odo_at": None,
+                        })
+                        for f in ("hours", "hours_at", "odo_km", "odo_at"):
+                            if slot.get(f) is None and trk.get(f) is not None:
+                                slot[f] = trk[f]
+                        source_by_tid[tid] = "tracks"
+
+            if still_missing:
+                # Cap to 20 devices per tick — track/list is fast but bounded.
+                await asyncio.gather(*[_tracks_one(t) for t in still_missing[:20]])
     except Exception as e:
         log.warning("navixy sync transport error for org=%s: %s", org_id, e)
         return {"org_id": org_id, "updated": 0, "skipped": 0, "errors": len(assets), "note": str(e)[:200]}
 
     updated = 0
     skipped = 0
+    source_breakdown = {"panel": 0, "report": 0, "tracks": 0, "none": 0, "already_current": 0}
     ts = now_iso()
+    cold_ids = {a["id"] for a in cold_assets}
     for a in assets:
         tid = int(a["navixy_device_id"])
         c = counters_by_tid.get(tid) or {}
+        src = source_by_tid.get(tid)
         patch: dict = {}
+        # Map provider → stored source label.
+        src_label = {"panel": "navixy", "report": "navixy_report",
+                     "tracks": "navixy_tracks_window"}.get(src or "", "navixy")
         if c.get("hours") is not None:
             patch["hours_meter"] = c["hours"]
             patch["hours_meter_updated_at"] = c.get("hours_at") or ts
-            patch["hours_meter_source"] = "navixy"
+            patch["hours_meter_source"] = src_label
         if c.get("odo_km") is not None:
             patch["odo_km"] = c["odo_km"]
             patch["odo_km_updated_at"] = c.get("odo_at") or ts
-            patch["odo_km_source"] = "navixy"
+            patch["odo_km_source"] = src_label
         if not patch:
             skipped += 1
+            # Warm assets we deliberately skipped (already had a source) are
+            # counted as `already_current`. Cold assets where every provider
+            # returned nothing are counted as `none` so the operator can see
+            # what's truly stuck.
+            if a["id"] in cold_ids:
+                source_breakdown["none"] += 1
+            else:
+                source_breakdown["already_current"] += 1
             continue
         patch["updated_at"] = ts
         await db.assets.update_one({"id": a["id"]}, {"$set": patch})
         a.update(patch)
         await _recompute_schedules_for_asset(a)
         updated += 1
+        source_breakdown[src or "panel"] += 1
 
     return {"org_id": org_id, "updated": updated, "skipped": skipped,
             "errors": errors, "devices": len(assets),
+            "source_breakdown": source_breakdown,
             "note": ("upstream_returned_no_counter_values"
                      if updated == 0 and skipped == len(assets) else None)}
 

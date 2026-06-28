@@ -11,6 +11,7 @@ import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
+import FleetLiveDashboards from '../components/FleetLiveDashboards';
 
 const KIND_CHIPS = [
   { key: 'all', label: 'All' },
@@ -226,6 +227,9 @@ export default function PlantVehicles() {
       {error && (
         <div className="mb-4 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700" data-testid="assets-error">{error}</div>
       )}
+
+      {/* Phase 3.6 — native Navixy dashboards (Fleet Live / Trips / Technical) */}
+      <FleetLiveDashboards />
 
       {/* Filters */}
       <div className="rounded-2xl border border-slate-200 bg-white p-3 mb-4 space-y-2.5">
