@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
+import InductionsMatrix from '../components/InductionsMatrix';
+import WorkerInductionsCard from '../components/WorkerInductionsCard';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const SYNC_OPTIONS = [
@@ -872,6 +874,13 @@ function EditModal({ worker, onClose, onSaved }) {
             <CertificationsPanel workerId={worker.id} canEdit={true} />
           )}
 
+          {/* Phase 3.11 — Inductions snapshot from the live matrix */}
+          {!isNew && (
+            <Section icon={Award} title="Inductions" testid="section-inductions">
+              <WorkerInductionsCard workerId={worker.id} />
+            </Section>
+          )}
+
           {/* Phase 4.1 — ID Card (printable wallet/lanyard PDFs + NFC pairing). */}
           {!isNew && (
             <IdCardSection worker={worker} canEdit={true} />
@@ -932,12 +941,23 @@ export default function Workers() {
   const [syncOpen, setSyncOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  // Phase 3.11 — Directory + Inductions Matrix tabs.
+  const [tab, setTab] = useState('directory');
+  // Per-worker induction-status chip map (loaded once with the matrix call).
+  const [chipByWorker, setChipByWorker] = useState({});
 
   const load = async () => {
     setLoading(true);
     try {
       const { data } = await api.get('/workers');
       setRows(data || []);
+      // Best-effort: also fetch the matrix to decorate rows with status chips.
+      // Worker role still gets 200 here; if it fails we just skip chips.
+      try {
+        const mx = await api.get('/workers/inductions/matrix');
+        const m = {}; (mx.data?.rows || []).forEach((r) => { m[r.id] = r.chip; });
+        setChipByWorker(m);
+      } catch (_) { /* silent */ }
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -995,6 +1015,24 @@ export default function Workers() {
       <PageHeader crumb="Settings / Workers" title="Workers"
         subtitle="Your field crew — synced from Simpro or added manually." />
 
+      {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix */}
+      <div className="mb-4 inline-flex p-1 rounded-lg bg-slate-100 border border-slate-200" data-testid="workers-tabs">
+        <button onClick={() => setTab('directory')} data-testid="tab-directory"
+          className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${
+            tab === 'directory' ? 'bg-white text-[#1e4a8c] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>
+          Directory
+        </button>
+        <button onClick={() => setTab('matrix')} data-testid="tab-matrix"
+          className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${
+            tab === 'matrix' ? 'bg-white text-[#5b21b6] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>
+          Inductions Matrix
+        </button>
+      </div>
+
+      {tab === 'matrix' ? (
+        <InductionsMatrix />
+      ) : (
+      <>
       <div className="mb-4 flex items-center gap-2 flex-wrap" data-testid="workers-toolbar">
         <div className="relative flex-1 max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -1098,7 +1136,19 @@ export default function Workers() {
                             <QrCode size={9} /> QR
                           </span>
                         ) : null}
-                        {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && <span className="text-[11px] text-slate-300">—</span>}
+                        {chipByWorker[w.id] && chipByWorker[w.id] !== 'unknown' ? (
+                          <span data-testid={`chip-induction-${w.id}`}
+                            title={`Inductions: ${chipByWorker[w.id]}`}
+                            className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                              chipByWorker[w.id] === 'current' ? 'bg-[#d8ecdd] text-[#1f7a3f]' :
+                              chipByWorker[w.id] === 'expiring' ? 'bg-[#fef3c7] text-[#92400e]' :
+                              chipByWorker[w.id] === 'expired' || chipByWorker[w.id] === 'invalid_date' ? 'bg-[#fbe4e7] text-[#7a1f33]' :
+                              'bg-slate-100 text-slate-500'
+                            }`}>
+                            <Award size={9} /> {chipByWorker[w.id]}
+                          </span>
+                        ) : null}
+                        {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && !chipByWorker[w.id] && <span className="text-[11px] text-slate-300">—</span>}
                       </div>
                     </td>
                     <td className="px-3 py-3"><StatusBadge active={w.active} /></td>
@@ -1132,6 +1182,8 @@ export default function Workers() {
       {editing && (
         <EditModal worker={editing} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
+      )}
+      </>
       )}
     </div>
   );

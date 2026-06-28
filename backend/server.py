@@ -132,6 +132,9 @@ api.include_router(swms_extras_router)
 
 from file_pdf import router as file_pdf_router  # noqa: E402
 api.include_router(file_pdf_router)
+
+from workers_inductions import router as workers_inductions_router  # noqa: E402
+api.include_router(workers_inductions_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
 

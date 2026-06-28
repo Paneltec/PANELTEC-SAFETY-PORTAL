@@ -33,26 +33,46 @@ const PDF_OK = (mime, name) => {
 export const isPdfPreviewable = PDF_OK;
 
 export default function PdfPreviewModal({ file, onClose }) {
+  // Iframes can't carry the Authorization header, so we mint a short-lived
+  // signed token via POST /files/{id}/preview-token and put it on the iframe
+  // src as `?t=`. This sidesteps Chrome's iframe-cookie / cross-origin auth
+  // friction that produced the "page blocked" screen with the bearer-blob
+  // approach.
   const [src, setSrc] = useState(null);
   const [pipeline, setPipeline] = useState(null);
   const [err, setErr] = useState(null);
+  const [iframeBlocked, setIframeBlocked] = useState(false);
 
   useEffect(() => {
     if (!file) return;
-    let url = null;
     let alive = true;
+    setIframeBlocked(false);
+    const watchdog = setTimeout(() => {
+      // If the iframe hasn't fired `onload` within 6 s, assume it's been
+      // blocked (Chrome's frame-ancestors enforcement is silent — no error
+      // event fires). The fallback card lets the user pop the PDF in a new
+      // tab where the same-origin policy doesn't apply.
+      if (alive) setIframeBlocked(true);
+    }, 6000);
     (async () => {
       try {
-        const r = await api.get(`/files/${file.id}/pdf`, { responseType: 'blob' });
+        const r = await api.post(`/files/${file.id}/preview-token`);
         if (!alive) return;
-        url = URL.createObjectURL(r.data);
-        setSrc(url);
-        setPipeline(r.headers?.['x-pipeline'] || null);
+        const t = r.data?.token;
+        // We honour same-origin by routing through the React proxy; the
+        // backend stamps frame-ancestors with the preview domain so the
+        // iframe loads cross-process within the Kubernetes ingress.
+        setSrc(`${process.env.REACT_APP_BACKEND_URL}/api/files/${file.id}/pdf?t=${encodeURIComponent(t)}`);
+        // Pipeline isn't available via the signed iframe URL; do a tiny
+        // bearer HEAD-style fetch on /pdf to grab the header for display.
+        api.get(`/files/${file.id}/pdf`, { responseType: 'blob' })
+          .then((rr) => { if (alive) setPipeline(rr.headers?.['x-pipeline'] || null); })
+          .catch(() => {});
       } catch (e) {
-        setErr(apiError(e));
+        if (alive) setErr(apiError(e));
       }
     })();
-    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+    return () => { alive = false; clearTimeout(watchdog); };
   }, [file]);
 
   useEffect(() => {
@@ -129,6 +149,27 @@ export default function PdfPreviewModal({ file, onClose }) {
                 <p className="text-[12px] text-slate-600 mt-1.5">{err}</p>
               </div>
             </div>
+          ) : iframeBlocked ? (
+            <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-blocked">
+              <div className="text-center max-w-md px-6">
+                <FileWarning size={28} className="text-amber-600 mx-auto mb-3" />
+                <div className="font-semibold text-slate-900">Chrome blocked the inline preview</div>
+                <p className="text-[12px] text-slate-600 mt-1.5">
+                  Some browsers refuse to render PDFs inside an iframe. Use the buttons below
+                  to open this PDF in a new tab or download it.
+                </p>
+                <div className="mt-4 inline-flex gap-2">
+                  <button onClick={openInNewTab}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
+                    <ExternalLink size={12} /> Open in new tab
+                  </button>
+                  <button onClick={downloadPdf}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    <Download size={12} /> Download PDF
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : !src ? (
             <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-loading">
               <div className="text-center">
@@ -139,7 +180,9 @@ export default function PdfPreviewModal({ file, onClose }) {
           ) : (
             <iframe data-testid="pdf-modal-iframe"
               title={file.filename || 'PDF preview'}
-              src={src} className="w-full h-full border-0" />
+              src={src}
+              onLoad={() => setIframeBlocked(false)}
+              className="w-full h-full border-0" />
           )}
         </div>
       </div>

@@ -1,16 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { FileText, Loader2, Plus, Trash2 } from 'lucide-react';
+import {
+  FileText, Loader2, Plus, Trash2, Download, ChevronDown,
+  AlertTriangle, ArrowUpRight, ShieldAlert, Layers,
+} from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
-import { getUser } from '../lib/auth';
+import { getUser, getToken } from '../lib/auth';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
   Field, inputClass, EmptyState, StatusBadge,
 } from '../components/capture/Ui';
+
+const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 
 // ----------------------- LIST -----------------------
 export default function SwmsList() {
@@ -248,16 +253,26 @@ export function SwmsDetail() {
         <div>
           <div className="text-xs text-slate-500 mb-1">Capture / AI SWMS / {doc.title}</div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">{doc.title}</h1>
-          <div className="mt-2 flex items-center gap-2"><StatusBadge value={doc.status} /><span className="text-xs text-slate-500">v{doc.version || 1} · {doc.created_at?.slice(0, 10)}</span></div>
-        </div>
-        {isReviewer && doc.status === 'submitted' && (
-          <div className="flex gap-2">
-            <GhostButton onClick={() => review('request_changes')} testid="swms-request-changes">Request changes</GhostButton>
-            <GhostButton onClick={() => review('reject')} testid="swms-reject">Reject</GhostButton>
-            <PrimaryButton onClick={() => review('approve')} busy={busy} testid="swms-approve">Approve</PrimaryButton>
+          <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <StatusBadge value={doc.status} />
+            {doc.code && <span className="text-[10px] uppercase tracking-wider font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">{doc.code}</span>}
+            <span className="text-xs text-slate-500">v{doc.version || 1} · {doc.created_at?.slice(0, 10)}</span>
           </div>
-        )}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <SwmsDownloadButton doc={doc} />
+          {isReviewer && doc.status === 'submitted' && (
+            <>
+              <GhostButton onClick={() => review('request_changes')} testid="swms-request-changes">Request changes</GhostButton>
+              <GhostButton onClick={() => review('reject')} testid="swms-reject">Reject</GhostButton>
+              <PrimaryButton onClick={() => review('approve')} busy={busy} testid="swms-approve">Approve</PrimaryButton>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Version chain banners — superseded_by / supersedes */}
+      <SwmsVersionBanner doc={doc} />
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-4">
         <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2">Job description</div>
@@ -268,6 +283,147 @@ export function SwmsDetail() {
       <DetailList title="Hazards" items={(doc.hazards || []).map((h) => `${h.label} (${h.risk})`)} />
       <DetailList title="Controls" items={(doc.controls || []).map((c) => `${c.label} — ${c.method}`)} />
       <DetailList title="PPE" items={doc.ppe || []} />
+
+      {/* Phase 3.10 — SWMS-06 rich sections */}
+      {(doc.codes_practices || []).length > 0 && (
+        <DetailList title="Codes & Practices" items={doc.codes_practices} />
+      )}
+      {(doc.equipment_required || []).length > 0 && (
+        <DetailList title="Equipment required" items={doc.equipment_required} />
+      )}
+      {doc.emergency_procedures && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-4" data-testid="swms-emergency">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-3 flex items-center gap-1.5">
+            <ShieldAlert size={12} className="text-amber-500" /> Emergency procedures
+          </div>
+          {Object.entries(doc.emergency_procedures).map(([k, v]) => (
+            <div key={k} className="mb-3 last:mb-0">
+              <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">{k.replace(/_/g, ' ')}</div>
+              <p className="text-sm text-slate-700">{v}</p>
+            </div>
+          ))}
+        </div>
+      )}
+      {doc.applies_to && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-4" data-testid="swms-applies-to">
+          <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold mb-2 flex items-center gap-1.5">
+            <Layers size={12} /> Applies to
+          </div>
+          <AppliesTo applies_to={doc.applies_to} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppliesTo({ applies_to }) {
+  const chunks = [];
+  if ((applies_to.asset_kinds || []).length) chunks.push(['Asset kinds', applies_to.asset_kinds]);
+  if ((applies_to.asset_types || []).length) chunks.push(['Asset types', applies_to.asset_types]);
+  if ((applies_to.roles || []).length) chunks.push(['Roles', applies_to.roles.map((r) => r.role || r)]);
+  if ((applies_to.worker_ids || []).length) chunks.push(['Workers', [`${applies_to.worker_ids.length} specific worker(s)`]]);
+  if ((applies_to.companies || []).length) chunks.push(['Companies', applies_to.companies]);
+  if (chunks.length === 0) return <p className="text-sm text-slate-400 italic">Not yet assigned. Use Form Assignments → SWMS to scope this document.</p>;
+  return (
+    <div className="space-y-2">
+      {chunks.map(([label, items]) => (
+        <div key={label} className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mr-1.5">{label}:</span>
+          {items.map((it, i) => (
+            <span key={i} className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c]">
+              {String(it).replace(/_/g, ' ')}
+            </span>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SwmsVersionBanner({ doc }) {
+  if (!doc.superseded_by && !doc.supersedes) return null;
+  return (
+    <div className="mb-4 space-y-2">
+      {doc.superseded_by && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-3" data-testid="swms-superseded-banner">
+          <AlertTriangle size={16} className="text-amber-600 flex-shrink-0" />
+          <div className="flex-1 text-sm text-amber-900">
+            This version has been <strong>superseded</strong>. The current approved version is available below.
+          </div>
+          <Link to={`/app/swms/${doc.superseded_by}`}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-amber-900 hover:underline">
+            Open current <ArrowUpRight size={12} />
+          </Link>
+        </div>
+      )}
+      {doc.supersedes && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex items-center gap-3" data-testid="swms-supersedes-banner">
+          <Layers size={16} className="text-blue-600 flex-shrink-0" />
+          <div className="flex-1 text-sm text-blue-900">
+            This version <strong>supersedes</strong> an earlier draft. Previous versions are archived for audit trail.
+          </div>
+          <Link to={`/app/swms/${doc.supersedes}`}
+            className="inline-flex items-center gap-1 text-sm font-semibold text-blue-900 hover:underline">
+            View previous <ArrowUpRight size={12} />
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SwmsDownloadButton({ doc }) {
+  const [open, setOpen] = useState(false);
+  const hasOriginal = !!(doc.source_file?.url);
+
+  const downloadCivil = async () => {
+    setOpen(false);
+    try {
+      const { data } = await api.post('/pdf-token', {
+        resource: 'swms', record_id: doc.id, action: 'download',
+      });
+      window.open(data.url, '_blank');
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  const downloadOriginal = () => {
+    setOpen(false);
+    if (!hasOriginal) return;
+    window.open(doc.source_file.url, '_blank');
+  };
+
+  return (
+    <div className="relative inline-flex items-stretch rounded-lg border border-slate-300 bg-white shadow-sm overflow-visible"
+         data-testid="swms-download-split">
+      <button onClick={downloadCivil}
+        data-testid="swms-download-civil"
+        className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 rounded-l-lg">
+        <Download size={14} /> Civil PDF
+      </button>
+      <div className="w-px bg-slate-200" />
+      <button onClick={() => setOpen((v) => !v)}
+        data-testid="swms-download-toggle"
+        className="inline-flex items-center px-2 py-2 text-slate-500 hover:bg-slate-50 rounded-r-lg">
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-10 w-56 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden"
+             data-testid="swms-download-menu">
+          <button onClick={downloadCivil}
+            className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50">
+            <div className="font-medium text-slate-900">Civil PDF</div>
+            <div className="text-[11px] text-slate-500">AI-rendered, branded layout</div>
+          </button>
+          <button onClick={downloadOriginal} disabled={!hasOriginal}
+            data-testid="swms-download-original"
+            className="block w-full text-left px-3 py-2 text-sm hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed border-t border-slate-100">
+            <div className="font-medium text-slate-900">Original document</div>
+            <div className="text-[11px] text-slate-500">
+              {hasOriginal ? doc.source_file.filename || 'Source .docx' : 'No original on file'}
+            </div>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

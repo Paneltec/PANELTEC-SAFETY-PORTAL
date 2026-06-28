@@ -28,16 +28,20 @@ Cache: converted PDFs live in `doc_files_pdf_cache` keyed by
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import io
+import json
 import logging
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from reportlab.lib.pagesizes import A4
@@ -253,6 +257,9 @@ def _pdf_response(pdf: bytes, original_name: str, dl: bool, pipeline: str) -> Re
     base = original_name.rsplit(".", 1)[0] or "document"
     fname = f"{base}.pdf"
     disp = "attachment" if dl else "inline"
+    # Phase 3.10 hotfix — Chrome blocks cross-origin iframe loading without
+    # explicit CSP frame-ancestors + same-site CORP. Stamp them on every PDF
+    # response so the PdfPreviewModal iframe loads cleanly.
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -260,23 +267,92 @@ def _pdf_response(pdf: bytes, original_name: str, dl: bool, pipeline: str) -> Re
             "Content-Disposition": f'{disp}; filename="{fname}"',
             "X-Pipeline": pipeline,
             "Cache-Control": "private, max-age=3600",
+            "X-Frame-Options": "SAMEORIGIN",
+            "Content-Security-Policy": (
+                "frame-ancestors 'self' https://*.emergentagent.com "
+                "https://*.preview.emergentagent.com"
+            ),
+            "Cross-Origin-Resource-Policy": "same-site",
+            "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
         },
     )
+
+
+# ────────────────── signed preview token (iframe auth) ──────────────────
+#
+# Iframes can't carry the Authorization header, so the PdfPreviewModal mints a
+# short-lived signed token via POST /preview-token and passes it as `?t=` on
+# the iframe src. The token is HMAC-SHA256 over {file_id, user_id, exp}, signed
+# with the JWT secret. Audience is bound to file_id to prevent token reuse on
+# a different file.
+
+def _preview_secret() -> bytes:
+    s = os.environ.get("JWT_SECRET") or os.environ.get("SECRET_KEY") or "paneltec-dev"
+    return s.encode()
+
+
+def _mint_preview_token(file_id: str, user_id: str, ttl_seconds: int = 300) -> str:
+    payload = {"f": file_id, "u": user_id, "exp": int(time.time()) + ttl_seconds}
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).rstrip(b"=").decode()
+    sig = hmac.new(_preview_secret(), body.encode(), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(sig).rstrip(b"=").decode()
+    return f"{body}.{sig_b64}"
+
+
+def _verify_preview_token(token: str, file_id: str) -> Optional[str]:
+    try:
+        body, sig_b64 = token.split(".", 1)
+        expected = hmac.new(_preview_secret(), body.encode(), hashlib.sha256).digest()
+        got = base64.urlsafe_b64decode(sig_b64 + "==")
+        if not hmac.compare_digest(expected, got):
+            return None
+        payload = json.loads(base64.urlsafe_b64decode(body + "==").decode())
+        if payload.get("f") != file_id:
+            return None
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return payload.get("u")
+    except Exception:
+        return None
 
 
 # ────────────────── endpoints ──────────────────
 
 @router.get("/files/{file_id}/pdf")
-async def file_pdf(file_id: str, dl: int = Query(0), user: dict = Depends(get_current_user)):
+async def file_pdf(file_id: str, request: Request,
+                   dl: int = Query(0),
+                   t: Optional[str] = Query(None, description="signed iframe token; alternative to Bearer auth")):
+    """Stream PDF. Accepts EITHER an Authorization Bearer header (curl /
+    download path) OR a short-lived signed `?t=` token (iframe path, since
+    iframes can't carry custom headers)."""
+    if t:
+        user_id = _verify_preview_token(t, file_id)
+        if not user_id:
+            raise HTTPException(401, "Invalid or expired preview token")
+        u = await db.users.find_one({"id": user_id}, {"_id": 0})
+        if not u:
+            raise HTTPException(401, "Token user not found")
+        user = u
+    else:
+        user = await get_current_user(request, creds=None)
     doc, path = await _resolve_file(file_id, user)
     pdf, pipeline = await _convert(doc, path)
     return _pdf_response(pdf, doc.get("filename") or file_id, bool(dl), pipeline)
 
 
 @router.get("/files/{file_id}/pdf.pdf")
-async def file_pdf_aliased(file_id: str, dl: int = Query(0), user: dict = Depends(get_current_user)):
-    """Ad-blocker-friendly path-only variant (mirrors forms_pdf pattern)."""
-    return await file_pdf(file_id, dl=dl, user=user)
+async def file_pdf_aliased(file_id: str, request: Request,
+                           dl: int = Query(0), t: Optional[str] = Query(None)):
+    return await file_pdf(file_id, request, dl=dl, t=t)
+
+
+@router.post("/files/{file_id}/preview-token")
+async def mint_file_preview_token(file_id: str, user: dict = Depends(get_current_user)):
+    """Issue a 5-minute signed token bound to (file_id, user_id) so the iframe
+    can fetch the PDF without an Authorization header."""
+    doc, _ = await _resolve_file(file_id, user)  # access check + 404
+    token = _mint_preview_token(doc["id"], user["id"])
+    return {"token": token, "expires_in": 300}
 
 
 class BundleIn(BaseModel):

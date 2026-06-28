@@ -756,3 +756,42 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 - Phase 5 — UHF reader integration (P2)
 - Per-trade auto-tick for form preferences (P2 — was deferred from 3.9)
 - Bulk "Scan reminders now" toolbar button (P2)
+
+---
+## 2026-06-28 · Phase 3.10 + 3.11 ship summary
+
+### Phase 3.10 — Iframe PDF block fix (Chrome) [VERIFIED]
+- `file_pdf.py` stamps `Content-Security-Policy: frame-ancestors 'self' https://*.emergentagent.com https://*.preview.emergentagent.com` + `X-Frame-Options: SAMEORIGIN` on every PDF response.
+- `POST /api/files/{id}/preview-token` mints HMAC-SHA256 signed token (`f` claim = file_id, `u` claim = user_id, `exp` claim, 300 s TTL). Cross-file reuse → 401, tamper → 401.
+- `PdfPreviewModal.jsx` uses `?t=` token + 6 s watchdog fallback.
+- Verified: 200 / correct CSP / token-bound (all curl receipts + screenshot).
+
+### Phase 3.11 — Live Inductions Matrix [SHIPPED]
+- Backend `workers_inductions.py`:
+  - `parse_messy_date` lenient parser (high / medium / low / unparseable). Skip-and-flag honoured: low / unparseable cells NEVER written.
+  - 5 endpoints: `POST /import-xlsx`, `POST /import-xlsx/commit`, `GET /matrix`, `PUT /cell`, `GET /export.xlsx`.
+  - New collection: `worker_access`. `worker_certifications` extended with `category`, `column_key`, `not_held`, `held_no_expiry`, `source`, `import_confidence`.
+  - RBAC: admin/manager/hseq_lead on writes; matrix-read open to all authed.
+  - Unit tests: `/app/backend/tests/test_induction_date_parser.py` — 10/10 passing.
+- Frontend:
+  - `InductionsMatrix.jsx` — sticky wide table with status chips, inline cell editor, search/refresh/export.
+  - `InductionImportWizard.jsx` — 3-step preview → commit flow with skip-and-flag callout.
+  - `WorkerInductionsCard.jsx` — per-worker induction snapshot for the worker drawer.
+  - `Workers.jsx` — tab switcher (Directory / Inductions Matrix) + induction-status chip on directory row.
+  - SW bump → `paneltec-v64`.
+
+### Deferred to Phase 3.12
+- Date-parser label-whitelist expansion (`MR ` / `HR ` prefixes need to match real Employee-Inductions.xlsx).
+- Bulk-cell paste / undo on matrix cells.
+
+### Phase Turn 4 — SWMS UI deferrals (partial)
+- **SHIPPED**: Rich SwmsDetail (codes, equipment, emergency procedures, applies-to block), split-button download (Civil PDF + Original document), version-chain banners (`superseded_by` / `supersedes` aware with cross-version links). SW bumped → `paneltec-v65`. yarn build clean.
+- **DEFERRED to next session (Turn 4 follow-up)**:
+  - `/app/settings/swms-assignments` admin two-pane page (mirror Form Assignments layout).
+  - Re-import commit logic in `swms_extras.py` that auto-chains `supersedes`/`superseded_by` when a new version of the same `code` is committed.
+
+### Phase Turn 5 — Site Induction QR · DEFERRED to next session
+Scope unchanged from spec: sites collection cleanup (`scan_token`, `nfc_uid`, `induction_form_template_id`, `gps_geofence`), public `GET /api/scan/site/{token}` resolver, JWT-gated `POST /api/scan/site/{token}/sign-on`, Site QR PDF (gate sign + Avery sheet), `SiteScanResolver.jsx` route, admin "Print site QR" on Sites admin page.
+
+### Phase Turn 6 — Supplier Induction QR · DEFERRED to next session
+Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, prequalification form with insurance upload + cert tick boxes), public `/scan/supplier/{token}` resolver, Supplier QR PDF (vCard + QR for first-email send).
