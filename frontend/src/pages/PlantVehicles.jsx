@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Plus, RefreshCw, Search, MapPin, Truck, Loader2, Printer, Tag,
   Edit3, Archive, QrCode, X, List as ListIcon, Map as MapIcon, Radio,
+  ClipboardCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
@@ -162,6 +163,46 @@ export default function PlantVehicles() {
     return m;
   }, [data.assets]);
 
+  // Phase 3.9b — load form-assignment counts per asset_type so each row can
+  // show "N forms". Only admin/manager/hseq_lead can read the matrix; for
+  // workers we just leave the chip hidden.
+  const [formCountsByType, setFormCountsByType] = useState({});
+  const [formNamesByType, setFormNamesByType] = useState({});
+  useEffect(() => {
+    let alive = true;
+    api.get('/form-templates/assignments').then((r) => {
+      if (!alive) return;
+      const counts = {};
+      const names = {};
+      (r.data?.templates || []).forEach((t) => {
+        const a = t.applies_to || {};
+        const isAny = (a.kinds || []).includes('any');
+        const types = a.asset_types || [];
+        const kinds = a.kinds || [];
+        // Track per-type (explicit) and a sentinel for "any kind".
+        const targets = new Set(types);
+        // Also: any kind-level match → applies to every asset_type of that kind.
+        // We can't compute that without a full kind→types index, so we just
+        // include this template against every asset_type the page knows
+        // about. data.assets already gives us that mapping cheaply.
+        if (isAny || kinds.length) {
+          (data.assets || []).forEach((asset) => {
+            if (isAny || (asset.kind && kinds.includes(asset.kind))) {
+              if (asset.asset_type) targets.add(asset.asset_type);
+            }
+          });
+        }
+        targets.forEach((at) => {
+          counts[at] = (counts[at] || 0) + 1;
+          (names[at] = names[at] || []).push(t.name);
+        });
+      });
+      setFormCountsByType(counts);
+      setFormNamesByType(names);
+    }).catch(() => { /* worker or other 403 — chip stays hidden */ });
+    return () => { alive = false; };
+  }, [data.assets]);
+
   const archive = async (a) => {
     if (!window.confirm(`Archive asset "${a.name}"?`)) return;
     try {
@@ -298,6 +339,14 @@ export default function PlantVehicles() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-semibold text-slate-900 truncate" data-testid={`asset-name-${a.id}`}>{a.name}</span>
                     <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600" data-testid={`asset-type-${a.id}`}>{fmtType(a.asset_type)}</span>
+                    {formCountsByType[a.asset_type] > 0 && (
+                      <Link to={`/app/settings/form-assignments?asset_type=${encodeURIComponent(a.asset_type)}`}
+                        title={(formNamesByType[a.asset_type] || []).join(' · ')}
+                        data-testid={`asset-forms-chip-${a.id}`}
+                        className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
+                        <ClipboardCheck size={10} /> {formCountsByType[a.asset_type]} forms
+                      </Link>
+                    )}
                     <SourceBadge asset={a} />
                     <PairingChips asset={a} />
                     {a.status === 'retired' && <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">Retired</span>}

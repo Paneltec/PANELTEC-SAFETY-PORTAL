@@ -254,9 +254,13 @@ async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
         if not matches:
             continue
         cat = (tpl.get("category") or "").lower()
+        # Recommended badge: modern category keys + a small legacy-label
+        # fallback so templates that still carry "Vehicle"/"Plant"/etc don't
+        # silently lose their flag if the backfill hasn't run for whatever
+        # reason.
         recommended = (
-            (kind == "vehicle" and cat in {"pre_use", "daily_check"})
-            or (kind == "plant" and cat == "plant_pre_start")
+            (kind == "vehicle" and cat in {"pre_use", "daily_check", "vehicle"})
+            or (kind == "plant"   and cat in {"plant_pre_start", "plant"})
         )
         forms.append({
             "template_id": tpl["id"],

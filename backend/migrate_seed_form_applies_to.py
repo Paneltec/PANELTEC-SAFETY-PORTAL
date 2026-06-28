@@ -1,30 +1,19 @@
-"""Phase 3.9b — Seed default `applies_to` on existing form_templates.
+"""Phase 3.9b — Seed default `applies_to` on existing form_templates and
+backfill modern category keys for the 5 named templates so the scan-page
+`recommended` badge logic lights up correctly.
 
-Idempotent. Gated by `forms.applies_to_seeded_at` in `db.migration_state` so
-subsequent restarts skip the work.
-
-Mapping rules (per user spec, "option b" for unspecified types):
-  • Vehicle Pre-Use Inspection                    → kinds=[vehicle]
-  • Heavy Vehicle Daily Check                     → kinds=[vehicle],
-                                                    asset_types=[tipper,
-                                                    vacuum_truck, service_truck,
-                                                    crane_truck]
-  • Plant Pre-Start Checklist (Heavy Equipment)   → kinds=[plant],
-                                                    asset_types=[excavator,
-                                                    generator, compactor]
-  • Incident Report                               → kinds=[any]
-  • Near Miss Report                              → kinds=[any]
-  • Everything else                               → kinds=[], asset_types=[]
-                                                    (won't appear on scans, still
-                                                    callable from /app/forms)
+Both steps are idempotent and individually gated:
+  • applies_to seeding   → forms.applies_to_seeded_at
+  • category backfill    → forms.categories_backfilled_at
 """
 from __future__ import annotations
 from datetime import datetime, timezone
 from db import db
 
 _SEED_KEY = "forms.applies_to_seeded_at"
+_CAT_KEY  = "forms.categories_backfilled_at"
 
-_RULES: dict[str, dict] = {
+_APPLIES_TO_RULES: dict[str, dict] = {
     "Vehicle Pre-Use Inspection":
         {"kinds": ["vehicle"], "asset_types": []},
     "Heavy Vehicle Daily Check":
@@ -39,23 +28,30 @@ _RULES: dict[str, dict] = {
     "Near Miss Report": {"kinds": ["any"], "asset_types": []},
 }
 
+# Modern category keys aligned with the scan_forms recommended-badge rule.
+_CATEGORY_RULES: dict[str, str] = {
+    "Vehicle Pre-Use Inspection":                "pre_use",
+    "Heavy Vehicle Daily Check":                 "daily_check",
+    "Plant Pre-Start Checklist (Heavy Equipment)": "plant_pre_start",
+    "Plant Pre-Start Checklist":                 "plant_pre_start",
+    "Incident Report":                           "incident",
+    "Near Miss Report":                          "near_miss",
+}
 
-async def run_migration() -> dict:
+
+async def _seed_applies_to() -> dict:
     state = await db.migration_state.find_one({"_id": _SEED_KEY})
     if state and state.get("at"):
         return {"already_done": True, "at": state["at"]}
-
     updated = 0
     defaulted = 0
     async for t in db.form_templates.find(
         {"deleted_at": None},
         {"_id": 0, "id": 1, "name": 1, "applies_to": 1},
     ):
-        # If a template already has explicit applies_to (e.g. via API edit),
-        # respect that and skip — only seed first-time defaults.
         if t.get("applies_to"):
             continue
-        rule = _RULES.get(t["name"])
+        rule = _APPLIES_TO_RULES.get(t["name"])
         if rule:
             applies_to = {"kinds": rule["kinds"], "asset_types": rule["asset_types"]}
             updated += 1
@@ -66,7 +62,6 @@ async def run_migration() -> dict:
             {"id": t["id"]},
             {"$set": {"applies_to": applies_to}},
         )
-
     now = datetime.now(timezone.utc).isoformat()
     await db.migration_state.update_one(
         {"_id": _SEED_KEY},
@@ -74,3 +69,30 @@ async def run_migration() -> dict:
         upsert=True,
     )
     return {"already_done": False, "at": now, "named": updated, "blank": defaulted}
+
+
+async def _backfill_categories() -> dict:
+    state = await db.migration_state.find_one({"_id": _CAT_KEY})
+    if state and state.get("at"):
+        return {"already_done": True, "at": state["at"]}
+    updated = 0
+    for name, cat in _CATEGORY_RULES.items():
+        res = await db.form_templates.update_one(
+            {"name": name, "deleted_at": None},
+            {"$set": {"category": cat}},
+        )
+        if res.matched_count:
+            updated += 1
+    now = datetime.now(timezone.utc).isoformat()
+    await db.migration_state.update_one(
+        {"_id": _CAT_KEY},
+        {"$set": {"at": now, "renamed": updated}},
+        upsert=True,
+    )
+    return {"already_done": False, "at": now, "renamed": updated}
+
+
+async def run_migration() -> dict:
+    a = await _seed_applies_to()
+    b = await _backfill_categories()
+    return {"applies_to": a, "categories": b}

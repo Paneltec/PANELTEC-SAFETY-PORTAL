@@ -43,9 +43,9 @@ const NAV = [
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },
     { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces', pastel: 'slate' },
-    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
-    { to: '/app/settings/users', label: 'Users', icon: UserCog, testid: 'nav-settings-users', resource: 'users', pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: HardHat, testid: 'nav-settings-workers', pastel: 'sky' },
+    { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardList, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
+    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Award, testid: 'nav-settings-certifications', pastel: 'butter' },
     { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true, pastel: 'slate' },
   ]},
