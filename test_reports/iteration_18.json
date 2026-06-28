@@ -1,0 +1,30 @@
+{
+  "summary": "Phase 4.1 Worker Induction QR — full end-to-end pass. Backend 12/12 pytest (qr.png 200/401, id-card.pdf wallet/lanyard/avery %PDF + garbage 422, public scan resolver 200/404, site-signin 200 with source=worker_qr/workspace_id/worker_name/signed_in_by_user_id + 401 unauth, NFC pair 200 + 409 dup + 200 unpair, asset /scan/{token}/forms regression 200 — no route shadowing). Frontend Playwright: anonymous /scan/worker/i4UmjUBzsi renders worker-profile with 'Stephen Guy' and worker-signin-anon CTA; after real-form login the same URL renders worker-signin-btn which opens signin-modal listing 12 sites (signin-site-*); /app/workers shows 60 chip-qr-* rows (Stephen Guy row also has chip-nfc + print/edit/delete buttons); worker-edit-modal section-id-card expands and contains all 8 required testids (id-card-qr, layout-wallet/lanyard/avery, id-card-print, id-card-download, nfc-input, nfc-pair) with layout-wallet sporting active ring-blue styling while lanyard is plain.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_41_worker_qr.py",
+    "/app/test_reports/pytest/phase_41_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Public /api/scan/worker/{token} returns scan_token in payload — this is fine because the caller already has it, but worth keeping in mind it should never be inferable from an auth-leaking field. Currently sanitised correctly.",
+    "site-signin permits any authed user in the same org to sign any worker in. RBAC scoping (admin/manager/safety_officer/self) is documented in the docstring but not enforced — anybody with a Bearer token in org_id can write. Worth tightening if it leaves QA.",
+    "signin-modal sites picker uses customer site IDs (free-text addresses with spaces) as both id and data-testid value — works but produces brittle/non-URL-safe testids like 'signin-site- 2/37 Leslie St…'. Consider slugifying for test stability.",
+    "WorkerScanResolver useEffect fetches sites with `siteQ` debouncing absent — every keystroke triggers an API call. Low traffic so fine for now, but add a debounce later.",
+    "site_signins.workspace_id falls back to (user.get('workspace_ids') or [None])[0] — picks the first workspace arbitrarily. If admin operates across multiple sites/workspaces, attendance may be tagged to the wrong workspace."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_41_worker_qr.py (new pytest module — 12 tests)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin). Test worker: Stephen Guy id=dbddf739-5803-4a86-925d-ed1aef514fa1 scan_token=i4UmjUBzsi nfc_uid=04:A1:B2:C3:D4:E5",
+  "seed_data_creation": "Tests insert a site_signins row each run (site_id='site-test-phase41', source='worker_qr'). NFC pair is restored to 04:A1:B2:C3:D4:E5 at end of NFC test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run with REACT_APP_BACKEND_URL exported in shell (NOT loaded from frontend/.env automatically): `REACT_APP_BACKEND_URL=https://whs-compliance.preview.emergentagent.com python -m pytest backend/tests/test_phase_41_worker_qr.py -v`. The signin-modal sites picker takes ~2-3s to populate after the modal opens (hits /api/forms/pickers/sites which proxies Simpro). Wait at least 3s before asserting on signin-site-* items. Workers route gate REQUIRES sidebar navigation after login — page.goto('/app/workers') will fail; click `a[href*=\"workers\"]` instead. Public /scan/worker/<token> works via direct page.goto since it's an unprotected route."
+}

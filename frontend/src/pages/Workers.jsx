@@ -5,8 +5,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
-  FileText, HardHat, Loader2, Mail, MapPin, Plug, Plus, RefreshCw, Search, Square,
-  Trash2, Upload, UploadCloud, Users, X,
+  FileText, HardHat, Loader2, Mail, MapPin, Plug, Plus, Printer, QrCode, RefreshCw,
+  Search, Smartphone, Square, Tag, Trash2, Upload, UploadCloud, Users, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -463,6 +463,171 @@ function CertEditRow({ cert, onSaved, onCancel }) {
 }
 
 
+// ────────────────── Phase 4.1 — ID Card / NFC ──────────────────
+
+const LAYOUTS = [
+  { value: 'wallet',  label: 'Wallet card',  hint: '85.6 × 54 mm · ID-1' },
+  { value: 'lanyard', label: 'Lanyard',      hint: '100 × 150 mm portrait' },
+  { value: 'avery',   label: 'Avery A4',     hint: '10 wallet cards on A4' },
+];
+
+function IdCardSection({ worker, canEdit }) {
+  // MUST have a server-side worker (i.e. not the unsaved `{}` new-form). Token
+  // is filled lazily by the backend if missing, so we always trust the server
+  // GET below.
+  const [layout, setLayout] = useState('wallet');
+  const [printing, setPrinting] = useState(false);
+  const [nfc, setNfc] = useState(worker.nfc_uid || '');
+  const [savingNfc, setSavingNfc] = useState(false);
+  const [paired, setPaired] = useState(!!worker.nfc_uid);
+  // scan_token is server-seeded; the list endpoint returns it. Lazy backfill
+  // in the PDF endpoint covers any edge case where a worker has no token yet.
+  const token = worker.scan_token || '';
+
+  // Fetch QR as a blob so the axios interceptor can attach the bearer token.
+  const [qrUrl, setQrUrl] = useState(null);
+  useEffect(() => {
+    if (!worker.id) return;
+    let url = null;
+    let alive = true;
+    api.get(`/workers/${worker.id}/qr.png`, { responseType: 'blob' })
+      .then((r) => {
+        if (!alive) return;
+        url = URL.createObjectURL(r.data);
+        setQrUrl(url);
+      })
+      .catch(() => setQrUrl(null));
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+  }, [worker.id]);
+
+  const openPdf = async (action) => {
+    if (!token) { toast.error('Worker has no scan token yet.'); return; }
+    setPrinting(true);
+    try {
+      const r = await api.get(`/workers/${worker.id}/id-card.pdf`, {
+        params: { layout },
+        responseType: 'blob',
+      });
+      const blob = new Blob([r.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      if (action === 'download') {
+        const a = document.createElement('a');
+        a.href = url; a.download = `worker-${worker.id.slice(0, 8)}-${layout}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+      } else {
+        // Open in a new tab → user can print from the browser preview.
+        const w = window.open(url, '_blank');
+        if (!w) toast.error('Pop-up blocked — use Download instead.');
+      }
+      // We don't revoke immediately so the preview/print window can still read it.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setPrinting(false); }
+  };
+
+  const pairNfc = async () => {
+    const uid = nfc.trim().toUpperCase();
+    if (uid.length < 4) { toast.error('NFC UID must be at least 4 chars'); return; }
+    setSavingNfc(true);
+    try {
+      await api.post(`/workers/${worker.id}/nfc-pair`, { nfc_uid: uid });
+      toast.success(`NFC paired · ${uid}`);
+      setNfc(uid); setPaired(true);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSavingNfc(false); }
+  };
+  const unpairNfc = async () => {
+    setSavingNfc(true);
+    try {
+      await api.delete(`/workers/${worker.id}/nfc-pair`);
+      toast.success('NFC unpaired');
+      setNfc(''); setPaired(false);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setSavingNfc(false); }
+  };
+
+  return (
+    <Section icon={QrCode} title="ID Card" testid="section-id-card"
+      badge={token ? `Token ${token.slice(0, 6)}…` : null} defaultOpen={false}>
+      <div className="grid md:grid-cols-[160px_1fr] gap-4">
+        {/* QR preview tile */}
+        <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
+          data-testid="id-card-qr">
+          {qrUrl
+            ? <img src={qrUrl} alt="Worker QR" className="w-32 h-32" />
+            : <div className="w-32 h-32 grid place-items-center text-slate-300"><QrCode size={48} /></div>}
+          <div className="text-[10px] uppercase tracking-wider text-slate-400">Worker QR</div>
+          <div className="text-[10px] font-mono text-slate-500">{token || '—'}</div>
+        </div>
+
+        <div className="space-y-3">
+          {/* Layout picker */}
+          <div>
+            <div className="text-xs font-medium text-slate-700 mb-1.5">Print layout</div>
+            <div className="grid grid-cols-3 gap-2">
+              {LAYOUTS.map((l) => (
+                <button key={l.value} type="button" onClick={() => setLayout(l.value)}
+                  data-testid={`layout-${l.value}`}
+                  className={`text-left px-3 py-2 rounded-lg border text-xs transition ${
+                    layout === l.value
+                      ? 'border-[#1e4a8c] bg-[#e6eff9] text-[#1e4a8c] font-semibold ring-1 ring-[#1e4a8c]/30'
+                      : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                  }`}>
+                  <div className="font-bold">{l.label}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{l.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button type="button" onClick={() => openPdf('print')} disabled={printing || !token}
+              data-testid="id-card-print"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
+              {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Print preview
+            </button>
+            <button type="button" onClick={() => openPdf('download')} disabled={printing || !token}
+              data-testid="id-card-download"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+              <Download size={12} /> Download PDF
+            </button>
+          </div>
+
+          {/* NFC pairing */}
+          {canEdit && (
+            <div className="pt-2 border-t border-slate-100">
+              <div className="text-xs font-medium text-slate-700 mb-1.5 inline-flex items-center gap-1.5"><Smartphone size={12} /> NFC tag</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <input value={nfc} onChange={(e) => setNfc(e.target.value.toUpperCase().replace(/[^A-F0-9:]/g, ''))}
+                  placeholder="04:A1:B2:C3:D4:E5" maxLength={32}
+                  data-testid="nfc-input"
+                  className="px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg flex-1 min-w-[12rem]" />
+                {paired ? (
+                  <button type="button" onClick={unpairNfc} disabled={savingNfc}
+                    data-testid="nfc-unpair"
+                    className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#e69aa3] bg-[#fbe4e7] text-[#7a1f33] text-xs font-semibold hover:bg-[#f4c7cd] disabled:opacity-60">
+                    Unpair
+                  </button>
+                ) : null}
+                <button type="button" onClick={pairNfc} disabled={savingNfc || nfc.length < 4}
+                  data-testid="nfc-pair"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
+                  {savingNfc ? <Loader2 size={12} className="animate-spin" /> : <Tag size={12} />} Pair
+                </button>
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                Optional. UHF/NFC readers will resolve the worker by tag UID when QR isn&apos;t practical.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+
+
 
 function EditModal({ worker, onClose, onSaved }) {
   const isNew = !worker.id;
@@ -706,6 +871,11 @@ function EditModal({ worker, onClose, onSaved }) {
           {!isNew && (
             <CertificationsPanel workerId={worker.id} canEdit={true} />
           )}
+
+          {/* Phase 4.1 — ID Card (printable wallet/lanyard PDFs + NFC pairing). */}
+          {!isNew && (
+            <IdCardSection worker={worker} canEdit={true} />
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-2 bg-slate-50">
@@ -806,6 +976,20 @@ export default function Workers() {
     const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
 
+  // Phase 4.1 — one-click wallet PDF from the row. Opens in a new tab so the
+  // user can hit Cmd-P / Ctrl-P from the browser preview.
+  const printWalletCard = async (w) => {
+    try {
+      const r = await api.get(`/workers/${w.id}/id-card.pdf`, {
+        params: { layout: 'wallet' }, responseType: 'blob',
+      });
+      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
+      const win = window.open(url, '_blank');
+      if (!win) toast.error('Pop-up blocked — open the worker drawer and use Download instead.');
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
   return (
     <div className="max-w-7xl mx-auto" data-testid="workers-page">
       <PageHeader crumb="Settings / Workers" title="Workers"
@@ -902,13 +1086,27 @@ export default function Workers() {
                             <Users size={9} /> {clientsCount}
                           </span>
                         ) : null}
-                        {!w.state && clientsCount === 0 && <span className="text-[11px] text-slate-300">—</span>}
+                        {w.nfc_uid ? (
+                          <span data-testid={`chip-nfc-${w.id}`} title={`NFC: ${w.nfc_uid}`}
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f5f3ff] text-[#5b21b6]">
+                            <Smartphone size={9} /> NFC
+                          </span>
+                        ) : null}
+                        {w.scan_token ? (
+                          <span data-testid={`chip-qr-${w.id}`} title={`QR token: ${w.scan_token}`}
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                            <QrCode size={9} /> QR
+                          </span>
+                        ) : null}
+                        {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && <span className="text-[11px] text-slate-300">—</span>}
                       </div>
                     </td>
                     <td className="px-3 py-3"><StatusBadge active={w.active} /></td>
                     <td className="px-3 py-3 text-right">
                       {canEdit && confirmDelete !== w.id && (
                         <div className="inline-flex gap-1 items-center">
+                          <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer size={13} /></button>
                           <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
                             className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 size={13} /></button>
                           <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}

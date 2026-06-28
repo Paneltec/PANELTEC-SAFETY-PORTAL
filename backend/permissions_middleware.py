@@ -43,6 +43,7 @@ SKIP_PATHS: list[re.Pattern] = [
     re.compile(r"^/api/openapi\.json$"),
     re.compile(r"^/api/renew/"),            # public renewal page
     re.compile(r"^/api/assets/scan/"),      # public QR scan resolver
+    re.compile(r"^/api/scan/worker/[^/]+$"),  # Phase 4.1 — public worker scan resolver (GET only; site-signin is JWT'd)
     re.compile(r"^/api/files/"),            # public uploads
     re.compile(r"^/api/ask(/|$)"),          # ask intelligence (own checks)
     re.compile(r"^/api/dashboard(/|$)"),    # metrics — open to any logged-in user

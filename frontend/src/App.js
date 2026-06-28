@@ -30,6 +30,7 @@ import TextMagicAdmin from '@/pages/TextMagicAdmin';
 import Vehicles from '@/pages/Vehicles';
 import PlantVehicles from '@/pages/PlantVehicles';
 import ScanResolver from '@/pages/ScanResolver';
+import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
@@ -53,7 +54,8 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
-            <Route path="/scan/:token" element={<ScanResolver />} />
+            <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
+          <Route path="/scan/:token" element={<ScanResolver />} />
 
             <Route path="/app" element={<AppShell />}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
