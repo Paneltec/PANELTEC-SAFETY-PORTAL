@@ -5,6 +5,7 @@ ledger, defect → hazard auto-link (workspace-configurable), and a reminder
 scanner that fans out via the existing M365 + TextMagic plumbing.
 """
 from __future__ import annotations
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
@@ -14,6 +15,8 @@ from pydantic import BaseModel, Field
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
+
+log = logging.getLogger("paneltec.assets.service")
 
 router = APIRouter(prefix="/assets", tags=["asset-service"])
 scan_router = APIRouter(prefix="/scan", tags=["asset-scan-action"])
@@ -198,6 +201,64 @@ async def update_schedule(asset_id: str, sid: str, body: ScheduleIn, user: dict 
     merged.pop("_id", None); return merged
 
 
+@router.get("/{asset_id}/schedules/{sid}")
+async def get_schedule(asset_id: str, sid: str, user: dict = Depends(get_current_user)):
+    asset = await _get_asset(asset_id, user["org_id"])
+    doc = await db.asset_service_schedules.find_one(
+        {"id": sid, "asset_id": asset_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(404, "Schedule not found")
+    nd = _compute_next_due(doc, asset)
+    return {**doc, **nd, "status_cached": nd["status"]}
+
+
+class MeterResetIn(BaseModel):
+    hours: Optional[float] = Field(default=None, ge=0)
+    km: Optional[float] = Field(default=None, ge=0)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+@router.post("/{asset_id}/meter/reset")
+async def meter_reset(asset_id: str, body: MeterResetIn, user: dict = Depends(get_current_user)):
+    """Admin-only meter rewind. Writes a meter_update record with the
+    reason as `notes` (free-form description). Bypasses the monotonic guard."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    asset = await _get_asset(asset_id, user["org_id"])
+    if body.hours is None and body.km is None:
+        raise HTTPException(400, "Provide hours or km")
+    ts = now_iso()
+    patch: dict[str, Any] = {}
+    if body.hours is not None:
+        patch["hours_meter"] = body.hours
+        patch["hours_meter_updated_at"] = ts
+    if body.km is not None:
+        patch["odo_km"] = body.km
+        patch["odo_km_updated_at"] = ts
+    await db.assets.update_one({"id": asset_id}, {"$set": patch})
+    asset.update(patch)
+    rec = {
+        "id": new_id(), "asset_id": asset_id, "org_id": user["org_id"],
+        "workspace_id": asset.get("workspace_id"),
+        "type": "meter_update", "title": "Meter reset", "description": body.reason,
+        "performed_at": ts, "performed_by": user["id"],
+        "performed_by_name": user.get("name") or user.get("email"),
+        "hours_at": body.hours, "km_at": body.km,
+        "linked_hazard_id": None, "created_at": ts, "deleted_at": None,
+    }
+    await db.asset_service_records.insert_one(rec)
+    # Recompute every active schedule on this asset so the cached status
+    # reflects the rewound meter.
+    async for s in db.asset_service_schedules.find(
+        {"asset_id": asset_id, "deleted_at": None, "status": "active"},
+    ):
+        await _recompute_and_save(s, asset)
+    rec.pop("_id", None)
+    return rec
+
+
 @router.delete("/{asset_id}/schedules/{sid}", status_code=204)
 async def delete_schedule(asset_id: str, sid: str, user: dict = Depends(get_current_user)):
     res = await db.asset_service_schedules.update_one(
@@ -278,6 +339,13 @@ async def create_record(asset_id: str, body: RecordIn, user: dict = Depends(get_
     # Meter capture: a service or meter_update with hours_at/km_at also updates
     # the asset's current meter reading.
     meter_patch: dict[str, Any] = {}
+    # Meter is monotonic — reject decreases so an operator typo doesn't wipe
+    # service history. Use POST /meter/reset (admin) for legitimate rewinds.
+    if body.type == "meter_update":
+        if body.hours_at is not None and asset.get("hours_meter") is not None and body.hours_at < asset["hours_meter"]:
+            raise HTTPException(422, "Meter cannot decrease — use POST /api/assets/{id}/meter/reset (admin)")
+        if body.km_at is not None and asset.get("odo_km") is not None and body.km_at < asset["odo_km"]:
+            raise HTTPException(422, "Meter cannot decrease — use POST /api/assets/{id}/meter/reset (admin)")
     if body.hours_at is not None and (asset.get("hours_meter") is None or body.hours_at >= asset.get("hours_meter")):
         meter_patch["hours_meter"] = body.hours_at
         meter_patch["hours_meter_updated_at"] = ts
@@ -398,11 +466,14 @@ async def scan_reminders(user: dict = Depends(get_current_user)):
                 f"<p>Open the asset register to log service: <a href='https://app.paneltec.com.au/app/vehicles'>Plant &amp; Vehicles</a></p>"
             )
             for to in recipients:
-                await queue_email_doc(org_id=org_id, to=to, subject=subject, html=body_html,
-                                      resource="assets", record_id=sched["asset_id"])
+                await queue_email_doc(
+                    org_id=org_id, to=[to], subject=subject, body_html=body_html,
+                    resource_kind="assets", related_record_type="asset_service_schedule",
+                    related_record_id=sched["id"], created_by=user["id"],
+                )
                 emails_sent += 1
-        except Exception as e:  # pragma: no cover
-            pass
+        except Exception as e:
+            log.warning("asset reminder email failed for schedule=%s: %s", sched.get("id"), e)
 
         # SMS
         try:
@@ -420,8 +491,8 @@ async def scan_reminders(user: dict = Depends(get_current_user)):
                                      headers={"X-TM-Username": tm_cfg["username"], "X-TM-Key": tm_cfg["api_key"]},
                                      data={"text": text, "phones": ",".join(mobiles)})
                     sms_sent += len(mobiles)
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("asset reminder SMS failed for schedule=%s: %s", sched.get("id"), e)
 
         await db.asset_reminders_sent.insert_one({
             "id": new_id(), "schedule_id": sched["id"], "asset_id": sched["asset_id"],
@@ -462,9 +533,18 @@ async def service_summary(user: dict = Depends(get_current_user)):
 
 @scan_router.post("/quick-action")
 async def scan_quick_action(body: QuickActionIn, user: dict = Depends(get_current_user)):
-    asset = await db.assets.find_one(
-        {"org_id": user["org_id"], "scan_token": body.scan_token, "deleted_at": None},
-    )
+    # Workers can resolve a scan token to any asset they're allowed to see —
+    # i.e. workspace-scoped: workspace_id IS NULL (org-wide Navixy) OR in
+    # user.workspace_ids. Admins still see everything in their org.
+    ws_ids = user.get("workspace_ids") or []
+    q: dict = {
+        "org_id": user["org_id"],
+        "scan_token": body.scan_token,
+        "deleted_at": None,
+    }
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        q["$or"] = [{"workspace_id": None}, {"workspace_id": {"$in": ws_ids}}]
+    asset = await db.assets.find_one(q)
     if not asset:
         raise HTTPException(404, "Unknown scan token")
     if asset.get("status") == "retired":
