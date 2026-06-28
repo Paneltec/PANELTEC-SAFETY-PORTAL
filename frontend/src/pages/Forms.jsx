@@ -15,6 +15,7 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
 import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
+import { WorkerPicker, JobPicker, SitePicker, CustomerPicker } from '../components/forms/PickerFields';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -368,6 +369,18 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
   if (field.type === 'vehicle_navixy')
     return <VehicleNavixyField field={field} value={value} onChange={onChange} readOnly={readOnly}
       allFields={allFields} allValues={allValues} />;
+  if (field.type === 'worker_picker')
+    return <WorkerPicker field={field} value={value} onChange={onChange} readOnly={readOnly}
+      allFields={allFields} allValues={allValues} />;
+  if (field.type === 'job_picker')
+    return <JobPicker field={field} value={value} onChange={onChange} readOnly={readOnly}
+      allFields={allFields} allValues={allValues} />;
+  if (field.type === 'site_picker')
+    return <SitePicker field={field} value={value} onChange={onChange} readOnly={readOnly}
+      allFields={allFields} allValues={allValues} />;
+  if (field.type === 'customer_picker')
+    return <CustomerPicker field={field} value={value} onChange={onChange} readOnly={readOnly}
+      allFields={allFields} allValues={allValues} />;
   if (field.type === 'asset_scan')
     return <AssetScanField field={field} value={value} readOnly={readOnly}
       onChange={(v) => {
@@ -414,7 +427,16 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
 // ─────────────── Fill-Out modal ───────────────
 
 function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
-  const [values, setValues] = useState(initialValues || {});
+  const [values, setValues] = useState(() => {
+    const base = { ...(initialValues || {}) };
+    // Default any empty date field to today (YYYY-MM-DD in local TZ).
+    const today = new Date();
+    const isoDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    (template.fields || []).forEach((f) => {
+      if (f.type === 'date' && !base[f.id]) base[f.id] = isoDate;
+    });
+    return base;
+  });
   const [photoFiles, setPhotoFiles] = useState({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState('');

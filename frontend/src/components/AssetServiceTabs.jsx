@@ -254,7 +254,8 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
 
 export function ServiceLogTab({ asset, canEdit }) {
   const [records, setRecords] = useState([]);
-  const [adder, setAdder] = useState(null); // 'service' | 'defect' | null
+  const [adder, setAdder] = useState(null); // {kind:'service'|'defect', record?:existing} or null
+  const [deleting, setDeleting] = useState(null); // record being confirmed
   const load = useCallback(async () => {
     if (!asset?.id) return;
     const r = await api.get(`/assets/${asset.id}/records`);
@@ -262,35 +263,80 @@ export function ServiceLogTab({ asset, canEdit }) {
   }, [asset?.id]);
   useEffect(() => { load(); }, [load]);
 
+  const onDelete = async () => {
+    if (!deleting) return;
+    try {
+      await api.delete(`/assets/${asset.id}/records/${deleting.id}`);
+      toast.success('Record deleted');
+      setDeleting(null);
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
   return (
     <div className="space-y-3" data-testid="service-log-tab">
       <div className="flex items-center gap-2 flex-wrap">
         <h4 className="font-display text-sm font-semibold text-slate-800 flex-1">Service log</h4>
         {canEdit && (
           <>
-            <button onClick={() => setAdder('service')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold" data-testid="record-add-service"><Plus size={12} /> Log service</button>
-            <button onClick={() => setAdder('defect')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold" data-testid="record-add-defect"><AlertTriangle size={12} /> Report defect</button>
+            <button onClick={() => setAdder({ kind: 'service' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold" data-testid="record-add-service"><Plus size={12} /> Log service</button>
+            <button onClick={() => setAdder({ kind: 'defect' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold" data-testid="record-add-defect"><AlertTriangle size={12} /> Report defect</button>
           </>
         )}
       </div>
       <ul className="space-y-2" data-testid="record-list">
         {records.length === 0 && <li className="text-xs text-slate-500 italic">No records yet.</li>}
-        {records.map((r) => <RecordRow key={r.id} record={r} />)}
+        {records.map((r) => (
+          <RecordRow key={r.id} record={r}
+            canEdit={canEdit}
+            onEdit={() => setAdder({ kind: r.type === 'defect' ? 'defect' : 'service', record: r })}
+            onDelete={() => setDeleting(r)} />
+        ))}
       </ul>
-      {adder && <RecordEditor asset={asset} kind={adder} onClose={() => setAdder(null)} onSaved={() => { setAdder(null); load(); }} />}
+      {adder && <RecordEditor asset={asset} kind={adder.kind} initial={adder.record || null}
+        onClose={() => setAdder(null)}
+        onSaved={() => { setAdder(null); load(); }} />}
+      {deleting && (
+        <DeleteRecordDialog record={deleting} onCancel={() => setDeleting(null)} onConfirm={onDelete} />
+      )}
     </div>
   );
 }
 
-function RecordRow({ record }) {
+function DeleteRecordDialog({ record, onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-3"
+      onClick={(e) => e.target === e.currentTarget && onCancel()}
+      data-testid="record-delete-dialog">
+      <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
+            <AlertTriangle size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-display font-bold text-slate-900">Delete this {record.type} entry?</h3>
+            <p className="text-xs text-slate-500 mt-1">This cannot be undone. {record.linked_hazard_id ? 'A linked hazard exists and will be kept with an audit note.' : ''}</p>
+            <p className="text-[11px] text-slate-600 mt-2 truncate">&ldquo;{record.title}&rdquo;</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2">
+          <button onClick={onCancel} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="record-delete-cancel">Cancel</button>
+          <button onClick={onConfirm} className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-bold" data-testid="record-delete-confirm">Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecordRow({ record, canEdit, onEdit, onDelete }) {
   const isDefect = record.type === 'defect';
   const tone = isDefect ? 'border-rose-200 bg-rose-50' : record.type === 'meter_update' ? 'border-slate-200 bg-slate-50' : 'border-emerald-200 bg-emerald-50';
   const Icon = isDefect ? AlertTriangle : record.type === 'meter_update' ? Gauge : Wrench;
   return (
-    <li className={`px-3 py-2.5 rounded-xl border ${tone}`} data-testid={`record-${record.id}`}>
+    <li className={`group relative px-3 py-2.5 rounded-xl border ${tone}`} data-testid={`record-${record.id}`}>
       <div className="flex items-start gap-2">
         <Icon size={14} className="mt-0.5 text-slate-600 shrink-0" />
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 pr-12">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="font-semibold text-sm text-slate-900">{record.title}</span>
             <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200">{record.type}</span>
@@ -312,39 +358,72 @@ function RecordRow({ record }) {
             {record.technician_name && <span className="ml-2">· {record.technician_name}</span>}
           </div>
         </div>
+        {canEdit && (
+          <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 sm:opacity-0 max-sm:opacity-100 focus-within:opacity-100 transition">
+            <button type="button" onClick={onEdit}
+              data-testid={`record-edit-${record.id}`}
+              aria-label="Edit record"
+              className="p-1.5 rounded-lg bg-white/90 border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-sm">
+              <Edit3 size={12} />
+            </button>
+            <button type="button" onClick={onDelete}
+              data-testid={`record-delete-${record.id}`}
+              aria-label="Delete record"
+              className="p-1.5 rounded-lg bg-white/90 border border-slate-200 text-rose-600 hover:bg-rose-50 shadow-sm">
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
       </div>
     </li>
   );
 }
 
-function RecordEditor({ asset, kind, onClose, onSaved }) {
+function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
+  const isEdit = !!initial;
   const [form, setForm] = useState({
-    title: kind === 'defect' ? 'Defect' : 'Service performed',
-    description: '', hours_at: '', km_at: '', cost: '', technician_name: '',
-    defect_severity: 'minor',
+    title: initial?.title ?? (kind === 'defect' ? 'Defect' : 'Service performed'),
+    description: initial?.description ?? '',
+    hours_at: initial?.hours_at != null ? String(initial.hours_at) : '',
+    km_at: initial?.km_at != null ? String(initial.km_at) : '',
+    cost: initial?.cost != null ? String(initial.cost) : '',
+    technician_name: initial?.technician_name ?? '',
+    defect_severity: initial?.defect_severity ?? 'minor',
   });
   const [saving, setSaving] = useState(false);
   const submit = async () => {
     setSaving(true);
     try {
       const payload = {
-        type: kind, title: form.title, description: form.description || null,
+        title: form.title,
+        description: form.description || null,
         hours_at: form.hours_at === '' ? null : Number(form.hours_at),
         km_at: form.km_at === '' ? null : Number(form.km_at),
         cost: form.cost === '' ? null : Number(form.cost),
         technician_name: form.technician_name || null,
       };
       if (kind === 'defect') payload.defect_severity = form.defect_severity;
-      const r = await api.post(`/assets/${asset.id}/records`, payload);
-      if (kind === 'defect' && r.data.linked_hazard_id) toast.success('Defect logged · hazard raised');
-      else toast.success(`${kind} logged`);
+      if (isEdit) {
+        await api.put(`/assets/${asset.id}/records/${initial.id}`, payload);
+        toast.success(`${kind === 'defect' ? 'Defect' : 'Service'} updated`);
+      } else {
+        payload.type = kind;
+        const r = await api.post(`/assets/${asset.id}/records`, payload);
+        if (kind === 'defect' && r.data.linked_hazard_id) toast.success('Defect logged · hazard raised');
+        else toast.success(`${kind} logged`);
+      }
       onSaved();
     } catch (e) { toast.error(apiError(e)); } finally { setSaving(false); }
   };
   return (
     <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center bg-slate-900/40 p-3" onClick={(e) => e.target === e.currentTarget && onClose()} data-testid={`record-editor-${kind}`}>
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200">
-        <div className="px-5 py-3 border-b flex items-center"><h3 className="font-display font-bold text-slate-900 flex-1">{kind === 'defect' ? 'Report defect' : 'Log service'}</h3><button onClick={onClose}><X size={16} /></button></div>
+        <div className="px-5 py-3 border-b flex items-center">
+          <h3 className="font-display font-bold text-slate-900 flex-1">
+            {isEdit ? `Edit ${kind === 'defect' ? 'defect' : 'service'}` : (kind === 'defect' ? 'Report defect' : 'Log service')}
+          </h3>
+          <button onClick={onClose}><X size={16} /></button>
+        </div>
         <div className="px-5 py-4 space-y-3 text-sm">
           <div>
             <label className="block text-xs font-semibold mb-1">Title</label>
@@ -366,7 +445,7 @@ function RecordEditor({ asset, kind, onClose, onSaved }) {
                     data-testid={`rec-sev-${s}`}>{s}</button>
                 ))}
               </div>
-              {['major', 'critical'].includes(form.defect_severity) && (
+              {['major', 'critical'].includes(form.defect_severity) && !isEdit && (
                 <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1"><AlertTriangle size={11} /> This will raise a hazard if your workspace setting is on.</p>
               )}
             </div>
@@ -397,7 +476,7 @@ function RecordEditor({ asset, kind, onClose, onSaved }) {
         <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="rec-cancel">Cancel</button>
           <button onClick={submit} disabled={saving} className={`px-4 py-2 rounded-lg text-white text-sm font-bold disabled:opacity-50 ${kind === 'defect' ? 'bg-rose-600' : 'bg-blue-600'}`} data-testid="rec-save">
-            {saving ? <Loader2 size={14} className="inline animate-spin" /> : 'Save'}
+            {saving ? <Loader2 size={14} className="inline animate-spin" /> : (isEdit ? 'Save changes' : 'Save')}
           </button>
         </div>
       </div>

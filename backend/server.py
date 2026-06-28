@@ -17,6 +17,7 @@ from assets import router as assets_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router  # noqa: E402
 from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
 from asset_navixy_dashboards import router as asset_navixy_dashboards_router  # noqa: E402
+from forms_pickers import router as forms_pickers_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
@@ -122,6 +123,7 @@ api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(asset_navixy_sync_router)
 api.include_router(asset_navixy_dashboards_router)
+api.include_router(forms_pickers_router)
 
 app.include_router(api)
 
@@ -140,6 +142,14 @@ async def on_startup():
         log.info("Cert reminder scan: %s", stats)
     except Exception as e:
         log.warning("Cert reminder scan failed at startup: %s", e)
+
+    # Phase 3.7 — one-shot migration of seeded select fields → dynamic pickers.
+    try:
+        from migrate_form_pickers import migrate_form_pickers
+        mig = await migrate_form_pickers()
+        log.info("Form pickers migration: %s", mig)
+    except Exception as e:
+        log.warning("Form pickers migration failed: %s", e)
 
     # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
     try:

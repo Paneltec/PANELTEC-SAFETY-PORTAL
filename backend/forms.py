@@ -32,7 +32,8 @@ router = APIRouter(prefix="/forms", tags=["forms"])
 WRITE_ROLES = {"admin", "hseq_lead"}
 ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
-                       "photo", "signature", "gps", "vehicle_navixy", "asset_scan"}
+                       "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
+                       "worker_picker", "job_picker", "site_picker", "customer_picker"}
 PHOTO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 

@@ -35,6 +35,10 @@ const FIELD_TYPES = [
   { key: 'gps',       label: 'GPS location' },
   { key: 'vehicle_navixy', label: 'Vehicle (Navixy)' },
   { key: 'asset_scan', label: 'Asset scan (QR / NFC / pick)' },
+  { key: 'worker_picker',   label: 'Worker (live)' },
+  { key: 'customer_picker', label: 'Customer (Simpro)' },
+  { key: 'site_picker',     label: 'Site (Simpro)' },
+  { key: 'job_picker',      label: 'Job (Simpro)' },
 ];
 
 const newFieldId = () => `f${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

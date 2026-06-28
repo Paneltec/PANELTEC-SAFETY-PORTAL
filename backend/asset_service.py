@@ -145,6 +145,19 @@ class RecordIn(BaseModel):
     defect_severity: Optional[DefectSeverity] = None
 
 
+class RecordPatch(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=160)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    performed_at: Optional[str] = None
+    hours_at: Optional[float] = None
+    km_at: Optional[float] = None
+    cost: Optional[float] = None
+    technician_name: Optional[str] = None
+    defect_severity: Optional[DefectSeverity] = None
+    photo_file_ids: Optional[list[str]] = None
+    notes: Optional[str] = Field(default=None, max_length=4000)
+
+
 class MeterUpdateIn(BaseModel):
     hours: Optional[float] = Field(default=None, ge=0)
     km: Optional[float] = Field(default=None, ge=0)
@@ -415,13 +428,85 @@ async def get_record(asset_id: str, rid: str, user: dict = Depends(get_current_u
 async def delete_record(asset_id: str, rid: str, user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
-    res = await db.asset_service_records.update_one(
+    existing = await db.asset_service_records.find_one(
         {"id": rid, "asset_id": asset_id, "org_id": user["org_id"], "deleted_at": None},
-        {"$set": {"deleted_at": now_iso()}},
+        {"_id": 0},
     )
-    if res.matched_count == 0:
+    if not existing:
         raise HTTPException(404, "Record not found")
+    ts = now_iso()
+    await db.asset_service_records.update_one(
+        {"id": rid, "asset_id": asset_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"deleted_at": ts}},
+    )
+    # Linked hazard: leave intact, add an audit note so the trail is preserved.
+    haz_id = existing.get("linked_hazard_id")
+    if haz_id:
+        note = (f"Defect record {rid} deleted by "
+                f"{user.get('name') or user.get('email') or user.get('id')} on {ts}")
+        await db.hazards.update_one(
+            {"id": haz_id, "org_id": user["org_id"]},
+            {"$push": {"audit_notes": note}, "$set": {"updated_at": ts}},
+        )
+    # Meter-impacting record: recompute every schedule on the asset.
+    if existing.get("type") in {"meter_update", "service"} and (
+            existing.get("hours_at") is not None or existing.get("km_at") is not None):
+        asset = await db.assets.find_one({"id": asset_id, "org_id": user["org_id"]})
+        if asset:
+            async for s in db.asset_service_schedules.find(
+                {"asset_id": asset_id, "deleted_at": None, "status": "active"}):
+                await _recompute_and_save(s, asset)
     return None
+
+
+@router.put("/{asset_id}/records/{rid}")
+async def update_record(asset_id: str, rid: str, body: RecordPatch,
+                        user: dict = Depends(get_current_user)):
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        raise HTTPException(403, "Admin or manager only")
+    existing = await db.asset_service_records.find_one(
+        {"id": rid, "asset_id": asset_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Record not found")
+    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {"description", "technician_name", "cost", "hours_at", "km_at", "notes"}}
+    # `type` is immutable post-creation.
+    payload.pop("type", None)
+
+    asset = await _get_asset(asset_id, user["org_id"])
+
+    # Severity dial-down note when a previously raised hazard now becomes minor.
+    if (existing.get("type") == "defect" and existing.get("linked_hazard_id")
+            and "defect_severity" in payload
+            and payload["defect_severity"] not in {"major", "critical"}
+            and (existing.get("defect_severity") or "").lower() in {"major", "critical"}):
+        note = (f"Linked defect {rid} severity dialled down to "
+                f"{payload['defect_severity']} by "
+                f"{user.get('name') or user.get('email')} on {now_iso()}")
+        await db.hazards.update_one(
+            {"id": existing["linked_hazard_id"], "org_id": user["org_id"]},
+            {"$push": {"audit_notes": note}, "$set": {"updated_at": now_iso()}},
+        )
+
+    payload["updated_at"] = now_iso()
+    payload["updated_by"] = user["id"]
+    await db.asset_service_records.update_one(
+        {"id": rid, "asset_id": asset_id, "org_id": user["org_id"]},
+        {"$set": payload},
+    )
+    new_doc = await db.asset_service_records.find_one(
+        {"id": rid, "asset_id": asset_id, "org_id": user["org_id"]}, {"_id": 0},
+    )
+
+    # Recompute schedule status_cached on meter-impacting edits.
+    if existing.get("type") in {"meter_update", "service"} and (
+            "hours_at" in payload or "km_at" in payload):
+        async for s in db.asset_service_schedules.find(
+            {"asset_id": asset_id, "deleted_at": None, "status": "active"}):
+            await _recompute_and_save(s, asset)
+
+    return new_doc
 
 
 @router.post("/{asset_id}/meter")
