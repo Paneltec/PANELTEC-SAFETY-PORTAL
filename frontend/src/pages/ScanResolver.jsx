@@ -6,15 +6,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
   Loader2, MapPin, Copy, ArrowRight, AlertTriangle, Truck, Wrench, Archive,
   Wrench as ServiceIcon, Gauge, AlertOctagon, X, Check, ChevronRight,
-  ClipboardCheck, ChevronDown, Settings,
+  ClipboardCheck, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
 import { getToken } from '../lib/auth';
 import api, { apiError } from '../lib/api';
 import Logo from '../components/brand/Logo';
-import FormPreferencesDialog from '../components/forms/FormPreferencesDialog';
-import { getDevicePrefs, filterByPrefs } from '../lib/formPrefs';
 
 const PUBLIC_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -42,9 +40,6 @@ export default function ScanResolver() {
   const [state, setState] = useState({ status: 'loading', asset: null, err: null });
   const [forms, setForms] = useState(null);  // null = not loaded, [] = loaded but empty
   const [formsLoading, setFormsLoading] = useState(false);
-  const [appliedPrefs, setAppliedPrefs] = useState(false);
-  const [hasDevicePrefs, setHasDevicePrefs] = useState(false);
-  const [prefsOpen, setPrefsOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
 
   // Resolve the asset (public endpoint — no Bearer needed).
@@ -79,36 +74,16 @@ export default function ScanResolver() {
 
   // Once we have the asset AND the user is authed, load the curated forms.
   const isAuthed = !!getToken();
-  const loadForms = React.useCallback(() => {
-    const dev = getDevicePrefs();
-    setHasDevicePrefs(!!dev);
-    setFormsLoading(true);
-    // If a per-device override is active we ask the server for the FULL
-    // curated list (`?include_disabled=true`) and re-filter on the client.
-    // Otherwise the server applies the user's account-wide preferences.
-    const url = dev
-      ? `/scan/${token}/forms?include_disabled=true`
-      : `/scan/${token}/forms`;
-    return api.get(url)
-      .then((r) => {
-        let f = r.data?.forms || [];
-        let applied = !!r.data?.applied_preferences;
-        if (dev) {
-          const filtered = filterByPrefs(f, dev.enabled_template_ids, 'template_id');
-          // Empty intersection → fall back to full list (matches server contract).
-          if (filtered.length) { f = filtered; applied = true; }
-        }
-        setForms(f);
-        setAppliedPrefs(applied);
-      })
-      .catch(() => setForms([]))
-      .finally(() => setFormsLoading(false));
-  }, [token]);
-
   useEffect(() => {
     if (state.status !== 'ok' || !isAuthed) return;
-    loadForms();
-  }, [state.status, isAuthed, loadForms]);
+    let alive = true;
+    setFormsLoading(true);
+    api.get(`/scan/${token}/forms`)
+      .then((r) => { if (alive) setForms(r.data?.forms || []); })
+      .catch(() => { if (alive) setForms([]); })
+      .finally(() => { if (alive) setFormsLoading(false); });
+    return () => { alive = false; };
+  }, [state.status, isAuthed, token]);
 
   const goLogin = () => navigate(`/login?next=${encodeURIComponent(`/scan/${token}`)}`);
 
@@ -245,9 +220,6 @@ export default function ScanResolver() {
                 forms={forms}
                 loading={formsLoading}
                 onLaunch={launchForm}
-                onOpenPrefs={() => setPrefsOpen(true)}
-                appliedPrefs={appliedPrefs}
-                devicePrefs={hasDevicePrefs}
                 assetName={state.asset.name} />
             ) : (
               <section className="bg-white rounded-2xl border border-slate-200 px-5 py-6 shadow-sm flex items-center justify-center">
@@ -282,8 +254,6 @@ export default function ScanResolver() {
             <p className="text-center text-[10px] uppercase tracking-wider text-slate-400 pb-4">
               Token <span className="font-mono">{token}</span> · Paneltec Civil
             </p>
-            <FormPreferencesDialog open={prefsOpen} onClose={() => setPrefsOpen(false)}
-              onSaved={() => loadForms()} />
           </>
         )}
       </div>
@@ -293,7 +263,7 @@ export default function ScanResolver() {
 
 // ────────────────── Forms grid ──────────────────
 
-function FormsSection({ forms, loading, onLaunch, onOpenPrefs, appliedPrefs, devicePrefs, assetName }) {
+function FormsSection({ forms, loading, onLaunch, assetName }) {
   const recommended = useMemo(() => (forms || []).filter((f) => f.recommended), [forms]);
   const standard = useMemo(() => (forms || []).filter((f) => !f.recommended), [forms]);
 
@@ -307,44 +277,19 @@ function FormsSection({ forms, loading, onLaunch, onOpenPrefs, appliedPrefs, dev
   if (!forms || forms.length === 0) {
     return (
       <section className="bg-white rounded-2xl border border-slate-200 px-5 py-6 shadow-sm text-center text-sm text-slate-500" data-testid="forms-empty">
-        <div>No forms wired to this asset yet.</div>
-        {onOpenPrefs && (
-          <button onClick={onOpenPrefs}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-800"
-            data-testid="scan-forms-prefs-empty">
-            <Settings size={12} /> My forms preferences
-          </button>
-        )}
+        No forms wired to this asset yet.
       </section>
     );
   }
   return (
     <section className="bg-white rounded-2xl border border-slate-200 px-5 py-5 sm:px-6 sm:py-6 shadow-sm" data-testid="scan-forms-section">
-      <div className="flex items-start justify-between mb-3 gap-3">
-        <div>
-          <h3 className="font-display text-lg sm:text-xl font-bold text-slate-900">
-            Forms for {assetName}
-          </h3>
-          {appliedPrefs && (
-            <p className="text-[11px] text-slate-500 mt-0.5 inline-flex items-center gap-1"
-               data-testid="scan-forms-prefs-applied">
-              <Settings size={11} className="text-blue-600" />
-              Filtered by {devicePrefs ? 'your device' : 'your'} preferences ·
-              <button onClick={onOpenPrefs} className="font-semibold text-blue-700 hover:text-blue-800 underline">edit</button>
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400">
-            {forms.length} form{forms.length === 1 ? '' : 's'}
-          </span>
-          <button onClick={onOpenPrefs}
-            className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-slate-700"
-            title="My forms preferences"
-            data-testid="scan-forms-prefs-btn">
-            <Settings size={14} />
-          </button>
-        </div>
+      <div className="flex items-baseline justify-between mb-4">
+        <h3 className="font-display text-lg sm:text-xl font-bold text-slate-900">
+          Forms for {assetName}
+        </h3>
+        <span className="text-[10px] uppercase tracking-wider text-slate-400">
+          {forms.length} form{forms.length === 1 ? '' : 's'}
+        </span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3" data-testid="scan-forms-grid">
         {recommended.map((f) => (

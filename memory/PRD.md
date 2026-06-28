@@ -558,3 +558,45 @@ All 5 seed accounts share password `demo123`. Idempotent seed re-applies on ever
 **Service worker:** `paneltec-v43 → paneltec-v44`.
 
 **Next:** Phase 3.7 — Simpro + Workers picker fields in form templates (queued, do NOT start in parallel).
+
+---
+
+## 2026-06-28 — Phase 3.8 (QR scan → form launcher) + Phase 3.9 (My forms preference filter)
+
+### Phase 3.8 — QR scan as form launcher (SHIPPED)
+- `GET /api/scan/{scan_token}/forms` (auth) — returns asset card + curated form list with `recommended` flags based on `kind`/`asset_type`. Heavy-vehicle types (vacuum_truck, tipper, dump_truck, semi_trailer, crane_truck, service_truck) get Heavy Vehicle Daily Check pinned alongside Vehicle Pre-Use Inspection.
+- `POST /api/scan/quick-action` extended with `action: "open_form"` + `payload: {template_id}` — pre-flight access check before client navigates.
+- Form submissions stamped with `launched_via: "scan"`, `source_scan_token`, `source_asset_id` when launched from a QR.
+- `ScanResolver.jsx` redesigned: Asset card → Forms grid (3-col, recommended border + badge) → demoted Maintenance disclosure. Legacy `?form=` deep-link still honoured.
+- `Forms.jsx` deep-link pre-fills date/asset_scan + auto-captures GPS + defaults worker_picker to logged-in user by email match.
+- Test report: `/app/test_reports/iteration_15.json` 13/13 PASS.
+
+### Phase 3.9 — My forms preference filter (SHIPPED)
+- `db.user_form_preferences` keyed by `user_id`+`org_id`. Empty `enabled_template_ids` is a sentinel for "all enabled" (no foot-gun).
+- Endpoints under `/api/users/`:
+  - `GET /me/form-preferences` — seeds with all org templates on first call.
+  - `PUT /me/form-preferences {enabled_template_ids, device_only}` — `device_only:true` is server no-op.
+  - `GET /{user_id}/form-preferences` — admin/manager/hseq_lead can read other users.
+  - `PUT /{user_id}/form-preferences` — admin only.
+- `permissions_middleware.SKIP_PATHS` extended with `^/api/users/(me|[^/]+)/form-preferences$` so the worker role (no `users.view`) can reach its own settings. Handler-level RBAC still enforces other-user access.
+- `GET /api/scan/{token}/forms` now intersects with the user's whitelist on top of the asset-type filter; returns `applied_preferences: true|false`. Empty intersection falls back to unfiltered list. `?include_disabled=true` query bypasses the filter (used when client has localStorage device override).
+- `FormPreferencesDialog` (`/app/frontend/src/components/forms/FormPreferencesDialog.jsx`) — modal with grouped checkboxes by category, "Use these settings on this device only" toggle, "Reset to defaults" link, admin can pass `targetUser` to edit another user.
+- `formPrefs.js` (`/app/frontend/src/lib/`) — localStorage helpers + client-side filterByPrefs.
+- Gear icons: top-right of Forms section on `/scan/:token` + right side of `/app/forms` toolbar. Workers drawer (`/app/workers` EditModal) gets a new "Forms" Section showing read-only count + admin Edit button.
+- Test report: `/app/test_reports/iteration_17.json` 14/14 + 13/13 regression PASS.
+
+### Pre-flight checklist (mandatory before claiming done)
+- `python -m py_compile $(find /app/backend -maxdepth 2 -name "*.py")` clean
+- `cd /app/frontend && yarn build` 0 errors (warnings only)
+- `curl /api/health` 200, login 200, 30s err-log clean
+- `CACHE_VERSION` bumped — currently `paneltec-v55`
+
+### Test credentials (unchanged)
+- Admin: `stephen@paneltec.com.au` / `Mcgstephen50#` (id=808cb7de-985a-4c49-8554-9c67e5e86313)
+- Worker: `worker_stephen@paneltec.com.au` / `WorkerTest123!` (id=21dddcc2-e184-47f7-bac6-9b128925b8df)
+
+### Next up
+- **Phase 4** — Worker / Supplier / Site induction QR (P1)
+- Phase 5 — UHF reader integration (P2)
+- Per-trade auto-tick for form preferences (P2 — was deferred from 3.9)
+- Bulk "Scan reminders now" toolbar button (P2)

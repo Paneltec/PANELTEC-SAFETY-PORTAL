@@ -217,76 +217,57 @@ async def _resolve_asset_for_user(user: dict, scan_token: str) -> dict:
 
 
 @scan_router.get("/{scan_token}/forms")
-async def scan_forms(
-    scan_token: str,
-    include_disabled: bool = False,
-    user: dict = Depends(get_current_user),
-):
-    """Return the curated list of form templates a worker can launch for
-    the scanned asset, plus a slim asset card for the header.
+async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
+    """Return the curated list of form templates a worker can launch for the
+    scanned asset.
 
-    Phase 3.9 — applies the user's `form_preferences` whitelist on top of the
-    asset-type filter. Pass `?include_disabled=true` to bypass the personal
-    filter (used when the client is enforcing a per-device override and wants
-    the full curated list so it can filter itself).
+    Phase 3.9b — selection is driven by each template's `applies_to`
+    metadata (kinds + asset_types) maintained by admins under Settings →
+    Form Assignments. A template appears when:
+        • "any" ∈ applies_to.kinds                       (universal)
+        • OR asset.kind ∈ applies_to.kinds              (e.g. all vehicles)
+        • OR asset.asset_type ∈ applies_to.asset_types  (specific subtype)
+    Templates with empty kinds AND asset_types don't appear on any scan —
+    workers can still launch them manually from /app/forms.
+
+    Ordering: `recommended` first (category matches the asset kind), then
+    alphabetical.
     """
     asset = await _resolve_asset_for_user(user, scan_token)
-    kind = asset.get("kind") or "vehicle"
+    kind = (asset.get("kind") or "").lower()
     asset_type = (asset.get("asset_type") or "").lower()
-    curated = _FORMS_FOR_KIND.get(kind, _FORMS_FOR_KIND["vehicle"])
-
-    # Pull templates by exact name in one round-trip.
-    names = [c["match"] for c in curated]
-    rows = []
-    async for t in db.form_templates.find(
-        {"org_id": user["org_id"], "name": {"$in": names}, "deleted_at": None},
-        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1, "fields": 1},
-    ):
-        rows.append(t)
-    by_name = {r["name"]: r for r in rows}
 
     forms: list[dict] = []
-    for entry in curated:
-        tpl = by_name.get(entry["match"])
-        if not tpl:
-            # Skip silently if a template was retired/renamed — keeps the page
-            # resilient. Caller can still launch a manual form from the library.
+    async for tpl in db.form_templates.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1,
+         "fields": 1, "applies_to": 1},
+    ):
+        applies_to = tpl.get("applies_to") or {}
+        kinds_set = {k.lower() for k in (applies_to.get("kinds") or [])}
+        types_set = {t.lower() for t in (applies_to.get("asset_types") or [])}
+        matches = (
+            "any" in kinds_set
+            or (kind and kind in kinds_set)
+            or (asset_type and asset_type in types_set)
+        )
+        if not matches:
             continue
+        cat = (tpl.get("category") or "").lower()
+        recommended = (
+            (kind == "vehicle" and cat in {"pre_use", "daily_check"})
+            or (kind == "plant" and cat == "plant_pre_start")
+        )
         forms.append({
             "template_id": tpl["id"],
             "name": tpl["name"],
             "description": tpl.get("description") or "",
-            "category": entry["category"],
-            "icon": entry["icon"],
+            "category": cat,
+            "icon": _icon_for_category(cat),
             "field_count": len(tpl.get("fields") or []),
-            "recommended": False,
+            "recommended": bool(recommended),
         })
-
-    # Phase 3.9 — intersect with the user's personal whitelist *after* the
-    # asset-type filter. Empty allow-list (or `include_disabled=true`) skips
-    # the intersection entirely. If the intersection happens to be empty,
-    # fall back to the unfiltered list so the page never shows a blank state.
-    applied_preferences = False
-    if not include_disabled:
-        from form_preferences import get_effective_enabled_ids
-        enabled_ids, has_filter = await get_effective_enabled_ids(user)
-        if has_filter:
-            filtered = [f for f in forms if f["template_id"] in set(enabled_ids)]
-            if filtered:
-                forms = filtered
-                applied_preferences = True
-            # else: fall through with the unfiltered list (applied_preferences stays False)
-
-    # Recommendation rules:
-    #   • Vehicles → first form (Vehicle Pre-Use Inspection) is the headline.
-    #     Heavy/truck-like assets *also* get Heavy Vehicle Daily Check flagged.
-    #   • Plant → the first form available (Plant Pre-Start) is the headline.
-    if forms:
-        forms[0]["recommended"] = True
-        if kind == "vehicle" and asset_type in _HEAVY_VEHICLE_TYPES:
-            for f in forms:
-                if f["name"] == "Heavy Vehicle Daily Check":
-                    f["recommended"] = True
+    forms.sort(key=lambda f: (not f["recommended"], f["name"].lower()))
 
     return {
         "asset": {
@@ -300,8 +281,115 @@ async def scan_forms(
             "last_known_lng": asset.get("last_known_lng"),
         },
         "forms": forms,
-        "applied_preferences": applied_preferences,
     }
+
+
+def _icon_for_category(cat: str) -> str:
+    return {
+        "pre_use":         "ClipboardCheck",
+        "daily_check":     "Truck",
+        "plant_pre_start": "Wrench",
+        "incident":        "AlertOctagon",
+        "near_miss":       "AlertTriangle",
+    }.get(cat, "ClipboardCheck")
+
+
+# ────────────────── Phase 3.9b — Form-to-Asset-Type Assignments ──────────────────
+
+_ASSIGN_READ_ROLES = {"admin", "manager", "hseq_lead"}
+_ASSIGN_WRITE_ROLES = {"admin", "manager"}
+
+
+def _require_assignments_role(user: dict, write: bool = False) -> None:
+    role = user.get("role")
+    allowed = _ASSIGN_WRITE_ROLES if write else _ASSIGN_READ_ROLES
+    if role not in allowed:
+        raise HTTPException(403, "Admin or manager role required")
+
+
+class AppliesToIn(BaseModel):
+    kinds: list[str] = Field(default_factory=list)
+    asset_types: list[str] = Field(default_factory=list)
+
+
+class BulkAssignmentEntry(BaseModel):
+    template_id: str
+    kinds: list[str] = Field(default_factory=list)
+    asset_types: list[str] = Field(default_factory=list)
+
+
+class BulkAssignmentsIn(BaseModel):
+    assignments: list[BulkAssignmentEntry]
+
+
+assignments_router = APIRouter(prefix="/form-templates", tags=["form-assignments"])
+
+
+@assignments_router.get("/assignments")
+async def list_assignments(user: dict = Depends(get_current_user)):
+    _require_assignments_role(user, write=False)
+    rows = []
+    async for t in db.form_templates.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1, "applies_to": 1},
+    ):
+        rows.append({
+            "id": t["id"], "name": t["name"],
+            "description": t.get("description") or "",
+            "category": t.get("category") or "general",
+            "applies_to": t.get("applies_to") or {"kinds": [], "asset_types": []},
+        })
+    rows.sort(key=lambda r: (r["category"], r["name"].lower()))
+
+    # Distinct asset_types currently in the org's asset register, grouped by kind.
+    pipeline = [
+        {"$match": {"org_id": user["org_id"], "deleted_at": None,
+                    "asset_type": {"$ne": None}}},
+        {"$group": {"_id": {"kind": "$kind", "asset_type": "$asset_type"}}},
+    ]
+    type_index: dict[str, set] = {}
+    async for doc in db.assets.aggregate(pipeline):
+        k = (doc["_id"]["kind"] or "other")
+        type_index.setdefault(k, set()).add(doc["_id"]["asset_type"])
+    columns = {k: sorted(v) for k, v in type_index.items()}
+    return {"templates": rows, "asset_type_columns": columns}
+
+
+@assignments_router.put("/{template_id}/applies-to")
+async def update_applies_to(template_id: str, body: AppliesToIn,
+                            user: dict = Depends(get_current_user)):
+    _require_assignments_role(user, write=True)
+    res = await db.form_templates.update_one(
+        {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"applies_to": {
+            "kinds": [k.lower() for k in body.kinds],
+            "asset_types": [t.lower() for t in body.asset_types],
+        }}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Template not found")
+    return {"ok": True, "template_id": template_id,
+            "applies_to": {"kinds": body.kinds, "asset_types": body.asset_types}}
+
+
+@assignments_router.post("/assignments/bulk")
+async def bulk_save_assignments(body: BulkAssignmentsIn,
+                                user: dict = Depends(get_current_user)):
+    _require_assignments_role(user, write=True)
+    saved, missing = 0, []
+    for entry in body.assignments:
+        res = await db.form_templates.update_one(
+            {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
+            {"$set": {"applies_to": {
+                "kinds": [k.lower() for k in entry.kinds],
+                "asset_types": [t.lower() for t in entry.asset_types],
+            }}},
+        )
+        if res.matched_count:
+            saved += 1
+        else:
+            missing.append(entry.template_id)
+    return {"ok": True, "saved": saved, "missing": missing}
 
 
 # ────────────────── Schedules ──────────────────
