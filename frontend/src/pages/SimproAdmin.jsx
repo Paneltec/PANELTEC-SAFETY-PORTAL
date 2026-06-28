@@ -710,6 +710,8 @@ function SimproSyncCard({ connected }) {
           url="/integrations/simpro/suppliers/sync" post />
         <Row kind="employees" label="Employees" hint="Used by Worker pickers"
           url="/workers/sync-from-simpro" post />
+        <Row kind="jobs" label="Jobs" hint="Used by Job pickers"
+          url="/integrations/simpro/sync-jobs" post />
         <Row kind="sites" label="Sites" hint="Used by Site pickers (with coords)"
           url="/integrations/simpro/sync-sites" post />
       </div>

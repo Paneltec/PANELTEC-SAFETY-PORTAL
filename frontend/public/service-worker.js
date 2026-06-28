@@ -12,7 +12,7 @@
  *
  * Bump CACHE_VERSION whenever this file changes.
  */
-const CACHE_VERSION = 'paneltec-v51';
+const CACHE_VERSION = 'paneltec-v52';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

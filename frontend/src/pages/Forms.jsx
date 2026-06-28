@@ -526,6 +526,32 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
   const overrideField = (fid) =>
     setLockedFields((p) => { const next = { ...p }; delete next[fid]; return next; });
 
+  // Auto-pin Site from Job picker — when a `job_picker` resolves to a job that
+  // has `site_name` and a sibling `site_picker` is empty (or previously
+  // auto-pinned), copy the site over and tag it `auto_pinned: true`. Re-pinning
+  // happens when the job changes too, but only if the site is still flagged
+  // auto-pinned (user-typed sites are left alone).
+  useEffect(() => {
+    const fields = template.fields || [];
+    const jobField = fields.find((f) => f.type === 'job_picker' && values[f.id]?.site_name);
+    if (!jobField) return;
+    const siteField = fields.find((f) => f.type === 'site_picker');
+    if (!siteField) return;
+    const current = values[siteField.id];
+    if (current && !current.auto_pinned) return;
+    const job = values[jobField.id];
+    if (current && current.id === job.site_name) return;
+    setValues((p) => ({
+      ...p,
+      [siteField.id]: {
+        id: job.site_name, name: job.site_name,
+        customer_name: job.customer_name || null,
+        auto_pinned: true, source_job_id: job.simpro_job_id,
+      },
+    }));
+    setLockedFields((p) => ({ ...p, [siteField.id]: jobField.id }));
+  }, [values, template.fields]);
+
   const setField = useCallback((fid, v) => {
     setDirty(true);
     setTouched((p) => ({ ...p, [fid]: true }));

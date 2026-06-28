@@ -98,6 +98,42 @@ async def _maybe_auto_sync_workers(org_id, user):
         return None
 
 
+async def _maybe_auto_sync_jobs(org_id, user):
+    n = await db.simpro_jobs.count_documents({"org_id": org_id})
+    if n > 0:
+        return None
+    key = f"jobs:{org_id}"
+    last = _AUTO_SYNC_LOCK.get(key, 0)
+    if (time.time() - last) < _AUTO_SYNC_TTL:
+        return None
+    _AUTO_SYNC_LOCK[key] = time.time()
+    try:
+        from integrations_simpro import simpro_sync_jobs
+        await simpro_sync_jobs(user=user)
+        from models import now_iso as _now
+        return _now()
+    except Exception:
+        return None
+
+
+async def _maybe_auto_sync_sites(org_id, user):
+    n = await db.simpro_sites.count_documents({"org_id": org_id})
+    if n > 0:
+        return None
+    key = f"sites:{org_id}"
+    last = _AUTO_SYNC_LOCK.get(key, 0)
+    if (time.time() - last) < _AUTO_SYNC_TTL:
+        return None
+    _AUTO_SYNC_LOCK[key] = time.time()
+    try:
+        from integrations_simpro import simpro_sync_sites
+        await simpro_sync_sites(user=user)
+        from models import now_iso as _now
+        return _now()
+    except Exception:
+        return None
+
+
 def _worker_display_name(w: dict) -> str:
     n = (w.get("name") or "").strip()
     if n:
@@ -147,6 +183,7 @@ async def jobs(q: Optional[str] = None, status: str = "open",
                customer_id: Optional[str] = None, site_id: Optional[str] = None,
                limit: int = Query(200, ge=1, le=500),
                user: dict = Depends(get_current_user)):
+    auto_synced_at = await _maybe_auto_sync_jobs(user["org_id"], user)
     key = ("jobs", user["org_id"], _norm(q), status,
            customer_id or "", site_id or "", limit)
     cached = _cache_get(key)
@@ -179,7 +216,8 @@ async def jobs(q: Optional[str] = None, status: str = "open",
             "stage": j.get("stage"),
         })
     rows.sort(key=lambda r: (r["name"] or "").lower())
-    payload = {"jobs": rows[:limit], "count": len(rows)}
+    payload = {"jobs": rows[:limit], "count": len(rows),
+               "auto_synced_at": auto_synced_at}
     _cache_set(key, payload)
     return payload
 
@@ -194,6 +232,7 @@ async def sites(q: Optional[str] = None, customer_id: Optional[str] = None,
     """Sites — prefer the `simpro_sites` collection (real Simpro data with
     coords). Fall back to deriving from `simpro_jobs.site_name` only when the
     collection is empty for this org."""
+    auto_synced_at = await _maybe_auto_sync_sites(user["org_id"], user)
     key = ("sites", user["org_id"], _norm(q), customer_id or "",
            round(lat or 0, 3), round(lng or 0, 3), limit)
     cached = _cache_get(key)
@@ -261,7 +300,8 @@ async def sites(q: Optional[str] = None, customer_id: Optional[str] = None,
             })
     payload = {"sites": rows[:limit], "count": len(rows),
                "source": "simpro_sites" if sites_count > 0 else "simpro_jobs_fallback",
-               "sorted_by_distance": (lat is not None and lng is not None)}
+               "sorted_by_distance": (lat is not None and lng is not None),
+               "auto_synced_at": auto_synced_at}
     _cache_set(key, payload)
     return payload
 

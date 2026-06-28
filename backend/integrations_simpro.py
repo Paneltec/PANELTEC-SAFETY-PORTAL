@@ -2,7 +2,9 @@
 Supports multiple Company IDs per org (fan-out across companies)."""
 from __future__ import annotations
 import asyncio
+import html as _html_unescape
 import logging
+import re as _re_html
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -454,6 +456,16 @@ def _job_status_bucket(stage: Optional[str]) -> str:
     return "active"
 
 
+import html as _html_unescape
+_HTML_RX = _re_html.compile(r"<[^>]+>")
+
+
+def _strip_html(s):
+    if not s:
+        return s
+    return " ".join(_html_unescape.unescape(_HTML_RX.sub(" ", str(s))).split())[:300]
+
+
 async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, cid: str,
                                   org_id: str, cutoff: datetime) -> tuple[int, int]:
     url = f"{base}/api/v1.0/companies/{cid}/jobs/"
@@ -492,7 +504,7 @@ async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, ci
             "org_id": org_id,
             "company_id": cid,
             "simpro_job_id": jid,
-            "name": j.get("Name") or j.get("Description"),
+            "name": _strip_html(j.get("Name") or j.get("Description")),
             "stage": stage,
             "status_bucket": bucket,
             "site_name": (j.get("Site") or {}).get("Name") if isinstance(j.get("Site"), dict) else None,
