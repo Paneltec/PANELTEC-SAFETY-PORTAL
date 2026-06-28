@@ -162,30 +162,25 @@ class TestAdminUserPreferences:
         assert r.status_code == 403
 
     def test_worker_can_read_own_via_user_id(self, worker_headers):
-        # When user_id == self.id the endpoint should fall through to
-        # _load_or_seed. NOTE (Phase 3.9 bug): PermissionsMiddleware blocks all
-        # /api/users/* routes for the worker role (users.view = False) BEFORE
-        # the route handler runs, so workers currently get 403 even on their
-        # own preferences. This breaks the gear-icon feature for workers.
+        # After the middleware SKIP_PATHS fix, worker should now reach
+        # /api/users/{self}/form-preferences and get a 200.
         r = requests.get(
             f"{BASE_URL}/api/users/{WORKER_USER_ID}/form-preferences",
             headers=worker_headers, timeout=20,
         )
-        # Asserting the current (buggy) behaviour so the regression is visible.
-        # When the middleware exception is added, flip this back to == 200.
-        assert r.status_code in (200, 403), f"unexpected {r.status_code}"
-        if r.status_code == 403:
-            pytest.xfail("Workers cannot reach /api/users/{self}/form-preferences "
-                         "— blocked by PermissionsMiddleware (users.view=False)")
+        assert r.status_code == 200, f"expected 200, got {r.status_code} {r.text}"
+        data = r.json()
+        assert data["user_id"] == WORKER_USER_ID
+        assert isinstance(data["enabled_template_ids"], list)
 
     def test_worker_can_read_own_via_me(self, worker_headers):
-        # Same bug — /me path also gated by PermissionsMiddleware.
+        # /me path also now allowed through the middleware.
         r = requests.get(f"{BASE_URL}/api/users/me/form-preferences",
                          headers=worker_headers, timeout=20)
-        assert r.status_code in (200, 403)
-        if r.status_code == 403:
-            pytest.xfail("Workers cannot reach /api/users/me/form-preferences "
-                         "— blocked by PermissionsMiddleware (users.view=False)")
+        assert r.status_code == 200, f"expected 200, got {r.status_code} {r.text}"
+        data = r.json()
+        assert data["user_id"] == WORKER_USER_ID
+        assert isinstance(data["enabled_template_ids"], list)
 
 
 # ─────────── Section: scan-forms applies the whitelist ───────────

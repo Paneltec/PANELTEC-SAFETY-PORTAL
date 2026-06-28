@@ -1,0 +1,62 @@
+{
+  "summary": "Phase 3.9 RETEST after middleware fix. SKIP_PATHS regex `^/api/users/(me|[^/]+)/form-preferences$` added to permissions_middleware.py — workers can now read/write their own form-preferences while still being denied on other users' prefs. Backend pytest now 14/14 PASS (xfail markers converted to hard asserts). Phase 3.8 regression 13/13 PASS. Admin /api/users router unaffected (GET /api/users, GET /api/users/{id} = 200). Worker frontend e2e smoke verified end-to-end: login → /scan/EFLdyI3Thc → gear icon → dialog opens (23 template rows + 24 checkboxes) → untick + Save → 'Preferences saved' toast → 'Filtered by your preferences · edit' label → list narrows to 3 plant forms. Worker device_only=true PUT verified server-side no-op (worker baseline 6 ids unchanged after shrink-PUT). Cleanup: admin + worker prefs restored to all-enabled (empty whitelist sentinel) — admin plant scan now returns applied_preferences=false with full curated list. Phase 3.9 GREEN.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results_summary": {
+    "backend_passed_14_14": [
+      "TestMyFormPreferences::test_get_me_seeds_or_returns_existing",
+      "TestMyFormPreferences::test_put_me_persists",
+      "TestMyFormPreferences::test_put_me_device_only_does_not_touch_server",
+      "TestAdminUserPreferences::test_admin_can_read_worker_prefs",
+      "TestAdminUserPreferences::test_admin_can_write_worker_prefs",
+      "TestAdminUserPreferences::test_worker_403_on_other_user_get",
+      "TestAdminUserPreferences::test_worker_403_on_other_user_put",
+      "TestAdminUserPreferences::test_worker_can_read_own_via_user_id (was xfail → now PASS)",
+      "TestAdminUserPreferences::test_worker_can_read_own_via_me (was xfail → now PASS)",
+      "TestScanFormsApplyPrefs::test_admin_all_enabled_returns_full_curated_list",
+      "TestScanFormsApplyPrefs::test_narrowed_whitelist_filters_plant_pre_start",
+      "TestScanFormsApplyPrefs::test_include_disabled_bypasses_filter",
+      "TestScanFormsApplyPrefs::test_empty_intersection_falls_back_to_full_list",
+      "TestScanFormsApplyPrefs::test_reset_admin_to_all_for_cleanup"
+    ],
+    "phase_38_regression_13_13_pass": true,
+    "users_router_unaffected": "GET /api/users = 200, GET /api/users/{worker_id} = 200, GET /api/users/me/form-preferences = 200 (admin)",
+    "worker_frontend_smoke_pass": [
+      "login as worker_stephen worked",
+      "[data-testid=scan-forms-prefs-btn] visible on /scan/EFLdyI3Thc",
+      "[data-testid=form-prefs-dialog] opens with 23 form-prefs-row-* and 24 checkboxes (incl. device-only)",
+      "Untick first row + click [data-testid=form-prefs-save] → 'Preferences saved' toast",
+      "[data-testid=scan-forms-prefs-applied] label 'Filtered by your preferences · edit' rendered",
+      "Plant scan list narrowed to 3 forms (Plant Pre-Start RECOMMENDED, Incident Report, Near Miss Report)"
+    ],
+    "worker_device_only_verified": "PUT /api/users/me/form-preferences {enabled_template_ids:[incident],device_only:true} → 200; GET after returns same 6 ids as before (set equality True). Server doc untouched."
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_39_form_prefs.py",
+    "/app/backend/tests/test_phase_38_scan_forms.py",
+    "/app/test_reports/pytest/phase_39_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "permissions_middleware.py SKIP_PATHS regex is precise — it anchors to the `/form-preferences` suffix so generic /api/users/{id} reads/writes still flow through the users.view/edit gate. Verified live.",
+    "Suggestion (non-blocking): the SKIP_PATHS check runs before PATH_RESOURCE; current ordering is correct. Add a unit test asserting GET /api/users/{id} still hits the middleware (returns 403 for a worker on another user) so a future broadening of the regex doesn't accidentally open the whole users router.",
+    "Reset semantics: PUT with enabled_template_ids:[] clears the whitelist (sentinel meaning 'all enabled'). After cleanup, admin plant scan returns applied_preferences=false with full curated 3-form list — confirms the empty-list sentinel works as documented."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_39_form_prefs.py (xfail markers in test_worker_can_read_own_via_user_id and test_worker_can_read_own_via_me replaced with hard `assert r.status_code == 200` + payload checks)"
+  ],
+  "success_rate": {"backend": "100% (14/14 phase_39 + 13/13 phase_38)", "frontend": "100% worker e2e smoke (gear → dialog → save → toast → applied label → filtered list)"},
+  "test_credentials": "Admin stephen@paneltec.com.au / Mcgstephen50# ✓ ; Worker worker_stephen@paneltec.com.au / WorkerTest123! ✓ (now fully functional on /api/users/me/form-preferences)",
+  "seed_data_creation": "None. Cleanup restored both admin AND worker form-preferences to all-enabled (PUT enabled_template_ids:[] → empty-whitelist sentinel). Next agent starts clean.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Phase 3.9 fully green. Middleware fix verified safe (no regression on the rest of /api/users/*). Tokens: vehicle=yTtV1KWWmE, plant=EFLdyI3Thc. Plant Pre-Start tpl id=225cd097-2c2d-4963-9b92-1f8554894db8. Service worker is paneltec-v55. Two screenshots captured: /app/test_reports/p39_worker_dialog.png and /app/test_reports/p39_worker_after_save.png showing the worker-role gear→dialog→save→filtered-list flow end-to-end.",
+  "rca_of_the_issue": "Previous bug (iteration_16) RCA: PermissionsMiddleware applied a coarse `users.view`/`users.edit` check to anything matching `^/api/users(/|$)`, and worker role default is users.view=False. Fix: added `re.compile(r'^/api/users/(me|[^/]+)/form-preferences$')` to SKIP_PATHS (lines 56-62 of permissions_middleware.py). This skip is BEFORE the PATH_RESOURCE lookup so the suffix routes pass through to the handler, which enforces its own RBAC (self always allowed; admin/manager/hseq_lead for other-user reads; admin only for other-user writes). Verified by curl: worker GET/PUT /me/form-preferences = 200; worker GET other-user prefs still = 403; admin GET /api/users (and /api/users/{id}) still = 200. The regex anchor `$` is important — it prevents any other /api/users subpath from being whitelisted by accident."
+}

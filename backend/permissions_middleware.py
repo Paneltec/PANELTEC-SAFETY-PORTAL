@@ -53,6 +53,12 @@ SKIP_PATHS: list[re.Pattern] = [
     # the route handlers themselves (`_require_write` and `require_roles`).
     re.compile(r"^/api/suppliers(/|$)"),
     re.compile(r"^/api/integrations/simpro/suppliers(/|$)"),
+    # Phase 3.9 — personal form-preference endpoints. Handlers enforce
+    # their own RBAC (self always allowed; admin/manager/hseq_lead for
+    # other-user reads; admin only for other-user writes) so the coarse
+    # users.view middleware check must be skipped here, otherwise the
+    # worker role (no users.view) gets 403 on its own settings.
+    re.compile(r"^/api/users/(me|[^/]+)/form-preferences$"),
 ]
 
 
