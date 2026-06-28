@@ -94,6 +94,12 @@ class ImportPayload(BaseModel):
 
 class SubmissionIn(BaseModel):
     fields: list[dict]
+    # Phase 3.8 — when launched from a QR scan, the client stamps the
+    # submission with the scan token + source so PDFs / audit exports can
+    # attribute it to the asset that started the workflow.
+    launched_via: Optional[str] = None  # "scan" | "manual" | None
+    source_scan_token: Optional[str] = None
+    source_asset_id: Optional[str] = None
 
 
 @router.get("/fleet/vehicles")
@@ -619,6 +625,16 @@ async def create_submission(template_id: str, body: SubmissionIn,
         "submitted_at": now_iso(),
         "deleted_at": None,
     }
+    # Phase 3.8 — attach scan provenance when present. We trust the client's
+    # token because the actual asset access check happens at scan-time
+    # (`/api/scan/{token}/forms`) and at quick-action time. The token is just
+    # an attribution marker on the resulting record.
+    if body.launched_via:
+        doc["launched_via"] = body.launched_via
+    if body.source_scan_token:
+        doc["source_scan_token"] = body.source_scan_token
+    if body.source_asset_id:
+        doc["source_asset_id"] = body.source_asset_id
     await db.form_submissions.insert_one(doc)
     return _serialise(doc)
 

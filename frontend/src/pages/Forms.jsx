@@ -450,7 +450,7 @@ function _readDraft(template, userId) {
   } catch { return null; }
 }
 
-function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
+function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceScanToken, sourceAssetId }) {
   const userId = (() => {
     try { return JSON.parse(localStorage.getItem('paneltec.user') || 'null')?.id; }
     catch { return null; }
@@ -602,10 +602,19 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues }) {
     setSaving(true);
     try {
       setProgress('Saving submission…');
-      const payload = { fields: (template.fields || []).map((f) => ({
-        id: f.id, label: f.label, type: f.type,
-        value: f.type === 'photo' ? [] : (values[f.id] ?? null),
-      })) };
+      const payload = {
+        fields: (template.fields || []).map((f) => ({
+          id: f.id, label: f.label, type: f.type,
+          value: f.type === 'photo' ? [] : (values[f.id] ?? null),
+        })),
+      };
+      // Phase 3.8 — stamp scan provenance so PDFs/audits attribute this
+      // submission to the asset that launched it.
+      if (sourceScanToken) {
+        payload.launched_via = 'scan';
+        payload.source_scan_token = sourceScanToken;
+        if (sourceAssetId) payload.source_asset_id = sourceAssetId;
+      }
       const { data: sub } = await api.post(`/forms/templates/${template.id}/submissions`, payload);
       const photoFieldIds = Object.keys(photoFiles).filter((fid) => (photoFiles[fid] || []).length > 0);
       for (let i = 0; i < photoFieldIds.length; i++) {
@@ -1026,9 +1035,56 @@ export default function Forms() {
           last_known_lat: asset.last_known_lat, last_known_lng: asset.last_known_lng,
           resolved_via: 'qr', resolved_at: new Date().toISOString(),
         };
+        // Phase 3.8 — pre-fill the *logged-in* worker into any worker_picker
+        // field. We match by email against the org's workers register so a
+        // user without a worker row simply skips this step.
+        const me = user;
+        if (me?.email) {
+          try {
+            const { data: wp } = await api.get('/forms/pickers/workers', { params: { q: me.email, limit: 5 } });
+            const match = (wp?.workers || []).find((w) => (w.email || '').toLowerCase() === me.email.toLowerCase());
+            if (match) {
+              (tpl.fields || []).forEach((f) => {
+                if (f.type === 'worker_picker' && initial[f.id] == null) {
+                  initial[f.id] = {
+                    id: match.id, name: match.name, trade: match.trade || null,
+                    phone: match.phone || null, email: match.email || null,
+                  };
+                }
+              });
+            }
+          } catch { /* picker not available — skip silently */ }
+        }
+        // Phase 3.8 — auto-capture GPS so the worker doesn't have to tap a
+        // button on their phone. Best-effort: silently no-op if the browser
+        // denies / takes too long.
+        const gpsField = (tpl.fields || []).find((f) => f.type === 'gps');
+        if (gpsField && navigator.geolocation) {
+          try {
+            await new Promise((resolve) => {
+              navigator.geolocation.getCurrentPosition(
+                (pos) => {
+                  initial[gpsField.id] = {
+                    lat: pos.coords.latitude, lng: pos.coords.longitude,
+                    accuracy: pos.coords.accuracy,
+                    captured_at: new Date().toISOString(),
+                  };
+                  resolve();
+                },
+                () => resolve(),
+                { enableHighAccuracy: true, timeout: 4000, maximumAge: 30_000 },
+              );
+            });
+          } catch { /* noop */ }
+        }
         // Schedule autofill of dependent fields after the modal mounts.
         const auto = buildAutofillFromAsset(tpl.fields || [], { ...asset });
-        setFillTemplate({ ...tpl, _initialValues: { ...initial, ...auto } });
+        setFillTemplate({
+          ...tpl,
+          _initialValues: { ...initial, ...auto },
+          _sourceScanToken: tok,
+          _sourceAssetId: asset.id,
+        });
       } catch (e) { toast.error(apiError(e)); }
       navigate('/app/forms', { replace: true });
     })();
@@ -1182,6 +1238,8 @@ export default function Forms() {
       {previewT && <PreviewModal template={previewT} onClose={() => setPreviewT(null)}
         onFill={() => { setFillTemplate(previewT); setPreviewT(null); }} />}
       {fillTemplate && <FillOutModal template={fillTemplate} initialValues={fillTemplate._initialValues}
+        sourceScanToken={fillTemplate._sourceScanToken}
+        sourceAssetId={fillTemplate._sourceAssetId}
         onClose={() => setFillTemplate(null)} onSubmitted={load} />}
       {builderTemplate !== null && <TemplateBuilder template={builderTemplate}
         onClose={() => setBuilderTemplate(null)}

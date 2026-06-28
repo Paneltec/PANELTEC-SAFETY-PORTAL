@@ -165,8 +165,117 @@ class MeterUpdateIn(BaseModel):
 
 class QuickActionIn(BaseModel):
     scan_token: str = Field(min_length=4, max_length=64)
-    action: Literal["log_service", "report_defect", "update_meter"]
+    action: Literal["log_service", "report_defect", "update_meter", "open_form"]
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+# ────────────────── Phase 3.8 — Scan form launcher ──────────────────
+
+# Heavy / truck-style vehicle asset types that should see the Heavy Vehicle
+# Daily Check on top of the standard Vehicle Pre-Use Inspection.
+_HEAVY_VEHICLE_TYPES = {
+    "vacuum_truck", "tipper", "dump_truck", "semi_trailer",
+    "crane_truck", "service_truck",
+}
+
+# Curated recommendation per asset kind (ordered, first item is the
+# headline Recommended tile).
+_FORMS_FOR_KIND: dict[str, list[dict]] = {
+    "vehicle": [
+        {"match": "Vehicle Pre-Use Inspection",  "category": "pre_use",     "icon": "ClipboardCheck"},
+        {"match": "Heavy Vehicle Daily Check",   "category": "daily_check", "icon": "Truck"},
+        {"match": "Incident Report",             "category": "incident",    "icon": "AlertOctagon"},
+        {"match": "Near Miss Report",            "category": "near_miss",   "icon": "AlertTriangle"},
+    ],
+    "plant": [
+        {"match": "Plant Pre-Start Checklist (Heavy Equipment)",
+                                                 "category": "plant_pre_start", "icon": "Wrench"},
+        {"match": "Plant Pre-Start Checklist",   "category": "plant_pre_start", "icon": "Wrench"},
+        {"match": "Incident Report",             "category": "incident",    "icon": "AlertOctagon"},
+        {"match": "Near Miss Report",            "category": "near_miss",   "icon": "AlertTriangle"},
+    ],
+}
+
+
+async def _resolve_asset_for_user(user: dict, scan_token: str) -> dict:
+    """Workspace-scoped asset lookup matching `scan_quick_action`. Raises
+    404 for unknown and 410 for retired."""
+    ws_ids = user.get("workspace_ids") or []
+    q: dict = {
+        "org_id": user["org_id"],
+        "scan_token": scan_token,
+        "deleted_at": None,
+    }
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        q["$or"] = [{"workspace_id": None}, {"workspace_id": {"$in": ws_ids}}]
+    asset = await db.assets.find_one(q)
+    if not asset:
+        raise HTTPException(404, "Unknown scan token")
+    if asset.get("status") == "retired":
+        raise HTTPException(410, "Asset retired")
+    return asset
+
+
+@scan_router.get("/{scan_token}/forms")
+async def scan_forms(scan_token: str, user: dict = Depends(get_current_user)):
+    """Return the curated list of form templates a worker can launch for
+    the scanned asset, plus a slim asset card for the header."""
+    asset = await _resolve_asset_for_user(user, scan_token)
+    kind = asset.get("kind") or "vehicle"
+    asset_type = (asset.get("asset_type") or "").lower()
+    curated = _FORMS_FOR_KIND.get(kind, _FORMS_FOR_KIND["vehicle"])
+
+    # Pull templates by exact name in one round-trip.
+    names = [c["match"] for c in curated]
+    rows = []
+    async for t in db.form_templates.find(
+        {"org_id": user["org_id"], "name": {"$in": names}, "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1, "fields": 1},
+    ):
+        rows.append(t)
+    by_name = {r["name"]: r for r in rows}
+
+    forms: list[dict] = []
+    for entry in curated:
+        tpl = by_name.get(entry["match"])
+        if not tpl:
+            # Skip silently if a template was retired/renamed — keeps the page
+            # resilient. Caller can still launch a manual form from the library.
+            continue
+        forms.append({
+            "template_id": tpl["id"],
+            "name": tpl["name"],
+            "description": tpl.get("description") or "",
+            "category": entry["category"],
+            "icon": entry["icon"],
+            "field_count": len(tpl.get("fields") or []),
+            "recommended": False,
+        })
+
+    # Recommendation rules:
+    #   • Vehicles → first form (Vehicle Pre-Use Inspection) is the headline.
+    #     Heavy/truck-like assets *also* get Heavy Vehicle Daily Check flagged.
+    #   • Plant → the first form available (Plant Pre-Start) is the headline.
+    if forms:
+        forms[0]["recommended"] = True
+        if kind == "vehicle" and asset_type in _HEAVY_VEHICLE_TYPES:
+            for f in forms:
+                if f["name"] == "Heavy Vehicle Daily Check":
+                    f["recommended"] = True
+
+    return {
+        "asset": {
+            "id": asset["id"],
+            "name": asset.get("name"),
+            "kind": asset.get("kind"),
+            "asset_type": asset.get("asset_type"),
+            "rego_serial": asset.get("rego_serial"),
+            "scan_token": asset.get("scan_token"),
+            "last_known_lat": asset.get("last_known_lat"),
+            "last_known_lng": asset.get("last_known_lng"),
+        },
+        "forms": forms,
+    }
 
 
 # ────────────────── Schedules ──────────────────
@@ -637,20 +746,30 @@ async def scan_quick_action(body: QuickActionIn, user: dict = Depends(get_curren
     # Workers can resolve a scan token to any asset they're allowed to see —
     # i.e. workspace-scoped: workspace_id IS NULL (org-wide Navixy) OR in
     # user.workspace_ids. Admins still see everything in their org.
-    ws_ids = user.get("workspace_ids") or []
-    q: dict = {
-        "org_id": user["org_id"],
-        "scan_token": body.scan_token,
-        "deleted_at": None,
-    }
-    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
-        q["$or"] = [{"workspace_id": None}, {"workspace_id": {"$in": ws_ids}}]
-    asset = await db.assets.find_one(q)
-    if not asset:
-        raise HTTPException(404, "Unknown scan token")
-    if asset.get("status") == "retired":
-        raise HTTPException(410, "Asset retired")
+    asset = await _resolve_asset_for_user(user, body.scan_token)
     p = body.payload or {}
+
+    # Phase 3.8 — open_form: lightweight access check before the client
+    # navigates to the Fill-out modal. Returns the template id + asset id so
+    # the caller can stamp the resulting submission.
+    if body.action == "open_form":
+        tpl_id = (p.get("template_id") or "").strip()
+        if not tpl_id:
+            raise HTTPException(422, "template_id is required for open_form")
+        tpl = await db.form_templates.find_one(
+            {"id": tpl_id, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1},
+        )
+        if not tpl:
+            raise HTTPException(404, "Template not found")
+        return {
+            "ok": True,
+            "asset_id": asset["id"],
+            "scan_token": asset["scan_token"],
+            "template_id": tpl["id"],
+            "template_name": tpl["name"],
+        }
+
     if body.action == "log_service":
         rec = RecordIn(
             type="service",
