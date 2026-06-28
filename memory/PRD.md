@@ -1,3 +1,51 @@
+# 2026-02-19 — Phase 4.1: Worker Induction QR + Printable ID Cards
+
+## Backend (`/app/backend/workers_qr.py`)
+- **Endpoints**
+  - `GET /api/workers/{id}/qr.png` — admin-only PNG of the worker's signed scan URL.
+  - `GET /api/workers/{id}/id-card.pdf?layout=wallet|lanyard|avery` — ReportLab-generated PDFs (wallet default = ID-1 85.6×54 mm, lanyard 100×150 mm portrait, Avery A4 10-up).
+  - `POST /api/workers/{id}/nfc-pair` `{nfc_uid}` — pairs a UHF/NFC tag UID with a worker; duplicate UID on a different worker returns `409`.
+  - `DELETE /api/workers/{id}/nfc-pair` — unpairs.
+  - `GET /api/scan/worker/{scan_token}` — **PUBLIC** (no auth). Returns `{id,name,role,trade,company,scan_token,certifications,assigned_swms,active_site_today}` for the lanyard scan resolver.
+  - `POST /api/scan/worker/{scan_token}/site-signin` `{site_id,site_name,gps}` — authed; inserts a `site_signins` row with `source="worker_qr"` and the calling user's `org_id` + `workspace_id`.
+- **Migration**: nanoid 10-char `scan_token` backfilled into all 61 existing workers at startup. `_full_name(w)` helper derives display name from `first_name + last_name` (workers don't have a single `name` column).
+- **Coexistence**: `/api/scan/worker/{token}` (new) and `/api/scan/{asset_token}/forms` (Phase 3.8) share the `/scan` mount with no shadowing — verified by regression test.
+
+## Frontend
+- **New** `pages/WorkerScanResolver.jsx` — public route `/scan/worker/:token`. Renders profile card, certifications chip strip, "Already signed in to {site}" banner, and dual-state CTA: anonymous shows "Log in to sign in" → `/login?next=...`, authed shows "Sign in to site" → opens a site picker modal backed by `/api/forms/pickers/sites`.
+- **`pages/Workers.jsx`** — added:
+  - Row chips: green `QR` (every worker, 60 rows) + purple `NFC` (when paired).
+  - Row action button: `Printer` icon → one-click wallet PDF in new tab.
+  - `IdCardSection` accordion inside `EditModal` with: QR preview (blob-fetch with bearer header), 3-up layout picker (`wallet` selected by default), Print preview / Download PDF buttons, NFC pair input (auto-uppercase, hex+colon filtered) with Pair / Unpair buttons.
+- **Service worker** bumped `paneltec-v57 → v58`.
+
+## Pre-flight (mandatory after previous build-breaks)
+- `python -m py_compile $(find /app/backend -maxdepth 2 -name "*.py")` ✓ clean.
+- `cd /app/frontend && DISABLE_ESLINT_PLUGIN=true yarn build` ✓ 19.4s, no compile errors.
+- `curl /api/health` → 200; `curl /api/auth/login` → 200.
+
+## Verification — Phase 4.1 receipts (Stephen Guy, id=dbddf739-5803-4a86-925d-ed1aef514fa1, scan_token=i4UmjUBzsi)
+- **Public profile (anon)** `GET /api/scan/worker/i4UmjUBzsi` → 200 · 251 b · `name="Stephen Guy"`, 4 certs, `active_site_today="130 Cimitiere St Launceston"`.
+- **Invalid token** `GET /api/scan/worker/__invalid__` → 404.
+- **Wallet PDF** → 200, `%PDF` magic ✓. **Lanyard PDF** → 200, `%PDF` ✓. **Avery A4 PDF** → 200, `%PDF` ✓.
+- **QR PNG** → 200, `\x89PNG` ✓.
+- **Site sign-in** POST `{site_id:"130 Cimitiere St Launceston",gps:{...}}` → 200; row has `source="worker_qr"`, `workspace_id="156f06df…"`, `worker_name="Stephen Guy"`, `signed_in_by_name="Stephen McGregor"`. Subsequent profile fetch shows `active_site_today` populated.
+- **NFC pair** `04:A1:B2:C3:D4:E5` → 200 OK. Re-paring same UID to a different worker → **409 conflict**. ✓
+- **Asset scan regression** `GET /api/scan/03tuIaQGp5/forms` → 200, returns Scott Campbell vehicle + 6 forms (Phase 3.8 + 3.9b unaffected). ✓
+
+## Testing
+- `testing_agent_v3` iteration 18 → backend **12/12 pytest pass**, frontend **100% pass**. Zero critical/minor bugs. Pytest module at `/app/backend/tests/test_phase_41_worker_qr.py`.
+- Code-review notes (non-blocking): site-signin doesn't yet enforce role RBAC; site picker testids include spaces; sites picker lacks debounce; workspace_id falls back to first allowed workspace.
+
+## Out of scope (Phase 4.2/4.3)
+- **Phase 4.2** — Site induction QR (posters per site, induction acknowledgement record, expiry).
+- **Phase 4.3** — Supplier induction QR + supplier compliance gating.
+- Slugify site-signin picker IDs.
+- Debounce site search in `WorkerScanResolver`.
+
+---
+
+
 # 2026-02-18 — Phase 3: Service & Maintenance for Plant & Vehicles
 
 ## Backend (new `/app/backend/asset_service.py`)
