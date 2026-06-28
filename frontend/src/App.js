@@ -28,6 +28,8 @@ import SimproAdmin from '@/pages/SimproAdmin';
 import Microsoft365Admin from '@/pages/Microsoft365Admin';
 import TextMagicAdmin from '@/pages/TextMagicAdmin';
 import Vehicles from '@/pages/Vehicles';
+import PlantVehicles from '@/pages/PlantVehicles';
+import ScanResolver from '@/pages/ScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
@@ -50,6 +52,7 @@ function App() {
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
+            <Route path="/scan/:token" element={<ScanResolver />} />
 
             <Route path="/app" element={<AppShell />}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
@@ -83,7 +86,8 @@ function App() {
 
               <Route path="renewals" element={<Renewals />} />
               <Route path="audit-exports" element={<AuditExports />} />
-              <Route path="vehicles" element={<Vehicles />} />
+              <Route path="vehicles" element={<PlantVehicles />} />
+              <Route path="vehicles-legacy" element={<Vehicles />} />
 
               <Route path="document-library" element={<DocumentLibrary />} />
               <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />

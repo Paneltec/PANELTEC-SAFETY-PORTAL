@@ -30,6 +30,7 @@ PATH_RESOURCE: list[tuple[re.Pattern, str]] = [
     (re.compile(r"^/api/contractors(/|$)"),   "contractors"),
     (re.compile(r"^/api/renewals(/|$)"),      "renewals"),
     (re.compile(r"^/api/audit-exports(/|$)"), "audit_exports"),
+    (re.compile(r"^/api/assets(/|$)"),        "assets"),
     (re.compile(r"^/api/integrations(/|$)"),  "integrations"),
     (re.compile(r"^/api/users(/|$)"),         "users"),
 ]
@@ -41,6 +42,7 @@ SKIP_PATHS: list[re.Pattern] = [
     re.compile(r"^/api/whoami$"),
     re.compile(r"^/api/openapi\.json$"),
     re.compile(r"^/api/renew/"),            # public renewal page
+    re.compile(r"^/api/assets/scan/"),      # public QR scan resolver
     re.compile(r"^/api/files/"),            # public uploads
     re.compile(r"^/api/ask(/|$)"),          # ask intelligence (own checks)
     re.compile(r"^/api/dashboard(/|$)"),    # metrics — open to any logged-in user

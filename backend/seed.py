@@ -376,3 +376,8 @@ async def ensure_indexes() -> None:
     await db.users.create_index("email", unique=True)
     for c in ("swms", "pre_starts", "site_diary_entries", "hazards", "incidents", "inspections"):
         await db[c].create_index([("org_id", 1), ("workspace_id", 1), ("created_at", -1)])
+    # Asset register indexes (Phase 1).
+    await db.assets.create_index("scan_token", unique=True)
+    await db.assets.create_index([("org_id", 1), ("kind", 1)])
+    await db.assets.create_index("navixy_device_id", sparse=True)
+    await db.assets.create_index("nfc_uid", sparse=True)

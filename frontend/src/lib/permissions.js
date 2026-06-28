@@ -26,11 +26,12 @@ export const RESOURCE_LABELS = {
   hazards: 'Hazards', incidents: 'Incidents', inspections: 'Inspections',
   contractors: 'Contractors', renewals: 'Renewal links',
   audit_exports: 'Audit exports', vehicles: 'Vehicles',
+  assets: 'Plant & Vehicles',
   integrations: 'Integrations', users: 'Users & permissions',
 };
 
 export const EMAIL_SUPPORTED = {
   swms: true, pre_starts: true, site_diary: true, hazards: true,
   incidents: true, inspections: true, contractors: true, renewals: true,
-  audit_exports: true, vehicles: false, integrations: false, users: false,
+  audit_exports: true, vehicles: false, assets: false, integrations: false, users: false,
 };

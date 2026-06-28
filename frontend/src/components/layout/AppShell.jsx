@@ -38,7 +38,7 @@ const NAV = [
     { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
-    { to: '/app/vehicles', label: 'Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'vehicles', pastel: 'sky' },
+    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'assets', pastel: 'sky' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },

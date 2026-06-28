@@ -1,3 +1,58 @@
+# 2026-02-18 — Phase 1: Plant & Vehicles Register (Asset Register backbone)
+
+## New backend module `/app/backend/assets.py`
+- Collection `assets` indexed by `scan_token` (unique), `(org_id, kind)`, `navixy_device_id` (sparse), `nfc_uid` (sparse).
+- Routes (under `/api/assets`):
+  - `GET /` — list + backfill from Navixy on every call (idempotent on `navixy_device_id`). Filters: `kind`, `asset_type`, `q`.
+  - `POST /` — create manual asset (admin/manager/hseq_lead via `assets.edit`).
+  - `GET /{id}`, `PUT /{id}`, `DELETE /{id}` — read / update / soft-archive.
+  - `GET /{id}/qr.png` — QR PNG encoding `${FRONTEND_PUBLIC_URL}/scan/{token}`.
+  - `GET /{id}/label.pdf?layout=a6|avery_l7160|on_metal|combo&ids=…` — ReportLab labels.
+  - `POST /{id}/nfc-pair` (workspace-scoped uid uniqueness → 409 on dup) + `DELETE /{id}/nfc-pair`.
+  - `POST /{id}/uhf-pair` — Phase 5 stub.
+  - `GET /scan/{token}` — **public, no JWT** (skipped in permissions middleware). Returns sanitised payload, `410` on retired, `404` on unknown.
+- Navixy backfill uses `_classify_vehicle_type(label, tag_names)` from `forms.py` — vehicles inherit the same vac-truck/tipper classification.
+- Rego parsed from Navixy labels with a regex heuristic (last alphanumeric token w/ ≥1 letter and ≥1 digit).
+
+## Permissions
+- `permissions.py`: added `assets` resource (`email_supported=False`). admin/hseq_lead: full edit; supervisor/worker/auditor: view-only.
+- `permissions_middleware.py`: added `(/api/assets, "assets")` matcher and `^/api/assets/scan/` skip path for the public resolver.
+
+## Frontend
+- New `/app/frontend/src/pages/PlantVehicles.jsx` — unified register: filter chips (All / Vehicles / Plant / Tools / Containers), type sub-pills, search, list/map view, source badges (LIVE NAVIXY / MANUAL) + pairing chips (QR ✓ / NFC ✓ / UHF ✓), per-row actions (Locate, QR download, Print label, Edit, Archive), `+ Add Asset` and `Print Labels` (multi-select via layout picker).
+- New `/app/frontend/src/components/AssetDrawer.jsx` — right-side drawer with Details / Pairing / Photo / Notes tabs. Pairing tab includes QR preview, label printers (a6/on_metal/combo/avery_l7160), Web NFC writing via `NDEFReader` with manual UID fallback, and UHF EPC field. Navixy-linked assets lock core fields ("Synced from Navixy").
+- New `/app/frontend/src/pages/ScanResolver.jsx` at `/scan/:token` (public route) — anonymous-safe; redirects to `/login?next=…` for full access. Phase 2 will read `sessionStorage` form context to push the asset into an active form.
+- Sidebar renamed "Vehicles" → **Plant & Vehicles** (still routed at `/app/vehicles`, legacy at `/app/vehicles-legacy`). Resource gate changed `vehicles` → `assets`.
+- `lib/permissions.js` RESOURCE_LABELS/EMAIL_SUPPORTED updated.
+- Service Worker bumped `paneltec-v38 → paneltec-v39`.
+
+## Dependencies
+- Added `qrcode==8.2` to `requirements.txt` (`pip install qrcode[pil]`). `reportlab` already present.
+
+## Verification (curl + screenshot)
+- Backend smoke: 72 Navixy vehicles backfilled, CAT 320 Excavator (Yard) created with token `EFLdyI3Thc`. PDF labels valid (`%PDF-`) at a6=14KB, combo=11KB, on_metal=18KB, avery_l7160=26KB (3 ids). QR PNG ~2KB, valid `\x89PNG`. NFC pair success + duplicate 409. Worker token: GET 200, POST 403.
+- Frontend smoke: sidebar shows "Plant & Vehicles", page lists 73/73 (72 live · 1 manual), CAT 320 Excavator appears with MANUAL + QR ✓ + NFC ✓ chips. `/scan/EFLdyI3Thc` renders the resolver card with name + rego + actions.
+
+## Phase 1 acceptance: all met
+- GET /api/assets merges + backfills ✓
+- POST creates with unique scan_token ✓
+- /qr.png returns PNG that decodes to `${FRONTEND_PUBLIC_URL}/scan/{token}` ✓
+- /label.pdf?layout=a6 returns PDF (14KB, well under 200KB cap) ✓
+- avery_l7160 with `?ids=` lays 3-up ✓
+- NFC duplicate → 409 ✓
+- Plant & Vehicles page lists merged set with chips ✓
+- Worker role hides create/edit/delete ✓
+- /scan/{token} works end-to-end ✓
+
+## Deferred to next phases
+- Photo upload via doc_files (drawer accepts ID only for now)
+- `asset_scan` form field (Phase 2)
+- Service & Maintenance schedules (Phase 3)
+- Worker/Supplier/Site QR (Phase 4)
+- UHF sled integration (Phase 5)
+- Expo mobile parity — dispatch `e1_expo_frontend_dev`
+
+
 # 2026-02-18 — Vehicle Type → Filtered Navixy Fleet (verified)
 - `_classify_vehicle_type(label, tag_names=None)` in `/app/backend/forms.py` now searches Navixy **tags first**, label second. This lifted vac-truck detection from 2 → 13 (Cap Recycler, Industrial, Cappelotto, RSP, VW Crafter, etc. all carry the "Vac Truck Dumping" tag but have free-form labels).
 - `/api/forms/fleet/vehicles` proxy passes each vehicle's `tags[].name` array into the classifier.
