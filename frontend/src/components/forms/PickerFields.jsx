@@ -11,7 +11,7 @@
 // Picker fields can be wired to one another via `field.config.dependsOn`,
 // which is the id of a sibling picker on the same template. When a dependency
 // is selected, this picker re-fetches with that filter applied.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown, HardHat, Loader2, MapPin, Search, Briefcase, Building2, X,
 } from 'lucide-react';
@@ -70,7 +70,7 @@ function PickerEmptyState({ icon, title, hint }) {
   );
 }
 
-function PickerList({ items, render, onPick, loading, emptyState, testId }) {
+function PickerList({ items, render, onPick, loading, emptyState, searchActive, testId }) {
   if (loading) {
     return (
       <div className="flex items-center gap-2 text-xs text-slate-500 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
@@ -78,7 +78,16 @@ function PickerList({ items, render, onPick, loading, emptyState, testId }) {
       </div>
     );
   }
-  if (!items.length) return emptyState;
+  if (!items.length) {
+    // Silent when the user hasn't typed anything yet — feels less broken.
+    if (!searchActive) return null;
+    if (emptyState) return emptyState;
+    return (
+      <div className="text-xs text-slate-500 px-3 py-2.5 rounded-xl bg-white border border-slate-200">
+        No matches
+      </div>
+    );
+  }
   return (
     <div className="max-h-72 overflow-y-auto rounded-xl border border-slate-200 bg-white divide-y divide-slate-100"
       data-testid={testId}>
@@ -96,7 +105,7 @@ function PickerList({ items, render, onPick, loading, emptyState, testId }) {
 
 function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
                        displaySecondary, fetchUrl, fetchParams, renderRow,
-                       emptyState, depBlockedState, testId }) {
+                       emptyState, pinnedRow, footerNote, testId }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q, 250);
   const [items, setItems] = useState([]);
@@ -116,7 +125,6 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
   // Fetch when open or filters/search change.
   useEffect(() => {
     if (!open || readOnly) return;
-    if (depBlockedState) { setItems([]); return; }
     let cancelled = false;
     setLoading(true);
     api.get(fetchUrl, { params: { ...(fetchParams || {}), q: debounced || undefined } })
@@ -131,7 +139,7 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
       .catch(() => { if (!cancelled) setItems([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, debounced, JSON.stringify(fetchParams || {}), depBlockedState]);
+  }, [open, debounced, JSON.stringify(fetchParams || {})]);
 
   if (value && typeof value === 'object' && value.id) {
     return (
@@ -168,11 +176,17 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
               data-testid={`${testId}-search`}
               className="w-full pl-8 pr-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:border-blue-400 focus:outline-none" />
           </div>
-          {depBlockedState ? depBlockedState
-            : <PickerList items={items} render={renderRow}
-                onPick={(it) => { onChange(it); setOpen(false); setQ(''); }}
-                loading={loading} emptyState={emptyState}
-                testId={`${testId}-list`} />}
+          {pinnedRow}
+          <PickerList items={items} render={renderRow}
+            onPick={(it) => { onChange(it); setOpen(false); setQ(''); }}
+            loading={loading} emptyState={emptyState}
+            searchActive={!!debounced}
+            testId={`${testId}-list`} />
+          {footerNote && (
+            <div className="text-[11px] text-slate-400 px-1 pt-1 border-t border-slate-100">
+              {footerNote}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -189,9 +203,6 @@ export function WorkerPicker(props) {
       fetchUrl="/forms/pickers/workers"
       displayPrimary={(v) => v.name}
       displaySecondary={(v) => [v.trade, v.phone].filter(Boolean).join(' · ')}
-      emptyState={<PickerEmptyState icon={<HardHat size={16} />}
-        title="No active workers"
-        hint={`Sync from Simpro in Settings → Integrations.`} />}
       renderRow={(w) => (
         <>
           <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-[10px] font-bold shrink-0">
@@ -217,9 +228,6 @@ export function CustomerPicker(props) {
       fetchUrl="/forms/pickers/customers"
       displayPrimary={(v) => v.name}
       displaySecondary={(v) => v.company_label || null}
-      emptyState={<PickerEmptyState icon={<Building2 size={16} />}
-        title="No customers cached"
-        hint="Connect Simpro in Settings → Integrations to populate the customer list." />}
       renderRow={(c) => (
         <>
           <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
@@ -236,36 +244,84 @@ export function CustomerPicker(props) {
 }
 
 
-// ─────────────── Sites (depends on Customer) ───────────────
+// ─────────────── Sites (customer filter optional + GPS affordance) ───────────────
 export function SitePicker(props) {
   const depId = (props.field.config || {}).dependsOn || null;
   const depValue = useMemo(() => _resolveDepValue(props.allValues, depId),
     [props.allValues, depId]);
-  const depFieldLabel = useMemo(() => {
-    if (!depId) return null;
-    const f = (props.allFields || []).find((x) => x.id === depId);
-    return f?.label || 'customer';
-  }, [props.allFields, depId]);
-  const depBlocked = depId && !depValue ? (
-    <PickerEmptyState icon={<MapPin size={16} />}
-      title={`Pick a ${depFieldLabel} first`}
-      hint="Sites filter to the selected customer's record set." />
-  ) : null;
+  const [geo, setGeo] = useState(null);
+  const [geoError, setGeoError] = useState(false);
+
+  const requestGeo = useCallback(() => {
+    if (geo || geoError) return;
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGeoError(true);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => setGeo({
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy || 0),
+        captured_at: new Date().toISOString(),
+      }),
+      () => setGeoError(true),
+      { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 },
+    );
+  }, [geo, geoError]);
+
+  // Auto-request once on first render (the picker is inside the open dropdown
+  // already — the user has chosen to interact with the form).
+  useEffect(() => { requestGeo(); }, [requestGeo]);
+
+  const pinnedRow = geo ? (
+    <button type="button"
+      data-testid={`site-picker-${props.field.id}-use-gps`}
+      onClick={() => props.onChange({
+        site_id: null,
+        label: `Custom location · ${geo.lat.toFixed(4)}, ${geo.lng.toFixed(4)}`,
+        name: `Custom location · ${geo.lat.toFixed(4)}, ${geo.lng.toFixed(4)}`,
+        id: `gps:${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}`,
+        lat: geo.lat, lng: geo.lng, accuracy: geo.accuracy,
+        captured_at: geo.captured_at, freeform: true,
+      })}
+      className="w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 hover:bg-emerald-100">
+      <span className="w-7 h-7 rounded-lg bg-white/70 text-emerald-700 flex items-center justify-center shrink-0">
+        <MapPin size={13} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className="block text-sm font-semibold truncate">Use current location</span>
+        <span className="block text-[11px] text-emerald-700/80 truncate">
+          {geo.lat.toFixed(4)}, {geo.lng.toFixed(4)} (±{geo.accuracy || 0} m)
+        </span>
+      </span>
+    </button>
+  ) : (
+    <button type="button"
+      data-testid={`site-picker-${props.field.id}-request-gps`}
+      onClick={requestGeo}
+      className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-xl border border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50">
+      <MapPin size={13} />
+      <span className="text-xs">
+        {geoError ? 'Location unavailable — tap to retry' : 'Use my current location'}
+      </span>
+    </button>
+  );
 
   return (
     <PickerInput {...props}
       icon={<MapPin size={13} />}
       testId={`site-picker-${props.field.id}`}
       fetchUrl="/forms/pickers/sites"
-      fetchParams={depValue ? { customer_id: depValue } : {}}
-      depBlockedState={depBlocked}
-      displayPrimary={(v) => v.name}
-      displaySecondary={(v) => v.customer_name || v.address || null}
-      emptyState={<PickerEmptyState icon={<MapPin size={16} />}
-        title="No sites synced yet"
-        hint={depValue
-          ? `No sites for "${depValue}" — sync Simpro jobs in Settings → Integrations.`
-          : 'Sites are derived from Simpro job records — sync in Settings → Integrations.'} />}
+      fetchParams={{
+        ...(depValue ? { customer_id: depValue } : {}),
+        ...(geo ? { lat: geo.lat, lng: geo.lng } : {}),
+      }}
+      pinnedRow={pinnedRow}
+      displayPrimary={(v) => v.name || v.label}
+      displaySecondary={(v) => v.freeform
+        ? `±${v.accuracy || 0} m · ${new Date(v.captured_at).toLocaleTimeString()}`
+        : (v.customer_name || v.address || null)}
       renderRow={(s) => (
         <>
           <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
@@ -274,7 +330,9 @@ export function SitePicker(props) {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-slate-900 truncate">{s.name}</div>
             <div className="text-[11px] text-slate-500 truncate">
-              {[s.customer_name, s.jobs != null ? `${s.jobs} jobs` : null].filter(Boolean).join(' · ')}
+              {[s.customer_name,
+                s.distance_km != null ? `${s.distance_km.toFixed(1)} km` : null,
+                s.jobs != null ? `${s.jobs} jobs` : null].filter(Boolean).join(' · ')}
             </div>
           </div>
         </>
@@ -318,12 +376,8 @@ export function JobPicker(props) {
       testId={`job-picker-${props.field.id}`}
       fetchUrl="/forms/pickers/jobs"
       fetchParams={params}
-      depBlockedState={depBlocked}
       displayPrimary={(v) => v.name || `Job #${v.simpro_job_id}`}
       displaySecondary={(v) => [v.customer_name, v.site_name, v.stage].filter(Boolean).join(' · ')}
-      emptyState={<PickerEmptyState icon={<Briefcase size={16} />}
-        title="No open Simpro jobs"
-        hint="Sync Simpro jobs in Settings → Integrations to populate this list." />}
       renderRow={(j) => (
         <>
           <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">

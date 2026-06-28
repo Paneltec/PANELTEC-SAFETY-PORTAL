@@ -206,7 +206,7 @@ async def sites(q: Optional[str] = None, customer_id: Optional[str] = None,
         sname = r.get("_id")
         if not sname:
             continue
-        if qn and qn not in _norm(sname):
+        if qn and qn not in (_norm(sname) + " " + _norm(r.get("customer_name"))):
             continue
         rows.append({
             "id": sname, "simpro_site_id": sname, "name": sname,
