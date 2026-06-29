@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2 } from 'lucide-react';
+// Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
+// 20-pixel Regular variant for actions, matching the spec.
+import {
+  Key20Regular as FlKey,
+  Edit20Regular as FlEdit,
+  SignOut20Regular as FlSignOut,
+  Delete20Regular as FlDelete,
+  Mail20Regular as FlMail,
+  PersonAdd20Regular as FlPersonAdd,
+  ArrowDownload20Regular as FlDownload,
+} from '@fluentui/react-icons';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -163,7 +174,7 @@ export default function UsersManagement() {
             </button>
             <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
-              <UserPlus size={14} /> Invite user
+              <FlPersonAdd /> Invite user
             </button>
           </div>) : null} />
 
@@ -196,7 +207,7 @@ export default function UsersManagement() {
             <button onClick={() => setBulkConfirmOpen(true)}
               data-testid="users-bulk-delete-btn"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">
-              <Trash2 size={12} /> Delete {bulkSelected.size} user{bulkSelected.size === 1 ? '' : 's'}
+              <FlDelete /> Delete {bulkSelected.size} user{bulkSelected.size === 1 ? '' : 's'}
             </button>
           </div>
         )}
@@ -264,7 +275,7 @@ export default function UsersManagement() {
                         data-testid={`mailto-invite-${u.id}`}
                         className="inline-flex items-center justify-center w-6 h-6 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300"
                       >
-                        <Mail size={12} />
+                        <FlMail />
                       </a>
                     )}
                   </div>
@@ -277,21 +288,21 @@ export default function UsersManagement() {
                         data-testid={`user-edit-perms-${u.id}`}
                         onClick={() => { setActiveTab('permissions'); setActive(u); }}
                         className="inline-flex items-center justify-center w-7 h-7 rounded bg-violet-100 text-violet-700 hover:bg-violet-200">
-                        <KeyRound size={13} />
+                        <FlKey />
                       </button>
                       <button
                         title="Edit user"
                         data-testid={`user-edit-${u.id}`}
                         onClick={() => { setActiveTab('profile'); setActive(u); }}
                         className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
-                        <Pencil size={13} />
+                        <FlEdit />
                       </button>
                       <button
                         title="Force sign-out everywhere"
                         data-testid={`force-signout-${u.id}`}
                         onClick={() => setConfirmAction({ kind: 'signout', user: u })}
                         className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbf3df] text-[#8c6a1a] hover:bg-[#f7eed1]">
-                        <LogOut size={13} />
+                        <FlSignOut />
                       </button>
                       {u.id !== me?.id && (
                         <button
@@ -299,7 +310,7 @@ export default function UsersManagement() {
                           data-testid={`delete-user-${u.id}`}
                           onClick={() => setConfirmAction({ kind: 'delete', user: u })}
                           className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
-                          <Trash2 size={13} />
+                          <FlDelete />
                         </button>
                       )}
                     </div>

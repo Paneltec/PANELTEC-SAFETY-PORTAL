@@ -1,11 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
-  Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
-  Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
-  Plus, FolderOpen, HardHat, Award, ClipboardList, Settings as Cog, MapPin,
+  Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
 } from 'lucide-react';
+// Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
+// Each NAV entry now carries `icon` (Regular outline) for the resting
+// state and `iconActive` (Filled) for the currently-active route. Sizes
+// are baked into the component name (24Regular/24Filled).
+import {
+  Board24Regular, Board24Filled,
+  Sparkle24Regular, Sparkle24Filled,
+  DocumentText24Regular, DocumentText24Filled,
+  ClipboardCheckmark24Regular, ClipboardCheckmark24Filled,
+  Notebook24Regular, Notebook24Filled,
+  Warning24Regular, Warning24Filled,
+  Alert24Regular, Alert24Filled,
+  ShieldCheckmark24Regular, ShieldCheckmark24Filled,
+  ClipboardTextLtr24Regular, ClipboardTextLtr24Filled,
+  People24Regular, People24Filled,
+  Link24Regular, Link24Filled,
+  FolderOpen24Regular, FolderOpen24Filled,
+  ArrowDownload24Regular, ArrowDownload24Filled,
+  VehicleTruck24Regular, VehicleTruck24Filled,
+  Location24Regular, Location24Filled,
+  Building24Regular, Building24Filled,
+  CubeMultiple24Regular, CubeMultiple24Filled,
+  PeopleSettings24Regular, PeopleSettings24Filled,
+  PersonAvailable24Regular, PersonAvailable24Filled,
+  PlugConnected24Regular, PlugConnected24Filled,
+  Settings24Regular, Settings24Filled,
+  Trophy24Regular, Trophy24Filled,
+  Mail24Regular, Mail24Filled,
+} from '@fluentui/react-icons';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
 import { fetchMe, getToken, getUser, initials, signOut, refreshToken } from '../../lib/auth';
@@ -23,37 +49,37 @@ import { Avatar, AvatarFallback } from '../ui/avatar';
 
 const NAV = [
   { section: 'Overview', items: [
-    { to: '/app/dashboard', label: 'Intelligence Centre', icon: LayoutDashboard, testid: 'nav-dashboard', pastel: 'coral' },
-    { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkles, testid: 'nav-ask', pastel: 'lilac' },
+    { to: '/app/dashboard', label: 'Intelligence Centre', icon: Board24Regular, iconActive: Board24Filled, testid: 'nav-dashboard', pastel: 'coral' },
+    { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkle24Regular, iconActive: Sparkle24Filled, testid: 'nav-ask', pastel: 'lilac' },
   ]},
   { section: 'Capture', items: [
-    { to: '/app/swms', label: 'AI SWMS', icon: FileText, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
-    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheck, testid: 'nav-pre-starts', resource: 'pre_starts', pastel: 'sky' },
-    { to: '/app/site-diary', label: 'Site Diary', icon: NotebookPen, testid: 'nav-site-diary', resource: 'site_diary', pastel: 'butter' },
-    { to: '/app/hazards', label: 'Hazard Reports', icon: TriangleAlert, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
-    { to: '/app/incidents', label: 'Incident Reports', icon: Siren, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
-    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheck, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
-    { to: '/app/forms', label: 'Forms', icon: ClipboardList, testid: 'nav-forms', pastel: 'sky' },
+    { to: '/app/swms', label: 'AI SWMS', icon: DocumentText24Regular, iconActive: DocumentText24Filled, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
+    { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-pre-starts', resource: 'pre_starts', pastel: 'sky' },
+    { to: '/app/site-diary', label: 'Site Diary', icon: Notebook24Regular, iconActive: Notebook24Filled, testid: 'nav-site-diary', resource: 'site_diary', pastel: 'butter' },
+    { to: '/app/hazards', label: 'Hazard Reports', icon: Warning24Regular, iconActive: Warning24Filled, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
+    { to: '/app/incidents', label: 'Incident Reports', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
+    { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheckmark24Regular, iconActive: ShieldCheckmark24Filled, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
+    { to: '/app/forms', label: 'Forms', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-forms', pastel: 'sky' },
   ]},
   { section: 'Compliance', items: [
-    { to: '/app/suppliers', label: 'Suppliers', icon: Users2, testid: 'nav-suppliers', pastel: 'sage' },
-    { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
-    { to: '/app/document-library', label: 'Document Library', icon: FolderOpen, testid: 'nav-document-library', pastel: 'lavender' },
-    { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
-    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: Radio, testid: 'nav-vehicles', resource: 'assets', pastel: 'sky' },
-    { to: '/app/sites', label: 'Sites', icon: MapPin, testid: 'nav-sites', adminOnly: true, pastel: 'lavender' },
+    { to: '/app/suppliers', label: 'Suppliers', icon: People24Regular, iconActive: People24Filled, testid: 'nav-suppliers', pastel: 'sage' },
+    { to: '/app/renewals', label: 'Renewal Links', icon: Link24Regular, iconActive: Link24Filled, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
+    { to: '/app/document-library', label: 'Document Library', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-document-library', pastel: 'lavender' },
+    { to: '/app/audit-exports', label: 'Audit Exports', icon: ArrowDownload24Regular, iconActive: ArrowDownload24Filled, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
+    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-vehicles', resource: 'assets', pastel: 'sky' },
+    { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', adminOnly: true, pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
-    { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },
-    { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces', pastel: 'slate' },
-    { to: '/app/settings/users', label: 'Users & Permissions', icon: UserCog, testid: 'nav-settings-users', adminOnly: true, pastel: 'slate' },
-    { to: '/app/settings/workers', label: 'Workers', icon: HardHat, testid: 'nav-settings-workers', pastel: 'sky' },
-    { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardList, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
-    { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardList, testid: 'nav-settings-swms-assignments', adminOnly: true, pastel: 'sky' },
-    { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
-    { to: '/app/settings/system', label: 'System', icon: Cog, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
-    { to: '/app/settings/certifications', label: 'Certifications', icon: Award, testid: 'nav-settings-certifications', pastel: 'butter' },
-    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', pastel: 'slate' },
+    { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },
+    { to: '/app/settings/workspaces', label: 'Workspaces', icon: CubeMultiple24Regular, iconActive: CubeMultiple24Filled, testid: 'nav-settings-workspaces', pastel: 'slate' },
+    { to: '/app/settings/users', label: 'Users & Permissions', icon: PeopleSettings24Regular, iconActive: PeopleSettings24Filled, testid: 'nav-settings-users', adminOnly: true, pastel: 'slate' },
+    { to: '/app/settings/workers', label: 'Workers', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-settings-workers', pastel: 'sky' },
+    { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
+    { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-swms-assignments', adminOnly: true, pastel: 'sky' },
+    { to: '/app/settings/integrations', label: 'Integrations', icon: PlugConnected24Regular, iconActive: PlugConnected24Filled, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
+    { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
+    { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
+    { to: '/app/outbox', label: 'Email outbox', icon: Mail24Regular, iconActive: Mail24Filled, testid: 'nav-outbox', pastel: 'slate' },
   ]},
 ];
 
@@ -69,7 +95,8 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
             {!collapsed && <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.section}</div>}
             <ul className="space-y-0.5">
               {visible.map((it) => {
-                const Icon = it.icon;
+                const IconRegular = it.icon;
+                const IconFilled = it.iconActive || it.icon;
                 const activeCls = `nav-active-${it.pastel || 'slate'}`;
                 return (
                   <li key={it.to}>
@@ -78,9 +105,16 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
                         `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
                           isActive ? `${activeCls} font-semibold` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                         }`} title={collapsed ? it.label : undefined}>
-                      <Icon size={18} className="shrink-0" />
-                      {!collapsed && <span className="truncate flex-1">{it.label}</span>}
-                      {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
+                      {({ isActive }) => {
+                        const Glyph = isActive ? IconFilled : IconRegular;
+                        return (
+                          <>
+                            <Glyph className="shrink-0" style={{ width: 20, height: 20 }} />
+                            {!collapsed && <span className="truncate flex-1">{it.label}</span>}
+                            {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
+                          </>
+                        );
+                      }}
                     </NavLink>
                   </li>
                 );
