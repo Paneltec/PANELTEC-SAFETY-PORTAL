@@ -1,10 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Pencil, Trash2, Loader2, Star, ShieldCheck, Users2 } from 'lucide-react';
+import { Loader2, ShieldCheck, Users2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Delete20Regular as Trash2,
+  Edit20Regular as Pencil,
+  Star20Regular as Star,
+} from '@fluentui/react-icons';
+
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '../components/ui/dialog';
@@ -160,7 +169,7 @@ export default function Workspaces() {
                       {w.name}
                       {w.default_for_org && (
                         <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold text-brand-blue bg-brand-blue-soft px-1.5 py-0.5 rounded">
-                          <Star size={10} /> Default
+                          <Star /> Default
                         </span>
                       )}
                     </div>
@@ -184,7 +193,7 @@ export default function Workspaces() {
                           data-testid={`workspace-edit-${w.id}`}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 hover:border-slate-300 transition-colors"
                         >
-                          <Pencil size={13} />
+                          <Pencil />
                         </button>
                         <button
                           type="button"
@@ -194,7 +203,7 @@ export default function Workspaces() {
                           data-testid={`workspace-delete-${w.id}`}
                           className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-rose-200 bg-white text-rose-500 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors"
                         >
-                          <Trash2 size={13} />
+                          <Trash2 />
                         </button>
                       </div>
                     ) : (
@@ -287,7 +296,7 @@ export default function Workspaces() {
               data-testid="workspace-delete-confirm"
               className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
             >
-              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 className="mr-1.5" />}
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -317,7 +326,7 @@ export default function Workspaces() {
               data-testid="workspace-force-delete-confirm"
               className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
             >
-              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 className="mr-1.5" />}
               Force delete · unassign {forceDelete?.user_count || 0}
             </AlertDialogAction>
           </AlertDialogFooter>

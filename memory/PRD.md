@@ -1237,3 +1237,8 @@ Any seed file that keys its tenant lookup on a mutable field. The same
 class of bug could resurface in the Phase 3 workspace-rename flow, the
 Phase 4 Simpro vendor-rename sync, or any future "org_name renamed by
 user" UI. Always key on slug or stable id.
+
+## Phase 3.20 — Fluent UI Icon Migration
+
+- **Wave 1 (v95.4.1)**: AppShell sidebar (~24 icons) + UsersManagement row actions + toolbar (8 icons) migrated lucide → @fluentui/react-icons. Sidebar uses 24Regular default / 24Filled active. Tightened ESLint with `no-undef: error` after the Wave 1 `Plus` orphan regression.
+- **Wave 2 (v96)**: 62 row-action/toolbar icons across 14 list pages migrated lucide → @fluentui/react-icons via deterministic migration script `/app/scripts/wave2_fluent_migrate.py`. All 16 acceptance routes load with zero runtime errors.

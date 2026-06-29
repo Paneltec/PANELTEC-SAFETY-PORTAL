@@ -5,11 +5,20 @@
 // here (it's a synchronous POST that returns the tail of apt-get output);
 // the spinner with "Installing… 5–10 min" is shown until completion.
 import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, RefreshCw, Loader2, Download, FileText, Settings as Cog, Eye } from 'lucide-react';
+import { CheckCircle2, XCircle, Loader2, FileText, Settings as Cog } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import SessionTimeoutCard from '../components/settings/SessionTimeoutCard';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowDownload20Regular as Download,
+  ArrowSync20Regular as RefreshCw,
+  Eye20Regular as Eye,
+} from '@fluentui/react-icons';
 
 export default function SystemSettings() {
   const me = getUser();
@@ -114,7 +123,7 @@ export default function SystemSettings() {
             <button onClick={refresh} disabled={loading || installing}
               data-testid="refresh-status"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-              {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Run health check
+              {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw />} Run health check
             </button>
             <button onClick={install} disabled={!canInstall || installing}
               data-testid="install-now"

@@ -1,15 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren,
-  ShieldCheck, BarChart3, Download, Sparkles, Database, Radar, Eye, FileSearch,
-  AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck,
-  ClipboardList,
-} from 'lucide-react';
+import { ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, BarChart3, Sparkles, Database, Radar, FileSearch, AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowDownload20Regular as Download,
+  Eye20Regular as Eye,
+} from '@fluentui/react-icons';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck, ClipboardList };
 
@@ -521,7 +524,7 @@ export default function Dashboard() {
             </button>
             <button data-testid="download-pdf-btn" onClick={downloadPdf} disabled={pdfBusy}
               className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-slate-300 text-sm font-medium hover:bg-slate-50 transition-colors disabled:opacity-60">
-              <Download size={16} /> {pdfBusy ? 'Generating…' : 'Download PDF report'}
+              <Download /> {pdfBusy ? 'Generating…' : 'Download PDF report'}
             </button>
           </div>
 

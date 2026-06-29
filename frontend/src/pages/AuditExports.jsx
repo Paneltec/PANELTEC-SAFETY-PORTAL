@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
@@ -7,6 +7,13 @@ import DeleteRecordButton from '../components/DeleteRecordButton';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowDownload20Regular as Download,
+} from '@fluentui/react-icons';
 
 const INCLUDE_OPTIONS = [
   ['swms', 'SWMS'], ['pre_starts', 'Pre-starts'], ['site_diary', 'Site diary'],
@@ -82,7 +89,7 @@ export default function AuditExports() {
                       />
                       <DeleteRecordButton resourceKind="audit_exports" apiPath="audit-exports" recordId={it.id} label="Audit export" recordTitle={it.title || it.scope} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                       <a href={`${BACKEND}${it.file_url}`} target="_blank" rel="noreferrer" data-testid={`export-download-${it.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download size={12} /> Download</a>
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download /> Download</a>
                     </div>
                   </td>
                 </tr>

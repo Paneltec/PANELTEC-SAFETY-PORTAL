@@ -12,15 +12,20 @@
 // When a SWMS has supersedes / superseded_by pointers, a small "View history"
 // link surfaces a chain modal so admins can audit who superseded what.
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Loader2, Save, Search as SearchIcon, History, ChevronRight, X,
-  CheckSquare, Square, AlertCircle, FileText, GitCompare,
-} from 'lucide-react';
+import { Loader2, Save, History, ChevronRight, X, CheckSquare, Square, AlertCircle, FileText, GitCompare } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import SwmsDiffModal from '../components/swms/SwmsDiffModal';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Search20Regular as Search,
+  Search20Regular as SearchIcon,
+} from '@fluentui/react-icons';
 
 const ROLE_CHOICES = [
   ['admin', 'Admin'],
@@ -172,7 +177,7 @@ export default function SwmsAssignmentsAdmin() {
           <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
             <div className="p-3 border-b border-slate-200 bg-slate-50/60 flex items-center gap-2">
               <div className="relative flex-1">
-                <SearchIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search title or code"
                   className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
@@ -351,7 +356,7 @@ function SearchableMulti({ label, items, selected, onToggle, testid }) {
     <div className="mb-4" data-testid={testid}>
       <div className="text-xs font-semibold text-slate-700 mb-1.5">{label}</div>
       <div className="relative mb-2">
-        <SearchIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+        <SearchIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
         <input type="text" value={q} onChange={(e) => setQ(e.target.value)}
           placeholder={`Filter ${items.length} options…`}
           className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30" />

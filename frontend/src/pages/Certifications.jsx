@@ -3,9 +3,7 @@
 // search, CSV export, and the same Send Reminder action available in the
 // Worker edit modal.
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Award, ClipboardList, Download, Eye, Loader2, Mail, Pencil, Search, Trash2,
-} from 'lucide-react';
+import { Award, ClipboardList, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -13,6 +11,18 @@ import { PageHeader } from '../components/capture/Ui';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import CertEditModal from '../components/certifications/CertEditModal';
 import CertDeleteConfirm from '../components/certifications/CertDeleteConfirm';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowDownload20Regular as Download,
+  Delete20Regular as Trash2,
+  Edit20Regular as Pencil,
+  Eye20Regular as Eye,
+  Mail20Regular as Mail,
+  Search20Regular as Search,
+} from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -150,7 +160,7 @@ export default function Certifications() {
         </div>
         <div className="flex-1" />
         <div className="relative">
-          <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search worker, cert or issuer…" data-testid="cert-search"
             className="pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg bg-white w-72" />
@@ -158,7 +168,7 @@ export default function Certifications() {
         <button onClick={() => exportCsv(filtered)} disabled={filtered.length === 0}
           data-testid="cert-export-csv"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-          <Download size={14} /> Export CSV
+          <Download /> Export CSV
         </button>
       </div>
 
@@ -218,14 +228,14 @@ export default function Certifications() {
                         title={c.doc_file_id ? 'View PDF' : 'No file uploaded'}
                         data-testid={`cert-view-${c.id}`}
                         className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600"
-                      ><Eye size={13} /></button>
+                      ><Eye /></button>
                       {canEdit && (
                         <button
                           onClick={() => setEditCert(c)}
                           title="Edit"
                           data-testid={`cert-edit-${c.id}`}
                           className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700"
-                        ><Pencil size={13} /></button>
+                        ><Pencil /></button>
                       )}
                       {isAdmin && (
                         <button
@@ -233,13 +243,13 @@ export default function Certifications() {
                           title="Delete"
                           data-testid={`cert-delete-${c.id}`}
                           className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-                        ><Trash2 size={13} /></button>
+                        ><Trash2 /></button>
                       )}
                       {canEdit && (
                         <button onClick={() => sendReminder(c)} disabled={sendingId === c.id}
                           data-testid={`send-reminder-${c.id}`}
                           className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fbe4e7] text-[#7a1f33] text-xs font-semibold hover:bg-[#f4c7cd] disabled:opacity-60">
-                          {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                          {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail />}
                           Send reminder
                         </button>
                       )}

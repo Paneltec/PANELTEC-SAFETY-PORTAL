@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Copy, HelpCircle, Loader2, Pencil, Plus, Settings, Trash2, X, Download } from 'lucide-react';
+import { HelpCircle, Loader2, Settings, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
@@ -8,6 +8,17 @@ import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Add20Regular as Plus,
+  ArrowDownload20Regular as Download,
+  Copy20Regular as Copy,
+  Delete20Regular as Trash2,
+  Edit20Regular as Pencil,
+} from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
 const IMPORT_ROLES = new Set(['admin', 'manager']);
@@ -64,7 +75,7 @@ export default function Renewals() {
             {canImport && (
               <button onClick={() => setImportOpen(true)} data-testid="import-from-simpro-btn"
                 className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
-                <Download size={14} /> Import from Simpro
+                <Download /> Import from Simpro
               </button>
             )}
             <button onClick={() => setManageOpen(true)} data-testid="renewals-manage-doc-types-btn"
@@ -117,14 +128,14 @@ export default function Renewals() {
                             recipients={r.contractor_email ? [r.contractor_email] : []}
                             variant="primary" size="sm" label="Email link"
                           />
-                          <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy size={12} /> Copy</button>
+                          <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy /> Copy</button>
                         </>
                       )}
                       {canEdit && r.status !== 'used' && (
                         <button onClick={() => setEditing({ ...r, expires_date: (r.expires_at || '').slice(0, 10) })}
                           data-testid={`renewal-edit-${r.id}`} title="Edit renewal link"
                           className="p-1.5 rounded text-[#1e4a8c] bg-[#e6eff9] hover:bg-[#d8e6f4]">
-                          <Pencil size={12} />
+                          <Pencil />
                         </button>
                       )}
                       {canEdit && r.status === 'pending' && (
@@ -373,7 +384,7 @@ function ManageDocTypesDialog({ open, onClose, docTypes, onChanged }) {
                 <button onClick={() => deleteRow(r)} title="Delete"
                   data-testid={`doc-type-delete-${r.id}`}
                   className="p-1.5 rounded text-rose-600 hover:bg-rose-50">
-                  <Trash2 size={13} />
+                  <Trash2 />
                 </button>
               </div>
               <input value={r.description || ''} placeholder="Optional description"
@@ -396,7 +407,7 @@ function ManageDocTypesDialog({ open, onClose, docTypes, onChanged }) {
             <button onClick={addRow} disabled={busy || !newLabel.trim()}
               data-testid="new-doc-type-add"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-brand-blue text-white hover:bg-blue-600 disabled:opacity-40">
-              {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Add type
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Plus />} Add type
             </button>
           </div>
         </div>

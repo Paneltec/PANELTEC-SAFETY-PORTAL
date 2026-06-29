@@ -8,11 +8,7 @@
 // semantic RAG is deferred to a future phase.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  Check, ClipboardPaste, Download, Eye, FileSpreadsheet, FileText, FolderOpen,
-  Image as ImageIcon, Loader2, Pencil, Plus, Search, Sparkles, Trash2,
-  Upload, X,
-} from 'lucide-react';
+import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
@@ -20,6 +16,19 @@ import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
 import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Add20Regular as Plus,
+  ArrowDownload20Regular as Download,
+  ArrowUpload20Regular as Upload,
+  Delete20Regular as Trash2,
+  Edit20Regular as Pencil,
+  Eye20Regular as Eye,
+  Search20Regular as Search,
+} from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const DELETE_FOLDER_ROLES = new Set(['admin']);
@@ -121,13 +130,13 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
             data-testid={`subfolder-rename-${sf.id}`}
             title="Rename folder" aria-label="Rename folder"
             className="w-7 h-7 rounded-md bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 border border-slate-200 flex items-center justify-center">
-            <Pencil size={11} />
+            <Pencil />
           </button>
           <button onClick={handleDelete} disabled={busy}
             data-testid={`subfolder-delete-${sf.id}`}
             title="Delete folder" aria-label="Delete folder"
             className="w-7 h-7 rounded-md bg-white text-rose-600 hover:text-rose-700 hover:bg-rose-50 border border-rose-200 flex items-center justify-center">
-            <Trash2 size={11} />
+            <Trash2 />
           </button>
         </div>
       )}
@@ -247,7 +256,7 @@ export default function DocumentLibrary() {
           />
           <button type="submit" disabled={searchBusy} data-testid="smart-search-submit"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#8c6a1a] text-white text-sm font-medium hover:bg-[#6f5314] disabled:opacity-60">
-            {searchBusy ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Search
+            {searchBusy ? <Loader2 size={14} className="animate-spin" /> : <Search />} Search
           </button>
           {searchResults && (
             <button type="button" onClick={() => { setSearchQ(''); setSearchResults(null); }}
@@ -290,7 +299,7 @@ export default function DocumentLibrary() {
       {/* Toolbar */}
       <div className="mb-5 flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
@@ -302,7 +311,7 @@ export default function DocumentLibrary() {
         {canEdit && (
           <button onClick={startCreate} data-testid="folder-create-btn"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
-            <Plus size={14} /> New folder
+            <Plus /> New folder
           </button>
         )}
       </div>
@@ -327,7 +336,7 @@ export default function DocumentLibrary() {
           action={canEdit && !filter ? (
             <button onClick={startCreate} data-testid="folder-empty-create"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium">
-              <Plus size={14} /> New folder
+              <Plus /> New folder
             </button>
           ) : null} />
       ) : (
@@ -367,7 +376,7 @@ export default function DocumentLibrary() {
                     <button onClick={() => startRename(f)} data-testid={`folder-rename-btn-${f.id}`}
                       title="Rename"
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-white">
-                      <Pencil size={11} />
+                      <Pencil />
                     </button>
                     {canDeleteFolder && (
                       <button onClick={() => setConfirmDeleteId(f.id)} data-testid={`folder-delete-btn-${f.id}`}
@@ -567,7 +576,7 @@ export function DocumentLibraryFolder() {
                 <button onClick={() => { setRenameValue(folder.name); setRenaming(true); }}
                   data-testid="folder-detail-rename-btn"
                   className="p-1.5 rounded text-slate-400 hover:text-brand-blue hover:bg-slate-100" title="Rename">
-                  <Pencil size={16} />
+                  <Pencil />
                 </button>
               )}
             </div>
@@ -585,7 +594,7 @@ export function DocumentLibraryFolder() {
             <button onClick={() => fileInputRef.current?.click()} disabled={uploading}
               data-testid="folder-upload-btn"
               className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-60">
-              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />} Upload files
+              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload />} Upload files
             </button>
           </div>
         )}
@@ -682,7 +691,7 @@ export function DocumentLibraryFolder() {
                             className={`p-1.5 rounded ${ok
                               ? 'text-slate-500 hover:text-brand-blue hover:bg-slate-100'
                               : 'text-slate-300 cursor-not-allowed'}`}>
-                            <Eye size={14} />
+                            <Eye />
                           </button>
                         );
                       })()}
@@ -717,12 +726,12 @@ export function DocumentLibraryFolder() {
                       })()}
                       <button onClick={() => downloadFile(f)} data-testid={`file-download-${f.id}`}
                         className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
-                        <Download size={14} />
+                        <Download />
                       </button>
                       {canEdit && (
                         <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
                           className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
-                          <Trash2 size={14} />
+                          <Trash2 />
                         </button>
                       )}
                     </div>

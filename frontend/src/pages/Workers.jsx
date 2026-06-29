@@ -3,17 +3,30 @@
 // Phase 2: Personal section (birth date + address), Availability scheduler,
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download, Edit3,
-  FileText, HardHat, Loader2, Mail, MapPin, Plug, Plus, Printer, QrCode, RefreshCw,
-  Search, Smartphone, Square, Tag, Trash2, Upload, UploadCloud, Users, X,
-} from 'lucide-react';
+import { AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Add20Regular as Plus,
+  ArrowDownload20Regular as Download,
+  ArrowSync20Regular as RefreshCw,
+  ArrowUpload20Regular as Upload,
+  Delete20Regular as Trash2,
+  Edit20Regular as Edit3,
+  Mail20Regular as Mail,
+  Print20Regular as Printer,
+  QrCode20Regular as QrCode,
+  Search20Regular as Search,
+  Tag20Regular as Tag,
+} from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const SYNC_OPTIONS = [
@@ -150,7 +163,7 @@ function ClientPicker({ company, onClose, selectedIds, onApply }) {
         </div>
         <div className="px-5 py-3 border-b border-slate-200 flex items-center gap-2">
           <div className="relative flex-1">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Search customers…" data-testid="client-picker-search"
               className="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg" />
@@ -332,7 +345,7 @@ function CertificationsPanel({ workerId, canEdit }) {
             <div className="flex justify-end">
               <button type="button" onClick={addManual} data-testid="cert-add-manual"
                 className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
-                <Plus size={12} /> Add certification (no file)
+                <Plus /> Add certification (no file)
               </button>
             </div>
           )}
@@ -386,10 +399,10 @@ function CertificationsPanel({ workerId, canEdit }) {
                               <div className="inline-flex gap-1 items-center">
                                 <button type="button" onClick={() => setEditingId(c.id)} data-testid={`cert-edit-${c.id}`}
                                   title="Edit"
-                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 size={11} /></button>
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
                                 <button type="button" onClick={() => removeCert(c)} data-testid={`cert-delete-${c.id}`}
                                   title="Delete"
-                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 size={11} /></button>
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
                               </div>
                             )}
                           </td>
@@ -557,7 +570,7 @@ function IdCardSection({ worker, canEdit }) {
           data-testid="id-card-qr">
           {qrUrl
             ? <img src={qrUrl} alt="Worker QR" className="w-32 h-32" />
-            : <div className="w-32 h-32 grid place-items-center text-slate-300"><QrCode size={48} /></div>}
+            : <div className="w-32 h-32 grid place-items-center text-slate-300"><QrCode /></div>}
           <div className="text-[10px] uppercase tracking-wider text-slate-400">Worker QR</div>
           <div className="text-[10px] font-mono text-slate-500">{token || '—'}</div>
         </div>
@@ -586,12 +599,12 @@ function IdCardSection({ worker, canEdit }) {
             <button type="button" onClick={() => openPdf('print')} disabled={printing || !token}
               data-testid="id-card-print"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
-              {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Print preview
+              {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer />} Print preview
             </button>
             <button type="button" onClick={() => openPdf('download')} disabled={printing || !token}
               data-testid="id-card-download"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-              <Download size={12} /> Download PDF
+              <Download /> Download PDF
             </button>
           </div>
 
@@ -614,7 +627,7 @@ function IdCardSection({ worker, canEdit }) {
                 <button type="button" onClick={pairNfc} disabled={savingNfc || nfc.length < 4}
                   data-testid="nfc-pair"
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
-                  {savingNfc ? <Loader2 size={12} className="animate-spin" /> : <Tag size={12} />} Pair
+                  {savingNfc ? <Loader2 size={12} className="animate-spin" /> : <Tag />} Pair
                 </button>
               </div>
               <p className="mt-1.5 text-[11px] text-slate-500">
@@ -1039,20 +1052,20 @@ export default function Workers() {
       <>
       <div className="mb-4 flex items-center gap-2 flex-wrap" data-testid="workers-toolbar">
         <div className="relative flex-1 max-w-md">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by name, email, phone or state…" data-testid="search-input"
             className="w-full pl-9 pr-3 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30" />
         </div>
         <button onClick={() => exportCsv(filtered)} disabled={filtered.length === 0} data-testid="export-csv"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-          <Download size={14} /> Export CSV
+          <Download /> Export CSV
         </button>
         {canEdit && (
           <div className="relative">
             <button onClick={() => setSyncOpen((v) => !v)} disabled={syncing} data-testid="sync-dropdown"
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-sm font-medium hover:bg-[#d8e6f4] disabled:opacity-60">
-              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync from Simpro <ChevronDown size={12} />
+              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw />} Sync from Simpro <ChevronDown size={12} />
             </button>
             {syncOpen && (
               <div className="absolute right-0 z-20 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden">
@@ -1070,7 +1083,7 @@ export default function Workers() {
         {canEdit && (
           <button onClick={() => setEditing({})} data-testid="add-worker"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263]">
-            <Plus size={14} /> Add worker
+            <Plus /> Add worker
           </button>
         )}
       </div>
@@ -1083,7 +1096,7 @@ export default function Workers() {
           action={canEdit && !search ? (
             <button onClick={() => setEditing({})} data-testid="empty-add"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-medium">
-              <Plus size={14} /> Add worker
+              <Plus /> Add worker
             </button>
           ) : null} />
       ) : (
@@ -1137,7 +1150,7 @@ export default function Workers() {
                         {w.scan_token ? (
                           <span data-testid={`chip-qr-${w.id}`} title={`QR token: ${w.scan_token}`}
                             className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                            <QrCode size={9} /> QR
+                            <QrCode /> QR
                           </span>
                         ) : null}
                         {(() => {
@@ -1176,11 +1189,11 @@ export default function Workers() {
                       {canEdit && confirmDelete !== w.id && (
                         <div className="inline-flex gap-1 items-center">
                           <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer size={13} /></button>
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
                           <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 size={13} /></button>
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
                           <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 size={13} /></button>
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
                         </div>
                       )}
                       {canEdit && confirmDelete === w.id && (

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Building2, FileBadge, Link2, Loader2, Plus, Printer, Trash2, Upload } from 'lucide-react';
+import { Building2, FileBadge, Link2, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
@@ -9,6 +9,16 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Add20Regular as Plus,
+  ArrowUpload20Regular as Upload,
+  Delete20Regular as Trash2,
+  Print20Regular as Printer,
+} from '@fluentui/react-icons';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'],
@@ -151,7 +161,7 @@ export default function ContractorsList() {
                           data-testid={`contractor-print-qr-btn-${c.id}`}
                           title="Print supplier induction QR"
                           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 text-xs font-semibold hover:bg-violet-100">
-                          <Printer size={11} /> Print supplier QR
+                          <Printer /> Print supplier QR
                         </button>
                         <button type="button" onClick={() => openSingle(c)}
                           data-testid={`contractor-add-renewal-${c.id}`}
@@ -434,7 +444,7 @@ export function ContractorDetail() {
             <select className={inputClass + ' w-auto text-xs py-1'} value={upload.type} onChange={(e) => setUpload({ ...upload, type: e.target.value })}>{DOC_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             <input type="date" className={inputClass + ' w-auto text-xs py-1'} value={upload.expiry_date} onChange={(e) => setUpload({ ...upload, expiry_date: e.target.value })} placeholder="Expiry" />
             <input ref={fileRef} type="file" className="hidden" onChange={submitDoc} data-testid="doc-file-input" />
-            <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-blue text-white text-xs font-medium hover:bg-blue-600 disabled:opacity-60"><Upload size={12} /> Upload</button>
+            <button onClick={() => fileRef.current?.click()} disabled={busy} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-blue text-white text-xs font-medium hover:bg-blue-600 disabled:opacity-60"><Upload /> Upload</button>
           </div>
         </div>
         {(!doc.documents || doc.documents.length === 0)
@@ -447,7 +457,7 @@ export function ContractorDetail() {
                     <td className="py-2"><FileBadge size={14} className="inline mr-2 text-slate-400" />{(DOC_TYPES.find(([k]) => k === d.type) || [])[1] || d.type}</td>
                     <td className="py-2 text-slate-500 text-xs">expires {d.expiry_date || '—'}</td>
                     <td className="py-2"><StatusBadge value={d.status} /></td>
-                    <td className="py-2 text-right"><button onClick={() => delDoc(d.id)} className="p-1 text-slate-400 hover:text-brand-red"><Trash2 size={14} /></button></td>
+                    <td className="py-2 text-right"><button onClick={() => delDoc(d.id)} className="p-1 text-slate-400 hover:text-brand-red"><Trash2 /></button></td>
                   </tr>
                 ))}
               </tbody>

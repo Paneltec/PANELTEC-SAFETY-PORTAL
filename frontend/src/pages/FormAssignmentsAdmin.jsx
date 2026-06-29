@@ -8,14 +8,20 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import {
-  Loader2, Save, Search, AlertTriangle, Check, Truck, Wrench, Hammer, Box,
-  LayoutGrid, Mail as ListPaneIcon, Circle, RotateCcw, Sparkles, CheckSquare, Square,
-  HardHat, Users, Building2, X, Send,
-} from 'lucide-react';
+import { Loader2, Save, AlertTriangle, Check, Truck, Wrench, Hammer, Box, LayoutGrid, Circle, RotateCcw, Sparkles, CheckSquare, Square, HardHat, Users, Building2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Mail20Regular as Mail,
+  Mail20Regular as ListPaneIcon,
+  Search20Regular as Search,
+  Send20Regular as Send,
+} from '@fluentui/react-icons';
 
 const KIND_OPTIONS = [
   { key: 'vehicle',   label: 'Vehicle',   Icon: Truck },
@@ -317,7 +323,7 @@ export default function FormAssignmentsAdmin() {
         <div className="flex rounded-2xl border border-slate-300 overflow-hidden" data-testid="assignments-view-toggle">
           <button onClick={() => setView('pane')}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold ${view === 'pane' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
-            data-testid="view-pane"><ListPaneIcon size={12} /> Two-pane</button>
+            data-testid="view-pane"><ListPaneIcon /> Two-pane</button>
           <button onClick={() => setView('matrix')}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold ${view === 'matrix' ? 'bg-slate-900 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}
             data-testid="view-matrix"><LayoutGrid size={12} /> Matrix</button>
@@ -348,7 +354,7 @@ export default function FormAssignmentsAdmin() {
           <div className="w-full sm:w-[320px] border-r border-slate-200 bg-white flex flex-col" data-testid="left-rail">
             <div className="px-3 py-2 border-b border-slate-200 space-y-2">
               <div className="relative">
-                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 <input type="search" value={search} onChange={(e) => setSearch(e.target.value)}
                   placeholder={`Search ${templates.length} templates…`}
                   data-testid="assignments-search"
@@ -454,7 +460,7 @@ export default function FormAssignmentsAdmin() {
                     ))}
                   </div>
                   <div className="relative">
-                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input type="search" value={workerSearch} onChange={(e) => setWorkerSearch(e.target.value)}
                       placeholder="Search workers by name or email…"
                       data-testid="worker-search"
@@ -572,7 +578,7 @@ export default function FormAssignmentsAdmin() {
               <button onClick={() => persistSave(false)} disabled={saving}
                 data-testid="notify-send"
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-60">
-                {saving ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />} Save &amp; notify
+                {saving ? <Loader2 size={12} className="animate-spin" /> : <Send />} Save &amp; notify
               </button>
             </div>
           </div>

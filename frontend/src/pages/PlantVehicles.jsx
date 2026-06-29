@@ -1,10 +1,6 @@
 // Plant & Vehicles Register — unified live Navixy + manual plant/tool/container assets.
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  Plus, RefreshCw, Search, MapPin, Truck, Loader2, Printer, Tag,
-  Edit3, Archive, QrCode, X, List as ListIcon, Map as MapIcon, Radio,
-  ClipboardCheck,
-} from 'lucide-react';
+import { MapPin, Truck, Loader2, Archive, X, List as ListIcon, Map as MapIcon, Radio, ClipboardCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
@@ -14,6 +10,19 @@ import { PageHeader } from '../components/capture/Ui';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  Add20Regular as Plus,
+  ArrowSync20Regular as RefreshCw,
+  Edit20Regular as Edit3,
+  Print20Regular as Printer,
+  QrCode20Regular as QrCode,
+  Search20Regular as Search,
+  Tag20Regular as Tag,
+} from '@fluentui/react-icons';
 
 const KIND_CHIPS = [
   { key: 'all', label: 'All' },
@@ -89,7 +98,7 @@ function PrintLabelsModal({ assetIds, onClose }) {
       data-testid="print-labels-modal">
       <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-3">
-          <Printer size={18} className="text-blue-600" />
+          <Printer className="text-blue-600" />
           <div className="flex-1">
             <h3 className="font-display text-lg font-bold text-slate-900">Print labels</h3>
             <p className="text-xs text-slate-500">{assetIds.length} asset{assetIds.length === 1 ? '' : 's'} selected</p>
@@ -118,7 +127,7 @@ function PrintLabelsModal({ assetIds, onClose }) {
         <div className="px-5 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
           <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-white" data-testid="print-cancel">Cancel</button>
           <button onClick={openLabel} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700" data-testid="print-generate">
-            <Printer size={14} /> Generate PDF
+            <Printer /> Generate PDF
           </button>
         </div>
       </div>
@@ -246,19 +255,19 @@ export default function PlantVehicles() {
         action={
           <div className="flex items-center gap-2">
             <button onClick={load} disabled={refreshing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm hover:bg-slate-50 disabled:opacity-50" data-testid="assets-refresh">
-              {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Refresh
+              {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw />} Refresh
             </button>
             {canEdit && (
               <>
                 <button onClick={() => setPrintIds(assets.map((a) => a.id))} disabled={!assets.length}
                   className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm hover:bg-slate-50 disabled:opacity-50"
                   data-testid="assets-print-labels">
-                  <Printer size={14} /> Print Labels
+                  <Printer /> Print Labels
                 </button>
                 <button onClick={openCreate}
                   className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
                   data-testid="assets-add">
-                  <Plus size={14} /> Add Asset
+                  <Plus /> Add Asset
                 </button>
               </>
             )}
@@ -283,7 +292,7 @@ export default function PlantVehicles() {
           ))}
           <div className="ml-auto flex items-center gap-2">
             <div className="relative">
-              <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+              <Search className="absolute left-2.5 top-2.5 text-slate-400" />
               <input value={q} onChange={(e) => setQ(e.target.value)}
                 placeholder="Search name, rego, make…"
                 className="pl-7 pr-3 py-1.5 text-sm border border-slate-200 rounded-lg w-56"
@@ -350,7 +359,7 @@ export default function PlantVehicles() {
             {assets.map((a) => (
               <li key={a.id} className="px-4 py-3 flex items-center gap-3 hover:bg-slate-50" data-testid={`asset-${a.id}`}>
                 <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                  {a.kind === 'vehicle' ? <Truck size={18} className="text-blue-700" /> : <Tag size={18} className="text-slate-500" />}
+                  {a.kind === 'vehicle' ? <Truck size={18} className="text-blue-700" /> : <Tag className="text-slate-500" />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -407,16 +416,16 @@ export default function PlantVehicles() {
                     );
                   })()}
                   <button onClick={() => downloadQr(a)} title="Download QR" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-qr-${a.id}`}>
-                    <QrCode size={15} />
+                    <QrCode />
                   </button>
                   {canEdit && (
                     <button onClick={() => setPrintIds([a.id])} title="Print label" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-label-${a.id}`}>
-                      <Printer size={15} />
+                      <Printer />
                     </button>
                   )}
                   {canEdit && (
                     <button onClick={() => openEdit(a)} title="Edit" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-edit-${a.id}`}>
-                      <Edit3 size={15} />
+                      <Edit3 />
                     </button>
                   )}
                   {canEdit && a.status !== 'retired' && (

@@ -6,11 +6,7 @@
 // collapsible — when closed, each row shows a single "n/N current" chip
 // for that group instead of N cells.
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Loader2, RefreshCw, Upload, Download, Search, X, CalendarOff, Check,
-  AlertTriangle, Calendar, Settings2, ChevronDown, ChevronRight,
-  Columns3, Filter, LayoutGrid, Maximize2, Printer, Eye,
-} from 'lucide-react';
+import { Loader2, X, CalendarOff, Check, AlertTriangle, Calendar, Settings2, ChevronDown, ChevronRight, Columns3, LayoutGrid, Maximize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
@@ -18,6 +14,19 @@ import InductionImportWizard from './InductionImportWizard';
 import { stashInlinePdf } from '../lib/pdfStash';
 import PdfPreviewModal from './PdfPreviewModal';
 import InductionCardModal from './InductionCardModal';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowDownload20Regular as Download,
+  ArrowSync20Regular as RefreshCw,
+  ArrowUpload20Regular as Upload,
+  Eye20Regular as Eye,
+  Filter20Regular as Filter,
+  Print20Regular as Printer,
+  Search20Regular as Search,
+} from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -235,7 +244,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
       {/* toolbar */}
       <div className="mb-3 flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             data-testid="matrix-search"
             placeholder="Search worker…"
@@ -283,7 +292,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
           <button onClick={() => setColsOpen((v) => !v)}
             data-testid="matrix-cols-toggle"
             className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">
-            <Filter size={12} /> Columns ({data.columns.length - hidden.size})
+            <Filter /> Columns ({data.columns.length - hidden.size})
             <ChevronDown size={12} />
           </button>
           {colsOpen && (
@@ -311,11 +320,11 @@ export default function InductionsMatrix({ onWorkerClick }) {
 
         <button onClick={load} data-testid="matrix-refresh" title="Refresh"
           className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50">
-          <RefreshCw size={12} />
+          <RefreshCw />
         </button>
         <button onClick={downloadExport} data-testid="matrix-export" title="Export .xlsx"
           className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50">
-          <Download size={12} />
+          <Download />
         </button>
         {canEdit && (
           <button onClick={() => setPrintOpen(true)}
@@ -323,7 +332,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
             data-testid="matrix-preview"
             title={selectedIds.size === 0 && !pinnedWorkerId ? 'Select workers or pin one to preview' : `Preview ${selectedIds.size || 1} worker(s)`}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Eye size={12} /> Preview {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+            <Eye /> Preview {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
           </button>
         )}
         {canEdit && (
@@ -332,13 +341,13 @@ export default function InductionsMatrix({ onWorkerClick }) {
             data-testid="matrix-print"
             title={selectedIds.size === 0 && !pinnedWorkerId ? 'Select workers or pin one to print' : `Print ${selectedIds.size || 1} worker(s)`}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold uppercase tracking-wider hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
-            <Printer size={12} /> Print {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+            <Printer /> Print {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
           </button>
         )}
         {canEdit && (
           <button onClick={() => setShowWizard(true)} data-testid="matrix-import"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#5b21b6] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#4c1d95]">
-            <Upload size={12} /> Import .xlsx
+            <Upload /> Import .xlsx
           </button>
         )}
       </div>
@@ -375,12 +384,12 @@ export default function InductionsMatrix({ onWorkerClick }) {
             <button onClick={() => doPrint([pinned.id], printOpts, 'inline')}
               data-testid="matrix-pinned-preview" title="Preview this worker"
               className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
-              <Eye size={11} /> Preview
+              <Eye /> Preview
             </button>
             <button onClick={() => doPrint([pinned.id])}
               data-testid="matrix-pinned-print" title="Print this worker"
               className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
-              <Printer size={11} /> Print
+              <Printer /> Print
             </button>
             <button onClick={() => setPinnedWorkerId(null)}
               data-testid="matrix-pinned-clear"
@@ -602,7 +611,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
                 }} disabled={printing}
                 data-testid="preview-confirm"
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
-                {printing ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} Preview
+                {printing ? <Loader2 size={12} className="animate-spin" /> : <Eye />} Preview
               </button>
               <button onClick={() => {
                   const ids = selectedIds.size > 0 ? [...selectedIds] : (pinnedWorkerId ? [pinnedWorkerId] : []);
@@ -610,7 +619,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
                 }} disabled={printing}
                 data-testid="print-confirm"
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60">
-                {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Print
+                {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer />} Print
               </button>
             </div>
           </div>
@@ -760,7 +769,7 @@ function EmptyMatrix({ canEdit, onImport }) {
       {canEdit && (
         <button onClick={onImport}
           className="mt-4 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#5b21b6] text-white text-sm font-semibold hover:bg-[#4c1d95]">
-          <Upload size={14} /> Import .xlsx
+          <Upload /> Import .xlsx
         </button>
       )}
     </div>

@@ -8,9 +8,7 @@
 // panel auto-refreshing every 60s with an admin "Sign off" action.
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  Loader2, Printer, MapPin, Users, ChevronRight, RefreshCcw, LogOut, ArrowLeft, AlertCircle,
-} from 'lucide-react';
+import { Loader2, MapPin, Users, ChevronRight, LogOut, ArrowLeft, AlertCircle } from 'lucide-react';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -18,6 +16,14 @@ import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
+
+// Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
+// to @fluentui/react-icons. Aliased back to the original lucide
+// names so existing JSX call sites don't need to change.
+import {
+  ArrowSync20Regular as RefreshCcw,
+  Print20Regular as Printer,
+} from '@fluentui/react-icons';
 
 const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
@@ -129,7 +135,7 @@ export default function SitesAdmin() {
                       data-testid={`site-print-qr-btn-${s.simpro_site_id}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50"
                     >
-                      <Printer size={12} /> Print site QR
+                      <Printer /> Print site QR
                     </button>
                   </td>
                 </tr>
@@ -305,7 +311,7 @@ export function SiteDetail() {
           <button type="button" onClick={() => setPrintOpen(true)}
             data-testid={`site-detail-print-qr-${site.simpro_site_id}`}
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold hover:bg-blue-700">
-            <Printer size={14} /> Print site QR
+            <Printer /> Print site QR
           </button>
         }
       />
@@ -321,7 +327,7 @@ export function SiteDetail() {
           <button onClick={loadSignons} disabled={refreshing}
             data-testid="site-signons-refresh"
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-700 hover:text-slate-900 disabled:opacity-50">
-            {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCcw size={11} />}
+            {refreshing ? <Loader2 size={11} className="animate-spin" /> : <RefreshCcw />}
             Refresh
           </button>
           {lastRefresh && <span className="text-[10px] text-slate-400" data-testid="site-signons-last-refresh">Updated {fmtAgo(lastRefresh.toISOString())}</span>}
