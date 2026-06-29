@@ -1111,7 +1111,7 @@ export default function Workers() {
                     <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">{w.mobile || w.phone || '—'}</td>
                     <td className="px-3 py-3"><CompanyChip label={w.company_label} /></td>
                     <td className="px-3 py-3 hidden xl:table-cell">
-                      <div className="inline-flex items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1 max-w-[280px]">
                         {w.state ? (
                           <span data-testid={`chip-state-${w.id}`}
                             className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
@@ -1136,23 +1136,39 @@ export default function Workers() {
                             <QrCode size={9} /> QR
                           </span>
                         ) : null}
-                        {chipByWorker[w.id] && chipByWorker[w.id] !== 'unknown' ? (
-                          <span data-testid={`chip-induction-${w.id}`}
-                            title={`Inductions: ${chipByWorker[w.id]}`}
-                            className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                              chipByWorker[w.id] === 'current' ? 'bg-[#d8ecdd] text-[#1f7a3f]' :
-                              chipByWorker[w.id] === 'expiring' ? 'bg-[#fef3c7] text-[#92400e]' :
-                              chipByWorker[w.id] === 'expired' || chipByWorker[w.id] === 'invalid_date' ? 'bg-[#fbe4e7] text-[#7a1f33]' :
-                              'bg-slate-100 text-slate-500'
-                            }`}>
-                            <Award size={9} /> {chipByWorker[w.id]}
-                          </span>
-                        ) : null}
+                        {(() => {
+                          const v = chipByWorker[w.id];
+                          // Show explicit "No data" pill when worker is in the dataset but has zero cells.
+                          if (!v || v === 'unknown') {
+                            return (
+                              <span data-testid={`chip-induction-${w.id}`}
+                                title="No induction data on file for this worker"
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-dashed border-slate-200">
+                                <Award size={9} /> No data
+                              </span>
+                            );
+                          }
+                          // Abbreviated label + full text in tooltip to keep the row tight.
+                          const labelMap = { current: 'OK', expiring: 'SOON', expiring_90: '90d', expired: 'EXP', invalid_date: 'INV', not_held: 'N/H', held_no_expiry: 'HELD' };
+                          const fullMap  = { current: 'All current', expiring: 'Expiring 30d', expiring_90: 'Expiring 90d', expired: 'Has expired item(s)', invalid_date: 'Invalid date(s)', not_held: 'Not held', held_no_expiry: 'Held (no expiry)' };
+                          return (
+                            <span data-testid={`chip-induction-${w.id}`}
+                              title={`Inductions: ${fullMap[v] || v}`}
+                              className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                v === 'current' || v === 'held_no_expiry' ? 'bg-[#d8ecdd] text-[#1f7a3f]' :
+                                v === 'expiring' ? 'bg-[#fef3c7] text-[#92400e]' :
+                                v === 'expired' || v === 'invalid_date' ? 'bg-[#fbe4e7] text-[#7a1f33]' :
+                                'bg-slate-100 text-slate-500'
+                              }`}>
+                              <Award size={9} /> {labelMap[v] || v.toUpperCase()}
+                            </span>
+                          );
+                        })()}
                         {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && !chipByWorker[w.id] && <span className="text-[11px] text-slate-300">—</span>}
                       </div>
                     </td>
                     <td className="px-3 py-3"><StatusBadge active={w.active} /></td>
-                    <td className="px-3 py-3 text-right">
+                    <td className="sticky right-0 z-[5] bg-white px-3 py-3 text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                       {canEdit && confirmDelete !== w.id && (
                         <div className="inline-flex gap-1 items-center">
                           <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
