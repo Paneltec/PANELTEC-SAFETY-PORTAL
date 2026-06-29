@@ -223,30 +223,7 @@ export default function Cover() {
                   </button>
                 </form>
 
-                {/* Demo divider */}
-                <div className="mt-7 flex items-center gap-3" data-testid="cover-demo-divider">
-                  <div className="flex-1 h-px bg-slate-200" />
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-slate-400">Or use a demo account</div>
-                  <div className="flex-1 h-px bg-slate-200" />
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2.5">
-                  <button type="button" disabled={busy}
-                    onClick={() => demo('admin@paneltec.com', 'demo123', 'admin')}
-                    title="Admin demo — full access including user management & integrations"
-                    data-testid="cover-demo-admin"
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:border-brand-blue hover:text-brand-blue hover:bg-brand-blue/5 disabled:opacity-50">
-                    <ShieldCheck size={14} /> Admin demo
-                  </button>
-                  <button type="button" disabled={busy}
-                    onClick={() => demo('demo@paneltec.com', 'demo123', 'hseq')}
-                    title="HSEQ Lead demo — manage WHS compliance records & users (no integration edits)"
-                    data-testid="cover-demo-hseq"
-                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-medium hover:border-brand-blue hover:text-brand-blue hover:bg-brand-blue/5 disabled:opacity-50">
-                    <UserCog size={14} /> HSEQ Lead demo
-                  </button>
-                </div>
-
+                {/* Demo accounts removed — production app uses real credentials only. */}
                 <div className="mt-5 text-center text-[12px] text-slate-500" data-testid="cover-help">
                   Need an account? Contact your administrator.
                 </div>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowRight, Info, Loader2, Briefcase } from 'lucide-react';
+import { ArrowRight, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
 import { login, loginWithSimpro, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
@@ -9,8 +9,8 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const nextPath = safeNext(location.search);
-  const [email, setEmail] = useState('demo@paneltec.com');
-  const [password, setPassword] = useState('demo123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busySimpro, setBusySimpro] = useState(false);
@@ -51,14 +51,6 @@ export default function Login() {
           <Link to="/" className="inline-block mb-8"><Logo size="md" /></Link>
           <h1 className="font-display text-3xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-2 text-sm text-slate-600">Sign in to your Paneltec Civil workspace.</p>
-
-          <div className="mt-6 rounded-xl border border-brand-blue-soft bg-brand-blue-soft/60 p-3 text-xs text-slate-700 flex gap-2" data-testid="demo-banner">
-            <Info size={14} className="text-brand-blue mt-0.5 shrink-0" />
-            <div>
-              <div className="font-medium text-brand-blue">Demo credentials</div>
-              <div className="text-slate-600">Email <span className="font-mono">demo@paneltec.com</span> · Password <span className="font-mono">demo123</span></div>
-            </div>
-          </div>
 
           <form onSubmit={submit} className="mt-6 space-y-4" data-testid="login-form">
             <div>

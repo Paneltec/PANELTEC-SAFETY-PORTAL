@@ -8,7 +8,7 @@
 // one-time reload gated by sessionStorage so the loop can't repeat.
 import { toast } from 'sonner';
 
-const RELOAD_GUARD = 'paneltec_sw_reloaded_v69';
+const RELOAD_GUARD = 'paneltec_sw_reloaded_v70';
 
 function attachForceReloadListener() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;

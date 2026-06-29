@@ -71,36 +71,16 @@ from permissions_middleware import PermissionsMiddleware  # noqa: E402
 app.add_middleware(PermissionsMiddleware)
 
 
-# Phase 3.11h — one-time Clear-Site-Data on /api/* responses.
+# NOTE — A `Clear-Site-Data` middleware was briefly enabled here to force
+# stuck-SW visitors to wipe stale caches. It was REVERTED on 2026-06-29
+# because `"storage"` also wiped freshly-stored JWTs on the next /api/*
+# call when the version-marker cookie didn't survive the round trip,
+# causing an endless login-flash-and-redirect loop.
 #
-# The SPA HTML is served by the CRA dev server, not FastAPI. To force
-# every visitor's browser to wipe stale service workers / caches / storage
-# exactly ONCE, we attach `Clear-Site-Data` to the first /api/* response
-# that arrives without the version-marker cookie. Setting the cookie on
-# the same response prevents the directive from firing a second time.
-#
-# Cookie name is versioned: `paneltec_sw_reset_v68`. Bumping the version
-# string re-triggers a forced reset for every browser on the next API hit.
-SW_RESET_COOKIE = "paneltec_sw_reset_v68"
-
-
-@app.middleware("http")
-async def sw_reset_middleware(request, call_next):
-    response = await call_next(request)
-    # Only API responses (the SPA boots by hitting /api/auth/me /api/health
-    # so the directive arrives well before the user is into the app).
-    if not request.url.path.startswith("/api"):
-        return response
-    if request.cookies.get(SW_RESET_COOKIE) == "1":
-        return response
-    # First visit after the version bump → wipe + mark.
-    response.headers["Clear-Site-Data"] = '"cache", "storage", "executionContexts"'
-    response.set_cookie(
-        SW_RESET_COOKIE, "1",
-        max_age=60 * 60 * 24 * 365, samesite="lax",
-        secure=True, path="/",
-    )
-    return response
+# The SW activate handler in `service-worker.js` already hard-purges every
+# cache that doesn't carry the current `paneltec-v70+` prefix and broadcasts
+# a one-time reload to all open clients — that's sufficient. Don't reinstate
+# Clear-Site-Data on /api/* responses without a per-request opt-in.
 
 
 @api.get("/")
