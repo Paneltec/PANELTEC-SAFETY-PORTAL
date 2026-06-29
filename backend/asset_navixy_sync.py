@@ -345,9 +345,35 @@ async def _sync_org(org_id: str) -> dict:
     # Phase 3.6 — track which provider populated each tracker's value so the
     # caller can surface a source_breakdown.
     source_by_tid: dict[int, str] = {}
+    # Phase 3.15-fix — `contacted_tids` is the set of trackers Navixy actually
+    # responded for during this poll. It's our "device online" signal — fed
+    # by counter responses AND the cheap bulk `get_states` probe below. Used
+    # by the writer to stamp `navixy_last_seen_at` on every reachable device,
+    # whether or not the counter values changed.
+    contacted_tids: set[int] = set()
     errors = 0
     try:
         async with httpx.AsyncClient(timeout=15) as c:
+            # Phase 3.15-fix — Pass 0: cheap bulk reachability probe.
+            # ONE `get_states` for every device in the fleet (warm + cold).
+            # Any tracker that comes back gets its `navixy_last_seen_at`
+            # stamped to `now()` so parked-but-online devices stay GREEN.
+            all_tids = [int(a["navixy_device_id"]) for a in assets]
+            if all_tids:
+                try:
+                    rs = await c.post(f"{base}/v2/tracker/get_states",
+                        json={"hash": h, "trackers": all_tids, "allow_not_exist": True})
+                    if rs.status_code < 400:
+                        rs_data = rs.json() or {}
+                        states_raw = rs_data.get("states") if isinstance(rs_data, dict) else None
+                        if isinstance(states_raw, dict):
+                            for k in states_raw.keys():
+                                try:
+                                    contacted_tids.add(int(k))
+                                except (TypeError, ValueError):
+                                    pass
+                except (httpx.HTTPError, ValueError) as e:
+                    log.info("reachability probe (get_states) errored — %s", e)
             # Pass 1 — counter/read for both types per COLD tracker only,
             # with bounded concurrency so 100+ devices stay fast.
             sem = asyncio.Semaphore(8)
@@ -460,9 +486,13 @@ async def _sync_org(org_id: str) -> dict:
 
     updated = 0
     skipped = 0
+    contacted = 0  # Phase 3.15-fix — devices Navixy responded for (online).
     source_breakdown = {"panel": 0, "report": 0, "tracks": 0, "none": 0, "already_current": 0}
     ts = now_iso()
     cold_ids = {a["id"] for a in cold_assets}
+    # `contacted_tids` was populated above (Pass 0 bulk get_states + counter
+    # responses). Anything in this set is "reachable right now".
+    contacted_tids = contacted_tids | set(counters_by_tid.keys()) | set(source_by_tid.keys())
     for a in assets:
         tid = int(a["navixy_device_id"])
         c = counters_by_tid.get(tid) or {}
@@ -479,6 +509,17 @@ async def _sync_org(org_id: str) -> dict:
             patch["odo_km"] = c["odo_km"]
             patch["odo_km_updated_at"] = c.get("odo_at") or ts
             patch["odo_km_source"] = src_label
+
+        # Phase 3.15-fix — `navixy_last_seen_at` is the "I successfully
+        # reached this device on this poll" signal. We stamp it whenever
+        # *any* provider acknowledged the tracker, even if the counter
+        # values didn't change. Without this, parked-but-online devices
+        # show RED on the health dot (the regression user reported).
+        was_contacted = tid in contacted_tids
+        if was_contacted:
+            patch["navixy_last_seen_at"] = ts
+            contacted += 1
+
         if not patch:
             skipped += 1
             # Warm assets we deliberately skipped (already had a source) are
@@ -494,10 +535,17 @@ async def _sync_org(org_id: str) -> dict:
         await db.assets.update_one({"id": a["id"]}, {"$set": patch})
         a.update(patch)
         await _recompute_schedules_for_asset(a)
-        updated += 1
-        source_breakdown[src or "panel"] += 1
+        # `updated` counts records where a counter VALUE changed; bumping
+        # the seen-at timestamp alone counts as `already_current` so the
+        # existing report semantics stay intact.
+        if c.get("hours") is not None or c.get("odo_km") is not None:
+            updated += 1
+            source_breakdown[src or "panel"] += 1
+        else:
+            source_breakdown["already_current"] += 1
 
     return {"org_id": org_id, "updated": updated, "skipped": skipped,
+            "contacted": contacted,
             "errors": errors, "devices": len(assets),
             "source_breakdown": source_breakdown,
             "note": ("upstream_returned_no_counter_values"

@@ -122,12 +122,21 @@ NAVIXY_FRESH_THRESHOLD_HOURS = 24
 
 
 def _navixy_last_seen_at(asset: dict) -> Optional[str]:
-    """Canonical "last data point received" timestamp for the asset. We pick
-    the most recent of hours_meter_updated_at / odo_km_updated_at — both are
-    written by `asset_navixy_sync` whenever a counter snaps in. If neither
-    is populated the asset has never reported (red)."""
-    candidates = [asset.get("hours_meter_updated_at"), asset.get("odo_km_updated_at"),
-                  asset.get("navixy_last_seen_at")]
+    """Canonical "last contact" timestamp for the asset.
+
+    Phase 3.15-fix — order of preference:
+      1. `navixy_last_seen_at`  — stamped on EVERY successful sync poll,
+         independent of counter changes. This is the "device is reachable"
+         signal and the one the health dot really cares about.
+      2. `hours_meter_updated_at` / `odo_km_updated_at` — only tick when the
+         underlying counter VALUE changes. A parked-but-online vehicle
+         would otherwise look stale because its odometer never increments
+         while it sleeps. We still consult these as a fallback so legacy
+         rows pre-Phase-3.15-fix still resolve to *something*.
+    """
+    candidates = [asset.get("navixy_last_seen_at"),
+                  asset.get("hours_meter_updated_at"),
+                  asset.get("odo_km_updated_at")]
     candidates = [c for c in candidates if c]
     if not candidates:
         return None

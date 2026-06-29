@@ -62,8 +62,16 @@
  *       idempotent (skip rows already covered by a pending link).
  *       Also: Phase 4.1 history walker is now BIDIRECTIONAL — calling
  *       /history on the LATEST node returns the same chain as the OLDEST.
+ * v85.2 — Phase 3.15 Navixy health-dot accuracy fix.
+ *       Root cause: `hours_meter_updated_at` only ticks when the meter VALUE
+ *       changes; parked-but-online vehicles never got a fresh timestamp so
+ *       the health-dot read them as stale. Now sync stamps a dedicated
+ *       `navixy_last_seen_at` on every reachable device via a single bulk
+ *       /v2/tracker/get_states probe covering the entire fleet. Histogram
+ *       flipped from 1 green / 71 red → 72 green / 0 red on the first
+ *       post-fix sync tick.
  */
-const CACHE_VERSION = 'paneltec-v85.1';
+const CACHE_VERSION = 'paneltec-v85.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
