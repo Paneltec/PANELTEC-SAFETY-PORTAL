@@ -21,8 +21,20 @@ export default function SystemSettings() {
   const refresh = async () => {
     setLoading(true);
     try {
-      const r = await api.get('/admin/system-tools');
-      setStatus(r.data?.tools || null);
+      // Phase 3.13 — point at the dedicated health endpoint. Normalise the
+      // `{ok, version, path}` shape back into the legacy `{installed, ...}`
+      // keys the ToolCard component already consumes, so we don't have to
+      // touch downstream rendering.
+      const r = await api.get('/admin/server-tools/health');
+      const h = r.data || {};
+      const norm = (t) => ({
+        installed: !!t?.ok, version: t?.version || null, path: t?.path || null,
+      });
+      setStatus({
+        libreoffice: norm(h.libreoffice),
+        tesseract:   norm(h.tesseract),
+        poppler:     norm(h.poppler),
+      });
     } catch (e) {
       toast.error(apiError(e));
     } finally { setLoading(false); }

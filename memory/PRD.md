@@ -823,3 +823,31 @@ Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, 
 ## Queued (do not interleave)
 - **Phase 3.13** — LibreOffice swap as primary DOCX/XLSX/PPTX→PDF path with Python fallback; Tesseract/Poppler OCR utility; `/api/admin/server-tools/health` endpoint.
 - **Phase 3.14** — Simpro Suppliers Import for Renewal Links: `sync_simpro_suppliers()`, `POST /api/integrations/simpro/sync-suppliers`, `POST /api/contractors/import-from-simpro`, `SimproSupplierImportModal.jsx`.
+
+## 2026-02 — Phase 3.13: LibreOffice swap + Tesseract OCR + server-tools/health
+- **Backend** (`file_pdf.py`):
+  - `_libreoffice_to_pdf(src, out_dir, timeout=60)` helper using `soffice --headless --convert-to pdf` with per-call `-env:UserInstallation` profile to avoid lockfile contention.
+  - `_office_to_pdf_via_lo(blob, ext, name)` wrapper.
+  - `_docx_to_pdf()` now tries LibreOffice → docx2pdf (legacy) → pragmatic ReportLab text fallback (chain logged at INFO).
+  - New pipelines registered: `docx_libreoffice`, `xlsx_libreoffice`, `pptx_libreoffice`, `odt_libreoffice`, `rtf_libreoffice`. xlsx/pptx/odt/rtf raise HTTP 415 on LO failure (no text fallback — by design).
+  - `ocr_pdf_to_text(pdf_path, lang='eng')` util: tries `pdftotext` first, falls back to `pdftoppm` + `tesseract`. Opt-in only; not wired to upload path.
+  - `GET /api/admin/server-tools/health` (admin) — returns `{libreoffice:{ok,version,path}, tesseract:{...}, poppler:{...}}`. Legacy `/admin/system-tools` retained for back-compat.
+  - Env override `PANELTEC_LIBREOFFICE_BIN` for fault-testing — set to a missing path and the fallback chain kicks in cleanly.
+- **Frontend**: `SystemSettings.jsx` now hits `/admin/server-tools/health` (normalises to `{installed, version, path}` for the existing ToolCard component, zero downstream refactor).
+- **Cache**: `paneltec-v78`.
+
+### Receipts (all green)
+- `GET /api/admin/server-tools/health` admin → 200 `{libreoffice:{ok:true,version:"LibreOffice 7.4.7.2 …"}, tesseract:{ok:true,version:"tesseract 5.3.0"}, poppler:{ok:true,version:"pdftotext version 22.12.0"}}`. Worker token → 403.
+- DOCX upload → `GET /api/files/{id}/pdf` → `x-pipeline: docx_libreoffice`, 7023 bytes, `%PDF` magic.
+- XLSX upload → `GET /api/files/{id}/pdf` → `x-pipeline: xlsx_libreoffice`, 5948 bytes, `%PDF` magic.
+- Force-failure (`PANELTEC_LIBREOFFICE_BIN=/nonexistent/soffice`): `_docx_to_pdf()` falls through to `docx_text_fallback`, returns valid 1.9 KB PDF, no 500. INFO log shows the cascade reasons.
+- OCR util on the LibreOffice-generated PDF extracts 332 chars cleanly (paragraph + table + bold/italic text all surface).
+
+### Incidental fix shipped in this phase
+- `models.py` Role Literal was missing `"manager"`, causing 500s on `/auth/login` for any manager-role user. Patched the Literal; unblocks manager-class flows everywhere.
+
+## Queued (do not interleave)
+- **Phase 3.14** — Simpro Suppliers Import for Renewal Links.
+- **Phase 3.15** — Navixy Health Dot on Asset Location Pin.
+- **Phase 3.16** — Session Timeout Settings (Admin-Configurable).
+- **Phase 3.17** — Certifications row actions (PDF Preview / Edit / Delete).

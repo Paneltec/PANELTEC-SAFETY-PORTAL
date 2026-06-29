@@ -60,7 +60,60 @@ log = logging.getLogger("paneltec.files.pdf")
 router = APIRouter(prefix="", tags=["files-pdf"])
 
 UPLOAD_DIR = Path(__file__).parent / "uploads" / "document_library"
-PIPELINES = {"passthrough", "image", "heic", "text", "docx_docx2pdf", "docx_text_fallback"}
+PIPELINES = {
+    "passthrough", "image", "heic", "text",
+    "docx_libreoffice", "docx_docx2pdf", "docx_text_fallback",
+    "xlsx_libreoffice", "pptx_libreoffice", "odt_libreoffice", "rtf_libreoffice",
+}
+
+# Phase 3.13 — LibreOffice primary path. Override via env to fault-test.
+LIBREOFFICE_BIN_OVERRIDE = os.environ.get("PANELTEC_LIBREOFFICE_BIN")
+LIBREOFFICE_TIMEOUT_S = int(os.environ.get("PANELTEC_LIBREOFFICE_TIMEOUT_S", "60"))
+
+
+def _libreoffice_binary() -> str | None:
+    """Resolve the soffice/libreoffice executable, honouring an env override.
+    Set PANELTEC_LIBREOFFICE_BIN to a non-existent path during fault tests to
+    force the pragmatic fallback."""
+    import shutil
+    if LIBREOFFICE_BIN_OVERRIDE is not None:
+        return LIBREOFFICE_BIN_OVERRIDE if Path(LIBREOFFICE_BIN_OVERRIDE).exists() else None
+    return shutil.which("soffice") or shutil.which("libreoffice")
+
+
+def _libreoffice_to_pdf(src_path: Path, out_dir: Path, timeout: int = LIBREOFFICE_TIMEOUT_S) -> Path:
+    """Convert an office doc → PDF via headless LibreOffice. Returns the
+    output PDF path or raises. Each call gets its own UserInstallation profile
+    so concurrent requests don't clobber each other's lockfiles."""
+    bin_path = _libreoffice_binary()
+    if not bin_path:
+        raise RuntimeError("LibreOffice not installed")
+    profile = out_dir / f"_lo_profile_{os.getpid()}_{int(time.time()*1000)}"
+    profile.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        bin_path, "--headless",
+        f"-env:UserInstallation=file://{profile}",
+        "--convert-to", "pdf", "--outdir", str(out_dir), str(src_path),
+    ]
+    res = subprocess.run(cmd, capture_output=True, timeout=timeout)
+    if res.returncode != 0:
+        tail = (res.stderr or res.stdout or b"").decode("utf-8", errors="replace")[-300:]
+        raise RuntimeError(f"libreoffice rc={res.returncode}: {tail}")
+    expected = out_dir / (src_path.stem + ".pdf")
+    if not expected.exists():
+        raise RuntimeError("LibreOffice produced no PDF output file")
+    return expected
+
+
+def _office_to_pdf_via_lo(blob: bytes, ext: str, name: str) -> bytes:
+    """Pipe blob → temp file → LibreOffice → PDF bytes. Raises on any
+    failure; caller decides whether to fall back."""
+    with tempfile.TemporaryDirectory() as td:
+        td_p = Path(td)
+        src = td_p / f"in.{ext.lstrip('.')}"
+        src.write_bytes(blob)
+        out = _libreoffice_to_pdf(src, td_p)
+        return out.read_bytes()
 
 
 # ────────────────── helpers ──────────────────
@@ -100,8 +153,19 @@ def _pipeline_for(mime: str, name: str) -> str:
         return "heic"
     if m in {"text/csv", "text/plain", "text/markdown"} or n.endswith((".csv", ".txt", ".md")):
         return "text"
+    # Phase 3.13 — LibreOffice primary path for all office formats.
+    # .docx still has a pragmatic ReportLab text fallback for ultra-defensive
+    # delivery; xlsx/pptx/odt/rtf are LO-only (raises 415 on LO failure).
     if n.endswith(".docx") or m == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        return "docx_docx2pdf"
+        return "docx_libreoffice"
+    if n.endswith(".xlsx") or m == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+        return "xlsx_libreoffice"
+    if n.endswith(".pptx") or m == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        return "pptx_libreoffice"
+    if n.endswith(".odt") or m == "application/vnd.oasis.opendocument.text":
+        return "odt_libreoffice"
+    if n.endswith(".rtf") or m in {"application/rtf", "text/rtf"}:
+        return "rtf_libreoffice"
     return ""  # unsupported
 
 
@@ -176,10 +240,24 @@ def _docx_text_fallback(blob: bytes, name: str) -> bytes:
 
 
 def _docx_to_pdf(blob: bytes, name: str) -> tuple[bytes, str]:
-    """Best-effort docx → PDF. Returns (pdf_bytes, pipeline_used). The
-    docx2pdf module silently produces near-empty output if LibreOffice/Word
-    isn't on PATH — guard with a <1 KB size check and fall back to the
-    text-only renderer."""
+    """Best-effort docx → PDF. Tries LibreOffice headless first (high fidelity),
+    then docx2pdf (legacy Windows-on-PATH path), and finally the pragmatic
+    ReportLab text fallback so we **never** return blank.
+
+    Each fallback reason is logged at INFO so the production log shows the
+    pipeline actually used (visible via `tail /var/log/supervisor/backend.out.log`)."""
+    # 1. LibreOffice headless — primary path.
+    try:
+        pdf = _office_to_pdf_via_lo(blob, "docx", name)
+        if len(pdf) >= 1024 and _is_pdf(pdf):
+            log.info("libreoffice: ok docx=%s bytes=%d", name, len(pdf))
+            return pdf, "docx_libreoffice"
+        log.info("libreoffice fallback: docx produced %d bytes (<1KB or not PDF)", len(pdf))
+    except Exception as e:
+        log.info("libreoffice fallback: %s", e)
+
+    # 2. docx2pdf — legacy path (only effective if Word/LO is on PATH, but
+    # still gives us a third shot before the lossy fallback).
     with tempfile.TemporaryDirectory() as td:
         td_p = Path(td)
         src = td_p / "in.docx"
@@ -188,15 +266,70 @@ def _docx_to_pdf(blob: bytes, name: str) -> tuple[bytes, str]:
         try:
             import docx2pdf
             docx2pdf.convert(str(src), str(dst))
+            if dst.exists():
+                data = dst.read_bytes()
+                if len(data) >= 1024 and _is_pdf(data):
+                    log.info("docx2pdf: ok docx=%s bytes=%d", name, len(data))
+                    return data, "docx_docx2pdf"
         except Exception as e:
-            log.info("docx2pdf raised, using text fallback: %s", e)
-            return _docx_text_fallback(blob, name), "docx_text_fallback"
-        if dst.exists():
-            data = dst.read_bytes()
-            if len(data) >= 1024 and _is_pdf(data):
-                return data, "docx_docx2pdf"
-            log.info("docx2pdf produced %d bytes (<1KB or not PDF) — falling back", len(data))
-        return _docx_text_fallback(blob, name), "docx_text_fallback"
+            log.info("docx2pdf fallback: %s", e)
+
+    # 3. Pragmatic ReportLab text renderer — never blank.
+    log.info("docx text fallback engaged for %s", name)
+    return _docx_text_fallback(blob, name), "docx_text_fallback"
+
+
+def _office_to_pdf_or_415(blob: bytes, ext: str, name: str, pipeline: str) -> tuple[bytes, str]:
+    """xlsx / pptx / odt / rtf have no pragmatic fallback. Convert via LO or
+    raise a 415 with a useful hint."""
+    try:
+        pdf = _office_to_pdf_via_lo(blob, ext, name)
+        if _is_pdf(pdf) and len(pdf) >= 100:
+            log.info("libreoffice: ok %s=%s bytes=%d", ext, name, len(pdf))
+            return pdf, pipeline
+        raise RuntimeError(f"produced invalid PDF: {len(pdf)} bytes")
+    except subprocess.TimeoutExpired:
+        log.info("libreoffice timeout for %s — giving up", name)
+        raise HTTPException(504, f"LibreOffice timed out converting {name}. Try again or open locally.")
+    except Exception as e:
+        log.info("libreoffice failed for %s: %s", name, e)
+        raise HTTPException(415, f"Couldn't render {ext.upper()} preview: {e}")
+
+
+# ────────────────── OCR utility (opt-in) ──────────────────
+
+def ocr_pdf_to_text(pdf_path: Path | str, lang: str = "eng", timeout: int = 90) -> str:
+    """Extract plaintext from a PDF. Tries `pdftotext` first (fast — works for
+    text-layer PDFs), falls back to Tesseract via Poppler's `pdftoppm` when
+    the file is image-only. **Not** wired into the upload path — call this
+    explicitly from a search-indexer job or admin tool.
+
+    Raises FileNotFoundError if the binaries aren't installed."""
+    import shutil
+    src = Path(pdf_path)
+    if not src.exists():
+        raise FileNotFoundError(src)
+    if not shutil.which("pdftotext"):
+        raise FileNotFoundError("pdftotext (poppler-utils) not installed")
+    # Fast path — pdftotext.
+    res = subprocess.run(["pdftotext", "-layout", str(src), "-"],
+                         capture_output=True, timeout=timeout)
+    text = (res.stdout or b"").decode("utf-8", errors="replace").strip()
+    if text:
+        return text
+    # Slow path — rasterise + tesseract OCR.
+    if not shutil.which("pdftoppm") or not shutil.which("tesseract"):
+        return ""
+    with tempfile.TemporaryDirectory() as td:
+        td_p = Path(td)
+        subprocess.run(["pdftoppm", "-r", "200", str(src), str(td_p / "page"), "-png"],
+                       capture_output=True, timeout=timeout)
+        out_chunks: list[str] = []
+        for img in sorted(td_p.glob("page-*.png")):
+            r = subprocess.run(["tesseract", str(img), "-", "-l", lang],
+                               capture_output=True, timeout=timeout)
+            out_chunks.append((r.stdout or b"").decode("utf-8", errors="replace"))
+        return "\n".join(out_chunks).strip()
 
 
 # ────────────────── cache + dispatcher ──────────────────
@@ -245,8 +378,11 @@ async def _convert(doc: dict, path: Path) -> tuple[bytes, str]:
     elif pipeline == "image": pdf = _img_to_pdf(blob)
     elif pipeline == "heic":  pdf = _heic_to_pdf(blob)
     elif pipeline == "text":  pdf = _text_to_pdf(blob, doc.get("filename") or "Document")
-    elif pipeline == "docx_docx2pdf":
+    elif pipeline == "docx_libreoffice":
         pdf, pipeline = _docx_to_pdf(blob, doc.get("filename") or "Document")
+    elif pipeline in {"xlsx_libreoffice", "pptx_libreoffice", "odt_libreoffice", "rtf_libreoffice"}:
+        ext = pipeline.split("_", 1)[0]
+        pdf, pipeline = _office_to_pdf_or_415(blob, ext, doc.get("filename") or f"Document.{ext}", pipeline)
     else:
         raise HTTPException(500, f"Unknown pipeline: {pipeline}")
     await _cache_store(doc["id"], sha1, pipeline, pdf)
@@ -470,3 +606,21 @@ async def system_tools(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     return {"tools": await _tool_status()}
+
+
+@router.get("/admin/server-tools/health")
+async def server_tools_health(user: dict = Depends(get_current_user)):
+    """Phase 3.13 — health-check shape requested by the Settings page.
+    Returns `{libreoffice:{ok,version,path}, tesseract:{...}, poppler:{...}}`.
+    Same data as `/admin/system-tools` but normalised to the `ok` key the
+    UI uses to colour the chip green/red without a key-mapping helper."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    s = await _tool_status()
+    def _norm(t: dict) -> dict:
+        return {"ok": bool(t.get("installed")), "version": t.get("version"), "path": t.get("path")}
+    return {
+        "libreoffice": _norm(s["libreoffice"]),
+        "tesseract":   _norm(s["tesseract"]),
+        "poppler":     _norm(s["poppler"]),
+    }

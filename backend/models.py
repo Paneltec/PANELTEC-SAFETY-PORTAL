@@ -9,7 +9,7 @@ from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 import uuid
 
-Role = Literal["worker", "supervisor", "hseq_lead", "auditor", "admin"]
+Role = Literal["worker", "supervisor", "hseq_lead", "auditor", "manager", "admin"]
 SwmsStatus = Literal["draft", "submitted", "approved", "rejected", "changes_requested"]
 HazardStatus = Literal["open", "in_progress", "closed"]
 HazardSeverity = Literal["low", "medium", "high", "critical"]
