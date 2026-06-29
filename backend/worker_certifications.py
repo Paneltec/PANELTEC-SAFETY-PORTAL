@@ -22,6 +22,7 @@ from pymongo import ReturnDocument
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
+from permissions import require_permission
 from document_library import (
     MAX_FILE_BYTES, UPLOAD_DIR, _safe_ext, _serialise_file, _stub_ai_tags,
 )
@@ -307,8 +308,13 @@ async def update_cert(
 
 
 @router.delete("/certifications/{cert_id}", status_code=204)
-async def delete_cert(cert_id: str, user: dict = Depends(get_current_user)):
-    _require_write(user, action="delete")
+async def delete_cert(
+    cert_id: str,
+    user: dict = Depends(require_permission("certifications", "delete")),
+):
+    # Phase 3.18 — auth now flows through the permissions matrix so admins can
+    # delegate cert-delete to specific HSEQ Leads via per-user override
+    # without changing role membership.
     existing = await db.worker_certifications.find_one(
         {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},

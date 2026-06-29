@@ -1,3 +1,71 @@
+# 2026-06-29 — Phase 3.18 Granular Permissions + Active Sessions
+
+## Backend
+- `permissions.py` extended:
+  - New action `delete` joins `open|view|edit|email` → 5-action matrix.
+  - New `_all_no_delete()` helper keeps HSEQ Lead's broad grants while
+    *explicitly* denying delete (mirrors actual route behaviour pre-3.18).
+  - 5 new resources added to `PERMISSIONS_SCHEMA`: `workers`, `inductions`,
+    `certifications`, `documents`, `forms`. Each declares `delete_supported`
+    and `email_supported` flags.
+  - ROLE_DEFAULTS extended for all 5 roles × 5 new resources. Workers get
+    view-only on inductions/certifications; supervisors get edit on
+    inductions/forms; only admin gets delete by default.
+- Cert/induction/worker DELETE routes now flow through `require_permission`
+  instead of inline role checks, so per-user overrides actually grant access.
+- `admin_active_sessions.py` (new) wires:
+    - `GET  /api/admin/active-sessions` — joins active_sessions ⨝ users.
+    - `DELETE /api/admin/active-sessions/{jti}` — revokes one session +
+      bumps the owner's `token_version` (defence-in-depth — even a cached
+      JWT for that user fails on next /auth/me).
+
+## Frontend
+- `pages/UsersManagement.jsx`:
+  - New ✏️ Edit-permissions icon button (`user-edit-perms-{id}`, violet)
+    opens the existing drawer pre-selected to the permissions tab.
+  - Permissions matrix now has a `perm-search` filter input.
+  - `<div data-testid="user-permissions-modal">` wraps the matrix tab so
+    e2e selectors are stable.
+- `lib/permissions.js`:
+  - 5 new resources added to RESOURCE_LABELS / EMAIL_SUPPORTED, plus a
+    DELETE_SUPPORTED map and a 5-element ACTIONS export.
+- `components/settings/ActiveSessionsPanel.jsx` (new) mounted inside
+  the Session Timeout card. Auto-refresh every 30s, relative timestamps,
+  per-row revoke (`revoke-session-{jti}`), self-revoke is blocked with a
+  toast guiding admins to "Force logout everyone" instead.
+
+## Curl receipts
+- `GET /api/auth/me` (admin) → `effective_permissions` now contains
+  `workers/inductions/certifications/documents/forms` each with proper
+  delete=True, edit=True, view=True for admin.
+- `GET /api/admin/active-sessions` admin → 200 (17 sessions live);
+  worker → **403**.
+- Per-user override end-to-end (worker_stephen + certifications.delete):
+    1. Pre-override `effective.certifications.delete = False` (worker role default).
+    2. As worker — `DELETE /workers/certifications/{id}` → **403**.
+    3. Admin `PUT /users/{id}/permissions {overrides: {certifications:{delete:true}}}` → 200,
+       effective now True.
+    4. Re-login worker — `DELETE` same cert → **204** (over-the-wall!)
+    5. Admin `POST /users/{id}/permissions/reset` → 200, override cleared.
+    6. Worker re-tries delete → back to **403**. End-to-end gate works.
+
+## Cache
+- `service-worker.js` → **paneltec-v84**.
+
+## Screenshots
+- `/tmp/users_with_edit_perms.png` — 6 user rows, each with the new violet ✏️ Edit-permissions button next to the existing logout + delete actions.
+- `/tmp/perms_modal_search.png` — drawer opened on Permissions tab, `cert` search filters to just the Certifications row.
+- `/tmp/active_sessions_panel.png` — 24 live sessions with relative timestamps and per-row revoke buttons.
+
+## Next Action Items
+- Phase 4.1 — SWMS Assignments admin page + version-chain commit (P2).
+- Phase 4.2/4.3 — Site / Supplier Induction QR (P2).
+- Long-term: extend granular catalog to include `add` separately (today
+  it's bundled into `edit`) once the user has a concrete use case.
+
+---
+
+
 # 2026-06-29 — Phase 3.16 Parts A+B + Phase 3.17 (Certifications row actions)
 
 ## Part A — `session_timeout.py` BSON-Date normalisation (FAIL-SAFE)

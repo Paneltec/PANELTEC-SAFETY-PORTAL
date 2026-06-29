@@ -28,10 +28,24 @@ export const RESOURCE_LABELS = {
   audit_exports: 'Audit exports', vehicles: 'Vehicles',
   assets: 'Plant & Vehicles',
   integrations: 'Integrations', users: 'Users & permissions',
+  // Phase 3.18 — granular delete-aware resources.
+  workers: 'Workers', inductions: 'Inductions', certifications: 'Certifications',
+  documents: 'Documents', forms: 'Forms',
 };
 
 export const EMAIL_SUPPORTED = {
   swms: true, pre_starts: true, site_diary: true, hazards: true,
   incidents: true, inspections: true, contractors: true, renewals: true,
   audit_exports: true, vehicles: false, assets: false, integrations: false, users: false,
+  workers: false, inductions: true, certifications: true, documents: false, forms: false,
 };
+
+export const DELETE_SUPPORTED = {
+  swms: true, pre_starts: true, site_diary: true, hazards: true,
+  incidents: true, inspections: true, contractors: true, renewals: true,
+  audit_exports: false, vehicles: true, assets: true, integrations: false, users: true,
+  workers: true, inductions: true, certifications: true, documents: true, forms: true,
+};
+
+// 5-action matrix (Phase 3.18 added `delete`).
+export const ACTIONS = ['open', 'view', 'edit', 'delete', 'email'];

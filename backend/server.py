@@ -153,6 +153,8 @@ api.include_router(workers_inductions_card_router)
 from session_timeout import router as session_timeout_router, admin_router as session_timeout_admin_router  # noqa: E402
 api.include_router(session_timeout_router)
 api.include_router(session_timeout_admin_router)
+from admin_active_sessions import router as admin_active_sessions_router  # noqa: E402
+api.include_router(admin_active_sessions_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
 

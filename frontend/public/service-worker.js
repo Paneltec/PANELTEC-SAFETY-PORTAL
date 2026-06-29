@@ -35,8 +35,16 @@
  * v83 — Phase 3.17 Certifications row actions: 👁 View PDF (PdfPreviewModal),
  *       ✏️ Edit (PATCH /workers/certifications/{id}), 🗑 Delete with proper
  *       confirmation modal (DELETE /workers/certifications/{id}, admin-only).
+ * v84 — Phase 3.18 Granular permissions + Active Sessions panel:
+ *       `delete` action added to ACTIONS, new resources (workers, inductions,
+ *       certifications, documents, forms), HSEQ Lead loses delete by default.
+ *       Cert/induction/worker DELETE routes now flow through require_permission
+ *       so admins can grant per-user delete via override. UsersManagement
+ *       gains a ✏️ Edit-permissions icon button + matrix search field.
+ *       Live "Active sessions" panel inside the Session Timeout card
+ *       (GET /api/admin/active-sessions + DELETE /api/admin/active-sessions/{jti}).
  */
-const CACHE_VERSION = 'paneltec-v83';
+const CACHE_VERSION = 'paneltec-v84';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

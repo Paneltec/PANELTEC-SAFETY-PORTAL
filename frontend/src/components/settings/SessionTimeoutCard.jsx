@@ -17,6 +17,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { signOut } from '../../lib/auth';
+import ActiveSessionsPanel from './ActiveSessionsPanel';
 
 const IDLE_OPTIONS = [
   { v: 15,  l: '15 minutes' },
@@ -314,6 +315,8 @@ export default function SessionTimeoutCard() {
           </div>
         </div>
       </div>
+      {/* Phase 3.18 — live active sessions panel */}
+      <ActiveSessionsPanel />
     </div>
   );
 }

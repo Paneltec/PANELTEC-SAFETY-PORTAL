@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2 } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
@@ -44,6 +44,7 @@ export default function UsersManagement() {
   const [users, setUsers] = useState([]);
   const [filters, setFilters] = useState({ role: '', status: '' });
   const [active, setActive] = useState(null);
+  const [activeTab, setActiveTab] = useState('profile');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
@@ -113,7 +114,7 @@ export default function UsersManagement() {
           </thead>
           <tbody>
             {filtered.map((u) => (
-              <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => setActive(u)} data-testid={`user-row-${u.id}`}>
+              <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
                 <td className="px-4 py-3"><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{(u.name || u.email)[0]}</AvatarFallback></Avatar>
                   <div>
                     <div className="font-medium flex items-center gap-1.5">{u.name}
@@ -151,6 +152,13 @@ export default function UsersManagement() {
                 {can('users', 'edit') && (
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="inline-flex gap-1 items-center">
+                      <button
+                        title="Edit permissions"
+                        data-testid={`user-edit-perms-${u.id}`}
+                        onClick={() => { setActiveTab('permissions'); setActive(u); }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-violet-100 text-violet-700 hover:bg-violet-200">
+                        <KeyRound size={13} />
+                      </button>
                       <button
                         title="Force sign-out everywhere"
                         data-testid={`force-signout-${u.id}`}
@@ -191,7 +199,7 @@ export default function UsersManagement() {
         </table>
       </div>
 
-      {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} />}
+      {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} defaultTab={activeTab} />}
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
       {importOpen && <ImportFromSimproDrawer
         companies={simproStatus.companies}
@@ -202,14 +210,15 @@ export default function UsersManagement() {
   );
 }
 
-function UserDrawer({ userRow, onClose, onReload, canEdit }) {
-  const [tab, setTab] = useState('profile');
+function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile' }) {
+  const [tab, setTab] = useState(defaultTab);
   const [detail, setDetail] = useState(null);
   const [perms, setPerms] = useState(null);
   const [profile, setProfile] = useState({ name: '', email: '', role: '', status: '', workspace_ids: [] });
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
+  const [permSearch, setPermSearch] = useState('');
 
   const load = async () => {
     try {
@@ -354,10 +363,19 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
         )}
 
         {tab === 'permissions' && perms && (
-          <div className="mt-5">
-            <div className="flex items-center justify-between mb-3">
+          <div className="mt-5" data-testid="user-permissions-modal">
+            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
               <div className="text-sm text-slate-700"><ShieldCheck size={13} className="inline mr-1 text-brand-blue" /> Role default: <strong>{perms.role}</strong></div>
-              {canEdit && <button onClick={resetPerms} className="text-xs inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded hover:bg-slate-50"><RotateCcw size={11} /> Reset to defaults</button>}
+              {canEdit && <button onClick={resetPerms} data-testid="perm-reset-defaults" className="text-xs inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded hover:bg-slate-50"><RotateCcw size={11} /> Reset to defaults</button>}
+            </div>
+            <div className="relative mb-2">
+              <SearchIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text" value={permSearch} onChange={(e) => setPermSearch(e.target.value)}
+                placeholder="Search resources (e.g. workers, certifications, inductions)…"
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                data-testid="perm-search"
+              />
             </div>
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
               <table className="w-full text-sm">
@@ -365,7 +383,12 @@ function UserDrawer({ userRow, onClose, onReload, canEdit }) {
                   <tr><th className="text-left px-3 py-2">Resource</th>{ACTIONS.map((a) => <th key={a} className="px-3 py-2">{a}</th>)}</tr>
                 </thead>
                 <tbody>
-                  {RESOURCES.map((res) => (
+                  {RESOURCES.filter((res) => {
+                    if (!permSearch.trim()) return true;
+                    const s = permSearch.trim().toLowerCase();
+                    return res.toLowerCase().includes(s)
+                      || (RESOURCE_LABELS[res] || '').toLowerCase().includes(s);
+                  }).map((res) => (
                     <tr key={res} className="border-t border-slate-100">
                       <td className="px-3 py-2 font-medium">{RESOURCE_LABELS[res]}</td>
                       {ACTIONS.map((act) => {

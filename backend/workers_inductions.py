@@ -41,6 +41,7 @@ from pydantic import BaseModel
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission
 
 log = logging.getLogger("paneltec.workers.inductions")
 router = APIRouter(prefix="/workers/inductions", tags=["workers-inductions"])
@@ -1243,10 +1244,11 @@ async def upload_induction_file(
 
 @card_router.delete("/{worker_id}/inductions/{induction_id}", status_code=204)
 async def delete_induction(
-    worker_id: str, induction_id: str, user: dict = Depends(get_current_user),
+    worker_id: str, induction_id: str,
+    user: dict = Depends(require_permission("inductions", "delete")),
 ):
-    if user.get("role") != "admin":
-        raise HTTPException(403, "Only admin can delete inductions")
+    # Phase 3.18 — gate moved from inline `role == "admin"` to the permissions
+    # matrix. Admins can grant delete to specific HSEQ Leads via override.
     await _worker_or_404(worker_id, user["org_id"])
     cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
     await db.worker_certifications.update_one(

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 
 from auth import get_current_user
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
@@ -191,8 +192,11 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
 
 
 @router.delete("/{worker_id}", status_code=204)
-async def delete_worker(worker_id: str, user: dict = Depends(get_current_user)):
-    _require_write(user, action="delete")
+async def delete_worker(
+    worker_id: str,
+    user: dict = Depends(require_permission("workers", "delete")),
+):
+    # Phase 3.18 — auth now flows through the permissions matrix.
     ts = now_iso()
     result = await db.workers.update_one(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
