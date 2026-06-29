@@ -9,6 +9,7 @@ import { CheckCircle2, XCircle, RefreshCw, Loader2, Download, FileText, Settings
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import SessionTimeoutCard from '../components/settings/SessionTimeoutCard';
 
 export default function SystemSettings() {
   const me = getUser();
@@ -144,6 +145,12 @@ export default function SystemSettings() {
         renderer) are already PDF-viewable. Installing the toolchain above
         promotes DOCX to full-fidelity rendering and unlocks XLSX / PPTX / ODT.
       </div>
+
+      {canInstall && (
+        <div className="mt-6">
+          <SessionTimeoutCard />
+        </div>
+      )}
     </div>
   );
 }

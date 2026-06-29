@@ -112,18 +112,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
     navigate('/');
   };
 
-  // Phase 3.16 — idle-watch + warning modal driver. Hidden completely from
-  // public routes (this component only mounts inside /app/**), so the hook
-  // is safe to instantiate unconditionally.
-  const [warnInfo, setWarnInfo] = useState(null);
-  useSessionTimeout({
-    onWarn: (info) => setWarnInfo(info),
-    onLogout: async () => {
-      setWarnInfo(null);
-      await signOut();
-      navigate('/login?reason=idle');
-    },
-  });
+  // Phase 3.16 — session-timeout warning lives at the AppShell level so the
+  // modal is rendered as a sibling of <main>, not nested inside TopBar.
+  // Previously the state was declared inside TopBar but referenced down here,
+  // which exploded with "warnInfo is not defined" on every /app/* render.
 
   const onBack = () => {
     // navigate(-1) falls back gracefully when history is empty in most
@@ -240,9 +232,21 @@ const SidebarShell = ({ collapsed }) => (
 );
 
 export default function AppShell() {
+  const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(getUser());
+  // Phase 3.16 — idle-watch + warning modal driver. Lives here (not in
+  // TopBar) so the modal can be rendered as a sibling of <main> below.
+  const [warnInfo, setWarnInfo] = useState(null);
+  useSessionTimeout({
+    onWarn: (info) => setWarnInfo(info),
+    onLogout: async () => {
+      setWarnInfo(null);
+      await signOut();
+      navigate('/login?reason=idle');
+    },
+  });
 
   // refresh user from server on mount so role/name stays accurate, and slide
   // the JWT window via a silent /auth/refresh so long-idle sessions don't 401.

@@ -4,12 +4,15 @@
 // Worker edit modal.
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Award, ClipboardList, Download, Loader2, Mail, Search, Trash2, X,
+  Award, ClipboardList, Download, Eye, Loader2, Mail, Pencil, Search, Trash2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+import PdfPreviewModal from '../components/PdfPreviewModal';
+import CertEditModal from '../components/certifications/CertEditModal';
+import CertDeleteConfirm from '../components/certifications/CertDeleteConfirm';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
@@ -59,11 +62,16 @@ function exportCsv(rows) {
 export default function Certifications() {
   const user = getUser();
   const canEdit = WRITE_ROLES.has(user?.role);
+  const isAdmin = user?.role === 'admin';
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [sendingId, setSendingId] = useState(null);
+  // Phase 3.17 — row actions
+  const [previewCert, setPreviewCert] = useState(null);   // 👁  View PDF
+  const [editCert, setEditCert] = useState(null);         // ✏️ Edit
+  const [deleteCert, setDeleteCert] = useState(null);     // 🗑 Delete (admin)
 
   const load = async () => {
     setLoading(true);
@@ -203,20 +211,75 @@ export default function Certifications() {
                   </td>
                   <td className="px-3 py-3 text-xs text-slate-500 hidden xl:table-cell">{c.doc_seed_folder || '—'}</td>
                   <td className="px-3 py-3 text-right">
-                    {canEdit && (
-                      <button onClick={() => sendReminder(c)} disabled={sendingId === c.id}
-                        data-testid={`send-reminder-${c.id}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fbe4e7] text-[#7a1f33] text-xs font-semibold hover:bg-[#f4c7cd] disabled:opacity-60">
-                        {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
-                        Send reminder
-                      </button>
-                    )}
+                    <div className="inline-flex items-center gap-1 justify-end">
+                      <button
+                        onClick={() => setPreviewCert(c)}
+                        disabled={!c.doc_file_id}
+                        title={c.doc_file_id ? 'View PDF' : 'No file uploaded'}
+                        data-testid={`cert-view-${c.id}`}
+                        className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600"
+                      ><Eye size={13} /></button>
+                      {canEdit && (
+                        <button
+                          onClick={() => setEditCert(c)}
+                          title="Edit"
+                          data-testid={`cert-edit-${c.id}`}
+                          className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700"
+                        ><Pencil size={13} /></button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => setDeleteCert(c)}
+                          title="Delete"
+                          data-testid={`cert-delete-${c.id}`}
+                          className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                        ><Trash2 size={13} /></button>
+                      )}
+                      {canEdit && (
+                        <button onClick={() => sendReminder(c)} disabled={sendingId === c.id}
+                          data-testid={`send-reminder-${c.id}`}
+                          className="ml-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fbe4e7] text-[#7a1f33] text-xs font-semibold hover:bg-[#f4c7cd] disabled:opacity-60">
+                          {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail size={11} />}
+                          Send reminder
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* Phase 3.17 — row action modals */}
+      {previewCert && (
+        <PdfPreviewModal
+          file={previewCert.doc_file_id
+            ? { id: previewCert.doc_file_id, filename: `${previewCert.name} — ${previewCert.worker_first_name} ${previewCert.worker_last_name}` }
+            : null}
+          onClose={() => setPreviewCert(null)}
+        />
+      )}
+      {editCert && (
+        <CertEditModal
+          cert={editCert}
+          onClose={() => setEditCert(null)}
+          onSaved={(updated) => {
+            setRows((rs) => rs.map((r) => r.id === updated.id
+              ? { ...r, ...updated, worker_first_name: r.worker_first_name, worker_last_name: r.worker_last_name }
+              : r));
+            // Status may have changed (e.g. new expiry_date) — reload to recompute.
+            load();
+          }}
+        />
+      )}
+      {deleteCert && (
+        <CertDeleteConfirm
+          cert={deleteCert}
+          onClose={() => setDeleteCert(null)}
+          onDeleted={(id) => setRows((rs) => rs.filter((r) => r.id !== id))}
+        />
       )}
     </div>
   );

@@ -41,6 +41,34 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalise_activity_ts(raw) -> Optional[datetime]:
+    """Coerce a stored `last_activity_at` value into a tz-aware UTC datetime.
+
+    Accepts:
+      * `None`                → returns `None` (caller treats as expired).
+      * `datetime` (naive)    → assumed UTC, returned tz-aware.
+      * `datetime` (tz-aware) → returned unchanged.
+      * `str` (ISO-8601)      → parsed; trailing `Z` accepted; naive parses
+                                are stamped UTC.
+      * Any other type or unparseable string → returns `None`.
+
+    Callers MUST treat a `None` return as "session expired" — failing SAFE
+    rather than fail-open prevents the BSON-Date vs ISO-string mismatch from
+    silently keeping idle sessions alive (the exact regression Phase 3.16
+    Part A fixes)."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        return raw if raw.tzinfo else raw.replace(tzinfo=timezone.utc)
+    if isinstance(raw, str):
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+        return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return None
+
+
 async def get_settings(org_id: str) -> dict:
     """Returns the current settings for an org; missing doc → DEFAULTS."""
     doc = await db.session_timeout_settings.find_one({"org_id": org_id}, {"_id": 0})
@@ -176,33 +204,35 @@ async def register_session(jti: str, user: dict, remember_me: bool = False) -> N
 
 
 async def touch_and_check_session(jti: str, user: dict) -> Optional[str]:
-    """Returns None if the session is fresh, "session_idle_timeout" if not."""
+    """Returns None if the session is fresh, "session_idle_timeout" if not.
+
+    Handles `last_activity_at` stored as EITHER an ISO string (current write
+    path) OR a BSON Date — older code or a future migration could land
+    datetime objects in the doc and we must not silently fail open.
+    A genuinely-unparseable timestamp is treated as expired (safer default)."""
     if not jti:
-        return None  # legacy token issued before 3.16 — let it through
+        return None
     sess = await db.active_sessions.find_one({"jti": jti}, {"_id": 0})
     if not sess:
-        # No row — fresh token from a pre-3.16 issuer OR a token that's
-        # being used after the row was wiped. Re-register and let through;
-        # idle clock starts now.
         await register_session(jti, user)
         return None
     eff = await effective_for_user(user)
     idle_minutes = eff["idle_minutes"]
     if sess.get("remember_me"):
         idle_minutes = max(idle_minutes, 30 * 24 * 60)
-    try:
-        last = datetime.fromisoformat(sess["last_activity_at"].replace("Z", "+00:00"))
-        if last.tzinfo is None:
-            last = last.replace(tzinfo=timezone.utc)
-        age_s = (datetime.now(timezone.utc) - last).total_seconds()
-        if age_s > idle_minutes * 60:
-            await db.active_sessions.delete_one({"jti": jti})
-            return "session_idle_timeout"
-        if age_s > ACTIVITY_DEBOUNCE_SECONDS:
-            await db.active_sessions.update_one(
-                {"jti": jti}, {"$set": {"last_activity_at": _now_iso()}},
-            )
-    except Exception:
-        # Don't break auth on a malformed timestamp — fail open.
-        pass
+    raw = sess.get("last_activity_at")
+    last = _normalise_activity_ts(raw)
+    if last is None:
+        # No timestamp, malformed shape, or unknown type — fail SAFE (expired),
+        # not open. The next login will write a fresh well-formed row.
+        await db.active_sessions.delete_one({"jti": jti})
+        return "session_idle_timeout"
+    age_s = (datetime.now(timezone.utc) - last).total_seconds()
+    if age_s > idle_minutes * 60:
+        await db.active_sessions.delete_one({"jti": jti})
+        return "session_idle_timeout"
+    if age_s > ACTIVITY_DEBOUNCE_SECONDS:
+        await db.active_sessions.update_one(
+            {"jti": jti}, {"$set": {"last_activity_at": _now_iso()}},
+        )
     return None

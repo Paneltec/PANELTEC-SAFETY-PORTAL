@@ -45,8 +45,9 @@ function persist(token, user) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
-export async function login(email, password) {
-  const { data } = await api.post('/auth/login', { email, password });
+export async function login(email, password, options = {}) {
+  const { remember_me = false } = options;
+  const { data } = await api.post('/auth/login', { email, password, remember_me });
   persist(data.access_token, data.user);
   return data.user;
 }

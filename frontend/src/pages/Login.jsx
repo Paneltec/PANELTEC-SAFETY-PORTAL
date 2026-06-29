@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
 import { login, loginWithSimpro, safeNext } from '../lib/auth';
-import { apiError } from '../lib/api';
+import api, { apiError } from '../lib/api';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -11,9 +11,22 @@ export default function Login() {
   const nextPath = safeNext(location.search);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMeAllowed, setRememberMeAllowed] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busySimpro, setBusySimpro] = useState(false);
+
+  // Phase 3.16 — Public endpoint tells us whether the org admin has enabled
+  // the "Keep me logged in" feature. We only render the checkbox if so; this
+  // keeps the login page calm for the common (kiosk / strict-policy) case.
+  useEffect(() => {
+    let alive = true;
+    api.get('/settings/login-options')
+      .then((r) => { if (alive) setRememberMeAllowed(!!r.data?.remember_me_enabled); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -21,7 +34,7 @@ export default function Login() {
     if (!email || !password) { setError('Enter an email and password to continue.'); return; }
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, password, { remember_me: rememberMeAllowed && rememberMe });
       navigate(nextPath, { replace: true });
     } catch (err) {
       setError(apiError(err) || 'Invalid email or password.');
@@ -64,6 +77,18 @@ export default function Login() {
                 className="w-full px-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue" />
             </div>
             {error && <div className="text-xs text-brand-red" data-testid="login-error">{error}</div>}
+            {rememberMeAllowed && (
+              <label className="flex items-center gap-2 text-sm text-slate-700 select-none cursor-pointer" data-testid="remember-me-row">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  data-testid="remember-me-checkbox"
+                  className="h-4 w-4 rounded border-slate-300 text-brand-blue focus:ring-brand-blue/30" />
+                <span>Keep me logged in</span>
+                <span className="text-[11px] text-slate-400">· extends idle window to 30 days</span>
+              </label>
+            )}
             <button type="submit" disabled={busy} data-testid="login-submit"
               className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600 transition-colors disabled:opacity-60">
               {busy ? <><Loader2 size={16} className="animate-spin" /> Signing in…</> : <>Sign in <ArrowRight size={16} /></>}

@@ -1,3 +1,83 @@
+# 2026-06-29 — Phase 3.16 Parts A+B + Phase 3.17 (Certifications row actions)
+
+## Part A — `session_timeout.py` BSON-Date normalisation (FAIL-SAFE)
+- New helper `_normalise_activity_ts(raw) -> Optional[datetime]` (tz-aware UTC).
+  Accepts: ISO string (w/ or w/o `Z` / offset / tzinfo), `datetime` (naive → UTC,
+  tz-aware → unchanged). Anything else / malformed → `None`.
+- `touch_and_check_session()` now calls the helper. `None` returns make the
+  caller delete the row and return `session_idle_timeout` — fail SAFE, not
+  fail OPEN (which was the silent BSON-Date bug pre-Phase 3.16).
+- Belt-and-suspenders pytest suite: `tests/test_session_timeout_normalisation.py`
+  · 9 tests · ISO+offset, ISO+Z, naive ISO, tz-aware dt, naive dt, 2h-old dt,
+  malformed strings, None, unknown types (int, dict, list) — all passing.
+- **Curl receipt** (real BSON Date via Motor):
+    - BEFORE tamper: GET /api/auth/me → HTTP 200
+    - TAMPER: `last_activity_at` = `datetime.now(UTC) − 2h` (naive datetime,
+      stored as BSON Date by Motor — `type: datetime`, no tzinfo)
+    - AFTER tamper: GET /api/auth/me → HTTP 401 `{"detail":"session_idle_timeout"}`
+    - Garbage-string tamper (`"not-a-date"`) → also 401 `session_idle_timeout`.
+
+## Part B — Phase 3.16 deferred UI
+- `components/settings/SessionTimeoutCard.jsx` (new, admin-gated, mounted in
+  Settings → System under the Server Tools section). Surfaces:
+    - Idle timeout dropdown (15m / 30m / 1h / 2h / 4h / 8h)
+    - Absolute timeout dropdown (4h / 8h / 12h / 24h / 72h)
+    - Warning modal toggle + lead-time dropdown (15s / 30s / 1m / 2m)
+    - Remember-me toggle (controls `/login` "Keep me logged in" visibility)
+    - Per-role overrides toggle + 6-row matrix (admin / manager / hseq_lead /
+      auditor / supervisor / worker, each with idle-min + absolute-hr inputs)
+    - "Save changes" (dirty-tracked, disabled when no diff)
+    - Danger zone: "Force logout everyone" with inline confirm pattern →
+      POSTs `/api/admin/settings/force-logout-all` then signs the admin out.
+- `Login.jsx` — calls `GET /api/settings/login-options` on mount. When
+  `remember_me_enabled=true`, renders the "Keep me logged in" checkbox under
+  the password field. `lib/auth.js::login()` now accepts `{remember_me}` and
+  forwards it in the POST payload.
+- **AppShell.jsx scope fix**: previous agent had declared `warnInfo`
+  state inside `TopBar` but referenced it from `AppShell`'s JSX → uncaught
+  `ReferenceError: warnInfo is not defined` blocked every `/app/*` render.
+  Moved the `useSessionTimeout` hook + state up into `AppShell`.
+
+## Part C — Phase 3.17 Certifications row actions
+- `pages/Certifications.jsx` action column adds three icon buttons before
+  Send-reminder:
+    - 👁 **View PDF** — opens existing `PdfPreviewModal` with the cert's
+      `doc_file_id`. Disabled (greyed) when the cert has no uploaded file.
+    - ✏️ **Edit** (admin / hseq_lead) — opens `CertEditModal` (new). Patches
+      `name / issuer / issue_date / expiry_date` via
+      `PATCH /api/workers/certifications/{id}`. Backend recomputes
+      `doc_seed_folder` automatically when `name` changes.
+    - 🗑 **Delete** (admin only) — opens `CertDeleteConfirm` (new). Posts
+      `DELETE /api/workers/certifications/{id}`. Soft-deletes the cert and
+      detaches the file if no other cert references it.
+- **Curl receipts**:
+    - admin PATCH → HTTP 200 (rename), restore PATCH → HTTP 200.
+    - worker DELETE → HTTP 403 (auth gate intact).
+- Both modals follow the rounded-2xl shell pattern of InductionCardModal,
+  ESC closes, backdrop click closes when not busy, no `window.confirm()`.
+
+## Cache version
+- `service-worker.js` bumped to **paneltec-v83**.
+
+## Pre-flight
+- `python -m py_compile $(find /app/backend -maxdepth 2 -name "*.py")` ✓
+- `yarn build` ✓ (warnings only, all pre-existing exhaustive-deps).
+- `pytest tests/test_session_timeout_normalisation.py` → 9/9 passed.
+
+## Screenshots (saved as receipts)
+- `/tmp/login_remember_me.png` — checkbox rendered under password when admin enables remember-me.
+- `/tmp/settings_session_timeout.png` — full Session Timeout card with role override matrix open.
+- `/tmp/cert_row_actions.png` — Certifications page with all 4 row buttons per cert.
+- `/tmp/cert_edit_modal.png` — Edit modal showing LISA TAFARI / Traffic Control / 2017-12-19.
+- `/tmp/cert_delete_modal.png` — Delete confirmation copy nailing the soft-delete semantics.
+
+## Next Action Items
+- Phase 3.18 — Granular per-user permission overrides (P1).
+- Phase 4.1 — SWMS Assignments admin page + version-chain commit (P2).
+
+---
+
+
 # 2026-02-19 — Phase 3.10: Universal PDF preview for Document Library files
 
 ## Backend (`file_pdf.py` + server.py wiring)

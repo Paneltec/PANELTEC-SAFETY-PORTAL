@@ -27,8 +27,16 @@
  * v81 — Phase 3.16 Session Timeout: backend org settings + active_sessions
  *       + per-role JWT lifetimes + force-logout-all. Frontend gets the
  *       useSessionTimeout hook driving SessionWarningModal inside AppShell.
+ * v82 — Phase 3.16 Part A+B: BSON-Date fail-SAFE normalisation in
+ *       session_timeout.py (+ pytest cover), Settings → Session Timeout
+ *       admin card (idle/absolute/warning/remember-me/per-role overrides/
+ *       force-logout-all), and "Keep me logged in" checkbox on /login
+ *       gated by GET /api/settings/login-options.
+ * v83 — Phase 3.17 Certifications row actions: 👁 View PDF (PdfPreviewModal),
+ *       ✏️ Edit (PATCH /workers/certifications/{id}), 🗑 Delete with proper
+ *       confirmation modal (DELETE /workers/certifications/{id}, admin-only).
  */
-const CACHE_VERSION = 'paneltec-v81';
+const CACHE_VERSION = 'paneltec-v83';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
