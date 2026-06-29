@@ -11,8 +11,14 @@
  *     from cache previously caused phantom "logged out" loops.
  *
  * Bump CACHE_VERSION whenever this file changes.
+ *
+ * v69 — Forced reset path. Activate handler now hard-purges EVERY cache
+ *       that doesn't carry the current `paneltec-v69` prefix and broadcasts
+ *       `paneltec_sw_force_reload` to all open clients so they refresh once.
+ *       Pairs with the backend `Clear-Site-Data` middleware (cookie-gated)
+ *       so visitors with a stuck older SW self-heal on next API hit.
  */
-const CACHE_VERSION = 'paneltec-v68';
+const CACHE_VERSION = 'paneltec-v69';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
@@ -28,11 +34,23 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== STATIC_CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    // Hard purge every cache that doesn't carry the current version prefix.
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((k) => !k.startsWith(CACHE_VERSION))
+        .map((k) => caches.delete(k)),
+    );
+    await self.clients.claim();
+    // Broadcast a one-time reload signal. The page-side listener gates on
+    // sessionStorage so it never loops.
+    const clients = await self.clients.matchAll({ type: 'window' });
+    for (const c of clients) {
+      try { c.postMessage({ type: 'paneltec_sw_force_reload', version: CACHE_VERSION }); }
+      catch (_) { /* noop */ }
+    }
+  })());
 });
 
 self.addEventListener('message', (event) => {
