@@ -8,6 +8,7 @@ import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, i
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import PdfPreviewModal from '../components/PdfPreviewModal';
+import { stashInlinePdf } from '../lib/pdfStash';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'],
@@ -185,7 +186,7 @@ export default function ContractorsList() {
 
 function SupplierPrintModal({ contractor, onClose }) {
   const [layout, setLayout] = useState('business_card');
-  const [blobUrl, setBlobUrl] = useState(null);
+  const [directUrl, setDirectUrl] = useState(null);
   const [busy, setBusy] = useState(false);
 
   React.useEffect(() => {
@@ -193,17 +194,16 @@ function SupplierPrintModal({ contractor, onClose }) {
     setBusy(true);
     api.get(`/contractors/${contractor.id}/scan-pdf`,
       { params: { layout }, responseType: 'blob' })
-      .then((r) => {
+      .then(async (r) => {
         if (!alive) return;
-        const u = URL.createObjectURL(r.data);
-        setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return u; });
+        // Phase 3.13.1 — same-origin stash URL (ad-blocker friendly).
+        const { src } = await stashInlinePdf(r.data, `${contractor.name || 'supplier'}-qr.pdf`);
+        if (alive) setDirectUrl(src);
       })
       .catch((e) => alive && toast.error(apiError(e)))
       .finally(() => alive && setBusy(false));
     return () => { alive = false; };
-  }, [contractor.id, layout]);
-
-  React.useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
+  }, [contractor.id, contractor.name, layout]);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
@@ -235,8 +235,8 @@ function SupplierPrintModal({ contractor, onClose }) {
             <div className="absolute inset-0 grid place-items-center">
               <Loader2 size={22} className="animate-spin text-violet-600" />
             </div>
-          ) : blobUrl ? (
-            <iframe data-testid="supplier-print-iframe" title="Supplier QR PDF" src={blobUrl}
+          ) : directUrl ? (
+            <iframe data-testid="supplier-print-iframe" title="Supplier QR PDF" src={directUrl}
               className="w-full h-full border-0" />
           ) : null}
         </div>

@@ -17,6 +17,7 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import PdfPreviewModal from '../components/PdfPreviewModal';
+import { stashInlinePdf } from '../lib/pdfStash';
 
 const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
@@ -147,7 +148,7 @@ export default function SitesAdmin() {
 
 function SitePrintModal({ site, onClose }) {
   const [layout, setLayout] = useState('gate_sign');
-  const [blobUrl, setBlobUrl] = useState(null);
+  const [directUrl, setDirectUrl] = useState(null);
   const [busy, setBusy] = useState(false);
 
   const generate = useCallback(async (l) => {
@@ -155,16 +156,15 @@ function SitePrintModal({ site, onClose }) {
     try {
       const r = await api.get(`/sites/${encodeURIComponent(site.simpro_site_id)}/scan-pdf`,
         { params: { layout: l }, responseType: 'blob' });
-      const u = URL.createObjectURL(r.data);
-      setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return u; });
+      // Phase 3.13.1 — same-origin stash URL (ad-blocker friendly) instead
+      // of `blob:` object URL.
+      const { src } = await stashInlinePdf(r.data, `${site.name || 'site'}-qr.pdf`);
+      setDirectUrl(src);
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
-  }, [site.simpro_site_id]);
+  }, [site.simpro_site_id, site.name]);
 
   useEffect(() => { generate(layout); }, [generate, layout]);
-
-  // Cleanup blob on unmount
-  useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
 
   return (
     <div
@@ -197,8 +197,8 @@ function SitePrintModal({ site, onClose }) {
             <div className="absolute inset-0 grid place-items-center">
               <Loader2 size={22} className="animate-spin text-blue-600" />
             </div>
-          ) : blobUrl ? (
-            <iframe data-testid="site-print-iframe" title="Site QR PDF" src={blobUrl}
+          ) : directUrl ? (
+            <iframe data-testid="site-print-iframe" title="Site QR PDF" src={directUrl}
               className="w-full h-full border-0" />
           ) : null}
         </div>
