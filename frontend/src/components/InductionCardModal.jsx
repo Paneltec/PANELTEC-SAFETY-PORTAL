@@ -220,7 +220,8 @@ export default function InductionCardModal({
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 grid place-items-center p-0 md:p-6"
          onClick={(e) => e.target === e.currentTarget && onClose?.()}
-         data-testid="induction-card-modal"
+         data-testid={mode === 'add' ? 'induction-add-mode' : 'induction-card-modal'}
+         data-modal="induction-card-modal"
          {...(mode === 'add' ? { 'data-mode': 'add' } : {})}>
       <div className="w-full h-full md:max-w-6xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
 

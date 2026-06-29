@@ -851,3 +851,9 @@ Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, 
 - **Phase 3.15** — Navixy Health Dot on Asset Location Pin.
 - **Phase 3.16** — Session Timeout Settings (Admin-Configurable).
 - **Phase 3.17** — Certifications row actions (PDF Preview / Edit / Delete).
+
+## 2026-02 — Phase 3.12 patches (post-tester feedback)
+- **Frontend** (`InductionCardModal.jsx`): root `<div>` now emits `data-testid="induction-add-mode"` when `mode==='add'` (was only `data-mode="add"`); falls back to `induction-card-modal` test-id for view/edit modes. Playwright/QA hooks now match.
+- **Backend** (`workers_inductions.py::get_induction`): when `role=="worker"` and `_can_read_own()` returns false, we now return `404 "Induction not found"` instead of `403 "Permission denied"` so we don't leak existence of records belonging to other workers. Non-worker roles without read access still get 403 (legitimate internal-user case).
+- **Cache**: `paneltec-v78.1`.
+- **Verification**: worker probing other worker's induction → HTTP 404 `{"detail":"Induction not found"}`; admin GET still 200. Screenshot shows add-mode rendered correctly with name hint pre-filled.

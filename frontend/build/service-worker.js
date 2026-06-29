@@ -24,12 +24,15 @@
  *       opens InductionCardModal (detail view + iframe doc preview + edit /
  *       add / file upload). New backend endpoints under
  *       /workers/{wid}/inductions/...
+ * v78.1 — Phase 3.12 patches: induction-add-mode test-id added; cross-worker
+ *         GET for worker role now returns 404 not 403 to avoid leaking
+ *         existence of records on other workers.
  * v78 — Phase 3.13 LibreOffice swap: DOCX/XLSX/PPTX/ODT/RTF now go through
  *       headless LibreOffice for high-fidelity PDF, with pragmatic ReportLab
  *       text fallback only for .docx. Settings → Server Tools health check
  *       now hits /api/admin/server-tools/health.
  */
-const CACHE_VERSION = 'paneltec-v78';
+const CACHE_VERSION = 'paneltec-v78.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

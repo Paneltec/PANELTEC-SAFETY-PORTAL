@@ -1050,6 +1050,13 @@ class IndPatch(BaseModel):
 async def get_induction(worker_id: str, induction_id: str, user: dict = Depends(get_current_user)):
     worker = await _worker_or_404(worker_id, user["org_id"])
     if not _can_read_own(user, worker):
+        # Worker users probing other workers' records get 404 (not 403) so we
+        # don't leak existence of those records — same shape as a genuine
+        # not-found. Non-worker authenticated roles that lack read access
+        # (supervisor/auditor without permission) keep the 403 since they're
+        # legitimately internal users and the response shape is informative.
+        if user.get("role") == "worker":
+            raise HTTPException(404, "Induction not found")
         raise HTTPException(403, "Permission denied")
     cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
     return _serialise_induction(cert)
