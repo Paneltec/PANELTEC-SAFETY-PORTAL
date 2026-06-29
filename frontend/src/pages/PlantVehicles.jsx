@@ -299,6 +299,22 @@ export default function PlantVehicles() {
                 <MapIcon size={12} /> Map
               </button>
             </div>
+            {/* Phase 3.15 smart-enhancement — surface the count of red assets
+                as a quick-glance "needs ignition check" pill that filters the
+                list when clicked. Hidden when nothing's stale. */}
+            {(() => {
+              const offlineCount = assets.filter((a) => a.navixy_health === 'red').length;
+              if (offlineCount === 0) return null;
+              return (
+                <button onClick={() => { setQ(''); setView('list'); window.dispatchEvent(new CustomEvent('plantvehicles.filter-red')); }}
+                  data-testid="ignition-check-pill"
+                  title={`${offlineCount} tracked asset${offlineCount === 1 ? '' : 's'} haven't reported in >24 h`}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 text-xs font-semibold text-rose-700 hover:bg-rose-100">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" aria-hidden />
+                  {offlineCount} need{offlineCount === 1 ? 's' : ''} ignition check
+                </button>
+              );
+            })()}
           </div>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap text-xs">
@@ -444,12 +460,15 @@ function FleetMap({ assets, onPick }) {
           Showing area of <strong className="text-slate-700">{positioned.length}</strong> tracked vehicle{positioned.length === 1 ? '' : 's'}.
           Click an asset&apos;s pin icon in List view for the focused view.
         </span>
-        <span className="ml-auto inline-flex items-center gap-2">
-          <span className="inline-flex items-center gap-1" data-testid="fleet-map-health-green">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" /> {green} live
+        <span className="ml-auto inline-flex items-center gap-1">
+          <span data-testid="fleet-map-health-green" className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" aria-hidden />
+            ● {green} live
           </span>
-          <span className="inline-flex items-center gap-1" data-testid="fleet-map-health-red">
-            <span className="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" /> {red} offline
+          <span className="opacity-60" aria-hidden> · </span>
+          <span data-testid="fleet-map-health-red" className="inline-flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" aria-hidden />
+            ● {red} offline
           </span>
         </span>
       </div>

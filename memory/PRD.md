@@ -930,3 +930,11 @@ yarn build clean; backend reload clean.
 - **Phase 3.18** — Granular Per-User Permissions System
 - **Phase 4.1/4.2/4.3** — SWMS Assignments + Site/Supplier Induction QR
 - Mobile mirror via e1_expo_frontend_dev
+
+## 2026-02 — Phase 3.15 cosmetic patch + smart enhancement
+- **Map counter strip text**: now reads literal `● {N} live · ● {M} offline` (text glyphs + middle-dot separator) so screenreaders + automation pick up the same signal as sighted users. CSS dots remain for visual polish.
+- **Plant & Vehicles header gains an "ignition check" pill** (`[data-testid="ignition-check-pill"]`) — count of red-health assets surfaced as a rose-coloured pill next to the List/Map toggle. Hidden when count is zero. Click switches to List view and clears the search (filtering wiring deferred to a follow-up phase via the `plantvehicles.filter-red` CustomEvent).
+- **Cache**: `paneltec-v80.1`.
+
+## Phase 3.16 — DEFERRED to next handoff
+Reason: Session Timeout Settings touches every protected request via new middleware (5 endpoints, Mongo TTL `active_sessions` collection, idle-watch hook on every page, warning modal, login-page Remember-Me toggle). With <70k tokens remaining in this context, shipping the auth-touching middleware without sufficient room to test the negative paths (idle expiry returning 401, force-logout-all invalidation, fallback to defaults when org_settings missing) is too risky. Asked user to green-light a fresh context for 3.16.
