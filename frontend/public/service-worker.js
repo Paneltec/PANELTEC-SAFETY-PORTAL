@@ -43,8 +43,16 @@
  *       gains a ✏️ Edit-permissions icon button + matrix search field.
  *       Live "Active sessions" panel inside the Session Timeout card
  *       (GET /api/admin/active-sessions + DELETE /api/admin/active-sessions/{jti}).
+ * v85 — Phase 4.1 SWMS Assignments admin + version-chain commit:
+ *       POST /api/swms now auto-chains: same title+org_id with bumped
+ *       version archives the old row (status=superseded, superseded_by) and
+ *       inserts a fresh one with supersedes pointer. Same version → in-place
+ *       update (idempotent). GET /swms hides superseded unless
+ *       ?include_superseded=true. New /swms/{id}/history (DFS, capped at 20
+ *       hops). Backfill endpoint POST /admin/swms/backfill-version-chain
+ *       (admin only). SWMS Assignments two-pane admin page with bulk mode.
  */
-const CACHE_VERSION = 'paneltec-v84';
+const CACHE_VERSION = 'paneltec-v85';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

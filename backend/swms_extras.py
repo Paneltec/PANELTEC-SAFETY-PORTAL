@@ -225,3 +225,147 @@ async def import_swms_docx(body: ImportDocxIn, user: dict = Depends(get_current_
         },
     }
     return inferred
+
+
+# ────────────────── Phase 4.1 — Version chain history + backfill ──────────────────
+
+@router.get("/{swms_id}/history")
+async def swms_history(swms_id: str, user: dict = Depends(get_current_user)):
+    """Walk supersedes/superseded_by pointers (depth-first, cap 20 hops)."""
+    chain: list[dict] = []
+    seen: set[str] = set()
+    # Walk ancestors via supersedes.
+    cur = await db.swms.find_one({"id": swms_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not cur:
+        raise HTTPException(404, "SWMS not found")
+    chain.append(cur); seen.add(cur["id"])
+    node = cur
+    for _ in range(20):
+        prev_id = node.get("supersedes")
+        if not prev_id or prev_id in seen:
+            break
+        node = await db.swms.find_one({"id": prev_id, "org_id": user["org_id"]}, {"_id": 0})
+        if not node:
+            break
+        chain.insert(0, node); seen.add(node["id"])
+    # Walk descendants via superseded_by.
+    node = cur
+    for _ in range(20):
+        nxt_id = node.get("superseded_by")
+        if not nxt_id or nxt_id in seen:
+            break
+        node = await db.swms.find_one({"id": nxt_id, "org_id": user["org_id"]}, {"_id": 0})
+        if not node:
+            break
+        chain.append(node); seen.add(node["id"])
+    return {"swms_id": swms_id, "chain": chain, "depth": len(chain)}
+
+
+admin_router = APIRouter(prefix="/admin/swms", tags=["admin-swms"])
+
+
+@admin_router.post("/backfill-version-chain")
+async def backfill_version_chain(user: dict = Depends(get_current_user)):
+    """One-shot: link duplicates with the same `title` in import_date order.
+    Idempotent — rows already in a chain are skipped."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    by_title: dict[str, list[dict]] = {}
+    async for r in db.swms.find({"org_id": user["org_id"], "deleted_at": None}, {"_id": 0}):
+        t = (r.get("title") or "").strip()
+        if not t:
+            continue
+        by_title.setdefault(t, []).append(r)
+    linked = 0
+    skipped = 0
+    for title, rows in by_title.items():
+        if len(rows) < 2:
+            continue
+        rows.sort(key=lambda d: d.get("created_at") or "")
+        for i in range(1, len(rows)):
+            prev, curr = rows[i - 1], rows[i]
+            if curr.get("supersedes") or prev.get("superseded_by"):
+                skipped += 1
+                continue
+            await db.swms.update_one({"id": prev["id"]},
+                {"$set": {"superseded_by": curr["id"], "status": "superseded",
+                          "updated_at": now_iso()}})
+            await db.swms.update_one({"id": curr["id"]},
+                {"$set": {"supersedes": prev["id"], "updated_at": now_iso()}})
+            log.info("backfill linked: %s -> %s (title=%r)", prev["id"], curr["id"], title)
+            linked += 1
+    return {"linked": linked, "skipped": skipped}
+
+
+# ────────────────── Phase 4.1 — SWMS Assignments ──────────────────
+
+class AssignmentsIn(BaseModel):
+    applies_to: dict  # {roles:[], worker_ids:[], company_ids:[], asset_types:[]}
+
+
+class BulkAssignmentsIn(BaseModel):
+    swms_ids: list[str]
+    applies_to: dict
+
+
+def _clean_applies_to(raw: dict) -> dict:
+    raw = raw or {}
+    return {
+        "roles":        [str(x) for x in (raw.get("roles") or [])],
+        "worker_ids":   [str(x) for x in (raw.get("worker_ids") or [])],
+        "company_ids":  [str(x) for x in (raw.get("company_ids") or [])],
+        "asset_types":  [str(x) for x in (raw.get("asset_types") or [])],
+    }
+
+
+@router.get("/assignments")
+async def list_assignments(user: dict = Depends(get_current_user)):
+    out = {}
+    async for s in db.swms.find(
+        {"org_id": user["org_id"], "deleted_at": None,
+         "status": {"$ne": "superseded"}},
+        {"_id": 0, "id": 1, "applies_to": 1},
+    ):
+        out[s["id"]] = _clean_applies_to(s.get("applies_to") or {})
+    return out
+
+
+def _require_swms_edit(user: dict):
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        raise HTTPException(403, "Permission denied: swms.edit")
+
+
+@router.put("/assignments/bulk")
+async def put_assignment_bulk(body: BulkAssignmentsIn,
+                              user: dict = Depends(get_current_user)):
+    _require_swms_edit(user)
+    if not body.swms_ids:
+        raise HTTPException(400, "swms_ids cannot be empty")
+    cleaned = _clean_applies_to(body.applies_to)
+    r = await db.swms.update_many(
+        {"id": {"$in": body.swms_ids}, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"applies_to": cleaned, "updated_at": now_iso(),
+                  "updated_by": user["id"]}},
+    )
+    return {"matched": r.matched_count, "modified": r.modified_count,
+            "applies_to": cleaned}
+
+
+@router.put("/assignments/{swms_id}")
+async def put_assignment(swms_id: str, body: AssignmentsIn,
+                         user: dict = Depends(get_current_user)):
+    _require_swms_edit(user)
+    cleaned = _clean_applies_to(body.applies_to)
+    result = await db.swms.find_one_and_update(
+        {"id": swms_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {"applies_to": cleaned, "updated_at": now_iso(),
+                  "updated_by": user["id"]}},
+        return_document=True, projection={"_id": 0},
+    )
+    if not result:
+        raise HTTPException(404, "SWMS not found")
+    return {"swms_id": swms_id, "applies_to": cleaned}
+
+
+def now_iso():  # local re-export so this module is self-sufficient
+    return datetime.now(timezone.utc).isoformat()

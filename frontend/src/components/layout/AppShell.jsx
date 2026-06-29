@@ -47,6 +47,7 @@ const NAV = [
     { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces', pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: HardHat, testid: 'nav-settings-workers', pastel: 'sky' },
     { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardList, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
+    { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardList, testid: 'nav-settings-swms-assignments', adminOnly: true, pastel: 'sky' },
     { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/system', label: 'System', icon: Cog, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Award, testid: 'nav-settings-certifications', pastel: 'butter' },

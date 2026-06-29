@@ -39,6 +39,7 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
     async def list_items(
         workspace_id: Optional[str] = Query(None),
         status: Optional[str] = Query(None),
+        include_superseded: bool = Query(False),
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
         limit: int = Query(200, ge=1, le=500),
@@ -47,6 +48,9 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         q = _scoped(user, workspace_id)
         if status:
             q["status"] = status
+        elif collection == "swms" and not include_superseded:
+            # Phase 4.1 — hide chained ancestors from default SWMS lists.
+            q["status"] = {"$ne": "superseded"}
         if date_from or date_to:
             rng: Dict[str, Any] = {}
             if date_from:
@@ -78,7 +82,41 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
             **payload,
         }
         if collection == "swms":
-            doc["version"] = 1
+            # Phase 4.1 — version-chain auto-commit. If a non-superseded record
+            # exists with the same title in this org, we either:
+            #   (a) update IN-PLACE if the incoming version matches (idempotent), or
+            #   (b) insert FRESH and link via supersedes/superseded_by pointers,
+            #       archiving the old row with status=superseded.
+            doc["version"] = doc.get("version") or 1
+            title = (payload.get("title") or "").strip()
+            new_ver = payload.get("version")
+            if title:
+                existing = await db.swms.find_one(
+                    {"org_id": user["org_id"], "title": title,
+                     "deleted_at": None,
+                     "status": {"$ne": "superseded"}},
+                    {"_id": 0},
+                )
+                if existing:
+                    if (existing.get("version") or 1) == new_ver:
+                        # Idempotent re-import — patch in place.
+                        await db.swms.update_one(
+                            {"id": existing["id"]},
+                            {"$set": {**{k: v for k, v in payload.items() if k != "id"},
+                                      "updated_at": now_iso(),
+                                      "updated_by": user["id"]}},
+                        )
+                        return {**existing, **payload, "id": existing["id"],
+                                "_chain_action": "in_place_update"}
+                    # Different version → chain. Insert fresh, archive old.
+                    doc["supersedes"] = existing["id"]
+                    await db.swms.update_one(
+                        {"id": existing["id"]},
+                        {"$set": {"superseded_by": doc["id"],
+                                  "status": "superseded",
+                                  "updated_at": now_iso()}},
+                    )
+                    doc["_chain_action"] = "superseded_v" + str(existing.get("version"))
         await db[collection].insert_one(dict(doc))
         return _strip(doc)
 

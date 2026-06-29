@@ -103,6 +103,12 @@ api.include_router(auth_router)
 api.include_router(ai_router)
 api.include_router(dashboard_router)
 api.include_router(files_router)
+# Phase 4.1 — extras MUST mount before swms_router so static sub-paths
+# like /swms/assignments and /swms/{id}/history aren't shadowed by the
+# generic /swms/{item_id} GET route.
+from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
+api.include_router(swms_extras_router)
+api.include_router(swms_admin_router)
 api.include_router(swms_router)
 api.include_router(prestarts_router)
 api.include_router(diary_router)
@@ -139,8 +145,9 @@ api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
 api.include_router(asset_navixy_sync_router)
 
-from swms_extras import router as swms_extras_router  # noqa: E402
+from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
 api.include_router(swms_extras_router)
+api.include_router(swms_admin_router)
 
 from file_pdf import router as file_pdf_router  # noqa: E402
 api.include_router(file_pdf_router)

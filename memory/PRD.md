@@ -1,3 +1,83 @@
+# 2026-06-29 — Phase 4.1 SWMS Assignments + version-chain commit
+
+## Backend
+- `crud.py::create_item` SWMS branch now does **version-chain auto-commit**:
+  - Lookup by `org_id + title + status != superseded`.
+  - Same version → idempotent in-place update (returns existing id, no chain
+    mutation). Response carries `_chain_action: "in_place_update"`.
+  - Different version → insert FRESH + set `supersedes` on new, set
+    `superseded_by + status="superseded"` on old. Response carries
+    `_chain_action: "superseded_v<old_ver>"`.
+- `GET /api/swms` now hides `status:"superseded"` by default; opt-in with
+  `?include_superseded=true` for admin tools.
+- New endpoints in `swms_extras.py`:
+  - `GET /api/swms/{id}/history` — DFS walk via supersedes/superseded_by,
+    capped at 20 hops to defend against accidental loops.
+  - `PUT /api/swms/assignments/bulk` (admin/manager/hseq_lead).
+  - `PUT /api/swms/assignments/{swms_id}` (same RBAC).
+  - `GET /api/swms/assignments` — current applies_to map keyed by SWMS id
+    (excludes superseded).
+  - `POST /api/admin/swms/backfill-version-chain` — admin-only one-shot.
+    Idempotent (links existing duplicates by title in created_at order).
+- **Route-order fix**: `swms_extras_router` now mounts BEFORE `swms_router`
+  in `server.py` so `/swms/assignments` and `/swms/{id}/history` aren't
+  shadowed by the generic `/swms/{item_id}` dynamic route from crud.py.
+- API contract note (from tester feedback): per-user permission override
+  payload shape is `{"overrides": {"<resource>": {"<action>": bool}}}`
+  (nested); reset is `{"overrides": {}}` or the dedicated
+  `POST /users/{id}/permissions/reset` endpoint.
+
+## Frontend
+- `pages/SwmsAssignmentsAdmin.jsx` (new) — two-pane admin page:
+  - **Left**: scrollable list of active SWMS (superseded hidden), search
+    box, optional bulk-mode checkbox, applies-to summary per row, violet
+    🕐 "view history" icon on chained rows.
+  - **Right**: 4 multi-select editors — Roles + Asset Types as chip groups,
+    Workers + Companies as searchable multi-selects against `/workers` and
+    `/contractors`. Single Save → PUT `/swms/assignments/{id}`.
+  - **Bulk mode**: tick rows → editor shows "Editing N SWMS — overwrite
+    applies_to for all" → Save → PUT `/swms/assignments/bulk`.
+  - **History modal** (`swms-history-modal`): renders the chain as numbered
+    timeline nodes, superseded rows greyed and badged.
+- App.js route added at `/app/settings/swms-assignments`. Sidebar entry
+  `nav-settings-swms-assignments` (admin/manager/hseq_lead only).
+
+## Cache
+- `service-worker.js` → **paneltec-v85**.
+
+## Curl receipts (full 13/13 scenario covered)
+- POST same title same version → **in_place_update** (same id).
+- POST same title bumped version → **superseded_vV1.0** (new id, old archived).
+- Old record `status=superseded`, `superseded_by=new_id`. New record
+  `supersedes=old_id`. `/swms/{new}/history` depth=2, both rows.
+- `GET /swms` default → hides id1, shows id2. `?include_superseded=true` →
+  both visible.
+- `PUT /swms/assignments/{id2}` admin → **200**, applies_to round-trips.
+- `PUT /swms/assignments/bulk` admin → **200** (matched=1, modified=1).
+- Worker bulk PUT → **403**.
+- Backfill: 1st run `{linked:0, skipped:1}` (chain already linked from
+  earlier seed); 2nd run identical → idempotent.
+
+## Pre-flight
+- `py_compile` ✓ · pytest 9/9 ✓ · `eslint` clean on new files ·
+  webpack 1 pre-existing warning.
+
+## Screenshots
+- `/tmp/swms_assignments_page.png` — two-pane layout, 8 active SWMS rows
+  (superseded V1.0 hidden), editor showing Admin+Manager chips selected,
+  Workers/Companies pickers, Asset-types chip group.
+- `/tmp/swms_history_modal.png` — V1.0 superseded + V2.0 approved chain.
+- `/tmp/swms_bulk_mode.png` — 3 rows ticked, editor switches to "Editing 3
+  SWMS in bulk · Saving will overwrite applies_to for all selected records."
+
+## Next Action Items
+- Phase 4.2/4.3 — Site / Supplier Induction QR (P2).
+- Backlog parking lot: per-user session-history audit log retaining expired
+  `active_sessions` for 30 days (the v3.19/v4.4 enhancement).
+
+---
+
+
 # 2026-06-29 — Phase 3.18 Granular Permissions + Active Sessions
 
 ## Backend
