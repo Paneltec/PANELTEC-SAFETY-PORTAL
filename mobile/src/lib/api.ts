@@ -1,5 +1,6 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { previewToken, isPreviewMode } from './preview';
 
 const BASE = process.env.EXPO_PUBLIC_BACKEND_URL;
 export const API_BASE = `${BASE}/api`;
@@ -14,6 +15,12 @@ let _forceLogout: ((reason: string) => void) | null = null;
 export function setForceLogoutHandler(fn: (reason: string) => void) { _forceLogout = fn; }
 
 api.interceptors.request.use(async (config) => {
+  // Preview mode: use the injected token directly (never read from storage)
+  if (isPreviewMode && previewToken) {
+    config.headers.Authorization = `Bearer ${previewToken}`;
+    return config;
+  }
+  // Normal mode: read stored token
   const t = await AsyncStorage.getItem(TOKEN_KEY);
   if (t) config.headers.Authorization = `Bearer ${t}`;
   return config;
@@ -24,6 +31,8 @@ api.interceptors.response.use(
   async (err) => {
     const status = err?.response?.status;
     const reason = err?.response?.headers?.['x-auth-reason'];
+    // In preview mode, don't wipe storage or force-logout — just reject
+    if (isPreviewMode) return Promise.reject(err);
     if (status === 401) {
       await AsyncStorage.removeItem(TOKEN_KEY);
       await AsyncStorage.removeItem(USER_KEY);

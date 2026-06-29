@@ -27,7 +27,8 @@ async function persist(token: string, user: any) {
  */
 async function fetchModulesAfterLogin(): Promise<ModuleMap> {
   try {
-    return await fetchModules();
+    const { map } = await fetchModules();
+    return map;
   } catch {
     const cached = await getCachedModules();
     return cached || { ...SAFE_FALLBACK };

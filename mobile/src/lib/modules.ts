@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './api';
+import { previewRole, isPreviewMode } from './preview';
 
 const MODULES_KEY = 'paneltec_mobile_modules';
 
@@ -40,12 +41,26 @@ function normalise(raw: Record<string, boolean> | undefined): ModuleMap {
   return out;
 }
 
-/** Fetch from backend, normalise, and persist to AsyncStorage */
-export async function fetchModules(): Promise<ModuleMap> {
-  const { data } = await api.get('/me/mobile-modules');
+/**
+ * Fetch from backend, normalise, and persist to AsyncStorage.
+ * In preview mode: appends ?as_role= and skips persistence.
+ * Returns { map, previewed, previewedRole }.
+ */
+export async function fetchModules(): Promise<{ map: ModuleMap; previewed: boolean; previewedRole: string | null }> {
+  const params: Record<string, string> = {};
+  if (isPreviewMode && previewRole) {
+    params.as_role = previewRole;
+  }
+  const { data } = await api.get('/me/mobile-modules', { params });
   const map = normalise(data?.modules);
-  await AsyncStorage.setItem(MODULES_KEY, JSON.stringify(map));
-  return map;
+  const previewed = data?.previewed === true;
+  const previewedRole = data?.role || previewRole || null;
+
+  // Only persist when NOT in preview mode
+  if (!isPreviewMode) {
+    await AsyncStorage.setItem(MODULES_KEY, JSON.stringify(map));
+  }
+  return { map, previewed, previewedRole };
 }
 
 /** Read cached modules from AsyncStorage */

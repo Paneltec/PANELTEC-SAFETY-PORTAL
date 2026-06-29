@@ -112,6 +112,10 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
   return (
     <SafeAreaView style={ds.safe}>
       <ScrollView testID="document-library-page" style={ds.scroll} contentContainerStyle={ds.content}>
+        <TouchableOpacity testID="doclib-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={ds.navBack}>
+          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Text style={ds.navBackText}>Back</Text>
+        </TouchableOpacity>
         <Text style={ds.overline}>COMPLIANCE</Text>
         <Text style={ds.heading}>Document Library</Text>
         <Text style={ds.sub}>All your Risk & Compliance documents.</Text>
@@ -387,4 +391,6 @@ const ds = StyleSheet.create({
   aiTag: { backgroundColor: '#ece6f4', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   aiTagText: { fontSize: 9, fontWeight: '700', color: '#4f3a8c', textTransform: 'uppercase', letterSpacing: 0.5 },
   fileAction: { padding: 8 },
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
+  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
 });

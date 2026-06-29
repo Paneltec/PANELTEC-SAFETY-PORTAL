@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { getToken } from '../src/lib/auth';
 import { AuthProvider, useAuth } from '../src/lib/AuthContext';
+import { isPreviewMode } from '../src/lib/preview';
 
 function RootNav() {
   const [isReady, setIsReady] = useState(false);
@@ -12,6 +13,12 @@ function RootNav() {
 
   useEffect(() => {
     (async () => {
+      if (isPreviewMode) {
+        // Preview mode: AuthContext auto-sets isAuth=true in its boot useEffect.
+        // Just mark as ready — don't read from storage.
+        setIsReady(true);
+        return;
+      }
       const token = await getToken();
       setAuth(!!token);
       setIsReady(true);

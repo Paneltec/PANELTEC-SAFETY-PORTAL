@@ -4,6 +4,7 @@ import {
   RefreshControl, ActivityIndicator, Alert, TextInput, Switch, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../src/lib/api';
 import { Colors } from '../src/lib/colors';
@@ -32,6 +33,7 @@ function mergeSupplier(s: any, meta: any) {
 }
 
 export default function SuppliersScreen() {
+  const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -99,6 +101,10 @@ export default function SuppliersScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <ScrollView testID="suppliers-not-connected" contentContainerStyle={s.content}>
+          <TouchableOpacity testID="suppliers-back-nc" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={s.navBack}>
+            <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+            <Text style={s.navBackText}>Back</Text>
+          </TouchableOpacity>
           <Text style={s.overline}>COMPLIANCE</Text>
           <Text style={s.heading}>Suppliers</Text>
           <View style={s.errorCard}>
@@ -119,6 +125,10 @@ export default function SuppliersScreen() {
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}
       >
+        <TouchableOpacity testID="suppliers-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={s.navBack}>
+          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Text style={s.navBackText}>Back</Text>
+        </TouchableOpacity>
         <Text style={s.overline}>COMPLIANCE</Text>
         <Text style={s.heading}>Suppliers</Text>
         <Text style={s.sub}>Sourced live from Simpro. Org-local overrides stay in Paneltec.</Text>
@@ -482,4 +492,6 @@ const s = StyleSheet.create({
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 12 },
   pickerItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   pickerItemText: { fontSize: 15, color: Colors.text },
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
+  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
 });

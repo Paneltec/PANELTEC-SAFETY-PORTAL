@@ -95,6 +95,10 @@ export default function UsersScreen() {
         contentContainerStyle={us.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}
       >
+        <TouchableOpacity testID="users-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={us.navBack}>
+          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Text style={us.navBackText}>Back</Text>
+        </TouchableOpacity>
         <Text style={us.overline}>SETTINGS</Text>
         <Text style={us.heading}>Users & Permissions</Text>
         <Text style={us.sub}>{users.length} users in your org</Text>
@@ -349,4 +353,6 @@ const us = StyleSheet.create({
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 12 },
   pickerItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   pickerItemText: { fontSize: 15, color: Colors.text },
+  navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
+  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
 });

@@ -242,3 +242,26 @@
   - `/app/mobile/app/(auth)/login.tsx` (modified — refreshModules after login)
 - **Verified via screenshot**: Admin login shows 8 tabs, all metrics, all capture tools, intelligence briefing — all modules ON
 - **Note**: Worker account (`worker_stephen@paneltec.com.au`) is disabled in backend — cannot test worker-specific module visibility directly, but code logic correctly gates by the per-role module map returned by the API
+
+
+## Iteration 12 — Part A: Back-button fix for leaf screens + Part B: Preview-mode wiring
+- **Commit**: 12d1d70c6de0690d40ddded1ae5ceba69c1cbde0
+- **Date**: 2026-06-29T12:30:00Z
+- **Changes**:
+  ### Part A — Bug Fix: Missing back navigation on leaf screens
+  - Added "← Back" button with `canGoBack()` fallback to `/(tabs)/settings` on:
+    - `document-library.tsx` — was stuck with no way out
+    - `users.tsx` — no back button at all
+    - `suppliers.tsx` — no back button in both connected and not-connected states
+  - Added `useRouter` import to suppliers.tsx (was missing)
+  - Pattern: `router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')`
+  ### Part B — Phase 4.4 Preview-mode wiring
+  - Created `src/lib/preview.ts` — reads `preview_token` and `preview_role` from URL query params on web only (native ignores)
+  - Modified `src/lib/api.ts` — request interceptor uses `previewToken` instead of AsyncStorage when in preview mode; response interceptor skips force-logout in preview mode
+  - Modified `src/lib/modules.ts` — `fetchModules()` appends `?as_role={preview_role}` when in preview mode; returns `{map, previewed, previewedRole}`; skips AsyncStorage persist in preview mode
+  - Modified `src/lib/AuthContext.tsx` — added `isPreviewing` + `previewedRole` to context; boot useEffect auto-authenticates when `previewToken` is present without touching storage; foreground refresh works in preview mode
+  - Modified `src/lib/auth.ts` — `fetchModulesAfterLogin()` updated for new return shape
+  - Modified `app/_layout.tsx` — root nav skips AsyncStorage token check in preview mode
+  - Modified `app/(tabs)/_layout.tsx` — renders slate "Preview mode · {role}" ribbon when `isPreviewing` is true
+- **Preview mode verified**: `?preview_token=JWT&preview_role=contractor` → 5 tabs only (Home, QR Sign-On, Outbox, My Work, Profile), no Capture/Vehicles/Ask AI, ribbon shows "Preview mode · contractor"
+- **Files modified**: preview.ts (NEW), api.ts, modules.ts, AuthContext.tsx, auth.ts, _layout.tsx, (tabs)/_layout.tsx, document-library.tsx, users.tsx, suppliers.tsx

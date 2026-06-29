@@ -2,8 +2,9 @@ import React, { createContext, useContext, useState, useCallback, useRef, useEff
 import { AppState, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TOKEN_KEY, USER_KEY, setForceLogoutHandler } from './api';
-import { PermMatrix, getPermissions, setPermissions, clearPermissions, canDo, hasAnyCaptureOpen } from './permissions';
+import { PermMatrix, getPermissions, setPermissions, clearPermissions, canDo } from './permissions';
 import { ModuleMap, SAFE_FALLBACK, fetchModules, getCachedModules, clearModules } from './modules';
+import { isPreviewMode, previewToken, previewRole } from './preview';
 import api from './api';
 
 type AuthCtx = {
@@ -15,12 +16,15 @@ type AuthCtx = {
   modules: ModuleMap;
   refreshModules: () => Promise<boolean>;
   modulesLoading: boolean;
+  isPreviewing: boolean;
+  previewedRole: string | null;
 };
 
 const Ctx = createContext<AuthCtx>({
   isAuth: false, setAuth: () => {}, perms: {},
   refreshPerms: async () => {}, forceLogout: () => {},
   modules: { ...SAFE_FALLBACK }, refreshModules: async () => false, modulesLoading: false,
+  isPreviewing: false, previewedRole: null,
 });
 
 export const useAuth = () => useContext(Ctx);
@@ -50,6 +54,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [perms, setPermsState] = useState<PermMatrix>({});
   const [modules, setModulesState] = useState<ModuleMap>({ ...SAFE_FALLBACK });
   const [modulesLoading, setModulesLoading] = useState(false);
+  const [isPreviewing, setIsPreviewing] = useState(false);
+  const [previewedRole, setPreviewedRole] = useState<string | null>(null);
   const appState = useRef(AppState.currentState);
 
   const setAuth = useCallback((v: boolean) => setIsAuth(v), []);
@@ -57,26 +63,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refreshPerms = useCallback(async () => {
     try {
       const { data } = await api.get('/auth/me');
-      await AsyncStorage.setItem(USER_KEY, JSON.stringify(data));
+      if (!isPreviewMode) {
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(data));
+      }
       const ep = data.effective_permissions || {};
-      await setPermissions(ep);
+      if (!isPreviewMode) {
+        await setPermissions(ep);
+      }
       setPermsState(ep);
-      if (data.token_version !== undefined) {
+      if (!isPreviewMode && data.token_version !== undefined) {
         await AsyncStorage.setItem('paneltec_token_version', String(data.token_version));
       }
     } catch {
-      // If /me fails (e.g. 401), the interceptor handles logout
+      // non-fatal
     }
   }, []);
 
   const refreshModules = useCallback(async (): Promise<boolean> => {
     setModulesLoading(true);
     try {
-      const map = await fetchModules();
+      const { map, previewed, previewedRole: role } = await fetchModules();
       setModulesState(map);
+      setIsPreviewing(previewed);
+      setPreviewedRole(role);
       return true;
     } catch {
-      // On failure, keep whatever's cached — don't wipe the state
       return false;
     } finally {
       setModulesLoading(false);
@@ -84,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const forceLogout = useCallback((reason: string) => {
+    if (isPreviewMode) return; // Don't force-logout in preview mode
     (async () => {
       await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, 'paneltec_perms', 'paneltec_token_version']);
       await clearModules();
@@ -94,18 +106,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTimeout(() => { Alert.alert('Session ended', reason); }, 100);
   }, []);
 
-  // Register force-logout handler on api interceptor
+  // Register force-logout handler
   useEffect(() => {
     setForceLogoutHandler(forceLogout);
   }, [forceLogout]);
 
-  // Load cached perms + modules on mount
+  // Boot: either preview-mode auto-auth or load cached state
   useEffect(() => {
-    getPermissions().then(p => { if (Object.keys(p).length) setPermsState(p); });
-    getCachedModules().then(m => { if (m) setModulesState(m); });
+    if (isPreviewMode && previewToken) {
+      // Preview mode: skip storage, just set auth + fetch modules
+      setIsAuth(true);
+      refreshPerms();
+      refreshModules();
+    } else {
+      // Normal mode: load from cache
+      getPermissions().then(p => { if (Object.keys(p).length) setPermsState(p); });
+      getCachedModules().then(m => { if (m) setModulesState(m); });
+    }
   }, []);
 
-  // Refresh perms + modules on app foreground
+  // Foreground refresh
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (appState.current.match(/inactive|background/) && next === 'active' && isAuth) {
@@ -118,7 +138,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [isAuth, refreshPerms, refreshModules]);
 
   return (
-    <Ctx.Provider value={{ isAuth, setAuth, perms, refreshPerms, forceLogout, modules, refreshModules, modulesLoading }}>
+    <Ctx.Provider value={{
+      isAuth, setAuth, perms, refreshPerms, forceLogout,
+      modules, refreshModules, modulesLoading,
+      isPreviewing, previewedRole,
+    }}>
       {children}
     </Ctx.Provider>
   );
