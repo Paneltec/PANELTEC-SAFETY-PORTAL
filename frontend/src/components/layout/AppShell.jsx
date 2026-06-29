@@ -40,19 +40,20 @@ const NAV = [
     { to: '/app/renewals', label: 'Renewal Links', icon: Link2, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
-    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'assets', pastel: 'sky' },
+    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: Radio, testid: 'nav-vehicles', resource: 'assets', pastel: 'sky' },
     { to: '/app/sites', label: 'Sites', icon: MapPin, testid: 'nav-sites', adminOnly: true, pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },
     { to: '/app/settings/workspaces', label: 'Workspaces', icon: Boxes, testid: 'nav-settings-workspaces', pastel: 'slate' },
+    { to: '/app/settings/users', label: 'Users & Permissions', icon: UserCog, testid: 'nav-settings-users', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: HardHat, testid: 'nav-settings-workers', pastel: 'sky' },
     { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardList, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
     { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardList, testid: 'nav-settings-swms-assignments', adminOnly: true, pastel: 'sky' },
     { to: '/app/settings/integrations', label: 'Integrations', icon: Plug, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/system', label: 'System', icon: Cog, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Award, testid: 'nav-settings-certifications', pastel: 'butter' },
-    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', beta: true, pastel: 'slate' },
+    { to: '/app/outbox', label: 'Email outbox', icon: Bell, testid: 'nav-outbox', pastel: 'slate' },
   ]},
 ];
 
