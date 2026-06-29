@@ -48,6 +48,7 @@ from seed import ensure_indexes, seed_all  # noqa: E402
 from users import router as users_router  # noqa: E402
 from workspaces import router as workspaces_router  # noqa: E402
 from org_settings import router as org_router  # noqa: E402
+from mobile_modules import router as mobile_modules_router  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("paneltec")
@@ -163,6 +164,7 @@ api.include_router(preset_router)
 api.include_router(preset_apply_router)
 api.include_router(workspaces_router)
 app.include_router(org_router)
+app.include_router(mobile_modules_router)
 api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(pdf_router)

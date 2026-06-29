@@ -1,3 +1,66 @@
+# 2026-06-29 — Phase 4.3 Worker Mobile App Module Allocator (v103)
+
+## Goal
+Admin can decide which app modules appear in the Paneltec Civil Expo mobile
+app per role (Worker / Supervisor / Contractor / Admin). Visibility-only
+this phase — no API enforcement, no per-user overrides.
+
+## Backend (`mobile_modules.py` — new router)
+- Storage: `org_settings` collection, sub-doc `mobile_modules` keyed by
+  `org_id`. Seeded with sensible defaults on first read (workers + super
+  get the full operational kit, contractors are minimal: SWMS, inductions,
+  sign-on, profile).
+- `GET  /api/settings/mobile-modules` — admin-only. Returns full matrix +
+  `module_keys` + `role_keys` + `defaults` (for client-side fallback).
+- `PUT  /api/settings/mobile-modules` — admin-only, audit-logged.
+  Diff-only audit entry on `audit_logs` so a worker reporting "my tab
+  disappeared" is greppable. Admin row is force-set to all-true on every
+  PUT, so a hand-crafted payload can never silently strip the lock.
+- `GET  /api/me/mobile-modules` — any authenticated user. Returns flat
+  boolean map for the caller's role. Unknown roles fall back to the
+  most-restrictive `contractor` row.
+- 13 module keys × 4 role keys: `pre_start, site_diary, hazard, incident,
+  inspection, swms, inductions, plant_vehicles, service_maintenance,
+  certifications, ask_intel, sign_on, profile`.
+
+## Web admin UI
+- `PermissionPresetsAdmin.jsx` renamed page-title to **"Permissions
+  Matrix"** and added a tab strip (orange underline = active):
+  - **Permission Presets** (existing) — preset list + matrix detail.
+  - **Mobile App Modules** (new) — `MobileModulesSection.jsx`.
+- Mobile section: 13-row × 4-column grid. Each cell is a custom orange
+  switch toggle. Admin column lock icon + disabled toggles. Per-role
+  "All on / All off" shortcuts. Sticky orange Save bar appears on dirty
+  state with Reset + Save buttons.
+- Fluent UI icons throughout (no emoji). Brand: orange `#F97316` +
+  slate `#1E293B` via Tailwind's `orange-500` / `slate-900` classes
+  (matches `pdf_brand.py` exactly).
+
+## Service worker
+- `paneltec-v102` → **`paneltec-v103`**. `swVersionGuard` auto-heals
+  all open clients on next 60s poll.
+
+## Verification receipts
+- Curl: `GET /settings/mobile-modules` returns seeded defaults.
+- Curl: `PUT` with `admin:{}` payload — admin row preserved as all-true.
+- Curl: `GET /me/mobile-modules` returns admin's full map (role=admin).
+- Audit log: `mobile_modules.update` entry with diff array.
+- Playwright: 13 rows × 52 toggles rendered, admin column disabled,
+  save bar appears on dirty, save succeeds, savebar disappears.
+
+## Out of scope (parked)
+- API-level enforcement (blocking POSTs when module off) — next phase.
+- Per-user overrides — next phase.
+- Image-based sign-in / facial recognition — separate brief.
+
+## Mobile hand-off
+- Brief written to `/app/memory/mobile_briefs/phase_4_3_mobile_module_gate.md`
+  for `e1_expo_frontend_dev` to consume `GET /api/me/mobile-modules`
+  on login + foreground and gate the bottom-tab + drawer nav.
+
+---
+
+
 # 2026-06-29 — Phase 3.22c + 3.22d ALL PDFs on 2-colour brand (v102)
 
 ## Phase 3.22c — Card-style PDFs (NEW `pdf_card_template.py`)

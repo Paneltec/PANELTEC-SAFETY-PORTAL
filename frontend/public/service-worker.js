@@ -133,8 +133,22 @@
  *         inherit orange + slate automatically. Inductions Matrix
  *         print (`/api/workers/inductions/print`) also migrated.
  *         Old violet NFC pairing zone replaced with dotted orange.
+ * v103 — Phase 4.3 Mobile App Module allocator (per-role visibility):
+ *       · Backend `mobile_modules.py` — `GET /api/settings/mobile-modules`,
+ *         `PUT /api/settings/mobile-modules` (admin, audit-logged),
+ *         `GET /api/me/mobile-modules` (any user → flat boolean map for
+ *         their role). Admin row is force-true on every PUT so the
+ *         lock can't be bypassed by a hand-crafted payload.
+ *       · Web — new "Mobile App Modules" tab on the Permissions Matrix
+ *         page (re-titled from "Permission presets"). 13 modules × 4
+ *         roles toggle grid; admin column locked; "All on / All off"
+ *         per-role shortcuts; sticky orange Save bar; reset-to-clean
+ *         action. No API enforcement yet — visibility only.
+ *       · Expo mobile work handed off to `e1_expo_frontend_dev` to
+ *         consume `/api/me/mobile-modules` on login + foreground and
+ *         hide bottom-tab / drawer entries set to `false`.
  */
-const CACHE_VERSION = 'paneltec-v102';
+const CACHE_VERSION = 'paneltec-v103';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

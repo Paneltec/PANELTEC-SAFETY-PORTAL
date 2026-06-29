@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { PageHeader } from '@/components/capture/Ui';
+import MobileModulesSection from '@/components/settings/MobileModulesSection';
 import {
   LockClosed20Regular as Lock20Regular,
   Sparkle20Filled,
@@ -24,6 +25,8 @@ import {
   Save20Regular,
   Checkmark16Filled,
   Dismiss16Regular,
+  Phone20Regular,
+  ShieldCheckmark20Regular,
 } from '@fluentui/react-icons';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -40,6 +43,8 @@ export default function PermissionPresetsAdmin() {
   const [editing, setEditing] = useState(null); // {id, label, description, permissions}
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Phase 4.3 — extra tab for the per-role mobile module allocator.
+  const [tab, setTab] = useState('presets');
 
   const allowed = can('users', 'view');
   const canEdit = can('users', 'edit');
@@ -86,16 +91,26 @@ export default function PermissionPresetsAdmin() {
 
   return (
     <div className="max-w-7xl mx-auto" data-testid="presets-admin-page">
-      <PageHeader crumb="Settings / Permission presets" title="Permission presets"
-        subtitle="Curate the one-click role matrices admins can apply to any user."
-        action={canEdit && (
+      <PageHeader crumb="Settings / Permissions Matrix" title="Permissions Matrix"
+        subtitle="Curate role presets and decide which modules show up on the mobile app."
+        action={canEdit && tab === 'presets' && (
           <button onClick={() => setCreateOpen(true)} data-testid="preset-create-btn"
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
             <Add20Regular /> Create preset
           </button>
         )} />
 
-      {loading ? (
+      {/* Phase 4.3 — Tab strip between Permission Presets and Mobile Modules. */}
+      <div className="flex items-center gap-1 mb-4 border-b border-slate-200" data-testid="permissions-tabs">
+        <TabBtn active={tab === 'presets'} onClick={() => setTab('presets')}
+          icon={<ShieldCheckmark20Regular />} label="Permission Presets" testid="tab-presets" />
+        <TabBtn active={tab === 'mobile'} onClick={() => setTab('mobile')}
+          icon={<Phone20Regular />} label="Mobile App Modules" testid="tab-mobile" />
+      </div>
+
+      {tab === 'mobile' ? (
+        <MobileModulesSection canEdit={canEdit} />
+      ) : loading ? (
         <div className="text-sm text-slate-500">Loading…</div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
@@ -222,6 +237,28 @@ export default function PermissionPresetsAdmin() {
 
 function SectionTitle({ children, className = '' }) {
   return <div className={`px-2 mb-1.5 text-[10px] uppercase tracking-[0.12em] font-semibold text-slate-400 ${className}`}>{children}</div>;
+}
+
+// Phase 4.3 — page-level tab pill. Active tab gets an orange underline
+// (matches the new 2-colour brand) and a slate-900 label; inactive tabs
+// stay muted slate so the strip reads as navigation, not a CTA.
+function TabBtn({ active, onClick, icon, label, testid }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      data-active={active}
+      className={[
+        'relative inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors',
+        active ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700',
+      ].join(' ')}
+    >
+      <span className={active ? 'text-orange-600' : 'text-slate-400'}>{icon}</span>
+      {label}
+      {active && <span className="absolute left-2 right-2 -bottom-px h-0.5 bg-orange-500 rounded-full" />}
+    </button>
+  );
 }
 
 function PresetListItem({ preset, selected, onSelect, testid }) {
