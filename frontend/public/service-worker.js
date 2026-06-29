@@ -147,8 +147,20 @@
  *       · Expo mobile work handed off to `e1_expo_frontend_dev` to
  *         consume `/api/me/mobile-modules` on login + foreground and
  *         hide bottom-tab / drawer entries set to `false`.
+ * v104 — Phase 4.4 Live mobile preview inside Permissions Matrix:
+ *       · Backend: `GET /api/me/mobile-modules?as_role=...` admin-only
+ *         preview of another role's module set (silently ignored for
+ *         non-admins; usage logged at INFO).
+ *       · Web: phone-bezel iframe pinned to the right of the matrix
+ *         grid, role-switcher dropdown, Reload + open-in-new-tab
+ *         controls. iframe points at the Expo web build with
+ *         `preview_role` + `preview_token` query params. Explicitly
+ *         decoupled from grid toggles — only reflects SAVED config so
+ *         admins never see a misleading "preview-only" state.
+ *       · Mobile hand-off written: query-param wiring is the only
+ *         change required in the Expo app for this phase.
  */
-const CACHE_VERSION = 'paneltec-v103';
+const CACHE_VERSION = 'paneltec-v104';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

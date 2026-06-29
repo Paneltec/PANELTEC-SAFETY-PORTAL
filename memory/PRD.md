@@ -1,3 +1,69 @@
+# 2026-06-29 — Phase 4.4 Live Mobile Preview in Permissions Matrix (v104)
+
+## Backend
+- `GET /api/me/mobile-modules?as_role=worker|supervisor|contractor|admin`
+  - Admins: returns the matrix row for the requested role.
+  - Non-admins: param silently ignored (no escalation surface).
+  - Response gains `actual_role` and `previewed: bool` fields so the
+    mobile client can show a "Preview mode" ribbon.
+  - Usage is logged at INFO: `mobile_modules.preview org=... actor=...
+    preview_as=...`. No new collection — structured log only.
+
+## Web
+- `MobileModulesSection.jsx` gains a right-hand `<PhonePreview>` panel:
+  - Sticky on `lg:` and above; stacks below the grid on smaller screens.
+  - Header: Phone icon, "Live Preview" title, "Saved config · <role>"
+    sub-line, Reload + Open-in-new-tab icon buttons.
+  - Role dropdown: Worker (default) / Supervisor / Contractor / Admin.
+  - Phone bezel: 320×680 slate-900 rounded-[36px], notch with orange
+    accent dot. iframe inside `rounded-[24px]` white.
+  - `iframe` sandbox: `allow-scripts allow-same-origin allow-forms
+    allow-popups`. `referrerPolicy="no-referrer-when-downgrade"`.
+  - URL derivation: explicit `REACT_APP_EXPO_URL` env wins; otherwise
+    inject `.expo.` into the backend hostname (matches the existing
+    `EXPO_PACKAGER_PROXY_URL` convention in `/app/mobile/.env`).
+  - Token: admin's JWT from `getToken()` → `preview_token` query param.
+  - Role: dropdown → `preview_role` query param.
+  - Cache-bust: `_t=<timestamp>` so Reload always force-boots a fresh
+    Expo session.
+  - **Decoupled from grid toggles** — preview only ever reflects SAVED
+    config so admins never see a misleading half-state. The footer
+    note in the panel calls this out explicitly.
+- Iframe verified end-to-end: `https://whs-compliance.expo.preview.
+  emergentagent.com/?preview_role=worker&preview_token=eyJ…&_t=…`
+  with role-switch to contractor confirmed updating the src.
+
+## Service worker
+- `paneltec-v103` → **`paneltec-v104`**. `swVersionGuard` auto-heals
+  all open clients on next 60s poll.
+
+## Mobile hand-off
+- `/app/memory/mobile_briefs/phase_4_4_preview_role.md` — Expo-only
+  query-param wiring: `preview_token` overrides stored JWT (web only,
+  never persisted), `preview_role` is forwarded as `as_role` query on
+  the modules fetch. Native iOS/Android explicitly ignore both params.
+  Optional "Preview mode · <role>" ribbon when `previewed === true`.
+
+## Verification receipts
+- Curl admin no `as_role` → `role=admin actual=admin previewed=false`.
+- Curl admin `as_role=contractor` → `role=contractor previewed=true
+  count_true=4/13` (sign-on + swms + inductions + profile).
+- Curl admin `as_role=hacker` → silently rejected, returns admin row.
+- Backend INFO log: `mobile_modules.preview org=... preview_as=contractor`.
+- Playwright: iframe src has `.expo.preview.emergentagent.com` host,
+  `preview_role=worker` initially, switches to `preview_role=contractor`
+  on dropdown change.
+
+## Parked (next phases)
+- **Worker password / set-password workflow** — user explicitly parked
+  this to look at separately. Brief later.
+- **Native preview mode** — out of scope; web admin tool only.
+- **Phase 4.5 (P0 candidate)**: API-level enforcement layer for
+  modules — disabled module = 403 on related POST/PUT routes.
+
+---
+
+
 # 2026-06-29 — Phase 4.3 Worker Mobile App Module Allocator (v103)
 
 ## Goal

@@ -15,15 +15,18 @@ API surface (any authenticated user):
 Storage: `org_settings` collection, document keyed by `org_id` with a
 `mobile_modules` sub-document. Seeded with sensible defaults on first read.
 """
-from typing import Dict
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+
+import logging
 
 from auth import get_current_user
 from db import db
 from models import now_iso
 
 router = APIRouter(prefix="/api", tags=["mobile-modules"])
+log = logging.getLogger("paneltec.mobile_modules")
 
 # ──────────────────────────────────────────────────────────────────────
 # Module catalogue. Keep keys in sync with the friendly labels used by
@@ -154,12 +157,34 @@ async def put_mobile_modules(
 
 
 @router.get("/me/mobile-modules")
-async def get_my_mobile_modules(user: dict = Depends(get_current_user)):
+async def get_my_mobile_modules(
+    as_role: Optional[str] = Query(None, description="Admin-only: preview another role's module set"),
+    user: dict = Depends(get_current_user),
+):
     """Flat boolean map for the calling user's role. Used by the Expo
     mobile app to gate bottom-tab + drawer nav. Unknown roles fall back
     to the most-restrictive `contractor` row so a misconfigured user
-    can never accidentally see everything."""
+    can never accidentally see everything.
+
+    Phase 4.4 — admins can pass `?as_role=worker|supervisor|contractor|admin`
+    to preview another role's module set. The param is silently ignored
+    for non-admin callers (so a worker copying an admin's link can't
+    escalate). Usage is logged at INFO level for auditability."""
     matrix = await _load_matrix(user["org_id"])
-    role = (user.get("role") or "contractor").lower()
-    row = matrix.get(role) or matrix.get("contractor") or {}
-    return {"role": role, "modules": row}
+    caller_role = (user.get("role") or "contractor").lower()
+    effective_role = caller_role
+    if as_role:
+        ar = (as_role or "").lower()
+        if caller_role == "admin" and ar in ROLE_KEYS:
+            effective_role = ar
+            log.info("mobile_modules.preview org=%s actor=%s actor_role=%s preview_as=%s",
+                     user.get("org_id"), user.get("id") or user.get("email"),
+                     caller_role, ar)
+        # else: silently ignored — non-admin can't preview other roles.
+    row = matrix.get(effective_role) or matrix.get("contractor") or {}
+    return {
+        "role": effective_role,
+        "actual_role": caller_role,
+        "previewed": effective_role != caller_role,
+        "modules": row,
+    }
