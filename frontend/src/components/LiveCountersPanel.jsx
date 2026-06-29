@@ -79,11 +79,20 @@ function NavixyCounters({ asset, onAssetUpdated }) {
 
   const hoursAgo = fmtAgo(asset.hours_meter_updated_at);
   const kmAgo = fmtAgo(asset.odo_km_updated_at);
+  // Phase 4.2-E — dual heartbeat. `navixy_last_seen_at` is our outbound poll
+  // timestamp (we successfully called Navixy). `navixy_last_position_time` is
+  // the upstream sensor's last position fix. Showing both makes the
+  // "Why does my asset say LIVE but the GPS hasn't moved?" diagnostic obvious.
+  const syncedAgo = fmtAgo(asset.navixy_last_seen_at);
+  const navixyAgo = fmtAgo(asset.navixy_last_position_time);
 
   return (
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3" data-testid="live-counters-navixy">
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-700">Live counters · Navixy</div>
+        <div className="text-[10px] uppercase tracking-wider font-bold text-emerald-700 inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px]">LIVE</span>
+          <span>Live counters · Navixy</span>
+        </div>
         {canRefresh && (
           <button onClick={refreshNow} disabled={refreshing}
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
@@ -93,6 +102,25 @@ function NavixyCounters({ asset, onAssetUpdated }) {
           </button>
         )}
       </div>
+      {(syncedAgo || navixyAgo) && (
+        <div
+          title="Synced with Paneltec = when we last polled Navixy successfully. Navixy last heard = when the tracker last sent a position fix. A large gap between the two usually means the device is parked or out of mobile coverage."
+          className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mb-2 text-[10px] text-slate-600"
+          data-testid="navixy-dual-timestamps">
+          {syncedAgo && (
+            <span className="inline-flex items-center gap-1" data-testid="navixy-synced-paneltec">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              Synced with Paneltec: <span className="font-semibold text-slate-800">{syncedAgo}</span>
+            </span>
+          )}
+          {navixyAgo && (
+            <span className="inline-flex items-center gap-1" data-testid="navixy-last-heard">
+              <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />
+              Navixy last heard: <span className="font-semibold text-slate-800">{navixyAgo}</span>
+            </span>
+          )}
+        </div>
+      )}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <CounterCardShell
           icon={Activity} label="Engine hours" unit="hrs"

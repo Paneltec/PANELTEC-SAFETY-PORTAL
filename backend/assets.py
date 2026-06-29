@@ -124,38 +124,61 @@ NAVIXY_FRESH_THRESHOLD_HOURS = 24
 def _navixy_last_seen_at(asset: dict) -> Optional[str]:
     """Canonical "last contact" timestamp for the asset.
 
-    Phase 3.15-fix — order of preference:
-      1. `navixy_last_seen_at`  — stamped on EVERY successful sync poll,
-         independent of counter changes. This is the "device is reachable"
-         signal and the one the health dot really cares about.
-      2. `hours_meter_updated_at` / `odo_km_updated_at` — only tick when the
-         underlying counter VALUE changes. A parked-but-online vehicle
-         would otherwise look stale because its odometer never increments
-         while it sleeps. We still consult these as a fallback so legacy
-         rows pre-Phase-3.15-fix still resolve to *something*.
+    Phase 3.15-fix-2 — order of preference SWITCHED to the upstream
+    sensor timestamp because our local poll stamp ALWAYS ticks (we always
+    hit Navixy on cron) regardless of whether the tracker itself is
+    phoning home. Result: unplugged trackers like Z130 looked GREEN.
+
+    Priority now:
+      1. `navixy_last_position_time` — the upstream tracker's own
+         last_update timestamp, ground-truth for liveness.
+      2. `hours_meter_updated_at` / `odo_km_updated_at` — counter ticks.
+      3. `navixy_last_seen_at` — our local cron-poll stamp, only as a
+         last-resort breadcrumb so legacy rows without any upstream
+         freshness still resolve to *something* the UI can render.
     """
-    candidates = [asset.get("navixy_last_seen_at"),
+    candidates = [asset.get("navixy_last_position_time"),
                   asset.get("hours_meter_updated_at"),
-                  asset.get("odo_km_updated_at")]
+                  asset.get("odo_km_updated_at"),
+                  asset.get("navixy_last_seen_at")]
     candidates = [c for c in candidates if c]
     if not candidates:
         return None
     return max(candidates)
 
 
+# Connection statuses that mean the tracker isn't talking to Navixy right
+# now. `just_registered` covers devices paired in the panel but never
+# powered on (the Z130 case).
+_OFFLINE_STATUSES = {"offline", "just_registered", "recently_lost"}
+
+
 def _compute_navixy_health(asset: dict) -> Optional[str]:
-    """Returns "green" | "red" | None per the spec:
-      green  → asset has navixy_device_id AND last_seen_at within 24h
+    """Returns "green" | "red" | None.
+      green  → asset has navixy_device_id AND fresh upstream signal
       red    → asset has navixy_device_id AND no fresh data
-      None   → asset isn't linked to Navixy at all (no dot rendered)"""
+      None   → asset isn't linked to Navixy at all (no dot rendered)
+
+    Phase 3.15-fix-2 — Navixy's own `connection_status` is the
+    HIGHEST-priority signal: if upstream says offline / just_registered /
+    recently_lost we always render RED regardless of how recent our poll
+    was. Only when connection_status is online/idle/moving do we fall
+    back to the 24h freshness math on the upstream position timestamp."""
     if not asset.get("navixy_device_id"):
         return None
+    cs = (asset.get("navixy_connection_status") or "").strip().lower()
+    if cs in _OFFLINE_STATUSES:
+        return "red"
     last = _navixy_last_seen_at(asset)
     if not last:
         return "red"
     try:
         from datetime import datetime, timezone
-        seen = datetime.fromisoformat(last.replace("Z", "+00:00"))
+        # Navixy emits "YYYY-MM-DD HH:MM:SS" (UTC); fromisoformat tolerates
+        # either a space or a T separator if we swap, but the timestamp is
+        # naïve so we explicitly anchor to UTC.
+        s = last.replace("Z", "+00:00").replace(" ", "T", 1)
+        seen = datetime.fromisoformat(s)
         if seen.tzinfo is None:
             seen = seen.replace(tzinfo=timezone.utc)
         age_h = (datetime.now(timezone.utc) - seen).total_seconds() / 3600.0

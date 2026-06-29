@@ -45,6 +45,7 @@ scan_router = APIRouter(prefix="/scan/site", tags=["site-scan"])
 sites_router = APIRouter(prefix="/sites", tags=["sites"])
 
 EDIT_ROLES = {"admin", "manager", "hseq_lead"}
+ELEVATED_ROLES = {"admin", "manager", "hseq_lead", "supervisor"}
 
 
 def _gen_token(n: int = 12) -> str:
@@ -155,6 +156,36 @@ async def sign_on_to_site(scan_token: str, body: SignOnIn,
 def _require_site_admin(user: dict) -> None:
     if user.get("role") not in EDIT_ROLES:
         raise HTTPException(403, "Permission denied: sites.view")
+
+
+@sites_router.get("")
+async def list_sites(user: dict = Depends(get_current_user)):
+    """List every Simpro-synced site in the user's org. Used by the Sites
+    admin page to render a printable QR row per site + jump into active
+    sign-ons."""
+    rows: list[dict] = []
+    async for s in db.simpro_sites.find(
+        {"org_id": user["org_id"]},
+        {"_id": 0, "simpro_site_id": 1, "name": 1, "address_full": 1, "address": 1,
+         "suburb": 1, "state": 1, "scan_token": 1, "latitude": 1, "longitude": 1},
+    ).sort("name", 1):
+        rows.append(s)
+    return rows
+
+
+@sites_router.delete("/{site_id}/active-signons/{signon_id}")
+async def manual_sign_off(site_id: str, signon_id: str,
+                           user: dict = Depends(get_current_user)):
+    """Admin manual sign-off — physically deletes the sign-on row so the
+    panel refreshes empty. We don't preserve history yet (parked: 30-day
+    session-history audit log)."""
+    _require_site_admin(user)
+    res = await db.site_signons.delete_one(
+        {"id": signon_id, "org_id": user["org_id"], "site_id": site_id},
+    )
+    if res.deleted_count == 0:
+        raise HTTPException(404, "Sign-on not found")
+    return {"ok": True, "signon_id": signon_id}
 
 
 @sites_router.get("/{site_id}/active-signons")

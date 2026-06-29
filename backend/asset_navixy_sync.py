@@ -363,6 +363,7 @@ async def _sync_org(org_id: str) -> dict:
             # OUR poll timestamp and the upstream sensor heartbeat.
             all_tids = [int(a["navixy_device_id"]) for a in assets]
             navixy_last_position_time_by_tid: dict[int, str] = {}
+            navixy_connection_status_by_tid: dict[int, str] = {}
             if all_tids:
                 try:
                     rs = await c.post(f"{base}/v2/tracker/get_states",
@@ -377,11 +378,36 @@ async def _sync_org(org_id: str) -> dict:
                                 except (TypeError, ValueError):
                                     continue
                                 contacted_tids.add(tid)
+                                # Phase 4.2-E — try several candidate field
+                                # paths that real-world Navixy deployments use:
+                                #   * `last_update`        (newer API)
+                                #   * `online_time`        (legacy)
+                                #   * `last_position_time` (docs)
+                                #   * `gps.update_time`    (alternative)
+                                #   * `last_seen`          (some installs)
+                                lpt = None
                                 if isinstance(v, dict):
-                                    lpt = (v.get("last_position_time")
-                                           or v.get("gps", {}).get("update_time"))
-                                    if lpt:
-                                        navixy_last_position_time_by_tid[tid] = str(lpt)
+                                    for path in ("last_update", "online_time",
+                                                 "last_position_time",
+                                                 "last_seen"):
+                                        cand = v.get(path)
+                                        if cand:
+                                            lpt = cand; break
+                                    if not lpt and isinstance(v.get("gps"), dict):
+                                        lpt = v["gps"].get("update_time") or v["gps"].get("timestamp")
+                                    # Phase 3.15-fix-2 — Navixy's own
+                                    # connection_status is the most reliable
+                                    # liveness signal. Values seen in the wild:
+                                    #   online / idle / moving        → alive
+                                    #   offline / recently_lost       → dead
+                                    #   just_registered               → tracker
+                                    #     paired in Navixy but never phoned
+                                    #     home (e.g. unplugged Z130).
+                                    cs = v.get("connection_status")
+                                    if isinstance(cs, str) and cs.strip():
+                                        navixy_connection_status_by_tid[tid] = cs.strip().lower()
+                                if lpt:
+                                    navixy_last_position_time_by_tid[tid] = str(lpt)
                 except (httpx.HTTPError, ValueError) as e:
                     log.info("reachability probe (get_states) errored — %s", e)
             # Pass 1 — counter/read for both types per COLD tracker only,
@@ -532,6 +558,13 @@ async def _sync_org(org_id: str) -> dict:
             lpt = navixy_last_position_time_by_tid.get(tid)
             if lpt:
                 patch["navixy_last_position_time"] = lpt
+            # Phase 3.15-fix-2 — also persist Navixy's connection_status so
+            # the health-dot logic (in assets.py) can treat offline /
+            # just_registered / recently_lost as RED regardless of how
+            # recently we polled.
+            cs = navixy_connection_status_by_tid.get(tid)
+            if cs:
+                patch["navixy_connection_status"] = cs
             contacted += 1
 
         if not patch:
