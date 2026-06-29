@@ -84,6 +84,23 @@ const NAV = [
   ]},
 ];
 
+// Phase 3.20.3 — Per-section icon tint for the sidebar. Always renders the
+// Filled glyph variant (matches Option C in the user's design vote). The
+// resting colour groups items by section so a glance tells you which
+// bucket you're in:
+//   • Overview     → violet  (Intelligence)
+//   • Capture      → blue    (field record creation)
+//   • Compliance   → emerald (post-capture compliance work)
+//   • Settings     → slate   (admin)
+// Active row override: orange icon + left-border + bg-orange-50, regardless
+// of section, so the current route is unmistakable.
+const SECTION_TINTS = {
+  Overview:   { idle: 'text-violet-600',  hover: 'group-hover:text-violet-700' },
+  Capture:    { idle: 'text-blue-600',    hover: 'group-hover:text-blue-700' },
+  Compliance: { idle: 'text-emerald-600', hover: 'group-hover:text-emerald-700' },
+  Settings:   { idle: 'text-slate-500',   hover: 'group-hover:text-slate-700' },
+};
+
 const SidebarNav = ({ collapsed, onItemClick }) => {
   const can = useCan();
   return (
@@ -91,31 +108,32 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
       {NAV.map((group) => {
         const visible = group.items.filter((it) => !it.resource || can(it.resource, 'open'));
         if (visible.length === 0) return null;
+        const tint = SECTION_TINTS[group.section] || SECTION_TINTS.Settings;
         return (
           <div key={group.section} className="mb-5">
             {!collapsed && <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">{group.section}</div>}
             <ul className="space-y-0.5">
               {visible.map((it) => {
-                const IconRegular = it.icon;
                 const IconFilled = it.iconActive || it.icon;
-                const activeCls = `nav-active-${it.pastel || 'slate'}`;
                 return (
                   <li key={it.to}>
                     <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                          isActive ? `${activeCls} font-semibold` : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                        `group flex items-center gap-3 rounded-lg pr-2.5 py-2 text-sm transition-colors border-l-4 ${
+                          isActive
+                            ? 'border-orange-500 bg-orange-50 pl-1.5 text-slate-900 font-semibold'
+                            : 'border-transparent pl-1.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
                         }`} title={collapsed ? it.label : undefined}>
-                      {({ isActive }) => {
-                        const Glyph = isActive ? IconFilled : IconRegular;
-                        return (
-                          <>
-                            <Glyph className="shrink-0" style={{ width: 20, height: 20 }} />
-                            {!collapsed && <span className="truncate flex-1">{it.label}</span>}
-                            {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
-                          </>
-                        );
-                      }}
+                      {({ isActive }) => (
+                        <>
+                          <IconFilled
+                            className={`shrink-0 transition-colors ${isActive ? 'text-orange-500' : `${tint.idle} ${tint.hover}`}`}
+                            style={{ width: 20, height: 20 }}
+                          />
+                          {!collapsed && <span className="truncate flex-1">{it.label}</span>}
+                          {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
+                        </>
+                      )}
                     </NavLink>
                   </li>
                 );

@@ -96,11 +96,13 @@
  *             unregistering stale prod SWs already controlling the tab —
  *             those zombies kept serving cached chunks. Dev mode now
  *             unregisters every SW + drops every cache on page load.
- *       Skipped v96.1 (the planned Simpro modal cleanup) — going straight
- *       to v96.2 to bundle the cache fix with the compile-error recovery
- *       on UsersManagement.jsx.
+ * v97 — Phase 3.20.3 sidebar colourway (Option C). Every sidebar nav now
+ *       renders the Filled glyph variant tinted per-section (Capture blue,
+ *       Compliance emerald, Settings slate, Overview violet). Active row
+ *       overrides to orange-500 icon + left border + bg-orange-50.
+ *       SW bumped to invalidate static caches.
  */
-const CACHE_VERSION = 'paneltec-v96.2';
+const CACHE_VERSION = 'paneltec-v97';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
