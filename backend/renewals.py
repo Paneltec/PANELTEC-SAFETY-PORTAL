@@ -249,6 +249,14 @@ async def delete_doc_type(type_id: str, user: dict = Depends(get_current_user)):
 
 # ---------- Internal renewal endpoints ----------
 
+class RenewalBulkCreate(BaseModel):
+    contractor_ids: List[str] = Field(min_length=1)
+    doc_types_requested: List[str] = Field(min_length=1)
+    expires_in_days: int = Field(default=14, ge=1, le=90)
+    subject: Optional[str] = Field(default=None, max_length=200)
+    message: Optional[str] = Field(default=None, max_length=4000)
+
+
 @router.post("", status_code=201)
 async def create_renewal(body: RenewalCreate, user: dict = Depends(get_current_user)):
     _require_write(user)
@@ -273,6 +281,61 @@ async def create_renewal(body: RenewalCreate, user: dict = Depends(get_current_u
     link.pop("_id", None)
     link["public_url"] = _public_url(token)
     return link
+
+
+@router.post("/bulk", status_code=201)
+async def create_renewal_bulk(body: RenewalBulkCreate, user: dict = Depends(get_current_user)):
+    """Phase 3.14b — bulk-create renewal links for N contractors at once.
+
+    Idempotent: if a contractor already has a `pending` link covering ALL of
+    the requested doc_types, we skip rather than minting a duplicate. Skipped
+    rows still return their existing link id so the caller can deep-link to it.
+    """
+    _require_write(user)
+    created: list[dict] = []
+    skipped: list[dict] = []
+    errors: list[dict] = []
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=body.expires_in_days)).isoformat()
+    req_types = set(body.doc_types_requested)
+
+    for cid in body.contractor_ids:
+        contractor = await db.contractors.find_one(
+            {"id": cid, "org_id": user["org_id"], "deleted_at": None},
+            {"_id": 0},
+        )
+        if not contractor:
+            errors.append({"contractor_id": cid, "error": "not_found"})
+            continue
+
+        existing = await db.renewal_links.find_one(
+            {"contractor_id": cid, "org_id": user["org_id"], "status": "pending"},
+            {"_id": 0, "id": 1, "doc_types_requested": 1, "token": 1},
+        )
+        if existing and req_types.issubset(set(existing.get("doc_types_requested") or [])):
+            skipped.append({"contractor_id": cid, "renewal_id": existing["id"],
+                            "reason": "already_has_active_link"})
+            continue
+
+        token = uuid.uuid4().hex
+        link = {
+            "id": new_id(), "org_id": user["org_id"],
+            "contractor_id": cid,
+            "contractor_name": contractor.get("name"),
+            "doc_types_requested": body.doc_types_requested,
+            "subject": (body.subject or "").strip() or None,
+            "message": (body.message or "").strip() or None,
+            "token": token, "expires_at": expires_at, "status": "pending",
+            "created_by": user["id"], "created_at": now_iso(),
+            "used_at": None, "submitted_files": [],
+        }
+        await db.renewal_links.insert_one(dict(link))
+        link.pop("_id", None)
+        link["public_url"] = _public_url(token)
+        created.append(link)
+
+    return {"created": len(created), "skipped": len(skipped),
+            "errors": len(errors), "details": {
+                "created": created, "skipped": skipped, "errors": errors}}
 
 
 @router.patch("/{rid}")

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Building2, FileBadge, Link2, Plus, Trash2, Upload } from 'lucide-react';
+import { Building2, FileBadge, Link2, Loader2, Plus, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
@@ -19,17 +19,60 @@ const DOC_TYPES = [
 
 const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
+const TABS = [
+  { key: 'all',     label: 'All contractors',     testid: 'contractor-tab-all' },
+  { key: 'missing', label: 'Needs renewal link',  testid: 'contractor-tab-missing' },
+  { key: 'active',  label: 'Has active link',     testid: 'contractor-tab-active' },
+];
+
 export default function ContractorsList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: '', expiring: '' });
+  const [tab, setTab] = useState('all');
+  const [picked, setPicked] = useState(() => new Set());
+  const [linkModal, setLinkModal] = useState(null); // { contractors:[{id,name,contact_email}], bulk:bool }
 
   useEffect(() => {
     const params = {};
     if (filter.status) params.status = filter.status;
     if (filter.expiring) params.expiring_within_days = filter.expiring;
-    api.get('/contractors', { params }).then((r) => setItems(r.data)).finally(() => setLoading(false));
+    api.get('/contractors', { params })
+      .then((r) => setItems(r.data))
+      .finally(() => setLoading(false));
   }, [filter]);
+
+  const visibleItems = useMemo(() => {
+    if (tab === 'missing') return items.filter((c) => !c.has_active_renewal_link);
+    if (tab === 'active')  return items.filter((c) =>  c.has_active_renewal_link);
+    return items;
+  }, [items, tab]);
+
+  const pickedRows = useMemo(
+    () => items.filter((c) => picked.has(c.id)),
+    [items, picked],
+  );
+
+  const togglePicked = (id) => setPicked((s) => {
+    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  const openSingle = (c) => setLinkModal({
+    contractors: [{ id: c.id, name: c.name, contact_email: c.contact_email }],
+    bulk: false,
+  });
+  const openBulk = () => {
+    if (pickedRows.length === 0) return;
+    setLinkModal({ contractors: pickedRows.map((c) => ({ id: c.id, name: c.name, contact_email: c.contact_email })), bulk: true });
+  };
+
+  const reload = () => {
+    setLoading(true);
+    const params = {};
+    if (filter.status) params.status = filter.status;
+    if (filter.expiring) params.expiring_within_days = filter.expiring;
+    api.get('/contractors', { params }).then((r) => setItems(r.data)).finally(() => setLoading(false));
+  };
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="contractors-list">
@@ -37,27 +80,61 @@ export default function ContractorsList() {
         subtitle="Companies, ABNs, insurances and licences — with auto-computed expiry status."
         action={<NewButton to="/app/contractors/new" label="Add contractor" testid="contractor-create-btn" />} />
 
-      <div className="flex flex-wrap gap-2 mb-4">
+      {/* Phase 3.14b — tab strip */}
+      <div className="flex items-center gap-1 mb-3 border-b border-slate-200" data-testid="contractor-tabs">
+        {TABS.map((t) => {
+          const count = t.key === 'missing' ? items.filter((c) => !c.has_active_renewal_link).length
+                       : t.key === 'active' ? items.filter((c) =>  c.has_active_renewal_link).length
+                       : items.length;
+          const isActive = tab === t.key;
+          return (
+            <button key={t.key} type="button" onClick={() => setTab(t.key)}
+              data-testid={t.testid}
+              className={`px-3 py-2 text-xs font-semibold border-b-2 -mb-px transition-colors ${
+                isActive ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-600 hover:text-slate-900'
+              }`}>
+              {t.label} <span className={`ml-1 text-[10px] px-1.5 py-0.5 rounded ${isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
         <select className={inputClass + ' w-auto'} value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })} data-testid="contractor-filter-status">
           <option value="">All statuses</option>{STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <select className={inputClass + ' w-auto'} value={filter.expiring} onChange={(e) => setFilter({ ...filter, expiring: e.target.value })} data-testid="contractor-filter-expiring">
           <option value="">Any expiry</option><option value="30">Expiring ≤30 days</option><option value="60">Expiring ≤60 days</option><option value="90">Expiring ≤90 days</option>
         </select>
+        {pickedRows.length > 0 && (
+          <button type="button" onClick={openBulk}
+            data-testid="contractor-bulk-renewal"
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700">
+            <Link2 size={12} /> Add {pickedRows.length} to Renewal Links
+          </button>
+        )}
       </div>
 
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
-       : items.length === 0 ? <EmptyState title="No contractors" body="Add your first contractor." action={<NewButton to="/app/contractors/new" label="Add contractor" testid="contractor-empty-create" />} />
+       : visibleItems.length === 0 ? <EmptyState title="No contractors" body={tab === 'missing' ? 'Every active contractor has an open renewal link.' : 'Add your first contractor.'} action={<NewButton to="/app/contractors/new" label="Add contractor" testid="contractor-empty-create" />} />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Company</th><th className="text-left px-4 py-3">Trade</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Compliance</th><th className="text-right px-4 py-3">Actions</th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr>
+              <th className="px-3 py-3 w-8"></th>
+              <th className="text-left px-4 py-3">Company</th>
+              <th className="text-left px-4 py-3">Trade</th>
+              <th className="text-left px-4 py-3">Status</th>
+              <th className="text-left px-4 py-3">Compliance</th>
+              <th className="text-right px-4 py-3">Actions</th>
+            </tr></thead>
             <tbody>
-              {items.map((c) => {
+              {visibleItems.map((c) => {
                 const s = c.compliance_summary || { valid: 0, expiring_soon: 0, expired: 0, total: 0 };
                 return (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`contractor-row-${c.id}`}>
-                    <td className="px-4 py-3"><Link to={`/app/contractors/${c.id}`} className="font-medium text-slate-900 hover:text-brand-blue">{c.name}</Link>{c.simpro_vendor_id && <span title={`Simpro vendor ${c.simpro_vendor_id}`} className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fff1e1] text-[#8a4b00] border border-[#f5cf91]" data-testid={`contractor-simpro-chip-${c.id}`}>Simpro</span>}{c.needs_email && <span title="No email — fill in before sending renewal link" className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#fcd34d]">needs email</span>}<div className="text-xs text-slate-500">{c.abn || '—'}</div></td>
+                    <td className="px-3 py-3"><input type="checkbox" checked={picked.has(c.id)} onChange={() => togglePicked(c.id)} data-testid={`contractor-checkbox-${c.id}`} className="h-3.5 w-3.5" /></td>
+                    <td className="px-4 py-3"><Link to={`/app/contractors/${c.id}`} className="font-medium text-slate-900 hover:text-brand-blue">{c.name}</Link>{c.simpro_vendor_id && <span title={`Simpro vendor ${c.simpro_vendor_id}`} className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fff1e1] text-[#8a4b00] border border-[#f5cf91]" data-testid={`contractor-simpro-chip-${c.id}`}>Simpro</span>}{c.needs_email && <span title="No email — fill in before sending renewal link" className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#fcd34d]">needs email</span>}{c.has_active_renewal_link && <span title="Has a pending renewal link" className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200">link active</span>}<div className="text-xs text-slate-500">{c.abn || '—'}</div></td>
                     <td className="px-4 py-3 text-slate-600">{c.trade}</td>
                     <td className="px-4 py-3"><StatusBadge value={c.status} /></td>
                     <td className="px-4 py-3 text-xs">
@@ -66,7 +143,15 @@ export default function ContractorsList() {
                       {s.expired > 0 && <span className="ml-2 text-red-700">· {s.expired} expired</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <DeleteRecordButton resourceKind="contractors" apiPath="contractors" recordId={c.id} label="Contractor" recordTitle={c.name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                      <div className="inline-flex items-center gap-1 justify-end">
+                        <button type="button" onClick={() => openSingle(c)}
+                          data-testid={`contractor-add-renewal-${c.id}`}
+                          title={c.has_active_renewal_link ? 'Already has an active link — clicking will add a new one' : 'Add to Renewal Links'}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-xs font-semibold hover:bg-blue-100">
+                          <Link2 size={11} /> Add to Renewal Links
+                        </button>
+                        <DeleteRecordButton resourceKind="contractors" apiPath="contractors" recordId={c.id} label="Contractor" recordTitle={c.name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                      </div>
                     </td>
                   </tr>
                 );
@@ -75,7 +160,99 @@ export default function ContractorsList() {
           </table>
         </div>
        )}
+
+      {linkModal && (
+        <CreateRenewalLinkModal
+          payload={linkModal}
+          onClose={() => setLinkModal(null)}
+          onCreated={() => { setPicked(new Set()); setLinkModal(null); reload(); }}
+        />
+      )}
     </div>
+  );
+}
+
+function CreateRenewalLinkModal({ payload, onClose, onCreated }) {
+  const navigate = useNavigate();
+  const [docTypes, setDocTypes] = useState(['public_liability', 'workers_comp']);
+  const [expiresIn, setExpiresIn] = useState(14);
+  const [busy, setBusy] = useState(false);
+  const toggle = (v) => setDocTypes((d) => d.includes(v) ? d.filter((x) => x !== v) : [...d, v]);
+
+  const submit = async () => {
+    if (docTypes.length === 0) { toast.error('Pick at least one document type.'); return; }
+    setBusy(true);
+    try {
+      if (payload.bulk) {
+        const { data } = await api.post('/renewals/bulk', {
+          contractor_ids: payload.contractors.map((c) => c.id),
+          doc_types_requested: docTypes,
+          expires_in_days: expiresIn,
+        });
+        toast.success(`${data.created} link${data.created === 1 ? '' : 's'} created · ${data.skipped} already existed.`, {
+          action: { label: 'View →', onClick: () => navigate('/app/renewals') },
+        });
+      } else {
+        await api.post('/renewals', {
+          contractor_id: payload.contractors[0].id,
+          doc_types_requested: docTypes,
+          expires_in_days: expiresIn,
+        });
+        toast.success(`Renewal link created for ${payload.contractors[0].name}.`, {
+          action: { label: 'View →', onClick: () => navigate('/app/renewals') },
+        });
+      }
+      onCreated?.();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose?.()}>
+      <DialogContent className="sm:max-w-md" data-testid="create-renewal-link-modal">
+        <DialogHeader>
+          <DialogTitle>{payload.bulk ? `Bulk: creating ${payload.contractors.length} renewal links` : 'Add to Renewal Links'}</DialogTitle>
+          <DialogDescription>
+            {payload.bulk
+              ? 'Same document set + expiry will apply to every selected contractor. Existing pending links covering the same documents are skipped.'
+              : (<><span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-xs font-semibold mr-1.5">{payload.contractors[0].name}</span> A new pending renewal link will be created. The contractor receives a public submission URL.</>)}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <div>
+            <div className="text-xs font-semibold text-slate-700 mb-1.5">Document types</div>
+            <div className="flex flex-wrap gap-1.5">
+              {DOC_TYPES.map(([v, l]) => {
+                const on = docTypes.includes(v);
+                return (
+                  <button key={v} type="button" onClick={() => toggle(v)}
+                    data-testid={`doc-type-${v}`}
+                    className={`px-2.5 py-1 rounded-full text-xs font-semibold border transition-colors ${on ? 'bg-blue-600 text-white border-blue-600' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>{l}</button>
+                );
+              })}
+            </div>
+          </div>
+          <Field label="Expires in">
+            <select value={expiresIn} onChange={(e) => setExpiresIn(Number(e.target.value))}
+              data-testid="expires-in"
+              className={inputClass + ' w-auto'}>
+              <option value={7}>7 days</option>
+              <option value={14}>14 days</option>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+            </select>
+          </Field>
+        </div>
+        <DialogFooter>
+          <GhostButton onClick={onClose} disabled={busy}>Cancel</GhostButton>
+          <PrimaryButton onClick={submit} disabled={busy} data-testid={payload.bulk ? 'contractor-bulk-confirm' : 'contractor-add-renewal-confirm'}>
+            {busy ? <Loader2 size={12} className="animate-spin mr-1" /> : <Link2 size={12} className="mr-1" />}
+            {payload.bulk ? `Create ${payload.contractors.length} links` : 'Create link'}
+          </PrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

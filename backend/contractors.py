@@ -80,6 +80,7 @@ async def list_contractors(
     status: Optional[ContractorStatus] = None,
     expiring_within_days: Optional[int] = Query(None, ge=1, le=365),
     trade: Optional[str] = None,
+    missing_renewal_link: Optional[bool] = Query(False),
     user: dict = Depends(get_current_user),
 ):
     q = {"org_id": user["org_id"], "deleted_at": None}
@@ -88,13 +89,31 @@ async def list_contractors(
     if trade:
         q["trade"] = trade
     docs = await db.contractors.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
-    out = [_decorate(d) for d in docs]
+
+    # Phase 3.14b — annotate `has_active_renewal_link` so the frontend can
+    # render a "needs renewal link" badge and filter on it without a 2nd round-trip.
+    active_cids: set[str] = set()
+    async for r in db.renewal_links.find(
+        {"org_id": user["org_id"], "status": "pending"},
+        {"_id": 0, "contractor_id": 1},
+    ):
+        if r.get("contractor_id"):
+            active_cids.add(r["contractor_id"])
+
+    out = []
+    for d in docs:
+        decorated = _decorate(d)
+        decorated["has_active_renewal_link"] = d["id"] in active_cids
+        out.append(decorated)
+
     if expiring_within_days:
         cutoff = date.today() + timedelta(days=expiring_within_days)
         out = [c for c in out if any(
             d.get("expiry_date") and date.fromisoformat(d["expiry_date"][:10]) <= cutoff
             for d in c.get("documents", [])
         )]
+    if missing_renewal_link:
+        out = [c for c in out if not c.get("has_active_renewal_link")]
     return out
 
 

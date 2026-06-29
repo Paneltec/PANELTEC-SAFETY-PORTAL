@@ -51,8 +51,19 @@
  *       ?include_superseded=true. New /swms/{id}/history (DFS, capped at 20
  *       hops). Backfill endpoint POST /admin/swms/backfill-version-chain
  *       (admin only). SWMS Assignments two-pane admin page with bulk mode.
+ * v85.1 — Phase 3.14b "Add to Renewal Links" workflow promotion:
+ *       Contractors page gets 3-tab strip (All · Needs renewal link ·
+ *       Has active link), checkbox column, per-row "Add to Renewal Links"
+ *       button (`contractor-add-renewal-{id}`), and a bulk toolbar button
+ *       (`contractor-bulk-renewal`). Modal posts to /renewals or
+ *       /renewals/bulk with doc-type chips + expiry. Backend: GET
+ *       /contractors now decorates rows with `has_active_renewal_link` and
+ *       supports `?missing_renewal_link=true`. POST /renewals/bulk is
+ *       idempotent (skip rows already covered by a pending link).
+ *       Also: Phase 4.1 history walker is now BIDIRECTIONAL — calling
+ *       /history on the LATEST node returns the same chain as the OLDEST.
  */
-const CACHE_VERSION = 'paneltec-v85';
+const CACHE_VERSION = 'paneltec-v85.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
