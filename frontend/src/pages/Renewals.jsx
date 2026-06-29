@@ -18,6 +18,8 @@ import {
   Copy20Regular as Copy,
   Delete20Regular as Trash2,
   Edit20Regular as Pencil,
+  Warning20Filled,
+  Save20Regular,
 } from '@fluentui/react-icons';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
@@ -36,6 +38,19 @@ export default function Renewals() {
   const [editing, setEditing] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // Phase 3.21 Item 2 — Needs-email banner. Re-counts on every contractors
+  // refresh; sessionStorage flag lets the admin dismiss for this session.
+  const [needsEmailDrawerOpen, setNeedsEmailDrawerOpen] = useState(false);
+  const [needsEmailDismissed, setNeedsEmailDismissed] = useState(() => {
+    try { return sessionStorage.getItem('paneltec_needs_email_dismissed') === '1'; } catch (_) { return false; }
+  });
+  const needsEmailList = useMemo(() => contractors.filter((c) => c.needs_email), [contractors]);
+  const needsEmailCount = needsEmailList.length;
+  const dismissBanner = () => {
+    setNeedsEmailDismissed(true);
+    try { sessionStorage.setItem('paneltec_needs_email_dismissed', '1'); } catch (_) { /* noop */ }
+  };
+  const refreshContractors = () => api.get('/contractors').then((r) => setContractors(r.data));
 
   const typeLabel = useMemo(() => Object.fromEntries(docTypes.map((t) => [t.slug, t.label])), [docTypes]);
 
@@ -89,6 +104,22 @@ export default function Renewals() {
           </div>
         )} />
 
+      {needsEmailCount > 0 && !needsEmailDismissed && (
+        <div data-testid="needs-email-banner"
+          className="mb-4 flex items-start gap-3 rounded-xl border border-amber-400 bg-amber-100 px-4 py-3 text-amber-900">
+          <Warning20Filled className="shrink-0 mt-0.5 text-amber-700" />
+          <div className="flex-1 min-w-0 text-sm">
+            <span data-testid="needs-email-count" className="font-semibold">{needsEmailCount} contractor{needsEmailCount === 1 ? '' : 's'}</span>{' '}
+            {needsEmailCount === 1 ? 'is' : 'are'} missing an email. Add their email before sending a renewal link.
+          </div>
+          <button onClick={() => setNeedsEmailDrawerOpen(true)} data-testid="needs-email-fix-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700">
+            Fix now →
+          </button>
+          <button onClick={dismissBanner} aria-label="Dismiss"
+            className="text-amber-800/70 hover:text-amber-900 rounded-md p-1"><X size={14} /></button>
+        </div>
+      )}
       {items.length === 0 ? <EmptyState title="No renewal links yet" body="Create a link and send it to a contractor." />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
@@ -213,6 +244,85 @@ export default function Renewals() {
             api.get('/contractors').then((r) => setContractors(r.data));
           }} />
       )}
+
+      <NeedsEmailDrawer open={needsEmailDrawerOpen} contractors={needsEmailList}
+        onClose={() => setNeedsEmailDrawerOpen(false)}
+        onSaved={() => { refreshContractors(); }} />
+    </div>
+  );
+}
+
+function NeedsEmailDrawer({ open, contractors, onClose, onSaved }) {
+  const [drafts, setDrafts] = useState({});
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const initial = {};
+    contractors.forEach((c) => { initial[c.id] = c.email || c.contact_email || ''; });
+    setDrafts(initial);
+  }, [open, contractors]);
+
+  if (!open) return null;
+
+  const dirty = contractors.filter((c) => (drafts[c.id] || '').trim() && (drafts[c.id] || '').trim() !== (c.email || c.contact_email || ''));
+
+  const saveAll = async () => {
+    if (dirty.length === 0) { toast.info('No changes to save'); return; }
+    setSaving(true);
+    let okCount = 0;
+    for (const c of dirty) {
+      const email = (drafts[c.id] || '').trim();
+      if (!email) continue;
+      try {
+        await api.patch(`/contractors/${c.id}`, { email });
+        okCount += 1;
+      } catch (e) { toast.error(`${c.name}: ${apiError(e)}`); }
+    }
+    setSaving(false);
+    if (okCount > 0) {
+      toast.success(`Saved email for ${okCount} contractor${okCount === 1 ? '' : 's'}`);
+      onSaved?.();
+    }
+    if (okCount === dirty.length) onClose?.();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex" onClick={onClose} data-testid="needs-email-drawer">
+      <div className="flex-1 bg-slate-900/50" />
+      <div className="w-full max-w-xl bg-white shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-amber-700">Compliance</div>
+            <h2 className="font-display text-xl font-semibold text-slate-900">Add missing contractor emails</h2>
+            <p className="text-xs text-slate-500 mt-0.5">{contractors.length} contractor{contractors.length === 1 ? '' : 's'} need an email before you can send a renewal link.</p>
+          </div>
+          <button onClick={onClose} className="text-slate-500 hover:text-slate-900 p-1"><X size={18} /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 py-3 space-y-2">
+          {contractors.map((c) => (
+            <div key={c.id} className="rounded-lg border border-slate-200 px-3 py-2.5">
+              <div className="flex items-center gap-2 mb-1.5">
+                <div className="text-sm font-medium text-slate-900 truncate flex-1">{c.name}</div>
+                {c.abn && <span className="text-[10px] uppercase tracking-wider text-slate-500">ABN {c.abn}</span>}
+                {c.simpro_vendor_id && <span className="text-[10px] uppercase tracking-wider font-semibold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded">Simpro</span>}
+              </div>
+              <input type="email" placeholder="contractor@example.com"
+                value={drafts[c.id] || ''}
+                onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))}
+                data-testid={`needs-email-input-${c.id}`}
+                className="w-full px-3 py-1.5 text-sm border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+          ))}
+        </div>
+        <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700">Cancel</button>
+          <button onClick={saveAll} disabled={saving || dirty.length === 0} data-testid="needs-email-save-btn"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50">
+            <Save20Regular /> {saving ? 'Saving…' : `Save all (${dirty.length})`}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

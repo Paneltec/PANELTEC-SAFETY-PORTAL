@@ -20,6 +20,7 @@
 // never breaks the app.
 
 import { API_BASE } from '@/lib/api';
+import api from '@/lib/api';
 
 const GUARD_KEY = 'paneltec_sw_self_heal_done';
 const PROBE_TIMEOUT_MS = 1500;
@@ -100,3 +101,50 @@ export async function runSwVersionGuard() {
     await nukeAndReload();
   }
 }
+
+// Phase 3.21 Item 5 — Force-refresh signal poll. Separate from the
+// version-mismatch self-heal so an admin can broadcast a refresh
+// without bumping the SW version (e.g. critical CSS hotfix).
+//
+// Persistence: localStorage so we DON'T loop-reload across sessions.
+// First-read seeds with the current server signal so a returning user
+// doesn't immediately reload on first poll.
+const SIGNAL_KEY = 'paneltec_last_seen_force_refresh';
+
+async function fetchSignal() {
+  try {
+    // Use the shared api wrapper which already attaches the JWT.
+    const res = await api.get('/settings/force-refresh-signal');
+    return res?.data?.signal_at || null;
+  } catch (_) { return null; }
+}
+
+export async function runForceRefreshSignalCheck() {
+  if (typeof window === 'undefined') return;
+  const signal = await fetchSignal();
+  if (!signal) return;
+  let lastSeen = null;
+  try { lastSeen = localStorage.getItem(SIGNAL_KEY); } catch (_) { /* noop */ }
+  if (!lastSeen) {
+    // First read this browser — seed without reloading so returning
+    // users don't trigger on a historical signal.
+    try { localStorage.setItem(SIGNAL_KEY, signal); } catch (_) { /* noop */ }
+    return;
+  }
+  if (signal > lastSeen) {
+    // eslint-disable-next-line no-console
+    console.warn('[paneltec-sw] force-refresh-all signal received. Reloading.');
+    try { localStorage.setItem(SIGNAL_KEY, signal); } catch (_) { /* noop */ }
+    await nukeAndReload();
+  }
+}
+
+// Kick off a 60s heartbeat once on first import so the poll keeps
+// running even while the user is sitting on a long-lived screen.
+if (typeof window !== 'undefined' && !window.__paneltec_force_refresh_poll_started) {
+  window.__paneltec_force_refresh_poll_started = true;
+  setInterval(() => { runForceRefreshSignalCheck(); }, 60_000);
+  // Fire once shortly after AppShell mounts so the first poll isn't 60s away.
+  setTimeout(() => { runForceRefreshSignalCheck(); }, 5_000);
+}
+

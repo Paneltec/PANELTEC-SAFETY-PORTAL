@@ -96,13 +96,13 @@
  *             unregistering stale prod SWs already controlling the tab —
  *             those zombies kept serving cached chunks. Dev mode now
  *             unregisters every SW + drops every cache on page load.
- * v98 — Phase 3.21 parking-lot polish. Item 1 (breadcrumb section-tint),
- *       Item 4 (Permission presets admin page + sidebar entry), and the
- *       full backend wave (session_history with hooks on every session
- *       end; force-refresh-all + signal endpoints) shipped. Items 2/3/5
- *       frontend deferred to v98.1 due to context exhaustion.
+ * v98.1 — Phase 3.21 closeout. The 3 deferred frontend pieces shipped:
+ *       · Needs-email sticky banner + drawer on Renewals page
+ *       · Session-history tab in UsersManagement UserDrawer
+ *       · Force-refresh-all admin button + 60s client poll for the signal
+ *       SW bumped so existing v98 clients pick up the new bundle.
  */
-const CACHE_VERSION = 'paneltec-v98';
+const CACHE_VERSION = 'paneltec-v98.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

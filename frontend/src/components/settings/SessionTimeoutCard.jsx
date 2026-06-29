@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { signOut } from '../../lib/auth';
 import ActiveSessionsPanel from './ActiveSessionsPanel';
+import { ArrowClockwise20Regular } from '@fluentui/react-icons';
 
 const IDLE_OPTIONS = [
   { v: 15,  l: '15 minutes' },
@@ -60,6 +61,11 @@ export default function SessionTimeoutCard() {
   const [showOverrides, setShowOverrides] = useState(false);
   const [confirmForceLogout, setConfirmForceLogout] = useState(false);
   const [forcing, setForcing] = useState(false);
+  // Phase 3.21 Item 5 — force-refresh-all (non-destructive cousin of
+  // force-logout-all). Confirm modal shows live connected-user count.
+  const [confirmForceRefresh, setConfirmForceRefresh] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [connectedCount, setConnectedCount] = useState(null);
 
   const dirty = useMemo(
     () => original && draft && !deepEqual(original, draft),
@@ -119,6 +125,29 @@ export default function SessionTimeoutCard() {
       setForcing(false);
       setConfirmForceLogout(false);
     }
+  };
+
+  // Phase 3.21 Item 5 — Force refresh all connected clients (no logout).
+  const openForceRefresh = async () => {
+    setConfirmForceRefresh(true);
+    setConnectedCount(null);
+    try {
+      const { data } = await api.get('/admin/active-sessions');
+      const list = Array.isArray(data) ? data : (data?.sessions || []);
+      const uniq = new Set(list.map((s) => s.user_id).filter(Boolean));
+      setConnectedCount(uniq.size);
+    } catch (_) {
+      setConnectedCount(0);
+    }
+  };
+  const runForceRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await api.post('/admin/settings/force-refresh-all');
+      toast.success('Force-refresh signal broadcast. All clients will reload within 60s.');
+      setConfirmForceRefresh(false);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setRefreshing(false); }
   };
 
   if (loading || !draft) {
@@ -312,6 +341,42 @@ export default function SessionTimeoutCard() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+        {/* Phase 3.21 Item 5 — non-destructive force-refresh-all */}
+        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-amber-100 p-1.5 text-amber-700"><ArrowClockwise20Regular /></div>
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-bold text-amber-900">Force refresh all clients</h3>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Broadcasts a cache-bust signal to every connected user. Each
+                client purges caches and hard-reloads within 60 seconds. Users
+                remain signed in — only the bundle is refreshed.
+              </p>
+              {!confirmForceRefresh ? (
+                <button type="button" onClick={openForceRefresh} data-testid="force-refresh-all-btn"
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-xs font-bold text-amber-800 hover:bg-amber-100">
+                  <ArrowClockwise20Regular style={{ width: 12, height: 12 }} /> Force refresh all clients
+                </button>
+              ) : (
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-amber-900" data-testid="force-refresh-count">
+                    {connectedCount === null
+                      ? <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> counting connected clients…</span>
+                      : <>{connectedCount} user{connectedCount === 1 ? '' : 's'} will hard-reload within 60 seconds.</>}
+                  </span>
+                  <button type="button" onClick={runForceRefresh} disabled={refreshing} data-testid="force-refresh-all-confirm"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 disabled:opacity-60">
+                    {refreshing ? <Loader2 size={12} className="animate-spin" /> : <ArrowClockwise20Regular style={{ width: 12, height: 12 }} />} Yes, broadcast refresh
+                  </button>
+                  <button type="button" onClick={() => setConfirmForceRefresh(false)} disabled={refreshing}
+                    className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

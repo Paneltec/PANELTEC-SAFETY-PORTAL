@@ -519,11 +519,15 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
         <div className="flex items-start justify-between"><h2 className="font-display text-xl">{userRow.name}<div className="text-sm text-slate-500 font-normal">{userRow.email}</div></h2>
           <button onClick={onClose} className="text-2xl text-slate-400">&times;</button></div>
         <div className="mt-5 border-b border-slate-200 flex gap-4">
-          {['profile', 'permissions'].map((t) => (
-            <button key={t} onClick={() => setTab(t)} data-testid={`tab-${t}`}
-              className={`pb-2 text-sm font-medium ${tab === t ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-slate-500'}`}>{t}</button>
+          {['profile', 'permissions', 'sessions'].map((t) => (
+            <button key={t} onClick={() => setTab(t)} data-testid={t === 'sessions' ? 'session-history-tab' : `tab-${t}`}
+              className={`pb-2 text-sm font-medium ${tab === t ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-slate-500'}`}>{t === 'sessions' ? 'Session history' : t}</button>
           ))}
         </div>
+
+        {tab === 'sessions' && (
+          <SessionHistoryTab userId={userRow.id} />
+        )}
 
         {tab === 'profile' && detail && (
           <div className="mt-5 space-y-4">
@@ -1083,4 +1087,79 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
     </div>
   );
 }
+
+// Phase 3.21 Item 3 — Session history tab. Admin-only; the backend
+// endpoint enforces the role check so the worst case for a non-admin is
+// a 403 with an empty render. We render the last 50 sessions per user
+// with semantic chips per end_reason so an auditor can see WHY a session
+// ended at a glance.
+const END_REASON_CHIP = {
+  idle:               { label: 'Idle timeout',     cls: 'bg-slate-100 text-slate-700' },
+  explicit_logout:    { label: 'Signed out',        cls: 'bg-blue-100 text-blue-800' },
+  admin_revoke:       { label: 'Admin revoked',     cls: 'bg-rose-100 text-rose-800' },
+  force_logout_all:   { label: 'Force-logout all',  cls: 'bg-violet-100 text-violet-800' },
+  absolute_timeout:   { label: 'Absolute expiry',   cls: 'bg-amber-100 text-amber-800' },
+  token_version_bump: { label: 'Password change',   cls: 'bg-indigo-100 text-indigo-800' },
+};
+
+function SessionHistoryTab({ userId }) {
+  const [rows, setRows] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    setRows(null); setError(null);
+    api.get(`/admin/users/${userId}/session-history?limit=50`)
+      .then((r) => { if (!cancelled) setRows(r.data?.history || []); })
+      .catch((e) => { if (!cancelled) setError(apiError(e)); });
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const fmt = (iso) => {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleString(); } catch (_) { return iso; }
+  };
+
+  if (error) return <div className="mt-5 text-sm text-rose-700" data-testid="session-history-error">{error}</div>;
+  if (rows === null) return <div className="mt-5 text-sm text-slate-500">Loading session history…</div>;
+  if (rows.length === 0) {
+    return <div className="mt-5 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500" data-testid="session-history-empty">
+      No session history for this user yet. History rows are written each time a session ends (idle timeout, sign-out, or admin revoke) and auto-purged after 30 days.
+    </div>;
+  }
+
+  return (
+    <div className="mt-5 rounded-xl border border-slate-200 overflow-x-auto" data-testid="session-history-table">
+      <table className="w-full text-sm">
+        <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
+          <tr>
+            <th className="text-left px-3 py-2 font-semibold">Login</th>
+            <th className="text-left px-3 py-2 font-semibold">Ended</th>
+            <th className="text-left px-3 py-2 font-semibold">Reason</th>
+            <th className="text-left px-3 py-2 font-semibold">Role</th>
+            <th className="text-left px-3 py-2 font-semibold">IP</th>
+            <th className="text-left px-3 py-2 font-semibold">User agent</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const chip = END_REASON_CHIP[r.end_reason] || { label: r.end_reason || 'Unknown', cls: 'bg-slate-100 text-slate-700' };
+            return (
+              <tr key={r.jti} className="border-t border-slate-100" data-testid={`session-history-row-${r.jti}`}>
+                <td className="px-3 py-2 text-slate-700 whitespace-nowrap" title={r.login_at}>{fmt(r.login_at)}</td>
+                <td className="px-3 py-2 text-slate-700 whitespace-nowrap" title={r.ended_at}>{fmt(r.ended_at)}</td>
+                <td className="px-3 py-2">
+                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider ${chip.cls}`}>{chip.label}</span>
+                </td>
+                <td className="px-3 py-2 text-slate-700">{r.role || '—'}</td>
+                <td className="px-3 py-2 text-slate-600 font-mono text-[12px]">{r.ip_address || '—'}</td>
+                <td className="px-3 py-2 text-slate-500 text-[11px] max-w-[280px] truncate" title={r.user_agent || ''}>{r.user_agent || '—'}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 
