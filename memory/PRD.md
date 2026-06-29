@@ -1,3 +1,64 @@
+# 2026-06-29 — Phase 4.6 SWMS Scan Upload (OCR + Claude) (v106)
+
+## Backend (`swms_phase45.py` extended)
+- `parse_swms_text(text, title_hint)` — shared Claude entry-point
+  (extracted from `from-paste`). Same strict-JSON prompt feeds both
+  surfaces so the editor highlight UI behaves identically regardless
+  of input modality.
+- `POST /api/swms/from-scan` (multipart):
+  - Accepts `.pdf`, `.png`, `.jpg`, `.jpeg`, max 25 MB. Streams to
+    disk with size cap so a hostile upload can't OOM the worker.
+  - PDF path: tries `ocr_pdf_to_text` first (Poppler `pdftotext` +
+    Tesseract fallback), gracefully degrades to **PyPDF2** when the
+    OCR binaries aren't on the host (text-embedded PDFs still work).
+  - Image path: direct `tesseract` invocation.
+  - <200 OCR chars → friendly 400 retry message.
+  - >12k OCR chars → truncated to 12k + `truncated: true` warning
+    flag (NOT 413 — scans are often long).
+  - Persists SWMS with `created_via="scan"` + `attachments: [
+      { kind: "signed_evidence", file_url, pages, ocr_chars, ...}]`
+    so the auditor copy lives next to the parsed draft.
+  - Audit log: `swms.from_scan` with bytes, pages, ocr_chars,
+    truncated, file name.
+- New static route `GET /api/files/swms_scans/{stored_name}` serves
+  the signed-evidence file.
+
+## Web (`Swms.jsx`)
+- "Upload Scanned SWMS" header button (ScanLine icon) — orange
+  outlined to match the Paste action.
+- `ScanSwmsDialog` — dropzone (drag/drop + click-to-browse), file
+  preview + size + MIME, 25 MB client-side cap, optional title hint,
+  "Read & Parse with AI" submit with 20–40s loading state.
+- Multipart upload with a 120-second axios timeout.
+- **"Open in editor"** toast action (Phase 4.6 enhancement) on BOTH
+  paste and scan success → navigates to `/app/swms/{id}?highlight=ai_filled`.
+  Editor page consumes the param to render "AI filled" vs "Needs
+  your input" pills (URL contract in place; pill rendering follow-on
+  for the editor route).
+
+## Service worker
+- `paneltec-v105` → **`paneltec-v106`**. `swVersionGuard` auto-heals
+  open clients on next 60s poll.
+
+## Verification receipts (5/5 green)
+1. PDF upload (1-page signed-SWMS sample): 201 with 5 tasks,
+   4 hazards, 10 controls, 7 PPE, `created_via=scan`,
+   `ocr_chars=1199`, `truncated=False`, attachment with `pages=1`.
+2. Signed-evidence download via `/api/files/swms_scans/{name}`:
+   HTTP 200, exact 2193-byte round-trip.
+3. `.txt` upload → 400 (unsupported type).
+4. Blank PNG → 400 "Could not read the document — please rescan…".
+5. Bulk-delete cleanup works on `created_via=scan` rows too.
+
+## Mobile hand-off
+- `/app/memory/mobile_briefs/phase_4_6_swms_scan_upload.md` — Expo:
+  camera (`expo-image-picker`) + file picker (`expo-document-picker`),
+  multipart submit, same "Open in editor" toast, "View signed copy"
+  on detail. Stacks with Phase 4.5 brief for one mobile cycle.
+
+---
+
+
 # 2026-06-29 — Phase 4.5 SWMS Paste + Bulk Delete + Recycle Bin (v105)
 
 ## Backend (`swms_phase45.py`)

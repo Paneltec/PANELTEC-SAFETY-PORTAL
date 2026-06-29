@@ -159,7 +159,16 @@
  *         admins never see a misleading "preview-only" state.
  *       · Mobile hand-off written: query-param wiring is the only
  *         change required in the Expo app for this phase.
- * v105 — Phase 4.5 SWMS paste-to-create + bulk soft-delete + recycle:
+ * v105 — Phase 4.5 SWMS paste-to-create + bulk soft-delete + recycle
+ * v106 — Phase 4.6 SWMS scan upload (PDF / JPG / PNG) + OCR + Claude
+ *       parse + signed-evidence attachment. Shared `parse_swms_text`
+ *       helper now powers both `/from-paste` and `/from-scan`. New
+ *       `/api/files/swms_scans/{name}` route serves the auditor copy.
+ *       PyPDF2 fallback in place when poppler/tesseract aren't on
+ *       the host (graceful degrade for text-embedded PDFs). Toast on
+ *       success now offers "Open in editor" → `?highlight=ai_filled`.
+ */
+const CACHE_VERSION = 'paneltec-v106';:
  *       · Backend `swms_phase45.py`:
  *         - `POST /api/swms/from-paste` Claude-parses pasted text/HTML
  *           into the SWMS schema and saves as a draft (200–12,000 char

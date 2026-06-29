@@ -24,7 +24,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -115,7 +115,12 @@ ordered list, `activity_analysis` is the grid with risk classes and
 controls per row."""
 
 
-async def _claude_parse(text_for_llm: str, title_hint: Optional[str]) -> dict:
+async def parse_swms_text(text_for_llm: str, title_hint: Optional[str]) -> dict:
+    """Phase 4.5/4.6 — shared Claude entry-point for paste + scan flows.
+
+    Returns the parsed SWMS JSON. The same prompt + schema applies to
+    both surfaces so the editor highlight UI ("AI filled" pills) is
+    consistent regardless of input modality."""
     # Lazy import so the module loads even when emergentintegrations
     # isn't installed (eg unit-test env).
     from emergentintegrations.llm.chat import LlmChat, UserMessage
@@ -138,7 +143,6 @@ async def _claude_parse(text_for_llm: str, title_hint: Optional[str]) -> dict:
         raise HTTPException(503, f"LLM call failed: {exc}") from exc
 
     raw = reply if isinstance(reply, str) else getattr(reply, "content", str(reply))
-    # Reuse the same fence-tolerant JSON extractor as ai.py.
     import json as _json
     candidates = [raw]
     for m in re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL):
@@ -152,6 +156,11 @@ async def _claude_parse(text_for_llm: str, title_hint: Optional[str]) -> dict:
         except Exception:
             continue
     raise HTTPException(503, f"AI returned non-JSON output: {raw[:200]}")
+
+
+async def _claude_parse(text_for_llm: str, title_hint: Optional[str]) -> dict:
+    # Backwards-compat alias — kept so any older imports still resolve.
+    return await parse_swms_text(text_for_llm, title_hint)
 
 
 @router.post("/from-paste", status_code=201)
@@ -316,7 +325,199 @@ async def list_recycle_bin(user: dict = Depends(get_current_user)):
     return out
 
 
-# ----- Scheduled hard-delete job ----------------------------------------
+# ----- Phase 4.6 — `from-scan` (OCR-driven upload) ----------------------
+ALLOWED_SCAN_EXTS = {".pdf", ".png", ".jpg", ".jpeg"}
+MAX_SCAN_BYTES = 25 * 1024 * 1024  # 25 MB
+SCAN_DIR_NAME = "swms_scans"
+
+
+def _safe_scan_ext(filename: str) -> Optional[str]:
+    if not filename:
+        return None
+    ext = ("." + filename.rsplit(".", 1)[-1].lower()) if "." in filename else ""
+    return ext if ext in ALLOWED_SCAN_EXTS else None
+
+
+def _ocr_image(path) -> str:
+    """Tesseract direct call for image uploads."""
+    import shutil, subprocess
+    if not shutil.which("tesseract"):
+        return ""
+    res = subprocess.run(
+        ["tesseract", str(path), "-", "-l", "eng"],
+        capture_output=True, timeout=90,
+    )
+    return (res.stdout or b"").decode("utf-8", errors="replace").strip()
+
+
+def _count_pdf_pages(pdf_path) -> int:
+    """Best-effort page count for the audit log; never raises."""
+    try:
+        import shutil, subprocess
+        if shutil.which("pdfinfo"):
+            r = subprocess.run(["pdfinfo", str(pdf_path)], capture_output=True, timeout=30)
+            m = re.search(rb"Pages:\s+(\d+)", r.stdout or b"")
+            if m:
+                return int(m.group(1))
+    except Exception:
+        pass
+    return 0
+
+
+@router.post("/from-scan", status_code=201)
+async def swms_from_scan(
+    file: UploadFile = File(...),
+    title_hint: Optional[str] = Form(None),
+    workspace_id: Optional[str] = Form(None),
+    user: dict = Depends(get_current_user),
+):
+    """Phase 4.6 — upload a scanned/signed SWMS (PDF or photo), run OCR,
+    pipe through the same Claude parser as `/from-paste`, attach the
+    original file as `signed_evidence` for the auditor copy."""
+    import shutil, uuid as _uuid
+    from pathlib import Path
+
+    ext = _safe_scan_ext(file.filename or "")
+    if not ext:
+        raise HTTPException(400, "Unsupported file type — allowed: PDF, PNG, JPG, JPEG.")
+
+    # Save to disk with size cap (streamed so a hostile 100 MB upload
+    # can't OOM the worker).
+    scan_root = Path(__file__).parent / "uploads" / SCAN_DIR_NAME
+    scan_root.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{_uuid.uuid4().hex}{ext}"
+    target = scan_root / stored_name
+    total = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_SCAN_BYTES:
+                out.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(413, "File too large — 25 MB limit.")
+            out.write(chunk)
+
+    # OCR. PDFs go through `ocr_pdf_to_text` (text-layer first, raster
+    # fallback via Poppler+Tesseract). If those binaries aren't on the
+    # path, fall back to PyPDF2's pure-Python text-layer reader so we
+    # at least get text-embedded PDFs through the pipeline. Image-only
+    # scans still need a real OCR toolchain on the host.
+    pages = 0
+    ocr_text = ""
+    try:
+        if ext == ".pdf":
+            try:
+                from file_pdf import ocr_pdf_to_text
+                ocr_text = ocr_pdf_to_text(target)
+            except FileNotFoundError as exc:
+                log.warning("swms.from_scan poppler_missing: %s — falling back to PyPDF2", exc)
+            if not ocr_text:
+                try:
+                    from PyPDF2 import PdfReader
+                    reader = PdfReader(str(target))
+                    pages = len(reader.pages)
+                    chunks = []
+                    for p in reader.pages:
+                        try:
+                            chunks.append(p.extract_text() or "")
+                        except Exception:
+                            continue
+                    ocr_text = "\n\n".join(chunks).strip()
+                except Exception as exc:
+                    log.warning("swms.from_scan pypdf2_fail: %s", exc)
+            if not pages:
+                pages = _count_pdf_pages(target)
+        else:
+            ocr_text = _ocr_image(target)
+    except Exception as exc:
+        log.warning("swms.from_scan unexpected_ocr_error: %s", exc)
+        ocr_text = ""
+
+    ocr_text = (ocr_text or "").strip()
+    ocr_chars = len(ocr_text)
+    if ocr_chars < MIN_PASTE_CHARS:
+        # Keep the file so admins can inspect what went wrong, but bail.
+        raise HTTPException(
+            400,
+            "Could not read the document — please rescan at higher resolution or paste the text instead.",
+        )
+
+    truncated = ocr_chars > MAX_PASTE_CHARS
+    text_for_llm = ocr_text[:MAX_PASTE_CHARS] if truncated else ocr_text
+    parsed = await parse_swms_text(text_for_llm, title_hint)
+
+    # Persist the SWMS doc (same shape as `/from-paste`, plus the
+    # signed-evidence attachment + scan metadata).
+    title = (parsed.get("title") or (title_hint or "").strip() or "Scanned SWMS draft")[:200]
+    attachment = {
+        "id":          new_id(),
+        "kind":        "signed_evidence",
+        "filename":    file.filename or stored_name,
+        "stored_name": stored_name,
+        "file_url":    f"/api/files/{SCAN_DIR_NAME}/{stored_name}",
+        "mime":        file.content_type or ("application/pdf" if ext == ".pdf" else "image/" + ext.lstrip(".")),
+        "size":        total,
+        "pages":       pages,
+        "ocr_chars":   ocr_chars,
+        "truncated":   truncated,
+        "uploaded_at": now_iso(),
+        "uploaded_by": user["id"],
+    }
+    doc = {
+        "id":            new_id(),
+        "org_id":        user["org_id"],
+        "workspace_id":  workspace_id or user.get("workspace_id") or user.get("default_workspace_id"),
+        "created_by":    user["id"],
+        "created_at":    now_iso(),
+        "updated_at":    now_iso(),
+        "deleted_at":    None,
+        "deleted_by":    None,
+        "restore_until": None,
+        "title":         title,
+        "job_description": (parsed.get("scope") or "")[:1000],
+        "scope":         parsed.get("scope") or "",
+        "high_risk_construction_work": parsed.get("high_risk_construction_work") or "",
+        "tasks":         parsed.get("tasks") or [],
+        "hazards":       parsed.get("hazards") or [],
+        "controls":      parsed.get("controls") or [],
+        "ppe":           parsed.get("ppe") or [],
+        "activity_analysis":   parsed.get("activity_analysis") or [],
+        "environmental_risks": parsed.get("environmental_risks") or [],
+        "training_requirements": parsed.get("training_requirements") or [],
+        "equipment_list":      parsed.get("equipment_list") or [],
+        "legislation_and_codes": parsed.get("legislation_and_codes") or [],
+        "emergency_procedures": parsed.get("emergency_procedures") or {},
+        "status":        "draft",
+        "version":       1,
+        "created_via":   "scan",
+        "attachments":   [attachment],
+    }
+    await db.swms.insert_one(dict(doc))
+    doc.pop("_id", None)
+    await db.audit_logs.insert_one({
+        "org_id":     user["org_id"],
+        "actor_id":   user["id"],
+        "actor_name": user.get("name") or user.get("email"),
+        "action":     "swms.from_scan",
+        "at":         now_iso(),
+        "swms_id":    doc["id"],
+        "filename":   file.filename,
+        "bytes":      total,
+        "pages":      pages,
+        "ocr_chars":  ocr_chars,
+        "truncated":  truncated,
+    })
+    log.info("swms.from_scan org=%s user=%s bytes=%d pages=%d ocr_chars=%d truncated=%s id=%s",
+             user["org_id"], user["id"], total, pages, ocr_chars, truncated, doc["id"])
+    return {
+        **doc,
+        "ocr_chars":     ocr_chars,
+        "truncated":     truncated,
+        "attachment_id": attachment["id"],
+    }
 async def purge_expired_swms() -> dict:
     """Hard-delete any SWMS whose `restore_until` is in the past."""
     now = datetime.now(timezone.utc).isoformat()

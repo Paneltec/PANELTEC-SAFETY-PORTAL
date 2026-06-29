@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   FileText, Loader2, Plus, Trash2, Download, ChevronDown,
   AlertTriangle, ArrowUpRight, ShieldAlert, Layers,
-  ClipboardPaste, Sparkles, Undo2, X,
+  ClipboardPaste, Sparkles, Undo2, X, ScanLine, UploadCloud,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -31,6 +31,7 @@ export default function SwmsList() {
   const [bin, setBin] = useState([]);
   const [selected, setSelected] = useState(new Set());
   const [pasteOpen, setPasteOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -90,9 +91,34 @@ export default function SwmsList() {
         className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-700 text-sm font-medium hover:bg-orange-100">
         <ClipboardPaste size={16} /> Paste SWMS
       </button>
+      <button onClick={() => setScanOpen(true)} data-testid="swms-scan-btn"
+        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-orange-500 bg-white text-orange-700 text-sm font-medium hover:bg-orange-50">
+        <ScanLine size={16} /> Upload Scanned SWMS
+      </button>
       <NewButton to="/app/swms/new" label="Create SWMS" testid="swms-create-btn" />
     </div>
   );
+
+  // Phase 4.6 — shared post-create handler: success toast + "Open in
+  // editor" action that lands on the SWMS detail with the highlight
+  // query param so AI-filled fields can render pills (TODO: editor
+  // page picks up `?highlight=ai_filled` to render the diff).
+  const handleCreated = (doc, kind /* 'paste' | 'scan' */) => {
+    const path = `/app/swms/${doc.id}?highlight=ai_filled`;
+    toast.success(
+      kind === 'scan'
+        ? `Scanned SWMS parsed (${doc.ocr_chars || '0'} chars OCR'd). Review and approve when ready.`
+        : 'AI-parsed draft created. Review and approve when ready.',
+      {
+        action: {
+          label: 'Open in editor',
+          onClick: () => navigate(path),
+        },
+        duration: 8000,
+      },
+    );
+    navigate(path);
+  };
 
   // Recycle bin view — admin only.
   if (view === 'bin') {
@@ -236,7 +262,9 @@ export default function SwmsList() {
        )}
 
       <PasteSwmsDialog open={pasteOpen} onClose={() => setPasteOpen(false)}
-        onCreated={(doc) => { setPasteOpen(false); navigate(`/app/swms/${doc.id}`); }} />
+        onCreated={(doc) => { setPasteOpen(false); handleCreated(doc, 'paste'); }} />
+      <ScanSwmsDialog open={scanOpen} onClose={() => setScanOpen(false)}
+        onCreated={(doc) => { setScanOpen(false); handleCreated(doc, 'scan'); }} />
 
       <Dialog open={confirmBulk} onOpenChange={(v) => !v && setConfirmBulk(false)}>
         <DialogContent data-testid="swms-bulk-confirm">
@@ -342,6 +370,116 @@ function PasteSwmsDialog({ open, onClose, onCreated }) {
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-60">
             {busy ? <><Loader2 size={14} className="animate-spin" /> Reading your SWMS… (~10–20s)</>
                   : <><Sparkles size={14} /> Parse with AI</>}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------- Phase 4.6 — Scan/photo upload dialog ----------
+function ScanSwmsDialog({ open, onClose, onCreated }) {
+  const [file, setFile] = useState(null);
+  const [title, setTitle] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef(null);
+
+  const accept = '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg';
+  const MAX_BYTES = 25 * 1024 * 1024;
+
+  const pick = (f) => {
+    if (!f) return;
+    if (f.size > MAX_BYTES) { toast.error('File too large — 25 MB limit.'); return; }
+    const okExt = /\.(pdf|png|jpe?g)$/i.test(f.name);
+    if (!okExt) { toast.error('Allowed types: PDF, PNG, JPG, JPEG.'); return; }
+    setFile(f);
+  };
+  const onDrop = (e) => {
+    e.preventDefault(); setDrag(false);
+    pick(e.dataTransfer.files?.[0]);
+  };
+
+  const submit = async () => {
+    if (!file) { toast.error('Choose a file to upload first.'); return; }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      if (title) fd.append('title_hint', title);
+      const r = await api.post('/swms/from-scan', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+      onCreated?.(r.data);
+      setFile(null); setTitle('');
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setBusy(false); }
+  };
+
+  // Use the same `PasteSwmsDialog`'s shadcn Dialog wrapper.
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>
+      <DialogContent className="max-w-xl" data-testid="swms-scan-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display inline-flex items-center gap-2">
+            <ScanLine className="text-orange-500" size={20} /> Upload Scanned SWMS
+          </DialogTitle>
+          <DialogDescription>
+            Drop the photocopied / signed SWMS PDF (or a phone photo of the
+            pages) here. We&rsquo;ll OCR the document, run it through Claude,
+            and keep the original as the auditor copy.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <Field label="Title (optional — AI will infer if blank)">
+            <input className={inputClass} value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Bridge concrete cutting — section B"
+              data-testid="swms-scan-title" />
+          </Field>
+          {/* Dropzone */}
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}
+            onClick={() => inputRef.current?.click()}
+            data-testid="swms-scan-dropzone"
+            className={[
+              'rounded-2xl border-2 border-dashed px-6 py-8 text-center cursor-pointer transition-colors',
+              drag ? 'border-orange-500 bg-orange-50' : 'border-slate-300 hover:border-orange-400 hover:bg-orange-50/30',
+            ].join(' ')}
+          >
+            <UploadCloud size={28} className="mx-auto text-orange-500 mb-2" />
+            {file ? (
+              <>
+                <div className="font-medium text-slate-800">{file.name}</div>
+                <div className="text-xs text-slate-500 mt-1">
+                  {(file.size / 1024).toFixed(0)} KB · {file.type || 'application/octet-stream'}
+                </div>
+                <button type="button" onClick={(e) => { e.stopPropagation(); setFile(null); }}
+                  className="mt-2 text-xs text-orange-600 hover:underline">Choose a different file</button>
+              </>
+            ) : (
+              <>
+                <div className="font-medium text-slate-700">Drop file here or click to browse</div>
+                <div className="text-xs text-slate-500 mt-1">PDF · PNG · JPG · JPEG — up to 25 MB</div>
+              </>
+            )}
+            <input ref={inputRef} type="file" accept={accept} className="hidden"
+              data-testid="swms-scan-file"
+              onChange={(e) => pick(e.target.files?.[0])} />
+          </div>
+        </div>
+        <DialogFooter>
+          <GhostButton onClick={onClose} disabled={busy}>Cancel</GhostButton>
+          <button onClick={submit} disabled={busy || !file}
+            data-testid="swms-scan-submit"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-60">
+            {busy
+              ? <><Loader2 size={14} className="animate-spin" /> Reading your document… (~20–40s)<span className="hidden sm:inline text-orange-100/80 ml-1">· OCR + AI parse running</span></>
+              : <><Sparkles size={14} /> Read &amp; Parse with AI</>}
           </button>
         </DialogFooter>
       </DialogContent>

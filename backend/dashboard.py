@@ -115,3 +115,9 @@ async def serve_document_library(folder_id: str, name: str):
 @files_router.get("/form_photos/{submission_id}/{name}")
 async def serve_form_photo(submission_id: str, name: str):
     return _serve("form_photos", submission_id, name)
+
+
+# Phase 4.6 — signed-evidence SWMS scans (PDF + JPG/PNG).
+@files_router.get("/swms_scans/{name}")
+async def serve_swms_scan(name: str):
+    return _serve("swms_scans", name)
