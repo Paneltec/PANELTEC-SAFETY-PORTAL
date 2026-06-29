@@ -9,12 +9,13 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Loader2, RefreshCw, Upload, Download, Search, X, CalendarOff, Check,
   AlertTriangle, Calendar, Settings2, ChevronDown, ChevronRight,
-  Columns3, Filter, LayoutGrid, Maximize2, Printer,
+  Columns3, Filter, LayoutGrid, Maximize2, Printer, Eye,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import InductionImportWizard from './InductionImportWizard';
+import PdfPreviewModal from './PdfPreviewModal';
 
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -72,6 +73,11 @@ export default function InductionsMatrix({ onWorkerClick }) {
     include_raw: false, include_last_updated: false, combined: true,
   });
   const [printing, setPrinting] = useState(false);
+  // Phase 3.11i — inline PDF preview. When non-null, the matrix renders
+  // PdfPreviewModal with blobUrl set to the object URL of the inline PDF.
+  // Object URL is revoked on modal close to avoid leaking memory.
+  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  const [previewFilename, setPreviewFilename] = useState('');
 
   // Selection clears on search to avoid stale-id surprises.
   useEffect(() => { setSelectedIds(new Set()); }, [search]);
@@ -90,26 +96,44 @@ export default function InductionsMatrix({ onWorkerClick }) {
     setSelectedIds(n);
   };
 
-  const doPrint = async (workerIds, opts = printOpts) => {
+  const doPrint = async (workerIds, opts = printOpts, mode = 'download') => {
     if (!workerIds.length) return;
     setPrinting(true);
     try {
       const res = await fetch(`${API_BASE}/workers/inductions/print`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
-        body: JSON.stringify({ worker_ids: workerIds, ...opts }),
+        body: JSON.stringify({ worker_ids: workerIds, ...opts, mode }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = `paneltec-inductions-${Date.now()}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
-      toast.success(`Printed ${workerIds.length} worker(s)`);
+      if (mode === 'inline') {
+        // Open the existing PdfPreviewModal pointed at the inline blob.
+        // Filename is informational only (modal header + download fallback).
+        setPreviewBlobUrl(url);
+        setPreviewFilename(
+          workerIds.length === 1
+            ? `paneltec-inductions-${workerIds.length}-worker.pdf`
+            : `paneltec-inductions-${workerIds.length}-workers.pdf`,
+        );
+        toast.success(`Preview ready · ${workerIds.length} worker(s)`);
+      } else {
+        const a = document.createElement('a');
+        a.href = url; a.download = `paneltec-inductions-${Date.now()}.pdf`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+        toast.success(`Printed ${workerIds.length} worker(s)`);
+      }
       setPrintOpen(false);
     } catch (e) { toast.error(e.message || 'Print failed'); }
     finally { setPrinting(false); }
+  };
+
+  const closePreview = () => {
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    setPreviewBlobUrl(null);
+    setPreviewFilename('');
   };
 
   // Persisted UI state.
@@ -294,6 +318,15 @@ export default function InductionsMatrix({ onWorkerClick }) {
         {canEdit && (
           <button onClick={() => setPrintOpen(true)}
             disabled={selectedIds.size === 0 && !pinnedWorkerId}
+            data-testid="matrix-preview"
+            title={selectedIds.size === 0 && !pinnedWorkerId ? 'Select workers or pin one to preview' : `Preview ${selectedIds.size || 1} worker(s)`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold uppercase tracking-wider text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Eye size={12} /> Preview {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+          </button>
+        )}
+        {canEdit && (
+          <button onClick={() => setPrintOpen(true)}
+            disabled={selectedIds.size === 0 && !pinnedWorkerId}
             data-testid="matrix-print"
             title={selectedIds.size === 0 && !pinnedWorkerId ? 'Select workers or pin one to print' : `Print ${selectedIds.size || 1} worker(s)`}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold uppercase tracking-wider hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -337,6 +370,11 @@ export default function InductionsMatrix({ onWorkerClick }) {
                 Open profile
               </button>
             )}
+            <button onClick={() => doPrint([pinned.id], printOpts, 'inline')}
+              data-testid="matrix-pinned-preview" title="Preview this worker"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
+              <Eye size={11} /> Preview
+            </button>
             <button onClick={() => doPrint([pinned.id])}
               data-testid="matrix-pinned-print" title="Print this worker"
               className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
@@ -501,7 +539,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
           <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
               <div>
-                <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Print options</div>
+                <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Preview / Print options</div>
                 <h3 className="font-semibold text-slate-900 mt-0.5">
                   {(selectedIds.size || (pinnedWorkerId ? 1 : 0))} worker{((selectedIds.size || (pinnedWorkerId ? 1 : 0)) === 1 ? '' : 's')}
                 </h3>
@@ -547,6 +585,14 @@ export default function InductionsMatrix({ onWorkerClick }) {
               <button onClick={() => setPrintOpen(false)} className="text-sm text-slate-500 hover:text-slate-900">Cancel</button>
               <button onClick={() => {
                   const ids = selectedIds.size > 0 ? [...selectedIds] : (pinnedWorkerId ? [pinnedWorkerId] : []);
+                  doPrint(ids, printOpts, 'inline');
+                }} disabled={printing}
+                data-testid="preview-confirm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                {printing ? <Loader2 size={12} className="animate-spin" /> : <Eye size={12} />} Preview
+              </button>
+              <button onClick={() => {
+                  const ids = selectedIds.size > 0 ? [...selectedIds] : (pinnedWorkerId ? [pinnedWorkerId] : []);
                   doPrint(ids);
                 }} disabled={printing}
                 data-testid="print-confirm"
@@ -556,6 +602,13 @@ export default function InductionsMatrix({ onWorkerClick }) {
             </div>
           </div>
         </div>
+      )}
+      {previewBlobUrl && (
+        <PdfPreviewModal
+          file={{ filename: previewFilename }}
+          blobUrl={previewBlobUrl}
+          onClose={closePreview}
+        />
       )}
     </div>
   );

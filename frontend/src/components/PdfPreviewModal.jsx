@@ -32,7 +32,13 @@ const PDF_OK = (mime, name) => {
 
 export const isPdfPreviewable = PDF_OK;
 
-export default function PdfPreviewModal({ file, onClose }) {
+export default function PdfPreviewModal({ file, blobUrl, onClose }) {
+  // Two modes:
+  //   1. file={id, filename} → mint a signed token, build iframe src.
+  //   2. blobUrl + file={filename} → caller already has a Blob URL (e.g. the
+  //      Inductions matrix print endpoint returned the PDF inline). Skip the
+  //      token dance and render the blob URL directly. Caller is responsible
+  //      for revoking the URL after the modal closes.
   // Iframes can't carry the Authorization header, so we mint a short-lived
   // signed token via POST /files/{id}/preview-token and put it on the iframe
   // src as `?t=`. This sidesteps Chrome's iframe-cookie / cross-origin auth
@@ -47,6 +53,14 @@ export default function PdfPreviewModal({ file, onClose }) {
     if (!file) return;
     let alive = true;
     setIframeBlocked(false);
+    // Mode 2 — caller-supplied blob URL. Skip the watchdog: blob: URLs are
+    // same-origin and can't be blocked by CSP/X-Frame-Options, so the
+    // 6-second timeout only produces false positives when the PDF is large
+    // enough that the headless browser hasn't fired `onload` yet.
+    if (blobUrl) {
+      setSrc(blobUrl);
+      return () => { alive = false; };
+    }
     const watchdog = setTimeout(() => {
       // If the iframe hasn't fired `onload` within 6 s, assume it's been
       // blocked (Chrome's frame-ancestors enforcement is silent — no error
@@ -54,6 +68,7 @@ export default function PdfPreviewModal({ file, onClose }) {
       // tab where the same-origin policy doesn't apply.
       if (alive) setIframeBlocked(true);
     }, 6000);
+    // Mode 1 — fetch a signed preview token.
     (async () => {
       try {
         const r = await api.post(`/files/${file.id}/preview-token`);
@@ -73,7 +88,7 @@ export default function PdfPreviewModal({ file, onClose }) {
       }
     })();
     return () => { alive = false; clearTimeout(watchdog); };
-  }, [file]);
+  }, [file, blobUrl]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -82,6 +97,15 @@ export default function PdfPreviewModal({ file, onClose }) {
   }, [onClose]);
 
   const downloadPdf = async () => {
+    // blobUrl mode → we already have the PDF bytes locally; just trigger
+    // the download with the desired filename.
+    if (blobUrl) {
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
     try {
       const r = await api.get(`/files/${file.id}/pdf`, {
         params: { dl: 1 }, responseType: 'blob',

@@ -795,3 +795,13 @@ Scope unchanged from spec: sites collection cleanup (`scan_token`, `nfc_uid`, `i
 
 ### Phase Turn 6 — Supplier Induction QR · DEFERRED to next session
 Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, prequalification form with insurance upload + cert tick boxes), public `/scan/supplier/{token}` resolver, Supplier QR PDF (vCard + QR for first-email send).
+
+## 2026-02 — Inductions Matrix inline PDF preview (Phase 3.11i)
+- Backend `POST /api/workers/inductions/print` now accepts `mode: "download"|"inline"` (default `"download"`); sets `Content-Disposition` accordingly.
+- `PdfPreviewModal` accepts a `blobUrl` prop (skips signed-token flow + watchdog).
+- `InductionsMatrix` now exposes a Preview button **alongside** Print:
+  - Toolbar: `[data-testid=matrix-preview]` next to `[data-testid=matrix-print]`
+  - Pinned-worker chip: `[data-testid=matrix-pinned-preview]` next to `[data-testid=matrix-pinned-print]`
+  - Popover footer: `[data-testid=preview-confirm]` next to `[data-testid=print-confirm]`
+- Verified: curl `mode:inline` → `Content-Disposition: inline`; no-mode → `attachment`; worker-token → `403`.
+- Service worker cache bumped to `paneltec-v76`.

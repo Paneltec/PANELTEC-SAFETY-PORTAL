@@ -17,8 +17,11 @@
  *       `paneltec_sw_force_reload` to all open clients so they refresh once.
  *       Pairs with the backend `Clear-Site-Data` middleware (cookie-gated)
  *       so visitors with a stuck older SW self-heal on next API hit.
+ * v76 — Inductions Matrix gains inline PDF preview alongside download via the
+ *       existing PdfPreviewModal. Touches InductionsMatrix.jsx,
+ *       PdfPreviewModal.jsx, and the backend print endpoint (mode flag).
  */
-const CACHE_VERSION = 'paneltec-v75';
+const CACHE_VERSION = 'paneltec-v76';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

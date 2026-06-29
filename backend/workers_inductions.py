@@ -641,6 +641,9 @@ class PrintIn(BaseModel):
     include_raw: bool = False
     include_last_updated: bool = False
     combined: bool = True
+    # download → forces browser save (Content-Disposition: attachment).
+    # inline   → renders in-app iframe via PdfPreviewModal (Content-Disposition: inline).
+    mode: str = "download"
 
 
 _STATUS_LABEL = {
@@ -844,8 +847,9 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
     doc.build(elements)
     buf.seek(0)
     fname = "paneltec-inductions.pdf" if body.combined else f"paneltec-inductions-{workers_to_print[0]['name'].replace(' ','_')}.pdf"
+    disposition = "inline" if body.mode == "inline" else "attachment"
     return StreamingResponse(buf, media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+        headers={"Content-Disposition": f'{disposition}; filename="{fname}"'})
 
 
 # ────────────────── export.xlsx ──────────────────
