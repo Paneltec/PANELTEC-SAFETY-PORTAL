@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import { RESOURCE_LABELS, EMAIL_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
@@ -39,6 +40,59 @@ function inviteMailtoHref(user) {
   return `mailto:${user.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 }
 
+function ConfirmActionModal({ kind, user, busy, onConfirm, onClose }) {
+  const isDelete = kind === 'delete';
+  const title = isDelete ? `Delete ${user.name || user.email}?` : `Force sign-out ${user.name || user.email}?`;
+  const body = isDelete
+    ? 'They will lose access immediately and their active sessions will be revoked. This is a soft-delete — an admin can restore the account from Mongo. SWMS sign-offs, sign-ons and audit records authored by this user are preserved.'
+    : "They'll be signed out everywhere and need to sign in again. Their account, role and permissions are unchanged.";
+  const cta = isDelete ? 'Delete user' : 'Sign them out';
+  const ctaClass = isDelete
+    ? 'bg-rose-600 hover:bg-rose-700'
+    : 'bg-amber-600 hover:bg-amber-700';
+
+  React.useEffect(() => {
+    const k = (e) => { if (e.key === 'Escape' && !busy) onClose?.(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [busy, onClose]);
+
+  return (
+    <div
+      data-testid={isDelete ? 'user-delete-modal' : 'user-signout-modal'}
+      className="fixed inset-0 z-[70] bg-slate-900/70 grid place-items-center p-4"
+      onClick={(e) => e.target === e.currentTarget && !busy && onClose?.()}
+    >
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+          <div className={`inline-flex items-center justify-center w-9 h-9 rounded-full flex-shrink-0 ${isDelete ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+            <AlertTriangle size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-display font-bold text-slate-900 truncate">{title}</h3>
+            <p className="text-[11px] text-slate-500 mt-0.5 truncate">{user.email} · {user.role}</p>
+          </div>
+        </div>
+        <div className="px-5 py-4 text-sm text-slate-700 leading-relaxed">{body}</div>
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            data-testid={isDelete ? 'user-delete-cancel' : 'user-signout-cancel'}
+            className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy}
+            data-testid={isDelete ? 'user-delete-confirm' : 'user-signout-confirm'}
+            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-white text-sm font-bold ${ctaClass} disabled:opacity-60`}>
+            {busy ? <Loader2 size={14} className="animate-spin" /> : (isDelete ? <Trash2 size={14} /> : <LogOut size={14} />)}
+            {busy ? 'Working…' : cta}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 export default function UsersManagement() {
   const can = useCan();
   const [users, setUsers] = useState([]);
@@ -48,6 +102,9 @@ export default function UsersManagement() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
+  const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
+  const [actionBusy, setActionBusy] = useState(false);
+  const me = getUser();
 
   const load = async () => { try { const { data } = await api.get('/users'); setUsers(data); } catch (e) { toast.error(apiError(e)); } };
   const loadSimpro = async () => {
@@ -162,34 +219,19 @@ export default function UsersManagement() {
                       <button
                         title="Force sign-out everywhere"
                         data-testid={`force-signout-${u.id}`}
-                        onClick={async () => {
-                          if (!window.confirm(`Force sign-out ${u.name || u.email}? They'll need to sign in again.`)) return;
-                          try {
-                            const { data } = await api.post(`/users/${u.id}/force-signout`);
-                            toast.success(`${u.name || u.email}'s sessions revoked.`);
-                            if (data?.new_token_version) console.info('new token_version:', data.new_token_version);
-                          } catch (e) { toast.error(apiError(e)); }
-                        }}
+                        onClick={() => setConfirmAction({ kind: 'signout', user: u })}
                         className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbf3df] text-[#8c6a1a] hover:bg-[#f7eed1]">
                         <LogOut size={13} />
                       </button>
-                      <button
-                        title="Delete user (soft)"
-                        data-testid={`delete-user-${u.id}`}
-                        onClick={async () => {
-                          const extra = u.imported_from === 'simpro'
-                            ? ' (This user came from Simpro and can be re-imported later.)'
-                            : '';
-                          if (!window.confirm(`Permanently disable ${u.name || u.email}? They will lose access immediately. This is reversible by re-enabling them.${extra}`)) return;
-                          try {
-                            await api.delete(`/users/${u.id}`);
-                            toast.success(`${u.name || u.email} deleted.`);
-                            await load();
-                          } catch (e) { toast.error(apiError(e)); }
-                        }}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
-                        <Trash2 size={13} />
-                      </button>
+                      {u.id !== me?.id && (
+                        <button
+                          title="Delete user (soft)"
+                          data-testid={`delete-user-${u.id}`}
+                          onClick={() => setConfirmAction({ kind: 'delete', user: u })}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 )}
@@ -200,6 +242,33 @@ export default function UsersManagement() {
       </div>
 
       {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} defaultTab={activeTab} />}
+      {confirmAction && (
+        <ConfirmActionModal
+          kind={confirmAction.kind}
+          user={confirmAction.user}
+          busy={actionBusy}
+          onClose={() => !actionBusy && setConfirmAction(null)}
+          onConfirm={async () => {
+            const { kind, user: u } = confirmAction;
+            setActionBusy(true);
+            try {
+              if (kind === 'delete') {
+                await api.delete(`/users/${u.id}`);
+                toast.success(`${u.name || u.email} deleted.`);
+              } else {
+                await api.post(`/users/${u.id}/force-signout`);
+                toast.success(`${u.name || u.email}'s sessions revoked.`);
+              }
+              setConfirmAction(null);
+              await load();
+            } catch (e) {
+              toast.error(apiError(e));
+            } finally {
+              setActionBusy(false);
+            }
+          }}
+        />
+      )}
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
       {importOpen && <ImportFromSimproDrawer
         companies={simproStatus.companies}
