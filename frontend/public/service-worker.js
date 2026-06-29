@@ -24,12 +24,12 @@
  *       opens InductionCardModal (detail view + iframe doc preview + edit /
  *       add / file upload). New backend endpoints under
  *       /workers/{wid}/inductions/...
- * v79 — Phase 3.14 Simpro Suppliers Import for Renewal Links: "Import from
- *       Simpro" toolbar button on /renewals, SimproSupplierImportModal with
- *       virtualised checkbox list + Refresh, Simpro chip on contractor rows.
- *       Plus auto-OCR-to-SmartSearch on every /pdf fetch (background task).
+ * v80 — Phase 3.15 Navixy Health Dot: tiny green/red dot on the location-pin
+ *       action icon of every Plant & Vehicle row whose asset is linked to
+ *       Navixy. Tooltip surfaces relative last-seen time. Map view gets a
+ *       counter strip (live/offline) since the iframe is single-marker.
  */
-const CACHE_VERSION = 'paneltec-v79';
+const CACHE_VERSION = 'paneltec-v80';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

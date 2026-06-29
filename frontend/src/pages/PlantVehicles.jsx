@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
@@ -359,12 +360,36 @@ export default function PlantVehicles() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  {a.navixy_device_id && (a.last_known_lat != null) && (
-                    <button onClick={() => setActiveMapAsset({ ...a, lat: a.last_known_lat, lng: a.last_known_lng, label: a.name, plate: a.rego_serial })}
-                      title="Locate" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-locate-${a.id}`}>
-                      <MapPin size={15} />
-                    </button>
-                  )}
+                  {a.navixy_device_id && (() => {
+                    // Phase 3.15 — show the pin whenever an asset is linked to
+                    // Navixy. If we don't have a fix yet the button is disabled
+                    // but the health dot still tells the operator the device
+                    // hasn't reported. Tooltip carries the relative time.
+                    const hasPos = a.last_known_lat != null;
+                    const health = a.navixy_health;  // 'green' | 'red' | null
+                    const seen = a.navixy_last_seen_at
+                      ? formatDistanceToNow(parseISO(a.navixy_last_seen_at), { addSuffix: true })
+                      : 'never reported';
+                    const dotCls = health === 'green' ? 'bg-emerald-500' : 'bg-rose-500';
+                    const label = health === 'green'
+                      ? `Navixy live · last seen ${seen}`
+                      : `Navixy offline · ${a.navixy_last_seen_at ? `last seen ${seen}` : 'never reported'}`;
+                    return (
+                      <button onClick={() => hasPos && setActiveMapAsset({ ...a, lat: a.last_known_lat, lng: a.last_known_lng, label: a.name, plate: a.rego_serial })}
+                        disabled={!hasPos}
+                        title={label}
+                        className={`relative p-2 rounded-lg ${hasPos ? 'hover:bg-slate-100 text-slate-600' : 'text-slate-400 cursor-default'}`}
+                        data-testid={`asset-locate-${a.id}`}>
+                        <MapPin size={15} />
+                        {health && (
+                          <span
+                            data-testid={`asset-navixy-health-${a.id}`}
+                            data-health={health}
+                            className={`absolute bottom-1 right-1 w-2 h-2 rounded-full ring-2 ring-white ${dotCls}`} />
+                        )}
+                      </button>
+                    );
+                  })()}
                   <button onClick={() => downloadQr(a)} title="Download QR" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-qr-${a.id}`}>
                     <QrCode size={15} />
                   </button>
@@ -401,6 +426,11 @@ export default function PlantVehicles() {
 
 function FleetMap({ assets, onPick }) {
   const positioned = assets.filter((a) => typeof a.last_known_lat === 'number' && typeof a.last_known_lng === 'number');
+  // Phase 3.15 — same green/red treatment as the list-row dots. The Google
+  // Maps embed is single-iframe so we can't recolour per-marker; instead we
+  // surface a counter strip so operators see the same signal in either view.
+  const green = positioned.filter((a) => a.navixy_health === 'green').length;
+  const red   = positioned.filter((a) => a.navixy_health === 'red').length;
   if (!positioned.length) {
     return <div className="h-[60vh] flex items-center justify-center text-sm text-slate-500" data-testid="assets-map-empty">No tracked assets have a current GPS position.</div>;
   }
@@ -409,9 +439,19 @@ function FleetMap({ assets, onPick }) {
   const src = `https://maps.google.com/maps?q=${avgLat},${avgLng}&z=10&output=embed`;
   return (
     <div data-testid="assets-map">
-      <div className="px-4 py-2 text-[11px] text-slate-500 bg-slate-50 border-b border-slate-100">
-        Showing area of <strong className="text-slate-700">{positioned.length}</strong> tracked vehicle{positioned.length === 1 ? '' : 's'}.
-        Click an asset&apos;s pin icon in List view for the focused view.
+      <div className="px-4 py-2 text-[11px] text-slate-500 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
+        <span>
+          Showing area of <strong className="text-slate-700">{positioned.length}</strong> tracked vehicle{positioned.length === 1 ? '' : 's'}.
+          Click an asset&apos;s pin icon in List view for the focused view.
+        </span>
+        <span className="ml-auto inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-1" data-testid="fleet-map-health-green">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" /> {green} live
+          </span>
+          <span className="inline-flex items-center gap-1" data-testid="fleet-map-health-red">
+            <span className="w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white" /> {red} offline
+          </span>
+        </span>
       </div>
       <div className="h-[60vh]">
         <iframe title="Fleet area" src={src} width="100%" height="100%" style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />

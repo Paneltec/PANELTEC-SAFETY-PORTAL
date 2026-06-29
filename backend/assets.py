@@ -107,7 +107,52 @@ def _internal(doc: dict) -> dict:
     """Strip Mongo internals from a doc destined for the authed UI."""
     out = dict(doc)
     out.pop("_id", None)
+    # Phase 3.15 — surface a derived Navixy health chip + canonical
+    # last_seen_at so the frontend can render the green/red dot without
+    # touching the live API on each render.
+    out["navixy_last_seen_at"] = _navixy_last_seen_at(out)
+    out["navixy_health"] = _compute_navixy_health(out)
     return out
+
+
+# ────────────── Phase 3.15 — Navixy health chip ──────────────
+
+# 24h freshness threshold. Tune here, not in the frontend.
+NAVIXY_FRESH_THRESHOLD_HOURS = 24
+
+
+def _navixy_last_seen_at(asset: dict) -> Optional[str]:
+    """Canonical "last data point received" timestamp for the asset. We pick
+    the most recent of hours_meter_updated_at / odo_km_updated_at — both are
+    written by `asset_navixy_sync` whenever a counter snaps in. If neither
+    is populated the asset has never reported (red)."""
+    candidates = [asset.get("hours_meter_updated_at"), asset.get("odo_km_updated_at"),
+                  asset.get("navixy_last_seen_at")]
+    candidates = [c for c in candidates if c]
+    if not candidates:
+        return None
+    return max(candidates)
+
+
+def _compute_navixy_health(asset: dict) -> Optional[str]:
+    """Returns "green" | "red" | None per the spec:
+      green  → asset has navixy_device_id AND last_seen_at within 24h
+      red    → asset has navixy_device_id AND no fresh data
+      None   → asset isn't linked to Navixy at all (no dot rendered)"""
+    if not asset.get("navixy_device_id"):
+        return None
+    last = _navixy_last_seen_at(asset)
+    if not last:
+        return "red"
+    try:
+        from datetime import datetime, timezone
+        seen = datetime.fromisoformat(last.replace("Z", "+00:00"))
+        if seen.tzinfo is None:
+            seen = seen.replace(tzinfo=timezone.utc)
+        age_h = (datetime.now(timezone.utc) - seen).total_seconds() / 3600.0
+    except Exception:
+        return "red"
+    return "green" if age_h <= NAVIXY_FRESH_THRESHOLD_HOURS else "red"
 
 
 # ────────────────────── models ──────────────────────
@@ -235,7 +280,7 @@ async def list_assets(
 
     rows: list[dict] = []
     async for row in db.assets.find(query, {"_id": 0}).sort("name", 1).limit(limit):
-        rows.append(row)
+        rows.append(_internal(row))
 
     total_q = {"org_id": org_id, "deleted_at": None}
     total = await db.assets.count_documents(total_q)

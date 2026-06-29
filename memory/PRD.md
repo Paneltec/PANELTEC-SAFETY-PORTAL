@@ -894,3 +894,39 @@ Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, 
 - **Phase 3.18** — Granular Per-User Permissions System
 - **Phase 4.1 / 4.2 / 4.3** — SWMS Assignments + Site/Supplier Induction QR
 - Mobile mirror via e1_expo_frontend_dev
+
+## 2026-02 — Phase 3.15: Navixy Health Dot on Asset Location Pin
+### Backend (`assets.py`)
+- Module constant `NAVIXY_FRESH_THRESHOLD_HOURS = 24`.
+- `_navixy_last_seen_at(asset)` — canonical timestamp = max(hours_meter_updated_at, odo_km_updated_at, navixy_last_seen_at).
+- `_compute_navixy_health(asset)` → "green" (linked AND ≤24h fresh) | "red" (linked AND stale/no data) | None (not linked).
+- `_internal()` enriches every asset on its way out with `navixy_health` + `navixy_last_seen_at`.
+- `GET /api/assets` list rows now go through `_internal()` (was raw before).
+- **Zero live Navixy calls per render** — reads from cached sync fields only.
+
+### Frontend
+- `PlantVehicles.jsx`: location-pin button now renders for any asset with `navixy_device_id` (even without a fix — button disabled, but the dot is still visible). 8px circle dot overlay (`absolute bottom-1 right-1 w-2 h-2 rounded-full ring-2 ring-white`) coloured `bg-emerald-500` / `bg-rose-500` per health. Hover tooltip uses `formatDistanceToNow` from `date-fns`:
+  - green → "Navixy live · last seen 12 min ago"
+  - red → "Navixy offline · last seen 3 days ago" (or "Navixy offline · never reported")
+  - `data-testid="asset-navixy-health-{asset_id}"` with `data-health="green|red"`.
+- `FleetMap`: counter strip ("● N live · ● N offline") for visual parity since Google Maps embed is single-iframe (cannot recolour per-marker). `data-testid="fleet-map-health-green|red"`.
+
+### Cache: `paneltec-v80`
+
+### Receipts (all green)
+```
+GET /api/assets → every Navixy-linked asset has `navixy_health` + `navixy_last_seen_at`.
+  Forced green: 200 Tipper - H41DH (device=10307569, seen=now)   → health=green
+  Forced red:   200 Tipper - H89MY (device=10307562, seen=48h ago) → health=red
+  Null:         CAT 320 Excavator (Yard) (no device id)            → health=None
+Screenshot: list shows green dot on 200 Tipper - H41DH row, red dots on stale rows.
+Map view counter strip reads "1 live · 71 offline" matching Mongo state.
+yarn build clean; backend reload clean.
+```
+
+## Queued (no interleave)
+- **Phase 3.16** — Session Timeout Settings (Admin-Configurable)
+- **Phase 3.17** — Certifications row actions (View / Edit / Delete)
+- **Phase 3.18** — Granular Per-User Permissions System
+- **Phase 4.1/4.2/4.3** — SWMS Assignments + Site/Supplier Induction QR
+- Mobile mirror via e1_expo_frontend_dev
