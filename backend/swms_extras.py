@@ -231,14 +231,25 @@ async def import_swms_docx(body: ImportDocxIn, user: dict = Depends(get_current_
 
 @router.get("/{swms_id}/history")
 async def swms_history(swms_id: str, user: dict = Depends(get_current_user)):
-    """Walk supersedes/superseded_by pointers (depth-first, cap 20 hops)."""
-    chain: list[dict] = []
-    seen: set[str] = set()
-    # Walk ancestors via supersedes.
+    """Walk the chain in BOTH directions from `swms_id` so an admin opening
+    history on either the latest or any ancestor sees the full lineage.
+
+    Algorithm:
+      1. Walk backward via `supersedes` (ancestors).
+      2. Walk forward via `superseded_by` (descendants).
+      3. Concatenate ancestors + start + descendants.
+      4. Cap at 20 nodes across the combined walk (loop defence).
+      5. Final sort tie-breaker on created_at (oldest first).
+    """
     cur = await db.swms.find_one({"id": swms_id, "org_id": user["org_id"]}, {"_id": 0})
     if not cur:
         raise HTTPException(404, "SWMS not found")
-    chain.append(cur); seen.add(cur["id"])
+
+    seen: set[str] = {cur["id"]}
+    ancestors: list[dict] = []
+    descendants: list[dict] = []
+
+    # ── Ancestors (backward).
     node = cur
     for _ in range(20):
         prev_id = node.get("supersedes")
@@ -247,17 +258,25 @@ async def swms_history(swms_id: str, user: dict = Depends(get_current_user)):
         node = await db.swms.find_one({"id": prev_id, "org_id": user["org_id"]}, {"_id": 0})
         if not node:
             break
-        chain.insert(0, node); seen.add(node["id"])
-    # Walk descendants via superseded_by.
+        ancestors.append(node); seen.add(node["id"])
+
+    # ── Descendants (forward).
     node = cur
     for _ in range(20):
+        if len(seen) >= 20:
+            break
         nxt_id = node.get("superseded_by")
         if not nxt_id or nxt_id in seen:
             break
         node = await db.swms.find_one({"id": nxt_id, "org_id": user["org_id"]}, {"_id": 0})
         if not node:
             break
-        chain.append(node); seen.add(node["id"])
+        descendants.append(node); seen.add(node["id"])
+
+    chain = list(reversed(ancestors)) + [cur] + descendants
+    # Final tie-breaker — keep oldest-first regardless of walk direction so the
+    # UI timeline always reads V1 → V2 → V3.
+    chain.sort(key=lambda d: (d.get("created_at") or "", d.get("version") or ""))
     return {"swms_id": swms_id, "chain": chain, "depth": len(chain)}
 
 

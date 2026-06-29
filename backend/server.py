@@ -162,6 +162,9 @@ api.include_router(session_timeout_router)
 api.include_router(session_timeout_admin_router)
 from admin_active_sessions import router as admin_active_sessions_router  # noqa: E402
 api.include_router(admin_active_sessions_router)
+from sites_qr import scan_router as site_scan_router, sites_router  # noqa: E402
+api.include_router(site_scan_router)
+api.include_router(sites_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
 
