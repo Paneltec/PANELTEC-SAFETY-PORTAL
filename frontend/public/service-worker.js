@@ -70,8 +70,21 @@
  *       /v2/tracker/get_states probe covering the entire fleet. Histogram
  *       flipped from 1 green / 71 red → 72 green / 0 red on the first
  *       post-fix sync tick.
+ * v86 — Phase 4.2 frontend (Part A) + 4.1c diff endpoint + 3.14c search
+ *       + 3.15+ last_position_time:
+ *       · Public `/scan/site/:token` SiteScanResolver page (auth-aware
+ *         CTA: signed-in users sign on directly; anon users bounce
+ *         through /login?next=… and auto-return).
+ *       · `GET /api/swms/{id}/diff/{previous_id}` returns set-diffs of
+ *         hazards/controls/ppe/activity_analysis (added/removed/unchanged)
+ *         + a header with from/to versions+dates for the auditor UI.
+ *       · `GET /api/contractors?search=` server-side regex on name/abn/
+ *         simpro_vendor_id (closes the tester WARN from 3.14b).
+ *       · Navixy sync now also harvests `last_position_time` from
+ *         get_states and stores it as `navixy_last_position_time` so admins
+ *         can see Navixy-side vs our-poll timestamps side-by-side.
  */
-const CACHE_VERSION = 'paneltec-v85.2';
+const CACHE_VERSION = 'paneltec-v86';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

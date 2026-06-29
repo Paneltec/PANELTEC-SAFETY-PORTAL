@@ -280,6 +280,49 @@ async def swms_history(swms_id: str, user: dict = Depends(get_current_user)):
     return {"swms_id": swms_id, "chain": chain, "depth": len(chain)}
 
 
+@router.get("/{swms_id}/diff/{previous_id}")
+async def swms_diff(swms_id: str, previous_id: str,
+                    user: dict = Depends(get_current_user)):
+    """Phase 4.1c — structured delta between two SWMS revisions.
+
+    Computes set-diffs on the four list-shaped fields auditors care about
+    most: hazards, controls, ppe, activity_analysis. Each field returns
+    {added:[...], removed:[...], unchanged:[...]} so the UI can render
+    green/strikethrough/grey pills side-by-side."""
+    cur = await db.swms.find_one({"id": swms_id, "org_id": user["org_id"]}, {"_id": 0})
+    prev = await db.swms.find_one({"id": previous_id, "org_id": user["org_id"]}, {"_id": 0})
+    if not cur or not prev:
+        raise HTTPException(404, "SWMS not found")
+
+    def _items(d: dict, key: str) -> list[str]:
+        v = d.get(key)
+        if isinstance(v, list):
+            return [str(x).strip() for x in v if x is not None and str(x).strip()]
+        if isinstance(v, str):
+            return [s.strip() for s in v.splitlines() if s.strip()]
+        return []
+
+    out: dict = {}
+    for k in ("hazards", "controls", "ppe", "activity_analysis"):
+        a = set(_items(prev, k)); b = set(_items(cur, k))
+        out[k] = {
+            "added": sorted(b - a),
+            "removed": sorted(a - b),
+            "unchanged": sorted(a & b),
+        }
+    return {
+        "swms_id": swms_id,
+        "previous_id": previous_id,
+        "header": {
+            "from_version": prev.get("version"),
+            "to_version": cur.get("version"),
+            "from_created_at": prev.get("created_at"),
+            "to_created_at": cur.get("created_at"),
+        },
+        "diff": out,
+    }
+
+
 admin_router = APIRouter(prefix="/admin/swms", tags=["admin-swms"])
 
 

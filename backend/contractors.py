@@ -81,6 +81,7 @@ async def list_contractors(
     expiring_within_days: Optional[int] = Query(None, ge=1, le=365),
     trade: Optional[str] = None,
     missing_renewal_link: Optional[bool] = Query(False),
+    search: Optional[str] = Query(None, max_length=120),
     user: dict = Depends(get_current_user),
 ):
     q = {"org_id": user["org_id"], "deleted_at": None}
@@ -88,6 +89,13 @@ async def list_contractors(
         q["status"] = status
     if trade:
         q["trade"] = trade
+    if search and search.strip():
+        # Phase 3.14c — server-side search (regex, case-insensitive) across the
+        # three identity fields a user is most likely to type: company name,
+        # ABN, or the imported Simpro vendor id.
+        import re as _re
+        rx = {"$regex": _re.escape(search.strip()), "$options": "i"}
+        q["$or"] = [{"name": rx}, {"abn": rx}, {"simpro_vendor_id": rx}]
     docs = await db.contractors.find(q, {"_id": 0}).sort("created_at", -1).to_list(500)
 
     # Phase 3.14b — annotate `has_active_renewal_link` so the frontend can

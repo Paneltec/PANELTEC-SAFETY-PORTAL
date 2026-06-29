@@ -41,6 +41,7 @@ import Suppliers from '@/pages/Suppliers';
 import Workers from '@/pages/Workers';
 import FormAssignmentsAdmin from '@/pages/FormAssignmentsAdmin';
 import SwmsAssignmentsAdmin from '@/pages/SwmsAssignmentsAdmin';
+import SiteScanResolver from '@/pages/SiteScanResolver';
 import SystemSettings from '@/pages/SystemSettings';
 import Certifications from '@/pages/Certifications';
 import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-line no-unused-vars
@@ -57,6 +58,7 @@ function App() {
             <Route path="/signup" element={<Signup />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
+            <Route path="/scan/site/:token" element={<SiteScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
 
             <Route path="/app" element={<AppShell />}>

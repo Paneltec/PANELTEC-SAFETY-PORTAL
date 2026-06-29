@@ -358,7 +358,11 @@ async def _sync_org(org_id: str) -> dict:
             # ONE `get_states` for every device in the fleet (warm + cold).
             # Any tracker that comes back gets its `navixy_last_seen_at`
             # stamped to `now()` so parked-but-online devices stay GREEN.
+            # Phase 3.15-fix+ — we also harvest the Navixy-side
+            # `last_position_time` so admins can see the difference between
+            # OUR poll timestamp and the upstream sensor heartbeat.
             all_tids = [int(a["navixy_device_id"]) for a in assets]
+            navixy_last_position_time_by_tid: dict[int, str] = {}
             if all_tids:
                 try:
                     rs = await c.post(f"{base}/v2/tracker/get_states",
@@ -367,11 +371,17 @@ async def _sync_org(org_id: str) -> dict:
                         rs_data = rs.json() or {}
                         states_raw = rs_data.get("states") if isinstance(rs_data, dict) else None
                         if isinstance(states_raw, dict):
-                            for k in states_raw.keys():
+                            for k, v in states_raw.items():
                                 try:
-                                    contacted_tids.add(int(k))
+                                    tid = int(k)
                                 except (TypeError, ValueError):
-                                    pass
+                                    continue
+                                contacted_tids.add(tid)
+                                if isinstance(v, dict):
+                                    lpt = (v.get("last_position_time")
+                                           or v.get("gps", {}).get("update_time"))
+                                    if lpt:
+                                        navixy_last_position_time_by_tid[tid] = str(lpt)
                 except (httpx.HTTPError, ValueError) as e:
                     log.info("reachability probe (get_states) errored — %s", e)
             # Pass 1 — counter/read for both types per COLD tracker only,
@@ -518,6 +528,10 @@ async def _sync_org(org_id: str) -> dict:
         was_contacted = tid in contacted_tids
         if was_contacted:
             patch["navixy_last_seen_at"] = ts
+            # Phase 3.15-fix+ — surface the Navixy-side sensor timestamp too.
+            lpt = navixy_last_position_time_by_tid.get(tid)
+            if lpt:
+                patch["navixy_last_position_time"] = lpt
             contacted += 1
 
         if not patch:
