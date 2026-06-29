@@ -265,3 +265,23 @@
   - Modified `app/(tabs)/_layout.tsx` — renders slate "Preview mode · {role}" ribbon when `isPreviewing` is true
 - **Preview mode verified**: `?preview_token=JWT&preview_role=contractor` → 5 tabs only (Home, QR Sign-On, Outbox, My Work, Profile), no Capture/Vehicles/Ask AI, ribbon shows "Preview mode · contractor"
 - **Files modified**: preview.ts (NEW), api.ts, modules.ts, AuthContext.tsx, auth.ts, _layout.tsx, (tabs)/_layout.tsx, document-library.tsx, users.tsx, suppliers.tsx
+
+
+
+## Iteration 13 — Phase 4.5 (Paste SWMS + Bulk Delete) + Phase 4.6 (Scan Upload + Signed Copy)
+- **Commit**: ee47b5a
+- **Date**: 2026-06-29T21:55:00Z
+- **Changes**:
+  - Wired PasteSwmsModal and ScanSwmsModal into SWMS list screen (`app/swms/index.tsx`)
+  - Added "Paste" + "Scan" header action buttons (orange themed, matching web)
+  - Implemented long-press multi-select: checkboxes, orange highlight, bottom bulk action bar
+  - Bulk delete: confirmation Alert → POST /api/swms/bulk-delete → partial delete handling
+  - Success toast pattern: Alert with "Stay here" / "Open in editor" navigation
+  - Added "View signed copy" button on SWMS detail (`app/swms/[id].tsx`) — detects `attachments[].kind === 'signed_evidence'`
+  - Signed copy opens via Linking.openURL() with filename + OCR char count display
+- **Files modified**:
+  - `/app/mobile/app/swms/index.tsx` (overwritten — modals, multi-select, bulk delete, header actions)
+  - `/app/mobile/app/swms/[id].tsx` (overwritten — signed copy view)
+- **Files verified**: PasteSwmsModal.tsx, ScanSwmsModal.tsx (created by prior agent, working correctly)
+- **Web files referenced**: Swms.jsx (paste/scan/bulk-delete patterns, handleCreated, signed_evidence)
+- **All screens verified via screenshot**: SWMS list (Paste+Scan+Create buttons), Paste modal (title+text+counter+submit), Scan modal (Camera+Library+PDF choices), SWMS detail (signed copy card with filename+OCR info)
