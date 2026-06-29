@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { getUser, signOut, initials } from '../../src/lib/auth';
@@ -13,10 +13,11 @@ const WORKSPACES = [
 ];
 
 export default function ProfileScreen() {
-  const { setAuth } = useAuth();
+  const { setAuth, refreshModules, modules, modulesLoading } = useAuth();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [activeWs, setActiveWs] = useState(WORKSPACES[0].id);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => { getUser().then(setUser); }, []);
 
@@ -38,9 +39,18 @@ export default function ProfileScreen() {
     Alert.alert('Workspace switched', `Now viewing: ${WORKSPACES.find(w => w.id === wsId)?.name}`);
   };
 
+  const onPullRefresh = async () => {
+    setRefreshing(true);
+    const ok = await refreshModules();
+    if (!ok) Alert.alert('Couldn\'t refresh', 'Module config refresh failed. Your current settings are still active.');
+    setRefreshing(false);
+  };
+
   return (
     <SafeAreaView style={s.safe}>
-      <ScrollView testID="profile-page" style={s.scroll} contentContainerStyle={s.content}>
+      <ScrollView testID="profile-page" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl testID="profile-pull-refresh" refreshing={refreshing} onRefresh={onPullRefresh} tintColor={Colors.blue} />}
+      >
         <Text style={s.overline}>PROFILE</Text>
         <Text style={s.heading}>My Profile</Text>
 
@@ -81,18 +91,18 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Settings links */}
+        {/* Settings links — gated by modules */}
         <Text style={s.sectionLabel}>SETTINGS</Text>
         <View style={s.section}>
           {[
-            { label: 'Workers', icon: 'people' as const, route: '/workers' },
-            { label: 'Certifications', icon: 'ribbon' as const, route: '/certifications' },
-            { label: 'Organisation', icon: 'business' as const },
-            { label: 'Integrations', icon: 'extension-puzzle' as const },
-            { label: 'Users', icon: 'people-circle' as const, route: '/users' },
-            { label: 'Compliance Hub', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance' },
-            { label: 'Ask Intelligence', icon: 'sparkles' as const, route: '/(tabs)/ask' },
-          ].map((item) => (
+            { label: 'Workers', icon: 'people' as const, route: '/workers', moduleKey: 'inductions' as const },
+            { label: 'Certifications', icon: 'ribbon' as const, route: '/certifications', moduleKey: 'certifications' as const },
+            { label: 'Organisation', icon: 'business' as const, moduleKey: undefined },
+            { label: 'Integrations', icon: 'extension-puzzle' as const, moduleKey: undefined },
+            { label: 'Users', icon: 'people-circle' as const, route: '/users', moduleKey: undefined },
+            { label: 'Compliance Hub', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance', moduleKey: undefined },
+            { label: 'Ask Intelligence', icon: 'sparkles' as const, route: '/(tabs)/ask', moduleKey: 'ask_intel' as const },
+          ].filter(item => !item.moduleKey || modules[item.moduleKey]).map((item) => (
             <TouchableOpacity key={item.label} testID={`settings-${item.label.toLowerCase().replace(/\s/g, '-')}`} style={s.row} activeOpacity={0.7}
               onPress={() => item.route ? router.push(item.route as any) : undefined}>
               <Ionicons name={item.icon} size={20} color={Colors.textSecondary} />

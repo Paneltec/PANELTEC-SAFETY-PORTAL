@@ -3,6 +3,7 @@ import { AppState, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { TOKEN_KEY, USER_KEY, setForceLogoutHandler } from './api';
 import { PermMatrix, getPermissions, setPermissions, clearPermissions, canDo, hasAnyCaptureOpen } from './permissions';
+import { ModuleMap, SAFE_FALLBACK, fetchModules, getCachedModules, clearModules } from './modules';
 import api from './api';
 
 type AuthCtx = {
@@ -11,11 +12,15 @@ type AuthCtx = {
   perms: PermMatrix;
   refreshPerms: () => Promise<void>;
   forceLogout: (reason: string) => void;
+  modules: ModuleMap;
+  refreshModules: () => Promise<boolean>;
+  modulesLoading: boolean;
 };
 
 const Ctx = createContext<AuthCtx>({
   isAuth: false, setAuth: () => {}, perms: {},
   refreshPerms: async () => {}, forceLogout: () => {},
+  modules: { ...SAFE_FALLBACK }, refreshModules: async () => false, modulesLoading: false,
 });
 
 export const useAuth = () => useContext(Ctx);
@@ -34,9 +39,17 @@ export function Can({ resource, action, fallback, children }: {
   return can(resource, action) ? <>{children}</> : <>{fallback ?? null}</>;
 }
 
+/** Hook: check if a specific module is enabled */
+export function useModule(moduleId: keyof ModuleMap): boolean {
+  const { modules } = useAuth();
+  return modules[moduleId] === true;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuth, setIsAuth] = useState(false);
   const [perms, setPermsState] = useState<PermMatrix>({});
+  const [modules, setModulesState] = useState<ModuleMap>({ ...SAFE_FALLBACK });
+  const [modulesLoading, setModulesLoading] = useState(false);
   const appState = useRef(AppState.currentState);
 
   const setAuth = useCallback((v: boolean) => setIsAuth(v), []);
@@ -48,7 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const ep = data.effective_permissions || {};
       await setPermissions(ep);
       setPermsState(ep);
-      // Store token_version defensively
       if (data.token_version !== undefined) {
         await AsyncStorage.setItem('paneltec_token_version', String(data.token_version));
       }
@@ -57,16 +69,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  const refreshModules = useCallback(async (): Promise<boolean> => {
+    setModulesLoading(true);
+    try {
+      const map = await fetchModules();
+      setModulesState(map);
+      return true;
+    } catch {
+      // On failure, keep whatever's cached — don't wipe the state
+      return false;
+    } finally {
+      setModulesLoading(false);
+    }
+  }, []);
+
   const forceLogout = useCallback((reason: string) => {
     (async () => {
       await AsyncStorage.multiRemove([TOKEN_KEY, USER_KEY, 'paneltec_perms', 'paneltec_token_version']);
+      await clearModules();
       setPermsState({});
+      setModulesState({ ...SAFE_FALLBACK });
       setIsAuth(false);
     })();
-    // Show alert after state update
-    setTimeout(() => {
-      Alert.alert('Session ended', reason);
-    }, 100);
+    setTimeout(() => { Alert.alert('Session ended', reason); }, 100);
   }, []);
 
   // Register force-logout handler on api interceptor
@@ -74,24 +99,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setForceLogoutHandler(forceLogout);
   }, [forceLogout]);
 
-  // Load cached perms on mount
+  // Load cached perms + modules on mount
   useEffect(() => {
     getPermissions().then(p => { if (Object.keys(p).length) setPermsState(p); });
+    getCachedModules().then(m => { if (m) setModulesState(m); });
   }, []);
 
-  // Refresh perms on app foreground
+  // Refresh perms + modules on app foreground
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (appState.current.match(/inactive|background/) && next === 'active' && isAuth) {
         refreshPerms();
+        refreshModules();
       }
       appState.current = next;
     });
     return () => sub.remove();
-  }, [isAuth, refreshPerms]);
+  }, [isAuth, refreshPerms, refreshModules]);
 
   return (
-    <Ctx.Provider value={{ isAuth, setAuth, perms, refreshPerms, forceLogout }}>
+    <Ctx.Provider value={{ isAuth, setAuth, perms, refreshPerms, forceLogout, modules, refreshModules, modulesLoading }}>
       {children}
     </Ctx.Provider>
   );

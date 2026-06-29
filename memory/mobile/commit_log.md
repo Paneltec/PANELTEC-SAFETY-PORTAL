@@ -214,3 +214,31 @@
   - Worker site picker modal (Erskineville Turnout listed)
 - **Testing credentials**: stephen@paneltec.com.au / Mcgstephen50# (admin)
 - **QR IS NO LONGER MOCKED** — All three scan flows use real backend API endpoints
+
+
+## Iteration 11 — Module Gate: Per-role module config from admin web → mobile nav gating
+- **Commit**: 9c120eb240617215ac7504b7a866dc790e28811f
+- **Date**: 2026-06-29T11:55:00Z
+- **Changes**:
+  - Created `src/lib/modules.ts` — ModuleMap type (13 IDs), fetchModules(), getCachedModules(), clearModules(), SAFE_FALLBACK, hasAnyCaptureModule()
+  - Modified `src/lib/AuthContext.tsx` — Added `modules` + `refreshModules` + `modulesLoading` to context; AppState foreground listener refreshes modules; load cached on mount; clearModules on forceLogout
+  - Modified `src/lib/auth.ts` — login() now calls fetchModulesAfterLogin() which falls back to cached → SAFE_FALLBACK; signOut() clears modules cache
+  - Modified `app/(tabs)/_layout.tsx` — Bottom tabs gated by modules: Capture (any capture module ON), QR Sign-On (sign_on), Vehicles (plant_vehicles), Ask AI (ask_intel); Home/Outbox/My Work/Profile always visible
+  - Modified `app/(tabs)/dashboard.tsx` — METRIC_ROWS + CAPTURE_TOOLS filtered by modules; Intelligence Briefing gated by ask_intel; "Couldn't load app config" fallback banner when in SAFE_FALLBACK mode
+  - Modified `app/(tabs)/capture.tsx` — Internal tools gated by individual module keys (swms, pre_start, site_diary, hazard, incident, inspection); Forms Library always shown
+  - Modified `app/(tabs)/settings.tsx` — Pull-to-refresh calls refreshModules(); Settings links gated: Workers→inductions, Certifications→certifications, Ask Intelligence→ask_intel
+  - Modified `app/(auth)/login.tsx` — Calls refreshModules() after login to sync context state with cached modules
+- **API Endpoint**: `GET /api/me/mobile-modules` → returns `{ role, modules: { pre_start: bool, ... } }`
+- **Refresh triggers**: (a) On login, (b) On app foreground (AppState active), (c) Profile pull-to-refresh
+- **Empty-state safety**: SAFE_FALLBACK = sign_on + profile only; shows "Couldn't load app config" banner on dashboard
+- **Files modified**:
+  - `/app/mobile/src/lib/modules.ts` (NEW)
+  - `/app/mobile/src/lib/AuthContext.tsx` (modified — modules context)
+  - `/app/mobile/src/lib/auth.ts` (modified — fetchModulesAfterLogin)
+  - `/app/mobile/app/(tabs)/_layout.tsx` (modified — tab gating)
+  - `/app/mobile/app/(tabs)/dashboard.tsx` (modified — tile/metric/briefing gating + fallback banner)
+  - `/app/mobile/app/(tabs)/capture.tsx` (modified — tool gating)
+  - `/app/mobile/app/(tabs)/settings.tsx` (modified — pull-to-refresh + link gating)
+  - `/app/mobile/app/(auth)/login.tsx` (modified — refreshModules after login)
+- **Verified via screenshot**: Admin login shows 8 tabs, all metrics, all capture tools, intelligence briefing — all modules ON
+- **Note**: Worker account (`worker_stephen@paneltec.com.au`) is disabled in backend — cannot test worker-specific module visibility directly, but code logic correctly gates by the per-role module map returned by the API

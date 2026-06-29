@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator, Alert,
+  Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -13,7 +13,7 @@ import { useAuth } from '../../src/lib/AuthContext';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { setAuth } = useAuth();
+  const { setAuth, refreshModules } = useAuth();
   const [email, setEmail] = useState('demo@paneltec.com');
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
@@ -26,10 +26,11 @@ export default function LoginScreen() {
     setBusy(true);
     try {
       await login(email, password);
+      // Refresh module map in context (login() already cached it)
+      await refreshModules();
       setAuth(true);
     } catch (err: any) {
       const msg = apiError(err) || 'Invalid email or password.';
-      // Track 4: detect disabled account
       const detail = err?.response?.data?.detail;
       if (typeof detail === 'string' && detail.toLowerCase().includes('disabled')) {
         setError('Account disabled — contact your organisation administrator to re-enable your account.');
@@ -47,6 +48,7 @@ export default function LoginScreen() {
     setBusySimpro(true);
     try {
       await loginWithSimpro(email);
+      await refreshModules();
       setAuth(true);
     } catch (err: any) {
       const msg = apiError(err) || 'Could not sign in with Simpro.';
@@ -72,7 +74,6 @@ export default function LoginScreen() {
           <Text style={[styles.heading, { color: '#F4C430' }]}>Build Together.</Text>
           <Text style={styles.sub}>All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.</Text>
 
-          {/* Value-prop chips */}
           <View style={styles.valueGrid}>
             <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
               <Ionicons name="shield-checkmark" size={14} color="#F4C430" />
@@ -139,14 +140,12 @@ export default function LoginScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Divider */}
           <View style={styles.divider}>
             <View style={styles.dividerLine} />
             <Text style={styles.dividerText}>OR</Text>
             <View style={styles.dividerLine} />
           </View>
 
-          {/* Sign in with Simpro */}
           <TouchableOpacity
             testID="login-with-simpro"
             style={[styles.simproBtn, (busySimpro || !email) && { opacity: 0.6 }]}

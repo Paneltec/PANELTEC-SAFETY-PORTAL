@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { TOKEN_KEY, USER_KEY } from './api';
 import { setPermissions, clearPermissions } from './permissions';
+import { fetchModules, clearModules, SAFE_FALLBACK, getCachedModules, ModuleMap } from './modules';
 
 export async function getToken(): Promise<string | null> {
   return AsyncStorage.getItem(TOKEN_KEY);
@@ -20,10 +21,24 @@ async function persist(token: string, user: any) {
   await AsyncStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
+/**
+ * Fetch mobile modules after login. Returns the map.
+ * On failure, falls back to cached map or SAFE_FALLBACK.
+ */
+async function fetchModulesAfterLogin(): Promise<ModuleMap> {
+  try {
+    return await fetchModules();
+  } catch {
+    const cached = await getCachedModules();
+    return cached || { ...SAFE_FALLBACK };
+  }
+}
+
 export async function login(email: string, password: string) {
   const { data } = await api.post('/auth/login', { email, password });
   await persist(data.access_token, data.user);
-  // Immediately fetch effective_permissions from /me
+  // Immediately fetch effective_permissions + mobile modules
+  let user = data.user;
   try {
     const { data: me } = await api.get('/auth/me');
     await AsyncStorage.setItem(USER_KEY, JSON.stringify(me));
@@ -33,10 +48,11 @@ export async function login(email: string, password: string) {
     if (me.token_version !== undefined) {
       await AsyncStorage.setItem('paneltec_token_version', String(me.token_version));
     }
-    return me;
-  } catch {
-    return data.user;
-  }
+    user = me;
+  } catch { /* non-fatal */ }
+  // Fetch mobile modules (non-blocking to login flow)
+  await fetchModulesAfterLogin();
+  return user;
 }
 
 export async function signup(payload: { name: string; org_name: string; email: string; password: string }) {
@@ -86,6 +102,7 @@ export async function signOut() {
   await AsyncStorage.removeItem(TOKEN_KEY);
   await AsyncStorage.removeItem(USER_KEY);
   await clearPermissions();
+  await clearModules();
   await AsyncStorage.removeItem('paneltec_token_version');
 }
 

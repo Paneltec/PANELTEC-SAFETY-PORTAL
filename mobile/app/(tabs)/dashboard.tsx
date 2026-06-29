@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -6,18 +6,21 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import { getUser, initials } from '../../src/lib/auth';
 import { Colors } from '../../src/lib/colors';
+import { useAuth } from '../../src/lib/AuthContext';
+import { SAFE_FALLBACK } from '../../src/lib/modules';
 import AiBuilderModal from '../../src/components/forms/AiBuilderModal';
 import TemplateBuilder from '../../src/components/forms/TemplateBuilder';
+import type { ModuleId } from '../../src/lib/modules';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
-const METRIC_ROWS = [
-  { key: 'swms', label: 'AI SWMS', field: 'swms_count', icon: 'document-text' as const },
-  { key: 'pre-starts', label: 'Pre-starts', field: 'prestarts_count', icon: 'clipboard' as const },
-  { key: 'site-diary', label: 'Site diary', field: 'today' as const, icon: 'book' as const },
-  { key: 'hazards', label: 'Hazards', field: 'hazards_count', icon: 'warning' as const },
-  { key: 'incidents', label: 'Incidents', field: 'incidents_count', icon: 'alert-circle' as const },
-  { key: 'inspections', label: 'Inspections', field: 'inspections_count', icon: 'checkmark-circle' as const },
+const METRIC_ROWS: { key: string; label: string; field: string; icon: any; moduleKey: ModuleId }[] = [
+  { key: 'swms', label: 'AI SWMS', field: 'swms_count', icon: 'document-text' as const, moduleKey: 'swms' },
+  { key: 'pre-starts', label: 'Pre-starts', field: 'prestarts_count', icon: 'clipboard' as const, moduleKey: 'pre_start' },
+  { key: 'site-diary', label: 'Site diary', field: 'today' as const, icon: 'book' as const, moduleKey: 'site_diary' },
+  { key: 'hazards', label: 'Hazards', field: 'hazards_count', icon: 'warning' as const, moduleKey: 'hazard' },
+  { key: 'incidents', label: 'Incidents', field: 'incidents_count', icon: 'alert-circle' as const, moduleKey: 'incident' },
+  { key: 'inspections', label: 'Inspections', field: 'inspections_count', icon: 'checkmark-circle' as const, moduleKey: 'inspection' },
 ];
 
 const MANAGE_TOOLS = [
@@ -29,17 +32,18 @@ const MANAGE_TOOLS = [
   { key: 'compliance', title: 'Compliance Hub', desc: 'Contractor register & audit exports', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance' },
 ];
 
-const CAPTURE_TOOLS = [
-  { key: 'swms', title: 'AI SWMS', desc: 'Draft Safe Work Method Statements', icon: 'document-text' as const, route: '/swms' },
-  { key: 'pre-starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks and sign-ons', icon: 'clipboard' as const, route: '/pre-starts' },
-  { key: 'site-diary', title: 'Site Diary AI', desc: 'Auto-summarise notes into daily diary', icon: 'book' as const, route: '/site-diary' },
-  { key: 'hazards', title: 'Hazard Reports', desc: 'Snap a hazard — AI classifies risk', icon: 'warning' as const, route: '/hazards' },
-  { key: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture', icon: 'alert-circle' as const, route: '/incidents' },
-  { key: 'inspections', title: 'Inspections', desc: 'Site walk, plant, height inspections', icon: 'checkmark-circle' as const, route: '/inspections' },
+const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId }[] = [
+  { key: 'swms', title: 'AI SWMS', desc: 'Draft Safe Work Method Statements', icon: 'document-text' as const, route: '/swms', moduleKey: 'swms' },
+  { key: 'pre-starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks and sign-ons', icon: 'clipboard' as const, route: '/pre-starts', moduleKey: 'pre_start' },
+  { key: 'site-diary', title: 'Site Diary AI', desc: 'Auto-summarise notes into daily diary', icon: 'book' as const, route: '/site-diary', moduleKey: 'site_diary' },
+  { key: 'hazards', title: 'Hazard Reports', desc: 'Snap a hazard — AI classifies risk', icon: 'warning' as const, route: '/hazards', moduleKey: 'hazard' },
+  { key: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture', icon: 'alert-circle' as const, route: '/incidents', moduleKey: 'incident' },
+  { key: 'inspections', title: 'Inspections', desc: 'Site walk, plant, height inspections', icon: 'checkmark-circle' as const, route: '/inspections', moduleKey: 'inspection' },
 ];
 
 export default function DashboardScreen() {
   const router = useRouter();
+  const { modules } = useAuth();
   const [metrics, setMetrics] = useState<any>(null);
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -50,6 +54,10 @@ export default function DashboardScreen() {
   const [builderTemplate, setBuilderTemplate] = useState<any | null>(null);
 
   const canEdit = WRITE_ROLES.has(user?.role);
+
+  // Filter metric & capture tiles by modules
+  const visibleMetrics = useMemo(() => METRIC_ROWS.filter(m => modules[m.moduleKey]), [modules]);
+  const visibleCapture = useMemo(() => CAPTURE_TOOLS.filter(t => modules[t.moduleKey]), [modules]);
 
   const loadData = async () => {
     try {
@@ -76,6 +84,12 @@ export default function DashboardScreen() {
   const band = metrics?.attention_band ?? 'Strong';
   const bandColor = band === 'Strong' ? Colors.emerald : band === 'Watch' ? Colors.amber : Colors.red;
 
+  // Detect safe fallback mode — show non-blocking banner
+  const isSafeFallback = useMemo(() => {
+    const sf = SAFE_FALLBACK;
+    return Object.keys(sf).every(k => modules[k as ModuleId] === sf[k as ModuleId]) && !modules.pre_start;
+  }, [modules]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView
@@ -93,6 +107,14 @@ export default function DashboardScreen() {
             <Text style={styles.avatarText}>{initials(user)}</Text>
           </View>
         </View>
+
+        {/* Safe fallback banner — shows when module config couldn't be loaded */}
+        {isSafeFallback && (
+          <View testID="safe-fallback-banner" style={styles.fallbackBanner}>
+            <Ionicons name="cloud-offline" size={16} color="#B45309" />
+            <Text style={styles.fallbackText}>Couldn't load app config — showing minimal features. Pull down on Profile to retry.</Text>
+          </View>
+        )}
 
         {/* Attention score card */}
         <View testID="attention-score-card" style={[styles.scoreCard, { borderColor: bandColor }]}>
@@ -113,13 +135,13 @@ export default function DashboardScreen() {
           </View>
         </View>
 
-        {/* Intelligence briefing */}
-        {briefingLoading ? (
+        {/* Intelligence briefing — only if ask_intel module is on */}
+        {modules.ask_intel && briefingLoading ? (
           <View style={styles.briefingCard}>
             <ActivityIndicator color={Colors.violet} />
             <Text style={styles.briefingLoading}>Generating AI briefing...</Text>
           </View>
-        ) : briefing ? (
+        ) : modules.ask_intel && briefing ? (
           <View testID="briefing-card" style={styles.briefingCard}>
             <View style={styles.briefingHeader}>
               <Text style={styles.briefingOverline}>INTELLIGENCE BRIEFING</Text>
@@ -152,10 +174,12 @@ export default function DashboardScreen() {
           </View>
         ) : null}
 
-        {/* Metrics grid */}
-        <Text style={styles.sectionLabel}>COMPLIANCE SNAPSHOT</Text>
-        <View style={styles.metricsGrid}>
-          {METRIC_ROWS.map((row) => (
+        {/* Metrics grid — filtered by enabled modules */}
+        {visibleMetrics.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>COMPLIANCE SNAPSHOT</Text>
+            <View style={styles.metricsGrid}>
+              {visibleMetrics.map((row) => (
             <View key={row.key} testID={`metric-${row.key}`} style={styles.metricCard}>
               <View style={styles.metricIcon}>
                 <Ionicons name={row.icon} size={16} color={Colors.textSecondary} />
@@ -169,7 +193,9 @@ export default function DashboardScreen() {
               </Text>
             </View>
           ))}
-        </View>
+            </View>
+          </>
+        )}
 
         {/* Manage & comply */}
         <Text style={styles.sectionLabel}>MANAGE & COMPLY</Text>
@@ -192,8 +218,10 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
 
-        {/* Quick capture */}
-        <Text style={styles.sectionLabel}>CREATE & CAPTURE</Text>
+        {/* Quick capture — filtered by enabled modules */}
+        {visibleCapture.length > 0 && (
+          <Text style={styles.sectionLabel}>CREATE & CAPTURE</Text>
+        )}
         {canEdit && (
           <TouchableOpacity
             testID="dashboard-generate-form-ai"
@@ -211,7 +239,7 @@ export default function DashboardScreen() {
             <Ionicons name="chevron-forward" size={16} color="#a78bfa" />
           </TouchableOpacity>
         )}
-        {CAPTURE_TOOLS.map((t) => (
+        {visibleCapture.map((t) => (
           <TouchableOpacity
             key={t.key}
             testID={`capture-card-${t.key}`}
@@ -305,6 +333,12 @@ const styles = StyleSheet.create({
   captureIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: Colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
   captureTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   captureDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  fallbackBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A',
+    borderRadius: 12, padding: 12, marginBottom: 16,
+  },
+  fallbackText: { fontSize: 12, color: '#92400E', flex: 1, lineHeight: 18 },
   aiFormTile: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#f5f3ff', borderWidth: 2, borderColor: '#ddd6fe',
