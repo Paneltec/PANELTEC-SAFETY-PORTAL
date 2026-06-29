@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Alert, Linking } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import api, { apiError } from '../../src/lib/api';
+import { Ionicons } from '@expo/vector-icons';
+import api, { apiError, API_BASE } from '../../src/lib/api';
 import { getUser } from '../../src/lib/auth';
 import StatusBadge from '../../src/components/StatusBadge';
 import PrimaryButton from '../../src/components/PrimaryButton';
@@ -11,6 +12,7 @@ import EmailButton from '../../src/components/EmailButton';
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
+import { TouchableOpacity } from 'react-native';
 
 export default function SwmsDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,6 +41,19 @@ export default function SwmsDetailScreen() {
   const canView = can('swms', 'view');
   const canEmail = can('swms', 'email');
 
+  // Phase 4.6: detect signed evidence attachment
+  const signedEvidence = (doc.attachments || []).find((a: any) => a.kind === 'signed_evidence');
+
+  const openSignedCopy = () => {
+    if (!signedEvidence) return;
+    // Build full URL from the file_url (relative API path)
+    const baseUrl = process.env.EXPO_PUBLIC_BACKEND_URL || '';
+    const url = signedEvidence.file_url?.startsWith('http')
+      ? signedEvidence.file_url
+      : `${baseUrl}${signedEvidence.file_url}`;
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open the file.'));
+  };
+
   return (
     <ScrollView testID="swms-detail" style={s.scroll} contentContainerStyle={s.content}>
       {!canEdit && <ReadOnlyBanner />}
@@ -59,6 +74,27 @@ export default function SwmsDetailScreen() {
           />
         )}
       </View>
+
+      {/* Phase 4.6: View signed copy button */}
+      {signedEvidence && (
+        <TouchableOpacity
+          testID="swms-view-signed-copy"
+          style={s.signedBtn}
+          onPress={openSignedCopy}
+          activeOpacity={0.7}
+        >
+          <View style={s.signedIcon}>
+            <Ionicons name="document-attach" size={16} color="#2563EB" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={s.signedTitle}>View signed copy</Text>
+            <Text style={s.signedSub}>
+              {signedEvidence.filename || 'Original document'}{signedEvidence.ocr_chars ? ` · ${signedEvidence.ocr_chars} chars OCR'd` : ''}
+            </Text>
+          </View>
+          <Ionicons name="open-outline" size={16} color={Colors.textTertiary} />
+        </TouchableOpacity>
+      )}
 
       {canEdit && isReviewer && doc.status === 'submitted' && (
         <View style={s.reviewRow}>
@@ -96,6 +132,20 @@ const s = StyleSheet.create({
   meta: { fontSize: 12, color: Colors.textTertiary },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12, marginBottom: 16 },
   reviewRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+
+  // Signed evidence button
+  signedBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE',
+    borderRadius: 14, padding: 14, marginBottom: 16,
+  },
+  signedIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: '#DBEAFE', alignItems: 'center', justifyContent: 'center',
+  },
+  signedTitle: { fontSize: 14, fontWeight: '600', color: '#1E40AF' },
+  signedSub: { fontSize: 11, color: '#3B82F6', marginTop: 1 },
+
   section: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 10 },
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.textTertiary, textTransform: 'uppercase', marginBottom: 8 },
   sectionItem: { fontSize: 14, color: Colors.text, marginBottom: 4, lineHeight: 20 },
