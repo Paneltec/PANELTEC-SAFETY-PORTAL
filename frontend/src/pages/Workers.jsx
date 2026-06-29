@@ -877,7 +877,7 @@ function EditModal({ worker, onClose, onSaved }) {
           {/* Phase 3.11 — Inductions snapshot from the live matrix */}
           {!isNew && (
             <Section icon={Award} title="Inductions" testid="section-inductions">
-              <WorkerInductionsCard workerId={worker.id} />
+              <WorkerInductionsCard workerId={worker.id} workerName={[worker.first_name, worker.last_name].filter(Boolean).join(' ')} />
             </Section>
           )}
 

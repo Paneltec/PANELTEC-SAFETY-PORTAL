@@ -20,8 +20,12 @@
  * v76 — Inductions Matrix gains inline PDF preview alongside download via the
  *       existing PdfPreviewModal. Touches InductionsMatrix.jsx,
  *       PdfPreviewModal.jsx, and the backend print endpoint (mode flag).
+ * v77 — Phase 3.12 Induction Card popup: every induction card / matrix cell
+ *       opens InductionCardModal (detail view + iframe doc preview + edit /
+ *       add / file upload). New backend endpoints under
+ *       /workers/{wid}/inductions/...
  */
-const CACHE_VERSION = 'paneltec-v76';
+const CACHE_VERSION = 'paneltec-v77';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

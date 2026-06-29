@@ -805,3 +805,21 @@ Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, 
   - Popover footer: `[data-testid=preview-confirm]` next to `[data-testid=print-confirm]`
 - Verified: curl `mode:inline` → `Content-Disposition: inline`; no-mode → `attachment`; worker-token → `403`.
 - Service worker cache bumped to `paneltec-v76`.
+
+## 2026-02 — Phase 3.12: Induction Card Popup (detail + doc preview + edit + add)
+- **Backend**: 5 new endpoints on `card_router` registered in `server.py`:
+  - `GET    /api/workers/{wid}/inductions/{iid}`     — full record (admin/manager/HSEQ or worker matched by email)
+  - `PATCH  /api/workers/{wid}/inductions/{iid}`     — issuer/dates/notes/not_held/held_no_expiry; status_override admin-only
+  - `POST   /api/workers/{wid}/inductions`           — create new record for "Not held" slots; dup column_key → 409
+  - `POST   /api/workers/{wid}/inductions/{iid}/file` — multipart upload, reuses Document Library smart-folder routing
+  - `DELETE /api/workers/{wid}/inductions/{iid}`     — admin-only, soft delete
+  - Cross-worker requests → 404 (no existence leak); worker-token writes → 403
+- **Frontend**: new `InductionCardModal.jsx` two-pane modal (detail left / iframe doc preview + dropzone right) wired into both:
+  - `WorkerInductionsCard.jsx` (every card in the worker edit drawer is now a button)
+  - `InductionsMatrix.jsx` (every cell — including empty ones — opens the same modal; CellEditor retired in favour)
+- **Cache**: `paneltec-v77`.
+- **Verification**: All 7 curl receipts pass (GET admin/worker-own, PATCH status recompute, POST create, POST file 201, worker token 403 on write, cross-worker 404, DELETE 204 + GET 404). 4 screenshots show view→edit→add modes from both entry points.
+
+## Queued (do not interleave)
+- **Phase 3.13** — LibreOffice swap as primary DOCX/XLSX/PPTX→PDF path with Python fallback; Tesseract/Poppler OCR utility; `/api/admin/server-tools/health` endpoint.
+- **Phase 3.14** — Simpro Suppliers Import for Renewal Links: `sync_simpro_suppliers()`, `POST /api/integrations/simpro/sync-suppliers`, `POST /api/contractors/import-from-simpro`, `SimproSupplierImportModal.jsx`.

@@ -16,6 +16,7 @@ import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import InductionImportWizard from './InductionImportWizard';
 import PdfPreviewModal from './PdfPreviewModal';
+import InductionCardModal from './InductionCardModal';
 
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -62,6 +63,9 @@ export default function InductionsMatrix({ onWorkerClick }) {
   const [search, setSearch] = useState('');
   const [showWizard, setShowWizard] = useState(false);
   const [editing, setEditing] = useState(null);
+  // Phase 3.12 — Induction Card popup (preferred path for cell clicks).
+  // Shape: `{ inductionId?, inductionNameHint?, mode }`.
+  const [cardModal, setCardModal] = useState(null);
   // Phase 3.11h — pin to a single worker. Clicking a name in the matrix
   // narrows the view to just that worker. ✕ on the pinned chip clears it.
   const [pinnedWorkerId, setPinnedWorkerId] = useState(null);
@@ -516,7 +520,18 @@ export default function InductionsMatrix({ onWorkerClick }) {
                       <Cell key={`${r.id}-${c.column_key}`}
                             worker={r} col={c} cell={r.cells[c.column_key]}
                             canEdit={canEdit} density={density} cellW={cellW} cellH={cellH}
-                            onClick={() => canEdit && setEditing({ worker: r, col: c, cell: r.cells[c.column_key] })} />
+                            onClick={() => {
+                              // Phase 3.12 — every cell opens the Induction Card modal.
+                              // Existing cert → view mode; empty slot → add mode (write roles only).
+                              const cell = r.cells[c.column_key];
+                              if (cell?.cert_id) {
+                                setCardModal({ workerId: r.id, workerName: r.name,
+                                  inductionId: cell.cert_id, mode: 'view' });
+                              } else if (canEdit) {
+                                setCardModal({ workerId: r.id, workerName: r.name,
+                                  inductionNameHint: c.header, mode: 'add' });
+                              }
+                            }} />
                     ));
                   })}
                 </tr>
@@ -610,6 +625,17 @@ export default function InductionsMatrix({ onWorkerClick }) {
           onClose={closePreview}
         />
       )}
+      {cardModal && (
+        <InductionCardModal
+          workerId={cardModal.workerId}
+          workerName={cardModal.workerName}
+          inductionId={cardModal.inductionId}
+          inductionNameHint={cardModal.inductionNameHint}
+          initialMode={cardModal.mode}
+          onClose={() => setCardModal(null)}
+          onSaved={() => { load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -620,8 +646,11 @@ function Cell({ worker, col, cell, canEdit, density, cellW, cellH, onClick }) {
   const status = refinedStatus(cell);
   const meta = STATUS[status] || STATUS.unknown;
   const tip = buildTooltip(col, cell);
+  // Cells are always clickable — write roles get edit/add, others get view.
+  // Empty cells for non-edit roles still open the modal in view mode (which
+  // shows "No record" so a worker can read what they're missing).
   const common = {
-    onClick, disabled: !canEdit,
+    onClick,
     'data-testid': `cell-${worker.id}-${col.column_key}`,
     title: tip,
   };

@@ -918,3 +918,333 @@ async def export_matrix(user: dict = Depends(get_current_user)):
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": 'attachment; filename="paneltec-inductions-matrix.xlsx"'},
     )
+
+
+# ────────────────── Phase 3.12 — Induction Card popup endpoints ──────────────────
+#
+# These hang off `/workers/{worker_id}/inductions/...` (distinct from the existing
+# `/workers/inductions/*` router) and serve a single, normalised induction record
+# for the in-modal viewer. They are thin wrappers around the same
+# `worker_certifications` collection used by the live matrix.
+
+from fastapi import File, UploadFile, Response  # noqa: E402
+from pathlib import Path  # noqa: E402
+import uuid as _uuid  # noqa: E402
+
+card_router = APIRouter(prefix="/workers", tags=["workers-inductions-card"])
+
+_CARD_WRITE = {"admin", "manager", "hseq_lead"}
+
+
+def _ind_status(cert: dict) -> str:
+    """Same chip logic used by the matrix — kept here so the card payload
+    is self-contained and doesn't require a full matrix fetch."""
+    if cert.get("not_held"):
+        return "not_held"
+    exp = cert.get("expiry_date")
+    if not exp:
+        return "held_no_expiry" if cert.get("held_no_expiry") else "unknown"
+    try:
+        d = date.fromisoformat(exp)
+    except Exception:
+        return "invalid_date"
+    today = date.today()
+    if d < today:
+        return "expired"
+    delta = (d - today).days
+    if delta <= 30:
+        return "expiring"
+    if delta <= 90:
+        return "expiring_90"
+    return "current"
+
+
+def _serialise_induction(cert: dict) -> dict:
+    return {
+        "id": cert["id"],
+        "worker_id": cert["worker_id"],
+        "name": cert.get("name") or "",
+        "type": cert.get("category") or "competency",
+        "category": cert.get("category") or "competency",
+        "column_key": cert.get("column_key"),
+        "issuer": cert.get("issuer") or "",
+        "issue_date": cert.get("issue_date"),
+        "expiry_date": cert.get("expiry_date"),
+        "not_held": bool(cert.get("not_held")),
+        "held_no_expiry": bool(cert.get("held_no_expiry")),
+        "status": cert.get("status_override") or _ind_status(cert),
+        "status_override": cert.get("status_override"),
+        "notes": cert.get("notes") or "",
+        "doc_file_id": cert.get("doc_file_id"),
+        "doc_folder_id": cert.get("doc_folder_id"),
+        "raw_input": cert.get("raw_input"),
+        "import_confidence": cert.get("import_confidence"),
+        "updated_at": cert.get("updated_at"),
+        "created_at": cert.get("created_at"),
+    }
+
+
+async def _worker_or_404(worker_id: str, org_id: str) -> dict:
+    w = await db.workers.find_one(
+        {"id": worker_id, "org_id": org_id, "deleted_at": None}, {"_id": 0},
+    )
+    if not w:
+        raise HTTPException(404, "Worker not found")
+    return w
+
+
+def _can_read_own(user: dict, worker: dict) -> bool:
+    """A worker user may read inductions for the worker record whose email
+    matches their login email (case-insensitive). Simpro id fallback too."""
+    if user.get("role") in _CARD_WRITE:
+        return True
+    if user.get("role") != "worker":
+        return False
+    u_email = (user.get("email") or "").strip().lower()
+    w_email = (worker.get("email") or "").strip().lower()
+    if u_email and u_email == w_email:
+        return True
+    if user.get("simpro_employee_id") and worker.get("simpro_employee_id"):
+        return str(user["simpro_employee_id"]) == str(worker["simpro_employee_id"])
+    return False
+
+
+async def _induction_or_404(induction_id: str, worker_id: str, org_id: str) -> dict:
+    """Returns the cert document; 404 if it doesn't belong to this worker
+    or this org. Don't leak existence across worker boundaries."""
+    cert = await db.worker_certifications.find_one(
+        {"id": induction_id, "org_id": org_id, "deleted_at": None},
+        {"_id": 0},
+    )
+    if not cert or cert.get("worker_id") != worker_id:
+        raise HTTPException(404, "Induction not found")
+    return cert
+
+
+class IndCreateIn(BaseModel):
+    name: str
+    type: Optional[str] = None          # site_induction | competency | license
+    issuer: Optional[str] = ""
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    notes: Optional[str] = ""
+    not_held: Optional[bool] = False
+    held_no_expiry: Optional[bool] = False
+    column_key: Optional[str] = None
+
+
+class IndPatch(BaseModel):
+    issuer: Optional[str] = None
+    issue_date: Optional[str] = None
+    expiry_date: Optional[str] = None
+    notes: Optional[str] = None
+    not_held: Optional[bool] = None
+    held_no_expiry: Optional[bool] = None
+    name: Optional[str] = None
+    status_override: Optional[str] = None  # admin-only — bypasses date logic
+    # Sentinel: pass `clear_status_override: true` to remove an override.
+    clear_status_override: Optional[bool] = False
+
+
+@card_router.get("/{worker_id}/inductions/{induction_id}")
+async def get_induction(worker_id: str, induction_id: str, user: dict = Depends(get_current_user)):
+    worker = await _worker_or_404(worker_id, user["org_id"])
+    if not _can_read_own(user, worker):
+        raise HTTPException(403, "Permission denied")
+    cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
+    return _serialise_induction(cert)
+
+
+@card_router.patch("/{worker_id}/inductions/{induction_id}")
+async def patch_induction(
+    worker_id: str, induction_id: str, body: IndPatch,
+    user: dict = Depends(get_current_user),
+):
+    if user.get("role") not in _CARD_WRITE:
+        raise HTTPException(403, "Only admin/manager/HSEQ can edit inductions")
+    await _worker_or_404(worker_id, user["org_id"])
+    cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
+
+    patch = {"updated_at": _now_iso(), "updated_by": user["id"]}
+    if body.name is not None:        patch["name"] = body.name.strip()
+    if body.issuer is not None:      patch["issuer"] = body.issuer.strip()
+    if body.notes is not None:       patch["notes"] = body.notes.strip()
+    if body.issue_date is not None:
+        if body.issue_date and not _is_iso(body.issue_date):
+            raise HTTPException(400, "issue_date must be ISO YYYY-MM-DD")
+        patch["issue_date"] = body.issue_date or None
+    if body.expiry_date is not None:
+        if body.expiry_date and not _is_iso(body.expiry_date):
+            raise HTTPException(400, "expiry_date must be ISO YYYY-MM-DD")
+        patch["expiry_date"] = body.expiry_date or None
+    if body.not_held is not None:        patch["not_held"] = bool(body.not_held)
+    if body.held_no_expiry is not None:  patch["held_no_expiry"] = bool(body.held_no_expiry)
+    if body.clear_status_override:
+        patch["status_override"] = None
+    elif body.status_override is not None:
+        if user.get("role") != "admin":
+            raise HTTPException(403, "Only admin may override status")
+        patch["status_override"] = body.status_override
+    # If date is set, ensure not_held is false (consistency).
+    if patch.get("expiry_date"):
+        patch["not_held"] = False
+
+    await db.worker_certifications.update_one({"id": cert["id"]}, {"$set": patch})
+    out = await db.worker_certifications.find_one({"id": cert["id"]}, {"_id": 0})
+    return _serialise_induction(out)
+
+
+def _is_iso(value: str) -> bool:
+    try:
+        date.fromisoformat(value)
+        return True
+    except Exception:
+        return False
+
+
+@card_router.post("/{worker_id}/inductions", status_code=201)
+async def create_induction(
+    worker_id: str, body: IndCreateIn, user: dict = Depends(get_current_user),
+):
+    if user.get("role") not in _CARD_WRITE:
+        raise HTTPException(403, "Only admin/manager/HSEQ can add inductions")
+    await _worker_or_404(worker_id, user["org_id"])
+
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    column_key = body.column_key or _column_key(name)
+    category = body.type or _category_for_header(name)
+    for d in (body.issue_date, body.expiry_date):
+        if d and not _is_iso(d):
+            raise HTTPException(400, f"date must be ISO YYYY-MM-DD: {d}")
+
+    # If a cert with this column_key already exists for the worker, reject —
+    # the matrix is keyed on (worker_id, column_key) so duplicates would
+    # silently overwrite. Frontend should call PATCH instead.
+    dup = await db.worker_certifications.find_one(
+        {"org_id": user["org_id"], "worker_id": worker_id,
+         "column_key": column_key, "deleted_at": None},
+        {"_id": 0, "id": 1},
+    )
+    if dup:
+        raise HTTPException(409, f"Induction '{name}' already exists for this worker")
+
+    doc = {
+        "id": _new_id(), "org_id": user["org_id"], "worker_id": worker_id,
+        "name": name,
+        "category": category,
+        "column_key": column_key,
+        "issuer": (body.issuer or "").strip(),
+        "issue_date": body.issue_date,
+        "expiry_date": body.expiry_date,
+        "not_held": bool(body.not_held),
+        "held_no_expiry": bool(body.held_no_expiry),
+        "doc_file_id": None,
+        "doc_folder_id": None,
+        "notes": (body.notes or "").strip(),
+        "source": "manual_card_add",
+        "import_confidence": "manual",
+        "created_by": user["id"],
+        "created_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "deleted_at": None,
+    }
+    await db.worker_certifications.insert_one(doc)
+    return _serialise_induction(doc)
+
+
+@card_router.post("/{worker_id}/inductions/{induction_id}/file", status_code=201)
+async def upload_induction_file(
+    worker_id: str, induction_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    """Replace (or set) the certificate document attached to an induction.
+    Reuses Document Library storage + smart folder routing (same code path
+    used by `POST /workers/{wid}/certifications/upload`)."""
+    if user.get("role") not in _CARD_WRITE:
+        raise HTTPException(403, "Only admin/manager/HSEQ can upload induction docs")
+    worker = await _worker_or_404(worker_id, user["org_id"])
+    cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
+
+    # Lazy import to avoid heavy startup cost if Document Library not used yet.
+    from document_library import (
+        MAX_FILE_BYTES, UPLOAD_DIR, _safe_ext, _stub_ai_tags,
+    )
+    from worker_certifications import (
+        _match_folder_name, _resolve_seed_folder, _find_or_create_worker_subfolder,
+    )
+
+    ext = _safe_ext(file.filename)
+    if not ext:
+        raise HTTPException(400, "Unsupported file type")
+
+    cert_name = cert.get("name") or Path(file.filename or "").stem or "Induction"
+    seed_name = _match_folder_name(cert_name)
+    seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
+    sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
+
+    folder_dir = UPLOAD_DIR / sub_folder["id"]
+    folder_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{_uuid.uuid4().hex}{ext}"
+    target = folder_dir / stored_name
+
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk: break
+            size += len(chunk)
+            if size > MAX_FILE_BYTES:
+                out.close(); target.unlink(missing_ok=True)
+                raise HTTPException(400, "Exceeds 50 MB limit")
+            out.write(chunk)
+
+    worker_label = f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip() or "(unnamed)"
+    file_doc = {
+        "id": _new_id(),
+        "org_id": user["org_id"],
+        "folder_id": sub_folder["id"],
+        "filename": file.filename or stored_name,
+        "stored_name": stored_name,
+        "mime": file.content_type or "application/octet-stream",
+        "size": size,
+        "file_url": f"/api/files/document_library/{sub_folder['id']}/{stored_name}",
+        "uploaded_by": user["id"],
+        "uploaded_by_name": user.get("name") or user.get("email"),
+        "uploaded_at": _now_iso(),
+        "updated_at": _now_iso(),
+        "ai_tags": _stub_ai_tags(file.filename or stored_name) + [f"worker:{worker_label}", f"induction:{cert_name}"],
+        "uploaded_via": "induction_card",
+        "worker_id": worker_id,
+        "worker_name": worker_label,
+        "seed_folder": seed_folder["name"],
+        "deleted_at": None,
+    }
+    await db.doc_files.insert_one(file_doc)
+
+    await db.worker_certifications.update_one(
+        {"id": cert["id"]},
+        {"$set": {"doc_file_id": file_doc["id"], "doc_folder_id": sub_folder["id"],
+                  "updated_at": _now_iso(), "updated_by": user["id"]}},
+    )
+    updated = await db.worker_certifications.find_one({"id": cert["id"]}, {"_id": 0})
+    return {"ok": True, "induction": _serialise_induction(updated),
+            "file": {"id": file_doc["id"], "filename": file_doc["filename"]}}
+
+
+@card_router.delete("/{worker_id}/inductions/{induction_id}", status_code=204)
+async def delete_induction(
+    worker_id: str, induction_id: str, user: dict = Depends(get_current_user),
+):
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Only admin can delete inductions")
+    await _worker_or_404(worker_id, user["org_id"])
+    cert = await _induction_or_404(induction_id, worker_id, user["org_id"])
+    await db.worker_certifications.update_one(
+        {"id": cert["id"]},
+        {"$set": {"deleted_at": _now_iso(), "updated_at": _now_iso(),
+                  "updated_by": user["id"]}},
+    )
+    return Response(status_code=204)
