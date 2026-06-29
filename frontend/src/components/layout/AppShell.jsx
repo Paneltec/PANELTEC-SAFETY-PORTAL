@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Sparkles, FileText, ClipboardCheck, NotebookPen, TriangleAlert,
   Siren, ShieldCheck, Users2, Link2, FolderDown, Building2, Boxes, Plug, UserCog,
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Radio,
-  Plus, FolderOpen, HardHat, Award, ClipboardList, Settings as Cog,
+  Plus, FolderOpen, HardHat, Award, ClipboardList, Settings as Cog, MapPin,
 } from 'lucide-react';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -41,6 +41,7 @@ const NAV = [
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: FolderDown, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
     { to: '/app/vehicles', label: 'Plant & Vehicles', icon: Radio, testid: 'nav-vehicles', beta: true, resource: 'assets', pastel: 'sky' },
+    { to: '/app/sites', label: 'Sites', icon: MapPin, testid: 'nav-sites', adminOnly: true, pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building2, testid: 'nav-settings-org', pastel: 'slate' },

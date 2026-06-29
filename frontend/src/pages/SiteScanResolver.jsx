@@ -9,21 +9,31 @@
 //   POST /api/scan/site/{token}/sign-on  (auth)   → confirmation
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Building2, CheckCircle2, MapPin, ShieldCheck, Loader2, AlertCircle, FileText } from 'lucide-react';
+import { Building2, CheckCircle2, MapPin, ShieldCheck, Loader2, AlertCircle, FileText, UserCog, Search, X } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import Logo from '../components/brand/Logo';
+
+const ELEVATED_ROLES = new Set(['admin', 'manager', 'hseq_lead', 'supervisor']);
 
 export default function SiteScanResolver() {
   const { token } = useParams();
   const navigate = useNavigate();
   const user = getUser();
+  const isElevated = ELEVATED_ROLES.has(user?.role);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [signing, setSigning] = useState(false);
   const [signed, setSigned] = useState(null);
   const [ackSwms, setAckSwms] = useState(new Set());
+
+  // Kiosk mode (admins/managers/hseq_lead/supervisor only)
+  const [kioskMode, setKioskMode] = useState(false);
+  const [kioskQuery, setKioskQuery] = useState('');
+  const [workers, setWorkers] = useState([]);
+  const [picked, setPicked] = useState(null); // selected worker object
+  const [recent, setRecent] = useState([]); // last 5 sign-ons this session
 
   useEffect(() => {
     let alive = true;
@@ -34,9 +44,24 @@ export default function SiteScanResolver() {
     return () => { alive = false; };
   }, [token]);
 
+  // Lazy-load workers only once when admin first toggles kiosk on.
+  useEffect(() => {
+    if (!kioskMode || workers.length > 0) return;
+    api.get('/workers').then((r) => setWorkers(r.data || [])).catch(() => {});
+  }, [kioskMode, workers.length]);
+
   const toggleAck = (id) => setAckSwms((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
+
+  const filteredWorkers = (() => {
+    const q = kioskQuery.trim().toLowerCase();
+    if (!q) return workers.slice(0, 6);
+    return workers.filter((w) => {
+      const name = `${w.first_name || ''} ${w.last_name || ''}`.trim().toLowerCase();
+      return name.includes(q) || (w.email || '').toLowerCase().includes(q);
+    }).slice(0, 8);
+  })();
 
   const onSignOn = async () => {
     if (!user) {
@@ -45,10 +70,20 @@ export default function SiteScanResolver() {
     }
     setSigning(true);
     try {
-      const r = await api.post(`/scan/site/${token}/sign-on`, {
-        swms_acknowledged: Array.from(ackSwms),
-      });
-      setSigned(r.data);
+      const payload = { swms_acknowledged: Array.from(ackSwms) };
+      if (kioskMode && picked) payload.worker_id = picked.id;
+      const r = await api.post(`/scan/site/${token}/sign-on`, payload);
+      if (kioskMode) {
+        // Kiosk: stay on the page, prepend to recent strip, reset picker.
+        setRecent((prev) => [{
+          name: picked ? `${picked.first_name || ''} ${picked.last_name || ''}`.trim() : (user.name || user.email),
+          at: r.data.signed_at || new Date().toISOString(),
+        }, ...prev].slice(0, 5));
+        setPicked(null); setKioskQuery(''); setAckSwms(new Set());
+        // 5s idle: re-blur input/clear pending state already done; nothing more to do.
+      } else {
+        setSigned(r.data);
+      }
     } catch (e) { setError(apiError(e)); }
     finally { setSigning(false); }
   };
@@ -66,7 +101,7 @@ export default function SiteScanResolver() {
 
   const s = data.site;
 
-  if (signed) {
+  if (signed && !kioskMode) {
     return (
       <PageShell>
         <div className="rounded-2xl bg-white shadow-xl p-8 text-center" data-testid="site-signon-confirmation">
@@ -82,8 +117,27 @@ export default function SiteScanResolver() {
     );
   }
 
+  const ctaLabel = (() => {
+    if (!user) return 'Sign in to sign on';
+    if (kioskMode && picked) return `Sign ${picked.first_name || picked.last_name || 'worker'} on to ${s.name}`;
+    if (kioskMode && !picked) return 'Pick a worker first';
+    return 'Sign me on';
+  })();
+
   return (
     <PageShell>
+      {recent.length > 0 && (
+        <div className="mb-3 rounded-xl bg-white/95 shadow-sm border border-slate-200 px-3 py-2" data-testid="kiosk-recent-signons">
+          <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Recent sign-ons</div>
+          <ul className="flex flex-wrap gap-1.5">
+            {recent.map((r, i) => (
+              <li key={`${r.name}-${i}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800">
+                <CheckCircle2 size={10} /> {r.name}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="rounded-2xl bg-white shadow-xl overflow-hidden" data-testid="site-scan-resolver">
         <div className="bg-blue-600 text-white px-6 py-5">
           <div className="text-[10px] uppercase tracking-wider font-bold opacity-80">Site Sign-On</div>
@@ -119,12 +173,63 @@ export default function SiteScanResolver() {
           )}
 
           <button
-            type="button" onClick={onSignOn} disabled={signing}
+            type="button" onClick={onSignOn} disabled={signing || (kioskMode && !picked)}
             data-testid="site-signon-btn"
             className="w-full inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-60">
             {signing ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-            {user ? 'Sign me on' : 'Sign in to sign on'}
+            {ctaLabel}
           </button>
+
+          {isElevated && (
+            <div className="border-t border-slate-200 pt-3" data-testid="kiosk-mode-section">
+              <button type="button" onClick={() => { setKioskMode((v) => !v); setPicked(null); setKioskQuery(''); }}
+                data-testid="kiosk-mode-toggle"
+                className={`w-full inline-flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs font-semibold border ${kioskMode ? 'bg-violet-50 border-violet-300 text-violet-800' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
+                <span className="inline-flex items-center gap-1.5"><UserCog size={12} /> Sign on as someone else (kiosk mode)</span>
+                <span className="text-[10px] opacity-70">{kioskMode ? 'ON' : 'OFF'}</span>
+              </button>
+              {kioskMode && (
+                <div className="mt-3 space-y-2">
+                  <div className="relative">
+                    <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text" autoFocus value={kioskQuery}
+                      onChange={(e) => { setKioskQuery(e.target.value); setPicked(null); }}
+                      placeholder="Type a worker name or email…"
+                      data-testid="kiosk-worker-search"
+                      className="w-full pl-8 pr-3 py-2 text-sm border border-violet-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                    />
+                  </div>
+                  {picked ? (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-50 border border-violet-200 text-sm" data-testid="kiosk-worker-picked">
+                      <UserCog size={13} className="text-violet-700" />
+                      <span className="flex-1 font-semibold text-violet-900 truncate">{`${picked.first_name || ''} ${picked.last_name || ''}`.trim() || picked.email}</span>
+                      <button onClick={() => setPicked(null)} className="text-violet-600 hover:text-violet-900"><X size={13} /></button>
+                    </div>
+                  ) : (
+                    <ul className="max-h-56 overflow-y-auto rounded-lg border border-slate-200 divide-y divide-slate-100">
+                      {filteredWorkers.length === 0 && (
+                        <li className="px-3 py-3 text-[11px] text-slate-500">No workers match that search.</li>
+                      )}
+                      {filteredWorkers.map((w) => {
+                        const name = `${w.first_name || ''} ${w.last_name || ''}`.trim() || w.email || w.id;
+                        return (
+                          <li key={w.id}>
+                            <button type="button" onClick={() => setPicked(w)}
+                              data-testid={`kiosk-worker-option-${w.id}`}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-violet-50">
+                              <span className="font-semibold text-slate-900">{name}</span>
+                              {w.trade && <span className="text-[11px] text-slate-500 ml-1.5">· {w.trade}</span>}
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <p className="text-[11px] text-slate-400 text-center">
             By signing on you confirm you're fit-for-work and have read the SWMS above.

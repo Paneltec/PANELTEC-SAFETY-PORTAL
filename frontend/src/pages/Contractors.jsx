@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Building2, FileBadge, Link2, Loader2, Plus, Trash2, Upload } from 'lucide-react';
+import { Building2, FileBadge, Link2, Loader2, Plus, Printer, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
 import { useWorkspace } from '../lib/workspace';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import PdfPreviewModal from '../components/PdfPreviewModal';
 
 const DOC_TYPES = [
   ['public_liability', 'Public liability'],
@@ -32,6 +33,7 @@ export default function ContractorsList() {
   const [tab, setTab] = useState('all');
   const [picked, setPicked] = useState(() => new Set());
   const [linkModal, setLinkModal] = useState(null); // { contractors:[{id,name,contact_email}], bulk:bool }
+  const [printFor, setPrintFor] = useState(null); // contractor record
 
   useEffect(() => {
     const params = {};
@@ -144,6 +146,12 @@ export default function ContractorsList() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex items-center gap-1 justify-end">
+                        <button type="button" onClick={() => setPrintFor(c)}
+                          data-testid={`contractor-print-qr-btn-${c.id}`}
+                          title="Print supplier induction QR"
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 text-xs font-semibold hover:bg-violet-100">
+                          <Printer size={11} /> Print supplier QR
+                        </button>
                         <button type="button" onClick={() => openSingle(c)}
                           data-testid={`contractor-add-renewal-${c.id}`}
                           title={c.has_active_renewal_link ? 'Already has an active link — clicking will add a new one' : 'Add to Renewal Links'}
@@ -168,6 +176,71 @@ export default function ContractorsList() {
           onCreated={() => { setPicked(new Set()); setLinkModal(null); reload(); }}
         />
       )}
+      {printFor && (
+        <SupplierPrintModal contractor={printFor} onClose={() => setPrintFor(null)} />
+      )}
+    </div>
+  );
+}
+
+function SupplierPrintModal({ contractor, onClose }) {
+  const [layout, setLayout] = useState('business_card');
+  const [blobUrl, setBlobUrl] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  React.useEffect(() => {
+    let alive = true;
+    setBusy(true);
+    api.get(`/contractors/${contractor.id}/scan-pdf`,
+      { params: { layout }, responseType: 'blob' })
+      .then((r) => {
+        if (!alive) return;
+        const u = URL.createObjectURL(r.data);
+        setBlobUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return u; });
+      })
+      .catch((e) => alive && toast.error(apiError(e)))
+      .finally(() => alive && setBusy(false));
+    return () => { alive = false; };
+  }, [contractor.id, layout]);
+
+  React.useEffect(() => () => { if (blobUrl) URL.revokeObjectURL(blobUrl); }, [blobUrl]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      data-testid="supplier-print-modal">
+      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-bold text-violet-700">Supplier induction QR</div>
+            <div className="font-display font-bold text-slate-900 truncate">{contractor.name}</div>
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
+            <button onClick={() => setLayout('business_card')}
+              data-testid="supplier-print-layout-business-card"
+              className={`px-3 py-1.5 ${layout === 'business_card' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+              Business card
+            </button>
+            <button onClick={() => setLayout('lanyard')}
+              data-testid="supplier-print-layout-lanyard"
+              className={`px-3 py-1.5 border-l border-slate-300 ${layout === 'lanyard' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+              Lanyard
+            </button>
+          </div>
+          <button onClick={onClose} data-testid="supplier-print-close"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-200">✕</button>
+        </div>
+        <div className="flex-1 bg-slate-100 relative">
+          {busy ? (
+            <div className="absolute inset-0 grid place-items-center">
+              <Loader2 size={22} className="animate-spin text-violet-600" />
+            </div>
+          ) : blobUrl ? (
+            <iframe data-testid="supplier-print-iframe" title="Supplier QR PDF" src={blobUrl}
+              className="w-full h-full border-0" />
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

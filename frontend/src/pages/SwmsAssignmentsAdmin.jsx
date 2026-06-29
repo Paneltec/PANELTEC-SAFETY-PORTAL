@@ -14,12 +14,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Loader2, Save, Search as SearchIcon, History, ChevronRight, X,
-  CheckSquare, Square, AlertCircle, FileText,
+  CheckSquare, Square, AlertCircle, FileText, GitCompare,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+import SwmsDiffModal from '../components/swms/SwmsDiffModal';
 
 const ROLE_CHOICES = [
   ['admin', 'Admin'],
@@ -376,6 +377,7 @@ function SearchableMulti({ label, items, selected, onToggle, testid }) {
 function HistoryModal({ swms, onClose }) {
   const [chain, setChain] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [diffFor, setDiffFor] = useState(null); // { swmsId, previousId, currentLabel, previousLabel }
 
   useEffect(() => {
     let alive = true;
@@ -413,25 +415,50 @@ function HistoryModal({ swms, onClose }) {
             <div className="text-xs text-slate-500">No history available.</div>
           ) : (
             <ol className="space-y-2.5">
-              {chain.map((c, i) => (
-                <li key={c.id} className="relative pl-6">
-                  <span className={`absolute left-0 top-1 inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${
-                    c.status === 'superseded' ? 'bg-slate-300 text-slate-700' : 'bg-blue-600 text-white'
-                  }`}>{i + 1}</span>
-                  <div className="text-sm font-semibold text-slate-900 truncate">{c.title}</div>
-                  <div className="text-[11px] text-slate-500">
-                    {c.code || '—'} · {c.version || 'v?'} ·
-                    <span className={`ml-1 inline-block text-[9px] uppercase font-bold tracking-wider rounded px-1.5 py-0.5 ${
-                      c.status === 'superseded' ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'
-                    }`}>{c.status || '—'}</span>
-                    {c.created_at && <> · {new Date(c.created_at).toLocaleDateString()}</>}
-                  </div>
-                </li>
-              ))}
+              {chain.map((c, i) => {
+                const prevNode = i > 0 ? chain[i - 1] : null;
+                return (
+                  <li key={c.id} className="relative pl-6">
+                    <span className={`absolute left-0 top-1 inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold ${
+                      c.status === 'superseded' ? 'bg-slate-300 text-slate-700' : 'bg-blue-600 text-white'
+                    }`}>{i + 1}</span>
+                    <div className="text-sm font-semibold text-slate-900 truncate">{c.title}</div>
+                    <div className="text-[11px] text-slate-500">
+                      {c.code || '—'} · {c.version || 'v?'} ·
+                      <span className={`ml-1 inline-block text-[9px] uppercase font-bold tracking-wider rounded px-1.5 py-0.5 ${
+                        c.status === 'superseded' ? 'bg-slate-200 text-slate-700' : 'bg-emerald-100 text-emerald-700'
+                      }`}>{c.status || '—'}</span>
+                      {c.created_at && <> · {new Date(c.created_at).toLocaleDateString()}</>}
+                    </div>
+                    {prevNode && (
+                      <button
+                        type="button"
+                        onClick={() => setDiffFor({
+                          swmsId: c.id, previousId: prevNode.id,
+                          currentLabel: c.version || 'v?',
+                          previousLabel: prevNode.version || 'v?',
+                        })}
+                        data-testid={`swms-diff-link-${c.id}`}
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-violet-700 hover:text-violet-900">
+                        <GitCompare size={11} /> View diff vs previous
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
             </ol>
           )}
         </div>
       </div>
+      {diffFor && (
+        <SwmsDiffModal
+          swmsId={diffFor.swmsId}
+          previousId={diffFor.previousId}
+          currentLabel={diffFor.currentLabel}
+          previousLabel={diffFor.previousLabel}
+          onClose={() => setDiffFor(null)}
+        />
+      )}
     </div>
   );
 }

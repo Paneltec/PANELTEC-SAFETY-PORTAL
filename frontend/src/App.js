@@ -42,6 +42,8 @@ import Workers from '@/pages/Workers';
 import FormAssignmentsAdmin from '@/pages/FormAssignmentsAdmin';
 import SwmsAssignmentsAdmin from '@/pages/SwmsAssignmentsAdmin';
 import SiteScanResolver from '@/pages/SiteScanResolver';
+import SupplierScanResolver from '@/pages/SupplierScanResolver';
+import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
 import Certifications from '@/pages/Certifications';
 import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-line no-unused-vars
@@ -59,6 +61,7 @@ function App() {
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
             <Route path="/scan/site/:token" element={<SiteScanResolver />} />
+            <Route path="/scan/supplier/:token" element={<SupplierScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
 
             <Route path="/app" element={<AppShell />}>
@@ -95,6 +98,8 @@ function App() {
               <Route path="audit-exports" element={<AuditExports />} />
               <Route path="vehicles" element={<PlantVehicles />} />
               <Route path="vehicles-legacy" element={<Vehicles />} />
+              <Route path="sites" element={<SitesAdmin />} />
+              <Route path="sites/:id" element={<SiteDetail />} />
 
               <Route path="document-library" element={<DocumentLibrary />} />
               <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />
