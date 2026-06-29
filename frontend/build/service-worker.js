@@ -18,7 +18,7 @@
  *       Pairs with the backend `Clear-Site-Data` middleware (cookie-gated)
  *       so visitors with a stuck older SW self-heal on next API hit.
  */
-const CACHE_VERSION = 'paneltec-v71';
+const CACHE_VERSION = 'paneltec-v74';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -1030,7 +1030,11 @@ export default function Workers() {
       </div>
 
       {tab === 'matrix' ? (
-        <InductionsMatrix />
+        <InductionsMatrix onWorkerClick={(w) => {
+          // Look up the full worker row (matrix payload only has a slim view).
+          const full = rows.find((r) => r.id === w.id);
+          if (full) setEditing(full);
+        }} />
       ) : (
       <>
       <div className="mb-4 flex items-center gap-2 flex-wrap" data-testid="workers-toolbar">
@@ -1195,11 +1199,14 @@ export default function Workers() {
         </div>
       )}
 
+      </>
+      )}
+
+      {/* EditModal lives OUTSIDE the tab conditional so it renders for both
+          Directory and Inductions Matrix worker-click flows. */}
       {editing && (
         <EditModal worker={editing} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
-      )}
-      </>
       )}
     </div>
   );

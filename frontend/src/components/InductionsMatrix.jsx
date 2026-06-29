@@ -53,7 +53,7 @@ function refinedStatus(cell) {
   return days <= 30 ? 'expiring' : 'expiring_90';
 }
 
-export default function InductionsMatrix() {
+export default function InductionsMatrix({ onWorkerClick }) {
   const user = getUser();
   const canEdit = WRITE_ROLES.has(user?.role);
   const [data, setData] = useState(null);
@@ -61,6 +61,9 @@ export default function InductionsMatrix() {
   const [search, setSearch] = useState('');
   const [showWizard, setShowWizard] = useState(false);
   const [editing, setEditing] = useState(null);
+  // Phase 3.11h — pin to a single worker. Clicking a name in the matrix
+  // narrows the view to just that worker. ✕ on the pinned chip clears it.
+  const [pinnedWorkerId, setPinnedWorkerId] = useState(null);
 
   // Persisted UI state.
   const [density, setDensity] = useState(() => localStorage.getItem(LS_DENSITY) || 'compact');
@@ -102,9 +105,13 @@ export default function InductionsMatrix() {
     }));
   }, [data, hidden]);
 
-  // Row filtering: search + status filter chip.
+  // Row filtering: search + status filter chip + (highest precedence) pin.
   const filteredRows = useMemo(() => {
     if (!data) return [];
+    if (pinnedWorkerId) {
+      const row = data.rows.find((r) => r.id === pinnedWorkerId);
+      return row ? [row] : [];
+    }
     const q = search.trim().toLowerCase();
     return data.rows.filter((r) => {
       if (q && !(`${r.name} ${r.email||''} ${r.company||''}`.toLowerCase().includes(q))) return false;
@@ -119,7 +126,7 @@ export default function InductionsMatrix() {
       }
       return true;
     });
-  }, [data, search, rowFilter]);
+  }, [data, search, rowFilter, pinnedWorkerId]);
 
   const downloadExport = async () => {
     try {
@@ -254,6 +261,32 @@ export default function InductionsMatrix() {
         <Legend />
       </div>
 
+      {/* Pinned chip — visible only when a worker is pinned. ✕ clears. */}
+      {pinnedWorkerId && (() => {
+        const pinned = data.rows.find((r) => r.id === pinnedWorkerId);
+        if (!pinned) return null;
+        return (
+          <div className="mb-3 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#e6eff9] border border-[#bcd2ee]"
+               data-testid="matrix-pinned-chip">
+            <span className="text-[10px] uppercase tracking-wider font-semibold text-[#1e4a8c]">Pinned to</span>
+            <span className="text-sm font-semibold text-[#1e4a8c]">{pinned.name}</span>
+            {onWorkerClick && (
+              <button onClick={() => onWorkerClick(pinned)}
+                data-testid="matrix-pinned-open-profile"
+                className="text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
+                Open profile
+              </button>
+            )}
+            <button onClick={() => setPinnedWorkerId(null)}
+              data-testid="matrix-pinned-clear"
+              title="Clear pin"
+              className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded text-[#1e4a8c] hover:bg-white">
+              <X size={12} />
+            </button>
+          </div>
+        );
+      })()}
+
       {empty ? (
         <EmptyMatrix canEdit={canEdit} onImport={() => setShowWizard(true)} />
       ) : (
@@ -328,15 +361,22 @@ export default function InductionsMatrix() {
             </thead>
             <tbody>
               {filteredRows.map((r) => (
-                <tr key={r.id} className="hover:bg-slate-50/50" data-testid={`matrix-row-${r.id}`}>
+                <tr key={`worker-row-${r.id}`} className="hover:bg-slate-50/50" data-testid={`matrix-row-${r.id}`}>
                   <th scope="row"
-                      className="sticky left-0 z-10 bg-white text-left px-3 py-1.5 border-b border-r border-slate-100 align-middle"
+                      className="sticky left-0 z-10 bg-white text-left p-0 border-b border-r border-slate-100 align-middle"
                       style={{ width: 200, minWidth: 200, height: rowH }}>
-                    <div className="font-semibold text-slate-900 truncate text-[12px] leading-tight" title={r.name}>{r.name}</div>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <RowChip status={r.chip} />
-                      {r.company && <span className="text-[9px] text-slate-400 truncate">{r.company}</span>}
-                    </div>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); setPinnedWorkerId(r.id); }}
+                      data-testid={`matrix-worker-${r.id}`}
+                      title={`Pin matrix to ${r.name}`}
+                      className="w-full h-full text-left px-3 py-1.5 cursor-pointer hover:bg-slate-50">
+                      <div className="font-semibold text-slate-900 truncate text-[12px] leading-tight">{r.name}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <RowChip status={r.chip} />
+                        {r.company && <span className="text-[9px] text-slate-400 truncate">{r.company}</span>}
+                      </div>
+                    </button>
                   </th>
                   {grouped.map((g) => {
                     if (collapsed.has(g.key)) {
