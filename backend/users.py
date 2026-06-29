@@ -1,5 +1,6 @@
 """Org user management — admins only. Permissions matrix lives in permissions.py."""
 from __future__ import annotations
+import logging
 from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,7 @@ from permissions import (
     require_permission, upsert_overrides,
 )
 
+log = logging.getLogger("paneltec.users")
 router = APIRouter(prefix="/users", tags=["users"])
 
 
@@ -221,6 +223,83 @@ async def invite_user(body: InviteUserIn, actor: dict = Depends(require_permissi
         bypass_provider_attempt=False,
     )
     return _user_out(doc, False)
+
+
+class BulkDeleteIn(BaseModel):
+    user_ids: List[str] = Field(default_factory=list)
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_users(body: BulkDeleteIn,
+                             actor: dict = Depends(require_permission("users", "edit"))):
+    """Soft-delete several users in one call. Defensive guards:
+      * silently skip the caller's own id (UI hides their row too, but the
+        backend never trusts that).
+      * silently skip any user that's the last remaining active admin in the
+        org (admins are gated more carefully than the single-row delete
+        endpoint since callers may not realise their selection is risky).
+      * skip already-disabled rows so the operation is idempotent.
+    Returns counts so the UI can toast something useful."""
+    if not body.user_ids:
+        raise HTTPException(400, "No user_ids provided")
+    deleted: list[str] = []
+    skipped_self = 0
+    skipped_last_admin = 0
+    skipped_not_found = 0
+    skipped_already = 0
+    ts = now_iso()
+
+    for uid in body.user_ids:
+        if uid == actor["id"]:
+            skipped_self += 1
+            continue
+        target = await db.users.find_one(
+            {"id": uid, "org_id": actor["org_id"]},
+            {"_id": 0, "id": 1, "role": 1, "status": 1, "deleted_at": 1},
+        )
+        if not target:
+            skipped_not_found += 1
+            continue
+        if target.get("deleted_at"):
+            skipped_already += 1
+            continue
+        if target.get("role") == "admin" and target.get("status", "active") == "active":
+            # Count admins OTHER than this one AND not also in our pending
+            # deletion list — otherwise selecting all admins at once would
+            # bypass the guard because each row passes the single-row check.
+            pending_admin_ids = set(deleted) | {uid}
+            remaining = await db.users.count_documents({
+                "org_id": actor["org_id"], "role": "admin",
+                "$or": [{"status": "active"}, {"status": {"$exists": False}}],
+                "id": {"$nin": list(pending_admin_ids)},
+            })
+            if remaining == 0:
+                skipped_last_admin += 1
+                continue
+        res = await db.users.update_one(
+            {"id": uid, "org_id": actor["org_id"]},
+            {"$set": {"status": "disabled", "deleted_at": ts, "updated_at": ts},
+             "$inc": {"token_version": 1}},
+        )
+        if res.matched_count:
+            deleted.append(uid)
+        else:
+            skipped_not_found += 1
+
+    log.info(
+        "users.bulk_delete actor=%s deleted=%d skipped_self=%d "
+        "skipped_last_admin=%d skipped_not_found=%d skipped_already=%d",
+        actor["id"], len(deleted), skipped_self,
+        skipped_last_admin, skipped_not_found, skipped_already,
+    )
+    return {
+        "deleted": len(deleted),
+        "deleted_ids": deleted,
+        "skipped_self": skipped_self,
+        "skipped_last_admin": skipped_last_admin,
+        "skipped_not_found": skipped_not_found,
+        "skipped_already_disabled": skipped_already,
+    }
 
 
 @router.delete("/{user_id}")

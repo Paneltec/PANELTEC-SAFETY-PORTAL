@@ -84,7 +84,7 @@
  *         get_states and stores it as `navixy_last_position_time` so admins
  *         can see Navixy-side vs our-poll timestamps side-by-side.
  */
-const CACHE_VERSION = 'paneltec-v92';
+const CACHE_VERSION = 'paneltec-v93';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

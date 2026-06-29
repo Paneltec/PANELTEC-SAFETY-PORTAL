@@ -104,6 +104,8 @@ export default function UsersManagement() {
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
   const [actionBusy, setActionBusy] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState(() => new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const me = getUser();
 
   const load = async () => { try { const { data } = await api.get('/users'); setUsers(data); } catch (e) { toast.error(apiError(e)); } };
@@ -122,6 +124,26 @@ export default function UsersManagement() {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
   }
   const filtered = users.filter((u) => (!filters.role || u.role === filters.role) && (!filters.status || u.status === filters.status));
+  const bulkable = filtered.filter((u) => u.id !== me?.id && !u.deleted_at);
+  const bulkAllChecked = bulkable.length > 0 && bulkable.every((u) => bulkSelected.has(u.id));
+  const toggleBulk = (uid) => setBulkSelected((s) => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
+  const toggleBulkAll = () => setBulkSelected((s) => bulkAllChecked ? new Set() : new Set(bulkable.map((u) => u.id)));
+  const runBulkDelete = async () => {
+    setActionBusy(true);
+    try {
+      const ids = Array.from(bulkSelected);
+      const { data } = await api.post('/users/bulk-delete', { user_ids: ids });
+      const parts = [`Deleted ${data.deleted}`];
+      if (data.skipped_self) parts.push(`skipped self ${data.skipped_self}`);
+      if (data.skipped_last_admin) parts.push(`skipped last-admin ${data.skipped_last_admin}`);
+      if (data.skipped_already_disabled) parts.push(`already disabled ${data.skipped_already_disabled}`);
+      toast.success(parts.join(' · '));
+      setBulkSelected(new Set());
+      setBulkConfirmOpen(false);
+      await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setActionBusy(false); }
+  };
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="users-page">
@@ -150,19 +172,41 @@ export default function UsersManagement() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex gap-2 mb-4 items-center">
         <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
           <option value="">All roles</option>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
           <option value="">All statuses</option>{['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        {can('users', 'edit') && bulkSelected.size > 0 && (
+          <div className="ml-auto inline-flex items-center gap-2" data-testid="users-bulk-toolbar">
+            <span className="text-xs text-slate-600"><strong>{bulkSelected.size}</strong> selected</span>
+            <button onClick={() => setBulkSelected(new Set())}
+              data-testid="users-bulk-clear"
+              className="text-xs text-slate-500 hover:underline">Clear</button>
+            <button onClick={() => setBulkConfirmOpen(true)}
+              data-testid="users-bulk-delete-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">
+              <Trash2 size={12} /> Delete {bulkSelected.size} user{bulkSelected.size === 1 ? '' : 's'}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
+              {can('users', 'edit') && (
+                <th className="text-left px-3 py-2.5 w-8" onClick={(e) => e.stopPropagation()}>
+                  <input type="checkbox" checked={bulkAllChecked}
+                    disabled={bulkable.length === 0}
+                    onChange={toggleBulkAll}
+                    data-testid="users-bulk-select-all"
+                    className="h-4 w-4 accent-rose-600" />
+                </th>
+              )}
               <th className="text-left px-4 py-2.5">User</th><th className="text-left px-4 py-2.5">Role</th>
               <th className="text-left px-4 py-2.5">Status</th><th className="text-left px-4 py-2.5">Permissions</th>
               <th className="text-left px-4 py-2.5">Created</th>
@@ -172,6 +216,17 @@ export default function UsersManagement() {
           <tbody>
             {filtered.map((u) => (
               <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
+                {can('users', 'edit') && (
+                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    {u.id !== me?.id && (
+                      <input type="checkbox"
+                        checked={bulkSelected.has(u.id)}
+                        onChange={() => toggleBulk(u.id)}
+                        data-testid={`user-checkbox-${u.id}`}
+                        className="h-4 w-4 accent-rose-600" />
+                    )}
+                  </td>
+                )}
                 <td className="px-4 py-3"><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{(u.name || u.email)[0]}</AvatarFallback></Avatar>
                   <div>
                     <div className="font-medium flex items-center gap-1.5">{u.name}
@@ -248,6 +303,37 @@ export default function UsersManagement() {
         </table>
       </div>
 
+      {bulkConfirmOpen && (
+        <div data-testid="users-bulk-delete-modal"
+          className="fixed inset-0 z-[70] bg-slate-900/70 grid place-items-center p-4"
+          onClick={(e) => e.target === e.currentTarget && !actionBusy && setBulkConfirmOpen(false)}>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+              <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex-shrink-0"><AlertTriangle size={18} /></div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-bold text-slate-900">Delete {bulkSelected.size} user{bulkSelected.size === 1 ? '' : 's'}?</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">They will lose access immediately. This is a soft-delete — admins can restore from Mongo.</p>
+              </div>
+            </div>
+            <div className="px-5 py-3 text-sm text-slate-700 max-h-48 overflow-auto">
+              {users.filter((u) => bulkSelected.has(u.id)).map((u) => (
+                <div key={u.id} className="text-xs py-0.5 truncate">• {u.name || u.email} <span className="text-slate-400">({u.role})</span></div>
+              ))}
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setBulkConfirmOpen(false)} disabled={actionBusy}
+                data-testid="users-bulk-delete-cancel"
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+              <button type="button" onClick={runBulkDelete} disabled={actionBusy}
+                data-testid="users-bulk-delete-confirm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-60">
+                {actionBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                {actionBusy ? 'Deleting…' : `Delete ${bulkSelected.size} user${bulkSelected.size === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} defaultTab={activeTab} />}
       {confirmAction && (
         <ConfirmActionModal
@@ -813,11 +899,16 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
               </div>
             )}
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto inline-flex items-center gap-2">
+            <button onClick={onClose} type="button" disabled={busy}
+              data-testid="import-cancel"
+              className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+              Cancel
+            </button>
             <button onClick={submit} disabled={busy || selected.size === 0}
               data-testid="import-submit"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold uppercase tracking-[0.12em] disabled:opacity-50">
-              {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold uppercase tracking-[0.12em] disabled:opacity-50 hover:bg-blue-700">
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
               <span data-testid="import-submit-label">
                 Import {selected.size} {selected.size === 1 ? 'user' : 'users'}
               </span>
