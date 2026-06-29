@@ -35,7 +35,18 @@ def _date_days_ago(n: int) -> str:
 
 
 async def _ensure_org_and_workspaces() -> tuple[str, list[str]]:
-    org = await db.orgs.find_one({"name": ORG_NAME})
+    # Phase 3.18-recovery — key org lookup on `slug` (stable) instead of
+    # `name` (mutable). When the user renames their org via Settings, the
+    # name diverges from ORG_NAME and a name-keyed lookup would spawn a
+    # phantom duplicate org; slug stays "paneltec-civil" forever.
+    # We also `sort("created_at", 1)` so if multiple orgs share the slug
+    # (e.g. the 2026-06-27 phantom org incident left two), we always
+    # pick the original.
+    org = await db.orgs.find_one({"slug": "paneltec-civil"},
+                                  sort=[("created_at", 1)])
+    if not org:
+        org = await db.orgs.find_one({"name": ORG_NAME},
+                                      sort=[("created_at", 1)])
     if not org:
         org = {"id": new_id(), "name": ORG_NAME, "slug": "paneltec-civil", "created_at": now_iso()}
         await db.orgs.insert_one(dict(org))
@@ -52,18 +63,27 @@ async def _ensure_org_and_workspaces() -> tuple[str, list[str]]:
 
 
 async def _ensure_users(org_id: str, ws_ids: list[str]) -> dict[str, str]:
-    """Returns mapping email -> user_id. Updates password if changed."""
+    """Returns mapping email -> user_id. Updates password if changed.
+
+    Phase 3.18-recovery — when a user has been moved by the recovery
+    migration (`org_migrated_at` set), DO NOT overwrite their `org_id` /
+    `workspace_ids` here. We still refresh the demo password so existing
+    docs / tests keep working, but the tenant pointer is sticky.
+    """
     out: dict[str, str] = {}
     for u in SEED_USERS:
         existing = await db.users.find_one({"email": u["email"]})
         if existing:
-            # Refresh password if the env-managed demo password changed.
-            await db.users.update_one(
-                {"id": existing["id"]},
-                {"$set": {"password_hash": hash_password(DEMO_PWD),
-                          "org_id": org_id, "workspace_ids": ws_ids,
-                          "role": u["role"], "name": u["name"]}},
-            )
+            patch = {
+                "password_hash": hash_password(DEMO_PWD),
+                "role": u["role"], "name": u["name"],
+            }
+            if not existing.get("org_migrated_at"):
+                # Not yet pinned by a recovery migration — safe to set
+                # org/workspace from the seed's view of the world.
+                patch["org_id"] = org_id
+                patch["workspace_ids"] = ws_ids
+            await db.users.update_one({"id": existing["id"]}, {"$set": patch})
             out[u["email"]] = existing["id"]
             continue
         doc = {

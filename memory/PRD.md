@@ -1209,3 +1209,31 @@ yarn build clean; backend reload clean; existing logged-in admin session uninter
 - **Settings → Session Timeout admin card UI** (dropdowns/toggles wired to the endpoints) — backend is ready, just the form to drive it.
 - **Login page "Keep me logged in" checkbox** — endpoint returns `remember_me_enabled` correctly; just needs the checkbox UI + plumbing of the flag in the login POST body (the backend already honours `remember_me` if present).
 Both are pure UI on top of fully-tested endpoints — happy to land them in a quick next-turn after a green light.
+
+# 2026-06-29 — Paneltec demo users recovery + seed regression vector
+
+## What happened
+- Phase 3.6 (Org Profile editing, 2026-06-27) allowed Stephen to rename
+  his org via Settings → Organisation. He renamed "Paneltec Civil Pty
+  Ltd" → "Paneltec Pty Ltd".
+- `seed.py:_ensure_org_and_workspaces` keyed the lookup on the mutable
+  `name` field. The next backend boot couldn't find an org named
+  "Paneltec Civil Pty Ltd", so it created a NEW phantom org
+  (`9a6e2c3d-…`).
+- `seed.py:_ensure_users` then unconditionally moved the 5 SEED_USERS
+  (demo@/worker@/super@/audit@/admin@paneltec.com) to the phantom org,
+  vanishing them from Stephen's Settings → Users page.
+
+## Fix shipped
+- `backend/migrations/2026_recover_paneltec_demo_users.py` — moved the
+  5 users back to Stephen's org `3116f250-…` and stamped them with
+  `org_migrated_at` + `org_migrated_from` (audit trail). Idempotent.
+- `seed.py` patched — slug-keyed org lookup (sorted oldest-first to
+  break the slug-collision tie); `_ensure_users` no longer overwrites
+  `org_id`/`workspace_ids` when `org_migrated_at` is set.
+
+## Regression vector to watch
+Any seed file that keys its tenant lookup on a mutable field. The same
+class of bug could resurface in the Phase 3 workspace-rename flow, the
+Phase 4 Simpro vendor-rename sync, or any future "org_name renamed by
+user" UI. Always key on slug or stable id.
