@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -96,7 +96,7 @@ function ConfirmActionModal({ kind, user, busy, onConfirm, onClose }) {
 export default function UsersManagement() {
   const can = useCan();
   const [users, setUsers] = useState([]);
-  const [filters, setFilters] = useState({ role: '', status: '' });
+  const [filters, setFilters] = useState({ role: '', status: 'active' });
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -124,6 +124,7 @@ export default function UsersManagement() {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
   }
   const filtered = users.filter((u) => (!filters.role || u.role === filters.role) && (!filters.status || u.status === filters.status));
+  const disabledCount = users.filter((u) => u.status === 'disabled').length;
   const bulkable = filtered.filter((u) => u.id !== me?.id && !u.deleted_at);
   const bulkAllChecked = bulkable.length > 0 && bulkable.every((u) => bulkSelected.has(u.id));
   const toggleBulk = (uid) => setBulkSelected((s) => { const n = new Set(s); n.has(uid) ? n.delete(uid) : n.add(uid); return n; });
@@ -176,9 +177,16 @@ export default function UsersManagement() {
         <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
           <option value="">All roles</option>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
         </select>
-        <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
+        <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5" data-testid="users-status-filter">
           <option value="">All statuses</option>{['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        {filters.status === 'active' && disabledCount > 0 && (
+          <span className="text-[11px] text-slate-500" data-testid="users-disabled-hint">
+            · {disabledCount} disabled hidden ·{' '}
+            <button onClick={() => setFilters({ ...filters, status: 'disabled' })}
+              className="text-blue-600 hover:underline">show</button>
+          </span>
+        )}
         {can('users', 'edit') && bulkSelected.size > 0 && (
           <div className="ml-auto inline-flex items-center gap-2" data-testid="users-bulk-toolbar">
             <span className="text-xs text-slate-600"><strong>{bulkSelected.size}</strong> selected</span>
@@ -379,8 +387,13 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
   const [profile, setProfile] = useState({ name: '', email: '', role: '', status: '', workspace_ids: [] });
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [hardConfirm, setHardConfirm] = useState(false);
   const [workspaces, setWorkspaces] = useState([]);
   const [permSearch, setPermSearch] = useState('');
+  const [presets, setPresets] = useState({ built_in: [], custom: [] });
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [appliedPreset, setAppliedPreset] = useState(null);
+  const [savePresetOpen, setSavePresetOpen] = useState(false);
 
   const load = async () => {
     try {
@@ -392,7 +405,13 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
       try { const { data: ws } = await api.get('/workspaces'); setWorkspaces(ws || []); } catch { /* ignore */ }
     } catch (e) { toast.error(apiError(e)); }
   };
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [userRow.id]);
+  const loadPresets = async () => {
+    try {
+      const { data } = await api.get('/permission-presets');
+      setPresets({ built_in: data.built_in || [], custom: data.custom || [] });
+    } catch { /* non-fatal */ }
+  };
+  useEffect(() => { load(); loadPresets(); /* eslint-disable-next-line */ }, [userRow.id]);
 
   const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   const saveProfile = async () => {
@@ -437,15 +456,45 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
   const savePerms = async () => {
     setBusy(true);
-    try { await api.put(`/users/${userRow.id}/permissions`, { overrides: perms.overrides }); toast.success('Permissions saved'); onReload(); load(); }
+    try { await api.put(`/users/${userRow.id}/permissions`, { overrides: perms.overrides }); toast.success('Permissions saved'); onReload(); load(); setAppliedPreset(null); }
     catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
   const resetPerms = async () => {
     setBusy(true);
-    try { await api.post(`/users/${userRow.id}/permissions/reset`); toast.success('Reset to role defaults'); onReload(); load(); }
+    try { await api.post(`/users/${userRow.id}/permissions/reset`); toast.success('Reset to role defaults'); onReload(); load(); setAppliedPreset(null); setSelectedPresetId(''); }
     catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
+  };
+
+  const allPresets = useMemo(
+    () => [...(presets.built_in || []), ...(presets.custom || [])],
+    [presets]
+  );
+  const applyPresetLocal = () => {
+    if (!selectedPresetId) return;
+    const preset = allPresets.find((p) => p.id === selectedPresetId || p.key === selectedPresetId);
+    if (!preset || !perms) return;
+    // Replace overrides with the preset matrix. Recompute effective off the
+    // role_defaults that came back from the server.
+    const overrides = {};
+    const eff = JSON.parse(JSON.stringify(perms.effective || {}));
+    Object.entries(preset.permissions || {}).forEach(([res, acts]) => {
+      overrides[res] = {};
+      Object.entries(acts || {}).forEach(([act, val]) => {
+        overrides[res][act] = !!val;
+        eff[res] = eff[res] || {};
+        eff[res][act] = !!val;
+      });
+    });
+    setPerms({ ...perms, overrides, effective: eff });
+    setAppliedPreset({ key: preset.key || preset.id, label: preset.label, is_builtin: !!preset.is_builtin });
+  };
+
+  const handlePresetCreated = (created) => {
+    setPresets((s) => ({ ...s, custom: [...(s.custom || []), created] }));
+    setSelectedPresetId(created.id);
+    toast.success(`Saved preset "${created.label}"`);
   };
   const disable = async () => {
     if (!window.confirm('Disable this user? They will be unable to log in.')) return;
@@ -530,6 +579,60 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               <div className="text-sm text-slate-700"><ShieldCheck size={13} className="inline mr-1 text-brand-blue" /> Role default: <strong>{perms.role}</strong></div>
               {canEdit && <button onClick={resetPerms} data-testid="perm-reset-defaults" className="text-xs inline-flex items-center gap-1 px-2 py-1 border border-slate-300 rounded hover:bg-slate-50"><RotateCcw size={11} /> Reset to defaults</button>}
             </div>
+
+            {canEdit && (
+              <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50/60 px-3 py-2.5" data-testid="preset-picker">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="text-[11px] uppercase tracking-wider font-bold text-violet-700 inline-flex items-center gap-1.5">
+                    <Wand2 size={12} /> Quick apply preset
+                  </div>
+                  <button onClick={() => setSavePresetOpen(true)} disabled={!perms.overrides || Object.keys(perms.overrides).length === 0}
+                    data-testid="save-current-as-preset"
+                    title={!perms.overrides || Object.keys(perms.overrides).length === 0 ? 'Tweak the matrix below, then save as a preset' : 'Save the current matrix as a custom preset'}
+                    className="text-[11px] text-violet-700 hover:underline disabled:text-slate-400 disabled:no-underline disabled:cursor-not-allowed inline-flex items-center gap-1">
+                    <Sparkles size={11} /> Save current as new preset…
+                  </button>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <select value={selectedPresetId} onChange={(e) => setSelectedPresetId(e.target.value)}
+                    data-testid="preset-select"
+                    className="flex-1 min-w-0 px-2.5 py-1.5 text-sm bg-white border border-violet-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-400/40">
+                    <option value="">Choose a preset…</option>
+                    {(presets.built_in || []).length > 0 && (
+                      <optgroup label="Built-in">
+                        {(presets.built_in || []).map((p) => (
+                          <option key={p.id} value={p.id} title={p.description} data-testid={`preset-option-${p.key}`}>{p.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {(presets.custom || []).length > 0 && (
+                      <optgroup label="Custom">
+                        {(presets.custom || []).map((p) => (
+                          <option key={p.id} value={p.id} title={p.description}>{p.label}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <button onClick={applyPresetLocal} disabled={!selectedPresetId}
+                    data-testid="preset-apply-btn"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <Wand2 size={11} /> Apply
+                  </button>
+                </div>
+                {selectedPresetId && !appliedPreset && (
+                  <div className="text-[11px] text-violet-700/80 mt-1.5">
+                    {(allPresets.find((p) => p.id === selectedPresetId || p.key === selectedPresetId) || {}).description || 'Select Apply to populate the matrix below.'}
+                  </div>
+                )}
+                {appliedPreset && (
+                  <div className="mt-2 px-2.5 py-2 rounded-lg bg-white border border-violet-300 text-[12px] text-violet-900 inline-flex items-center gap-2" data-testid="preset-applied-banner">
+                    <Sparkles size={12} className="text-violet-600" />
+                    <span>Applied <strong>{appliedPreset.label}</strong> preset — review the matrix below, then click <strong>Save permissions</strong> to commit.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="relative mb-2">
               <SearchIcon size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -580,6 +683,102 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             {canEdit && <button onClick={savePerms} disabled={busy} className="mt-4 px-4 py-2 bg-brand-blue text-white rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="save-perms"><Save size={13} /> Save permissions</button>}
           </div>
         )}
+        {canEdit && detail?.deleted_at && (
+          <div className="mt-6 pt-4 border-t border-rose-200" data-testid="user-hard-delete-section">
+            <div className="text-[11px] uppercase tracking-wider font-bold text-rose-700 mb-1.5">Danger zone</div>
+            <p className="text-xs text-slate-600 mb-2">This user is soft-deleted. Permanently removing them deletes the row from Mongo — name, email, history pointer. This cannot be undone.</p>
+            <button
+              type="button" onClick={async () => {
+                if (!hardConfirm) { setHardConfirm(true); return; }
+                setBusy(true);
+                try {
+                  await api.delete(`/users/${detail.id}?hard=true`);
+                  toast.success(`${detail.name || detail.email} permanently deleted.`);
+                  onReload?.(); onClose();
+                } catch (e) { toast.error(apiError(e)); }
+                finally { setBusy(false); setHardConfirm(false); }
+              }}
+              data-testid={hardConfirm ? 'user-hard-delete-confirm' : 'user-hard-delete-btn'}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 disabled:opacity-60">
+              <Trash2 size={12} /> {hardConfirm ? `Confirm — permanently delete ${detail.name || detail.email}` : 'Permanently delete'}
+            </button>
+            {hardConfirm && (
+              <button type="button" onClick={() => setHardConfirm(false)}
+                className="ml-2 text-xs text-slate-500 hover:text-slate-700">Cancel</button>
+            )}
+          </div>
+        )}
+        {savePresetOpen && (
+          <SavePresetModal
+            overrides={perms?.overrides || {}}
+            onClose={() => setSavePresetOpen(false)}
+            onCreated={(c) => { setSavePresetOpen(false); handlePresetCreated(c); }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SavePresetModal({ overrides, onClose, onCreated }) {
+  const [label, setLabel] = useState('');
+  const [description, setDescription] = useState('');
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    if (!label.trim()) return;
+    setBusy(true);
+    try {
+      // Convert overrides → full matrix (assume false where absent).
+      const permissions = {};
+      Object.entries(overrides || {}).forEach(([res, acts]) => {
+        permissions[res] = { ...acts };
+      });
+      const { data } = await api.post('/permission-presets', {
+        label: label.trim(),
+        description: description.trim(),
+        permissions,
+      });
+      onCreated?.(data);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+  React.useEffect(() => {
+    const k = (e) => { if (e.key === 'Escape' && !busy) onClose?.(); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [busy, onClose]);
+  return (
+    <div className="fixed inset-0 z-[80] bg-slate-900/60 grid place-items-center p-4"
+      onClick={(e) => e.target === e.currentTarget && !busy && onClose?.()}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" data-testid="save-preset-modal">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center gap-2">
+          <div className="w-9 h-9 rounded-full bg-violet-100 text-violet-700 grid place-items-center"><Sparkles size={16} /></div>
+          <div>
+            <h3 className="font-display font-bold text-slate-900">Save current matrix as preset</h3>
+            <p className="text-[11px] text-slate-500">Other admins can apply this preset to any user in your org.</p>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <label className="block"><div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Label</div>
+            <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g. Family Admin"
+              data-testid="save-preset-label" autoFocus
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" /></label>
+          <label className="block"><div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Description</div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="What this preset grants. Helps the next admin pick the right one."
+              data-testid="save-preset-description" rows={3}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-400/40" /></label>
+        </div>
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+          <button onClick={submit} disabled={busy || !label.trim()}
+            data-testid="save-preset-submit"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-bold hover:bg-violet-700 disabled:opacity-60">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save preset
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -868,7 +1067,7 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-end gap-4">
+        <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-end gap-4 pr-32 sm:pr-40">
           <div className="min-w-[180px]">
             <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Default role</div>
             <Select value={defaultRole} onValueChange={setDefaultRole}>
@@ -900,11 +1099,6 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
             )}
           </div>
           <div className="ml-auto inline-flex items-center gap-2">
-            <button onClick={onClose} type="button" disabled={busy}
-              data-testid="import-cancel"
-              className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
-              Cancel
-            </button>
             <button onClick={submit} disabled={busy || selected.size === 0}
               data-testid="import-submit"
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-semibold uppercase tracking-[0.12em] disabled:opacity-50 hover:bg-blue-700">
@@ -912,6 +1106,11 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
               <span data-testid="import-submit-label">
                 Import {selected.size} {selected.size === 1 ? 'user' : 'users'}
               </span>
+            </button>
+            <button onClick={onClose} type="button" disabled={busy}
+              data-testid="import-cancel"
+              className="px-4 py-2.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 disabled:opacity-50">
+              Cancel
             </button>
           </div>
         </div>

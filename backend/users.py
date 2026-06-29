@@ -303,12 +303,13 @@ async def bulk_delete_users(body: BulkDeleteIn,
 
 
 @router.delete("/{user_id}")
-async def disable_user(user_id: str, actor: dict = Depends(require_permission("users", "edit"))):
+async def disable_user(user_id: str, hard: bool = False,
+                        actor: dict = Depends(require_permission("users", "edit"))):
     if user_id == actor["id"]:
         raise HTTPException(400, "Can't disable your own account")
     target = await db.users.find_one(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"_id": 0, "role": 1, "status": 1},
+        {"_id": 0, "role": 1, "status": 1, "deleted_at": 1, "email": 1},
     )
     if not target:
         raise HTTPException(404, "User not found")
@@ -317,6 +318,18 @@ async def disable_user(user_id: str, actor: dict = Depends(require_permission("u
         remaining = await _other_active_admins_count(actor["org_id"], exclude_user_id=user_id)
         if remaining == 0:
             raise HTTPException(400, "Cannot delete the last active admin in this org")
+    if hard:
+        # Hard-delete = physically remove the row. Only legal when the user
+        # is already soft-deleted — forces the admin to make the choice in
+        # two steps.
+        if not target.get("deleted_at"):
+            raise HTTPException(400, "User must be soft-deleted first (set deleted_at) before hard delete")
+        res = await db.users.delete_one({"id": user_id, "org_id": actor["org_id"]})
+        if res.deleted_count == 0:
+            raise HTTPException(404, "User not found")
+        log.info("users.hard_delete actor=%s target=%s email=%s",
+                 actor["id"], user_id, target.get("email"))
+        return {"ok": True, "hard_deleted": True}
     ts = now_iso()
     result = await db.users.update_one(
         {"id": user_id, "org_id": actor["org_id"]},
