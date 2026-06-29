@@ -53,7 +53,7 @@ from reportlab.platypus import (
 )
 
 from db import db
-from models import now_iso  # noqa: E402  — Phase 3.14 OCR-index timestamp helper
+from models import new_id, now_iso  # noqa: E402  — Phase 3.14 OCR-index timestamp helper
 from auth import get_current_user
 
 
@@ -508,6 +508,106 @@ async def mint_file_preview_token(file_id: str, user: dict = Depends(get_current
     doc, _ = await _resolve_file(file_id, user)  # access check + 404
     token = _mint_preview_token(doc["id"], user["id"])
     return {"token": token, "expires_in": 300}
+
+
+# ────────────────── inline PDF stash (Phase 3.13.1) ──────────────────
+#
+# Some flows generate a PDF on the fly and pass it to the universal
+# PdfPreviewModal (Site QR sheet, Supplier QR sheet, Induction Print, ...).
+# Originally those flows wrapped the bytes in `URL.createObjectURL` and gave
+# the iframe a `blob:` URL — which ad blockers and privacy extensions
+# routinely refuse to load (ERR_BLOCKED_BY_CLIENT).
+#
+# To make those previews behave like normal HTTPS document loads, we stash
+# the PDF bytes in-process and return a same-origin signed URL the iframe
+# can hit directly. The stash is org-scoped, capped, and TTL'd.
+_INLINE_STASH: dict[str, dict] = {}
+_INLINE_STASH_TTL_SECONDS = 600   # 10 minutes
+_INLINE_STASH_MAX_BYTES = 25 * 1024 * 1024   # 25 MB cap per blob
+_INLINE_STASH_MAX_ENTRIES = 200
+
+
+def _stash_prune() -> None:
+    now = time.time()
+    expired = [k for k, v in _INLINE_STASH.items() if v["exp"] < now]
+    for k in expired:
+        _INLINE_STASH.pop(k, None)
+    # Hard cap — drop oldest if we've blown past the limit.
+    while len(_INLINE_STASH) > _INLINE_STASH_MAX_ENTRIES:
+        oldest = min(_INLINE_STASH, key=lambda k: _INLINE_STASH[k]["exp"])
+        _INLINE_STASH.pop(oldest, None)
+
+
+def stash_inline_pdf(pdf_bytes: bytes, user_id: str, org_id: str,
+                      filename: str = "document.pdf",
+                      ttl_seconds: int = _INLINE_STASH_TTL_SECONDS) -> str:
+    """Persist `pdf_bytes` in-memory and return a stash id callers can hand to
+    the frontend so it can pull the bytes via `GET /files/inline/{id}?t=...`
+    instead of feeding a `blob:` URL to the iframe."""
+    if not pdf_bytes:
+        raise HTTPException(400, "Empty PDF body")
+    if len(pdf_bytes) > _INLINE_STASH_MAX_BYTES:
+        raise HTTPException(413, f"PDF too large to stash ({len(pdf_bytes)} bytes)")
+    _stash_prune()
+    sid = new_id()
+    _INLINE_STASH[sid] = {
+        "bytes": pdf_bytes,
+        "user_id": user_id,
+        "org_id": org_id,
+        "filename": filename,
+        "exp": time.time() + ttl_seconds,
+    }
+    return sid
+
+
+@router.get("/files/inline/{stash_id}")
+async def serve_inline_pdf(stash_id: str, request: Request,
+                            t: Optional[str] = Query(None,
+                                description="signed iframe token; alternative to Bearer auth")):
+    """Stream a previously stashed PDF. Accepts either a Bearer header (curl /
+    same-tab navigation) or a `?t=` signed token (iframe path).
+
+    The stash entry pins (user_id, org_id) so a token bound to a different
+    user can't pull it. TTL ~10 min; entry is left in place until it expires
+    so the iframe can re-fetch if the page reloads."""
+    _stash_prune()
+    entry = _INLINE_STASH.get(stash_id)
+    if not entry:
+        raise HTTPException(404, "Inline preview not found or expired")
+    if t:
+        user_id = _verify_preview_token(t, stash_id)
+        if not user_id:
+            raise HTTPException(401, "Invalid or expired preview token")
+    else:
+        user = await get_current_user(request, creds=None)
+        user_id = user["id"]
+    if user_id != entry["user_id"]:
+        raise HTTPException(403, "Preview belongs to a different user")
+    return _pdf_response(entry["bytes"], entry["filename"], dl=False,
+                         pipeline="inline_stash")
+
+
+@router.post("/files/inline-pdf")
+async def stash_inline_endpoint(request: Request, user: dict = Depends(get_current_user)):
+    """Generic stash endpoint: POST a PDF body (binary or multipart) and get
+    back `{stash_id, token, expires_in}`. The iframe then loads
+    `/api/files/inline/{stash_id}?t={token}` to render the PDF as a normal
+    HTTPS document — sidestepping the `blob:` URL ad-blocker block.
+
+    Designed for callers that already have the PDF bytes locally (e.g.
+    they did a normal `axios.post(..., {responseType:'blob'})` and want to
+    show the result in PdfPreviewModal without a `blob:` URL)."""
+    body = await request.body()
+    if not body:
+        raise HTTPException(400, "Empty body")
+    if not _is_pdf(body):
+        raise HTTPException(400, "Body is not a PDF")
+    # Filename is optional, comes from X-Filename header if provided.
+    filename = request.headers.get("x-filename") or "document.pdf"
+    sid = stash_inline_pdf(body, user["id"], user.get("org_id") or "",
+                           filename=filename)
+    token = _mint_preview_token(sid, user["id"])
+    return {"stash_id": sid, "token": token, "expires_in": 300}
 
 
 class BundleIn(BaseModel):

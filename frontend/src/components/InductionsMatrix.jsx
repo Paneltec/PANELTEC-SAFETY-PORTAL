@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import InductionImportWizard from './InductionImportWizard';
+import { stashInlinePdf } from '../lib/pdfStash';
 import PdfPreviewModal from './PdfPreviewModal';
 import InductionCardModal from './InductionCardModal';
 
@@ -77,10 +78,9 @@ export default function InductionsMatrix({ onWorkerClick }) {
     include_raw: false, include_last_updated: false, combined: true,
   });
   const [printing, setPrinting] = useState(false);
-  // Phase 3.11i — inline PDF preview. When non-null, the matrix renders
-  // PdfPreviewModal with blobUrl set to the object URL of the inline PDF.
-  // Object URL is revoked on modal close to avoid leaking memory.
-  const [previewBlobUrl, setPreviewBlobUrl] = useState(null);
+  // Phase 3.13.1 — inline PDF preview now uses the same-origin stash URL
+  // instead of a `blob:` object URL (which ad blockers refuse to load).
+  const [previewDirectUrl, setPreviewDirectUrl] = useState(null);
   const [previewFilename, setPreviewFilename] = useState('');
 
   // Selection clears on search to avoid stale-id surprises.
@@ -111,18 +111,17 @@ export default function InductionsMatrix({ onWorkerClick }) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
       if (mode === 'inline') {
-        // Open the existing PdfPreviewModal pointed at the inline blob.
-        // Filename is informational only (modal header + download fallback).
-        setPreviewBlobUrl(url);
-        setPreviewFilename(
-          workerIds.length === 1
-            ? `paneltec-inductions-${workerIds.length}-worker.pdf`
-            : `paneltec-inductions-${workerIds.length}-workers.pdf`,
-        );
+        // Same-origin HTTPS URL via the inline stash (ad-blocker friendly).
+        const filename = workerIds.length === 1
+          ? `paneltec-inductions-${workerIds.length}-worker.pdf`
+          : `paneltec-inductions-${workerIds.length}-workers.pdf`;
+        const { src } = await stashInlinePdf(blob, filename);
+        setPreviewDirectUrl(src);
+        setPreviewFilename(filename);
         toast.success(`Preview ready · ${workerIds.length} worker(s)`);
       } else {
+        const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url; a.download = `paneltec-inductions-${Date.now()}.pdf`;
         document.body.appendChild(a); a.click(); a.remove();
@@ -135,8 +134,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
   };
 
   const closePreview = () => {
-    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
-    setPreviewBlobUrl(null);
+    setPreviewDirectUrl(null);
     setPreviewFilename('');
   };
 
@@ -618,10 +616,10 @@ export default function InductionsMatrix({ onWorkerClick }) {
           </div>
         </div>
       )}
-      {previewBlobUrl && (
+      {previewDirectUrl && (
         <PdfPreviewModal
           file={{ filename: previewFilename }}
-          blobUrl={previewBlobUrl}
+          directUrl={previewDirectUrl}
           onClose={closePreview}
         />
       )}

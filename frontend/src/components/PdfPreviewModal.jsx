@@ -32,13 +32,19 @@ const PDF_OK = (mime, name) => {
 
 export const isPdfPreviewable = PDF_OK;
 
-export default function PdfPreviewModal({ file, blobUrl, onClose }) {
-  // Two modes:
-  //   1. file={id, filename} → mint a signed token, build iframe src.
-  //   2. blobUrl + file={filename} → caller already has a Blob URL (e.g. the
-  //      Inductions matrix print endpoint returned the PDF inline). Skip the
-  //      token dance and render the blob URL directly. Caller is responsible
-  //      for revoking the URL after the modal closes.
+export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
+  // Three modes:
+  //   1. file={id, filename}            → mint a signed token, build iframe src.
+  //   2. directUrl + file={filename}    → caller already has a same-origin
+  //                                       HTTPS URL the iframe can render
+  //                                       directly (e.g. the inline-PDF stash
+  //                                       at /api/files/inline/{id}?t=...).
+  //                                       Ad blockers leave this alone.
+  //   3. blobUrl + file={filename}      → legacy path: caller hands us a
+  //                                       blob: URL. Kept for back-compat
+  //                                       but routinely blocked by ad
+  //                                       blockers (ERR_BLOCKED_BY_CLIENT).
+  //                                       The blocked-fallback UI applies.
   // Iframes can't carry the Authorization header, so we mint a short-lived
   // signed token via POST /files/{id}/preview-token and put it on the iframe
   // src as `?t=`. This sidesteps Chrome's iframe-cookie / cross-origin auth
@@ -48,26 +54,31 @@ export default function PdfPreviewModal({ file, blobUrl, onClose }) {
   const [pipeline, setPipeline] = useState(null);
   const [err, setErr] = useState(null);
   const [iframeBlocked, setIframeBlocked] = useState(false);
+  const isBlobMode = !!blobUrl && !directUrl;
 
   useEffect(() => {
     if (!file) return;
     let alive = true;
     setIframeBlocked(false);
-    // Mode 2 — caller-supplied blob URL. Skip the watchdog: blob: URLs are
-    // same-origin and can't be blocked by CSP/X-Frame-Options, so the
-    // 6-second timeout only produces false positives when the PDF is large
-    // enough that the headless browser hasn't fired `onload` yet.
-    if (blobUrl) {
-      setSrc(blobUrl);
-      return () => { alive = false; };
-    }
+    // Watchdog — if the iframe hasn't fired `onload` within 6 s, we assume
+    // it's been blocked (Chrome's CSP enforcement is silent, and ad
+    // blockers don't surface ERR_BLOCKED_BY_CLIENT through the iframe
+    // either). The blocked-fallback UI lets the user pop the PDF in a new
+    // tab where the same-origin policy doesn't apply.
     const watchdog = setTimeout(() => {
-      // If the iframe hasn't fired `onload` within 6 s, assume it's been
-      // blocked (Chrome's frame-ancestors enforcement is silent — no error
-      // event fires). The fallback card lets the user pop the PDF in a new
-      // tab where the same-origin policy doesn't apply.
       if (alive) setIframeBlocked(true);
     }, 6000);
+    // Mode 2 — caller-supplied same-origin URL. Render immediately.
+    if (directUrl) {
+      setSrc(directUrl);
+      return () => { alive = false; clearTimeout(watchdog); };
+    }
+    // Mode 3 — caller-supplied blob URL. Render but keep the watchdog on
+    // because ad blockers routinely refuse blob: URLs.
+    if (blobUrl) {
+      setSrc(blobUrl);
+      return () => { alive = false; clearTimeout(watchdog); };
+    }
     // Mode 1 — fetch a signed preview token.
     (async () => {
       try {
@@ -88,7 +99,7 @@ export default function PdfPreviewModal({ file, blobUrl, onClose }) {
       }
     })();
     return () => { alive = false; clearTimeout(watchdog); };
-  }, [file, blobUrl]);
+  }, [file, blobUrl, directUrl]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -177,17 +188,20 @@ export default function PdfPreviewModal({ file, blobUrl, onClose }) {
             <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-blocked">
               <div className="text-center max-w-md px-6">
                 <FileWarning size={28} className="text-amber-600 mx-auto mb-3" />
-                <div className="font-semibold text-slate-900">Chrome blocked the inline preview</div>
+                <div className="font-semibold text-slate-900">Your browser blocked the inline preview</div>
                 <p className="text-[12px] text-slate-600 mt-1.5">
-                  Some browsers refuse to render PDFs inside an iframe. Use the buttons below
-                  to open this PDF in a new tab or download it.
+                  {isBlobMode
+                    ? 'This is usually caused by an ad blocker or privacy extension flagging the local preview URL. Open the PDF in a new tab or download it directly — those paths bypass the extension.'
+                    : 'Some browsers refuse to render PDFs inside an iframe. Use the buttons below to open this PDF in a new tab or download it.'}
                 </p>
                 <div className="mt-4 inline-flex gap-2">
                   <button onClick={openInNewTab}
+                    data-testid="pdf-modal-blocked-newtab"
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
                     <ExternalLink size={12} /> Open in new tab
                   </button>
                   <button onClick={downloadPdf}
+                    data-testid="pdf-modal-blocked-download"
                     className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">
                     <Download size={12} /> Download PDF
                   </button>
