@@ -1,3 +1,71 @@
+# 2026-06-29 — Phase 3.23 Audit Exports dual JSON+PDF artefact (v101)
+
+## Backend
+- `POST /api/audit-exports` now auto-writes a **PDF sibling** whenever the
+  user picks JSON or CSV. Best-effort: a sibling failure logs a warning but
+  never breaks the primary artefact. Sibling row carries `sibling_of` →
+  primary id and shares the primary's SHA-256 via the meta block.
+- **NEW** `POST /api/audit-exports/{id}/render-pdf` — admin-only, idempotent
+  on-demand renderer for packs missing their PDF. Returns the existing
+  sibling if one already exists for the composite (title + period + scope)
+  group. Used by the frontend "JSON unavailable / render PDF" hint chip.
+- `_pdf()` hardened against malformed legacy bundles: non-list values are
+  ignored when computing sufficiency totals; non-dict records are skipped
+  per entity. Previously crashed with `AttributeError` on legacy packs.
+- `scripts/backfill_audit_pack_pdfs.py` — idempotent backfill script:
+  - Reads every non-PDF `audit_exports` row.
+  - Skips rows that already have a PDF sibling (composite lookup).
+  - Renders + writes the sibling, inserts a row with `backfilled=True`.
+  - Logs `migrated / skipped_already_dual / failed` counters at end.
+  - Run with `cd /app/backend && python3 -m scripts.backfill_audit_pack_pdfs`.
+
+## Frontend
+- `AuditExports.jsx` rewritten to **group rows by composite key**
+  `(title, date_from, date_to, scope, workspace_id)`. The composite
+  includes `scope` + `workspace_id` to defend against cross-workspace
+  collisions (e.g. "Quarterly Pack · All workspaces" vs "Quarterly Pack ·
+  Sydney Metro" would otherwise merge into one — catastrophic for audit).
+- Formats column renders inline `PDF · JSON` links (PDF first as the
+  human-readable default; JSON muted in slate-500). Each link is a direct
+  href to `${BACKEND}${file_url}` with `data-testid="export-download-{fmt}-{id}"`.
+- Missing-format hint chip (amber WarnFill icon) appears when a row is
+  missing a format:
+  - **Missing PDF** (JSON-only): admin click triggers
+    `POST /audit-exports/{id}/render-pdf` then reloads. Non-admins see
+    tooltip "ask an admin to regenerate".
+  - **Missing JSON** (PDF-only): informational tooltip only — JSON cannot
+    be reconstructed from PDF; user must re-export from source data.
+- Email button now attaches **all formats** in the group (PDF preferred).
+- Service worker `CACHE_VERSION` bumped to `paneltec-v101` — all clients
+  self-heal via `swVersionGuard` on next poll.
+
+## Verification
+- Backfill first run: `migrated=4 skipped_already_dual=2 failed=0`.
+- Backfill re-run: `migrated=0 skipped_already_dual=6 failed=0` (idempotent).
+- Curl receipts:
+  - `POST /audit-exports` JSON format → returns primary + `pdf_sibling`.
+  - `POST /audit-exports/{json_id}/render-pdf` → 201 + sibling row.
+  - Re-call same id → 201 + **same sibling id** (idempotent).
+  - Call on a PDF id → 400 "Row is already a PDF artefact".
+- UI screenshot: 5 grouped rows. 3 show `PDF · JSON`, 2 show `PDF` plus
+  amber JSON-unavailable hint.
+
+## Files touched
+- `/app/backend/exports.py` (+ render-pdf endpoint, defensive _pdf)
+- `/app/backend/scripts/backfill_audit_pack_pdfs.py` (new)
+- `/app/frontend/src/pages/AuditExports.jsx` (full rewrite, group key)
+- `/app/frontend/public/service-worker.js` (CACHE_VERSION → paneltec-v101)
+
+## Next phases (parked for next session)
+- **Phase 3.22c (P1)** — Card-style PDFs to 2-colour brand. Needs new
+  `pdf_card_template.py` for CR80/lanyard/site-gate sign + Avery 30-up
+  label sheet.
+- **Phase 3.22d (P1)** — Long-form PDFs (SWMS doc, certification renewal,
+  inductions matrix print, form submission) to the same brand template.
+
+---
+
+
 # 2026-06-29 — Phase 4.1 SWMS Assignments + version-chain commit
 
 ## Backend

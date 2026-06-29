@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "export_id": "9fc47a3c-bfa1-43fb-add8-34aea041404b",
+    "title": "v101 test pack",
+    "date_from": "2025-01-01",
+    "date_to": "2025-12-31",
+    "scope": "All workspaces",
+    "generated_at": "2026-06-29T11:04:18.339331+00:00",
+    "generated_by": "stephen@paneltec.com.au",
+    "counts": {
+      "hazards": 0,
+      "incidents": 0
+    }
+  },
+  "data": {
+    "hazards": [],
+    "incidents": []
+  }
+}

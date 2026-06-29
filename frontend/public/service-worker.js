@@ -103,8 +103,22 @@
  *       (Worker ID / Supplier lanyard / Site gate sign) and long-form
  *       (SWMS / Certs / Inductions print / Form submission) still on
  *       legacy path — migrate in 3.22c/d.
+ * v101 — Phase 3.23 Audit Exports dual JSON+PDF artefact:
+ *       · `POST /api/audit-exports` now auto-writes a PDF sibling
+ *         whenever the user picks JSON or CSV (best-effort — never
+ *         breaks the primary export).
+ *       · `POST /api/audit-exports/{id}/render-pdf` admin-only
+ *         on-demand renderer for packs missing their PDF sibling.
+ *       · `scripts/backfill_audit_pack_pdfs.py` idempotent script
+ *         to backfill historical JSON packs (logs migrated /
+ *         skipped_already_dual / failed counts).
+ *       · Frontend `AuditExports.jsx` groups rows by composite key
+ *         (title + period + scope + workspace) and renders inline
+ *         "PDF · JSON" download links. Amber warning chip appears
+ *         when a row is missing a format — admin click triggers the
+ *         render-pdf endpoint and refreshes the table.
  */
-const CACHE_VERSION = 'paneltec-v99.1';
+const CACHE_VERSION = 'paneltec-v101';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
