@@ -22,20 +22,28 @@ from reportlab.platypus import (
 )
 from reportlab.pdfgen.canvas import Canvas
 
-# ---- Brand tokens ----
-BRAND_BLUE = colors.HexColor("#2C6BFF")
-BRAND_INK = colors.HexColor("#0F172A")
-BRAND_MUTED = colors.HexColor("#64748B")
-BRAND_BORDER = colors.HexColor("#E5E7EB")
-GREEN = colors.HexColor("#10B981")
-MINT_BG = colors.HexColor("#D1FAE5")
-AMBER = colors.HexColor("#F59E0B")
-AMBER_BG = colors.HexColor("#FEF3C7")
-RED = colors.HexColor("#EF4444")
-RED_BG = colors.HexColor("#FEE2E2")
-VIOLET = colors.HexColor("#7C3AED")
-VIOLET_BG = colors.HexColor("#F5F3FF")
-SLATE_BG = colors.HexColor("#F8FAFC")
+# Phase 3.22d — brand tokens come from `pdf_brand.py` (single source of
+# truth). The legacy aliases below are kept so existing helpers keep
+# compiling, but they now resolve to orange + slate. NO cobalt, NO violet.
+from pdf_brand import (ORANGE, ORANGE_PALE, ORANGE_DEEP,
+                       SLATE, SLATE_INK, SLATE_MUTED, SLATE_BORDER,
+                       SLATE_BAND, SEV_CRITICAL, SEV_CRITICAL_BG,
+                       SEV_WARNING, SEV_WARNING_BG, SEV_OK, SEV_OK_BG)
+
+# ---- Brand tokens (aliased — old names point at the new palette) ----
+BRAND_BLUE   = ORANGE          # legacy accent → orange
+BRAND_INK    = SLATE_INK
+BRAND_MUTED  = SLATE_MUTED
+BRAND_BORDER = SLATE_BORDER
+GREEN        = SEV_OK          # "approved" now reads as muted slate
+MINT_BG      = SEV_OK_BG
+AMBER        = ORANGE
+AMBER_BG     = ORANGE_PALE
+RED          = SEV_CRITICAL
+RED_BG       = SEV_CRITICAL_BG
+VIOLET       = ORANGE          # violet is forbidden — fall back to orange
+VIOLET_BG    = ORANGE_PALE
+SLATE_BG     = SLATE_BAND
 
 UPLOADS_ROOT = Path(os.environ.get("UPLOADS_DIR", "/app/backend/uploads")).resolve()
 PDFS_DIR = UPLOADS_ROOT / "pdfs"
@@ -68,7 +76,7 @@ def _status_color(status: Optional[str]):
     if s in {"approved", "closed", "complete", "resolved", "pass", "passed", "sent"}:
         return (GREEN, MINT_BG)
     if s in {"in_progress", "in-progress", "open", "pending", "submitted", "review", "in_review"}:
-        return (BRAND_BLUE, colors.HexColor("#DBEAFE"))
+        return (BRAND_BLUE, ORANGE_PALE)
     if s in {"draft", "queued", "n/a", "na"}:
         return (BRAND_MUTED, SLATE_BG)
     if s in {"rejected", "fail", "failed", "high", "critical", "overdue"}:
@@ -245,18 +253,18 @@ def _crumb(record: dict, kind: str) -> str:
 def _render_swms_rich(swms: dict, layout: str = "civil") -> bytes:
     """Phase 4.x SWMS layout for structured documents (activity_analysis +
     environmental_risks + emergency_procedures). Honours `layout`:
-      - 'civil'    → pastel, lighter typography, mint approval badge
-      - 'original' → traditional Paneltec SWMS table layout with formal borders
-    Falls back to the civil styling for unknown layout values.
+      - 'civil'    → modern Paneltec orange + slate; light typography
+      - 'original' → deeper slate borders for the formal Paneltec SWMS look
+    Phase 3.22d — all colours now come from `pdf_brand.py` (orange + slate).
     """
-    from reportlab.lib import colors
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import PageBreak, Table, TableStyle, Spacer, Paragraph
     from reportlab.lib.units import mm
 
     is_original = (layout == "original")
-    accent_hex = "#1e4a8c" if is_original else "#2C6BFF"
-    border_hex = "#1e293b" if is_original else "#cbd5e1"
+    # Phase 3.22d — every accent is orange or slate. No cobalt, no mint.
+    accent_col = SLATE if is_original else ORANGE
+    border_col = SLATE if is_original else SLATE_BORDER
 
     buf = io.BytesIO()
     title = f"{swms.get('code') or 'SWMS'} · {swms.get('title', '')}"
@@ -304,11 +312,11 @@ def _render_swms_rich(swms: dict, layout: str = "civil") -> bytes:
         data = [_wrap(rows[0], hdr=True)] + [_wrap(r) for r in rows[1:]]
         t = Table(data, colWidths=[8*mm, 30*mm, 38*mm, 12*mm, 60*mm, 22*mm, 12*mm], repeatRows=1)
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(accent_hex)),
-            ("BOX",        (0,0), (-1,-1), 0.4, colors.HexColor(border_hex)),
-            ("INNERGRID",  (0,0), (-1,-1), 0.25, colors.HexColor(border_hex)),
+            ("BACKGROUND", (0,0), (-1,0), accent_col),
+            ("BOX",        (0,0), (-1,-1), 0.4, border_col),
+            ("INNERGRID",  (0,0), (-1,-1), 0.25, border_col),
             ("VALIGN",     (0,0), (-1,-1), "TOP"),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, SLATE_BAND]),
         ]))
         story += [t]
 
@@ -327,11 +335,14 @@ def _render_swms_rich(swms: dict, layout: str = "civil") -> bytes:
         data = [_wrap(rows[0], hdr=True)] + [_wrap(r) for r in rows[1:]]
         t = Table(data, colWidths=[30*mm, 38*mm, 12*mm, 70*mm, 22*mm, 12*mm], repeatRows=1)
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#10B981" if not is_original else accent_hex)),
-            ("BOX",        (0,0), (-1,-1), 0.4, colors.HexColor(border_hex)),
-            ("INNERGRID",  (0,0), (-1,-1), 0.25, colors.HexColor(border_hex)),
+            # Environmental section was the old mint header — now slate to
+            # keep parity with the activity table; orange would be too noisy
+            # for back-to-back tables.
+            ("BACKGROUND", (0,0), (-1,0), SLATE),
+            ("BOX",        (0,0), (-1,-1), 0.4, border_col),
+            ("INNERGRID",  (0,0), (-1,-1), 0.25, border_col),
             ("VALIGN",     (0,0), (-1,-1), "TOP"),
-            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.white, SLATE_BAND]),
         ]))
         story += [t]
 
@@ -354,12 +365,12 @@ def _render_swms_rich(swms: dict, layout: str = "civil") -> bytes:
         rows = [["Name", "Trade / Role", "Date", "Signature"]] + [["", "", "", ""] for _ in range(12)]
         t = Table(rows, colWidths=[55*mm, 45*mm, 25*mm, 55*mm])
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor(accent_hex)),
+            ("BACKGROUND", (0,0), (-1,0), accent_col),
             ("TEXTCOLOR",  (0,0), (-1,0), colors.white),
             ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
             ("FONTSIZE",   (0,0), (-1,0), 8),
-            ("BOX",        (0,0), (-1,-1), 0.5, colors.HexColor(border_hex)),
-            ("INNERGRID",  (0,0), (-1,-1), 0.3, colors.HexColor(border_hex)),
+            ("BOX",        (0,0), (-1,-1), 0.5, border_col),
+            ("INNERGRID",  (0,0), (-1,-1), 0.3, border_col),
         ]))
         story += [t]
 

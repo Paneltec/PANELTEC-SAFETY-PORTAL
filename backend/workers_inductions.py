@@ -703,15 +703,19 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
                             topMargin=14*mm, bottomMargin=14*mm,
                             title="Paneltec Civil — Inductions")
     styles = getSampleStyleSheet()
+    # Phase 3.22d — Inductions print on orange + slate brand. No HexColor
+    # literals in this file; all tones come from `pdf_brand.py`.
+    from pdf_brand import ORANGE, SLATE_INK, SLATE_MUTED, SLATE_BORDER, SLATE_BAND
     h_org = ParagraphStyle("h_org", parent=styles["Normal"],
-        fontName="Helvetica-Bold", fontSize=10, textColor=colors.HexColor("#2C6BFF"),
-        leading=12, spaceAfter=2)
+        fontName="Helvetica-Bold", fontSize=10, textColor=ORANGE,
+        leading=12, spaceAfter=2, tracking=1.2)
     h_name = ParagraphStyle("h_name", parent=styles["Heading1"],
-        fontName="Helvetica-Bold", fontSize=20, leading=24, spaceAfter=2)
+        fontName="Helvetica-Bold", fontSize=20, leading=24, spaceAfter=2,
+        textColor=SLATE_INK)
     sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9,
-        textColor=colors.HexColor("#475569"), spaceAfter=8)
+        textColor=SLATE_MUTED, spaceAfter=8)
     h2 = ParagraphStyle("h2", parent=styles["Heading2"],
-        fontName="Helvetica-Bold", fontSize=12, textColor=colors.HexColor("#0f172a"),
+        fontName="Helvetica-Bold", fontSize=12, textColor=SLATE_INK,
         leading=14, spaceBefore=10, spaceAfter=4)
 
     elements = []
@@ -729,10 +733,10 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
                                _STATUS_LABEL.get(w.get("chip"), w.get("chip") or "—")])
         t = Table(cover_rows, colWidths=[12*mm, 75*mm, 60*mm, 30*mm])
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+            ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
             ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
             ("FONTSIZE", (0,0), (-1,-1), 9),
-            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+            ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
             ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
             ("LEFTPADDING", (0,0), (-1,-1), 6),
             ("RIGHTPADDING", (0,0), (-1,-1), 6),
@@ -788,10 +792,10 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
             if body.include_last_updated: col_widths.append(28*mm)
             t = Table(table_rows, colWidths=col_widths, repeatRows=1)
             ts = TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+                ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
                 ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
                 ("FONTSIZE", (0,0), (-1,-1), 9),
-                ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+                ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
                 ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
                 ("LEFTPADDING", (0,0), (-1,-1), 5),
                 ("RIGHTPADDING", (0,0), (-1,-1), 5),
@@ -815,10 +819,10 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
                 ar.append(["Notes", a["extras"]])
             t = Table(ar, colWidths=[70*mm, 56*mm])
             t.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+                ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
                 ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
                 ("FONTSIZE", (0,0), (-1,-1), 9),
-                ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+                ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
                 ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5),
                 ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4),
             ]))
@@ -829,7 +833,7 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
             elements.append(Paragraph(
                 "<i>No induction records on file for this worker.</i>",
                 ParagraphStyle("empty", parent=styles["Normal"], fontSize=10,
-                               textColor=colors.HexColor("#94a3b8"))))
+                               textColor=SLATE_MUTED)))
 
         if body.include_legend:
             elements.append(Spacer(1, 6*mm))

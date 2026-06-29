@@ -29,6 +29,9 @@ from reportlab.pdfgen import canvas
 
 from auth import get_current_user
 from db import db
+# Phase 3.22c — wallet / lanyard / Avery cards on the shared 2-colour template.
+from pdf_card_template import (header_band, qr_image, ORANGE, SLATE,
+                                SLATE_INK, SLATE_MUTED, SLATE_BORDER, WHITE)
 
 _ALPHABET = string.ascii_letters + string.digits
 _SEED_KEY = "workers.scan_tokens_seeded_at"
@@ -140,74 +143,68 @@ async def worker_qr_png(worker_id: str = Path(...), user: dict = Depends(get_cur
 def _draw_wallet_card(c: canvas.Canvas, w: dict, x: float, y: float):
     """ID-1 credit-card size (85.6 × 54 mm) — name, role, company, QR."""
     W, H = 85.6 * mm, 54 * mm
-    c.setStrokeColorRGB(0.85, 0.88, 0.93)
-    c.setFillColorRGB(1, 1, 1)
+    # Card outline — slate hairline border on white stock.
+    c.setStrokeColor(SLATE_BORDER)
+    c.setFillColor(WHITE)
     c.roundRect(x, y, W, H, 4 * mm, stroke=1, fill=1)
-    # Header strip
-    c.setFillColorRGB(0.17, 0.42, 1.0)  # Paneltec blue
-    c.roundRect(x, y + H - 9 * mm, W, 9 * mm, 4 * mm, stroke=0, fill=1)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(x + 4 * mm, y + H - 6 * mm, "PANELTEC CIVIL")
-    c.setFont("Helvetica", 6)
-    c.drawRightString(x + W - 4 * mm, y + H - 6 * mm, "WORKER ID")
+    # Phase 3.22c — slate header band + orange chevron (was Paneltec blue).
+    header_band(c, x, y + H - 9 * mm, W, 9 * mm,
+                eyebrow='WORKER ID', eyebrow_align='right',
+                rounded_top_mm=4)
 
     # Name + role
-    c.setFillColorRGB(0.05, 0.1, 0.16)
+    c.setFillColor(SLATE_INK)
     c.setFont("Helvetica-Bold", 11)
     name = _full_name(w)
     c.drawString(x + 4 * mm, y + H - 16 * mm, name[:30])
     c.setFont("Helvetica", 8)
     role = w.get("trade") or w.get("position") or w.get("role") or "—"
-    c.setFillColorRGB(0.3, 0.4, 0.5)
+    c.setFillColor(SLATE_MUTED)
     c.drawString(x + 4 * mm, y + H - 21 * mm, role[:36])
     c.drawString(x + 4 * mm, y + H - 26 * mm, (w.get("company_label") or "Paneltec")[:36])
-    # Token text (small)
+    # Token text (small, orange accent)
+    c.setFillColor(ORANGE)
     c.setFont("Courier", 6)
     c.drawString(x + 4 * mm, y + 3 * mm, (w.get("scan_token") or "—"))
 
     # QR — bottom-right square
-    qr_png = _make_qr_png(_scan_url(w["scan_token"]), box_size=4)
-    from reportlab.lib.utils import ImageReader
-    img = ImageReader(io.BytesIO(qr_png))
     qr_size = 24 * mm
-    c.drawImage(img, x + W - qr_size - 3 * mm, y + 3 * mm,
-                width=qr_size, height=qr_size, preserveAspectRatio=True, mask='auto')
+    c.drawImage(qr_image(_scan_url(w["scan_token"]), box_size=4),
+                x + W - qr_size - 3 * mm, y + 3 * mm,
+                width=qr_size, height=qr_size,
+                preserveAspectRatio=True, mask='auto')
 
 
 def _draw_lanyard_card(c: canvas.Canvas, w: dict, x: float, y: float):
     """Portrait 100 × 150 mm with larger QR + emergency contact line."""
     W, H = 100 * mm, 150 * mm
-    c.setFillColorRGB(1, 1, 1)
-    c.setStrokeColorRGB(0.85, 0.88, 0.93)
+    c.setFillColor(WHITE)
+    c.setStrokeColor(SLATE_BORDER)
     c.roundRect(x, y, W, H, 5 * mm, stroke=1, fill=1)
-    c.setFillColorRGB(0.17, 0.42, 1.0)
-    c.roundRect(x, y + H - 16 * mm, W, 16 * mm, 5 * mm, stroke=0, fill=1)
-    c.setFillColorRGB(1, 1, 1)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(x + 6 * mm, y + H - 10 * mm, "PANELTEC CIVIL")
-    c.setFont("Helvetica", 8)
-    c.drawString(x + 6 * mm, y + H - 14 * mm, "Site Worker ID")
+    # Slate header band — 16mm — orange chevron, white wordmark.
+    header_band(c, x, y + H - 16 * mm, W, 16 * mm,
+                eyebrow='SITE WORKER ID', rounded_top_mm=5)
 
-    c.setFillColorRGB(0.05, 0.1, 0.16)
+    c.setFillColor(SLATE_INK)
     c.setFont("Helvetica-Bold", 16)
     c.drawString(x + 6 * mm, y + H - 30 * mm, _full_name(w)[:24])
     c.setFont("Helvetica", 10)
-    c.setFillColorRGB(0.3, 0.4, 0.5)
+    c.setFillColor(SLATE_MUTED)
     c.drawString(x + 6 * mm, y + H - 38 * mm, (w.get("trade") or w.get("position") or w.get("role") or "—")[:30])
     c.drawString(x + 6 * mm, y + H - 45 * mm, (w.get("company_label") or "Paneltec")[:30])
 
     # Big QR centre-bottom
-    from reportlab.lib.utils import ImageReader
-    qr_png = _make_qr_png(_scan_url(w["scan_token"]), box_size=8)
-    img = ImageReader(io.BytesIO(qr_png))
     qr_size = 60 * mm
-    c.drawImage(img, x + (W - qr_size) / 2, y + 18 * mm,
-                width=qr_size, height=qr_size, preserveAspectRatio=True, mask='auto')
+    c.drawImage(qr_image(_scan_url(w["scan_token"]), box_size=8),
+                x + (W - qr_size) / 2, y + 18 * mm,
+                width=qr_size, height=qr_size,
+                preserveAspectRatio=True, mask='auto')
 
     c.setFont("Helvetica", 7)
-    c.setFillColorRGB(0.4, 0.45, 0.55)
+    c.setFillColor(SLATE_MUTED)
     c.drawCentredString(x + W / 2, y + 12 * mm, "Scan this QR to view profile, certifications and site sign-in.")
+    c.setFillColor(ORANGE)
+    c.setFont("Courier-Bold", 7)
     c.drawCentredString(x + W / 2, y + 7 * mm, f"Token: {w.get('scan_token') or '—'}")
 
 

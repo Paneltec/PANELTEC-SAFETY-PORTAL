@@ -30,6 +30,9 @@ from auth import get_current_user
 from db import db
 from models import new_id, now_iso
 from workers_qr import _public_app_url
+# Phase 3.22c — supplier QR cards on the shared 2-colour template.
+from pdf_card_template import (header_band, qr_image, ORANGE, SLATE,
+                                SLATE_INK, SLATE_MUTED, SLATE_BORDER, WHITE)
 
 _ALPHABET = string.ascii_letters + string.digits
 
@@ -185,69 +188,65 @@ async def contractor_scan_pdf(
         # ID-2 portrait — 74 × 105 mm — fits a standard lanyard sleeve.
         W, H = 74 * mm, 105 * mm
         c_pdf = canvas.Canvas(buf, pagesize=(W, H))
-        # Header bar
-        c_pdf.setFillColorRGB(0.17, 0.42, 1.0)
-        c_pdf.rect(0, H - 22 * mm, W, 22 * mm, fill=1, stroke=0)
-        c_pdf.setFillColorRGB(1, 1, 1)
-        c_pdf.setFont("Helvetica-Bold", 13)
-        c_pdf.drawCentredString(W / 2, H - 10 * mm, "SUPPLIER INDUCTION")
-        c_pdf.setFont("Helvetica", 8)
-        c_pdf.drawCentredString(W / 2, H - 17 * mm, "Paneltec Civil WHS")
+        # Phase 3.22c — slate header band with orange chevron + wordmark.
+        header_band(c_pdf, 0, H - 22 * mm, W, 22 * mm,
+                    eyebrow='SUPPLIER INDUCTION · PANELTEC CIVIL WHS',
+                    eyebrow_align='right')
 
         # Name + ABN
-        c_pdf.setFillColorRGB(0, 0, 0)
+        c_pdf.setFillColor(SLATE_INK)
         c_pdf.setFont("Helvetica-Bold", 12)
         c_pdf.drawCentredString(W / 2, H - 32 * mm, (c.get("name") or "Supplier")[:32])
         if c.get("abn"):
             c_pdf.setFont("Helvetica", 8)
-            c_pdf.setFillColorRGB(0.3, 0.4, 0.5)
+            c_pdf.setFillColor(SLATE_MUTED)
             c_pdf.drawCentredString(W / 2, H - 38 * mm, f"ABN {c['abn']}")
 
         # QR (centred)
-        from reportlab.lib.utils import ImageReader
         qr_size = 50 * mm
-        c_pdf.drawImage(ImageReader(io.BytesIO(qr_png)),
-                         (W - qr_size) / 2, 22 * mm,
-                         qr_size, qr_size)
+        c_pdf.drawImage(qr_image(_supplier_scan_url(token), box_size=10),
+                         (W - qr_size) / 2, 22 * mm, qr_size, qr_size)
 
-        c_pdf.setFillColorRGB(0.4, 0.45, 0.55)
+        c_pdf.setFillColor(SLATE_MUTED)
         c_pdf.setFont("Helvetica", 7)
         c_pdf.drawCentredString(W / 2, 15 * mm, "Scan to complete the induction")
-        c_pdf.setFont("Helvetica-Oblique", 6)
+        c_pdf.setFillColor(ORANGE)
+        c_pdf.setFont("Courier-Bold", 7)
         c_pdf.drawCentredString(W / 2, 9 * mm, f"Token: {token}")
         c_pdf.showPage(); c_pdf.save()
     else:
         # Business-card 85.6 × 54 mm
         W, H = 85.6 * mm, 54 * mm
         c_pdf = canvas.Canvas(buf, pagesize=(W, H))
-        c_pdf.setStrokeColorRGB(0.85, 0.88, 0.93)
-        c_pdf.setFillColorRGB(1, 1, 1)
+        c_pdf.setStrokeColor(SLATE_BORDER)
+        c_pdf.setFillColor(WHITE)
         c_pdf.roundRect(0, 0, W, H, 3 * mm, stroke=1, fill=1)
-        # Left text block
-        c_pdf.setFillColorRGB(0.17, 0.42, 1.0)
+        # Orange wordmark line (no full slate band — keeps the BC airy).
+        c_pdf.setFillColor(ORANGE)
         c_pdf.setFont("Helvetica-Bold", 8)
         c_pdf.drawString(4 * mm, H - 6 * mm, "PANELTEC CIVIL")
-        c_pdf.setFillColorRGB(0.3, 0.4, 0.5)
+        c_pdf.setFillColor(SLATE_MUTED)
         c_pdf.setFont("Helvetica", 6)
         c_pdf.drawString(4 * mm, H - 10 * mm, "Supplier induction")
 
-        c_pdf.setFillColorRGB(0.05, 0.1, 0.16)
+        c_pdf.setFillColor(SLATE_INK)
         c_pdf.setFont("Helvetica-Bold", 10)
         c_pdf.drawString(4 * mm, H - 22 * mm, (c.get("name") or "Supplier")[:28])
         c_pdf.setFont("Helvetica", 7)
-        c_pdf.setFillColorRGB(0.3, 0.4, 0.5)
+        c_pdf.setFillColor(SLATE_MUTED)
         c_pdf.drawString(4 * mm, H - 28 * mm,
                           (c.get("trade") or c.get("contact_name") or "—")[:32])
         if c.get("abn"):
             c_pdf.drawString(4 * mm, H - 33 * mm, f"ABN {c['abn']}")
+        c_pdf.setFillColor(SLATE_MUTED)
         c_pdf.setFont("Helvetica", 6)
         c_pdf.drawString(4 * mm, 5 * mm, "Scan to complete induction →")
+        c_pdf.setFillColor(ORANGE)
         c_pdf.setFont("Courier", 5)
         c_pdf.drawString(4 * mm, 2.5 * mm, f"Token: {token}")
 
-        from reportlab.lib.utils import ImageReader
         qr_size = 36 * mm
-        c_pdf.drawImage(ImageReader(io.BytesIO(qr_png)),
+        c_pdf.drawImage(qr_image(_supplier_scan_url(token), box_size=7),
                          W - qr_size - 4 * mm, (H - qr_size) / 2,
                          qr_size, qr_size)
         c_pdf.showPage(); c_pdf.save()

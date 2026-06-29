@@ -1,3 +1,51 @@
+# 2026-06-29 — Phase 3.22c + 3.22d ALL PDFs on 2-colour brand (v102)
+
+## Phase 3.22c — Card-style PDFs (NEW `pdf_card_template.py`)
+- New shared template: `header_band`, `chevron` (orange "A" mark),
+  `qr_image`, `qr_block`, `pairing_zone` (replaces violet NFC zone with
+  dotted orange), `footer_brand`, `cut_guide`.
+- Migrated 9 card artefacts to slate + orange:
+  - `workers_qr.py` — wallet + lanyard worker ID cards (Avery 10-up too).
+  - `assets.py` — A6 plant label, on-metal label, combo (QR + NFC) label,
+    Avery L7160 21-up sheet.
+  - `suppliers_qr.py` — supplier lanyard + business-card induction QR.
+  - `sites_qr.py` — A4 portrait gate sign + Avery 30-up label sheet.
+
+## Phase 3.22d — Long-form PDFs (`pdf_renderer.py` brand swap)
+- Brand constants in `pdf_renderer.py` (`BRAND_BLUE`, `GREEN`, `VIOLET`,
+  `MINT_BG` …) now point at `pdf_brand.py` orange + slate. Cascades to:
+  - SWMS document (civil + rich `activity_analysis` layout).
+  - Form submission PDFs (`forms_pdf.py` reuses pdf_renderer helpers).
+  - Certifications + Renewals PDFs.
+  - Audit Pack PDF (Phase 3.23 sibling).
+  - Pre-Start / Site Diary / Incident / Inspection / Hazard already on
+    `pdf_template.py` from 3.22a/b — no churn.
+- `_render_swms_rich` — inline accent colours swapped to `ORANGE` / `SLATE`,
+  environmental risks table now slate (was mint).
+- `workers_inductions.py::print_inductions` — orange eyebrow, slate body,
+  slate table headers (`#f1f5f9` → `SLATE_BAND`, `#e2e8f0` → `SLATE_BORDER`,
+  `#94a3b8` → `SLATE_MUTED`).
+
+## Guarantees
+- `grep -rE 'HexColor\(' /app/backend/*.py | grep -v pdf_brand.py | grep -v
+  pdf_template.py | grep -v pdf_card_template.py` → **zero matches**.
+- Smoke-rendered all 11 PDF artefact types — all return `%PDF` magic.
+- SWMS PDF pixel sample: orange + slate present, **no cobalt / violet /
+  mint** in top 12 colours.
+
+## Cache
+- Service worker bumped `paneltec-v101` → `paneltec-v102`. All clients
+  self-heal via `swVersionGuard`.
+
+## Next session
+- **Phase 3.24** (parked, user-requested) — Scheduled monthly auto-pack:
+  `org_settings.audit_pack_schedule`, APScheduler cron (1st @ 06:00 UTC),
+  dual JSON+PDF via 3.23 pipeline, M365 outbox to recipients, Settings →
+  Audit Exports "Schedule" admin tab.
+
+---
+
+
 # 2026-06-29 — Phase 3.23 Audit Exports dual JSON+PDF artefact (v101)
 
 ## Backend

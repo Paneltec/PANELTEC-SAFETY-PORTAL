@@ -38,6 +38,9 @@ from auth import get_current_user
 from db import db
 from models import new_id, now_iso
 from workers_qr import _public_app_url
+# Phase 3.22c — site QR cards on the shared 2-colour template.
+from pdf_card_template import (header_band, qr_image, ORANGE, SLATE,
+                                SLATE_INK, SLATE_MUTED, WHITE)
 
 _ALPHABET = string.ascii_letters + string.digits
 
@@ -242,35 +245,33 @@ async def site_scan_pdf(site_id: str,
     page_w, page_h = A4
 
     if layout == "gate_sign":
-        # A4 portrait gate sign — big QR top centre, site name + address, big
-        # arrow/instruction. Designed to be laminated and zip-tied to a fence.
-        c.setFillColorRGB(0.17, 0.42, 1.0)  # Paneltec blue
-        c.rect(0, page_h - 35 * mm, page_w, 35 * mm, fill=1, stroke=0)
-        c.setFillColorRGB(1, 1, 1)
-        c.setFont("Helvetica-Bold", 22)
-        c.drawCentredString(page_w / 2, page_h - 18 * mm, "Site Sign-On")
-        c.setFont("Helvetica", 12)
-        c.drawCentredString(page_w / 2, page_h - 28 * mm, "Scan the QR — Paneltec Civil WHS")
+        # A4 portrait gate sign — slate header band + orange chevron,
+        # big QR centred. Designed to laminate + zip-tie to a fence.
+        header_band(c, 0, page_h - 35 * mm, page_w, 35 * mm,
+                    eyebrow='SCAN THE QR · PANELTEC CIVIL WHS',
+                    eyebrow_align='right')
 
         # Site name
-        c.setFillColorRGB(0, 0, 0)
+        c.setFillColor(SLATE_INK)
         c.setFont("Helvetica-Bold", 26)
         c.drawCentredString(page_w / 2, page_h - 55 * mm, (site.get("name") or "Site")[:60])
         c.setFont("Helvetica", 12)
+        c.setFillColor(SLATE_MUTED)
         addr = site.get("address_full") or site.get("address") or ""
         c.drawCentredString(page_w / 2, page_h - 65 * mm, addr[:80])
 
-        # QR block (centred, ~150mm square)
+        # QR block (centred, ~120mm square)
         qr_size_mm = 120
-        from reportlab.lib.utils import ImageReader
-        c.drawImage(ImageReader(io.BytesIO(qr_png)),
+        c.drawImage(qr_image(_site_scan_url(token), box_size=14),
                     (page_w - qr_size_mm * mm) / 2, page_h - (90 + qr_size_mm) * mm,
                     qr_size_mm * mm, qr_size_mm * mm)
 
+        c.setFillColor(SLATE_INK)
         c.setFont("Helvetica", 10)
         c.drawCentredString(page_w / 2, 30 * mm,
             "Scan with your phone camera, then sign on. All workers and visitors must sign on.")
-        c.setFont("Helvetica-Oblique", 8)
+        c.setFillColor(ORANGE)
+        c.setFont("Courier-Bold", 8)
         c.drawCentredString(page_w / 2, 18 * mm, f"Token: {token} — generated {now_iso()[:10]}")
     else:
         # Avery 30-up label sheet (3 cols × 10 rows). Each label gets one QR
@@ -279,19 +280,22 @@ async def site_scan_pdf(site_id: str,
         label_w, label_h = 66.7 * mm, 25.4 * mm
         margin_x = (page_w - cols * label_w) / 2
         margin_y = (page_h - rows * label_h) / 2
-        from reportlab.lib.utils import ImageReader
         for r in range(rows):
             for col in range(cols):
                 x = margin_x + col * label_w
                 y = page_h - margin_y - (r + 1) * label_h
-                c.drawImage(ImageReader(io.BytesIO(qr_png)),
+                c.drawImage(qr_image(_site_scan_url(token), box_size=6),
                             x + 2 * mm, y + 2 * mm,
                             21 * mm, 21 * mm)
+                c.setFillColor(SLATE_INK)
                 c.setFont("Helvetica-Bold", 7)
                 c.drawString(x + 26 * mm, y + 18 * mm, (site.get("name") or "Site")[:25])
+                c.setFillColor(SLATE_MUTED)
                 c.setFont("Helvetica", 6)
                 c.drawString(x + 26 * mm, y + 12 * mm, "Scan to sign-on")
-                c.drawString(x + 26 * mm, y + 8 * mm, "Paneltec Civil WHS")
+                c.setFillColor(ORANGE)
+                c.setFont("Helvetica-Bold", 6)
+                c.drawString(x + 26 * mm, y + 8 * mm, "PANELTEC CIVIL WHS")
 
     c.showPage(); c.save()
     buf.seek(0)

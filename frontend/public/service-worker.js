@@ -117,8 +117,24 @@
  *         "PDF · JSON" download links. Amber warning chip appears
  *         when a row is missing a format — admin click triggers the
  *         render-pdf endpoint and refreshes the table.
+ * v102 — Phase 3.22c + 3.22d. EVERY PDF report in the app now flows
+ *       through the shared 2-colour brand (orange #F97316 + slate
+ *       #1E293B). Zero `HexColor(...)` calls outside the three brand
+ *       modules: `pdf_brand.py`, `pdf_template.py`, `pdf_card_template.py`.
+ *       · 3.22c — `pdf_card_template.py` shipped with `header_band`,
+ *         `chevron`, `qr_image`, `qr_block`, `pairing_zone`,
+ *         `footer_brand`, `cut_guide`. Migrated: Worker wallet/lanyard
+ *         ID, Asset A6 label, on-metal label, combo (QR+NFC) label,
+ *         Avery L7160 21-up sheet, Supplier lanyard, Supplier business
+ *         card, Site gate sign, Site Avery 30-up sheet.
+ *       · 3.22d — `pdf_renderer.py` brand tokens point at the new
+ *         palette so SWMS (both civil + rich activity-analysis layout),
+ *         Form submission, Certifications and Renewals print PDFs
+ *         inherit orange + slate automatically. Inductions Matrix
+ *         print (`/api/workers/inductions/print`) also migrated.
+ *         Old violet NFC pairing zone replaced with dotted orange.
  */
-const CACHE_VERSION = 'paneltec-v101';
+const CACHE_VERSION = 'paneltec-v102';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

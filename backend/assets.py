@@ -17,7 +17,7 @@ import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
-from reportlab.lib.colors import HexColor, black, grey, white
+from reportlab.lib.colors import black, grey, white
 from reportlab.lib.pagesizes import A4, A6
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -25,6 +25,11 @@ from reportlab.pdfgen import canvas
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
+# Phase 3.22c — every card-style PDF now goes through the shared 2-colour
+# template (orange + slate). No HexColor calls in this file.
+from pdf_card_template import (header_band, qr_image, qr_block, footer_brand,
+                                pairing_zone, cut_guide,
+                                ORANGE, SLATE, SLATE_MUTED, SLATE_BORDER)
 
 log = logging.getLogger("paneltec.assets")
 router = APIRouter(prefix="/assets", tags=["assets"])
@@ -439,15 +444,10 @@ async def asset_qr_png(asset_id: str, user: dict = Depends(get_current_user)):
 
 def _draw_a6_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float):
     pad = 8 * mm
-    brand = HexColor("#2C6BFF")
-    # Top: brand bar
-    c.setFillColor(brand)
-    c.rect(0, page_h - 14 * mm, page_w, 14 * mm, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(pad, page_h - 9 * mm, "PANELTEC CIVIL")
-    c.setFont("Helvetica", 8)
-    c.drawRightString(page_w - pad, page_h - 9 * mm, "PROPERTY OF / SCAN TO IDENTIFY")
+    # Phase 3.22c — slate header band with orange chevron, no more blue.
+    header_band(c, 0, page_h - 14 * mm, page_w, 14 * mm,
+                eyebrow='PROPERTY OF · SCAN TO IDENTIFY',
+                eyebrow_align='right')
 
     # Name
     c.setFillColor(black)
@@ -459,7 +459,7 @@ def _draw_a6_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float):
     rego = (doc.get("rego_serial") or "—")[:14]
     c.drawString(pad, page_h - 34 * mm, rego)
     c.setFont("Helvetica", 9)
-    c.setFillColor(grey)
+    c.setFillColor(SLATE_MUTED)
     type_label = (doc.get("asset_type") or "—").replace("_", " ").title()
     c.drawString(pad, page_h - 40 * mm, f"Type: {type_label}   ·   Kind: {(doc.get('kind') or '').title()}")
     c.setFillColor(black)
@@ -468,17 +468,17 @@ def _draw_a6_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float):
     qr_size = 50 * mm
     qr_x = page_w - qr_size - pad
     qr_y = pad
-    png = _make_qr_png(_public_scan_url(doc["scan_token"]), box_size=10)
-    img_reader = _png_image_reader(png)
-    c.drawImage(img_reader, qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
+    c.drawImage(qr_image(_public_scan_url(doc["scan_token"]), box_size=10),
+                qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
 
-    # Token text under QR
+    # Token text under QR — orange to anchor the eye
+    c.setFillColor(ORANGE)
     c.setFont("Courier-Bold", 9)
     c.drawCentredString(qr_x + qr_size / 2, qr_y - 4 * mm, doc["scan_token"])
 
-    # Left footer
+    # Left footer — muted scan URL
     c.setFont("Helvetica", 7)
-    c.setFillColor(grey)
+    c.setFillColor(SLATE_MUTED)
     c.drawString(pad, pad + 4 * mm, _public_scan_url(doc["scan_token"])[:54])
 
 
@@ -488,8 +488,8 @@ def _draw_on_metal_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: flo
     qr_size = 70 * mm
     qr_x = (page_w - qr_size) / 2
     qr_y = page_h - qr_size - pad - 6 * mm
-    png = _make_qr_png(_public_scan_url(doc["scan_token"]), box_size=12)
-    c.drawImage(_png_image_reader(png), qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
+    c.drawImage(qr_image(_public_scan_url(doc["scan_token"]), box_size=12),
+                qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
 
     # Big rego
     c.setFillColor(black)
@@ -498,22 +498,18 @@ def _draw_on_metal_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: flo
 
     # Name
     c.setFont("Helvetica", 11)
+    c.setFillColor(SLATE)
     c.drawCentredString(page_w / 2, qr_y - 22 * mm, (doc.get("name") or "")[:40])
 
-    # Footer
-    c.setFont("Helvetica-Bold", 9)
-    c.setFillColor(HexColor("#2C6BFF"))
-    c.drawCentredString(page_w / 2, pad + 2 * mm, "PROPERTY OF PANELTEC CIVIL")
+    # Brand footer — orange line (the only colour on the lower half).
+    footer_brand(c, 0, pad + 2 * mm, page_w)
 
 
 def _draw_combo_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float):
     pad = 8 * mm
-    brand = HexColor("#2C6BFF")
-    c.setFillColor(brand)
-    c.rect(0, page_h - 14 * mm, page_w, 14 * mm, fill=1, stroke=0)
-    c.setFillColor(white)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(pad, page_h - 9 * mm, "PANELTEC CIVIL · QR + NFC PAIRING")
+    # Slate header band with orange chevron — replaces old cobalt strip.
+    header_band(c, 0, page_h - 14 * mm, page_w, 14 * mm,
+                eyebrow='QR + NFC PAIRING', eyebrow_align='right')
 
     c.setFillColor(black)
     c.setFont("Helvetica-Bold", 16)
@@ -525,28 +521,16 @@ def _draw_combo_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float)
     qr_size = 42 * mm
     qr_x = pad
     qr_y = pad + 6 * mm
-    png = _make_qr_png(_public_scan_url(doc["scan_token"]), box_size=8)
-    c.drawImage(_png_image_reader(png), qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
+    c.drawImage(qr_image(_public_scan_url(doc["scan_token"]), box_size=8),
+                qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
 
-    # Dotted NFC zone on the right
+    # Phase 3.22c — Dotted ORANGE NFC pairing zone (was violet before).
     nfc_x = qr_x + qr_size + 8 * mm
-    nfc_y = qr_y
     nfc_size = 42 * mm
-    c.setDash(3, 3)
-    c.setStrokeColor(HexColor("#7C3AED"))
-    c.setLineWidth(1.2)
-    c.roundRect(nfc_x, nfc_y, nfc_size, nfc_size, 4 * mm, fill=0, stroke=1)
-    c.setDash()
-    c.setFillColor(HexColor("#7C3AED"))
-    c.setFont("Helvetica-Bold", 11)
-    c.drawCentredString(nfc_x + nfc_size / 2, nfc_y + nfc_size / 2 + 4 * mm, "NFC PAIRING ZONE")
-    c.setFillColor(grey)
-    c.setFont("Helvetica", 8)
-    c.drawCentredString(nfc_x + nfc_size / 2, nfc_y + nfc_size / 2 - 2 * mm, "Tap phone here after scanning QR")
-    c.drawCentredString(nfc_x + nfc_size / 2, nfc_y + nfc_size / 2 - 8 * mm, "to pair the NFC tag.")
+    pairing_zone(c, nfc_x, qr_y, nfc_size)
 
-    # Token + url under QR
-    c.setFillColor(black)
+    # Token under QR — orange anchor
+    c.setFillColor(ORANGE)
     c.setFont("Courier-Bold", 9)
     c.drawCentredString(qr_x + qr_size / 2, qr_y - 4 * mm, doc["scan_token"])
 
@@ -568,31 +552,31 @@ def _draw_avery_sheet(c: canvas.Canvas, docs: list[dict]):
         row = idx // cols
         x = margin_x + col * label_w
         y = page_h - margin_y - (row + 1) * label_h
-        # Light border (cut guide)
-        c.setStrokeColor(HexColor("#E5E7EB"))
-        c.setLineWidth(0.3)
-        c.rect(x, y, label_w, label_h, fill=0, stroke=1)
+        # Slate hairline cut guide (was the old #E5E7EB).
+        cut_guide(c, x, y, label_w, label_h)
         # QR
         qr_size = 28 * mm
-        png = _make_qr_png(_public_scan_url(doc["scan_token"]), box_size=6)
-        c.drawImage(_png_image_reader(png), x + 2 * mm, y + 5 * mm, width=qr_size, height=qr_size, mask="auto")
-        # Text
+        c.drawImage(qr_image(_public_scan_url(doc["scan_token"]), box_size=6),
+                    x + 2 * mm, y + 5 * mm, width=qr_size, height=qr_size, mask="auto")
+        # Text — orange wordmark, slate body
         text_x = x + qr_size + 4 * mm
-        c.setFillColor(HexColor("#2C6BFF"))
+        c.setFillColor(ORANGE)
         c.setFont("Helvetica-Bold", 7)
         c.drawString(text_x, y + label_h - 5 * mm, "PANELTEC CIVIL")
-        c.setFillColor(black)
+        c.setFillColor(SLATE)
         c.setFont("Helvetica-Bold", 9)
         c.drawString(text_x, y + label_h - 11 * mm, (doc.get("name") or "")[:22])
         c.setFont("Helvetica-Bold", 12)
         c.drawString(text_x, y + label_h - 19 * mm, (doc.get("rego_serial") or "—")[:14])
         c.setFont("Helvetica", 7)
-        c.setFillColor(grey)
+        c.setFillColor(SLATE_MUTED)
         c.drawString(text_x, y + 4 * mm, doc["scan_token"])
         c.setFillColor(black)
 
 
 def _png_image_reader(png_bytes: bytes):
+    """Kept for any callers still passing raw PNG bytes; the new flow
+    uses `qr_image()` from `pdf_card_template` directly."""
     from reportlab.lib.utils import ImageReader
     return ImageReader(io.BytesIO(png_bytes))
 
