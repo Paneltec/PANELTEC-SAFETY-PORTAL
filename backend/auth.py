@@ -167,12 +167,23 @@ async def signup(body: SignupIn):
 @router.post("/login", response_model=TokenOut)
 async def login(body: LoginIn, request: Request):
     email = body.email.lower()
+    # Phase 4.7 — lockout pre-check. Locked accounts return 423 with a
+    # friendly message; admins can unlock via /api/users/{id}/unlock.
+    from auth_invite import is_locked, record_login_attempt
+    if await is_locked(email):
+        raise HTTPException(status_code=423,
+                            detail="Account temporarily locked after too many failed attempts. "
+                                   "Try again in 15 minutes or ask your admin to unlock.",
+                            headers={"X-Auth-Reason": "locked"})
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
+        await record_login_attempt(email, success=False)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
                             headers={"X-Auth-Reason": "account-disabled"})
+    await record_login_attempt(email, success=True)
+    await db.users.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_iso()}})
     # Phase 3.16 — embed `jti`, set absolute_hours from per-role settings,
     # register the active session row for the idle-watch middleware.
     try:

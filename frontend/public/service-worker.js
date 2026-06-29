@@ -167,8 +167,28 @@
  *       PyPDF2 fallback in place when poppler/tesseract aren't on
  *       the host (graceful degrade for text-embedded PDFs). Toast on
  *       success now offers "Open in editor" → `?highlight=ai_filled`.
+ * v107 — Phase 4.7 BACKEND — Worker invites, reset, PIN, lockout:
+ *       · `POST /api/users/{id}/invite` (admin) — email+SMS magic
+ *         link, 7-day JWT, audit-logged.
+ *       · `POST /api/auth/invite/validate` (public, rate-limited).
+ *       · `POST /api/auth/invite/redeem` (public) — sets password,
+ *         bumps token_version, returns a normal login JWT.
+ *       · `POST /api/users/{id}/reset-password` (admin) — 24-h JWT.
+ *       · `POST /api/auth/reset/redeem` (public).
+ *       · `POST /api/auth/forgot-password` (public) — always 200, no
+ *         email enumeration leak; per-email + per-IP throttle.
+ *       · `POST /api/users/{id}/pin` (admin) — 6-digit, 24-h, bcrypt
+ *         hashed; PIN returned ONCE to admin.
+ *       · `POST /api/auth/pin/redeem` (public).
+ *       · `POST /api/users/{id}/unlock` (admin) + `record_login_attempt`
+ *         hook into `auth.login` → 5 fails / 15 min lockout, 423.
+ *       · `GET  /api/users/{id}/access-status` — admin status pill data.
+ *       · Centralised `validate_password_rule` (10 chars, letter+digit+
+ *         special). Audit-logged everywhere. PUBLIC_HOST derived from
+ *         X-Forwarded-Host. Frontend onboard/reset/forgot/access UI
+ *         + ChangePasswordModal queued for next turn.
  */
-const CACHE_VERSION = 'paneltec-v106';:
+const CACHE_VERSION = 'paneltec-v107';:
  *       · Backend `swms_phase45.py`:
  *         - `POST /api/swms/from-paste` Claude-parses pasted text/HTML
  *           into the SWMS schema and saves as a draft (200–12,000 char

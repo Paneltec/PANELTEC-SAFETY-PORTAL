@@ -142,6 +142,8 @@ api.include_router(files_router)
 # generic /swms/{item_id} GET route.
 from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
 from swms_phase45 import router as swms_phase45_router  # noqa: E402
+from auth_invite import router as auth_invite_router  # noqa: E402
+api.include_router(auth_invite_router)
 api.include_router(swms_extras_router)
 api.include_router(swms_admin_router)
 api.include_router(swms_phase45_router)
