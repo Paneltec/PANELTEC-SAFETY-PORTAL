@@ -83,8 +83,24 @@
  *       · Navixy sync now also harvests `last_position_time` from
  *         get_states and stores it as `navixy_last_position_time` so admins
  *         can see Navixy-side vs our-poll timestamps side-by-side.
+ * v96 — Phase 3.20 (Wave 2) Fluent icon migration across AppShell + 16
+ *       list pages (62 lucide swaps → @fluentui/react-icons). ESLint
+ *       no-undef tightened to error to block undefined JSX at build.
+ * v96.2 — Cache-propagation fix. Two reasons users were still seeing the
+ *       pre-Fluent icons after v96 shipped:
+ *         (1) Page-side `RELOAD_GUARD` was a single static string so only
+ *             the FIRST SW upgrade in a browser session triggered the
+ *             auto-reload — every subsequent version (incl. v96) was
+ *             silently dropped. Now keyed per-version.
+ *         (2) In DEV mode `registerServiceWorker()` returned early without
+ *             unregistering stale prod SWs already controlling the tab —
+ *             those zombies kept serving cached chunks. Dev mode now
+ *             unregisters every SW + drops every cache on page load.
+ *       Skipped v96.1 (the planned Simpro modal cleanup) — going straight
+ *       to v96.2 to bundle the cache fix with the compile-error recovery
+ *       on UsersManagement.jsx.
  */
-const CACHE_VERSION = 'paneltec-v96';
+const CACHE_VERSION = 'paneltec-v96.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

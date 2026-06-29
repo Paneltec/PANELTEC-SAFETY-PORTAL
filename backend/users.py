@@ -378,8 +378,13 @@ class SimproEmployeeIn(BaseModel):
 
 class ImportFromSimproIn(BaseModel):
     employees: List[SimproEmployeeIn]
-    default_role: Role = "worker"
-    workspace_ids: List[str] = Field(default_factory=list)
+    # Phase 3.21 — `default_role` and `workspace_ids` removed from the
+    # import flow. Every imported user lands as role="worker" with no
+    # workspace pre-assignment; the admin promotes/assigns via the Edit
+    # drawer after import. Fields kept here as Optional ignored inputs
+    # for backwards compatibility with older clients.
+    default_role: Optional[Role] = None
+    workspace_ids: Optional[List[str]] = None
 
 
 @router.post("/import-from-simpro", status_code=201)
@@ -420,8 +425,8 @@ async def import_from_simpro(
         # Random throwaway password — Simpro-imported users sign in via /auth/login-with-simpro.
         throwaway_pwd = new_id() + new_id()
         doc = {
-            "id": user_id, "email": email, "name": name, "role": body.default_role,
-            "org_id": actor["org_id"], "workspace_ids": list(body.workspace_ids),
+            "id": user_id, "email": email, "name": name, "role": "worker",
+            "org_id": actor["org_id"], "workspace_ids": [],
             "password_hash": hash_password(throwaway_pwd),
             "status": "active",
             "token_version": 0,

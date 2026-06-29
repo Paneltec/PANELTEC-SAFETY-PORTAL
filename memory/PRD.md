@@ -1242,3 +1242,36 @@ user" UI. Always key on slug or stable id.
 
 - **Wave 1 (v95.4.1)**: AppShell sidebar (~24 icons) + UsersManagement row actions + toolbar (8 icons) migrated lucide → @fluentui/react-icons. Sidebar uses 24Regular default / 24Filled active. Tightened ESLint with `no-undef: error` after the Wave 1 `Plus` orphan regression.
 - **Wave 2 (v96)**: 62 row-action/toolbar icons across 14 list pages migrated lucide → @fluentui/react-icons via deterministic migration script `/app/scripts/wave2_fluent_migrate.py`. All 16 acceptance routes load with zero runtime errors.
+
+## v96.2 — Cache propagation fix + Simpro Import modal cleanup (2026-06-29)
+
+### Cache propagation (the real fix)
+Two compounding bugs prevented v96 Fluent icons from reaching users
+even after the SW + bundle.js shipped to the CDN:
+
+1. **`RELOAD_GUARD` was a static string** (`paneltec_sw_reloaded_v70`).
+   First SW upgrade in a browser session set the sessionStorage flag,
+   then EVERY subsequent upgrade broadcast (v85 → v96 → v96.2) was
+   silently dropped because the flag was already set. Now keyed
+   per-version: `paneltec_sw_reloaded_${data.version}`.
+2. **`registerServiceWorker()` returned early in dev mode** without
+   unregistering stale prod SWs. Users who'd ever visited the URL
+   while a production deploy was live had a zombie SW intercepting
+   every chunk request. Dev mode now proactively unregisters all
+   SW registrations and drops every cache on page load.
+
+### Simpro Import modal cleanup
+- UI: removed the whiteboard-only toggle, the default-role dropdown,
+  and the workspaces picker from `ImportFromSimproDrawer`. New users
+  land as `role=worker` with empty workspaces; admins refine per-user
+  via the ✏️ Edit drawer after import.
+- Backend: `POST /api/integrations/simpro/users/import` hardcodes
+  `role="worker"` and `workspace_ids=[]` on the create path.
+- `filterMode` is now a pinned constant (`'all'`) at component scope —
+  endpoint still accepts the param, UI no longer exposes the toggle.
+
+### Compile-error recovery
+Mid-cleanup the file ended up with an orphaned `})();` and `}, []);`
+between `useEffect` and `fetchEmployees`, plus a stray `</div>` in the
+footer. Both fixed; ESLint clean (only pre-existing exhaustive-deps
+warnings on the file).

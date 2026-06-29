@@ -842,14 +842,15 @@ const ROLE_OPTIONS_IMPORT = [
 function ImportFromSimproDrawer({ companies, onClose, onDone }) {
   const allCompanyIds = useMemo(() => companies.map((c) => String(c.id)), [companies]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
-  const [filterMode, setFilterMode] = useState('whiteboard'); // 'whiteboard' | 'all'
+  // Phase 3.21 — filterMode state retained internally as a constant
+  // because the backend `/integrations/simpro/employees` endpoint still
+  // accepts a `filter` query param. We pin it to `all` so the UI always
+  // shows the full employee list (the whiteboard toggle is gone).
+  const filterMode = 'all';
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [selected, setSelected] = useState(new Set());
-  const [defaultRole, setDefaultRole] = useState('worker');
-  const [workspaces, setWorkspaces] = useState([]);
-  const [chosenWorkspaces, setChosenWorkspaces] = useState([]);
   const [busy, setBusy] = useState(false);
   // Monotonically increasing request id used to discard stale responses
   // when the filter / company selection flips faster than the network can keep up.
@@ -863,13 +864,6 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
       return prev;
     });
   }, [allCompanyIds]);
-
-  // Load workspaces once
-  useEffect(() => {
-    (async () => {
-      try { const { data } = await api.get('/workspaces'); setWorkspaces(data || []); } catch { /* ignore */ }
-    })();
-  }, []);
 
   // Fetch employees whenever companies/filter changes.
   // Uses a request-id guard so a slow earlier fetch can't overwrite a newer one.
@@ -897,9 +891,6 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
   const toggleCompany = (cid) => {
     const k = String(cid);
     setSelectedCompanies((prev) => prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]);
-  };
-  const toggleWorkspace = (wid) => {
-    setChosenWorkspaces((prev) => prev.includes(wid) ? prev.filter((x) => x !== wid) : [...prev, wid]);
   };
 
   const visible = useMemo(() => {
@@ -942,8 +933,6 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
           position: e.position || null,
           company_name: e.company_name || null,
         })),
-        default_role: defaultRole,
-        workspace_ids: chosenWorkspaces,
       };
       const { data } = await api.post('/users/import-from-simpro', payload);
       const parts = [`Imported ${data.created}`];
@@ -988,15 +977,6 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs" data-testid="import-filter-toggle">
-              {[['whiteboard', 'Only whiteboard-marked'], ['all', 'All employees']].map(([v, lbl]) => (
-                <button key={v} type="button" onClick={() => setFilterMode(v)}
-                  className={`px-3 py-1.5 font-medium ${filterMode === v ? 'bg-slate-800 text-white' : 'bg-white text-slate-700 hover:bg-slate-100'}`}
-                  data-testid={`import-filter-${v}`}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
             <div className="relative flex-1 min-w-[180px]">
               <SearchIcon size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -1079,35 +1059,9 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
         </div>
 
         <div className="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-wrap items-end gap-4 pr-32 sm:pr-40">
-          <div className="min-w-[180px]">
-            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Default role</div>
-            <Select value={defaultRole} onValueChange={setDefaultRole}>
-              <SelectTrigger className="w-full" data-testid="import-default-role"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ROLE_OPTIONS_IMPORT.map((r) => (
-                  <SelectItem key={r.value} value={r.value} data-testid={`import-role-opt-${r.value}`}>{r.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex-1 min-w-[200px]">
-            <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Workspaces (optional)</div>
-            {workspaces.length === 0 ? (
-              <div className="text-xs text-slate-400 italic px-2 py-2">No workspaces in your org.</div>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {workspaces.map((w) => {
-                  const on = chosenWorkspaces.includes(w.id);
-                  return (
-                    <button key={w.id} type="button" onClick={() => toggleWorkspace(w.id)}
-                      data-testid={`import-ws-chip-${w.id}`}
-                      className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${on ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'}`}>
-                      {w.name}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+          <div className="flex-1 text-[11px] text-slate-500">
+            New users land as <strong>role: worker</strong> with no workspace
+            assignment. Adjust per-user via the ✏️ Edit drawer after import.
           </div>
           <div className="ml-auto inline-flex items-center gap-2">
             <button onClick={submit} disabled={busy || selected.size === 0}

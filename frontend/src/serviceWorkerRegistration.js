@@ -8,16 +8,21 @@
 // one-time reload gated by sessionStorage so the loop can't repeat.
 import { toast } from 'sonner';
 
-const RELOAD_GUARD = 'paneltec_sw_reloaded_v70';
-
+// v96.2 — Guard key is now PER-VERSION instead of a single static string.
+// The previous static `paneltec_sw_reloaded_v70` meant that the FIRST SW
+// upgrade in a browser session won the reload; every subsequent upgrade in
+// the same session (v85 → v96 → v96.2 …) was silently dropped because the
+// guard was already set. Keying off `data.version` lets every distinct
+// CACHE_VERSION earn exactly one auto-reload per session.
 function attachForceReloadListener() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event?.data;
     if (!data || data.type !== 'paneltec_sw_force_reload') return;
+    const guardKey = `paneltec_sw_reloaded_${data.version || 'unknown'}`;
     try {
-      if (sessionStorage.getItem(RELOAD_GUARD) === '1') return;
-      sessionStorage.setItem(RELOAD_GUARD, '1');
+      if (sessionStorage.getItem(guardKey) === '1') return;
+      sessionStorage.setItem(guardKey, '1');
     } catch (_) { /* sessionStorage may have just been wiped — fine */ }
     // Defer one tick so the SW message handler returns cleanly.
     setTimeout(() => window.location.reload(), 0);
@@ -30,7 +35,32 @@ function attachForceReloadListener() {
 attachForceReloadListener();
 
 export function registerServiceWorker() {
-  if (process.env.NODE_ENV !== 'production') return;
+  if (process.env.NODE_ENV !== 'production') {
+    // v96.2 — DEV-MODE SAFETY NET. If a user previously visited this URL
+    // while it was serving a production build, their browser still has a
+    // stuck SW controlling every request. In dev that means our hot bundle
+    // can be partially shadowed by the stale prod cache (the symptom Stephen
+    // hit: new Fluent icons present in bundle.js but invisible in the UI).
+    // Proactively unregister every SW + drop every cache so the next reload
+    // is clean. Safe to run on every dev page load — idempotent if nothing
+    // is registered.
+    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((regs) => {
+        if (regs.length === 0) return;
+        Promise.all(regs.map((r) => r.unregister().catch(() => false)))
+          .then(() => {
+            if ('caches' in window) {
+              return caches.keys().then((keys) =>
+                Promise.all(keys.map((k) => caches.delete(k).catch(() => false))),
+              );
+            }
+            return null;
+          })
+          .catch(() => { /* swallow — best-effort */ });
+      }).catch(() => { /* ignore */ });
+    }
+    return;
+  }
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
 
   window.addEventListener('load', () => {
