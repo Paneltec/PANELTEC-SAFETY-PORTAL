@@ -136,7 +136,20 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data === 'SKIP_WAITING') self.skipWaiting();
+  if (event.data === 'SKIP_WAITING') {
+    self.skipWaiting();
+    return;
+  }
+  // v96.2 — version probe. Client posts {type:'GET_VERSION'} via a
+  // MessageChannel and we reply with the running CACHE_VERSION so the page
+  // can detect when a stale prod SW is still in control.
+  if (event.data && event.data.type === 'GET_VERSION') {
+    const port = event.ports && event.ports[0];
+    if (port) {
+      try { port.postMessage({ version: CACHE_VERSION }); } catch (_) { /* noop */ }
+    }
+    return;
+  }
 });
 
 function isHtmlNavigation(req, url) {

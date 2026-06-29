@@ -93,6 +93,39 @@ async def health():
     return {"ok": True}
 
 
+# v96.2 — Cache-version probe. Frontend AppShell queries the controlling
+# Service Worker via postMessage and compares its `CACHE_VERSION` against
+# the value returned here. On mismatch the page self-heals (purge caches,
+# unregister SW, hard reload) so stuck-SW browsers never get stranded on a
+# stale bundle. Source of truth: /app/frontend/public/service-worker.js.
+_CACHE_VERSION_CACHE: dict = {"value": None, "stat": None}
+
+
+def _read_sw_cache_version() -> str:
+    import os, re
+    sw_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "public", "service-worker.js")
+    sw_path = os.path.abspath(sw_path)
+    try:
+        st = os.stat(sw_path)
+        stat_key = (st.st_mtime_ns, st.st_size)
+        if _CACHE_VERSION_CACHE["stat"] == stat_key and _CACHE_VERSION_CACHE["value"]:
+            return _CACHE_VERSION_CACHE["value"]
+        with open(sw_path, "r", encoding="utf-8") as f:
+            text = f.read()
+        m = re.search(r"const\s+CACHE_VERSION\s*=\s*['\"]([^'\"]+)['\"]", text)
+        version = m.group(1) if m else "unknown"
+        _CACHE_VERSION_CACHE["value"] = version
+        _CACHE_VERSION_CACHE["stat"] = stat_key
+        return version
+    except Exception:
+        return "unknown"
+
+
+@api.get("/health/version")
+async def health_version():
+    return {"cache_version": _read_sw_cache_version()}
+
+
 @api.get("/whoami")
 async def whoami(user: dict = Depends(get_current_user)):
     return {"id": user["id"], "email": user["email"], "role": user["role"]}

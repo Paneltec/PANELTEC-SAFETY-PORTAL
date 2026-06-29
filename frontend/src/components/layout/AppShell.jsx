@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
@@ -288,6 +289,11 @@ export default function AppShell() {
   // refresh user from server on mount so role/name stays accurate, and slide
   // the JWT window via a silent /auth/refresh so long-idle sessions don't 401.
   useEffect(() => {
+    // v96.2 — Self-heal stuck-SW browsers. If the controlling SW version
+    // doesn't match what the backend advertises, this nukes caches +
+    // unregisters and force-reloads exactly once per session. Fire-and-
+    // forget; safe to ignore the promise.
+    runSwVersionGuard();
     if (getToken()) {
       refreshToken().finally(() => {
         fetchMe().then(setUser).catch(() => { /* 401 interceptor redirects */ });

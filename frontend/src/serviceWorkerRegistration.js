@@ -6,7 +6,10 @@
 // SW was stuck at an older version, the new activate handler (after they
 // finally pick up v69) will postMessage every open client → we force a
 // one-time reload gated by sessionStorage so the loop can't repeat.
-import { toast } from 'sonner';
+//
+// v96.2 — Combined with the new auto-skipWaiting flow below, we no longer
+// nag users with a "Reload to update" toast — incoming SW grabs control
+// immediately and `controllerchange` reloads the page once.
 
 // v96.2 — Guard key is now PER-VERSION instead of a single static string.
 // The previous static `paneltec_sw_reloaded_v70` meant that the FIRST SW
@@ -65,25 +68,33 @@ export function registerServiceWorker() {
 
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/service-worker.js').then((reg) => {
-      // Listen for updates.
+      // v96.2 — Poll for SW updates every 60s while the tab is open so
+      // long-lived sessions pick up new builds without a manual refresh.
+      try {
+        setInterval(() => { reg.update().catch(() => {}); }, 60_000);
+      } catch (_) { /* setInterval should never throw — defensive */ }
+
+      // v96.2 — Auto-activate the incoming SW. Previously we showed a
+      // "Reload to update" toast that users ignored, leaving them on a
+      // stale bundle. Now any new SW gets SKIP_WAITING immediately on
+      // install; pair it with `controllerchange` to reload the tab once
+      // the new SW takes over. Gated by sessionStorage so we don't loop
+      // on the very first registration (when no controller existed yet).
       reg.addEventListener('updatefound', () => {
         const incoming = reg.installing;
         if (!incoming) return;
         incoming.addEventListener('statechange', () => {
           if (incoming.state === 'installed' && navigator.serviceWorker.controller) {
-            toast.message('New version available', {
-              description: 'Reload to update.',
-              action: {
-                label: 'Reload',
-                onClick: () => {
-                  incoming.postMessage('SKIP_WAITING');
-                  window.location.reload();
-                },
-              },
-              duration: 12000,
-            });
+            try { incoming.postMessage('SKIP_WAITING'); } catch (_) { /* noop */ }
           }
         });
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        try {
+          if (sessionStorage.getItem('paneltec_sw_controller_reloaded') === '1') return;
+          sessionStorage.setItem('paneltec_sw_controller_reloaded', '1');
+        } catch (_) { /* noop */ }
+        setTimeout(() => window.location.reload(), 0);
       });
     }).catch(() => { /* ignore — non-fatal */ });
   });
