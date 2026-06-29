@@ -483,26 +483,71 @@ def render_site_diary_pdf(d: dict) -> bytes:
 
 
 def render_hazard_pdf(h: dict) -> bytes:
+    """Phase 3.22a — migrated to the shared `pdf_template`. Same input
+    contract (hazard dict, returns bytes) so every caller (`pdf_routes`,
+    audit exports, email outbox) is unchanged. The on-disk filename and
+    Content-Disposition stay identical."""
+    import pdf_template as P
+    sev = (h.get('severity') or '').strip() or None
     buf = io.BytesIO()
-    doc = _make_doc(buf, h.get("title", "Hazard"), h.get("severity") or h.get("status"),
-                    _crumb(h, "Hazard"))
-    story = [
-        _section("Overview"),
-        _kv_table([
-            ("Title", h.get("title")),
-            ("Severity", h.get("severity")),
-            ("Status", h.get("status")),
-            ("Location", h.get("location")),
-            ("Owner", h.get("owner")),
-        ]),
-    ]
-    if h.get("photo_url"):
-        story += [_section("Photo")] + _embed(h["photo_url"])
-    story += [_section("Description"), _para(h.get("description", ""))]
-    story += [_section("Controls")] + _bullets(h.get("controls"))
-    if h.get("ai_analysis"):
-        story += [_section("AI analysis"),
-                  Paragraph(f"<i>{(h['ai_analysis'] or '').replace('<', '&lt;')}</i>", STYLES["PtMuted"])]
+    doc = P.make_doc(buf, 'WHS · Hazard report', sev, doc_id=h.get('id'))
+    story: list = []
+    story += P.title_block(
+        h.get('title') or 'Untitled hazard',
+        h.get('location') or h.get('subtitle') or 'Hazard recorded on site walk',
+    )
+    # Overview field grid
+    story += P.section_label('Overview')
+    story += [P.field_grid([
+        ('Title',     h.get('title')),
+        ('Severity',  (h.get('severity') or '').upper() or None),
+        ('Status',    (h.get('status') or '').replace('_', ' ').title() or None),
+        ('Location',  h.get('location')),
+        ('Owner',     h.get('owner') or h.get('reported_by')),
+        ('Created',   (h.get('created_at') or '')[:10] or None),
+        ('Workspace', (h.get('workspace_id') or '')[:8] or None),
+        ('Reference', (h.get('id') or '')[:8] or None),
+    ])]
+    # Description
+    story += P.section_label('Description')
+    story += P.description(h.get('description'))
+    # Controls applied
+    story += P.section_label('Controls applied')
+    story += P.bullets(h.get('controls'))
+    # AI analysis (only if present — still rendered as a body block)
+    if h.get('ai_analysis'):
+        story += P.section_label('AI analysis')
+        story += [P.Paragraph(
+            f"<i>{str(h['ai_analysis']).replace('<', '&lt;')}</i>", P.BODY_MUTED)]
+    # Attachments
+    atts: list[dict] = []
+    if h.get('photo_url'):
+        atts.append({'name': h['photo_url'].rsplit('/', 1)[-1], 'kind': 'photo'})
+    for a in (h.get('attachments') or []):
+        if isinstance(a, dict):
+            atts.append(a)
+        elif isinstance(a, str):
+            atts.append({'name': a.rsplit('/', 1)[-1], 'kind': 'file'})
+    story += P.section_label('Attachments')
+    story += P.attachments_section(atts)
+    # Timeline — synthesise from the dict if no explicit timeline.
+    events = list(h.get('timeline') or [])
+    if not events:
+        if h.get('created_at'):
+            events.append({'at': h['created_at'], 'label': 'Hazard recorded',
+                           'by': h.get('owner') or h.get('reported_by')})
+        if h.get('controls'):
+            events.append({'at': h.get('updated_at') or h.get('created_at'),
+                           'label': 'Controls applied'})
+        if (h.get('status') or '').lower() in {'closed', 'resolved'}:
+            events.append({'at': h.get('updated_at') or h.get('created_at'),
+                           'label': f"Marked {h['status'].lower()}"})
+    story += P.section_label('Timeline')
+    story += P.timeline_section(events)
+    # Signatures — every hazard report gets a 2-up signature block.
+    story += P.section_label('Signatures')
+    story += [P.signatures_section(['Author', 'Approver'])]
+
     doc.build(story)
     return buf.getvalue()
 

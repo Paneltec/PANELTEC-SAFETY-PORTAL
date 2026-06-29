@@ -96,13 +96,14 @@
  *             unregistering stale prod SWs already controlling the tab —
  *             those zombies kept serving cached chunks. Dev mode now
  *             unregisters every SW + drops every cache on page load.
- * v98.1 — Phase 3.21 closeout. The 3 deferred frontend pieces shipped:
- *       · Needs-email sticky banner + drawer on Renewals page
- *       · Session-history tab in UsersManagement UserDrawer
- *       · Force-refresh-all admin button + 60s client poll for the signal
- *       SW bumped so existing v98 clients pick up the new bundle.
+ * v99 — Phase 3.22a — PDF report redesign. New `pdf_brand.py` (single
+ *       2-colour palette: ORANGE #F97316 + SLATE #1E293B) and
+ *       `pdf_template.py` (shared header/footer/section helpers).
+ *       `render_hazard_pdf` migrated end-to-end. Other report
+ *       generators (incident/inspection/pre-start/swms/site-diary)
+ *       still on the legacy path — migrate in 3.22b/c/d.
  */
-const CACHE_VERSION = 'paneltec-v98.1';
+const CACHE_VERSION = 'paneltec-v99';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
