@@ -96,14 +96,15 @@
  *             unregistering stale prod SWs already controlling the tab —
  *             those zombies kept serving cached chunks. Dev mode now
  *             unregisters every SW + drops every cache on page load.
- * v99 — Phase 3.22a — PDF report redesign. New `pdf_brand.py` (single
- *       2-colour palette: ORANGE #F97316 + SLATE #1E293B) and
- *       `pdf_template.py` (shared header/footer/section helpers).
- *       `render_hazard_pdf` migrated end-to-end. Other report
- *       generators (incident/inspection/pre-start/swms/site-diary)
- *       still on the legacy path — migrate in 3.22b/c/d.
+ * v99.1 — Phase 3.22b. Migrated Incident, Inspection, Pre-Start, and
+ *       Site Diary report PDFs to the shared `pdf_template` (orange +
+ *       slate, 18mm margins, evidence-sufficiency line, full timeline
+ *       + signatures section on every report). Card-style PDFs
+ *       (Worker ID / Supplier lanyard / Site gate sign) and long-form
+ *       (SWMS / Certs / Inductions print / Form submission) still on
+ *       legacy path — migrate in 3.22c/d.
  */
-const CACHE_VERSION = 'paneltec-v99';
+const CACHE_VERSION = 'paneltec-v99.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

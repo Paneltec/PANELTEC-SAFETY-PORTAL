@@ -426,58 +426,216 @@ def render_swms_pdf(swms: dict, layout: str = "civil") -> bytes:
 
 
 def render_pre_start_pdf(ps: dict) -> bytes:
+    """Phase 3.22b — migrated to shared `pdf_template`."""
+    import pdf_template as P
     buf = io.BytesIO()
-    doc = _make_doc(buf, f"Daily Pre-Start {ps.get('date', '')}", ps.get("status", "complete"),
-                    _crumb(ps, "Pre-Start"))
-    story = [
-        _section("Overview"),
-        _kv_table([
-            ("Date", ps.get("date")),
-            ("Crew lead", ps.get("crew_lead")),
-            ("Workspace", ps.get("workspace_id", "")[:8]),
-        ]),
-        _section("Work summary"),
-        _para(ps.get("work_summary", "")),
-    ]
-    linked = ps.get("linked_swms_titles") or []
+    doc = P.make_doc(buf, 'WHS · Daily Pre-Start',
+                     ps.get('status') or 'complete', doc_id=ps.get('id'))
+    story: list = []
+    story += P.title_block(f"Daily Pre-Start · {ps.get('date', '')}",
+                           ps.get('crew_lead') or 'Pre-start brief and crew sign-on')
+    story.append(P.evidence_sufficiency_line(ps))
+    story += P.section_label('Overview')
+    story += [P.field_grid([
+        ('Date',       ps.get('date')),
+        ('Crew lead',  ps.get('crew_lead')),
+        ('Status',     (ps.get('status') or '').replace('_', ' ').title() or None),
+        ('Workspace',  (ps.get('workspace_id') or '')[:8] or None),
+        ('Reference',  (ps.get('id') or '')[:8] or None),
+    ])]
+    story += P.section_label('Work summary')
+    story += P.description(ps.get('work_summary'))
+    linked = ps.get('linked_swms_titles') or []
     if linked:
-        story += [_section("Linked SWMS")] + _bullets(linked)
-    hazards = ps.get("hazards_discussed") or []
-    story += [_section("Hazards discussed")] + _bullets(hazards)
-    sign_ons = ps.get("sign_ons") or []
-    story += [_section("Crew sign-on"),
-              _data_table(["Name", "Role", "Signed at"],
-                          [[s.get("name", ""), s.get("role", ""), s.get("signed_at", "")] for s in sign_ons],
-                          col_widths=[None, 40 * mm, 45 * mm])]
-    if ps.get("notes"):
-        story += [_section("Notes"), _para(ps["notes"])]
+        story += P.section_label('Linked SWMS')
+        story += P.bullets(linked)
+    story += P.section_label('Hazards discussed')
+    story += P.bullets(ps.get('hazards_discussed'))
+    story += P.section_label('Crew sign-on')
+    sign_ons = ps.get('sign_ons') or []
+    if sign_ons:
+        story += [P.data_table(
+            ['Name', 'Role', 'Signed at'],
+            [[s.get('name', ''), s.get('role', ''), s.get('signed_at', '')] for s in sign_ons],
+            col_widths=[None, 40 * mm, 45 * mm],
+        )]
+    else:
+        story += [P.Paragraph('No crew sign-ons recorded.', P.BODY_MUTED)]
+    if ps.get('notes'):
+        story += P.section_label('Notes')
+        story += P.description(ps['notes'])
+    story += P.section_label('Signatures')
+    story += [P.signatures_section(['Crew lead', 'Site supervisor'])]
     doc.build(story)
     return buf.getvalue()
 
 
 def render_site_diary_pdf(d: dict) -> bytes:
+    """Phase 3.22b — migrated to shared `pdf_template`."""
+    import pdf_template as P
     buf = io.BytesIO()
-    doc = _make_doc(buf, f"Site Diary {d.get('date', '')}", "logged",
-                    _crumb(d, "Site Diary"))
-    story = [
-        _section("Overview"),
-        _kv_table([("Date", d.get("date")),
-                   ("Workspace", d.get("workspace_id", "")[:8])]),
-        _section("Raw notes"),
-        _para(d.get("raw_notes", "")),
-    ]
-    log = d.get("structured_log") or {}
-    if log:
-        for key, label in [("activities", "Activities"), ("delays", "Delays"),
-                            ("deliveries", "Deliveries"), ("visitors", "Visitors"),
-                            ("weather", "Weather"), ("safety_observations", "Safety observations")]:
-            v = log.get(key)
-            if v:
-                story += [_section(label)]
-                if isinstance(v, list):
-                    story += _bullets(v)
-                else:
-                    story += [_para(str(v))]
+    doc = P.make_doc(buf, 'WHS · Site Diary', 'logged', doc_id=d.get('id'))
+    story: list = []
+    story += P.title_block(f"Site Diary · {d.get('date', '')}",
+                           d.get('weather') or 'Daily site activity log')
+    story.append(P.evidence_sufficiency_line(d))
+    story += P.section_label('Overview')
+    story += [P.field_grid([
+        ('Date',      d.get('date')),
+        ('Workspace', (d.get('workspace_id') or '')[:8] or None),
+        ('Reference', (d.get('id') or '')[:8] or None),
+        ('Logged by', d.get('logged_by') or d.get('created_by_name')),
+    ])]
+    story += P.section_label('Raw notes')
+    story += P.description(d.get('raw_notes'))
+    log = d.get('structured_log') or {}
+    for key, label in [('activities', 'Activities'), ('delays', 'Delays'),
+                       ('deliveries', 'Deliveries'), ('visitors', 'Visitors'),
+                       ('weather', 'Weather'),
+                       ('safety_observations', 'Safety observations')]:
+        v = log.get(key)
+        story += P.section_label(label)
+        if isinstance(v, list) and v:
+            story += P.bullets(v)
+        elif v:
+            story += P.description(str(v))
+        else:
+            story += [P.Paragraph('—', P.BODY_MUTED)]
+    story += P.section_label('Signatures')
+    story += [P.signatures_section(['Author', 'Approver'])]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_incident_pdf(inc: dict) -> bytes:
+    """Phase 3.22b — migrated to shared `pdf_template`."""
+    import pdf_template as P
+    buf = io.BytesIO()
+    status = inc.get('follow_up_status') or inc.get('category') or 'open'
+    doc = P.make_doc(buf, 'WHS · Incident report', status, doc_id=inc.get('id'))
+    story: list = []
+    story += P.title_block(inc.get('title') or 'Untitled incident',
+                           inc.get('location') or 'Recorded incident on site')
+    story.append(P.evidence_sufficiency_line(inc))
+    story += P.section_label('Overview')
+    story += [P.field_grid([
+        ('Title',             inc.get('title')),
+        ('Category',          (inc.get('category') or '').replace('_', ' ').title() or None),
+        ('Occurred at',       inc.get('occurred_at')),
+        ('Location',          inc.get('location')),
+        ('Follow-up status',  (inc.get('follow_up_status') or '').replace('_', ' ').title() or None),
+        ('Reporter',          inc.get('reporter') or inc.get('reported_by')),
+        ('Workspace',         (inc.get('workspace_id') or '')[:8] or None),
+        ('Reference',         (inc.get('id') or '')[:8] or None),
+    ])]
+    story += P.section_label('Description')
+    story += P.description(inc.get('description'))
+    story += P.section_label('Immediate actions')
+    story += P.description(inc.get('immediate_actions'))
+    story += P.section_label('Follow-up actions')
+    fu = inc.get('follow_up_actions') or []
+    if fu:
+        story += [P.data_table(
+            ['Action', 'Owner', 'Status'],
+            [[a.get('action', ''), a.get('owner', ''),
+              (a.get('status') or '').replace('_', ' ').title()] for a in fu],
+        )]
+    else:
+        story += [P.Paragraph('No follow-up actions recorded.', P.BODY_MUTED)]
+    # Photos → attachments strip
+    photo_atts = [{'name': u.rsplit('/', 1)[-1], 'kind': 'evidence photo'}
+                  for u in (inc.get('evidence_photos') or inc.get('photo_urls') or [])]
+    story += P.section_label('Attachments')
+    story += P.attachments_section(photo_atts)
+    # Timeline (synthesised if absent)
+    events = list(inc.get('timeline') or [])
+    if not events:
+        if inc.get('occurred_at'):
+            events.append({'at': inc['occurred_at'], 'label': 'Incident occurred'})
+        if inc.get('created_at'):
+            events.append({'at': inc['created_at'], 'label': 'Reported',
+                           'by': inc.get('reporter') or inc.get('reported_by')})
+        if inc.get('immediate_actions'):
+            events.append({'at': inc.get('updated_at') or inc.get('created_at'),
+                           'label': 'Immediate actions logged'})
+    story += P.section_label('Timeline')
+    story += P.timeline_section(events)
+    story += P.section_label('Signatures')
+    story += [P.signatures_section(['Reporter', 'Site manager', 'HSEQ lead'])]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_inspection_pdf(insp: dict) -> bytes:
+    """Phase 3.22b — migrated to shared `pdf_template`."""
+    import pdf_template as P
+    buf = io.BytesIO()
+    doc = P.make_doc(buf, 'WHS · Inspection report',
+                     insp.get('status') or 'complete', doc_id=insp.get('id'))
+    items = insp.get('checklist_items') or []
+    story: list = []
+    story += P.title_block(
+        f"{insp.get('template_name', 'Inspection')} · {insp.get('date', '')}",
+        insp.get('location') or 'Site inspection record',
+    )
+    # Build a synthetic dict for the evidence line that knows about checklist counts
+    suff = dict(insp)
+    suff['controls'] = items
+    suff['corrective_actions'] = insp.get('corrective_actions') or []
+    story.append(P.evidence_sufficiency_line(suff))
+    story += P.section_label('Overview')
+    story += [P.field_grid([
+        ('Template',  insp.get('template_name')),
+        ('Date',      insp.get('date')),
+        ('Inspector', insp.get('inspector') or (insp.get('created_by') or '')[:8] or None),
+        ('Status',    (insp.get('status') or '').replace('_', ' ').title() or None),
+        ('Workspace', (insp.get('workspace_id') or '')[:8] or None),
+        ('Reference', (insp.get('id') or '')[:8] or None),
+    ])]
+    story += P.section_label('Checklist')
+    if items:
+        rows = []
+        for i, it in enumerate(items):
+            rows.append([str(i + 1), it.get('item', ''),
+                         (it.get('response') or '').upper() or '—',
+                         it.get('notes') or '—'])
+        story += [P.data_table(['#', 'Item', 'Result', 'Notes'], rows,
+                              col_widths=[10 * mm, None, 22 * mm, 50 * mm])]
+    else:
+        story += [P.Paragraph('No checklist items recorded.', P.BODY_MUTED)]
+    # Photos
+    photo_atts = []
+    for i, it in enumerate(items):
+        if it.get('photo_url'):
+            photo_atts.append({
+                'name': f"item-{i+1}-{(it.get('item') or 'photo')[:40]}",
+                'kind': 'inspection photo',
+            })
+    story += P.section_label('Attachments')
+    story += P.attachments_section(photo_atts)
+    # Corrective actions
+    story += P.section_label('Corrective actions')
+    corr = insp.get('corrective_actions') or []
+    if corr:
+        story += [P.data_table(
+            ['Action', 'Owner', 'Due'],
+            [[a.get('action', ''), a.get('owner', ''), a.get('due_date', '')] for a in corr],
+        )]
+    else:
+        story += [P.Paragraph('No corrective actions raised.', P.BODY_MUTED)]
+    # Timeline
+    events = list(insp.get('timeline') or [])
+    if not events:
+        if insp.get('date'):
+            events.append({'at': insp['date'], 'label': 'Inspection completed',
+                           'by': insp.get('inspector')})
+        if corr:
+            events.append({'at': insp.get('updated_at') or insp.get('created_at'),
+                           'label': f"{len(corr)} corrective action{'s' if len(corr) != 1 else ''} raised"})
+    story += P.section_label('Timeline')
+    story += P.timeline_section(events)
+    story += P.section_label('Signatures')
+    story += [P.signatures_section(['Inspector', 'Site supervisor'])]
     doc.build(story)
     return buf.getvalue()
 
@@ -496,6 +654,7 @@ def render_hazard_pdf(h: dict) -> bytes:
         h.get('title') or 'Untitled hazard',
         h.get('location') or h.get('subtitle') or 'Hazard recorded on site walk',
     )
+    story.append(P.evidence_sufficiency_line(h))
     # Overview field grid
     story += P.section_label('Overview')
     story += [P.field_grid([
@@ -552,71 +711,11 @@ def render_hazard_pdf(h: dict) -> bytes:
     return buf.getvalue()
 
 
-def render_incident_pdf(inc: dict) -> bytes:
-    buf = io.BytesIO()
-    doc = _make_doc(buf, inc.get("title", "Incident"), inc.get("follow_up_status") or inc.get("category"),
-                    _crumb(inc, "Incident"))
-    story = [
-        _section("Overview"),
-        _kv_table([
-            ("Title", inc.get("title")),
-            ("Category", inc.get("category")),
-            ("Occurred at", inc.get("occurred_at")),
-            ("Location", inc.get("location")),
-            ("Follow-up status", inc.get("follow_up_status")),
-        ]),
-        _section("Description"),
-        _para(inc.get("description", "")),
-        _section("Immediate actions"),
-        _para(inc.get("immediate_actions", "")),
-    ]
-    photos = inc.get("evidence_photos") or inc.get("photo_urls") or []
-    if photos:
-        story += [_section("Evidence photos")]
-        for i, u in enumerate(photos):
-            story += _embed(u, caption=f"Evidence {i+1}", max_w_in=4.2)
-    fu = inc.get("follow_up_actions") or []
-    if fu:
-        story += [_section("Follow-up actions"),
-                  _data_table(["Action", "Owner", "Status"],
-                              [[a.get("action", ""), a.get("owner", ""), a.get("status", "")] for a in fu])]
-    doc.build(story)
-    return buf.getvalue()
+# Legacy render_incident_pdf and render_inspection_pdf removed in 3.22b —
+# the new versions live earlier in this file (search for "Phase 3.22b").
 
 
-def render_inspection_pdf(insp: dict) -> bytes:
-    buf = io.BytesIO()
-    doc = _make_doc(buf, f"{insp.get('template_name', 'Inspection')} {insp.get('date', '')}",
-                    insp.get("status", "complete"), _crumb(insp, "Inspection"))
-    story = [
-        _section("Overview"),
-        _kv_table([
-            ("Template", insp.get("template_name")),
-            ("Date", insp.get("date")),
-            ("Inspector", insp.get("inspector") or insp.get("created_by", "")[:8]),
-            ("Workspace", insp.get("workspace_id", "")[:8]),
-        ]),
-        _section("Checklist"),
-    ]
-    items = insp.get("checklist_items") or []
-    rows = []
-    for i, it in enumerate(items):
-        rows.append([str(i+1), it.get("item", ""),
-                     (it.get("response", "") or "").upper(),
-                     it.get("notes", "") or "—"])
-    story += [_data_table(["#", "Item", "Result", "Notes"], rows,
-                          col_widths=[10 * mm, None, 22 * mm, 50 * mm])]
-    # Embed any per-item photos beneath
-    for i, it in enumerate(items):
-        if it.get("photo_url"):
-            story += _embed(it["photo_url"], caption=f"Item {i+1} — {it.get('item', '')[:60]}", max_w_in=4.0)
-    corr = insp.get("corrective_actions") or []
-    if corr:
-        story += [_section("Corrective actions"),
-                  _data_table(["Action", "Owner", "Due"],
-                              [[a.get("action", ""), a.get("owner", ""), a.get("due_date", "")] for a in corr])]
-    doc.build(story)
-    return buf.getvalue()
+
 
 
 # ---- Persistence + slug helper ----

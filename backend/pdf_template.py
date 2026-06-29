@@ -261,9 +261,80 @@ def attachments_section(items: list[dict] | None) -> list:
     return [t]
 
 
+def data_table(headers: list[str], rows: list[list], col_widths: list | None = None) -> Table:
+    """Compact data table for sub-records (checklist items, sign-ons,
+    follow-up actions, etc). Slate header row + alternating row bands.
+    Strings are escaped so user content can't bust ReportLab."""
+    safe_rows = []
+    for r in rows:
+        safe_rows.append([
+            Paragraph(str(c if c is not None else '—').replace('<', '&lt;'), BODY)
+            for c in r
+        ])
+    head = [Paragraph(f"<b>{h.upper()}</b>",
+                      ParagraphStyle('th', fontName='Helvetica-Bold', fontSize=7.5,
+                                     leading=10, textColor=WHITE, tracking=0.8))
+            for h in headers]
+    t = Table([head] + safe_rows, colWidths=col_widths)
+    t.setStyle(TableStyle([
+        ('BACKGROUND',     (0, 0), (-1, 0), SLATE),
+        ('TEXTCOLOR',      (0, 0), (-1, 0), WHITE),
+        ('VALIGN',         (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING',     (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING',  (0, 0), (-1, -1), 4),
+        ('LEFTPADDING',    (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING',   (0, 0), (-1, -1), 6),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [WHITE, SLATE_BAND]),
+        ('LINEBELOW',      (0, 0), (-1, -1), 0.25, SLATE_BORDER),
+    ]))
+    return t
+
+
+def evidence_sufficiency_line(data: dict) -> Paragraph:
+    """Tiny one-liner directly under the title block summarising the
+    audit-readiness of the record. Counts photos / controls /
+    signatures / days-to-close from whatever shape the data presents.
+    Keeps auditors from having to scroll just to triage."""
+    parts: list[str] = []
+    # Photos / attachments
+    atts: list = list(data.get('attachments') or [])
+    photos = list(data.get('evidence_photos') or data.get('photo_urls') or [])
+    if data.get('photo_url'):
+        photos.append(data['photo_url'])
+    n_photos = len(atts) + len(photos)
+    if n_photos:
+        parts.append(f"{n_photos} photo{'s' if n_photos != 1 else ''}")
+    # Controls / corrective actions / follow-ups
+    ctrl = len(data.get('controls') or [])
+    if ctrl: parts.append(f"{ctrl} control{'s' if ctrl != 1 else ''}")
+    cor = len(data.get('corrective_actions') or [])
+    if cor: parts.append(f"{cor} corrective action{'s' if cor != 1 else ''}")
+    fu = len(data.get('follow_up_actions') or [])
+    if fu: parts.append(f"{fu} follow-up{'s' if fu != 1 else ''}")
+    # Signatures
+    sigs = len(data.get('signatures') or [])
+    if sigs: parts.append(f"{sigs} signature{'s' if sigs != 1 else ''}")
+    # Days to close (only when status indicates closed)
+    if str(data.get('status', '')).lower() in {'closed', 'resolved', 'complete', 'completed'}:
+        try:
+            created = datetime.fromisoformat((data.get('created_at') or '').replace('Z', '+00:00'))
+            closed = datetime.fromisoformat((data.get('closed_at') or data.get('updated_at') or '').replace('Z', '+00:00'))
+            days = max((closed - created).days, 0)
+            parts.append(f"{days} day{'s' if days != 1 else ''} to close")
+        except Exception:
+            pass
+    text = ('Evidence: ' + ' · '.join(parts)) if parts else 'Evidence: pending'
+    return Paragraph(
+        f"<i>{text}</i>",
+        ParagraphStyle('PtcSufficiency', parent=BODY, fontName='Helvetica-Oblique',
+                       fontSize=8, leading=10, textColor=SLATE_MUTED, spaceBefore=2, spaceAfter=6),
+    )
+
+
 __all__ = [
     'make_doc', 'title_block', 'section_label', 'field_grid', 'bullets',
     'description', 'timeline_section', 'signatures_section',
-    'attachments_section', 'KeepTogether', 'Spacer', 'Paragraph',
+    'attachments_section', 'data_table', 'evidence_sufficiency_line',
+    'KeepTogether', 'Spacer', 'Paragraph',
     'H1', 'H2', 'SECTION', 'BODY', 'BODY_MUTED', 'META',
 ]
