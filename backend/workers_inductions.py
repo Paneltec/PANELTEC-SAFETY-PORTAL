@@ -631,6 +631,226 @@ async def edit_cell(body: CellPatch, user: dict = Depends(get_current_user)):
 from fastapi.responses import StreamingResponse  # noqa: E402
 
 
+# ────────────────── print endpoint ──────────────────
+
+class PrintIn(BaseModel):
+    worker_ids: list[str]
+    layout: str = "a4_landscape"        # a4_portrait | a4_landscape | a3_landscape
+    include_cover: bool = True
+    include_legend: bool = True
+    include_raw: bool = False
+    include_last_updated: bool = False
+    combined: bool = True
+
+
+_STATUS_LABEL = {
+    "current": "Current", "expiring": "Expiring", "expired": "Expired",
+    "not_held": "Not held", "held_no_expiry": "Held", "invalid_date": "Invalid",
+    "unknown": "—",
+}
+_STATUS_RGB = {
+    "current":        (0.85, 0.93, 0.87),
+    "expiring":       (0.99, 0.95, 0.78),
+    "expired":        (0.98, 0.89, 0.91),
+    "not_held":       (0.94, 0.94, 0.94),
+    "held_no_expiry": (0.90, 0.93, 0.97),
+    "invalid_date":   (0.98, 0.89, 0.91),
+    "unknown":        (0.97, 0.97, 0.97),
+}
+
+
+@router.post("/print")
+async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)):
+    """Generate a PDF for one or many workers' induction status."""
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        raise HTTPException(403, "Only admin/manager/HSEQ can print inductions")
+    if not body.worker_ids:
+        raise HTTPException(400, "worker_ids must not be empty")
+
+    from reportlab.lib.pagesizes import A4, A3, landscape
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import mm
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle,
+                                    Spacer, PageBreak)
+
+    layout = body.layout
+    page_size = (
+        landscape(A3) if layout == "a3_landscape" else
+        landscape(A4) if layout == "a4_landscape" else
+        A4
+    )
+
+    # Pull the full matrix once (reuses the live computation including chip).
+    data = await induction_matrix(user)
+    by_id = {r["id"]: r for r in data["rows"]}
+    cols = data["columns"]
+    cols_by_cat = {"site_induction": [], "competency": [], "license": []}
+    for c in cols:
+        cols_by_cat.setdefault(c["category"], []).append(c)
+
+    workers_to_print = [by_id[wid] for wid in body.worker_ids if wid in by_id]
+    if not workers_to_print:
+        raise HTTPException(404, "None of the supplied worker_ids matched")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=page_size,
+                            leftMargin=18*mm, rightMargin=18*mm,
+                            topMargin=14*mm, bottomMargin=14*mm,
+                            title="Paneltec Civil — Inductions")
+    styles = getSampleStyleSheet()
+    h_org = ParagraphStyle("h_org", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=10, textColor=colors.HexColor("#2C6BFF"),
+        leading=12, spaceAfter=2)
+    h_name = ParagraphStyle("h_name", parent=styles["Heading1"],
+        fontName="Helvetica-Bold", fontSize=20, leading=24, spaceAfter=2)
+    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9,
+        textColor=colors.HexColor("#475569"), spaceAfter=8)
+    h2 = ParagraphStyle("h2", parent=styles["Heading2"],
+        fontName="Helvetica-Bold", fontSize=12, textColor=colors.HexColor("#0f172a"),
+        leading=14, spaceBefore=10, spaceAfter=4)
+
+    elements = []
+
+    # Cover page (combined mode + opted in).
+    if body.combined and body.include_cover and len(workers_to_print) > 1:
+        elements.append(Paragraph("PANELTEC CIVIL", h_org))
+        elements.append(Paragraph("Inductions Print Pack", h_name))
+        elements.append(Paragraph(
+            f"{len(workers_to_print)} worker(s) · generated {datetime.now(timezone.utc).strftime('%d %b %Y · %H:%M UTC')}",
+            sub))
+        cover_rows = [["#", "Worker", "Company", "Overall"]]
+        for i, w in enumerate(workers_to_print, 1):
+            cover_rows.append([str(i), w["name"], w.get("company") or "—",
+                               _STATUS_LABEL.get(w.get("chip"), w.get("chip") or "—")])
+        t = Table(cover_rows, colWidths=[12*mm, 75*mm, 60*mm, 30*mm])
+        t.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE", (0,0), (-1,-1), 9),
+            ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("LEFTPADDING", (0,0), (-1,-1), 6),
+            ("RIGHTPADDING", (0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ]))
+        elements.append(t)
+        elements.append(PageBreak())
+
+    # Per-worker pages.
+    for idx, w in enumerate(workers_to_print):
+        elements.append(Paragraph("PANELTEC CIVIL · INDUCTIONS", h_org))
+        elements.append(Paragraph(w["name"], h_name))
+        elements.append(Paragraph(
+            f"{w.get('company') or '—'} · status: {_STATUS_LABEL.get(w.get('chip'), '—')}"
+            f" · printed {datetime.now(timezone.utc).strftime('%d %b %Y')}", sub))
+
+        # Per-category sections.
+        cats = [("site_induction", "Site Inductions"),
+                ("competency", "Competencies"),
+                ("license", "Licences")]
+        any_cell = False
+        for cat_key, cat_label in cats:
+            cat_cols = cols_by_cat.get(cat_key, [])
+            if not cat_cols:
+                continue
+            elements.append(Paragraph(cat_label, h2))
+            header = ["Item", "Status", "Expiry"]
+            if body.include_raw:
+                header.append("Source")
+            if body.include_last_updated:
+                header.append("Updated")
+            table_rows = [header]
+            cell_colors = []
+            for c in cat_cols:
+                cell = w["cells"].get(c["column_key"])
+                if cell:
+                    any_cell = True
+                    status = cell.get("status") or "unknown"
+                    expiry = cell.get("expiry_date") or "—"
+                    if cell.get("not_held"): expiry = "—"
+                    src = cell.get("import_confidence") or "manual"
+                    upd = "—"
+                else:
+                    status, expiry, src, upd = "unknown", "—", "—", "—"
+                row = [c["header"], _STATUS_LABEL[status], expiry]
+                if body.include_raw: row.append(src)
+                if body.include_last_updated: row.append(upd)
+                table_rows.append(row)
+                cell_colors.append(_STATUS_RGB.get(status, (1, 1, 1)))
+            col_widths = [70*mm, 28*mm, 28*mm]
+            if body.include_raw: col_widths.append(28*mm)
+            if body.include_last_updated: col_widths.append(28*mm)
+            t = Table(table_rows, colWidths=col_widths, repeatRows=1)
+            ts = TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE", (0,0), (-1,-1), 9),
+                ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+                ("LEFTPADDING", (0,0), (-1,-1), 5),
+                ("RIGHTPADDING", (0,0), (-1,-1), 5),
+                ("TOPPADDING", (0,0), (-1,-1), 4),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ])
+            for i, rgb in enumerate(cell_colors, start=1):
+                ts.add("BACKGROUND", (1, i), (1, i), colors.Color(*rgb))
+            t.setStyle(ts)
+            elements.append(t)
+
+        # Access section.
+        a = w.get("access") or {}
+        if any(a.get(k) for k in ("vehicle", "building_key", "gate_key")) or a.get("extras"):
+            elements.append(Paragraph("Access", h2))
+            ar = [["Item", "Held"]]
+            ar.append(["Vehicle", "Yes" if a.get("vehicle") else "—"])
+            ar.append(["Building key", "Yes" if a.get("building_key") else "—"])
+            ar.append(["Gate key", "Yes" if a.get("gate_key") else "—"])
+            if a.get("extras"):
+                ar.append(["Notes", a["extras"]])
+            t = Table(ar, colWidths=[70*mm, 56*mm])
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#f1f5f9")),
+                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE", (0,0), (-1,-1), 9),
+                ("GRID", (0,0), (-1,-1), 0.3, colors.HexColor("#e2e8f0")),
+                ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5),
+                ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ]))
+            elements.append(t)
+
+        if not any_cell:
+            elements.append(Spacer(1, 4*mm))
+            elements.append(Paragraph(
+                "<i>No induction records on file for this worker.</i>",
+                ParagraphStyle("empty", parent=styles["Normal"], fontSize=10,
+                               textColor=colors.HexColor("#94a3b8"))))
+
+        if body.include_legend:
+            elements.append(Spacer(1, 6*mm))
+            elements.append(Paragraph(
+                "<font color='#94a3b8' size='8'>Legend: "
+                "<b>Current</b> · <b>Expiring</b> within 30 days · <b>Expired</b> past expiry · "
+                "<b>Not held</b> · <b>Held</b> (no expiry on file) · <b>Invalid</b> date format."
+                "</font>", styles["Normal"]))
+
+        # Combined mode → page break between workers (except last).
+        if body.combined and idx < len(workers_to_print) - 1:
+            elements.append(PageBreak())
+        elif not body.combined and idx < len(workers_to_print) - 1:
+            elements.append(PageBreak())
+
+    doc.build(elements)
+    buf.seek(0)
+    fname = "paneltec-inductions.pdf" if body.combined else f"paneltec-inductions-{workers_to_print[0]['name'].replace(' ','_')}.pdf"
+    return StreamingResponse(buf, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
+# ────────────────── export.xlsx ──────────────────
+
+
 @router.get("/export.xlsx")
 async def export_matrix(user: dict = Depends(get_current_user)):
     """Round-trip the live inductions matrix back to .xlsx. Sheet 1

@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Loader2, RefreshCw, Upload, Download, Search, X, CalendarOff, Check,
   AlertTriangle, Calendar, Settings2, ChevronDown, ChevronRight,
-  Columns3, Filter, LayoutGrid, Maximize2,
+  Columns3, Filter, LayoutGrid, Maximize2, Printer,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -64,6 +64,53 @@ export default function InductionsMatrix({ onWorkerClick }) {
   // Phase 3.11h — pin to a single worker. Clicking a name in the matrix
   // narrows the view to just that worker. ✕ on the pinned chip clears it.
   const [pinnedWorkerId, setPinnedWorkerId] = useState(null);
+  // Phase 3.11h — multi-select for print.
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [printOpen, setPrintOpen] = useState(false);
+  const [printOpts, setPrintOpts] = useState({
+    layout: 'a4_landscape', include_cover: true, include_legend: true,
+    include_raw: false, include_last_updated: false, combined: true,
+  });
+  const [printing, setPrinting] = useState(false);
+
+  // Selection clears on search to avoid stale-id surprises.
+  useEffect(() => { setSelectedIds(new Set()); }, [search]);
+
+  const toggleSelect = (id) => {
+    const n = new Set(selectedIds);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    setSelectedIds(n);
+  };
+  const toggleSelectAllVisible = (rows) => {
+    const visibleIds = rows.map((r) => r.id);
+    const allSelected = visibleIds.every((i) => selectedIds.has(i));
+    const n = new Set(selectedIds);
+    if (allSelected) visibleIds.forEach((i) => n.delete(i));
+    else visibleIds.forEach((i) => n.add(i));
+    setSelectedIds(n);
+  };
+
+  const doPrint = async (workerIds, opts = printOpts) => {
+    if (!workerIds.length) return;
+    setPrinting(true);
+    try {
+      const res = await fetch(`${API_BASE}/workers/inductions/print`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ worker_ids: workerIds, ...opts }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `paneltec-inductions-${Date.now()}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      toast.success(`Printed ${workerIds.length} worker(s)`);
+      setPrintOpen(false);
+    } catch (e) { toast.error(e.message || 'Print failed'); }
+    finally { setPrinting(false); }
+  };
 
   // Persisted UI state.
   const [density, setDensity] = useState(() => localStorage.getItem(LS_DENSITY) || 'compact');
@@ -245,6 +292,15 @@ export default function InductionsMatrix({ onWorkerClick }) {
           <Download size={12} />
         </button>
         {canEdit && (
+          <button onClick={() => setPrintOpen(true)}
+            disabled={selectedIds.size === 0 && !pinnedWorkerId}
+            data-testid="matrix-print"
+            title={selectedIds.size === 0 && !pinnedWorkerId ? 'Select workers or pin one to print' : `Print ${selectedIds.size || 1} worker(s)`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-900 text-white text-xs font-semibold uppercase tracking-wider hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">
+            <Printer size={12} /> Print {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
+          </button>
+        )}
+        {canEdit && (
           <button onClick={() => setShowWizard(true)} data-testid="matrix-import"
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#5b21b6] text-white text-xs font-semibold uppercase tracking-wider hover:bg-[#4c1d95]">
             <Upload size={12} /> Import .xlsx
@@ -257,6 +313,10 @@ export default function InductionsMatrix({ onWorkerClick }) {
         <span><strong className="text-slate-900">{filteredRows.length}</strong> / {data.summary.workers} workers</span>
         <span>·</span>
         <span><strong className="text-slate-900">{data.summary.columns - hidden.size}</strong> / {data.summary.columns} columns</span>
+        {selectedIds.size > 0 && (<>
+          <span>·</span>
+          <span data-testid="matrix-selected-count"><strong className="text-slate-900">{selectedIds.size}</strong> selected</span>
+        </>)}
         <span>·</span>
         <Legend />
       </div>
@@ -277,6 +337,11 @@ export default function InductionsMatrix({ onWorkerClick }) {
                 Open profile
               </button>
             )}
+            <button onClick={() => doPrint([pinned.id])}
+              data-testid="matrix-pinned-print" title="Print this worker"
+              className="inline-flex items-center gap-1 text-[11px] font-medium text-[#1e4a8c] underline hover:no-underline">
+              <Printer size={11} /> Print
+            </button>
             <button onClick={() => setPinnedWorkerId(null)}
               data-testid="matrix-pinned-clear"
               title="Clear pin"
@@ -296,9 +361,17 @@ export default function InductionsMatrix({ onWorkerClick }) {
             {/* category header row (group titles + collapse chevrons) */}
             <thead className="sticky top-0 z-30 bg-white">
               <tr>
+                <th className="sticky left-0 z-40 bg-white border-b border-r border-slate-200 align-middle" style={{ width: 32, minWidth: 32, padding: 4 }} rowSpan={2}>
+                  <input type="checkbox"
+                    data-testid="matrix-select-all"
+                    checked={filteredRows.length > 0 && filteredRows.every((r) => selectedIds.has(r.id))}
+                    onChange={() => toggleSelectAllVisible(filteredRows)}
+                    title="Select all visible"
+                    className="w-3.5 h-3.5" />
+                </th>
                 <th rowSpan={2}
-                    className="sticky left-0 z-40 bg-white text-left px-3 py-2 border-b border-r border-slate-200 align-bottom"
-                    style={{ width: 200, minWidth: 200 }}>
+                    className="sticky z-40 bg-white text-left px-3 py-2 border-b border-r border-slate-200 align-bottom"
+                    style={{ width: 200, minWidth: 200, left: 32 }}>
                   <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Worker</div>
                 </th>
                 {grouped.map((g) => {
@@ -362,9 +435,16 @@ export default function InductionsMatrix({ onWorkerClick }) {
             <tbody>
               {filteredRows.map((r) => (
                 <tr key={`worker-row-${r.id}`} className="hover:bg-slate-50/50" data-testid={`matrix-row-${r.id}`}>
+                  <td className="sticky left-0 z-10 bg-white border-b border-r border-slate-100 text-center" style={{ width: 32, minWidth: 32, padding: 4 }}>
+                    <input type="checkbox"
+                      data-testid={`matrix-row-check-${r.id}`}
+                      checked={selectedIds.has(r.id)}
+                      onChange={() => toggleSelect(r.id)}
+                      className="w-3.5 h-3.5" />
+                  </td>
                   <th scope="row"
-                      className="sticky left-0 z-10 bg-white text-left p-0 border-b border-r border-slate-100 align-middle"
-                      style={{ width: 200, minWidth: 200, height: rowH }}>
+                      className="sticky z-10 bg-white text-left p-0 border-b border-r border-slate-100 align-middle"
+                      style={{ width: 200, minWidth: 200, height: rowH, left: 32 }}>
                     <button
                       type="button"
                       onMouseDown={(e) => { e.preventDefault(); setPinnedWorkerId(r.id); }}
@@ -413,6 +493,69 @@ export default function InductionsMatrix({ onWorkerClick }) {
         <CellEditor worker={editing.worker} col={editing.col} cell={editing.cell}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {printOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+             onClick={(e) => e.target === e.currentTarget && setPrintOpen(false)}
+             data-testid="print-popover">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Print options</div>
+                <h3 className="font-semibold text-slate-900 mt-0.5">
+                  {(selectedIds.size || (pinnedWorkerId ? 1 : 0))} worker{((selectedIds.size || (pinnedWorkerId ? 1 : 0)) === 1 ? '' : 's')}
+                </h3>
+              </div>
+              <button onClick={() => setPrintOpen(false)} className="p-2 rounded-lg text-slate-500 hover:bg-white"><X size={16} /></button>
+            </div>
+            <div className="px-5 py-5 space-y-4">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1.5">Layout</div>
+                <div className="grid grid-cols-3 gap-2">
+                  {[['a4_portrait', 'A4 Portrait'], ['a4_landscape', 'A4 Landscape'], ['a3_landscape', 'A3 Landscape']].map(([k, label]) => (
+                    <button key={k} onClick={() => setPrintOpts({ ...printOpts, layout: k })}
+                      data-testid={`print-layout-${k}`}
+                      className={`px-2 py-2 rounded-lg border text-xs font-medium ${printOpts.layout === k ? 'border-[#1e4a8c] bg-[#e6eff9] text-[#1e4a8c]' : 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-slate-500 mb-1">Include</div>
+                {[['include_cover','Cover page'],['include_legend','Status legend'],['include_raw','Raw input values'],['include_last_updated','Last update timestamps']].map(([k, label]) => (
+                  <label key={k} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={printOpts[k]}
+                      data-testid={`print-opt-${k}`}
+                      onChange={(e) => setPrintOpts({ ...printOpts, [k]: e.target.checked })}
+                      className="w-3.5 h-3.5" />
+                    <span className="text-sm text-slate-700">{label}</span>
+                  </label>
+                ))}
+              </div>
+              <div className="pt-2 border-t border-slate-100">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={printOpts.combined}
+                    data-testid="print-opt-combined"
+                    onChange={(e) => setPrintOpts({ ...printOpts, combined: e.target.checked })}
+                    className="w-3.5 h-3.5" />
+                  <span className="text-sm text-slate-700">Combined PDF (one file, one page per worker)</span>
+                </label>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button onClick={() => setPrintOpen(false)} className="text-sm text-slate-500 hover:text-slate-900">Cancel</button>
+              <button onClick={() => {
+                  const ids = selectedIds.size > 0 ? [...selectedIds] : (pinnedWorkerId ? [pinnedWorkerId] : []);
+                  doPrint(ids);
+                }} disabled={printing}
+                data-testid="print-confirm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-60">
+                {printing ? <Loader2 size={12} className="animate-spin" /> : <Printer size={12} />} Print
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
