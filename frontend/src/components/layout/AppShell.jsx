@@ -12,6 +12,8 @@ import { fetchMe, getToken, getUser, initials, signOut, refreshToken } from '../
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
+import useSessionTimeout from '../../hooks/useSessionTimeout';
+import SessionWarningModal from '../SessionWarningModal';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuSeparator,
@@ -109,6 +111,19 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
     await signOut();
     navigate('/');
   };
+
+  // Phase 3.16 — idle-watch + warning modal driver. Hidden completely from
+  // public routes (this component only mounts inside /app/**), so the hook
+  // is safe to instantiate unconditionally.
+  const [warnInfo, setWarnInfo] = useState(null);
+  useSessionTimeout({
+    onWarn: (info) => setWarnInfo(info),
+    onLogout: async () => {
+      setWarnInfo(null);
+      await signOut();
+      navigate('/login?reason=idle');
+    },
+  });
 
   const onBack = () => {
     // navigate(-1) falls back gracefully when history is empty in most
@@ -265,6 +280,12 @@ export default function AppShell() {
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
         <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main"><Outlet /></main>
       </div>
+      {warnInfo && (
+        <SessionWarningModal
+          secondsRemaining={warnInfo.secondsRemaining}
+          onStay={() => { warnInfo.stay?.(); setWarnInfo(null); }}
+          onLogout={async () => { setWarnInfo(null); await signOut(); navigate('/login?reason=idle'); }} />
+      )}
     </div>
     </PermissionsProvider>
   );

@@ -24,16 +24,11 @@
  *       opens InductionCardModal (detail view + iframe doc preview + edit /
  *       add / file upload). New backend endpoints under
  *       /workers/{wid}/inductions/...
- * v80.1 — Phase 3.15 polish: map counter strip text content includes literal
- *         ● glyph + · separator for screenreaders. Plant & Vehicles header
- *         gains a "needs ignition check" pill that surfaces the count of
- *         red assets at a glance (hidden when zero).
- * v80 — Phase 3.15 Navixy Health Dot: tiny green/red dot on the location-pin
- *       action icon of every Plant & Vehicle row whose asset is linked to
- *       Navixy. Tooltip surfaces relative last-seen time. Map view gets a
- *       counter strip (live/offline) since the iframe is single-marker.
+ * v81 — Phase 3.16 Session Timeout: backend org settings + active_sessions
+ *       + per-role JWT lifetimes + force-logout-all. Frontend gets the
+ *       useSessionTimeout hook driving SessionWarningModal inside AppShell.
  */
-const CACHE_VERSION = 'paneltec-v80.1';
+const CACHE_VERSION = 'paneltec-v81';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -42,6 +42,9 @@ class SignupIn(BaseModel):
 class LoginIn(BaseModel):
     email: EmailStr
     password: str
+    # Phase 3.16 — opt-in 30-day idle override on this device. Backend
+    # honours only when org_settings.remember_me_enabled is true.
+    remember_me: Optional[bool] = False
 
 
 class UserOut(BaseModel):

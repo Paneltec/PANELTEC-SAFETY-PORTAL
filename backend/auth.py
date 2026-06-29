@@ -34,14 +34,22 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(user_id: str, email: str, token_version: int = 0) -> str:
+def create_access_token(user_id: str, email: str, token_version: int = 0,
+                        jti: Optional[str] = None,
+                        absolute_hours: Optional[int] = None) -> str:
+    # Phase 3.16 — `jti` lets the active_sessions tracker look this token
+    # up on every request; `absolute_hours` lets per-role caps override the
+    # default lifetime. Caller (login flow) must pass both.
+    exp_hours = absolute_hours if absolute_hours is not None else JWT_EXP_DAYS * 24
     payload = {
         "sub": user_id,
         "email": email,
         "tv": token_version,
-        "exp": datetime.now(timezone.utc) + timedelta(days=JWT_EXP_DAYS),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=exp_hours),
         "type": "access",
     }
+    if jti:
+        payload["jti"] = jti
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
 
@@ -94,6 +102,25 @@ async def get_current_user(
                             headers={"X-Auth-Reason": "token-revoked"})
 
     user.pop("password_hash", None)
+
+    # Phase 3.16 — session idle enforcement. Imported lazily to avoid a
+    # circular import (session_timeout imports auth.get_current_user).
+    # Hard-fails open if anything weird happens (e.g. db down): the goal
+    # is to enforce idle limits, not to break the app on a Mongo blip.
+    jti = payload.get("jti")
+    if jti:
+        try:
+            from session_timeout import touch_and_check_session
+            reason = await touch_and_check_session(jti, user)
+            if reason == "session_idle_timeout":
+                raise HTTPException(
+                    status_code=401, detail="session_idle_timeout",
+                    headers={"X-Auth-Reason": "session-idle"},
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # never break auth on a tracking blip
     return user
 
 
@@ -146,7 +173,24 @@ async def login(body: LoginIn):
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
                             headers={"X-Auth-Reason": "account-disabled"})
-    token = create_access_token(user["id"], user["email"], user.get("token_version", 0))
+    # Phase 3.16 — embed `jti`, set absolute_hours from per-role settings,
+    # register the active session row for the idle-watch middleware.
+    try:
+        from session_timeout import effective_for_user, new_jti, register_session
+        eff = await effective_for_user(user)
+        jti = new_jti()
+        absolute_hours = eff["absolute_hours"]
+        remember_me = bool(getattr(body, "remember_me", False))
+        if remember_me:
+            absolute_hours = max(absolute_hours, 30 * 24)  # 30-day absolute cap
+        token = create_access_token(user["id"], user["email"],
+                                    user.get("token_version", 0),
+                                    jti=jti, absolute_hours=absolute_hours)
+        await register_session(jti, user, remember_me=remember_me)
+    except Exception:
+        # Fall back to legacy issuance if anything in the session-timeout
+        # path explodes — auth must never go down.
+        token = create_access_token(user["id"], user["email"], user.get("token_version", 0))
     return TokenOut(access_token=token, user=UserOut(**_to_user_out(user)))
 
 
