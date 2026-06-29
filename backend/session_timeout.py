@@ -160,12 +160,50 @@ async def put_session_timeout(body: SessionTimeoutIn, user: dict = Depends(requi
 async def force_logout_all(user: dict = Depends(require_roles("admin"))):
     """Bump every org user's `token_version` (immediately revokes every
     outstanding JWT including the caller's) and wipe `active_sessions`."""
+    from session_history import record_session_ends_bulk
+    # Snapshot every live session into history BEFORE we wipe it.
+    history_written = await record_session_ends_bulk(
+        user["org_id"], "force_logout_all",
+    )
     res = await db.users.update_many(
         {"org_id": user["org_id"]},
         {"$inc": {"token_version": 1}},
     )
     s = await db.active_sessions.delete_many({"org_id": user["org_id"]})
-    return {"ok": True, "users_revoked": res.modified_count, "sessions_wiped": s.deleted_count}
+    return {
+        "ok": True,
+        "users_revoked": res.modified_count,
+        "sessions_wiped": s.deleted_count,
+        "history_written": history_written,
+    }
+
+
+# Phase 3.21 Item 5 — broadcast a "everyone please hard-refresh" signal
+# without revoking sessions. The signal is consumed by every client's
+# Service-Worker poll (see swVersionGuard.js). Useful when shipping a
+# critical UI fix that needs to land instantly but you don't want to
+# sign anyone out.
+@admin_router.post("/force-refresh-all")
+async def force_refresh_all(user: dict = Depends(require_roles("admin"))):
+    now = _now_iso()
+    await db.org_settings.update_one(
+        {"org_id": user["org_id"]},
+        {"$set": {"force_refresh_signal_at": now, "updated_at": now}},
+        upsert=True,
+    )
+    return {"ok": True, "signal_at": now}
+
+
+@router.get("/force-refresh-signal")
+async def force_refresh_signal(user: dict = Depends(get_current_user)):
+    """Frontend polls this. Returns the org's latest force_refresh_signal_at
+    or null if never triggered. Frontend stashes the value in localStorage
+    and self-heals when the server's value moves forward."""
+    doc = await db.org_settings.find_one(
+        {"org_id": user["org_id"]},
+        {"_id": 0, "force_refresh_signal_at": 1},
+    )
+    return {"signal_at": (doc or {}).get("force_refresh_signal_at")}
 
 
 @router.get("/session-timeout/me")
@@ -225,10 +263,16 @@ async def touch_and_check_session(jti: str, user: dict) -> Optional[str]:
     if last is None:
         # No timestamp, malformed shape, or unknown type — fail SAFE (expired),
         # not open. The next login will write a fresh well-formed row.
+        from session_history import record_session_end
+        await record_session_end(jti, user.get("org_id") or sess.get("org_id"), "idle",
+                                 fallback_user_id=sess.get("user_id") or user.get("id"))
         await db.active_sessions.delete_one({"jti": jti})
         return "session_idle_timeout"
     age_s = (datetime.now(timezone.utc) - last).total_seconds()
     if age_s > idle_minutes * 60:
+        from session_history import record_session_end
+        await record_session_end(jti, user.get("org_id") or sess.get("org_id"), "idle",
+                                 fallback_user_id=sess.get("user_id") or user.get("id"))
         await db.active_sessions.delete_one({"jti": jti})
         return "session_idle_timeout"
     if age_s > ACTIVITY_DEBOUNCE_SECONDS:

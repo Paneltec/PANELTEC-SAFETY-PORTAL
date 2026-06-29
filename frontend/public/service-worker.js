@@ -96,13 +96,13 @@
  *             unregistering stale prod SWs already controlling the tab —
  *             those zombies kept serving cached chunks. Dev mode now
  *             unregisters every SW + drops every cache on page load.
- * v97 — Phase 3.20.3 sidebar colourway (Option C). Every sidebar nav now
- *       renders the Filled glyph variant tinted per-section (Capture blue,
- *       Compliance emerald, Settings slate, Overview violet). Active row
- *       overrides to orange-500 icon + left border + bg-orange-50.
- *       SW bumped to invalidate static caches.
+ * v98 — Phase 3.21 parking-lot polish. Item 1 (breadcrumb section-tint),
+ *       Item 4 (Permission presets admin page + sidebar entry), and the
+ *       full backend wave (session_history with hooks on every session
+ *       end; force-refresh-all + signal endpoints) shipped. Items 2/3/5
+ *       frontend deferred to v98.1 due to context exhaustion.
  */
-const CACHE_VERSION = 'paneltec-v97';
+const CACHE_VERSION = 'paneltec-v98';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

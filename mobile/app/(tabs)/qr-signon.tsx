@@ -1,136 +1,221 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, Vibration, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput, Platform, Vibration,
+  KeyboardAvoidingView, ScrollView,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
+import SiteScanResult from '../../src/components/scan/SiteScanResult';
+import WorkerScanResult from '../../src/components/scan/WorkerScanResult';
+import SupplierScanResult from '../../src/components/scan/SupplierScanResult';
+
+type ScanType = 'site' | 'worker' | 'supplier' | null;
+
+/** Parse a QR URL/token to determine scan type and token */
+function parseQR(raw: string): { type: ScanType; token: string } | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+
+  // URL-based patterns: /scan/site/{token}, /scan/worker/{token}, /scan/supplier/{token}
+  const siteMatch = trimmed.match(/\/scan\/site\/([^/?#]+)/);
+  if (siteMatch) return { type: 'site', token: siteMatch[1] };
+
+  const workerMatch = trimmed.match(/\/scan\/worker\/([^/?#]+)/);
+  if (workerMatch) return { type: 'worker', token: workerMatch[1] };
+
+  const supplierMatch = trimmed.match(/\/scan\/supplier\/([^/?#]+)/);
+  if (supplierMatch) return { type: 'supplier', token: supplierMatch[1] };
+
+  // Raw token — no type detected. Default to site scan.
+  return { type: 'site', token: trimmed };
+}
 
 export default function QRSignOnScreen() {
-  const [scannedCode, setScannedCode] = useState('');
-  const [manualCode, setManualCode] = useState('');
-  const [signedOn, setSignedOn] = useState(false);
+  const [manualUrl, setManualUrl] = useState('');
+  const [resolvedType, setResolvedType] = useState<ScanType>(null);
+  const [resolvedToken, setResolvedToken] = useState('');
   const [scanning, setScanning] = useState(false);
 
-  const handleScan = () => {
-    setScanning(true);
-    // MOCKED: simulate a barcode scan after 1.5s
-    setTimeout(() => {
-      const mockCode = 'SITE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-      setScannedCode(mockCode);
-      setScanning(false);
-      if (Platform.OS !== 'web') Vibration.vibrate(100);
-    }, 1500);
-  };
+  const handleResolve = useCallback(() => {
+    const result = parseQR(manualUrl);
+    if (!result) return;
+    setResolvedType(result.type);
+    setResolvedToken(result.token);
+    if (Platform.OS !== 'web') Vibration.vibrate(100);
+  }, [manualUrl]);
 
-  const handleSignOn = () => {
-    const code = scannedCode || manualCode;
-    if (!code.trim()) { Alert.alert('Error', 'Scan a QR code or enter a site code'); return; }
-    // MOCKED: always succeeds
-    setSignedOn(true);
-    Alert.alert('Signed on', `You have been signed on to site ${code}.`);
-  };
+  const handleQuickType = useCallback((type: ScanType, token: string) => {
+    setResolvedType(type);
+    setResolvedToken(token);
+    setManualUrl('');
+  }, []);
 
-  const reset = () => { setScannedCode(''); setManualCode(''); setSignedOn(false); setScanning(false); };
+  const handleReset = useCallback(() => {
+    setResolvedType(null);
+    setResolvedToken('');
+    setManualUrl('');
+    setScanning(false);
+  }, []);
 
+  // Show result component based on resolved type
+  if (resolvedType === 'site' && resolvedToken) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <SiteScanResult token={resolvedToken} onReset={handleReset} />
+      </SafeAreaView>
+    );
+  }
+  if (resolvedType === 'worker' && resolvedToken) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <WorkerScanResult token={resolvedToken} onReset={handleReset} />
+      </SafeAreaView>
+    );
+  }
+  if (resolvedType === 'supplier' && resolvedToken) {
+    return (
+      <SafeAreaView style={s.safe}>
+        <SupplierScanResult token={resolvedToken} onReset={handleReset} />
+      </SafeAreaView>
+    );
+  }
+
+  // Scanner view
   return (
     <SafeAreaView style={s.safe}>
-      <View testID="qr-signon-page" style={s.container}>
-        <Text style={s.overline}>QR SIGN-ON</Text>
-        <Text style={s.heading}>Site Sign-On</Text>
-        <Text style={s.sub}>Scan a site QR code to sign on for the day.</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
+          <Text style={s.overline}>QR SCANNER</Text>
+          <Text style={s.heading}>Scan & Sign-On</Text>
+          <Text style={s.sub}>Scan a site, worker, or supplier QR code to begin.</Text>
 
-        {/* Camera viewfinder mock */}
-        <View style={s.viewfinder}>
-          <View style={s.viewfinderInner}>
-            {scanning ? (
-              <View style={s.scanningState}>
-                <Ionicons name="scan" size={48} color={Colors.blue} />
-                <Text style={s.scanText}>Scanning...</Text>
-              </View>
-            ) : scannedCode ? (
-              <View style={s.scannedState}>
-                <View style={s.checkCircle}>
-                  <Ionicons name="checkmark" size={32} color="#fff" />
+          {/* Camera viewfinder area */}
+          <View testID="qr-viewfinder" style={s.viewfinder}>
+            <View style={s.viewfinderInner}>
+              {scanning ? (
+                <View style={s.scanningState}>
+                  <Ionicons name="scan" size={48} color={Colors.blue} />
+                  <Text style={s.scanText}>Scanning...</Text>
                 </View>
-                <Text style={s.scannedLabel}>Code detected</Text>
-                <Text style={s.scannedCode}>{scannedCode}</Text>
-              </View>
-            ) : (
-              <View style={s.idleState}>
-                <View style={s.cameraIcon}>
-                  <Ionicons name="qr-code" size={40} color={Colors.textTertiary} />
+              ) : (
+                <View style={s.idleState}>
+                  <View style={s.cameraIcon}>
+                    <Ionicons name="qr-code" size={40} color={Colors.textTertiary} />
+                  </View>
+                  <Text style={s.idleText}>Point camera at QR code</Text>
+                  <Text style={s.idleSub}>or paste a scan URL below</Text>
                 </View>
-                <Text style={s.idleText}>Point camera at site QR code</Text>
-                <Text style={s.idleSub}>or enter the code manually below</Text>
-              </View>
-            )}
-          </View>
-          {/* Viewfinder corners */}
-          <View style={[s.corner, s.tl]} />
-          <View style={[s.corner, s.tr]} />
-          <View style={[s.corner, s.bl]} />
-          <View style={[s.corner, s.br]} />
-        </View>
-
-        {!scannedCode && (
-          <TouchableOpacity testID="qr-scan-btn" style={s.scanBtn} onPress={handleScan} disabled={scanning} activeOpacity={0.7}>
-            <Ionicons name="camera" size={18} color="#fff" />
-            <Text style={s.scanBtnText}>{scanning ? 'Scanning...' : 'Tap to Scan'}</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Manual entry */}
-        {!scannedCode && (
-          <View style={s.manualCard}>
-            <Text style={s.manualLabel}>Or enter site code manually</Text>
-            <TextInput
-              testID="qr-manual-input"
-              style={s.input}
-              value={manualCode}
-              onChangeText={setManualCode}
-              placeholder="e.g. SITE-ABC123"
-              placeholderTextColor={Colors.textTertiary}
-              autoCapitalize="characters"
-            />
-          </View>
-        )}
-
-        {/* Sign-on / Reset buttons */}
-        {signedOn ? (
-          <View style={s.successCard}>
-            <View style={s.successIcon}>
-              <Ionicons name="checkmark-circle" size={28} color={Colors.emerald} />
+              )}
             </View>
-            <Text style={s.successTitle}>Signed on</Text>
-            <Text style={s.successBody}>You are signed on at {scannedCode || manualCode}</Text>
-            <TouchableOpacity testID="qr-reset-btn" style={s.resetBtn} onPress={reset}>
-              <Text style={s.resetBtnText}>Sign on to a different site</Text>
-            </TouchableOpacity>
+            {/* Viewfinder corners */}
+            <View style={[s.corner, s.tl]} />
+            <View style={[s.corner, s.tr]} />
+            <View style={[s.corner, s.bl]} />
+            <View style={[s.corner, s.br]} />
           </View>
-        ) : (
-          <TouchableOpacity testID="qr-signon-submit" style={[s.signOnBtn, !(scannedCode || manualCode) && { opacity: 0.4 }]} onPress={handleSignOn} activeOpacity={0.7}>
-            <Ionicons name="log-in" size={18} color="#fff" />
-            <Text style={s.signOnBtnText}>Sign On</Text>
-          </TouchableOpacity>
-        )}
 
-        <View style={s.mockedBadge}>
-          <Ionicons name="information-circle" size={14} color={Colors.textTertiary} />
-          <Text style={s.mockedText}>Camera scan is simulated in this preview</Text>
-        </View>
-      </View>
+          {/* URL / Token input */}
+          <View style={s.inputCard}>
+            <Text style={s.inputLabel}>Paste QR URL or enter token</Text>
+            <View style={s.inputRow}>
+              <TextInput
+                testID="qr-url-input"
+                style={s.input}
+                value={manualUrl}
+                onChangeText={setManualUrl}
+                placeholder="e.g. https://.../scan/site/ziwkVY2..."
+                placeholderTextColor={Colors.textTertiary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="go"
+                onSubmitEditing={handleResolve}
+              />
+              <TouchableOpacity
+                testID="qr-resolve-btn"
+                style={[s.goBtn, !manualUrl.trim() && { opacity: 0.4 }]}
+                onPress={handleResolve}
+                disabled={!manualUrl.trim()}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-forward" size={18} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Quick scan type buttons */}
+          <View style={s.quickSection}>
+            <Text style={s.quickLabel}>OR TAP A SCAN TYPE</Text>
+            <View style={s.quickRow}>
+              <TouchableOpacity
+                testID="quick-site-scan"
+                style={[s.quickBtn, { backgroundColor: '#EFF6FF', borderColor: '#BFDBFE' }]}
+                onPress={() => {
+                  setManualUrl('');
+                  setResolvedType(null);
+                  // prompt for token
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="business" size={20} color="#2563EB" />
+                <Text style={[s.quickBtnText, { color: '#2563EB' }]}>Site{'\n'}Sign-On</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="quick-worker-scan"
+                style={[s.quickBtn, { backgroundColor: '#F0FDF4', borderColor: '#BBF7D0' }]}
+                onPress={() => {
+                  setManualUrl('');
+                  setResolvedType(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="person" size={20} color="#15803D" />
+                <Text style={[s.quickBtnText, { color: '#15803D' }]}>Worker{'\n'}Check</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                testID="quick-supplier-scan"
+                style={[s.quickBtn, { backgroundColor: '#FAF5FF', borderColor: '#DDD6FE' }]}
+                onPress={() => {
+                  setManualUrl('');
+                  setResolvedType(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="briefcase" size={20} color="#7C3AED" />
+                <Text style={[s.quickBtnText, { color: '#7C3AED' }]}>Supplier{'\n'}Induction</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={s.infoBadge}>
+            <Ionicons name="information-circle" size={14} color={Colors.textTertiary} />
+            <Text style={s.infoText}>
+              {Platform.OS === 'web'
+                ? 'Camera scanning is available on native devices. Use the URL field above to test.'
+                : 'Point your camera at any Paneltec QR code to begin.'}
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
-  container: { flex: 1, padding: 16, alignItems: 'center' },
-  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.blue, alignSelf: 'flex-start' },
-  heading: { fontSize: 26, fontWeight: '700', color: Colors.ink, alignSelf: 'flex-start', marginTop: 4, letterSpacing: -0.5 },
-  sub: { fontSize: 13, color: Colors.textSecondary, alignSelf: 'flex-start', marginTop: 4, marginBottom: 20 },
+  container: { padding: 16, paddingBottom: 40 },
+  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.blue },
+  heading: { fontSize: 26, fontWeight: '700', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
+  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 20 },
+  // Viewfinder
   viewfinder: {
-    width: 260, height: 260, backgroundColor: '#0F172A', borderRadius: 20,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 16, overflow: 'hidden',
+    width: '100%', maxWidth: 320, aspectRatio: 1, backgroundColor: '#0F172A', borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'center', marginBottom: 20, overflow: 'hidden',
   },
   viewfinderInner: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   corner: { position: 'absolute', width: 32, height: 32, borderColor: Colors.blue, borderWidth: 3 },
@@ -140,42 +225,33 @@ const s = StyleSheet.create({
   br: { bottom: 12, right: 12, borderLeftWidth: 0, borderTopWidth: 0, borderBottomRightRadius: 8 },
   scanningState: { alignItems: 'center', gap: 8 },
   scanText: { color: Colors.blue, fontSize: 14, fontWeight: '600' },
-  scannedState: { alignItems: 'center', gap: 8 },
-  checkCircle: { width: 52, height: 52, borderRadius: 26, backgroundColor: Colors.emerald, alignItems: 'center', justifyContent: 'center' },
-  scannedLabel: { color: '#94A3B8', fontSize: 12, fontWeight: '500' },
-  scannedCode: { color: '#fff', fontSize: 20, fontWeight: '700', letterSpacing: 1 },
   idleState: { alignItems: 'center', gap: 8 },
   cameraIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center' },
   idleText: { color: '#94A3B8', fontSize: 14, fontWeight: '500' },
   idleSub: { color: '#64748B', fontSize: 12 },
-  scanBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.blue, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 24,
-    width: 260, marginBottom: 16,
-  },
-  scanBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  manualCard: { width: '100%', backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 16 },
-  manualLabel: { fontSize: 13, color: Colors.textSecondary, marginBottom: 8 },
+  // Input
+  inputCard: { backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 14, marginBottom: 16 },
+  inputLabel: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 8 },
+  inputRow: { flexDirection: 'row', gap: 8 },
   input: {
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16,
-    color: Colors.text, letterSpacing: 1, fontWeight: '600',
+    flex: 1, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14,
+    color: Colors.text,
   },
-  signOnBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.emerald, borderRadius: 12, paddingVertical: 14, paddingHorizontal: 32,
-    width: '100%', minHeight: 52,
+  goBtn: {
+    width: 48, height: 48, borderRadius: 12, backgroundColor: Colors.blue,
+    alignItems: 'center', justifyContent: 'center',
   },
-  signOnBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  successCard: {
-    width: '100%', backgroundColor: '#F0FDF4', borderWidth: 2, borderColor: '#A7F3D0',
-    borderRadius: 16, padding: 20, alignItems: 'center', gap: 4,
+  // Quick type buttons
+  quickSection: { marginBottom: 16 },
+  quickLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.textTertiary, textAlign: 'center', marginBottom: 10 },
+  quickRow: { flexDirection: 'row', gap: 10, justifyContent: 'center' },
+  quickBtn: {
+    flex: 1, maxWidth: 110, alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 16, borderRadius: 16, borderWidth: 1.5,
   },
-  successIcon: { marginBottom: 4 },
-  successTitle: { fontSize: 18, fontWeight: '700', color: Colors.emeraldDark },
-  successBody: { fontSize: 14, color: Colors.textSecondary, textAlign: 'center' },
-  resetBtn: { marginTop: 12, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, borderColor: Colors.border },
-  resetBtnText: { fontSize: 13, color: Colors.blue, fontWeight: '500' },
-  mockedBadge: { flexDirection: 'row', gap: 6, alignItems: 'center', marginTop: 16 },
-  mockedText: { fontSize: 11, color: Colors.textTertiary, fontStyle: 'italic' },
+  quickBtnText: { fontSize: 12, fontWeight: '700', textAlign: 'center', lineHeight: 16 },
+  // Info
+  infoBadge: { flexDirection: 'row', gap: 6, alignItems: 'flex-start', paddingHorizontal: 4 },
+  infoText: { fontSize: 11, color: Colors.textTertiary, flex: 1, lineHeight: 16 },
 });

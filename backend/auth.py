@@ -165,7 +165,7 @@ async def signup(body: SignupIn):
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(body: LoginIn):
+async def login(body: LoginIn, request: Request):
     email = body.email.lower()
     user = await db.users.find_one({"email": email}, {"_id": 0})
     if not user or not verify_password(body.password, user["password_hash"]):
@@ -177,6 +177,7 @@ async def login(body: LoginIn):
     # register the active session row for the idle-watch middleware.
     try:
         from session_timeout import effective_for_user, new_jti, register_session
+        from session_history import extract_request_metadata
         eff = await effective_for_user(user)
         jti = new_jti()
         absolute_hours = eff["absolute_hours"]
@@ -186,7 +187,15 @@ async def login(body: LoginIn):
         token = create_access_token(user["id"], user["email"],
                                     user.get("token_version", 0),
                                     jti=jti, absolute_hours=absolute_hours)
+        meta = extract_request_metadata(request)
         await register_session(jti, user, remember_me=remember_me)
+        # Phase 3.21 — enrich the live session row with IP + UA so the
+        # session history that's written when this row dies carries the
+        # auditor metadata.
+        if meta:
+            await db.active_sessions.update_one(
+                {"jti": jti}, {"$set": meta},
+            )
     except Exception:
         # Fall back to legacy issuance if anything in the session-timeout
         # path explodes — auth must never go down.
@@ -205,7 +214,20 @@ async def me(user: dict = Depends(get_current_user)):
 
 @router.post("/logout")
 async def logout(user: dict = Depends(get_current_user)):
-    # Stateless JWT — client just drops the token. Endpoint exists for parity.
+    # Phase 3.21 — record an "explicit_logout" history row before the
+    # stateless JWT drops. Best-effort: if anything fails, /logout still
+    # returns ok so the client can complete the sign-out flow.
+    try:
+        from session_history import record_session_end
+        jti = user.get("jti")
+        if jti:
+            await record_session_end(jti, user["org_id"], "explicit_logout",
+                                     fallback_user_id=user["id"])
+            await db.active_sessions.delete_one(
+                {"jti": jti, "org_id": user["org_id"]},
+            )
+    except Exception:
+        pass
     return {"ok": True}
 
 

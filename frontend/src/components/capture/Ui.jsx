@@ -50,10 +50,42 @@ export function PageHeader({ crumb, title, subtitle, action, pastel: pastelOverr
     );
   }
 
+// Phase 3.21 Item 1 — Tint the leading crumb segment by its section colour
+// so the page header echoes the sidebar section the user navigated from.
+// Section → Tailwind text-class. Matches `SECTION_TINTS` in AppShell.jsx.
+const CRUMB_SECTION_TINT = {
+  capture:     'text-blue-600',
+  compliance:  'text-emerald-600',
+  settings:    'text-slate-500',
+  overview:    'text-violet-600',
+  intelligence:'text-violet-600',
+};
+
+function renderCrumb(crumb, fallbackCls) {
+  if (!crumb) return null;
+  const parts = crumb.split('/').map((s) => s.trim()).filter(Boolean);
+  if (parts.length < 2) {
+    return <div className={`text-xs mb-2 ${fallbackCls}`}>{crumb}</div>;
+  }
+  const sectionKey = parts[0].toLowerCase();
+  const tint = CRUMB_SECTION_TINT[sectionKey] || fallbackCls;
+  return (
+    <div className="text-xs mb-2 inline-flex items-center gap-1.5" data-testid="page-crumb">
+      <span className={`uppercase tracking-[0.16em] font-semibold ${tint}`}>{parts[0]}</span>
+      {parts.slice(1).map((p, i) => (
+        <React.Fragment key={i}>
+          <span className="text-slate-400">/</span>
+          <span className={i === parts.length - 2 ? 'text-slate-700 font-medium' : 'text-slate-500'}>{p}</span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
   return (
     <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
       <div>
-        {crumb && <div className="text-xs text-slate-500 mb-2">{crumb}</div>}
+        {renderCrumb(crumb, 'text-slate-500')}
         <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-1.5 text-sm text-slate-600 max-w-2xl">{subtitle}</p>}
       </div>

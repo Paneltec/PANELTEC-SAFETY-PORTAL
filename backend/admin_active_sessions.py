@@ -97,5 +97,9 @@ async def revoke_session(jti: str, user: dict = Depends(get_current_user)):
         {"id": sess["user_id"], "org_id": user["org_id"]},
         {"$inc": {"token_version": 1}, "$set": {"updated_at": now_iso()}},
     )
+    # Phase 3.21 — snapshot the row into history before we delete it.
+    from session_history import record_session_end
+    await record_session_end(jti, user["org_id"], "admin_revoke",
+                             fallback_user_id=sess.get("user_id"))
     await db.active_sessions.delete_one({"jti": jti, "org_id": user["org_id"]})
     return None

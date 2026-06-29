@@ -198,6 +198,9 @@ api.include_router(session_timeout_router)
 api.include_router(session_timeout_admin_router)
 from admin_active_sessions import router as admin_active_sessions_router  # noqa: E402
 api.include_router(admin_active_sessions_router)
+# Phase 3.21 — Session history audit log (30d retention).
+from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
+api.include_router(session_history_router)
 from sites_qr import scan_router as site_scan_router, sites_router  # noqa: E402
 from suppliers_qr import (  # noqa: E402
     scan_router as supplier_scan_router,
@@ -216,6 +219,7 @@ app.include_router(api)
 @app.on_event("startup")
 async def on_startup():
     await ensure_indexes()
+    await session_history_ensure_indexes()
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
