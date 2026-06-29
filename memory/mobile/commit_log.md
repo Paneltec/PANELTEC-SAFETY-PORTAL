@@ -185,3 +185,32 @@
   - Template Builder Modal: form name input, category dot, description, field cards with up/down reorder + type picker + required toggle, Save button
   - Fill-Out Screen: colored radio buttons (green Yes, red Fail, gray N/A), GPS capture, photo Camera/Library, signature pad, auto-save, Submit Form
   - Dashboard: Generate Form (AI) tile with lavender styling in CREATE & CAPTURE section
+
+
+## Iteration 10 — QR Scanning: MOCKED → REAL API Integration (Phase M2)
+- **Commit**: e1ea3a8a53f77d06711a36edc3a7f9202cf2cf5d
+- **Date**: 2026-06-29T10:25:00Z
+- **Changes**:
+  - **REPLACED** entirely mocked QR sign-on with real backend API integration
+  - Created `SiteScanResult.tsx` — Site sign-on flow: GET /api/scan/site/{token} → shows site info + SWMS checkboxes → POST /api/scan/site/{token}/sign-on → confirmation card with pass expiry
+  - Created `WorkerScanResult.tsx` — Worker profile: GET /api/scan/worker/{token} → shows name/company/trade/certifications(28) with status badges → "Sign in to site" modal with site picker (GET /forms/pickers/sites) → POST /api/scan/worker/{token}/site-signin
+  - Created `SupplierScanResult.tsx` — Supplier induction: GET /api/scan/supplier/{token} → shows supplier name/ABN/trade + required docs/SWMS checkboxes → POST /api/scan/supplier/{token}/complete-induction → confirmation
+  - Rewrote `qr-signon.tsx` — Unified scanner with URL parser (detects /scan/site/, /scan/worker/, /scan/supplier/ patterns), viewfinder area, URL input field, three quick-type buttons
+  - All three scan types tested with REAL backend tokens: site=ziwkVY2CDZK4, worker=tWoXwM5SpM
+  - Site sign-on POST confirmed working — received pass_expires_at in response
+  - Worker profile loads 28 certifications with green CURRENT badges
+  - Site picker modal loads real sites from /forms/pickers/sites API
+- **Files modified**:
+  - `/app/mobile/app/(tabs)/qr-signon.tsx` (overwritten — real API integration)
+  - `/app/mobile/src/components/scan/SiteScanResult.tsx` (NEW)
+  - `/app/mobile/src/components/scan/WorkerScanResult.tsx` (NEW)
+  - `/app/mobile/src/components/scan/SupplierScanResult.tsx` (NEW)
+- **Web files referenced**: SiteScanResolver.jsx, WorkerScanResolver.jsx, SupplierScanResolver.jsx
+- **All screens verified via screenshot**:
+  - QR Scanner main (viewfinder + URL input + 3 type buttons)
+  - Site scan result (Erskineville Turnout, 8 SWMS, sign-on button)
+  - Site sign-on confirmation (pass expires 6/30/2026)
+  - Worker scan result (RICK ANTRIM, 28 certs, sign-in-to-site button)
+  - Worker site picker modal (Erskineville Turnout listed)
+- **Testing credentials**: stephen@paneltec.com.au / Mcgstephen50# (admin)
+- **QR IS NO LONGER MOCKED** — All three scan flows use real backend API endpoints
