@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -215,6 +215,13 @@ export default function UsersManagement() {
                         onClick={() => { setActiveTab('permissions'); setActive(u); }}
                         className="inline-flex items-center justify-center w-7 h-7 rounded bg-violet-100 text-violet-700 hover:bg-violet-200">
                         <KeyRound size={13} />
+                      </button>
+                      <button
+                        title="Edit user"
+                        data-testid={`user-edit-${u.id}`}
+                        onClick={() => { setActiveTab('profile'); setActive(u); }}
+                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
+                        <Pencil size={13} />
                       </button>
                       <button
                         title="Force sign-out everywhere"
