@@ -1,3 +1,73 @@
+# 2026-06-29 — Phase 4.5 SWMS Paste + Bulk Delete + Recycle Bin (v105)
+
+## Backend (`swms_phase45.py`)
+- `POST /api/swms/from-paste` — Claude-parses pasted text/HTML into the
+  existing SWMS schema and saves as a Draft.
+  - Bounds: `200 ≤ chars ≤ 12,000`. Returns 400 / 413 outside.
+  - HTML path uses BeautifulSoup to flatten `<table>` → Markdown so
+    Claude can read column meaning (activity → hazards → controls).
+  - Prefers HTML when materially richer than the plain text (eg
+    paste from Word retains its grids).
+  - LLM: `claude-sonnet-4-5-20250929` via `emergentintegrations` /
+    `EMERGENT_LLM_KEY`. Strict JSON output, fence-tolerant parser.
+  - On success: writes a doc with `created_via=paste`, `status=draft`,
+    `version=1`, all soft-delete fields cleared.
+- `POST /api/swms/bulk-delete {ids[]}` — up to 200 ids per call.
+  - Ownership rule: admin OR `created_by == caller`. Mixed-ownership
+    requests succeed for the rows the caller owns and return the rest
+    under `refused_ids` (the UI shows a warning toast).
+  - Sets `deleted_at`, `deleted_by`, `restore_until = now + 30d`.
+  - Existing `GET /api/swms` already filters `deleted_at: None`.
+  - Audit log: `swms.bulk_delete` with deleted + refused id arrays.
+- `POST /api/swms/{id}/restore` — undo soft-delete (admin OR owner).
+  Audit `swms.restore`.
+- `GET /api/swms/recycle-bin` — admin-only listing with `days_left`
+  per row.
+- **APScheduler cron** `swms_purge_expired` — daily at 03:15 UTC,
+  hard-deletes rows where `restore_until < now`.
+
+## Web (`Swms.jsx`)
+- Header now has **two** primary actions: orange-outlined "Paste SWMS"
+  (Clipboard icon) + the existing blue "Create SWMS".
+- Paste dialog (`PasteSwmsDialog`):
+  - Sparkles header, large mono textarea with `onPaste` that captures
+    both plain text AND HTML clipboard streams.
+  - Live counter `<n> / 12,000 chars`, min-200 hint, "HTML detected
+    (tables preserved)" pill when html clipboard is present.
+  - "Reading your SWMS… (~10–20s)" loading state on submit.
+  - On 201 → close + navigate to `/app/swms/{id}` + success toast.
+- Row checkboxes + select-all on the SWMS list.
+- Sticky bulk-action toolbar (slate-900 + orange Delete button)
+  appears whenever ≥1 row checked. Confirmation dialog before
+  posting, success toast cites the 30-day restore window.
+- Admin "Open Recycle Bin →" link (small, top-right) flips the page
+  into the bin view — listing soft-deleted SWMS with Restore
+  buttons + amber/red day-count chips.
+
+## Service worker
+- `paneltec-v104` → **`paneltec-v105`**. `swVersionGuard` auto-heals
+  open clients on next 60s poll.
+
+## Verification receipts (9/9 green)
+1. <200 chars → 400.
+2. ~1.4KB SWMS paste → 201 with title, 6 tasks, 4 hazards, 9 controls,
+   6 PPE, 6 activity_analysis rows, `created_via=paste`.
+3. >12k chars → 413.
+4. Bulk-delete one id → `deleted=1`, `restore_until` ≈ 30d ahead.
+5. Default `GET /api/swms` excludes the deleted row.
+6. Recycle bin lists it with `days_left=29`.
+7. Restore → ok.
+8. Default list contains the restored row again.
+9. Cleanup ok.
+
+## Mobile hand-off
+- `/app/memory/mobile_briefs/phase_4_5_swms_paste_bulk.md` —
+  Paste-to-create + bulk-delete on the Expo SWMS screen. Recycle Bin
+  stays web-only this phase. Gated by the Phase 4.3 `swms` module flag.
+
+---
+
+
 # 2026-06-29 — Phase 4.4 Live Mobile Preview in Permissions Matrix (v104)
 
 ## Backend

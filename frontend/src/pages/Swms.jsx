@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   FileText, Loader2, Plus, Trash2, Download, ChevronDown,
   AlertTriangle, ArrowUpRight, ShieldAlert, Layers,
+  ClipboardPaste, Sparkles, Undo2, X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -14,23 +15,175 @@ import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
   Field, inputClass, EmptyState, StatusBadge,
 } from '../components/capture/Ui';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 
 // ----------------------- LIST -----------------------
 export default function SwmsList() {
+  const navigate = useNavigate();
+  const user = getUser();
+  const isAdmin = user?.role === 'admin';
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Phase 4.5 — paste-to-create, bulk-delete + recycle bin.
+  const [view, setView] = useState('active');                 // 'active' | 'bin'
+  const [bin, setBin] = useState([]);
+  const [selected, setSelected] = useState(new Set());
+  const [pasteOpen, setPasteOpen] = useState(false);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  useEffect(() => {
-    api.get('/swms').then((r) => setItems(r.data)).catch(() => toast.error('Could not load SWMS')).finally(() => setLoading(false));
-  }, []);
+  const load = () => {
+    setLoading(true);
+    return api.get('/swms')
+      .then((r) => setItems(r.data))
+      .catch(() => toast.error('Could not load SWMS'))
+      .finally(() => setLoading(false));
+  };
+  const loadBin = () => api.get('/swms/recycle-bin').then((r) => setBin(r.data)).catch(() => toast.error('Could not load bin'));
+
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (view === 'bin' && isAdmin) loadBin(); }, [view, isAdmin]);
+
+  const visibleIds = useMemo(() => items.map((s) => s.id), [items]);
+  const allChecked = selected.size > 0 && visibleIds.every((id) => selected.has(id));
+  const toggleOne = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected((prev) =>
+    allChecked ? new Set() : new Set(visibleIds));
+
+  const bulkDelete = async () => {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    setBusy(true);
+    try {
+      const r = await api.post('/swms/bulk-delete', { ids });
+      const { deleted, refused_ids } = r.data;
+      setItems((prev) => prev.filter((x) => !ids.includes(x.id)));
+      setSelected(new Set());
+      setConfirmBulk(false);
+      if (refused_ids?.length) {
+        toast.warning(`Deleted ${deleted} · skipped ${refused_ids.length} you don't own`);
+      } else {
+        toast.success(`Deleted ${deleted} SWMS — restore from the Recycle Bin within 30 days.`);
+      }
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const restoreOne = async (id) => {
+    try {
+      await api.post(`/swms/${id}/restore`);
+      setBin((prev) => prev.filter((x) => x.id !== id));
+      toast.success('SWMS restored');
+      load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      <button onClick={() => setPasteOpen(true)} data-testid="swms-paste-btn"
+        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-orange-500 bg-orange-50 text-orange-700 text-sm font-medium hover:bg-orange-100">
+        <ClipboardPaste size={16} /> Paste SWMS
+      </button>
+      <NewButton to="/app/swms/new" label="Create SWMS" testid="swms-create-btn" />
+    </div>
+  );
+
+  // Recycle bin view — admin only.
+  if (view === 'bin') {
+    return (
+      <div className="max-w-6xl mx-auto" data-testid="swms-recycle-bin">
+        <PageHeader crumb="Capture / AI SWMS / Recycle Bin" title="Recycle Bin"
+          subtitle="Soft-deleted SWMS are restored automatically after 30 days. Until then you can recover them here."
+          action={<GhostButton onClick={() => setView('active')} testid="swms-bin-back">Back to SWMS</GhostButton>} />
+        {bin.length === 0
+          ? <EmptyState title="Recycle bin is empty" body="Anything you delete will appear here for 30 days." />
+          : (
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-4 py-3">Title</th>
+                    <th className="text-left px-4 py-3">Deleted</th>
+                    <th className="text-left px-4 py-3">Days left</th>
+                    <th className="px-4 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {bin.map((s) => (
+                    <tr key={s.id} className="border-t border-slate-100" data-testid={`swms-bin-row-${s.id}`}>
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-800">{s.title}</div>
+                        <div className="text-xs text-slate-500 mt-0.5">v{s.version || 1} · {s.status}</div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-500 text-xs">{(s.deleted_at || '').slice(0, 10)}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${
+                          (s.days_left ?? 30) <= 3 ? 'bg-rose-50 text-rose-700' : 'bg-orange-50 text-orange-700'}`}>
+                          {s.days_left ?? '—'} days
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <button onClick={() => restoreOne(s.id)} data-testid={`swms-bin-restore-${s.id}`}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800">
+                          <Undo2 size={14} /> Restore
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="swms-list">
       <PageHeader crumb="Capture / AI SWMS" title="Safe Work Method Statements"
         subtitle="Draft, review and approve SWMS across your workspaces."
-        action={<NewButton to="/app/swms/new" label="Create SWMS" testid="swms-create-btn" />} />
+        action={headerActions} />
+
+      {/* Phase 4.5 — bulk-action toolbar appears whenever the user has
+          selected at least one row. Sticky-top so it stays in view as
+          the list scrolls under it. */}
+      {selected.size > 0 && (
+        <div className="sticky top-2 z-10 mb-3" data-testid="swms-bulk-bar">
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-slate-900 text-white px-3 py-2 shadow-lg">
+            <div className="text-sm">
+              <span className="inline-block w-2 h-2 rounded-full bg-orange-400 mr-2 align-middle" />
+              {selected.size} selected
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setSelected(new Set())} data-testid="swms-bulk-clear"
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-200 hover:bg-white/10">
+                <X size={14} /> Clear
+              </button>
+              <button onClick={() => setConfirmBulk(true)} data-testid="swms-bulk-delete-btn"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-semibold bg-orange-500 hover:bg-orange-600">
+                <Trash2 size={14} /> Delete selected
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin "Recycle Bin" entry-point — top-right link. */}
+      {isAdmin && (
+        <div className="flex justify-end mb-2 -mt-2">
+          <button onClick={() => setView('bin')} data-testid="swms-open-bin"
+            className="text-xs text-slate-500 hover:text-orange-600 underline-offset-2 hover:underline">
+            Open Recycle Bin →
+          </button>
+        </div>
+      )}
+
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No SWMS yet" body="Draft your first Safe Work Method Statement with the AI assistant."
             action={<NewButton to="/app/swms/new" label="Create SWMS" testid="swms-empty-create" />} />
@@ -38,11 +191,26 @@ export default function SwmsList() {
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-              <tr><th className="text-left px-4 py-3">Title</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Version</th><th className="text-left px-4 py-3">Created</th></tr>
+              <tr>
+                <th className="px-3 py-3 w-10">
+                  <input type="checkbox" checked={allChecked} onChange={toggleAll}
+                    data-testid="swms-select-all" aria-label="Select all" />
+                </th>
+                <th className="text-left px-4 py-3">Title</th>
+                <th className="text-left px-4 py-3">Status</th>
+                <th className="text-left px-4 py-3">Version</th>
+                <th className="text-left px-4 py-3">Created</th>
+                <th className="px-4 py-3" />
+              </tr>
             </thead>
             <tbody>
               {items.map((s) => (
                 <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50">
+                  <td className="px-3 py-3">
+                    <input type="checkbox" checked={selected.has(s.id)}
+                      onChange={() => toggleOne(s.id)}
+                      data-testid={`swms-select-${s.id}`} aria-label={`Select ${s.title}`} />
+                  </td>
                   <td className="px-4 py-3">
                     <Link to={`/app/swms/${s.id}`} className="font-medium text-slate-900 hover:text-brand-blue" data-testid={`swms-row-${s.id}`}>{s.title}</Link>
                     <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">{s.job_description}</div>
@@ -66,7 +234,118 @@ export default function SwmsList() {
           </table>
         </div>
        )}
+
+      <PasteSwmsDialog open={pasteOpen} onClose={() => setPasteOpen(false)}
+        onCreated={(doc) => { setPasteOpen(false); navigate(`/app/swms/${doc.id}`); }} />
+
+      <Dialog open={confirmBulk} onOpenChange={(v) => !v && setConfirmBulk(false)}>
+        <DialogContent data-testid="swms-bulk-confirm">
+          <DialogHeader>
+            <DialogTitle className="font-display">Delete {selected.size} SWMS?</DialogTitle>
+            <DialogDescription>
+              You can restore them from the Recycle Bin within 30 days. Items
+              you don&rsquo;t own will be skipped automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <GhostButton onClick={() => setConfirmBulk(false)}>Cancel</GhostButton>
+            <button onClick={bulkDelete} disabled={busy} data-testid="swms-bulk-confirm-btn"
+              className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-60">
+              {busy ? 'Deleting…' : `Delete ${selected.size}`}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+// ---------- Phase 4.5 — Paste SWMS dialog ----------
+function PasteSwmsDialog({ open, onClose, onCreated }) {
+  const [title, setTitle] = useState('');
+  const [text, setText] = useState('');
+  const [html, setHtml] = useState('');
+  const [busy, setBusy] = useState(false);
+  const taRef = useRef(null);
+
+  // Capture both plain-text and HTML from the clipboard so the backend
+  // can prefer the richer payload (tables survive the round-trip).
+  const onPaste = (e) => {
+    const clipboard = e.clipboardData;
+    if (!clipboard) return;
+    const pHtml = clipboard.getData('text/html');
+    if (pHtml) setHtml(pHtml);
+  };
+
+  const submit = async () => {
+    if (text.trim().length < 200) {
+      toast.error('Paste at least 200 characters of SWMS text.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api.post('/swms/from-paste', {
+        text, html: html || undefined, title_hint: title || undefined,
+      });
+      toast.success('AI-parsed draft created. Review and approve when ready.');
+      onCreated?.(r.data);
+      setTitle(''); setText(''); setHtml('');
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>
+      <DialogContent className="max-w-2xl" data-testid="swms-paste-dialog">
+        <DialogHeader>
+          <DialogTitle className="font-display inline-flex items-center gap-2">
+            <Sparkles className="text-orange-500" size={20} />
+            Paste SWMS content
+          </DialogTitle>
+          <DialogDescription>
+            Drop in plain text from Word, an HTML SWMS from email, or anything
+            in between. Claude will extract the activities, hazards, controls
+            and PPE into a fresh draft you can review and approve.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 pt-2">
+          <Field label="Title (optional — AI will infer if blank)">
+            <input className={inputClass} value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Working at Heights — Roof maintenance"
+              data-testid="swms-paste-title" />
+          </Field>
+          <Field label="Paste your SWMS content here (plain text, Word, or HTML)">
+            <textarea
+              ref={taRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onPaste={onPaste}
+              rows={14}
+              className={`${inputClass} font-mono text-xs leading-relaxed`}
+              placeholder="Paste anywhere — Ctrl/Cmd+V — supports plain text, formatted text, or pasted Word tables."
+              data-testid="swms-paste-textarea"
+            />
+          </Field>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span>{text.length.toLocaleString()} / 12,000 chars
+              {html && <span className="ml-2 text-orange-600">· HTML detected (tables preserved)</span>}
+            </span>
+            <span>Minimum: 200 characters</span>
+          </div>
+        </div>
+        <DialogFooter>
+          <GhostButton onClick={onClose} disabled={busy}>Cancel</GhostButton>
+          <button onClick={submit} disabled={busy || text.trim().length < 200}
+            data-testid="swms-paste-submit"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold disabled:opacity-60">
+            {busy ? <><Loader2 size={14} className="animate-spin" /> Reading your SWMS… (~10–20s)</>
+                  : <><Sparkles size={14} /> Parse with AI</>}
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

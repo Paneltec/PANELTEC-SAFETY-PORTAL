@@ -141,8 +141,10 @@ api.include_router(files_router)
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.
 from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
+from swms_phase45 import router as swms_phase45_router  # noqa: E402
 api.include_router(swms_extras_router)
 api.include_router(swms_admin_router)
+api.include_router(swms_phase45_router)
 api.include_router(swms_router)
 api.include_router(prestarts_router)
 api.include_router(diary_router)
@@ -277,6 +279,15 @@ async def on_startup():
             log.info("APScheduler job registered — simpro_sync_suppliers every 12 h")
         except Exception as e:
             log.warning("simpro_sync_suppliers scheduler hook failed: %s", e)
+        # Phase 4.5 — daily hard-delete of expired SWMS soft-deletes (03:15 UTC).
+        try:
+            from swms_phase45 import purge_expired_swms
+            scheduler.add_job(purge_expired_swms, "cron", hour=3, minute=15,
+                              id="swms_purge_expired", max_instances=1,
+                              coalesce=True, replace_existing=True)
+            log.info("APScheduler job registered — swms_purge_expired daily at 03:15 UTC")
+        except Exception as e:
+            log.warning("swms_purge_expired scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.

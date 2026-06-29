@@ -159,8 +159,31 @@
  *         admins never see a misleading "preview-only" state.
  *       · Mobile hand-off written: query-param wiring is the only
  *         change required in the Expo app for this phase.
+ * v105 — Phase 4.5 SWMS paste-to-create + bulk soft-delete + recycle:
+ *       · Backend `swms_phase45.py`:
+ *         - `POST /api/swms/from-paste` Claude-parses pasted text/HTML
+ *           into the SWMS schema and saves as a draft (200–12,000 char
+ *           bounds, 400/413 outside).
+ *         - `POST /api/swms/bulk-delete` soft-deletes up to 200 ids at
+ *           a time, sets `restore_until = now + 30d`. Ownership rule:
+ *           admin OR `created_by == caller`; mixed ownership returns
+ *           a structured `refused_ids` array.
+ *         - `POST /api/swms/{id}/restore` undoes a soft-delete inside
+ *           the window.
+ *         - `GET /api/swms/recycle-bin` admin-only listing with
+ *           `days_left` per row.
+ *         - APScheduler cron `swms_purge_expired` at 03:15 UTC daily
+ *           hard-deletes expired soft-deletes.
+ *       · Web `Swms.jsx`: "Paste SWMS" header button + Sparkles dialog
+ *         that captures both `text` and `html` clipboard streams
+ *         (preserves Word tables via BeautifulSoup → Markdown).
+ *         Row checkboxes + select-all + sticky orange bulk-delete
+ *         toolbar. Admin "Open Recycle Bin →" link surfaces the bin
+ *         view with Restore actions + amber/red days-left chips.
+ *       · Mobile hand-off written: mirror paste + bulk delete on the
+ *         Expo SWMS screen (Recycle Bin stays web-only).
  */
-const CACHE_VERSION = 'paneltec-v104';
+const CACHE_VERSION = 'paneltec-v105';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
