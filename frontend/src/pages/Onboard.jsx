@@ -62,6 +62,9 @@ export function PasswordPanel({ flavour, token }) {
         <h1 className="font-display text-2xl mt-3 text-slate-900">Link can't be used</h1>
         <p className="text-sm text-slate-600 mt-2">{error}</p>
         <a href="/login" className="inline-block mt-4 text-sm text-orange-600 hover:underline">Back to sign in</a>
+        <p className="mt-6 pt-4 border-t border-slate-100 text-xs text-slate-500" data-testid="onboard-help">
+          Need help? Contact your administrator to issue a fresh link or PIN.
+        </p>
       </div>
     );
   }

@@ -4,6 +4,7 @@ import { ArrowRight, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
 import { login, loginWithSimpro, safeNext } from '../lib/auth';
 import api, { apiError } from '../lib/api';
+import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 
 export default function Login() {
   const navigate = useNavigate();
@@ -16,6 +17,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busySimpro, setBusySimpro] = useState(false);
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   // Phase 3.16 — Public endpoint tells us whether the org admin has enabled
   // the "Keep me logged in" feature. We only render the checkbox if so; this
@@ -77,6 +79,13 @@ export default function Login() {
                 className="w-full px-3 py-2.5 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue" />
             </div>
             {error && <div className="text-xs text-brand-red" data-testid="login-error">{error}</div>}
+            <div className="flex justify-end -mt-1.5">
+              <button type="button" onClick={() => setForgotOpen(true)}
+                data-testid="forgot-password-link"
+                className="text-[12px] font-medium text-brand-blue hover:underline">
+                Forgot password?
+              </button>
+            </div>
             {rememberMeAllowed && (
               <label className="flex items-center gap-2 text-sm text-slate-700 select-none cursor-pointer" data-testid="remember-me-row">
                 <input
@@ -132,6 +141,7 @@ export default function Login() {
           </div>
         </div>
       </div>
+      <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
   );
 }

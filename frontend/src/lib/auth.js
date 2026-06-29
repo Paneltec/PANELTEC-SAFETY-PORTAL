@@ -31,6 +31,18 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// Phase 4.7 — used by Onboard / Reset flows after the public redeem endpoint
+// returns a fresh JWT. We persist the token, then hydrate USER_KEY off
+// `/auth/me` so the rest of the app sees a complete user object.
+export async function setToken(token) {
+  if (!token) return;
+  localStorage.setItem(TOKEN_KEY, token);
+  try {
+    const { data } = await api.get('/auth/me');
+    localStorage.setItem(USER_KEY, JSON.stringify(data));
+  } catch { /* AppShell will refetch on mount */ }
+}
+
 export function getUser() {
   try {
     const raw = localStorage.getItem(USER_KEY);

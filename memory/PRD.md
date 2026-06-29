@@ -1,3 +1,53 @@
+# 2026-06-29 — Phase 4.7 Web UI shipped (v108)
+
+## Web UI (token-driven password flows + admin UX) — SHIPPED
+- **Public routes** wired in `App.js` OUTSIDE `<AppShell />`:
+  - `/onboard?token=` → `Onboard` (invite flavour). Validates token via
+    `POST /api/auth/invite/validate` then redeems via `/invite/redeem`.
+  - `/reset?token=` → `ResetPasswordPage` (reset flavour). Skips validate
+    (no email leak) and redeems via `/reset/redeem`.
+  - Shared `PasswordPanel` (in `pages/Onboard.jsx`) enforces the backend
+    rule (≥10 chars / letter / digit / special) with a live strength meter.
+  - Error states (invalid / expired / used) surface a **"Need help? Contact
+    your administrator to issue a fresh link or PIN."** footer so workers
+    don't dead-end.
+- **`MustChangePasswordGuard`** wraps `/app/*`. Reads `must_change_password`
+  from `/auth/me` and pins a non-dismissable `ChangePasswordModal` until
+  the user complies (backstop for admin-initiated rotations + first
+  logins via PIN). Does **not** block users where the flag is false, so
+  existing logins are unaffected.
+- **Login page** gains a **"Forgot password?"** link beneath the password
+  field that opens `ForgotPasswordModal`. Always reports success (no email
+  enumeration), regardless of the backend's 200.
+- **AppShell user dropdown** gains a **"Change password…"** entry that
+  opens the modal in unlocked mode for self-serve rotations.
+- **UsersManagement**:
+  - Per-row **`AccessKebab`** (Send invite / Reset password / Generate
+    one-time PIN / Unlock account) — uses the same `/api/users/{id}/*`
+    endpoints as `AccessSection`, with the PIN reveal modal.
+  - User drawer **Profile tab** now embeds the full `AccessSection` with
+    channel picker (auto / email / SMS), status pill (Active / Invite
+    pending / Locked / Never logged in), and contextual sub-line
+    (expires in N days / last login Nd ago / too many failed attempts).
+- **`setToken(token)` helper** added to `lib/auth.js` — persists the redeem
+  JWT, hydrates `/auth/me`, so navigation to `/app` lands on a populated
+  user object.
+
+## Service worker
+- `CACHE_VERSION` bumped to **`paneltec-v108`**. Removed orphaned
+  `paneltec-v107` const + duplicate `paneltec-v105` declaration left over
+  from the previous cutoff (`swVersionGuard` will auto-purge stale caches
+  on next page load).
+
+## Mobile mirror — PENDING (handed off to `e1_expo_frontend_dev`)
+- Deep links: `paneltec://onboard?token=` and `paneltec://reset?token=`.
+- "Sign in with PIN" entry on the mobile login screen → `/api/auth/pin/
+  redeem`.
+- Biometric unlock after first successful password sign-in.
+
+---
+
+
 # 2026-06-29 — Phase 4.7 Worker Invite / Reset / PIN / Lockout (v107)
 
 ## Backend (`auth_invite.py` new + `auth.py` login patch) — SHIPPED

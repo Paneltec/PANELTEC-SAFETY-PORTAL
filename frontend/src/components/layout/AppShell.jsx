@@ -3,6 +3,7 @@ import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
+  KeyRound as KeyRoundIcon,
 } from 'lucide-react';
 // Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
 // Each NAV entry now carries `icon` (Regular outline) for the resting
@@ -47,6 +48,7 @@ import {
 } from '../ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Avatar, AvatarFallback } from '../ui/avatar';
+import { ChangePasswordModal } from '../auth/AuthBundle';
 
 const NAV = [
   { section: 'Overview', items: [
@@ -152,6 +154,8 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const location = useLocation();
   const { workspaceId, setWorkspaceId } = useWorkspace();
   const [workspaces, setWorkspaces] = useState([]);
+  // Phase 4.7 — self-serve password change from the user dropdown.
+  const [changePwOpen, setChangePwOpen] = useState(false);
   useEffect(() => {
     let live = true;
     api.get('/workspaces')
@@ -266,11 +270,15 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
           <DropdownMenuItem asChild data-testid="menu-profile">
             <Link to="/app/profile">My Profile</Link>
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setChangePwOpen(true)} data-testid="menu-change-password">
+            <KeyRoundIcon size={14} className="mr-2" /> Change password…
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={handleSignOut} data-testid="menu-sign-out">
             <LogOut size={14} className="mr-2" /> Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
     </header>
   );
 }

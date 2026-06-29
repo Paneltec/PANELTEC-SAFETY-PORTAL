@@ -187,32 +187,37 @@
  *         special). Audit-logged everywhere. PUBLIC_HOST derived from
  *         X-Forwarded-Host. Frontend onboard/reset/forgot/access UI
  *         + ChangePasswordModal queued for next turn.
+ *
+ * v108 — Phase 4.7 WEB UI shipped (token-driven password flows + admin UX):
+ *       · Public routes: `/onboard?token=` (invite redeem) and
+ *         `/reset?token=` (admin- or self-initiated reset) rendered
+ *         OUTSIDE the `AppShell`. Shared `PasswordPanel` enforces the
+ *         backend rule (10 chars / letter / digit / special) with a
+ *         live strength meter, and on error states surfaces a
+ *         "Need help? Contact your administrator" footer so workers
+ *         can't dead-end on an expired link.
+ *       · `MustChangePasswordGuard` wraps the authenticated `/app/*`
+ *         layout. Reads `must_change_password` from `/auth/me` and
+ *         pins a non-dismissable `ChangePasswordModal` until the user
+ *         complies — backstop for admin-initiated rotations + first
+ *         logins via PIN.
+ *       · Login page gains a "Forgot password?" link that opens
+ *         `ForgotPasswordModal`. Always reports success (no email
+ *         enumeration) regardless of the backend's 200.
+ *       · AppShell user dropdown gains a "Change password…" entry
+ *         that opens the modal in unlocked mode for self-serve
+ *         rotations.
+ *       · UsersManagement: per-row "Access…" kebab exposes Send invite
+ *         / Generate PIN / Reset password / Unlock (gated by current
+ *         user.status). User drawer Profile tab now renders the full
+ *         `AccessSection` with channel picker, live status pill and
+ *         PIN reveal modal.
+ *       · `setToken(token)` helper added to `lib/auth.js` — persists
+ *         the redeem JWT, then hydrates `/auth/me` so the rest of
+ *         the app sees a populated user object before navigating to
+ *         `/app`.
  */
-const CACHE_VERSION = 'paneltec-v107';:
- *       · Backend `swms_phase45.py`:
- *         - `POST /api/swms/from-paste` Claude-parses pasted text/HTML
- *           into the SWMS schema and saves as a draft (200–12,000 char
- *           bounds, 400/413 outside).
- *         - `POST /api/swms/bulk-delete` soft-deletes up to 200 ids at
- *           a time, sets `restore_until = now + 30d`. Ownership rule:
- *           admin OR `created_by == caller`; mixed ownership returns
- *           a structured `refused_ids` array.
- *         - `POST /api/swms/{id}/restore` undoes a soft-delete inside
- *           the window.
- *         - `GET /api/swms/recycle-bin` admin-only listing with
- *           `days_left` per row.
- *         - APScheduler cron `swms_purge_expired` at 03:15 UTC daily
- *           hard-deletes expired soft-deletes.
- *       · Web `Swms.jsx`: "Paste SWMS" header button + Sparkles dialog
- *         that captures both `text` and `html` clipboard streams
- *         (preserves Word tables via BeautifulSoup → Markdown).
- *         Row checkboxes + select-all + sticky orange bulk-delete
- *         toolbar. Admin "Open Recycle Bin →" link surfaces the bin
- *         view with Restore actions + amber/red days-left chips.
- *       · Mobile hand-off written: mirror paste + bulk delete on the
- *         Expo SWMS screen (Recycle Bin stays web-only).
- */
-const CACHE_VERSION = 'paneltec-v105';
+const CACHE_VERSION = 'paneltec-v108';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

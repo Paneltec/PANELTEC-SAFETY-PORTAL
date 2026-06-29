@@ -49,6 +49,9 @@ import SystemSettings from '@/pages/SystemSettings';
 import Certifications from '@/pages/Certifications';
 import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-line no-unused-vars
 import FormSubmissions from '@/pages/FormSubmissions';
+// Phase 4.7 — public token-driven password flows + must-change guard.
+import Onboard, { ResetPasswordPage } from '@/pages/Onboard';
+import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 
 function App() {
   return (
@@ -59,13 +62,16 @@ function App() {
             <Route path="/" element={<Cover />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            {/* Phase 4.7 — public token-driven password flows */}
+            <Route path="/onboard" element={<Onboard />} />
+            <Route path="/reset" element={<ResetPasswordPage />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
             <Route path="/scan/site/:token" element={<SiteScanResolver />} />
             <Route path="/scan/supplier/:token" element={<SupplierScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
 
-            <Route path="/app" element={<AppShell />}>
+            <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="ask" element={<Ask />} />
