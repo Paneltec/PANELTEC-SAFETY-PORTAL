@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from reportlab.lib.pagesizes import A4
@@ -53,6 +53,7 @@ from reportlab.platypus import (
 )
 
 from db import db
+from models import now_iso  # noqa: E402  — Phase 3.14 OCR-index timestamp helper
 from auth import get_current_user
 
 
@@ -456,11 +457,18 @@ def _verify_preview_token(token: str, file_id: str) -> Optional[str]:
 
 @router.get("/files/{file_id}/pdf")
 async def file_pdf(file_id: str, request: Request,
+                   background: BackgroundTasks,
                    dl: int = Query(0),
                    t: Optional[str] = Query(None, description="signed iframe token; alternative to Bearer auth")):
     """Stream PDF. Accepts EITHER an Authorization Bearer header (curl /
     download path) OR a short-lived signed `?t=` token (iframe path, since
-    iframes can't carry custom headers)."""
+    iframes can't carry custom headers).
+
+    Phase 3.14 — first time a file is converted to PDF, we kick a background
+    task that runs `ocr_pdf_to_text` against the PDF bytes and persists the
+    result onto `doc_files.search_text` so the Smart Search indexer (existing
+    or future) can pick it up. Fire-and-forget; the response returns
+    immediately as it does today."""
     if t:
         user_id = _verify_preview_token(t, file_id)
         if not user_id:
@@ -473,13 +481,24 @@ async def file_pdf(file_id: str, request: Request,
         user = await get_current_user(request, creds=None)
     doc, path = await _resolve_file(file_id, user)
     pdf, pipeline = await _convert(doc, path)
+    # Spool the OCR + index step into the background. We persist the PDF to a
+    # short-lived temp file so `ocr_pdf_to_text` (which expects a Path) can
+    # read it without re-converting. The doc id keeps us idempotent — see the
+    # `already_indexed` short-circuit in `_ocr_index_file`.
+    try:
+        tmp = Path(tempfile.gettempdir()) / f"ocr_idx_{doc['id']}.pdf"
+        tmp.write_bytes(pdf)
+        background.add_task(_ocr_index_file, doc["id"], tmp)
+    except Exception as e:
+        log.warning("ocr scheduling failed file=%s err=%s", doc.get("id"), e)
     return _pdf_response(pdf, doc.get("filename") or file_id, bool(dl), pipeline)
 
 
 @router.get("/files/{file_id}/pdf.pdf")
 async def file_pdf_aliased(file_id: str, request: Request,
+                           background: BackgroundTasks,
                            dl: int = Query(0), t: Optional[str] = Query(None)):
-    return await file_pdf(file_id, request, dl=dl, t=t)
+    return await file_pdf(file_id, request, background, dl=dl, t=t)
 
 
 @router.post("/files/{file_id}/preview-token")
@@ -624,3 +643,61 @@ async def server_tools_health(user: dict = Depends(get_current_user)):
         "tesseract":   _norm(s["tesseract"]),
         "poppler":     _norm(s["poppler"]),
     }
+
+
+# ────────────── Phase 3.14 — Auto-OCR-to-SmartSearch on upload ──────────────
+# Fire-and-forget extractor: after a file is converted to PDF (cached on disk
+# at <UPLOAD_DIR>/cache/<file_id>.pdf), we spawn a background task that runs
+# the existing `ocr_pdf_to_text()` util and persists the result onto
+# `doc_files.search_text`. Triggered from the /pdf endpoint so it benefits
+# from the LibreOffice cache without re-converting.
+
+# 50 MB cap — anything larger blows past the tesseract timeout and the
+# search-relevance per byte falls off a cliff.
+OCR_INDEX_MAX_BYTES = 50 * 1024 * 1024
+
+
+async def _ocr_index_file(file_id: str, pdf_path: Path) -> None:
+    """Background task: extract text and persist to doc_files.search_text.
+    Cheap when the PDF has a text layer (pdftotext fast path); slow only
+    when tesseract has to OCR rasterised pages."""
+    try:
+        existing = await db.doc_files.find_one({"id": file_id}, {"_id": 0, "search_text": 1, "size": 1})
+        if not existing:
+            return
+        if existing.get("search_text"):
+            log.info("ocr skipped file=%s reason=already_indexed", file_id)
+            return
+        if int(existing.get("size") or 0) > OCR_INDEX_MAX_BYTES:
+            log.info("ocr skipped file=%s reason=size", file_id)
+            await db.doc_files.update_one({"id": file_id},
+                {"$set": {"search_text_status": "skipped_size", "search_text_at": now_iso()}})
+            return
+        text = ocr_pdf_to_text(pdf_path)
+        await db.doc_files.update_one({"id": file_id},
+            {"$set": {"search_text": text or "", "search_text_chars": len(text or ""),
+                      "search_text_status": "indexed", "search_text_at": now_iso()}})
+        log.info("ocr indexed file=%s chars=%d", file_id, len(text or ""))
+    except Exception as e:
+        log.warning("ocr failed file=%s err=%s", file_id, e)
+        try:
+            await db.doc_files.update_one({"id": file_id},
+                {"$set": {"search_text_status": f"error: {str(e)[:120]}",
+                          "search_text_at": now_iso()}})
+        except Exception:
+            pass
+
+
+@router.get("/admin/files/{file_id}/search-text")
+async def admin_file_search_text(file_id: str, user: dict = Depends(get_current_user)):
+    """Debug-only — returns the OCR'd text persisted on the file doc."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    doc = await db.doc_files.find_one(
+        {"id": file_id, "org_id": user["org_id"]},
+        {"_id": 0, "search_text": 1, "search_text_chars": 1,
+         "search_text_status": 1, "search_text_at": 1, "filename": 1, "size": 1},
+    )
+    if not doc:
+        raise HTTPException(404, "File not found")
+    return doc

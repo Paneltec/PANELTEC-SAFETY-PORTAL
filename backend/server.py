@@ -203,6 +203,16 @@ async def on_startup():
         scheduler.add_job(sync_navixy_counters, "interval", minutes=15,
                           id="navixy_sync_counters", max_instances=1,
                           coalesce=True, replace_existing=True)
+        # Phase 3.14 — Simpro suppliers sync, 12h cadence. Imported here to
+        # keep server.py independent of the integrations module's import order.
+        try:
+            from integrations_simpro import sync_simpro_suppliers_all_orgs
+            scheduler.add_job(sync_simpro_suppliers_all_orgs, "interval", hours=12,
+                              id="simpro_sync_suppliers", max_instances=1,
+                              coalesce=True, replace_existing=True)
+            log.info("APScheduler job registered — simpro_sync_suppliers every 12 h")
+        except Exception as e:
+            log.warning("simpro_sync_suppliers scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.

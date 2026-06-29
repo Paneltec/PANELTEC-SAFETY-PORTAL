@@ -1031,3 +1031,166 @@ async def simpro_customers(
     return {"count": len(filtered), "customers": filtered,
             "connected": True, "cached_at": cached_at, "company": company}
 
+
+
+# ╔═══════════ Phase 3.14 — Suppliers Import for Renewal Links ═══════════╗
+# Persist normalised vendors into a dedicated `simpro_suppliers` collection
+# (upsert on simpro_vendor_id), expose a search-friendly GET, and provide
+# an admin "sync now" + idempotent "import-to-contractors" endpoint. The
+# existing `_refresh_suppliers_cache()` already does the heavy lifting of
+# fetching from Simpro — we just persist the rows into our own collection
+# so they survive cache TTLs and so the import flow can run while disconnected.
+import re as _re_supplier  # noqa: E402
+
+
+def _serialise_supplier_row(s: dict) -> dict:
+    """Public shape for the new /integrations/simpro/suppliers endpoint."""
+    s.pop("_id", None)
+    return {
+        "simpro_vendor_id": s["simpro_vendor_id"],
+        "name": s.get("name") or "",
+        "abn": s.get("abn") or "",
+        "email": s.get("email") or "",
+        "phone": s.get("phone") or "",
+        "primary_contact_name": s.get("primary_contact_name") or s.get("contact_name") or "",
+        "address": s.get("address") or "",
+        "archived": bool(s.get("archived", False)),
+        "last_synced_at": s.get("last_synced_at"),
+        "imported_contractor_id": s.get("imported_contractor_id"),
+    }
+
+
+async def _persist_simpro_suppliers(org_id: str, rows: list[dict]) -> dict:
+    """Upsert vendors into `simpro_suppliers`. Returns counters for the response."""
+    imported = updated = skipped = errors = 0
+    now = now_iso()
+    for raw in rows:
+        sid = raw.get("simpro_supplier_id") or raw.get("simpro_vendor_id")
+        if not sid:
+            skipped += 1; continue
+        doc = {
+            "org_id": org_id,
+            "simpro_vendor_id": str(sid),
+            "simpro_company_id": raw.get("simpro_company_id"),
+            "name": raw.get("name") or "",
+            "abn": raw.get("abn") or "",
+            "email": raw.get("email") or "",
+            "phone": raw.get("phone") or "",
+            "primary_contact_name": raw.get("contact_name") or raw.get("primary_contact_name") or "",
+            "address": raw.get("address") or "",
+            "archived": not bool(raw.get("active", True)),
+            "last_synced_at": now,
+        }
+        try:
+            res = await db.simpro_suppliers.update_one(
+                {"org_id": org_id, "simpro_vendor_id": doc["simpro_vendor_id"]},
+                {"$set": doc, "$setOnInsert": {"created_at": now}},
+                upsert=True,
+            )
+            if res.upserted_id is not None: imported += 1
+            elif res.modified_count: updated += 1
+            else: skipped += 1
+        except Exception as e:
+            log.warning("simpro supplier persist failed sid=%s err=%s", sid, e)
+            errors += 1
+    return {"imported": imported, "updated": updated, "skipped": skipped, "errors": errors,
+            "fetched": len(rows), "synced_at": now}
+
+
+async def sync_simpro_suppliers(org_id: str) -> dict:
+    """Pull vendors from Simpro for one org and persist into simpro_suppliers.
+    Idempotent — safe to call from both the on-demand endpoint and the
+    APScheduler 12h job."""
+    doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "simpro"})
+    if not doc or doc.get("status") != "connected":
+        return {"imported": 0, "updated": 0, "skipped": 0, "errors": 0,
+                "fetched": 0, "synced_at": None, "note": "simpro not connected"}
+    cfg = doc.get("config") or {}
+    try:
+        _require(cfg, "api_base_url", "api_token")
+    except HTTPException:
+        return {"imported": 0, "updated": 0, "skipped": 0, "errors": 0,
+                "fetched": 0, "synced_at": None, "note": "simpro config incomplete"}
+    ids = _company_ids(cfg)
+    if not ids:
+        return {"imported": 0, "updated": 0, "skipped": 0, "errors": 0,
+                "fetched": 0, "synced_at": None, "note": "no company ids"}
+    suppliers = await _refresh_suppliers_cache(cfg, ids, cfg["api_token"])
+    stats = await _persist_simpro_suppliers(org_id, suppliers)
+    # Bump the integration_configs marker so the existing GET /suppliers
+    # endpoint stays warm without a second round-trip.
+    await db.integration_configs.update_one(
+        {"org_id": org_id, "kind": "simpro"},
+        {"$set": {"suppliers_cache": suppliers[:2000],
+                  "suppliers_cached_at": stats["synced_at"],
+                  "last_synced_at.vendors": stats["synced_at"],
+                  "updated_at": stats["synced_at"]}},
+    )
+    log.info("sync_simpro_suppliers org=%s imported=%d updated=%d skipped=%d errors=%d",
+             org_id, stats["imported"], stats["updated"], stats["skipped"], stats["errors"])
+    return stats
+
+
+@router.post("/sync-suppliers")
+async def simpro_sync_suppliers_now(user: dict = Depends(require_roles("admin"))):
+    """Admin-only on-demand sync. Returns {imported, updated, skipped, errors}."""
+    return await sync_simpro_suppliers(user["org_id"])
+
+
+@router.get("/suppliers/cached")
+async def simpro_suppliers_cached(
+    search: Optional[str] = Query(None),
+    limit: int = Query(500, le=2000),
+    include_archived: bool = Query(False),
+    user: dict = Depends(get_current_user),
+):
+    """Return the locally mirrored supplier list (used by the
+    Renewal Links → Import-from-Simpro modal). admin/manager/hseq_lead only."""
+    if user.get("role") not in {"admin", "manager", "hseq_lead"}:
+        raise HTTPException(403, "Permission denied")
+    q: dict = {"org_id": user["org_id"]}
+    if not include_archived:
+        q["archived"] = {"$ne": True}
+    if search:
+        rx = {"$regex": _re_supplier.escape(search), "$options": "i"}
+        q["$or"] = [{"name": rx}, {"abn": rx}, {"email": rx}]
+    cur = db.simpro_suppliers.find(q, {"_id": 0}).sort("name", 1).limit(limit)
+    rows = [s async for s in cur]
+
+    # Cross-reference contractors already promoted from each vendor so the
+    # frontend can disable the checkbox + show "✓ Imported".
+    sids = [r["simpro_vendor_id"] for r in rows]
+    imported_map: dict[str, str] = {}
+    if sids:
+        c_cur = db.contractors.find(
+            {"org_id": user["org_id"], "simpro_vendor_id": {"$in": sids}, "deleted_at": None},
+            {"_id": 0, "id": 1, "simpro_vendor_id": 1, "name": 1},
+        )
+        async for c in c_cur:
+            imported_map[c["simpro_vendor_id"]] = c["id"]
+
+    out = []
+    for r in rows:
+        rr = _serialise_supplier_row(r)
+        rr["imported_contractor_id"] = imported_map.get(rr["simpro_vendor_id"])
+        out.append(rr)
+    return {"count": len(out), "suppliers": out}
+
+
+async def sync_simpro_suppliers_all_orgs() -> dict:
+    """Iterates every org that has Simpro connected. Invoked by APScheduler."""
+    cur = db.integration_configs.find(
+        {"kind": "simpro", "status": "connected"}, {"_id": 0, "org_id": 1},
+    )
+    org_ids = [d["org_id"] async for d in cur]
+    agg = {"orgs": 0, "imported": 0, "updated": 0, "skipped": 0, "errors": 0}
+    for oid in org_ids:
+        try:
+            s = await sync_simpro_suppliers(oid)
+            agg["orgs"] += 1
+            for k in ("imported", "updated", "skipped", "errors"):
+                agg[k] += s.get(k, 0)
+        except Exception as e:
+            log.warning("scheduled supplier sync failed org=%s err=%s", oid, e)
+            agg["errors"] += 1
+    return agg

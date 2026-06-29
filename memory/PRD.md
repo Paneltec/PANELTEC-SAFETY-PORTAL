@@ -857,3 +857,40 @@ Scope unchanged from spec: suppliers extension (`scan_token`, induction packet, 
 - **Backend** (`workers_inductions.py::get_induction`): when `role=="worker"` and `_can_read_own()` returns false, we now return `404 "Induction not found"` instead of `403 "Permission denied"` so we don't leak existence of records belonging to other workers. Non-worker roles without read access still get 403 (legitimate internal-user case).
 - **Cache**: `paneltec-v78.1`.
 - **Verification**: worker probing other worker's induction → HTTP 404 `{"detail":"Induction not found"}`; admin GET still 200. Screenshot shows add-mode rendered correctly with name hint pre-filled.
+
+## 2026-02 — Phase 3.14: Simpro Suppliers Import for Renewal Links + Auto-OCR
+### Backend
+- `simpro_suppliers` collection: upsert on `(org_id, simpro_vendor_id)`. Holds normalised vendor identity + contact (no financial data).
+- `sync_simpro_suppliers(org_id)` — idempotent. Pulls vendors via existing `_refresh_suppliers_cache()` and persists.
+- `POST /api/integrations/simpro/sync-suppliers` (admin) → `{imported, updated, skipped, errors, fetched, synced_at}`.
+- `GET /api/integrations/simpro/suppliers/cached?search=&limit=&include_archived=` (admin/manager/hseq) — returns the mirrored list with `imported_contractor_id` already cross-joined from the contractors collection.
+- `POST /api/contractors/import-from-simpro` (admin/manager) body `{vendor_ids:[…]}` — idempotent. Creates a contractor if none exists, otherwise updates. Backlinks `last_imported_at` on the supplier row.
+- `contractors` schema gains `simpro_vendor_id`, `simpro_company_id`, `imported_from="simpro"`, `imported_at`, `needs_email` fields.
+- APScheduler job `simpro_sync_suppliers` registered at 12h cadence.
+### Auto-OCR add (smart enhancement)
+- `_ocr_index_file(file_id, pdf_path)` background task fires after every `GET /files/{id}/pdf`. Idempotent (skips if `search_text` already set or file >50MB).
+- `GET /api/admin/files/{id}/search-text` (admin) for debug.
+- INFO log shape: `ocr indexed file=X chars=N` / `ocr skipped file=X reason=already_indexed`.
+### Frontend
+- `SimproSupplierImportModal.jsx`: virtualised checkbox list, search, "Refresh from Simpro" (admin only), "✓ Imported" badges on already-promoted rows (checkbox disabled), Import-N-suppliers confirm button.
+- `Renewals.jsx`: "Import from Simpro" toolbar button next to existing "Manage doc types" / "+ Create renewal link". Wires modal.
+- `Contractors.jsx`: small orange "Simpro" chip next to contractor name when `simpro_vendor_id` set; amber "needs email" chip when `needs_email=true`.
+### Cache: `paneltec-v79`.
+
+### Receipts (all green)
+- `POST /sync-suppliers` admin → 200, imported 250 vendors.
+- `POST /sync-suppliers` worker → 403.
+- `GET /suppliers/cached?limit=3` admin → 200 with rows, supplier 145/161 already linked to contractors.
+- `GET /suppliers/cached` worker → 403.
+- `POST /contractors/import-from-simpro` 3 vendor_ids → `{created:2, updated:0, skipped:1}` (1 not in cache). Re-run → `{created:0, updated:2, skipped:1}` (idempotent).
+- `GET /files/{id}/pdf` → OCR background task fires; `GET /admin/files/{id}/search-text` returns `status=indexed, chars=332` with extracted text. Re-fetch logs `ocr skipped … already_indexed`.
+- APScheduler boot log: `APScheduler job registered — simpro_sync_suppliers every 12 h`.
+- Screenshot: Renewals page shows 3 toolbar buttons including new "Import from Simpro"; modal renders with 250 vendors, search, Refresh button, ✓ Imported badges, "IMPORT N SUPPLIERS" confirm button.
+
+## Queued (no interleave)
+- **Phase 3.15** — Navixy Health Dot on Asset Location Pin
+- **Phase 3.16** — Session Timeout Settings (Admin-Configurable)
+- **Phase 3.17** — Certifications row actions (View / Edit / Delete)
+- **Phase 3.18** — Granular Per-User Permissions System
+- **Phase 4.1 / 4.2 / 4.3** — SWMS Assignments + Site/Supplier Induction QR
+- Mobile mirror via e1_expo_frontend_dev

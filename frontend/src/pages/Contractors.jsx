@@ -57,7 +57,7 @@ export default function ContractorsList() {
                 const s = c.compliance_summary || { valid: 0, expiring_soon: 0, expired: 0, total: 0 };
                 return (
                   <tr key={c.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`contractor-row-${c.id}`}>
-                    <td className="px-4 py-3"><Link to={`/app/contractors/${c.id}`} className="font-medium text-slate-900 hover:text-brand-blue">{c.name}</Link><div className="text-xs text-slate-500">{c.abn || '—'}</div></td>
+                    <td className="px-4 py-3"><Link to={`/app/contractors/${c.id}`} className="font-medium text-slate-900 hover:text-brand-blue">{c.name}</Link>{c.simpro_vendor_id && <span title={`Simpro vendor ${c.simpro_vendor_id}`} className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fff1e1] text-[#8a4b00] border border-[#f5cf91]" data-testid={`contractor-simpro-chip-${c.id}`}>Simpro</span>}{c.needs_email && <span title="No email — fill in before sending renewal link" className="ml-1.5 inline-flex items-center text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#fcd34d]">needs email</span>}<div className="text-xs text-slate-500">{c.abn || '—'}</div></td>
                     <td className="px-4 py-3 text-slate-600">{c.trade}</td>
                     <td className="px-4 py-3"><StatusBadge value={c.status} /></td>
                     <td className="px-4 py-3 text-xs">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Copy, HelpCircle, Loader2, Pencil, Plus, Settings, Trash2, X } from 'lucide-react';
+import { Copy, HelpCircle, Loader2, Pencil, Plus, Settings, Trash2, X, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
@@ -7,12 +7,15 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
+import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
 
-const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
+const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
+const IMPORT_ROLES = new Set(['admin', 'manager']);
 
 export default function Renewals() {
   const user = getUser();
   const canEdit = WRITE_ROLES.has(user?.role);
+  const canImport = IMPORT_ROLES.has(user?.role);
   const [items, setItems] = useState([]);
   const [contractors, setContractors] = useState([]);
   const [docTypes, setDocTypes] = useState([]);
@@ -21,6 +24,7 @@ export default function Renewals() {
   const [created, setCreated] = useState(null);
   const [editing, setEditing] = useState(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const typeLabel = useMemo(() => Object.fromEntries(docTypes.map((t) => [t.slug, t.label])), [docTypes]);
 
@@ -57,6 +61,12 @@ export default function Renewals() {
         subtitle="Single-use links contractors can use to upload renewed documents without a login."
         action={canEdit && (
           <div className="flex items-center gap-2">
+            {canImport && (
+              <button onClick={() => setImportOpen(true)} data-testid="import-from-simpro-btn"
+                className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+                <Download size={14} /> Import from Simpro
+              </button>
+            )}
             <button onClick={() => setManageOpen(true)} data-testid="renewals-manage-doc-types-btn"
               className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
               <Settings size={14} /> Manage doc types
@@ -184,6 +194,14 @@ export default function Renewals() {
 
       <ManageDocTypesDialog open={manageOpen} onClose={() => setManageOpen(false)}
         docTypes={docTypes} onChanged={loadDocTypes} />
+
+      {importOpen && (
+        <SimproSupplierImportModal
+          onClose={() => setImportOpen(false)}
+          onImported={() => {
+            api.get('/contractors').then((r) => setContractors(r.data));
+          }} />
+      )}
     </div>
   );
 }

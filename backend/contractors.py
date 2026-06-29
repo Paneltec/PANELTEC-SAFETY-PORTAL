@@ -67,6 +67,10 @@ def _decorate(c: dict) -> dict:
         "valid": valid, "expiring_soon": expiring,
         "expired": expired, "pending": pending, "total": len(docs),
     }
+    # Phase 3.14 — surface the simpro linkage so the frontend can render
+    # the "Simpro" chip next to the contractor name.
+    c["simpro_vendor_id"] = c.get("simpro_vendor_id")
+    c["needs_email"] = bool(c.get("needs_email"))
     c.pop("_id", None)
     return c
 
@@ -184,3 +188,81 @@ async def delete_document(cid: str, doc_id: str, user: dict = Depends(get_curren
     if res.modified_count == 0:
         raise HTTPException(404, "Document not found")
     return {"ok": True}
+
+
+# ─────────────── Phase 3.14 — Import from Simpro ───────────────
+
+class ImportFromSimproIn(BaseModel):
+    vendor_ids: List[str]
+
+
+@router.post("/import-from-simpro")
+async def import_from_simpro(body: ImportFromSimproIn, user: dict = Depends(get_current_user)):
+    """Promote one or more cached Simpro vendors into the contractors table.
+    Idempotent on `simpro_vendor_id` — a re-run updates the existing row
+    rather than creating a duplicate. admin/manager only."""
+    if user.get("role") not in {"admin", "manager"}:
+        raise HTTPException(403, "Only admin/manager can import contractors")
+    if not body.vendor_ids:
+        return {"created": 0, "updated": 0, "skipped": 0, "errors": [], "contractors": []}
+
+    # Pull the local mirror in one shot.
+    cur = db.simpro_suppliers.find(
+        {"org_id": user["org_id"], "simpro_vendor_id": {"$in": body.vendor_ids}},
+        {"_id": 0},
+    )
+    suppliers = {s["simpro_vendor_id"]: s async for s in cur}
+
+    created = updated = skipped = 0
+    errors: list[dict] = []
+    out: list[dict] = []
+    now = now_iso()
+
+    for vid in body.vendor_ids:
+        s = suppliers.get(vid)
+        if not s:
+            errors.append({"simpro_vendor_id": vid, "reason": "not in cached suppliers"})
+            skipped += 1
+            continue
+        # Has a contractor already been promoted from this vendor?
+        existing = await db.contractors.find_one(
+            {"org_id": user["org_id"], "simpro_vendor_id": vid, "deleted_at": None},
+            {"_id": 0},
+        )
+        payload = {
+            "name": s.get("name") or "(unnamed)",
+            "abn": s.get("abn") or "",
+            "contact_name": s.get("primary_contact_name") or "",
+            "contact_email": s.get("email") or "",
+            "contact_phone": s.get("phone") or "",
+            "status": "active",
+            "simpro_vendor_id": vid,
+            "simpro_company_id": s.get("simpro_company_id"),
+            "imported_from": "simpro",
+            "imported_at": now,
+            "needs_email": not bool(s.get("email")),
+            "updated_at": now,
+        }
+        if existing:
+            await db.contractors.update_one({"id": existing["id"]}, {"$set": payload})
+            merged = {**existing, **payload}
+            out.append(_decorate(merged))
+            updated += 1
+        else:
+            doc = {
+                "id": new_id(), "org_id": user["org_id"],
+                "created_by": user["id"], "created_at": now,
+                "deleted_at": None, "documents": [],
+                "trade": None, **payload,
+            }
+            await db.contractors.insert_one(dict(doc))
+            out.append(_decorate(doc))
+            created += 1
+        # Backlink on the supplier row.
+        await db.simpro_suppliers.update_one(
+            {"org_id": user["org_id"], "simpro_vendor_id": vid},
+            {"$set": {"last_imported_at": now}},
+        )
+
+    return {"created": created, "updated": updated, "skipped": skipped,
+            "errors": errors, "contractors": out}
