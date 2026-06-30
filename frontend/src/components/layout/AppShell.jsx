@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { runSwVersionGuard } from '@/lib/swVersionGuard';
+import RebrandNudge from '@/components/RebrandNudge';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
@@ -372,6 +373,7 @@ export default function AppShell() {
 
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
+        <RebrandNudge />
         <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main"><Outlet /></main>
       </div>
       {warnInfo && (

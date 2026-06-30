@@ -517,8 +517,35 @@
  *       behaviour, not something the SW activate handler can clear.
  *       Communicate to v115 PWA installers: "Reinstall to home screen
  *       to see the new orange tile."
+ *
+ * v117 — Phase 4.10.2 — in-app rebrand nudge for stale PWA installs.
+ *       Closes the v116 OS-icon-cache problem at the application
+ *       layer. New `components/RebrandNudge.jsx` renders a soft
+ *       orange banner directly under the topbar (mounted in
+ *       `layout/AppShell.jsx` between `<TopBar />` and `<main>`) when
+ *       BOTH:
+ *         · the session is running in standalone PWA mode (matches
+ *           `display-mode: standalone` OR iOS Safari's legacy
+ *           `navigator.standalone === true`), AND
+ *         · `localStorage.paneltec_seen_v116_rebrand !== '1'`.
+ *       The banner explains the icon-refresh step with platform-
+ *       specific instructions and gives the user three exits:
+ *         · "Got it" (`bg-orange-500` CTA) → sets the localStorage
+ *           flag, banner gone forever on this device.
+ *         · "Remind me later" → sets `sessionStorage`-only flag, so
+ *           the banner reappears on next app launch but stays hidden
+ *           for the rest of the current session.
+ *         · "✕" icon button → equivalent to "Remind me later".
+ *       Icons via @fluentui/react-icons (`PaintBrush20Regular`,
+ *       `Dismiss16Regular`) — no emoji. All storage operations are
+ *       wrapped in try/catch so Safari Private Mode / Lockdown Mode
+ *       don't blow up the AppShell.
+ *
+ *       Non-PWA web sessions never see the banner — desktop browser
+ *       users aren't affected by the OS icon cache problem so there's
+ *       nothing to nudge them about.
  */
-const CACHE_VERSION = 'paneltec-v116';
+const CACHE_VERSION = 'paneltec-v117';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
