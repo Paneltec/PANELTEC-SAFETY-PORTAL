@@ -34,6 +34,20 @@ endpoint family; quota is opaque from the response side.
 5. **Manual entries** — admin can POST `/api/assets/{id}/meter-history` to fill
    any gap that Navixy can't supply. Stored with `source="manual"` and
    surfaces in the same Week/Month delta calculations.
+6. **Paradoxical-lifetime repair (Phase 4.9.1, v114)** — after every counter
+   sync, `asset_navixy_sync._repair_paradoxical_lifetimes_for_org` finds any
+   asset where the stored `odo_km` is LOWER than the last-30-day
+   `/v2/track/list` distance. For each such asset we try:
+     1. `/v2/report/generate` (mileage report) — currently 400 on this plan,
+        but kept for forward-compat. On success, writes
+        `odo_km_source="navixy_report"`.
+     2. `/v2/track/list` chunked sum (30-day windows back to `created_at` or
+        730 days, whichever is later). On success > month, writes
+        `odo_km_source="navixy_tracks_lifetime"`.
+     3. Neither beats the month trips → stamp `lifetime_unreliable=true`
+        so the UI hides the misleading low number and prompts the admin
+        for a manual reading.
+   Manual trigger: `POST /api/assets/navixy/repair-lifetimes` (admin).
 
 ## What we explicitly do NOT have on this plan
 - Geofence enter/exit events

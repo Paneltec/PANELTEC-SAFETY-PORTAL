@@ -302,7 +302,20 @@ function PasteSwmsDialog({ open, onClose, onCreated }) {
     const clipboard = e.clipboardData;
     if (!clipboard) return;
     const pHtml = clipboard.getData('text/html');
+    const pText = clipboard.getData('text/plain');
     if (pHtml) setHtml(pHtml);
+    // Phase 4.9.1 — defensive write. When the clipboard contains BOTH
+    // text/html and text/plain (e.g. Word, Outlook), some browsers fire
+    // the native textarea input event with a delay; the React onChange
+    // can race the next render and the pasted text appears to "vanish".
+    // Force the controlled value on next tick so the textarea state is
+    // always the source of truth.
+    if (pText) {
+      setTimeout(() => {
+        const el = taRef.current;
+        if (el) setText(el.value || pText);
+      }, 0);
+    }
   };
 
   const submit = async () => {

@@ -360,8 +360,56 @@
  *       · Verified on H89MY (tracker 10307562): today=21.4 km / 3
  *         trips / peak 93 km/h; week=115.4 km / 15 trips / 104 km/h;
  *         month=665.3 km / 56 trips / 117 km/h.
+ *
+ * v114 — Phase 4.9.1 — three production bug fixes.
+ *       · Fix #1 — Odometer paradox repair (`asset_navixy_sync.py`).
+ *         After every 15-min counter sync we now sweep for assets where
+ *         the stored `odo_km` is LESS than the last 30 days of trip
+ *         distance (e.g. truck reads 3,300 km lifetime but logged
+ *         1,672.3 km this month alone — impossible for a 25-month-old
+ *         vehicle). For each broken asset we try, in order:
+ *           (a) `/v2/report/generate` mileage report — best-effort, the
+ *               current plan returns 400 but the call is plan-upgrade-
+ *               ready; on success writes `odo_km_source=navixy_report`.
+ *           (b) `/v2/track/list` chunked sum from the asset's
+ *               `created_at` (capped at 730 days) — writes
+ *               `odo_km_source=navixy_tracks_lifetime`.
+ *           (c) Both failed → stamp `lifetime_unreliable=true` so the
+ *               UI can hide the misleading low number.
+ *         New admin endpoint `POST /api/assets/navixy/repair-lifetimes`
+ *         for manual re-runs. Idempotent. Paradox detection requires
+ *         `month_km > 0` so silent / never-driven trackers aren't
+ *         mis-flagged.
+ *       · Fix #1 (UI half) — `LiveCountersPanel.jsx` renders a new
+ *         amber `UnreliableOdoCard` when `asset.lifetime_unreliable===
+ *         true`. Admins see an inline form: date + km → POST
+ *         `/api/assets/{id}/meter-history`. Everyone else sees the
+ *         "Lifetime not available — Add a historical reading" copy.
+ *         `srcLabel` now distinguishes `navixy_report` ("mileage
+ *         report") and `navixy_tracks_lifetime` ("sum of all trips
+ *         since first sync") from the legacy `navixy_tracks_window`.
+ *       · Fix #2 — `engine_hours` monotonicity guard
+ *         (`asset_meter_history.py`). POST `/api/assets/{id}/meter-
+ *         history` already returned 409 when an older snapshot's
+ *         odometer exceeded a younger one — extended to enforce the
+ *         same rule for engine_hours. Queries explicitly require
+ *         `engine_hours_total: {$ne: null}` on the next-younger row
+ *         so backfill anchors with NULL hours don't silently skip the
+ *         validation. Confirms by pytest in
+ *         `tests/test_navixy_trip_summary_v114.py`.
+ *       · Fix #3 — Pasted text retention.
+ *         `Swms.jsx PasteSwmsDialog.onPaste` now defensively re-reads
+ *         `taRef.current.value` on next tick and calls setText, so the
+ *         Word/Outlook combined text/html clipboard race that was
+ *         dropping plain text after the html branch hijacked the
+ *         render is now closed. Other surfaces audited:
+ *           - `Ask.jsx` (`#ask-input`)         — no onPaste handler, paste OK.
+ *           - `SiteDiary.jsx` entry field      — no onPaste handler, paste OK.
+ *           - `FormSubmissions.jsx`            — no onPaste handler, paste OK.
+ *           - Dialog-mounted controlled inputs — all confirmed standard
+ *             controlled-input semantics.
  */
-const CACHE_VERSION = 'paneltec-v113';
+const CACHE_VERSION = 'paneltec-v114';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

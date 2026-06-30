@@ -367,22 +367,39 @@ async def add_manual_snapshot(
         datetime.strptime(body.date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(400, "date must be YYYY-MM-DD")
-    # Monotonic guard — the entered value can't be smaller than the
-    # next-younger snapshot (counters only go up).
-    younger = await db.asset_meter_history.find_one(
-        {"asset_id": asset_id, "snapshot_date": {"$gt": body.date}},
-        {"_id": 0, "engine_hours_total": 1, "odometer_km_total": 1},
-        sort=[("snapshot_date", 1)],
-    )
-    if younger:
-        if (body.engine_hours is not None
-            and younger.get("engine_hours_total") is not None
-            and body.engine_hours > younger["engine_hours_total"]):
-            raise HTTPException(409, f"engine_hours ({body.engine_hours}) exceeds the next-younger snapshot ({younger['engine_hours_total']}). Counters only go up.")
-        if (body.odometer_km is not None
-            and younger.get("odometer_km_total") is not None
-            and body.odometer_km > younger["odometer_km_total"]):
-            raise HTTPException(409, f"odometer_km ({body.odometer_km}) exceeds the next-younger snapshot ({younger['odometer_km_total']}).")
+    # Monotonic guard — counters only go up. We must check against the
+    # closest younger snapshot that actually HAS the field set (backfill
+    # rows often have hours_total=NULL, so a naïve "oldest snapshot >
+    # body.date" check would silently skip the engine_hours validation
+    # when that anchor row has hours=None). Phase 4.9.1 — bug fix from
+    # v113 tester report: engine_hours monotonicity was not being
+    # enforced for assets where today's backfill row has hours=None.
+    if body.engine_hours is not None:
+        y = await db.asset_meter_history.find_one(
+            {"asset_id": asset_id, "snapshot_date": {"$gt": body.date},
+             "engine_hours_total": {"$ne": None}},
+            {"_id": 0, "engine_hours_total": 1, "snapshot_date": 1},
+            sort=[("snapshot_date", 1)],
+        )
+        if y and body.engine_hours > y["engine_hours_total"]:
+            raise HTTPException(
+                409,
+                f"engine_hours ({body.engine_hours}) exceeds the next-younger snapshot on "
+                f"{y['snapshot_date']} ({y['engine_hours_total']}). Counters only go up.",
+            )
+    if body.odometer_km is not None:
+        y = await db.asset_meter_history.find_one(
+            {"asset_id": asset_id, "snapshot_date": {"$gt": body.date},
+             "odometer_km_total": {"$ne": None}},
+            {"_id": 0, "odometer_km_total": 1, "snapshot_date": 1},
+            sort=[("snapshot_date", 1)],
+        )
+        if y and body.odometer_km > y["odometer_km_total"]:
+            raise HTTPException(
+                409,
+                f"odometer_km ({body.odometer_km}) exceeds the next-younger snapshot on "
+                f"{y['snapshot_date']} ({y['odometer_km_total']}). Counters only go up.",
+            )
     ok = await _upsert(asset, body.date, body.engine_hours, body.odometer_km, "manual")
     log.info("meter_history.manual asset=%s date=%s hours=%s km=%s actor=%s",
              asset_id, body.date, body.engine_hours, body.odometer_km, user["id"])

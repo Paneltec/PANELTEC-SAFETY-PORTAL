@@ -204,6 +204,83 @@ function CounterCardShell({ icon: Icon, label, value, unit, sub, accent, testid,
   );
 }
 
+// Phase 4.9.1 — Fallback card for assets whose lifetime odometer can't be
+// trusted (e.g. Kroll Recycler XT04CS: Navixy `get_counters` returns `[]`,
+// the report API isn't on the plan, and the lifetime track-sum still under-
+// shot the last 30 days of trips). Admins get an inline form to file a
+// historical reading via `POST /api/assets/{id}/meter-history`; everyone
+// else just sees the explainer.
+function UnreliableOdoCard({ asset, onAssetUpdated }) {
+  const user = getUser();
+  const canEdit = user?.role === 'admin';
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [km, setKm] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    const n = Number(km);
+    if (!Number.isFinite(n) || n < 0) { toast.error('Enter a non-negative km value'); return; }
+    if (!date) { toast.error('Pick a date'); return; }
+    setBusy(true);
+    try {
+      await api.post(`/assets/${asset.id}/meter-history`, {
+        date, odometer_km: n,
+      });
+      toast.success('Historical odometer reading saved');
+      setOpen(false); setKm('');
+      try {
+        const a = await api.get(`/assets/${asset.id}`);
+        if (onAssetUpdated) onAssetUpdated(a.data);
+      } catch { /* swallow */ }
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="px-3 py-2.5 rounded-xl border border-amber-300 bg-amber-50/70 flex items-start gap-2.5"
+      data-testid="counter-card-odo-unreliable">
+      <div className="w-8 h-8 rounded-lg bg-white/80 border border-amber-300 flex items-center justify-center shrink-0">
+        <Gauge size={15} className="text-amber-700" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-amber-800/80">Odometer</div>
+        <div className="mt-0.5 font-display text-base font-semibold text-amber-900 leading-tight">
+          Lifetime not available
+        </div>
+        <div className="text-[10px] text-amber-800/80 mt-0.5 leading-snug">
+          No panel counter — the GPS-derived estimate is lower than this month{`'`}s trips. Add a historical reading to anchor future deltas.
+        </div>
+        {canEdit && !open && (
+          <button onClick={() => setOpen(true)} data-testid="odo-add-reading-btn"
+            className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 hover:text-amber-900 underline">
+            + Add a historical reading
+          </button>
+        )}
+        {canEdit && open && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="odo-add-reading-form">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="px-2 py-1 border border-amber-300 rounded-md text-[11px]"
+              data-testid="odo-add-reading-date" />
+            <input type="number" min="0" placeholder="Total km" value={km}
+              onChange={(e) => setKm(e.target.value)}
+              className="px-2 py-1 border border-amber-300 rounded-md text-[11px] w-24 tabular-nums"
+              data-testid="odo-add-reading-km" />
+            <button onClick={submit} disabled={busy}
+              className="inline-flex items-center justify-center px-2 py-1 rounded-md bg-amber-600 text-white text-[11px] font-semibold hover:bg-amber-700 disabled:opacity-50"
+              data-testid="odo-add-reading-submit">
+              {busy ? <Loader2 size={11} className="animate-spin" /> : 'Save'}
+            </button>
+            <button onClick={() => setOpen(false)} disabled={busy}
+              className="px-2 py-1 rounded-md text-[11px] font-semibold text-amber-800 hover:bg-amber-100"
+              data-testid="odo-add-reading-cancel">Cancel</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NavixyCounters({ asset, onAssetUpdated }) {
   const user = getUser();
   const canRefresh = user?.role === 'admin';
@@ -251,10 +328,18 @@ function NavixyCounters({ asset, onAssetUpdated }) {
     const srcLabel = (s) => {
       if (!s) return 'Synced from Navixy';
       if (s === 'panel' || s === 'navixy' || s === 'navixy_counters_v2') return 'Synced from Navixy · panel counter';
+      if (s === 'navixy_report') return 'Synced from Navixy · mileage report';
+      if (s === 'navixy_tracks_lifetime') return 'Estimated · sum of all trips since first sync';
       if (s.includes('tracks')) return 'GPS-derived (no panel counter)';
       if (s === 'manual') return 'Manually entered';
       return `Synced from Navixy · ${s}`;
     };
+    // Phase 4.9.1 — when the backend repair couldn't recover a sensible
+    // lifetime odometer (Navixy's `get_counters` returned `[]`, the report
+    // API isn't on this plan, AND lifetime track-sum still under-shot the
+    // last 30 days of trips), surface a fallback UI instead of a misleading
+    // low number. Admins can punch in a historical reading inline.
+    const odoUnreliable = !!asset.lifetime_unreliable;
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         <CounterCardShell
@@ -263,12 +348,15 @@ function NavixyCounters({ asset, onAssetUpdated }) {
           sub={`${srcLabel(asset.hours_meter_source)}${hoursAgo ? ' · ' + hoursAgo : ''}`}
           accent="border-emerald-200 bg-white"
           testid="counter-card-hours" />
-        <CounterCardShell
-          icon={Gauge} label="Odometer" unit="km"
-          value={fmtKm(asset.odo_km)}
-          sub={`${srcLabel(asset.odo_km_source)}${kmAgo ? ' · ' + kmAgo : ''}`}
-          accent="border-emerald-200 bg-white"
-          testid="counter-card-odo" />
+        {odoUnreliable
+          ? <UnreliableOdoCard asset={asset} onAssetUpdated={onAssetUpdated} />
+          : <CounterCardShell
+              icon={Gauge} label="Odometer" unit="km"
+              value={fmtKm(asset.odo_km)}
+              sub={`${srcLabel(asset.odo_km_source)}${kmAgo ? ' · ' + kmAgo : ''}`}
+              accent="border-emerald-200 bg-white"
+              testid="counter-card-odo" />
+        }
       </div>
     );
   };

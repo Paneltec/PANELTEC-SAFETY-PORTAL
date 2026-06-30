@@ -676,7 +676,278 @@ async def sync_navixy_counters() -> list[dict]:
             results.append(r)
             log.info("navixy_sync org=%s updated=%d skipped=%d errors=%d devices=%s",
                      r["org_id"], r["updated"], r["skipped"], r["errors"], r.get("devices"))
+            # Phase 4.9.1 — after the counter refresh, sweep for assets where
+            # the stored lifetime odometer is LOWER than the last 30 days of
+            # trip distance (a "paradoxical lifetime"). Try the Navixy report
+            # API, then a full lifetime track-sum, then surface a
+            # `lifetime_unreliable` flag so the UI can show a fallback.
+            try:
+                rep = await _repair_paradoxical_lifetimes_for_org(cfg["org_id"])
+                log.info("navixy_repair org=%s checked=%d fixed_report=%d fixed_tracks=%d unreliable=%d",
+                         cfg["org_id"], rep["checked"], rep["fixed_report"],
+                         rep["fixed_tracks"], rep["unreliable"])
+                r["repair"] = rep
+            except Exception as e:
+                log.warning("navixy_repair failed org=%s err=%s", cfg["org_id"], e)
         return results
+
+
+# ─────────────────────── Phase 4.9.1 — Paradoxical lifetime repair ───────────────────────
+
+async def _fetch_lifetime_via_report(client: httpx.AsyncClient, base: str, h: str,
+                                     tid: int) -> Optional[float]:
+    """Best-effort mileage report probe via `/v2/report/generate`.
+
+    On the current Paneltec Navixy plan the report subsystem returns HTTP
+    400 ("Wrong handler: 'report'") — see /app/memory/navixy_capabilities.md.
+    We still attempt it for forward-compat when the plan is upgraded, then
+    fall through to the track-sum approach.
+
+    Returns the total mileage km if the report came back, else None.
+    """
+    try:
+        now = datetime.now(timezone.utc)
+        # 5-year window — the report API, when available, treats this as
+        # "lifetime" for vehicles registered later.
+        frm = (now - timedelta(days=365 * 5)).strftime("%Y-%m-%d %H:%M:%S")
+        to = now.strftime("%Y-%m-%d %H:%M:%S")
+        r = await client.post(
+            f"{base}/v2/report/generate",
+            json={"hash": h, "from": frm, "to": to, "trackers": [tid],
+                  "template_predefined": "mileage"},
+        )
+        if r.status_code >= 400:
+            return None
+        data = r.json() or {}
+        if not data.get("success"):
+            return None
+        # Try to read the value directly off the response, else poll /list_view.
+        rid = data.get("id") or data.get("build_id")
+        if not rid:
+            return None
+        for _ in range(8):
+            await asyncio.sleep(0.5)
+            ps = await client.post(f"{base}/v2/report/get_state",
+                                   json={"hash": h, "build_id": rid})
+            pd = ps.json() or {}
+            state = (pd.get("state") or pd.get("status") or "").lower()
+            if state in ("ready", "completed", "done"):
+                break
+        rv = await client.post(f"{base}/v2/report/list_view",
+                               json={"hash": h, "build_id": rid})
+        rd = rv.json() or {}
+        for row in (rd.get("list") or rd.get("rows") or []):
+            if not isinstance(row, dict):
+                continue
+            for k, v in row.items():
+                kl = k.lower()
+                val = _coerce_float(v)
+                if val is None:
+                    continue
+                if "odometer" in kl or "mileage" in kl or "distance" in kl:
+                    return float(val)
+    except (httpx.HTTPError, ValueError, KeyError):
+        return None
+    return None
+
+
+async def _sum_tracks_lifetime(client: httpx.AsyncClient, base: str, h: str,
+                               tid: int, since_dt: datetime) -> Optional[float]:
+    """Sum `/v2/track/list` distance across the asset's lifetime in 30-day
+    chunks (Navixy's `track/list` accepts arbitrary windows but we keep them
+    short to avoid timeouts and respect the plan's per-call quotas).
+
+    Returns total km or None on transport failure.
+    """
+    total = 0.0
+    chunks = 0
+    now = datetime.now(timezone.utc)
+    if since_dt > now:
+        return 0.0
+    cursor = since_dt
+    while cursor < now:
+        chunk_end = min(cursor + timedelta(days=30), now)
+        frm = cursor.strftime("%Y-%m-%d %H:%M:%S")
+        to_s = chunk_end.strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            r = await client.post(
+                f"{base}/v2/track/list",
+                json={"hash": h, "tracker_id": tid, "from": frm, "to": to_s},
+            )
+            if r.status_code >= 400:
+                return None
+            data = r.json() or {}
+        except (httpx.HTTPError, ValueError):
+            return None
+        for t in (data.get("list") or []):
+            if not isinstance(t, dict):
+                continue
+            if t.get("type") != "regular":
+                continue
+            total += float(t.get("length") or 0)
+        chunks += 1
+        cursor = chunk_end
+        # Be polite to Navixy — small inter-chunk sleep.
+        await asyncio.sleep(0.15)
+        # Hard ceiling: never exceed 30 chunks (~2.5 years) per asset/cycle.
+        if chunks >= 30:
+            break
+    return round(total, 2)
+
+
+async def _month_trip_distance(client: httpx.AsyncClient, base: str, h: str,
+                               tid: int) -> float:
+    """Return the last-30-days regular-track distance in km (live call)."""
+    now = datetime.now(timezone.utc)
+    frm = (now - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")
+    to = now.strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        r = await client.post(
+            f"{base}/v2/track/list",
+            json={"hash": h, "tracker_id": tid, "from": frm, "to": to},
+        )
+        if r.status_code >= 400:
+            return 0.0
+        data = r.json() or {}
+    except (httpx.HTTPError, ValueError):
+        return 0.0
+    total = 0.0
+    for t in (data.get("list") or []):
+        if isinstance(t, dict) and t.get("type") == "regular":
+            total += float(t.get("length") or 0)
+    return round(total, 2)
+
+
+async def _repair_paradoxical_lifetimes_for_org(org_id: str) -> dict:
+    """Find every Navixy-synced asset where the stored lifetime odometer is
+    LESS than the last-30-day trip distance and try to recover an honest
+    lifetime value. Strategy:
+
+      1. Try `/v2/report/generate` (mileage). If we get a number > month
+         trips, write it with `odo_km_source = "navixy_report"`.
+      2. Else sum `/v2/track/list` chunks from the asset's `created_at`
+         (or 730 days back, whichever is more recent). Write with
+         `odo_km_source = "navixy_tracks_lifetime"`.
+      3. If step 2 still doesn't beat the month trips (or returns None),
+         leave the stored value alone but stamp `lifetime_unreliable: true`
+         so the UI can render the "Lifetime not available — Add a historical
+         reading" fallback.
+
+    Idempotent. Touches at most one DB row per asset.
+    """
+    cfg_doc = await db.integration_configs.find_one(
+        {"org_id": org_id, "kind": "navixy", "status": "connected"},
+        {"_id": 0, "config": 1},
+    )
+    if not cfg_doc:
+        return {"checked": 0, "fixed_report": 0, "fixed_tracks": 0,
+                "unreliable": 0, "note": "navixy_not_connected"}
+    c = cfg_doc.get("config") or {}
+    base = (c.get("api_base_url") or "").rstrip("/")
+    h = c.get("session_hash")
+    if not base or not h:
+        return {"checked": 0, "fixed_report": 0, "fixed_tracks": 0,
+                "unreliable": 0, "note": "missing_base_or_hash"}
+
+    checked = fixed_report = fixed_tracks = unreliable = 0
+    cleared = 0
+    cursor = db.assets.find(
+        {"org_id": org_id, "navixy_device_id": {"$ne": None},
+         "deleted_at": None,
+         # Phase 4.9.1 — only inspect assets where the stored value is GPS-
+         # derived OR ALREADY flagged unreliable. Authoritative panel
+         # counters from `/v2/tracker/get_counters` are treated as truth
+         # and skipped here (operator can manually unstick via /repair-now).
+         "$or": [
+             {"odo_km_source": {"$in": ["navixy_tracks_window", "navixy_tracks_lifetime", None]}},
+             {"lifetime_unreliable": True},
+         ]},
+        {"_id": 0, "id": 1, "navixy_device_id": 1, "odo_km": 1,
+         "odo_km_source": 1, "created_at": 1, "kind": 1, "lifetime_unreliable": 1},
+    )
+    async with httpx.AsyncClient(timeout=20) as client:
+        async for a in cursor:
+            tid = int(a["navixy_device_id"])
+            stored = float(a.get("odo_km") or 0)
+            month_km = await _month_trip_distance(client, base, h, tid)
+            # Paradox test — month distance noticeably exceeds the lifetime.
+            # Allow a small 5% tolerance so floating-point drift doesn't
+            # trigger spurious repairs on freshly-synced assets. Also
+            # requires `month_km > 0` so silent / never-driven trackers
+            # (no trips AND no stored value) aren't mis-flagged.
+            if month_km <= 0 or month_km <= max(stored * 1.05, 0.0):
+                # No paradox. If we previously flagged this asset
+                # unreliable, clear the flag now that the lifetime makes
+                # sense again.
+                if a.get("lifetime_unreliable"):
+                    await db.assets.update_one(
+                        {"id": a["id"]},
+                        {"$set": {"lifetime_unreliable": False, "updated_at": now_iso()}},
+                    )
+                    cleared += 1
+                continue
+            checked += 1
+
+            # Step 1 — report API.
+            rep_km = await _fetch_lifetime_via_report(client, base, h, tid)
+            if rep_km is not None and rep_km > month_km:
+                await db.assets.update_one(
+                    {"id": a["id"]},
+                    {"$set": {
+                        "odo_km": round(rep_km, 2),
+                        "odo_km_source": "navixy_report",
+                        "odo_km_updated_at": now_iso(),
+                        "lifetime_unreliable": False,
+                        "updated_at": now_iso(),
+                    }},
+                )
+                fixed_report += 1
+                log.info("navixy_repair fixed_report asset=%s tid=%s month=%.1f km lifetime=%.1f km",
+                         a["id"], tid, month_km, rep_km)
+                continue
+
+            # Step 2 — track-sum lifetime.
+            created = a.get("created_at")
+            since_dt = datetime.now(timezone.utc) - timedelta(days=730)
+            if isinstance(created, str):
+                try:
+                    cdt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    if cdt.tzinfo is None:
+                        cdt = cdt.replace(tzinfo=timezone.utc)
+                    if cdt > since_dt:
+                        since_dt = cdt
+                except ValueError:
+                    pass
+            track_km = await _sum_tracks_lifetime(client, base, h, tid, since_dt)
+            if track_km is not None and track_km > month_km:
+                await db.assets.update_one(
+                    {"id": a["id"]},
+                    {"$set": {
+                        "odo_km": round(track_km, 2),
+                        "odo_km_source": "navixy_tracks_lifetime",
+                        "odo_km_updated_at": now_iso(),
+                        "lifetime_unreliable": False,
+                        "updated_at": now_iso(),
+                    }},
+                )
+                fixed_tracks += 1
+                log.info("navixy_repair fixed_tracks asset=%s tid=%s month=%.1f km lifetime=%.1f km",
+                         a["id"], tid, month_km, track_km)
+                continue
+
+            # Step 3 — give up; flag unreliable so the UI can hide the
+            # misleading number and prompt for a manual reading.
+            await db.assets.update_one(
+                {"id": a["id"]},
+                {"$set": {"lifetime_unreliable": True, "updated_at": now_iso()}},
+            )
+            unreliable += 1
+            log.info("navixy_repair unreliable asset=%s tid=%s month=%.1f km stored=%.1f km — no upstream lifetime",
+                     a["id"], tid, month_km, stored)
+
+    return {"checked": checked, "fixed_report": fixed_report,
+            "fixed_tracks": fixed_tracks, "unreliable": unreliable,
+            "cleared": cleared}
 
 
 async def sync_single_asset_now(asset: dict) -> dict:
@@ -747,4 +1018,20 @@ async def http_sync_now(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     r = await _sync_org(user["org_id"])
+    # Phase 4.9.1 — also run the paradox repair sweep so the UI reflects
+    # any track-sum or report-API recovered lifetimes immediately.
+    try:
+        rep = await _repair_paradoxical_lifetimes_for_org(user["org_id"])
+        r["repair"] = rep
+    except Exception as e:
+        log.warning("repair sweep failed on manual sync: %s", e)
     return r
+
+
+@router.post("/navixy/repair-lifetimes")
+async def http_repair_lifetimes(user: dict = Depends(get_current_user)):
+    """Admin-only — runs the paradoxical-lifetime sweep without re-fetching
+    counters. Useful for one-off recovery after a Navixy plan upgrade."""
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    return await _repair_paradoxical_lifetimes_for_org(user["org_id"])
