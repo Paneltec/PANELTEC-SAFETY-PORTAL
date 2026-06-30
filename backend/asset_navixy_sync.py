@@ -440,9 +440,24 @@ async def _sync_org(org_id: str) -> dict:
                                 when = item.get("update_time")
                                 if val is None:
                                     continue
-                                if "hour" in kind and slot["hours"] is None:
+                                # Phase 4.9.1 — generalised key matching for
+                                # plant-type devices. Navixy may surface
+                                # `working_hours` / `pto_hours` /
+                                # `auxiliary_engine_hours` for generators,
+                                # recyclers and other non-vehicle assets;
+                                # `total_mileage` / `mileage_can` for trucks
+                                # with CAN-bus reporting.
+                                is_hours = any(k in kind for k in (
+                                    "engine_hour", "engine hours", "enginehour",
+                                    "working_hour", "pto_hour", "aux_hour",
+                                    "auxiliary_engine_hour", "operating_hour",
+                                ))
+                                is_km    = any(k in kind for k in (
+                                    "odometer", "mileage", "total_distance",
+                                ))
+                                if is_hours and slot["hours"] is None:
                                     slot["hours"], slot["hours_at"] = val, when
-                                elif ("odometer" in kind or "mileage" in kind) and slot["odo_km"] is None:
+                                elif is_km and slot["odo_km"] is None:
                                     slot["odo_km"], slot["odo_at"] = val, when
                             if slot["hours"] is not None or slot["odo_km"] is not None:
                                 contacted_tids.add(tid)

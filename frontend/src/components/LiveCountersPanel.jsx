@@ -243,22 +243,35 @@ function NavixyCounters({ asset, onAssetUpdated }) {
   const syncedAgo = fmtAgo(asset.navixy_last_seen_at);
   const navixyAgo = fmtAgo(asset.navixy_last_position_time);
 
-  const renderTotal = () => (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-      <CounterCardShell
-        icon={Activity} label="Engine hours" unit="hrs"
-        value={fmtHours(asset.hours_meter)}
-        sub={hoursAgo ? `Synced from Navixy · ${hoursAgo}` : 'Synced from Navixy'}
-        accent="border-emerald-200 bg-white"
-        testid="counter-card-hours" />
-      <CounterCardShell
-        icon={Gauge} label="Odometer" unit="km"
-        value={fmtKm(asset.odo_km)}
-        sub={kmAgo ? `Synced from Navixy · ${kmAgo}` : 'Synced from Navixy'}
-        accent="border-emerald-200 bg-white"
-        testid="counter-card-odo" />
-    </div>
-  );
+  const renderTotal = () => {
+    // Phase 4.9.1 — surface the actual source per metric. Distinguishes a
+    // Navixy panel counter (authoritative) from GPS-derived track-window
+    // sums (estimates) so users can tell when a low number is "real" vs
+    // "Navixy doesn't have a panel counter for this device".
+    const srcLabel = (s) => {
+      if (!s) return 'Synced from Navixy';
+      if (s === 'panel' || s === 'navixy' || s === 'navixy_counters_v2') return 'Synced from Navixy · panel counter';
+      if (s.includes('tracks')) return 'GPS-derived (no panel counter)';
+      if (s === 'manual') return 'Manually entered';
+      return `Synced from Navixy · ${s}`;
+    };
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <CounterCardShell
+          icon={Activity} label="Engine hours" unit="hrs"
+          value={fmtHours(asset.hours_meter)}
+          sub={`${srcLabel(asset.hours_meter_source)}${hoursAgo ? ' · ' + hoursAgo : ''}`}
+          accent="border-emerald-200 bg-white"
+          testid="counter-card-hours" />
+        <CounterCardShell
+          icon={Gauge} label="Odometer" unit="km"
+          value={fmtKm(asset.odo_km)}
+          sub={`${srcLabel(asset.odo_km_source)}${kmAgo ? ' · ' + kmAgo : ''}`}
+          accent="border-emerald-200 bg-white"
+          testid="counter-card-odo" />
+      </div>
+    );
+  };
 
   const renderDelta = (slot, label) => {
     if (!trends || trends.error) {

@@ -1,3 +1,72 @@
+# 2026-06-30 — Phase 4.9 — Counter fix re-ship + Today/Week/Month Trip data (v113)
+
+## Part 1 — Counter fix re-shipped (after the brief rollback)
+- Pass 0.5 back in `asset_navixy_sync.py`. Calls `POST /v2/tracker/get_counters`
+  for EVERY synced asset on every 15-min cycle, idempotent via the
+  existing `_apply_counters` guard (refuses to lower a higher value).
+- Structured per-device log: `navixy.sync device_id=X hours=Y km=Z
+  source=counters_v2`. 307 such lines across recent cycles in the journal.
+- H89MY (tid 10307562): hours=554.7032 / km=109914.99 — matches Navixy
+  UI within 0.01.
+
+## Part 2 + 3 — Today / Week / Month Trip summary (NEW)
+- **New module `asset_trip_summary.py`** exposing
+  `GET /api/assets/{id}/trip-summary?range=today|week|month`.
+- Pulls Navixy `/v2/track/list` for the org-local window
+  (Australia/Sydney default) → aggregates from `type="regular"` tracks:
+  `distance_km`, `drive_seconds`, `max_speed_kmh`, plus a per-day
+  `sparkline:[{date, km}]`.
+- **Idle time** derived from inter-trip gaps shorter than 30 minutes
+  (Navixy plan doesn't expose a dedicated `track/stop/list` endpoint —
+  probed and confirmed HTTP 400). Documented in module docstring.
+- 60-second in-memory cache keyed by `(asset_id, range, org_id)` so
+  the UI tab flicker doesn't hammer Navixy.
+- Structured log: `navixy.trip_summary device_id=X range=Y distance=Z`.
+
+## Web UI — `LiveCountersPanel.jsx`
+- New **`TripSummaryCard`** rendered BELOW the existing Live Counters
+  block (separate card, discoverable). Title: "Today's trip · Navixy".
+- 4-tile grid: **Distance · Drive time · Idle time · Max speed**.
+- Tab strip: **Today (default) · This Week · Last Month**, matching the
+  Live Counters tabs above.
+- Tiny **orange sparkline of daily km** below the tiles (last N days).
+- Honest "Collecting data — N of M days with activity" hint when the
+  Navixy track stream has gaps.
+
+## Verification (testing_agent_v3 — 14/14 PASS, 100%)
+- H89MY today=21.42 km / 3 trips / peak 93 km/h. Week=115.37 km / 15
+  trips / 104 km/h. Month=665.26 km / 56 trips / 117 km/h. Exact match
+  to the brief's ground-truth numbers.
+- Schema contract met (`range, navixy, from, to, as_of,
+  total_days_in_range, distance_km, drive_seconds, idle_seconds,
+  max_speed_kmh, trip_count, days_available, sparkline`).
+- Cache check confirmed: second call within 60s does NOT emit a new
+  `navixy.trip_summary` log line.
+- Non-Navixy asset path returns 200 with `navixy=false`,
+  `distance_km=0`, no upstream call.
+- Counter fix re-ship: 70 assets refreshed on first cycle. Fleet sample
+  shows 5+ assets with `engine_hours>100 AND odometer_km>500` (no stuck
+  values).
+
+## Service worker
+- `CACHE_VERSION` bumped to **`paneltec-v113`** (re-shipped) with full
+  v113 changelog covering counter fix + trip summary endpoint + UI card.
+
+## Out of scope (parked per directive)
+- Harsh braking / acceleration / speeding events
+- Geofence entry/exit
+- Battery voltage
+- Service hours since last service
+- Driver ID / iButton
+- Fuel consumption
+
+## Comms Safe Mode
+- `COMMS_SAFE_MODE=on` remains in effect. No emails sent during build
+  or testing.
+
+---
+
+
 # 2026-06-30 — Phase 4.8 Asset Meter Trends (v112)
 
 ## Backend
