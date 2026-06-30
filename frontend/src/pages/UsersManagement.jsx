@@ -53,7 +53,7 @@ function StatusPill({ user }) {
 }
 
 function inviteMailtoHref(user) {
-  const loginUrl = `${window.location.origin}/login`;
+  const loginUrl = `${window.location.origin}/`;
   const subject = 'Welcome to Paneltec Civil';
   const body = [
     `Hi ${user.name || ''},`,

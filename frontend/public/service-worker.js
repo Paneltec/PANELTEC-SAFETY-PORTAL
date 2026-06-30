@@ -766,8 +766,13 @@
  *        tracker_id (falls back to a `navixy_device_id` lookup) so the
  *        Expo app stops 404-ing when it passes upstream IDs. Logged as
  *        `assets.id_resolver via tracker_id=X → asset_id=Y`.
+ * v129 — Phase 4.13. Killed duplicate /login route — redirects to /.
+ *        Single login surface (Cover.jsx) eliminates random crane-vs-
+ *        black-panel flip on refresh. All internal links + the 401
+ *        axios interceptor + the AppShell idle-timeout redirect now
+ *        target `/` instead of `/login`.
  */
-const CACHE_VERSION = 'paneltec-v128';
+const CACHE_VERSION = 'paneltec-v129';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

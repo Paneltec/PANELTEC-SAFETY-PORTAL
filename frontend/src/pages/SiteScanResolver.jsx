@@ -341,7 +341,7 @@ export default function SiteScanResolver() {
           {!user && (
             <div className="text-center">
               <button type="button"
-                onClick={() => navigate(`/login?next=${encodeURIComponent(`/scan/site/${token}`)}`)}
+                onClick={() => navigate(`/?next=${encodeURIComponent(`/scan/site/${token}`)}`)}
                 className="text-[11px] font-semibold text-slate-600 hover:text-slate-900">
                 Worker with a Paneltec account? Sign in to sign on →
               </button>

@@ -1,10 +1,9 @@
 import React from 'react';
 import '@/App.css';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
 import Cover from '@/pages/Cover';
-import Login from '@/pages/Login';
 import Signup from '@/pages/Signup';
 import Dashboard from '@/pages/Dashboard';
 import Integrations from '@/pages/Integrations';
@@ -56,6 +55,15 @@ import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 // Phase 4.7.3 — Comms Safe Mode admin page.
 import CommsSafeMode from '@/pages/CommsSafeMode';
 
+// Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
+// at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
+// remaining `/login?next=…` traffic to `/?next=…` so deep-links keep
+// working, preserving the query string.
+function LoginRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/', search }} replace />;
+}
+
 function App() {
   return (
     <div className="App">
@@ -63,7 +71,7 @@ function App() {
         <WorkspaceProvider>
           <Routes>
             <Route path="/" element={<Cover />} />
-            <Route path="/login" element={<Login />} />
+            <Route path="/login" element={<LoginRedirect />} />
             <Route path="/signup" element={<Signup />} />
             {/* Phase 4.7 — public token-driven password flows */}
             <Route path="/onboard" element={<Onboard />} />

@@ -1,5 +1,5 @@
 // Axios instance for Paneltec Civil API.
-// Bearer token in localStorage; 401 → drop token + redirect to /login.
+// Bearer token in localStorage; 401 → drop token + redirect to /.
 import axios from 'axios';
 
 const BASE = process.env.REACT_APP_BACKEND_URL;
@@ -35,11 +35,11 @@ api.interceptors.response.use(
     if (status === 401 && PLATFORM_AUTH_REASONS.has(reason)) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+      if (typeof window !== 'undefined' && window.location.pathname !== '/' && !window.location.pathname.startsWith('/login')) {
         // Preserve where the user was so the login screen can send them back.
         const here = window.location.pathname + window.location.search;
         const safeHere = here.startsWith('/') && !here.startsWith('//') ? here : '/app/dashboard';
-        window.location.assign(`/login?next=${encodeURIComponent(safeHere)}`);
+        window.location.assign(`/?next=${encodeURIComponent(safeHere)}`);
       }
     }
     return Promise.reject(err);

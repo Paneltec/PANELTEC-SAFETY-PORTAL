@@ -59,7 +59,7 @@ export default function Signup() {
         </form>
         <p className="mt-6 text-sm text-slate-600">
           Already have an account?{' '}
-          <Link to="/login" className="text-brand-blue font-medium hover:underline" data-testid="signup-to-login">Sign in</Link>
+          <Link to="/" className="text-brand-blue font-medium hover:underline" data-testid="signup-to-login">Sign in</Link>
         </p>
       </div>
     </div>

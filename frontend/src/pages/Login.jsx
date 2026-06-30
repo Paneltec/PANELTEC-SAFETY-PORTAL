@@ -1,3 +1,8 @@
+// DEPRECATED — Phase 4.13 (paneltec-v129).
+// `/login` now redirects to `/` (Cover.jsx is the single sign-in surface).
+// This component is kept on disk for historical reference only; it is not
+// mounted on any route. Do not re-route to this component. If sign-in copy
+// or visuals need to change, edit Cover.jsx and PaneltecHero.jsx instead.
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Briefcase } from 'lucide-react';

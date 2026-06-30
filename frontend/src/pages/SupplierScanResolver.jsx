@@ -36,7 +36,7 @@ export default function SupplierScanResolver() {
 
   const onComplete = async () => {
     if (!user) {
-      navigate(`/login?next=${encodeURIComponent(`/scan/supplier/${token}`)}`);
+      navigate(`/?next=${encodeURIComponent(`/scan/supplier/${token}`)}`);
       return;
     }
     setSigning(true);

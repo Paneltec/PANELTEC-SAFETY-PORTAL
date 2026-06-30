@@ -85,7 +85,7 @@ export default function ScanResolver() {
     return () => { alive = false; };
   }, [state.status, isAuthed, token]);
 
-  const goLogin = () => navigate(`/login?next=${encodeURIComponent(`/scan/${token}`)}`);
+  const goLogin = () => navigate(`/?next=${encodeURIComponent(`/scan/${token}`)}`);
 
   const copyLink = () => {
     const url = `${window.location.origin}/scan/${token}`;

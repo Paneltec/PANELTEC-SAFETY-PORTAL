@@ -343,7 +343,7 @@ export default function AppShell() {
     onLogout: async () => {
       setWarnInfo(null);
       await signOut();
-      navigate('/login?reason=idle');
+      navigate('/?reason=idle');
     },
   });
 
@@ -362,7 +362,7 @@ export default function AppShell() {
     }
   }, []);
 
-  if (!getToken()) return <Navigate to="/login" replace />;
+  if (!getToken()) return <Navigate to="/" replace />;
 
   const permsValue = {
     effective: user?.effective_permissions || {},
@@ -393,7 +393,7 @@ export default function AppShell() {
         <SessionWarningModal
           secondsRemaining={warnInfo.secondsRemaining}
           onStay={() => { warnInfo.stay?.(); setWarnInfo(null); }}
-          onLogout={async () => { setWarnInfo(null); await signOut(); navigate('/login?reason=idle'); }} />
+          onLogout={async () => { setWarnInfo(null); await signOut(); navigate('/?reason=idle'); }} />
       )}
     </div>
     </PermissionsProvider>

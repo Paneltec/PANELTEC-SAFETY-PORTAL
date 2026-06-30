@@ -169,7 +169,7 @@ export default function WorkerScanResolver() {
             <LogIn size={15} /> Sign in to site
           </button>
         ) : (
-          <button onClick={() => navigate(`/login?next=${encodeURIComponent(`/scan/worker/${token}`)}`)}
+          <button onClick={() => navigate(`/?next=${encodeURIComponent(`/scan/worker/${token}`)}`)}
             data-testid="worker-signin-anon"
             className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 shadow-md">
             Log in to sign in <ArrowRight size={15} />

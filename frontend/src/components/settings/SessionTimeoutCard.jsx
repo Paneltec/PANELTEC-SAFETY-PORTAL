@@ -119,7 +119,7 @@ export default function SessionTimeoutCard() {
         `${data.sessions_wiped} active session${data.sessions_wiped === 1 ? '' : 's'} wiped.`,
       );
       // Caller (admin) is included — sign them out cleanly client-side.
-      setTimeout(() => signOut().finally(() => { window.location.href = '/login'; }), 600);
+      setTimeout(() => signOut().finally(() => { window.location.href = '/'; }), 600);
     } catch (e) {
       toast.error(apiError(e));
       setForcing(false);
