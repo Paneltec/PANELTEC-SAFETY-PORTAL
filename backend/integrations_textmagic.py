@@ -77,6 +77,21 @@ class SmsSendIn(BaseModel):
 
 @router.post("/send-sms")
 async def tm_send(body: SmsSendIn, user: dict = Depends(require_roles("admin", "hseq_lead"))):
+    # Phase 4.7.3 — Comms Safe Mode. Block at the boundary BEFORE the
+    # TextMagic price check (which would still hit their HTTP API).
+    from comms_safe_mode import is_blocked, record_blocked
+    if await is_blocked(user["org_id"]):
+        await record_blocked(
+            channel="sms", org_id=user["org_id"], to=list(body.to),
+            subject="", body=body.message,
+            triggered_by_endpoint="/integrations/textmagic/send-sms",
+            actor_user_id=user.get("id"),
+        )
+        return {
+            "message_id": None, "parts": None, "cost": 0.0,
+            "session_id": None, "bulk_id": None,
+            "blocked": True, "reason": "comms_safe_mode_on",
+        }
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "textmagic"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "TextMagic not connected")

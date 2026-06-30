@@ -163,6 +163,19 @@ async def m365_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
 async def graph_send_mail(org_id: str, *, to: List[str], cc: List[str], subject: str,
                           body_html: str, attachments: List[dict]) -> dict:
     """Send an email via Graph using app-only auth. Returns {ok: bool, error?: str}."""
+    # Phase 4.7.3 — defensive Safe Mode check. queue_email_doc already blocks
+    # in front of us, but any direct caller hitting this function MUST also be
+    # gated. We persist a `comms_outbox_blocked` row and return ok=True with
+    # `blocked=True` so callers don't crash on a falsey ok.
+    from comms_safe_mode import is_blocked, record_blocked
+    if await is_blocked(org_id):
+        await record_blocked(
+            channel="email", org_id=org_id, to=list(to),
+            subject=subject, body=body_html,
+            triggered_by_endpoint="graph_send_mail",
+            extra={"cc": list(cc or [])},
+        )
+        return {"ok": True, "blocked": True, "provider": "safe_mode"}
     try:
         token = await get_app_only_access_token(org_id)
     except HTTPException as e:

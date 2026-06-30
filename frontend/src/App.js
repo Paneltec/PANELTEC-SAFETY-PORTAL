@@ -52,6 +52,8 @@ import FormSubmissions from '@/pages/FormSubmissions';
 // Phase 4.7 — public token-driven password flows + must-change guard.
 import Onboard, { ResetPasswordPage } from '@/pages/Onboard';
 import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
+// Phase 4.7.3 — Comms Safe Mode admin page.
+import CommsSafeMode from '@/pages/CommsSafeMode';
 
 function App() {
   return (
@@ -114,6 +116,7 @@ function App() {
               <Route path="settings/org" element={<OrgSettings />} />
               <Route path="settings/workspaces" element={<Workspaces />} />
               <Route path="settings/integrations" element={<Integrations />} />
+              <Route path="settings/comms-safe-mode" element={<CommsSafeMode />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />
               <Route path="settings/integrations/simpro" element={<SimproAdmin />} />
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />

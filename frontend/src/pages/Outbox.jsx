@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Mail, RefreshCw, Ban, ExternalLink, AlertTriangle, Filter, Trash2, ChevronDown, Loader2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Mail, RefreshCw, Ban, ExternalLink, AlertTriangle, Filter, Trash2, ChevronDown, Loader2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
@@ -17,6 +18,7 @@ const STATUS_STYLES = {
   sent:      'bg-emerald-100 text-emerald-800 border-emerald-200',
   failed:    'bg-red-100 text-red-800 border-red-200',
   cancelled: 'bg-slate-200 text-slate-700 border-slate-300',
+  blocked:   'bg-amber-200 text-amber-900 border-amber-400', // Phase 4.7.3
 };
 
 const BULK_OPTIONS = [
@@ -25,6 +27,39 @@ const BULK_OPTIONS = [
   { key: 'cancelled', label: 'Clear all cancelled', statuses: ['cancelled'] },
   { key: 'all',       label: 'Clear all (except queued)', statuses: ['sent', 'failed', 'cancelled'] },
 ];
+
+// Phase 4.7.3 — Comms Safe Mode banner. Renders ONLY when safe mode is on
+// (otherwise null, so it doesn't add noise to a normal-delivery setup).
+function SafeModeBanner() {
+  const [status, setStatus] = useState(null);
+  const [blockedCount, setBlockedCount] = useState(0);
+  useEffect(() => {
+    api.get('/admin/comms-safe-mode/status').then((r) => setStatus(r.data)).catch(() => {});
+    api.get('/admin/comms-outbox-blocked?limit=1')
+      .then((r) => setBlockedCount(r.data?.count || 0)).catch(() => {});
+  }, []);
+  if (!status || status.effective !== 'on') return null;
+  return (
+    <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 p-4 flex items-start gap-3" data-testid="outbox-safe-mode-banner">
+      <div className="w-9 h-9 rounded-lg bg-amber-200 text-amber-800 flex items-center justify-center flex-shrink-0">
+        <Zap size={16} className="fill-amber-600 text-amber-600" />
+      </div>
+      <div className="flex-1">
+        <div className="font-semibold text-slate-900 text-sm">
+          Comms Safe Mode is ON {status.env_locked && <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded ml-1">env-locked</span>}
+        </div>
+        <div className="text-xs text-slate-600 mt-0.5">
+          Outbound email and SMS are being CAPTURED for review but NOT delivered. Anything new will show up below as <span className="font-mono text-[11px] bg-amber-100 px-1 rounded">blocked</span> (in addition to the dedicated outbox).
+        </div>
+      </div>
+      <Link to="/app/settings/comms-safe-mode"
+        data-testid="outbox-safe-mode-link"
+        className="flex-shrink-0 text-xs font-semibold text-orange-700 hover:underline inline-flex items-center gap-1">
+        View blocked ({blockedCount}) <ExternalLink size={11} />
+      </Link>
+    </div>
+  );
+}
 
 export default function Outbox() {
   const [data, setData] = useState({ items: [], m365_connected: false, count: 0 });
@@ -110,6 +145,7 @@ export default function Outbox() {
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="outbox-page">
+      <SafeModeBanner />
       <PageHeader
         crumb="Settings / Email outbox"
         title="Email outbox"

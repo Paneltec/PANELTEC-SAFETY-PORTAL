@@ -264,8 +264,44 @@
  *         write of `${origin}/scan/${scan_token}` with execCommand
  *         fallback), and Download PNG (the existing handler, now toasts
  *         on success).
+ *
+ * v111 — Phase 4.7.3 COMMS SAFE MODE (P0 kill switch).
+ *       · NEW env var `COMMS_SAFE_MODE` (default "on") is the master
+ *         kill switch. When ON, NO email and NO SMS leaves the box.
+ *         Persisted `org_settings.comms_safe_mode` overrides only when
+ *         env is OFF (env always wins for off-by-default safety).
+ *       · Backend `comms_safe_mode.py`:
+ *         - `is_blocked(org_id)`, `record_blocked(...)`, status + toggle
+ *           routes.
+ *         - `GET /api/admin/comms-safe-mode/status` → effective, env_locked,
+ *           env_value, org_value.
+ *         - `PATCH /api/admin/comms-safe-mode` (admin) → flips org setting;
+ *           returns 423 Locked when env var is the master ON.
+ *         - `GET /api/admin/comms-outbox-blocked?limit=&channel=` → audit
+ *           feed of captured payloads.
+ *       · Interception points: `email_outbox.queue_email_doc` (primary),
+ *         `integrations_m365.graph_send_mail` (defensive), and
+ *         `integrations_textmagic.tm_send` (SMS boundary before the
+ *         TextMagic price/send HTTP calls).
+ *       · `outbound_emails` rows now use a new `status="blocked"` value
+ *         when held back so the existing email outbox UI can see them
+ *         alongside live mail; STATUS_STYLES updated accordingly.
+ *       · Frontend:
+ *         - Persistent yellow lightning chip in TopBar ("COMMS SAFE
+ *           MODE") that links to the dedicated settings page when active.
+ *         - New page `/app/settings/comms-safe-mode` shows current state,
+ *           env-lock pill, on/off buttons (disabled when env-locked),
+ *           and a chronological list of blocked email+SMS payloads with
+ *           channel filter.
+ *         - Email Outbox page gets a slate-amber banner explaining the
+ *           held-back state and linking to the blocked outbox.
+ *       · Invite / Reset / Forgot-password / Audit-pack / Cert-reminder
+ *         email paths all funnel through `queue_email_doc`, so the
+ *         single intercept covers ALL of them. Verified live: invite +
+ *         forgot-password both return 200 with 0 actual sends and
+ *         appear as 2 rows in `comms_outbox_blocked`.
  */
-const CACHE_VERSION = 'paneltec-v110';
+const CACHE_VERSION = 'paneltec-v111';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

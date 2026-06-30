@@ -3,7 +3,7 @@ import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
-  KeyRound as KeyRoundIcon,
+  KeyRound as KeyRoundIcon, Zap,
 } from 'lucide-react';
 // Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
 // Each NAV entry now carries `icon` (Regular outline) for the resting
@@ -156,6 +156,15 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const [workspaces, setWorkspaces] = useState([]);
   // Phase 4.7 — self-serve password change from the user dropdown.
   const [changePwOpen, setChangePwOpen] = useState(false);
+  // Phase 4.7.3 — Comms Safe Mode indicator (yellow lightning chip).
+  const [safeMode, setSafeMode] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get('/admin/comms-safe-mode/status')
+      .then((r) => { if (alive) setSafeMode(r.data); })
+      .catch(() => { /* non-admin or unauthenticated, skip */ });
+    return () => { alive = false; };
+  }, []);
   useEffect(() => {
     let live = true;
     api.get('/workspaces')
@@ -250,6 +259,17 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-brand-red text-white text-[10px] font-semibold flex items-center justify-center">3</span>
       </button>
       <OutboxBell />
+
+      {safeMode?.effective === 'on' && (
+        <Link
+          to="/app/settings/comms-safe-mode"
+          title="Outbound email/SMS are being captured but not delivered. Click to view Settings."
+          data-testid="comms-safe-mode-chip"
+          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-semibold uppercase tracking-wider hover:bg-amber-200 transition-colors">
+          <Zap size={12} className="fill-amber-500 text-amber-600" />
+          Comms Safe Mode
+        </Link>
+      )}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

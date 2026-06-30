@@ -69,6 +69,12 @@ async def queue_email_doc(
     """Persist + (if M365 connected) mark as sent. Used by /email/send AND by
     convenience routes + user-invite flow.
     """
+    # Phase 4.7.3 — Comms Safe Mode kill switch. Intercepts at the boundary so
+    # neither Graph API nor the queued-then-cron flow can fire while safe mode
+    # is on. We still persist the row in `outbound_emails` (status="blocked")
+    # AND in `comms_outbox_blocked` for admin audit.
+    from comms_safe_mode import is_blocked as _safe_blocked, record_blocked as _record_blocked
+    safe_blocked = await _safe_blocked(org_id)
     connected = (not bypass_provider_attempt) and await _m365_connected(org_id)
     doc = {
         "id": new_id(), "org_id": org_id,
@@ -86,6 +92,27 @@ async def queue_email_doc(
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
+    if safe_blocked:
+        # Block-and-record. The caller (invite flow / reset flow) still gets
+        # back a doc dict that looks successful from its POV — the row in
+        # outbound_emails is marked status="blocked" so admins can see what
+        # we held back.
+        doc["status"] = "blocked"
+        doc["provider"] = "safe_mode"
+        doc["sent_at"] = None
+        doc["error"] = "comms_safe_mode_on"
+        await _record_blocked(
+            channel="email", org_id=org_id, to=doc["to"],
+            subject=subject, body=body_html,
+            triggered_by_endpoint="queue_email_doc",
+            actor_user_id=created_by if created_by != "system" else None,
+            extra={"resource_kind": resource_kind,
+                   "related_record_type": related_record_type,
+                   "related_record_id": related_record_id,
+                   "cc": doc["cc"]},
+        )
+        await db.outbound_emails.insert_one(dict(doc))
+        return doc
     if connected:
         # Try real send via Microsoft Graph. If it fails, fall back to queued.
         try:

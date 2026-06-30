@@ -37,6 +37,7 @@ from workers_qr import router as workers_qr_router, scan_router as worker_scan_r
 from worker_certifications import router as worker_certifications_router  # noqa: E402
 from forms import router as forms_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
+from comms_safe_mode import router as comms_safe_mode_router  # noqa: E402 — Phase 4.7.3
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
 from integrations_simpro import router as simpro_router  # noqa: E402
@@ -171,6 +172,7 @@ app.include_router(org_router)
 app.include_router(mobile_modules_router)
 api.include_router(email_router)
 api.include_router(record_email_router)
+api.include_router(comms_safe_mode_router)  # Phase 4.7.3
 api.include_router(pdf_router)
 api.include_router(document_library_router)
 api.include_router(supplier_folders_router)
