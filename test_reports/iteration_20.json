@@ -1,0 +1,32 @@
+{
+  "summary": "v113 Navixy counter fix VERIFIED. All 11 backend tests pass (11/11, 100%). The new Pass 0.5 in asset_navixy_sync.py correctly calls POST /v2/tracker/get_counters for every Navixy-synced asset on every cycle and persists hours_meter + odo_km. H89MY (200 Tipper, asset 5407000f-…, device 10307562) now reports engine_hours=554.7032 and odometer_km=109914.9866 via /api/assets/{id}/meter-trends — within ±0.01 of the Navixy UI ground-truth (554.7 hrs / 109914.99 km). Force-sync via POST /api/assets/navixy/sync-counters returns updated >= 50 on a single cycle. Fleet check confirms >= 5 Navixy assets with plausible (hrs>100 & km>500) counters — pre-fix stuck 30-50 hr pattern is gone. Structured log line 'navixy.sync device_id=… hours=… km=… source=get_counters' is emitted per device, including H89MY (tid=10307562) on every cycle. hours_meter_updated_at on H89MY refreshes to today's 2026-06-30 timestamp. Regression check on /app/backend/asset_meter_history.py confirms zero writes to db.assets (only db.assets.find / find_one reads); the only write target is db.asset_meter_history (line 61 update_one). Cron meter_history_daily_snapshot also verified read-only on assets.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /v2/tracker/get_counters (some devices)", "issue": "A few devices (e.g. tid=10342904) return hours=None km=3010.83 — i.e. odometer-only response, no engine_hours counter. Pass 0.5 handles this correctly (skips None), but it's worth confirming with the user whether those trackers are expected to be odo-only or whether engine_hours should also stream. Not a regression — pre-existing Navixy provisioning state."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_navixy_counter_fix_v113.py",
+    "/app/test_reports/pytest/navixy_v113_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL — Audit the small set of Navixy devices that come back as hours=None via /v2/tracker/get_counters (e.g. tid=10342904, several 10342905-07). Confirm whether those trackers have engine_hours wiring/provisioning at the Navixy side or whether they're intentionally odo-only. Pass 0.5 already handles both cases gracefully."
+  ],
+  "critical_code_review_comments": [
+    "asset_navixy_sync.py Pass 0.5 (lines 417-458) is correct: idempotent, uses bounded concurrency (Semaphore(8)), respects errors counter, and writes source='panel' source_by_tid as well as the canonical log line. Pass 1 (counter/read) at lines 460+ is now redundant for warm assets — consider gating it behind 'cold-only' once Pass 0.5 has proven stable for a few days, to halve outbound Navixy traffic per cycle.",
+    "asset_meter_history.py — Confirmed read-only on db.assets. Only writes touch db.asset_meter_history (line 61). meter_history_daily_snapshot reads the just-persisted hours_meter/odo_km from the assets collection (line 76) and upserts the snapshot row — exactly the contract described in the regression spec.",
+    "Logged values for H89MY are full-precision floats (554.7032063888893 / 109914.98663535604). UI rounding to 554.7 / 109914.99 is presumably client-side in /api/assets/{id}/meter-trends consumers — fine for now, but consider rounding on the server (round(value, 2)) to keep wire payloads compact and stable.",
+    "_get_counters_one swallows httpx.HTTPError + ValueError silently at log.debug level. For first-pass diagnostics it'd be cheap to bump the per-device failure to log.info with status_code so future plan-level Navixy rejections (like the original counter/list 400) surface in the journal without needing DEBUG logging.",
+    "Pass 0.5 does NOT persist counters when slot['hours'] is None AND slot['odo_km'] is None — correct behaviour, but a counter-only success case (hours present, odo missing) will record source='panel' for that tracker which may slightly skew downstream 'source=get_counters' analytics if both later fall back to counter/read. Worth a metric-emit per (tid, branch) for observability."
+  ],
+  "updated_files": ["/app/backend/tests/test_navixy_counter_fix_v113.py"],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "not tested (backend-only request)"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin) — used for /api/assets/navixy/sync-counters and /api/assets queries",
+  "seed_data_creation": "None. Tests only read from assets/meter_history and trigger the existing on-demand sync endpoint. No test rows inserted, no real emails sent (Comms Safe Mode respected — no /users/{id}/invite or /auth/forgot-password calls).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run with: REACT_APP_BACKEND_URL=https://whs-compliance.preview.emergentagent.com python -m pytest /app/backend/tests/test_navixy_counter_fix_v113.py -v. The module-scoped sync_result fixture triggers /api/assets/navixy/sync-counters exactly once (takes ~3-4s) and shares it across all 11 tests. H89MY actuals at time of testing (2026-06-30 05:18 UTC): engine_hours=554.7032, odometer_km=109914.9866, hours_meter_updated_at=2026-06-30T05:18:13+00:00. Backend log line confirmed: 'navixy.sync device_id=10307562 hours=554.7032063888893 km=109914.98663535604 source=get_counters'.",
+  "rca of the issue": "Pre-v113: asset_navixy_sync was calling /v2/tracker/counter/list which returns HTTP 400 on the current Navixy plan; the warm-asset branch then actively SKIPPED counter refresh, so persisted hours_meter / odo_km drifted to whatever stale value was last written by the cold path or initial sync (H89MY stuck at 48.9 hrs / 2544.8 km vs ground truth 554.7 hrs / 109914.99 km). v113 fix adds Pass 0.5 calling POST /v2/tracker/get_counters with {hash, tracker_id} for EVERY synced asset (warm or cold) on every 15-min cycle and on every on-demand /sync-counters trigger, parsing list[{type:'engine_hours'|'odometer', value, update_time}]. Verified end-to-end: triggered sync → fetched /meter-trends → H89MY total matches Navixy UI to within 0.01 in both hours and km; 11/11 regression tests pass; structured log line is emitted per device; meter_history cron remains read-only on assets collection."
+}
