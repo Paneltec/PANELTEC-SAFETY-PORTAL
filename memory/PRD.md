@@ -2080,3 +2080,51 @@ enabled. Zero JS console errors.
 - [x] CACHE_VERSION bumped paneltec-v113 → paneltec-v114 with v114
       changelog covering all three fixes.
 
+
+
+## 2026-06-30 — Phase 4.10.4 (paneltec-v119): kill the legacy hero copy
+
+Closes the loop on the v118 marketing-copy bug (legacy SaaS scaffolding
+on the Login.jsx right panel had been shipping for weeks alongside the
+authoritative Cover.jsx copy).
+
+### 1. Cleanup
+Swept every file in /app for the legacy placeholder strings — including
+comments and changelog blocks. Sanitized the v118 changelog entry in
+`service-worker.js` so a future grep over the repo no longer returns
+quotes of the old copy. PRD.md hits ("8 active SWMS rows", screenshot
+description) are unrelated and stay.
+
+### 2. Single source of truth
+New `/app/frontend/src/components/marketing/PaneltecHero.jsx` exports a
+`<PaneltecHero variant="dark|cover|compact" />` component plus a frozen
+`PANELTEC_HERO_COPY` constant. All three render sites refactored to use
+it:
+- `Login.jsx`            → `<PaneltecHero variant="dark" />`
+- `Cover.jsx` desktop    → `<PaneltecHero variant="cover" />`
+- `Cover.jsx` mobile     → `<PaneltecHero variant="compact" />`
+
+Editing the eyebrow / 3-line headline / subhead / 4 pill labels now
+requires touching exactly ONE file. The two surfaces cannot drift.
+
+### 3. CI guard
+`/app/scripts/check_no_legacy_login_copy.sh` (executable) greps the
+known-bad phrases across /app and exits non-zero if any reappear. **Run
+this before every deploy**:
+
+```bash
+bash /app/scripts/check_no_legacy_login_copy.sh
+```
+
+If it fires, fix the file it names — do NOT relax the patterns. The
+authoritative hero copy lives in `PaneltecHero.jsx` only.
+
+### 4. Ship
+- CACHE_VERSION bumped `paneltec-v118` → `paneltec-v119`.
+- Webpack: 109 warnings / 0 errors. Lint clean on Login + Cover +
+  PaneltecHero.
+- Cover.jsx import list trimmed (removed `ShieldCheck`, `Sparkles`,
+  `Award`, `BarChart3` — now imported only inside PaneltecHero.jsx).
+- Visual smoke screenshot verified hero copy identical on /login
+  right panel and / cover hero.
+

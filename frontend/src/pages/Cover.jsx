@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
-import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog, Download, Share, Plus, X, Sparkles, Award, BarChart3 } from 'lucide-react';
+import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, UserCog, Download, Share, Plus, X } from 'lucide-react';
 import { login, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
+import PaneltecHero from '../components/marketing/PaneltecHero';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -118,37 +119,11 @@ export default function Cover() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(110deg, rgba(15,27,45,0.85) 0%, rgba(15,27,45,0.55) 40%, rgba(15,27,45,0) 70%)' }} />
           <div className="relative h-full flex flex-col justify-between p-12 lg:p-16">
             <div className="mt-[12vh] max-w-[520px]">
-              <div className="inline-block text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-500 bg-white/10 backdrop-blur px-3 py-1.5 rounded-full mb-5 border border-white/15">
-                WHS Compliance for civil teams
-              </div>
-              <h1 className="font-display text-4xl lg:text-5xl xl:text-[56px] font-bold leading-[1.05] text-white tracking-tight" data-testid="cover-hero-headline">
-                <span className="block">Build Safer.</span>
-                <span className="block">Build Smarter.</span>
-                <span className="block" style={{ color: 'var(--paneltec-gold)' }}>Build Together.</span>
-              </h1>
-              <p className="mt-5 text-base lg:text-lg text-white/75 leading-relaxed max-w-[460px]" data-testid="cover-subtitle">
-                All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.
-              </p>
-
-              {/* 4 value-prop chips */}
-              <div className="mt-7 grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-w-[520px]" data-testid="cover-feature-chips">
-                <div className="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10">
-                  <ShieldCheck size={18} className="text-white shrink-0" />
-                  <span className="text-sm font-medium text-white">Real-time Compliance</span>
-                </div>
-                <div className="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10">
-                  <Sparkles size={18} style={{ color: 'var(--paneltec-gold)' }} className="shrink-0" />
-                  <span className="text-sm font-medium text-white">AI-Powered Insights</span>
-                </div>
-                <div className="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10">
-                  <Award size={18} style={{ color: 'var(--paneltec-gold)' }} className="shrink-0" />
-                  <span className="text-sm font-medium text-white">Cert Tracking</span>
-                </div>
-                <div className="inline-flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl bg-black/40 backdrop-blur-sm border border-white/10">
-                  <BarChart3 size={18} style={{ color: 'var(--paneltec-gold)' }} className="shrink-0" />
-                  <span className="text-sm font-medium text-white">Live Analytics</span>
-                </div>
-              </div>
+              {/* Phase 4.10.4 (v119) — hero block is now a single shared
+                  component. Any future copy change should land in
+                  `/app/frontend/src/components/marketing/PaneltecHero.jsx`
+                  so this surface and Login.jsx stay in lock-step. */}
+              <PaneltecHero variant="cover" />
             </div>
             <div className="text-[11px] uppercase tracking-[0.22em] text-white/60 font-semibold" data-testid="cover-trust">
               AS/NZS 4801 · ISO 45001 · Comcare ready
@@ -160,19 +135,10 @@ export default function Cover() {
         <div className="relative bg-[#FBF8F2]">
           <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 md:px-8 py-24 md:py-10">
             <div className="w-full max-w-[460px]">
-              {/* Mobile-only hero intro */}
+              {/* Mobile-only hero intro — Phase 4.10.4 (v119) shared
+                  component. Compact variant has no pills (desktop only). */}
               <div className="md:hidden mb-6 px-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-orange-500 mb-2">
-                  WHS Compliance for civil teams
-                </div>
-                <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-[#0F1B2D]">
-                  <span className="block">Build Safer.</span>
-                  <span className="block">Build Smarter.</span>
-                  <span className="block" style={{ color: 'var(--paneltec-gold)' }}>Build Together.</span>
-                </h1>
-                <p className="mt-2 text-sm text-slate-600 leading-relaxed">
-                  All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.
-                </p>
+                <PaneltecHero variant="compact" />
               </div>
 
               {/* The elevated login card */}
