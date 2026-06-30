@@ -608,8 +608,29 @@
  *       longer pulls in the now-unused Lucide icons
  *       (ShieldCheck/Sparkles/Award/BarChart3) — those are now
  *       imported only by PaneltecHero.jsx.
+ *
+ * v120 — P1 hotfix — Dashboard "Users & Permissions" tile bounced to
+ *       /login instead of opening the page. Single-line drift bug:
+ *       `Dashboard.jsx:302` had `route: '/app/users'`, but the actual
+ *       route registered in `App.js:124` is `settings/users` →
+ *       `/app/settings/users`. React Router's outer wildcard
+ *       `<Route path="*" element={<Navigate to="/" replace />} />` was
+ *       silently catching `/app/users` and bouncing to `/` (the Cover
+ *       page), which an authenticated user perceives as "kicked back
+ *       to login".
+ *
+ *       Fix: changed the tile's `route` to `/app/settings/users`.
+ *       Audit of all 9 Dashboard tile routes against App.js shows
+ *       NO OTHER drift — every other tile maps to an existing route.
+ *       The sidebar nav in `AppShell.jsx:79` was already correct
+ *       (`/app/settings/users`), so only the dashboard tile was
+ *       affected.
+ *
+ *       The wildcard-to-cover fallback is intentional belt-and-braces
+ *       routing behaviour and stays in place. The drift was a
+ *       hand-coded string mismatch, not a guard or permission bug.
  */
-const CACHE_VERSION = 'paneltec-v119';
+const CACHE_VERSION = 'paneltec-v120';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

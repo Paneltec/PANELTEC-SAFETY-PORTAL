@@ -299,7 +299,7 @@ const CAPTURE_GROUPS = [
   { heading: 'People & Compliance', extras: [
     { key: 'workers',        title: 'Workers',              desc: 'Field crew directory synced from Simpro + manual adds.', icon: 'HardHat',  route: '/app/settings/workers' },
     { key: 'certifications', title: 'Certifications',       desc: 'White Card, First Aid, Heights — expiries at a glance.', icon: 'Award',    route: '/app/settings/certifications' },
-    { key: 'users',          title: 'Users & Permissions',  desc: 'Org members, roles and workspace access.',                icon: 'UserCog',  route: '/app/users' },
+    { key: 'users',          title: 'Users & Permissions',  desc: 'Org members, roles and workspace access.',                icon: 'UserCog',  route: '/app/settings/users' },
   ] },
   { heading: 'Contractors & Docs', extras: [
     { key: 'suppliers',        title: 'Suppliers',         desc: 'Vendor directory with tasks, notes and renewal links.', icon: 'Users2',   route: '/app/suppliers' },
