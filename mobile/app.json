@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes and capture hazard photos",
         "NSPhotoLibraryUsageDescription": "Attach site photos to reports",
-        "NSFaceIDUsageDescription": "Sign in quickly with Face ID"
+        "NSFaceIDUsageDescription": "Sign in quickly with Face ID",
+        "NSLocationWhenInUseUsageDescription": "Capture GPS for site sign-on"
       }
     },
     "android": {
@@ -22,7 +23,7 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "USE_BIOMETRIC", "USE_FINGERPRINT"]
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "USE_BIOMETRIC", "USE_FINGERPRINT", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
     },
     "web": {
       "bundler": "metro",
@@ -36,6 +37,10 @@
       [
         "expo-local-authentication",
         { "faceIDPermission": "Sign in quickly with Face ID" }
+      ],
+      [
+        "expo-location",
+        { "locationWhenInUsePermission": "Capture GPS for site sign-on" }
       ],
       [
         "expo-camera",

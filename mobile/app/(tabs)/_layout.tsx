@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
 import { hasAnyCaptureModule } from '../../src/lib/modules';
 import api from '../../src/lib/api';
+import { getActiveSignOn, clearActiveSignOn, onSignOnChange, ActiveSignOn } from '../../src/lib/signon';
 
 export default function TabLayout() {
   const { modules, isPreviewing, previewedRole } = useAuth();
@@ -19,6 +20,30 @@ export default function TabLayout() {
 
   const showCapture = hasAnyCaptureModule(modules);
 
+  const [activeSignOn, setActiveSignOnState] = useState<ActiveSignOn | null>(null);
+
+  useEffect(() => {
+    const check = async () => setActiveSignOnState(await getActiveSignOn());
+    check();
+    return onSignOnChange(check);
+  }, []);
+
+  const handleSignOff = () => {
+    Alert.alert('Sign off?', `Sign off from ${activeSignOn?.site_name}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign off', style: 'destructive', onPress: async () => {
+          try {
+            await api.post('/me/signoff-active');
+            await clearActiveSignOn();
+          } catch (e: any) {
+            Alert.alert('Error', e?.response?.data?.detail || e.message);
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={{ flex: 1 }}>
       {/* Preview-mode ribbon */}
@@ -27,6 +52,19 @@ export default function TabLayout() {
           <Ionicons name="eye" size={12} color="#fff" />
           <Text style={rs.ribbonText}>Preview mode · {previewedRole || 'unknown'}</Text>
         </View>
+      )}
+
+      {activeSignOn && modules.sign_on && (
+        <TouchableOpacity testID="signoff-banner" style={rs.signoffBanner} onPress={handleSignOff} activeOpacity={0.8}>
+          <Ionicons name="location" size={14} color="#fff" />
+          <Text style={rs.signoffText} numberOfLines={1}>
+            On-site: {activeSignOn.site_name}
+          </Text>
+          <View style={rs.signoffBtn}>
+            <Ionicons name="log-out" size={12} color="#fff" />
+            <Text style={rs.signoffBtnText}>Sign Off</Text>
+          </View>
+        </TouchableOpacity>
       )}
 
       <Tabs
@@ -133,4 +171,14 @@ const rs = StyleSheet.create({
     backgroundColor: '#334155', paddingVertical: 5, paddingHorizontal: 12,
   },
   ribbonText: { fontSize: 11, fontWeight: '600', color: '#fff', letterSpacing: 0.5 },
+  signoffBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#EA580C', paddingVertical: 8, paddingHorizontal: 16,
+  },
+  signoffText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#fff' },
+  signoffBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+  },
+  signoffBtnText: { fontSize: 11, fontWeight: '700', color: '#fff' },
 });
