@@ -1,3 +1,52 @@
+# 2026-06-30 — Phase 4.8.1 P0 Navixy counter fix (v113)
+
+## Root cause
+- `asset_navixy_sync.py` was calling `/v2/tracker/counter/list` →
+  Navixy returns **HTTP 400 "Wrong method: 'list'"** on the current
+  Navixy plan. The counter call silently failed.
+- The "warm-asset" branch (assets with an existing `*_source`)
+  actively **SKIPPED counter refresh** entirely on every cycle —
+  optimisation for the first version, regression in the wild. Once a
+  counter was seeded with the wrong value (from the old `report`
+  fallback), it never moved.
+- Net effect: H89MY stuck at 48.9 hrs / 2544.8 km, while Navixy UI
+  showed 554.7 hrs / 109,914.99 km.
+
+## Fix
+- New **Pass 0.5** in `asset_navixy_sync.py` calls the canonical
+  Navixy endpoint **`/v2/tracker/get_counters`** with
+  `{hash, tracker_id}` for EVERY synced asset (warm OR cold) on every
+  cycle. Parses `list:[{type:'engine_hours'|'odometer', value,
+  update_time}]`. Bounded concurrency (`sem=8`).
+- Legacy fallbacks (`counter/read`, `get_states`, `report`, `tracks`)
+  kept for plans where `get_counters` is unavailable.
+- Per-device structured log line emitted:
+  `navixy.sync device_id=X hours=Y km=Z source=get_counters` so
+  future field-mapping drift surfaces from supervisor logs.
+
+## Verification (live + testing_agent_v3, 11/11 pass)
+- H89MY (tracker 10307562, asset id 5407000f-…) now reports
+  `engine_hours=554.7032`, `odometer_km=109914.99` via
+  `/api/assets/{id}/meter-trends`. **Exact Navixy UI match.**
+- 61 of 72 Navixy assets refreshed on the first post-fix sync. Fleet
+  sample: XT02AX 8061 hrs / 123754 km · XT96AZ 2398 hrs / 33461 km
+  (plausible commercial-tipper values).
+- `hours_meter_updated_at` for H89MY now stamps today's timestamp,
+  not the stale 2026-06-27.
+- `meter_history_daily_snapshot` cron audited: only reads
+  `db.assets`, only writes `db.asset_meter_history`. Did not cause
+  the regression.
+
+## Service worker
+- `CACHE_VERSION` → **`paneltec-v113`** with full changelog.
+
+## Comms Safe Mode (unchanged)
+- `COMMS_SAFE_MODE=on` remains in effect. No comms changes this
+  phase. No emails sent during the fix or testing.
+
+---
+
+
 # 2026-06-30 — Phase 4.8 Asset Meter Trends (v112)
 
 ## Backend
