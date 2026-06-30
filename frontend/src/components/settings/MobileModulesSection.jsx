@@ -136,7 +136,16 @@ function PhonePreview({ canEdit }) {
   };
 
   return (
-    <aside className="space-y-3 lg:sticky lg:top-4" data-testid="mobile-preview-panel">
+    // Phase 4.4.1 (v125) — sticky settings:
+    //   · `top-20` (80px) clears the 64px AppShell topbar instead of
+    //     the previous `top-4` which let the panel slide under it.
+    //   · `max-h-[calc(100vh-6rem)] overflow-y-auto` lets a tall
+    //     preview bezel scroll internally on shorter viewports
+    //     instead of being clipped behind the topbar.
+    //   · `self-start` belt-and-braces guarantee the aside doesn't
+    //     stretch to grid row height (parent already carries
+    //     `items-start`, but explicit is cheaper than a regression).
+    <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto" data-testid="mobile-preview-panel">
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="inline-flex items-center gap-2">

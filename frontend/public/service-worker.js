@@ -716,8 +716,22 @@
  *       Also added `max-h-[calc(100vh-6rem)] overflow-y-auto` per
  *       sidebar so a long TOC scrolls internally instead of pushing
  *       the page when more sections land in future content updates.
+ *
+ * v125 — Phase 4.4.1 — sticky Mobile App Modules preview panel.
+ *       Same regression family as v124 but on
+ *       `components/settings/MobileModulesSection.jsx` →
+ *       `<PhonePreview>` aside. The existing `lg:sticky lg:top-4`
+ *       only stuck the panel at 16px from the viewport top, which is
+ *       BELOW the 64px AppShell topbar — so the bezel slid under the
+ *       topbar and looked like it was scrolling away with the matrix
+ *       grid. Swapped to `lg:top-20` (80px, clears the topbar) and
+ *       added `lg:self-start lg:max-h-[calc(100vh-6rem)]
+ *       lg:overflow-y-auto` so a tall bezel scrolls internally on
+ *       shorter viewports rather than getting clipped behind the
+ *       topbar. Grid container already carries `items-start` from
+ *       Phase 4.4, no change needed there.
  */
-const CACHE_VERSION = 'paneltec-v124';
+const CACHE_VERSION = 'paneltec-v125';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
