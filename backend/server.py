@@ -196,6 +196,9 @@ api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
 api.include_router(asset_navixy_sync_router)
 api.include_router(asset_meter_history_router)  # Phase 4.8
+# Phase 4.9 — Today / Week / Month trip aggregations from Navixy track/list.
+from asset_trip_summary import router as asset_trip_summary_router  # noqa: E402
+api.include_router(asset_trip_summary_router)
 
 from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
 api.include_router(swms_extras_router)

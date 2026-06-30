@@ -329,8 +329,39 @@
  *         - "Refresh now" reloads BOTH the asset (live counters) and
  *           the meter-trends payload so a successful sync immediately
  *           updates the chart.
+ *
+ * v113 — Phase 4.9 — Re-ship counter fix + Today/Week/Month trip data.
+ *       · Part 1 (re-ship the counter fix from v113 hot-fix): Pass 0.5
+ *         in `asset_navixy_sync.py` calls `/v2/tracker/get_counters`
+ *         for EVERY synced asset on every cycle (warm + cold). Legacy
+ *         `counter/read` / `counter/list` paths return HTTP 400 on
+ *         this Navixy plan and were silently being skipped on warm
+ *         assets, freezing counters at first-write. Per-sync log:
+ *         `navixy.sync device_id=X hours=Y km=Z source=counters_v2`.
+ *         Idempotent — `_apply_counters` refuses to overwrite a
+ *         higher value with a transient lower one.
+ *       · Part 2 + 3 — Today/Week/Month trip summary (Navixy):
+ *         - `asset_trip_summary.py`: `GET /api/assets/{id}/trip-
+ *           summary?range=today|week|month`. Calls Navixy
+ *           `/v2/track/list` for the date window (org-local timezone
+ *           defaulted to Australia/Sydney). Aggregates distance,
+ *           drive_seconds, max_speed across `type=regular` tracks;
+ *           derives idle_seconds from inter-trip gaps shorter than
+ *           30 minutes. Returns daily sparkline of km. 60-second
+ *           in-memory cache per (asset_id, range, org_id) keyed off
+ *           repeated UI hits. Structured log:
+ *           `navixy.trip_summary device_id=X range=Y distance=Z`.
+ *         - `LiveCountersPanel.jsx`: new `TripSummaryCard` rendered
+ *           BELOW the existing Live Counters block. 4-tile grid
+ *           (distance / drive time / idle time / max speed) +
+ *           Today / This Week / Last Month tab strip. Tiny orange
+ *           sparkline (km per day) at the bottom of each tab.
+ *           Honest "Collecting data" hint when Navixy returns gaps.
+ *       · Verified on H89MY (tracker 10307562): today=21.4 km / 3
+ *         trips / peak 93 km/h; week=115.4 km / 15 trips / 104 km/h;
+ *         month=665.3 km / 56 trips / 117 km/h.
  */
-const CACHE_VERSION = 'paneltec-v112';
+const CACHE_VERSION = 'paneltec-v113';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

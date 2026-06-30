@@ -61,9 +61,128 @@ export default function LiveCountersPanel({ asset, onAssetUpdated }) {
   // Plant and vehicles both have meters; tools/containers do not.
   if (!asset || (asset.kind !== 'vehicle' && asset.kind !== 'plant')) return null;
   const isNavixy = !!asset.navixy_device_id;
-  return isNavixy
-    ? <NavixyCounters asset={asset} onAssetUpdated={onAssetUpdated} />
-    : <ManualCounters asset={asset} onAssetUpdated={onAssetUpdated} />;
+  return (
+    <div className="space-y-3">
+      {isNavixy
+        ? <NavixyCounters asset={asset} onAssetUpdated={onAssetUpdated} />
+        : <ManualCounters asset={asset} onAssetUpdated={onAssetUpdated} />}
+      {/* Phase 4.9 — Today / Week / Month trip card. Only for Navixy assets. */}
+      {isNavixy && <TripSummaryCard asset={asset} />}
+    </div>
+  );
+}
+
+// ───── Phase 4.9 — Trip summary card (Today / Week / Month) ──────────
+function fmtSecs(s) {
+  if (!s) return '0m';
+  const h = Math.floor(s / 3600);
+  const m = Math.round((s % 3600) / 60);
+  if (h <= 0) return `${m}m`;
+  return `${h}h ${m}m`;
+}
+
+function TripSummaryCard({ asset }) {
+  const [range, setRange] = useState('today'); // today | week | month
+  const [data, setData] = useState({});        // {today: {...}, week, month}
+  const [loading, setLoading] = useState({});
+
+  const load = (r) => {
+    setLoading((x) => ({ ...x, [r]: true }));
+    api.get(`/assets/${asset.id}/trip-summary?range=${r}`)
+      .then((res) => setData((d) => ({ ...d, [r]: res.data })))
+      .catch(() => setData((d) => ({ ...d, [r]: { error: true } })))
+      .finally(() => setLoading((x) => ({ ...x, [r]: false })));
+  };
+  useEffect(() => { if (!data[range]) load(range); /* eslint-disable-next-line */ }, [range, asset.id]);
+
+  const d = data[range];
+  const total = range === 'today' ? 1 : range === 'week' ? 7 : 30;
+  const collecting = d && !d.error && range !== 'today' && (d.days_available || 0) < total;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-3" data-testid="trip-summary-card">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-orange-700 inline-flex items-center gap-1.5">
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-orange-600 text-white text-[9px]">TRIP</span>
+          Today's trip · Navixy
+        </div>
+        <div className="inline-flex items-center gap-0.5 p-0.5 rounded-lg bg-slate-100 border border-slate-200" role="tablist">
+          {[
+            { k: 'today', label: 'Today' },
+            { k: 'week',  label: 'This Week' },
+            { k: 'month', label: 'Last Month' },
+          ].map((t) => (
+            <button key={t.k} role="tab" aria-selected={range === t.k}
+              onClick={() => setRange(t.k)}
+              data-testid={`trip-tab-${t.k}`}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+                range === t.k ? 'bg-orange-500 text-white' : 'text-slate-600 hover:bg-slate-50'
+              }`}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading[range] && !d && (
+        <div className="text-xs text-slate-500 py-6 text-center" data-testid="trip-loading">Loading trip data…</div>
+      )}
+      {d && d.error && (
+        <div className="text-xs text-rose-600 py-6 text-center" data-testid="trip-error">
+          Could not load trip data — check Navixy connection.
+        </div>
+      )}
+      {d && !d.error && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <TripTile label="Distance" value={d.distance_km?.toLocaleString(undefined, { maximumFractionDigits: 1 }) ?? '0'} unit="km" testid="trip-distance" />
+            <TripTile label="Drive time" value={fmtSecs(d.drive_seconds)} unit="" testid="trip-drive" />
+            <TripTile label="Idle time" value={fmtSecs(d.idle_seconds)} unit="" testid="trip-idle" />
+            <TripTile label="Max speed" value={d.max_speed_kmh ?? 0} unit="km/h" testid="trip-max-speed" />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-slate-500 flex-wrap">
+            <span data-testid="trip-meta">
+              {d.trip_count ?? 0} trip{d.trip_count === 1 ? '' : 's'}
+              {range !== 'today' && ` · ${d.days_available ?? 0} of ${total} day${total === 1 ? '' : 's'} with activity`}
+            </span>
+            {collecting && (
+              <span className="text-amber-700" data-testid="trip-collecting">
+                Collecting data — some days have no trips on file
+              </span>
+            )}
+          </div>
+          {/* Tiny sparkline of daily km — shown on all tabs once we have multiple data points. */}
+          {d.sparkline && d.sparkline.length > 1 && (
+            <div className="mt-1.5" data-testid="trip-sparkline">
+              <div className="h-7 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={d.sparkline} margin={{ top: 2, right: 2, left: 2, bottom: 2 }}>
+                    <Line type="monotone" dataKey="km" stroke="#F97316" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="text-[9px] text-slate-400">Daily km · last {d.sparkline.length} days</div>
+            </div>
+          )}
+        </>
+      )}
+      <div className="text-[10px] text-slate-500 mt-2 leading-snug">
+        Trips are aggregated from Navixy's track records. Idle time is approximated from inter-trip gaps shorter than 30 minutes.
+      </div>
+    </div>
+  );
+}
+
+function TripTile({ label, value, unit, testid }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2" data-testid={testid}>
+      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{label}</div>
+      <div className="mt-0.5 font-display text-xl font-bold text-slate-900 leading-tight">
+        {value}
+        {unit && <span className="text-[11px] text-slate-400 font-normal ml-1">{unit}</span>}
+      </div>
+    </div>
+  );
 }
 
 function CounterCardShell({ icon: Icon, label, value, unit, sub, accent, testid, children }) {

@@ -1,0 +1,34 @@
+{
+  "summary": "Phase 4.9 (re-shipped counter fix + new /trip-summary endpoint) VERIFIED. 14/14 backend tests pass (100%). H89MY trip-summary values match the brief's ground truth EXACTLY: today=21.42 km/3 trips/93 km/h, week=115.37 km/15 trips/104 km/h, month=665.26 km/56 trips/117 km/h. Schema contract met (range, navixy, from, to, as_of, total_days_in_range, distance_km, drive_seconds, idle_seconds, max_speed_kmh, trip_count, days_available, sparkline). Sparkline length matches total_days_in_range (1/7/30). Cache check confirmed: second call within 60s does NOT emit a new 'navixy.trip_summary' log line. Range validation works (invalid → 422, missing asset → 404, non-Navixy asset → 200 with navixy=false / distance_km=0 / sparkline=[] / no upstream call). Counter fix re-ship verified: /api/assets/navixy/sync-counters returned updated=70 in a single cycle, structured log 'navixy.sync device_id=… hours=… km=… source=counters_v2' present 307 times in backend.err.log, H89MY (tid=10307562) shows hours=554.7032063888893, km=109914.98663535604 (matches Navixy UI within 0.01). Fleet check: 5+ Navixy-synced assets with engine_hours>100 AND odometer_km>500. COMMS_SAFE_MODE respected — zero calls to /users/{id}/invite or /auth/forgot-password.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/assets/{id}/trip-summary?range=invalid", "issue": "Returns HTTP 422 (FastAPI Query regex default) rather than the 400 the brief mentions. Functionally equivalent — request is rejected before reaching handler logic — but if a strict 400 is required, switch to manual validation inside the handler and raise HTTPException(400, ...)."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_navixy_trip_summary_v114.py",
+    "/app/test_reports/pytest/navixy_v114_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL — Decide whether /trip-summary?range=invalid should return 400 (current behaviour is 422 via FastAPI Query regex validation). Brief mentions 400; tests accept either as conformant.",
+    "OPTIONAL — Pass 0.5 counter sync currently logs at log.info per device (~70 lines per cycle, ~280/hour with the 15-min cron). Fine for now but consider DEBUG-gating individual device lines after a week of stability and keeping only a single aggregated 'navixy.sync cycle done: updated=X devices' INFO line for steady-state journals."
+  ],
+  "critical_code_review_comments": [
+    "asset_trip_summary.py — `_aggregate` correctly filters by type=='regular' (matching the brief), aggregates length/max_speed/duration, and derives idle as inter-trip gaps <30 min. Clean and idempotent. Cache key (asset_id, range, org_id) is correct for multi-tenancy. _TRIP_CACHE is module-level dict with no eviction beyond TTL check — fine for current scale (~70 assets × 3 ranges = 210 entries max) but consider periodic pruning if the org count grows.",
+    "asset_trip_summary.py line 130 uses `datetime.utcnow().date()` for sparkline day labels, but range bounds use org-local time (Australia/Sydney). Around midnight Sydney-time this can produce a sparkline label that doesn't include 'today' as the user perceives it. Suggest: `_last_n_days(n, tz)` and `datetime.now(tz).date()`.",
+    "asset_trip_summary.py — range=today's sparkline only contains one entry equal to the full day total. If the UI ever needs hourly buckets for the 'today' chart, this aggregation would need a different shape. Document the contract or split the response by range.",
+    "asset_trip_summary.py line 166 uses Query(regex=...) which yields 422 on invalid input; brief explicitly asks for 400. Trivial fix if strict 400 is desired: drop the regex and validate in-handler with `raise HTTPException(400, ...)`.",
+    "asset_trip_summary.py — `_fetch_tracks` swallows non-2xx with a log.info and returns []. Means upstream Navixy outages silently return 'no driving' to the user. Worth surfacing a `degraded: true` flag in the response when the upstream call errors, so the frontend can show a stale/unavailable indicator instead of '0 km'.",
+    "asset_navixy_sync.py Pass 0.5 (lines 417-459) is exactly the contract requested: idempotent, Semaphore(8), per-device structured log line with `source=counters_v2`, and only writes through `_apply_counters` (refuses to lower a higher value). Re-shipped cleanly after the rollback.",
+    "asset_navixy_sync.py — `_get_counters_one` writes `source_by_tid[tid] = 'panel'` for the counters_v2 branch even though the log emits `source=counters_v2`. Slight inconsistency between the in-memory source tag (which downstream analytics likely consume) and the journal label. Pick one taxonomy ('panel' vs 'counters_v2') and use it everywhere."
+  ],
+  "updated_files": ["/app/backend/tests/test_navixy_trip_summary_v114.py"],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "not tested (backend-only request per brief)"},
+  "test_credentials": "stephen@paneltec.com.au / Mcgstephen50# (admin) — used for /api/assets, /trip-summary, /sync-counters",
+  "seed_data_creation": "None. Tests are read-only against /api/assets and /trip-summary; the only mutation is the existing on-demand POST /api/assets/navixy/sync-counters, which is idempotent (Pass 0.5 refuses to overwrite higher counter values with lower ones). No outbound email/SMS triggered — COMMS_SAFE_MODE on.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Re-run with: cd /app/backend && REACT_APP_BACKEND_URL=https://whs-compliance.preview.emergentagent.com python -m pytest tests/test_navixy_trip_summary_v114.py -v. Suite is 14 tests, runs in ~7s. The module-scoped sync_result fixture triggers /api/assets/navixy/sync-counters exactly once. H89MY actuals at time of testing (2026-06-30 05:30 UTC): today=21.42 km/3 trips, week=115.37/15, month=665.26/56 — these match the Navixy UI ground truth in the brief verbatim. Backend log line confirmed: 'navixy.sync device_id=10307562 hours=554.7032063888893 km=109914.98663535604 source=counters_v2' (307 such structured lines across recent cycles)."
+}
