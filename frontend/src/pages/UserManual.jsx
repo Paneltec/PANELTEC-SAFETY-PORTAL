@@ -164,22 +164,26 @@ export default function UserManual() {
       </div>
 
       {/* 3-col layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_200px] gap-8">
-        {/* TOC (left) */}
-        <aside className="hidden lg:block" data-testid="manual-toc">
-          <div className="sticky top-20">
-            <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-500 mb-2">Contents</div>
-            <ul className="space-y-1.5">
-              {h2s.map((t) => (
-                <li key={t.slug}>
-                  <a href={`#${t.slug}`}
-                    className="block text-sm text-slate-700 hover:text-orange-600 py-1 leading-snug">
-                    {t.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+      <div className="grid grid-cols-1 lg:grid-cols-[220px_1fr_200px] gap-8 items-start">
+        {/* TOC (left) — Phase 4.11.3 (v124) — `sticky top-20` now lives
+            on the <aside> directly (not on an inner <div>) plus
+            `self-start max-h-[calc(100vh-6rem)] overflow-y-auto` so a
+            long TOC scrolls internally instead of pushing the page,
+            and grid stretching can't swallow the sticky anchor. The
+            parent grid carries `items-start` for the same reason. */}
+        <aside className="hidden lg:block sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1"
+               data-testid="manual-toc">
+          <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-500 mb-2">Contents</div>
+          <ul className="space-y-1.5">
+            {h2s.map((t) => (
+              <li key={t.slug}>
+                <a href={`#${t.slug}`}
+                  className="block text-sm text-slate-700 hover:text-orange-600 py-1 leading-snug">
+                  {t.text}
+                </a>
+              </li>
+            ))}
+          </ul>
         </aside>
 
         {/* Main pane */}
@@ -190,21 +194,20 @@ export default function UserManual() {
           }
         </main>
 
-        {/* Right anchor rail */}
-        <aside className="hidden lg:block" data-testid="manual-anchors">
-          <div className="sticky top-20">
-            <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-500 mb-2">On this page</div>
-            <ul className="space-y-1.5">
-              {h3s.slice(0, 12).map((t) => (
-                <li key={t.slug}>
-                  <a href={`#${t.slug}`}
-                    className="block text-[13px] text-slate-500 hover:text-orange-600 py-0.5 leading-snug truncate">
-                    {t.text}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </div>
+        {/* Right anchor rail — same sticky pattern as the TOC. */}
+        <aside className="hidden lg:block sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-1"
+               data-testid="manual-anchors">
+          <div className="text-[11px] uppercase tracking-[0.18em] font-semibold text-slate-500 mb-2">On this page</div>
+          <ul className="space-y-1.5">
+            {h3s.slice(0, 12).map((t) => (
+              <li key={t.slug}>
+                <a href={`#${t.slug}`}
+                  className="block text-[13px] text-slate-500 hover:text-orange-600 py-0.5 leading-snug truncate">
+                  {t.text}
+                </a>
+              </li>
+            ))}
+          </ul>
         </aside>
       </div>
     </div>

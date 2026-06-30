@@ -698,8 +698,26 @@
  *       length because the button now consumes its own flex track.
  *       The `pr-32 sm:pr-40` heading padding is no longer needed and
  *       was removed.
+ *
+ * v124 — Phase 4.11.3 — sticky TOC + anchor rail fix on User Manual.
+ *       User reported the left TOC and right anchor rail scrolled with
+ *       the main content instead of staying anchored on screen.
+ *       Two-part fix:
+ *         (1) Moved `position: sticky` from an inner <div> directly
+ *             onto the <aside> grid items themselves so the sticky
+ *             element IS the direct grid child — no extra wrapper to
+ *             confuse the containing-block resolution.
+ *         (2) Added `items-start` to the grid container + `self-start`
+ *             to each aside so grid's default `align-items: stretch`
+ *             doesn't make the sidebars fill the full row height —
+ *             which would technically defeat sticky positioning
+ *             because the sticky element would already span the
+ *             entire scroll range.
+ *       Also added `max-h-[calc(100vh-6rem)] overflow-y-auto` per
+ *       sidebar so a long TOC scrolls internally instead of pushing
+ *       the page when more sections land in future content updates.
  */
-const CACHE_VERSION = 'paneltec-v123';
+const CACHE_VERSION = 'paneltec-v124';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
