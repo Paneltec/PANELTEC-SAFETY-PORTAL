@@ -285,3 +285,29 @@
 - **Files verified**: PasteSwmsModal.tsx, ScanSwmsModal.tsx (created by prior agent, working correctly)
 - **Web files referenced**: Swms.jsx (paste/scan/bulk-delete patterns, handleCreated, signed_evidence)
 - **All screens verified via screenshot**: SWMS list (Paste+Scan+Create buttons), Paste modal (title+text+counter+submit), Scan modal (Camera+Library+PDF choices), SWMS detail (signed copy card with filename+OCR info)
+
+
+## Iteration 14 — Phase 4.7 (Auth/Password) + 4.8 (Live Counters) + 4.9 (Trip Summary) Wiring
+- **Commit**: 0c93ef5de074024c5165bb522108ed248f74c00f
+- **Date**: 2026-06-30T06:38:00Z
+- **Changes**:
+  - **Phase 4.7 — Auth/Password Flows**:
+    - Updated `app.json`: scheme "paneltec", added NSFaceIDUsageDescription, USE_BIOMETRIC/USE_FINGERPRINT permissions, expo-secure-store + expo-local-authentication plugins
+    - Updated `AuthContext.tsx`: added `mustChangePassword` + `setMustChangePassword` to context type, default, state, and provider value
+    - Updated `app/_layout.tsx`: deep link handler for `paneltec://reset?token=...` → `/(auth)/onboard?flavour=reset`, ChangePasswordModal locked guard when `mustChangePassword` is true
+    - Updated `app/(auth)/login.tsx`: added ForgotPasswordModal (via "Forgot password?" link), "Have a PIN?" link → `/(auth)/pin-redeem`, biometric sign-in button (shows if enrolled + enabled), biometric opt-in Alert after successful password login, `must_change_password` check from user data
+    - Updated `app/(tabs)/settings.tsx`: added SECURITY section with "Change password" row → ChangePasswordModal, biometric sign-in toggle (Switch component, shows only if hardware available)
+  - **Phase 4.8 — Live Counters Card**:
+    - Updated `VehicleMapModal.tsx`: imports LiveCountersCard + TripSummaryCard, constructs `vehicleAsAsset` from Navixy vehicle, renders cards in a ScrollView below the map and coordinates strip, changed map area from flex:1 to height:280
+  - **Phase 4.9 — Trip Summary Card**:
+    - TripSummaryCard rendered below LiveCountersCard, shows Today/This Week/Last Month tabs, fetches from /assets/{id}/trip-summary
+  - Pre-existing files wired in (created by previous agent): passwordRules.ts, biometric.ts, ForgotPasswordModal.tsx, ChangePasswordModal.tsx, onboard.tsx, pin-redeem.tsx, MiniSparkline.tsx, LiveCountersCard.tsx, TripSummaryCard.tsx
+- **Files modified**:
+  - `/app/mobile/app.json` (scheme + permissions + plugins)
+  - `/app/mobile/src/lib/AuthContext.tsx` (mustChangePassword state)
+  - `/app/mobile/app/_layout.tsx` (deep links + forced password guard)
+  - `/app/mobile/app/(auth)/login.tsx` (forgot, PIN, biometric, must_change)
+  - `/app/mobile/app/(tabs)/settings.tsx` (SECURITY section + modal)
+  - `/app/mobile/src/components/VehicleMapModal.tsx` (cards + layout restructure)
+- **Web files referenced**: Auth patterns from frontend login, settings, asset detail
+- **All screens verified via screenshot**: Login (Forgot password + Have a PIN links), Profile (SECURITY section with Change password row), Vehicle modal (Live Counters + Trip Summary cards below map), ForgotPasswordModal, ChangePasswordModal
