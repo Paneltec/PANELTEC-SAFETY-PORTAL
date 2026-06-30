@@ -463,8 +463,62 @@
  *         c) `Cover.jsx` 1px left-edge accent stripe on the sign-in
  *            card was a hard-coded inline `style={{ backgroundColor:
  *            '#2C6BFF' }}` — swapped to `#F97316`.
+ *
+ * v116 — Phase 4.10.1 — PWA / launcher icon regeneration.
+ *       The Phase 4.10 v115 sweep fixed every rendered DOM element but
+ *       missed two binary asset layers that still surfaced cobalt:
+ *       (1) the PWA home-screen tile (apple-touch-icon.png + the
+ *       icon-*.png maskable set referenced by manifest.json), and
+ *       (2) the browser theme-color meta tags (index.html +
+ *       manifest.json `theme_color`). On v115 a worker who installed
+ *       Paneltec Civil to their phone got an orange app launching from
+ *       a cobalt home-screen tile, with a cobalt iOS status bar tint —
+ *       brand break visible every single launch.
+ *
+ *       Changes:
+ *         · New `/app/backend/scripts/regenerate_brand_icons.py` —
+ *           Pillow-based rasteriser that draws the chevron polygon
+ *           (same 24×24 viewBox path data as `Logo.jsx`) at every
+ *           required size. Re-runnable for future brand refreshes.
+ *         · `/app/frontend/public/brand/icon-192.png` — 192×192,
+ *           transparent background, plain orange chevron. Manifest
+ *           "any" purpose.
+ *         · `/app/frontend/public/brand/icon-512.png` — 512×512, same.
+ *         · `/app/frontend/public/brand/icon-maskable-192.png` — NEW —
+ *           192×192 slate-900 background, 20% safe-area pad per W3C
+ *           maskable spec. Manifest "maskable" purpose.
+ *         · `/app/frontend/public/brand/icon-maskable-512.png` —
+ *           512×512, same recipe.
+ *         · `/app/frontend/public/brand/icon-monochrome-512.png` —
+ *           regenerated white-on-slate for Android themed-icon engines.
+ *         · `/app/frontend/public/brand/apple-touch-icon.png` —
+ *           180×180 slate-900 + 12% pad. iOS rounds the corners
+ *           automatically; padding stops the chevron getting clipped
+ *           when the OS applies its rounded-square mask.
+ *         · `/app/frontend/public/brand/mark.png` — regenerated at
+ *           256×256 transparent (was 859 KB cobalt PNG, now ~1.3 KB
+ *           orange — no quality loss, just a polygon at vector
+ *           resolution).
+ *         · `manifest.json` — `theme_color` flipped #2C6BFF → #F97316.
+ *           Added icon-maskable-192 entry and icon-monochrome-512
+ *           entry with `purpose: "monochrome"` so Android 13+ themed
+ *           icons get the right monochrome layer.
+ *         · `index.html` — `<meta name="theme-color">` flipped
+ *           #2C6BFF → #F97316 so non-PWA browser chrome (Chrome on
+ *           Android, Edge top bar, Safari iOS smart banner) reflects
+ *           the orange brand on first paint.
+ *
+ *       KNOWN PWA LIMITATION: iOS and Android both cache home-screen
+ *       icons aggressively — installed PWAs from v115 or earlier will
+ *       continue to show the cobalt tile until the user removes and
+ *       re-adds the app to their home screen, OR the OS triggers its
+ *       own icon refresh cycle (typically when the manifest URL
+ *       changes or the app is reinstalled). This is an OS-level
+ *       behaviour, not something the SW activate handler can clear.
+ *       Communicate to v115 PWA installers: "Reinstall to home screen
+ *       to see the new orange tile."
  */
-const CACHE_VERSION = 'paneltec-v115';
+const CACHE_VERSION = 'paneltec-v116';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
