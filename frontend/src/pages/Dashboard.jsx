@@ -422,17 +422,23 @@ export default function Dashboard() {
         style={{ backgroundImage: 'url(/tile-bgs/compliance.png)' }}
         data-testid="dashboard-banner"
       >
-        {/* Phase 4.11 (v121) — User Manual button. Top-right of the
-            banner so it's the first thing a new user spots after the
-            headline; routes to /app/help. */}
-        <Link to="/app/help" data-testid="dashboard-user-manual-btn"
-          className="absolute top-5 right-5 sm:top-6 sm:right-6 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors">
-          <BookOpen20Regular />
-          User Manual
-        </Link>
-        <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase pr-32 sm:pr-40">Paneltec Civil Intelligence Centre</div>
-        <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900 pr-32 sm:pr-40">Live Compliance Dashboard</h1>
-        <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
+        {/* Phase 4.11.2 (v123) — switched from absolute-positioned
+            button to a flex layout so the User Manual CTA can never
+            overlap the headline copy again. Left column carries the
+            eyebrow + H1 + lede; the button sits in its own column,
+            top-aligned, on the right. */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase">Paneltec Civil Intelligence Centre</div>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900">Live Compliance Dashboard</h1>
+            <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
+          </div>
+          <Link to="/app/help" data-testid="dashboard-user-manual-btn"
+            className="self-start shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors">
+            <BookOpen20Regular />
+            User Manual
+          </Link>
+        </div>
       </div>
 
       {/* Compliance Snapshot — value-prop cards (Thread B) */}

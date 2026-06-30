@@ -683,8 +683,23 @@
  *         markdown file's timestamp changes) pick up new content
  *         instantly with zero backend restart. Dropped the unused
  *         `import time`.
+ *
+ * v123 — Phase 4.11.2 — User Manual button position fix.
+ *       User feedback: "could you position the user manual tab to a
+ *       different position, it is over some wording at the moment
+ *       about 15 mm up should work." The v121 implementation used
+ *       `absolute top-5 right-5` which still overlapped the banner
+ *       copy on some viewport widths even after the v122 `pr-32 sm:pr-40`
+ *       padding gutter. Permanent fix: dropped the absolute positioning
+ *       entirely and switched the banner to a flex layout — left
+ *       column carries eyebrow + H1 + lede, button gets its own
+ *       column (top-aligned, `self-start`, `shrink-0`). No further
+ *       overlap is possible regardless of viewport width or copy
+ *       length because the button now consumes its own flex track.
+ *       The `pr-32 sm:pr-40` heading padding is no longer needed and
+ *       was removed.
  */
-const CACHE_VERSION = 'paneltec-v122';
+const CACHE_VERSION = 'paneltec-v123';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
