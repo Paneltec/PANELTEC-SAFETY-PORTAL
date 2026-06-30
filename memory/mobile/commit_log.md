@@ -311,3 +311,32 @@
   - `/app/mobile/src/components/VehicleMapModal.tsx` (cards + layout restructure)
 - **Web files referenced**: Auth patterns from frontend login, settings, asset detail
 - **All screens verified via screenshot**: Login (Forgot password + Have a PIN links), Profile (SECURITY section with Change password row), Vehicle modal (Live Counters + Trip Summary cards below map), ForgotPasswordModal, ChangePasswordModal
+
+
+
+## Iteration 15 — Phase 4.12: Sites + QR Sign-On (Dependencies & Testing)
+- **Commit**: 3327c0b5b12773792c92bc27bb4df89323347f1b
+- **Date**: 2026-06-30T09:43:00Z
+- **Changes**:
+  - Installed `expo-location@19.0.8` (SDK 54 compatible — v56 was incompatible, caused `createPermissionHook is not a function` error)
+  - Fixed missing StyleSheet entries in `_layout.tsx`: added `signoffBanner`, `signoffText`, `signoffBtn`, `signoffBtnText` styles (code referenced them but they weren't defined)
+  - Restarted mobile service after `app.json` plugin changes + dependency install
+- **Verified via screenshot**:
+  - QR Scanner tab: viewfinder + URL input + 3 scan type buttons ✅
+  - Site scan result (Erskineville Turnout): site header, GPS chip, worker pre-fill, dynamic questions (PPE yes/no), SWMS checkboxes ✅
+  - Sign-on POST success: confirmation card with checkmark, site name, time, pass expiry (7/1/2026) ✅
+  - Persistent sign-off banner: orange "On-site: Erskineville Turnout — Sample Site" with Sign Off button at top of tab layout ✅
+  - Module gating: QR Sign-On tab only visible when `modules.sign_on` is true ✅
+- **Phase 4.12 Requirements Met**:
+  1. QR scanner recognises site QR codes (`/scan/site/{token}`) ✅
+  2. In-app sign-on: pre-fill name, GPS via expo-location, dynamic signon_questions, POST, save signon_id ✅
+  3. Persistent sign-off banner in layout when active sign-on (POST `/api/me/signoff-active`) ✅
+  4. Feature gated behind `modules.sign_on` flag ✅
+- **Files modified**:
+  - `/app/mobile/app/(tabs)/_layout.tsx` (added missing sign-off banner styles)
+  - `/app/mobile/package.json` (expo-location@19.0.8 added)
+  - `/app/mobile/yarn.lock` (updated)
+- **Files verified (from previous agent)**:
+  - `/app/mobile/src/lib/signon.ts` ✅ (PubSub state manager)
+  - `/app/mobile/src/components/scan/SiteScanResult.tsx` ✅ (GPS + questions + sign-on POST)
+  - `/app/mobile/app.json` ✅ (expo-location plugin + permissions)
