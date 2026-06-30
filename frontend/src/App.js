@@ -47,6 +47,7 @@ import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
 import Certifications from '@/pages/Certifications';
+import UserManual from '@/pages/UserManual';
 import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-line no-unused-vars
 import FormSubmissions from '@/pages/FormSubmissions';
 // Phase 4.7 — public token-driven password flows + must-change guard.
@@ -132,6 +133,7 @@ function App() {
               <Route path="forms/templates/:templateId/submissions" element={<FormSubmissions />} />
               <Route path="outbox" element={<Outbox />} />
               <Route path="profile" element={<MyProfile />} />
+              <Route path="help" element={<UserManual />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/" replace />} />

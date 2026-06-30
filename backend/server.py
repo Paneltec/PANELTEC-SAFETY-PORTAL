@@ -25,6 +25,7 @@ from asset_meter_history import (  # noqa: E402
 )
 from asset_navixy_dashboards import router as asset_navixy_dashboards_router  # noqa: E402
 from forms_pickers import router as forms_pickers_router  # noqa: E402
+from help_routes import router as help_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
@@ -231,6 +232,7 @@ api.include_router(supplier_scan_router)
 api.include_router(contractors_qr_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
+api.include_router(help_router)
 
 app.include_router(api)
 

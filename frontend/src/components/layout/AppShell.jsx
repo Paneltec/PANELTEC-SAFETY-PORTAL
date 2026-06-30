@@ -34,6 +34,7 @@ import {
   Settings24Regular, Settings24Filled,
   Trophy24Regular, Trophy24Filled,
   Mail24Regular, Mail24Filled,
+  BookOpen24Regular, BookOpen24Filled,
 } from '@fluentui/react-icons';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -85,6 +86,10 @@ const NAV = [
     { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
     { to: '/app/outbox', label: 'Email outbox', icon: Mail24Regular, iconActive: Mail24Filled, testid: 'nav-outbox', pastel: 'slate' },
+    // Phase 4.11 (v121) — top-level Help entry so the user manual is
+    // discoverable from anywhere in the app, not just the dashboard
+    // header button.
+    { to: '/app/help', label: 'User Manual', icon: BookOpen24Regular, iconActive: BookOpen24Filled, testid: 'nav-help', pastel: 'lavender' },
   ]},
 ];
 

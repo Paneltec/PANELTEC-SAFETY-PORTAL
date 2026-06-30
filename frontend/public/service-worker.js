@@ -629,8 +629,46 @@
  *       The wildcard-to-cover fallback is intentional belt-and-braces
  *       routing behaviour and stays in place. The drift was a
  *       hand-coded string mismatch, not a guard or permission bug.
+ *
+ * v121 — Phase 4.11 — comprehensive in-app User Manual.
+ *       New top-level help surface backed by a single markdown source
+ *       at `/app/backend/content/user_manual.md`. Both renderings
+ *       (web HTML + branded PDF) share the same source so the manual
+ *       cannot drift between the in-app reader and the downloadable
+ *       artefact.
+ *         · Backend — `help_routes.py` exposes `GET /api/help/manual.md`
+ *           (raw markdown) and `GET /api/help/manual.pdf` (ReportLab
+ *           render using the v118 `pdf_brand.py` orange/slate palette,
+ *           with chevron + wordmark header band and footer page #).
+ *           Both responses cached in-process for 5 min.
+ *         · Frontend — `UserManual.jsx` renders the markdown with
+ *           react-markdown + remark-gfm. Three-column layout: sticky
+ *           TOC (H2 anchors) on the left, content in the middle with
+ *           slug ids on every heading, sticky "On this page" rail
+ *           (H3 anchors) on the right. Header carries a search input
+ *           that highlights in-page matches with the brand
+ *           orange-200 mark colour and scrolls to the first hit, plus
+ *           an orange Download PDF button that streams the cached
+ *           PDF for offline reading.
+ *         · Mount points — Dashboard.jsx banner now carries a top-
+ *           right "User Manual" button (BookOpen20Regular Fluent icon)
+ *           routing to `/app/help`, and `AppShell.jsx` sidebar gains
+ *           a new top-level "User Manual" nav entry under the Email
+ *           outbox row so the manual is discoverable from anywhere.
+ *         · Content — 13 sections covering every shipped feature in
+ *           friendly Australian English with concrete step-by-step
+ *           procedures: getting started + PWA install, dashboard,
+ *           SWMS (incl. paste + scan + bulk delete), the four field
+ *           captures, workers/users/permissions/mobile modules,
+ *           contractors + renewal links + QR resolvers, plant &
+ *           vehicles (live counters / trip summary / manual snapshots
+ *           / source pills), sites + sign-on (coming-soon flagged
+ *           where appropriate), certifications + inductions matrix +
+ *           ID cards, audit exports (dual JSON+PDF), Comms Safe Mode
+ *           explainer, mobile/PWA + offline, and a troubleshooting
+ *           FAQ. No "Lorem ipsum" or TODO placeholders.
  */
-const CACHE_VERSION = 'paneltec-v120';
+const CACHE_VERSION = 'paneltec-v121';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

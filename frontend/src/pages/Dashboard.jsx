@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, BarChart3, Sparkles, Database, Radar, FileSearch, AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
@@ -12,6 +12,7 @@ import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import {
   ArrowDownload20Regular as Download,
   Eye20Regular as Eye,
+  BookOpen20Regular,
 } from '@fluentui/react-icons';
 
 const ICONS = { FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, Sparkles, Database, Radar, Eye, HardHat, Award, UserCog, Users2, FolderOpen, Truck, ClipboardList };
@@ -417,10 +418,18 @@ export default function Dashboard() {
   return (
     <div className="max-w-[1400px] mx-auto" data-testid="dashboard-page">
       <div
-        className="page-banner mb-8 px-6 sm:px-8 py-7 sm:py-9 border border-slate-200 shadow-sm"
+        className="page-banner mb-8 px-6 sm:px-8 py-7 sm:py-9 border border-slate-200 shadow-sm relative"
         style={{ backgroundImage: 'url(/tile-bgs/compliance.png)' }}
         data-testid="dashboard-banner"
       >
+        {/* Phase 4.11 (v121) — User Manual button. Top-right of the
+            banner so it's the first thing a new user spots after the
+            headline; routes to /app/help. */}
+        <Link to="/app/help" data-testid="dashboard-user-manual-btn"
+          className="absolute top-5 right-5 sm:top-6 sm:right-6 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors">
+          <BookOpen20Regular />
+          User Manual
+        </Link>
         <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase">Paneltec Civil Intelligence Centre</div>
         <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900">Live Compliance Dashboard</h1>
         <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
