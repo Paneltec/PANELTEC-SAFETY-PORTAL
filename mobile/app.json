@@ -5,14 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "mobile",
+    "scheme": "paneltec",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "Scan QR codes and capture hazard photos",
-        "NSPhotoLibraryUsageDescription": "Attach site photos to reports"
+        "NSPhotoLibraryUsageDescription": "Attach site photos to reports",
+        "NSFaceIDUsageDescription": "Sign in quickly with Face ID"
       }
     },
     "android": {
@@ -21,7 +22,7 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "USE_BIOMETRIC", "USE_FINGERPRINT"]
     },
     "web": {
       "bundler": "metro",
@@ -31,6 +32,11 @@
     "plugins": [
       "expo-router",
       "expo-image-picker",
+      "expo-secure-store",
+      [
+        "expo-local-authentication",
+        { "faceIDPermission": "Sign in quickly with Face ID" }
+      ],
       [
         "expo-camera",
         { "cameraPermission": "Scan QR codes for crew sign-on" }

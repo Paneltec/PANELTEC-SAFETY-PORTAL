@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Alert, RefreshControl, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { getUser, signOut, initials } from '../../src/lib/auth';
+import { getUser, signOut, initials, getToken } from '../../src/lib/auth';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
 import { useRouter } from 'expo-router';
+import ChangePasswordModal from '../../src/components/auth/ChangePasswordModal';
+import { isBiometricAvailable, isBiometricEnabled, getBiometricType, storeBiometricToken, clearBiometric } from '../../src/lib/biometric';
 
 const WORKSPACES = [
   { id: '751d9aeb-60ca-476f-b8db-c387144c59b7', name: 'Sydney Metro' },
@@ -18,8 +20,38 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<any>(null);
   const [activeWs, setActiveWs] = useState(WORKSPACES[0].id);
   const [refreshing, setRefreshing] = useState(false);
+  const [showChangePw, setShowChangePw] = useState(false);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioEnabled, setBioEnabled] = useState(false);
+  const [bioType, setBioType] = useState('Biometric');
 
   useEffect(() => { getUser().then(setUser); }, []);
+
+  useEffect(() => {
+    (async () => {
+      const avail = await isBiometricAvailable();
+      setBioAvailable(avail);
+      if (avail) {
+        const enabled = await isBiometricEnabled();
+        setBioEnabled(enabled);
+        const t = await getBiometricType();
+        setBioType(t);
+      }
+    })();
+  }, []);
+
+  const toggleBiometric = async (val: boolean) => {
+    if (val) {
+      const tok = await getToken();
+      if (tok) {
+        await storeBiometricToken(tok);
+        setBioEnabled(true);
+      }
+    } else {
+      await clearBiometric();
+      setBioEnabled(false);
+    }
+  };
 
   const handleSignOut = () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
@@ -91,6 +123,29 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* Security section */}
+        <Text style={s.sectionLabel}>SECURITY</Text>
+        <View style={s.section}>
+          <TouchableOpacity testID="settings-change-password" style={s.row} activeOpacity={0.7} onPress={() => setShowChangePw(true)}>
+            <Ionicons name="lock-closed" size={20} color={Colors.textSecondary} />
+            <Text style={s.rowText}>Change password</Text>
+            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+          </TouchableOpacity>
+          {bioAvailable && (
+            <View style={s.row}>
+              <Ionicons name="finger-print" size={20} color={Colors.textSecondary} />
+              <Text style={[s.rowText, { flex: 1 }]}>{bioType} sign-in</Text>
+              <Switch
+                testID="settings-biometric-toggle"
+                value={bioEnabled}
+                onValueChange={toggleBiometric}
+                trackColor={{ false: '#E2E8F0', true: '#93C5FD' }}
+                thumbColor={bioEnabled ? Colors.blue : '#CBD5E1'}
+              />
+            </View>
+          )}
+        </View>
+
         {/* Settings links — gated by modules */}
         <Text style={s.sectionLabel}>SETTINGS</Text>
         <View style={s.section}>
@@ -116,6 +171,8 @@ export default function ProfileScreen() {
           <Ionicons name="log-out" size={20} color={Colors.red} />
           <Text style={s.signOutText}>Sign out</Text>
         </TouchableOpacity>
+
+        <ChangePasswordModal visible={showChangePw} onClose={() => setShowChangePw(false)} />
       </ScrollView>
     </SafeAreaView>
   );

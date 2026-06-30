@@ -1,11 +1,13 @@
 import React from 'react';
 import {
   View, Text, Modal, StyleSheet, TouchableOpacity, SafeAreaView,
-  Platform,
+  Platform, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Linking from 'expo-linking';
 import { Colors } from '../lib/colors';
+import LiveCountersCard from './LiveCountersCard';
+import TripSummaryCard from './TripSummaryCard';
 
 // On web we use an iframe; on native we'd use react-native-webview.
 // For the Expo web preview we render an iframe directly.
@@ -25,6 +27,7 @@ type Props = {
 export default function VehicleMapModal({ vehicle, visible, onClose }: Props) {
   if (!vehicle) return null;
   const hasGps = typeof vehicle.lat === 'number' && typeof vehicle.lng === 'number';
+  const vehicleAsAsset = { ...vehicle, kind: 'vehicle', navixy_device_id: vehicle.id };
   const isLive = vehicle.status !== 'offline';
   const trackerId = vehicle.id;
   const embedSrc = hasGps
@@ -111,6 +114,12 @@ export default function VehicleMapModal({ vehicle, visible, onClose }: Props) {
               </View>
             </View>
           )}
+
+          {/* Asset detail cards */}
+          <ScrollView testID="vehicle-cards-section" style={s.cardsSection} contentContainerStyle={s.cardsContent}>
+            <LiveCountersCard asset={vehicleAsAsset} />
+            <TripSummaryCard asset={vehicleAsAsset} />
+          </ScrollView>
         </View>
       </SafeAreaView>
     </Modal>
@@ -131,7 +140,9 @@ const s = StyleSheet.create({
   headerDivider: { fontSize: 11, color: Colors.textTertiary },
   headerTracker: { fontSize: 11, color: Colors.textTertiary },
   closeBtn: { padding: 6 },
-  body: { flex: 1, backgroundColor: '#F1F5F9' },
+  body: { height: 280, backgroundColor: '#F1F5F9' },
+  cardsSection: { flex: 1, backgroundColor: Colors.bg },
+  cardsContent: { padding: 12 },
   noGps: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },
   noGpsIcon: { width: 64, height: 64, borderRadius: 16, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   noGpsTitle: { fontSize: 20, fontWeight: '700', color: Colors.ink, textAlign: 'center' },

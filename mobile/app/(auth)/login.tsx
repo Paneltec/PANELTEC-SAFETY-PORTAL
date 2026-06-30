@@ -1,34 +1,90 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, ActivityIndicator,
+  Platform, ScrollView, ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { login, loginWithSimpro } from '../../src/lib/auth';
-import { apiError } from '../../src/lib/api';
+import { login, loginWithSimpro, getToken } from '../../src/lib/auth';
+import api, { apiError, TOKEN_KEY, USER_KEY } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
+import ForgotPasswordModal from '../../src/components/auth/ForgotPasswordModal';
+import { isBiometricAvailable, isBiometricEnabled, getBiometricType, storeBiometricToken, authenticateWithBiometric, clearBiometric } from '../../src/lib/biometric';
+import { setPermissions } from '../../src/lib/permissions';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { setAuth, refreshModules } = useAuth();
+  const { setAuth, refreshModules, setMustChangePassword } = useAuth();
   const [email, setEmail] = useState('demo@paneltec.com');
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [busySimpro, setBusySimpro] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [bioReady, setBioReady] = useState(false);
+  const [bioType, setBioType] = useState('Biometric');
+
+  React.useEffect(() => {
+    (async () => {
+      const avail = await isBiometricAvailable();
+      const enabled = await isBiometricEnabled();
+      if (avail && enabled) {
+        setBioReady(true);
+        const t = await getBiometricType();
+        setBioType(t);
+      }
+    })();
+  }, []);
+
+  const handleBiometricLogin = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const result = await authenticateWithBiometric();
+      if (result.success && result.token) {
+        await AsyncStorage.setItem(TOKEN_KEY, result.token);
+        const { data: me } = await api.get('/auth/me');
+        await AsyncStorage.setItem(USER_KEY, JSON.stringify(me));
+        if (me.effective_permissions) await setPermissions(me.effective_permissions);
+        await refreshModules();
+        if (me.must_change_password) setMustChangePassword(true);
+        setAuth(true);
+      }
+    } catch {
+      await clearBiometric();
+      setBioReady(false);
+      setError('Session expired — please sign in with your password.');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const submit = async () => {
     setError('');
     if (!email || !password) { setError('Enter an email and password to continue.'); return; }
     setBusy(true);
     try {
-      await login(email, password);
-      // Refresh module map in context (login() already cached it)
+      const user = await login(email, password);
       await refreshModules();
-      setAuth(true);
+      if (user?.must_change_password) setMustChangePassword(true);
+      const bioAvail = await isBiometricAvailable();
+      const bioEnrolled = await isBiometricEnabled();
+      if (bioAvail && !bioEnrolled) {
+        const t = await getBiometricType();
+        Alert.alert(`Enable ${t}?`, `Sign in faster next time with ${t}.`, [
+          { text: 'Not now', onPress: () => setAuth(true) },
+          { text: 'Enable', onPress: async () => {
+            const tok = await getToken();
+            if (tok) await storeBiometricToken(tok);
+            setAuth(true);
+          }},
+        ]);
+      } else {
+        setAuth(true);
+      }
     } catch (err: any) {
       const msg = apiError(err) || 'Invalid email or password.';
       const detail = err?.response?.data?.detail;
@@ -128,6 +184,10 @@ export default function LoginScreen() {
 
             {error ? <Text testID="login-error" style={styles.error}>{error}</Text> : null}
 
+            <TouchableOpacity testID="forgot-password-link" onPress={() => setShowForgot(true)} style={{ marginTop: 6 }}>
+              <Text style={styles.link}>Forgot password?</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity testID="login-submit" style={styles.btn} onPress={submit} disabled={busy} activeOpacity={0.7}>
               {busy ? (
                 <ActivityIndicator color="#fff" size="small" />
@@ -168,6 +228,19 @@ export default function LoginScreen() {
               <Text style={styles.link}>Start your free trial</Text>
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity testID="login-pin-redeem" onPress={() => router.push('/(auth)/pin-redeem')} style={{ marginTop: 12, alignItems: 'center' }}>
+            <Text style={styles.link}>Have a PIN?</Text>
+          </TouchableOpacity>
+
+          {bioReady && (
+            <TouchableOpacity testID="login-biometric" style={styles.bioBtn} onPress={handleBiometricLogin} disabled={busy} activeOpacity={0.7}>
+              <Ionicons name={bioType === 'Face ID' ? 'scan' : 'finger-print'} size={20} color={Colors.blue} />
+              <Text style={styles.bioBtnText}>Sign in with {bioType}</Text>
+            </TouchableOpacity>
+          )}
+
+          <ForgotPasswordModal visible={showForgot} onClose={() => setShowForgot(false)} />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -220,4 +293,10 @@ const styles = StyleSheet.create({
   },
   simproBtnText: { fontSize: 15, fontWeight: '500', color: Colors.text },
   simproHint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, textAlign: 'center' },
+  bioBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    paddingVertical: 14, marginTop: 12, backgroundColor: Colors.blueSoft, minHeight: 50,
+  },
+  bioBtnText: { fontSize: 15, fontWeight: '600', color: Colors.blue },
 });

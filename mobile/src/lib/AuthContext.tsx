@@ -18,6 +18,8 @@ type AuthCtx = {
   modulesLoading: boolean;
   isPreviewing: boolean;
   previewedRole: string | null;
+  mustChangePassword: boolean;
+  setMustChangePassword: (v: boolean) => void;
 };
 
 const Ctx = createContext<AuthCtx>({
@@ -25,6 +27,7 @@ const Ctx = createContext<AuthCtx>({
   refreshPerms: async () => {}, forceLogout: () => {},
   modules: { ...SAFE_FALLBACK }, refreshModules: async () => false, modulesLoading: false,
   isPreviewing: false, previewedRole: null,
+  mustChangePassword: false, setMustChangePassword: () => {},
 });
 
 export const useAuth = () => useContext(Ctx);
@@ -56,6 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [modulesLoading, setModulesLoading] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewedRole, setPreviewedRole] = useState<string | null>(null);
+  const [mustChangePassword, setMustChangePw] = useState(false);
   const appState = useRef(AppState.currentState);
 
   const setAuth = useCallback((v: boolean) => setIsAuth(v), []);
@@ -142,6 +146,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuth, setAuth, perms, refreshPerms, forceLogout,
       modules, refreshModules, modulesLoading,
       isPreviewing, previewedRole,
+      mustChangePassword, setMustChangePassword: setMustChangePw,
     }}>
       {children}
     </Ctx.Provider>

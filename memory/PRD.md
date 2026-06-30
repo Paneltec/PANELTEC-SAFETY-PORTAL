@@ -1991,3 +1991,92 @@ Mid-cleanup the file ended up with an orphaned `})();` and `}, []);`
 between `useEffect` and `fetchEmployees`, plus a stray `</div>` in the
 footer. Both fixed; ESLint clean (only pre-existing exhaustive-deps
 warnings on the file).
+
+
+## 2026-06-30 — Phase 4.9.1 (paneltec-v114): three production bug fixes
+
+### Bug 1 — Odometer paradox repair
+Some Navixy-synced assets stored a lifetime `odo_km` LOWER than the
+last-30-day trip distance (e.g. truck reported 3,300 km lifetime while
+logging 1,672 km in the month alone — impossible for a 25-month-old
+vehicle). Root cause: `/v2/tracker/get_counters` returned `[]` for some
+trackers (X-GPS phone-tracker devices, etc.) so we fell through to
+`navixy_tracks_window`, which is a rolling 90-day window, not a
+cumulative lifetime.
+
+**Backend** (`asset_navixy_sync.py`):
+- New `_fetch_lifetime_via_report` — best-effort `/v2/report/generate`
+  mileage probe. Returns 400 on the current Paneltec plan ("Wrong
+  handler: 'report'") so it short-circuits to step 2 — kept for
+  forward-compat when the plan is upgraded.
+- New `_sum_tracks_lifetime` — chunked `/v2/track/list` sum back to
+  `created_at` (cap 730 days). Source label `navixy_tracks_lifetime`.
+- New `_repair_paradoxical_lifetimes_for_org(org_id)` — for every asset
+  where `odo_km < month_km` (and `month_km > 0` — silent trackers are
+  skipped), tries report → track-sum → flag `lifetime_unreliable=true`.
+  Clears the flag when a subsequent sync makes the lifetime sensible
+  again. Hooked into `sync_navixy_counters` after each org sync.
+- New admin endpoint `POST /api/assets/navixy/repair-lifetimes` for
+  one-off manual triggering.
+
+**Frontend** (`LiveCountersPanel.jsx`):
+- New `UnreliableOdoCard` component — amber bordered card replacing the
+  misleading low number when `asset.lifetime_unreliable===true`. Body
+  copy: "Lifetime not available — No panel counter — the GPS-derived
+  estimate is lower than this month's trips. Add a historical reading
+  to anchor future deltas."
+- Admins see an inline form (date + km) that POSTs to
+  `/api/assets/{id}/meter-history`. Refetches the asset on success.
+- `srcLabel` now distinguishes `navixy_report` ("mileage report") and
+  `navixy_tracks_lifetime` ("sum of all trips since first sync") from
+  the legacy `navixy_tracks_window`.
+
+### Bug 2 — engine_hours monotonicity in manual snapshot POST
+`POST /api/assets/{id}/meter-history` already returned 409 when an
+older snapshot's `odometer_km` exceeded a younger one; the same rule
+now applies to `engine_hours`. The next-younger-snapshot query
+explicitly requires `engine_hours_total: {$ne: null}` so backfill
+anchors with NULL hours don't silently skip the validation.
+
+Verified live: POST `engine_hours=99999` for `date=2020-01-15` against
+H89MY (current hours=481.7) → HTTP 409 with friendly message. POST
+`engine_hours=0.5` → HTTP 200.
+
+### Bug 3 — Pasted text retention in SWMS paste dialog
+`Swms.jsx PasteSwmsDialog.onPaste` defensively re-reads
+`taRef.current.value` on next tick and forces `setText`, closing the
+Word/Outlook combined `text/html` + `text/plain` clipboard race that
+was dropping plain text after the HTML branch hijacked the render.
+
+Other paste surfaces audited and confirmed safe (no `onPaste` handler
+at all → browser native paste + controlled-input semantics):
+`Ask.jsx` `#ask-input`, `SiteDiary.jsx` entry field,
+`FormSubmissions.jsx`, all dialog-mounted controlled inputs.
+
+Verified live via Playwright: pasted 350 chars into the SWMS textarea
+→ all 350 retained, character counter updated, "Parse with AI" button
+enabled. Zero JS console errors.
+
+### Shipping notes
+- CACHE_VERSION bumped `paneltec-v113` → `paneltec-v114` with the full
+  v114 changelog entry in `service-worker.js`. Activate handler will
+  hard-purge every cache that doesn't carry the `paneltec-v114` prefix
+  and broadcast `paneltec_sw_force_reload` to all open tabs.
+- COMMS_SAFE_MODE stays ON (env-locked) — no email/SMS were sent during
+  testing.
+- Pre-existing pytest `tests/test_navixy_trip_summary_v114.py` (14
+  tests) still passes. Testing agent ran an additional v114-specific
+  suite at `/app/backend/tests/test_v114_bugs.py` — 4/4 direct tests
+  pass; 7 skipped tests are a cosmetic test-helper shape mismatch
+  (paginated dict vs plain list) — not product bugs.
+
+### Acceptance criteria — STATUS
+- [x] Lifetime odometer for paradoxical assets now reads a value
+      ≥ 30-day trip distance OR the UI shows the "Lifetime not
+      available — Add a historical reading" fallback when no upstream
+      source exists.
+- [x] POST meter-history returns 409 on engine_hours violations too.
+- [x] Paste into the SWMS textarea now retains 350+ chars.
+- [x] CACHE_VERSION bumped paneltec-v113 → paneltec-v114 with v114
+      changelog covering all three fixes.
+

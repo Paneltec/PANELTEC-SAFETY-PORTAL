@@ -1,21 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 import { getToken } from '../src/lib/auth';
 import { AuthProvider, useAuth } from '../src/lib/AuthContext';
 import { isPreviewMode } from '../src/lib/preview';
+import ChangePasswordModal from '../src/components/auth/ChangePasswordModal';
 
 function RootNav() {
   const [isReady, setIsReady] = useState(false);
-  const { isAuth, setAuth } = useAuth();
+  const { isAuth, setAuth, mustChangePassword, setMustChangePassword } = useAuth();
   const router = useRouter();
   const segments = useSegments();
 
   useEffect(() => {
     (async () => {
       if (isPreviewMode) {
-        // Preview mode: AuthContext auto-sets isAuth=true in its boot useEffect.
-        // Just mark as ready — don't read from storage.
         setIsReady(true);
         return;
       }
@@ -23,6 +23,21 @@ function RootNav() {
       setAuth(!!token);
       setIsReady(true);
     })();
+  }, []);
+
+  // Deep link: paneltec://reset?token=... → /(auth)/onboard?flavour=reset
+  useEffect(() => {
+    const handle = (event: { url: string }) => {
+      try {
+        const parsed = Linking.parse(event.url);
+        if (parsed.path === 'reset' && parsed.queryParams?.token) {
+          router.replace({ pathname: '/(auth)/onboard', params: { token: parsed.queryParams.token as string, flavour: 'reset' } });
+        }
+      } catch {}
+    };
+    Linking.getInitialURL().then(url => { if (url) handle({ url }); });
+    const sub = Linking.addEventListener('url', handle);
+    return () => sub.remove();
   }, []);
 
   useEffect(() => {
@@ -40,6 +55,12 @@ function RootNav() {
   return (
     <>
       <StatusBar style="dark" />
+      <ChangePasswordModal
+        visible={isAuth && mustChangePassword}
+        locked={true}
+        onClose={() => {}}
+        onChanged={() => setMustChangePassword(false)}
+      />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
