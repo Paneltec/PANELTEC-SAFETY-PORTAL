@@ -753,8 +753,21 @@
  *       enough to push the sidebar off-screen (User Manual,
  *       Permission Presets) now see the sidebar pinned in place as
  *       intended. One-line change.
+ * v127 — Phase 4.12 Sites + QR sign-on. New backend endpoints under
+ *        /api/sites for manual-site CRUD, soft-delete + recycle bin,
+ *        per-site sign-on questions and a public visitor sign-on path
+ *        (`/scan/site/{token}/sign-on-visitor`). Frontend gains Add /
+ *        Edit / Recycle-bin modals in SitesAdmin plus dynamic-question
+ *        rendering + GPS capture + visitor name/company/phone form in
+ *        SiteScanResolver. Sign-ons now carry GPS distance from site
+ *        (warn-only at >250m) and the dynamic answers list.
+ * v128 — Phase 4.12.1 mobile resolver fix. `GET /api/assets/{id}/meter-
+ *        trends` and `/trip-summary` now also accept a numeric Navixy
+ *        tracker_id (falls back to a `navixy_device_id` lookup) so the
+ *        Expo app stops 404-ing when it passes upstream IDs. Logged as
+ *        `assets.id_resolver via tracker_id=X → asset_id=Y`.
  */
-const CACHE_VERSION = 'paneltec-v126';
+const CACHE_VERSION = 'paneltec-v128';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

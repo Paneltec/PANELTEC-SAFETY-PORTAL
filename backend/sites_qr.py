@@ -25,6 +25,7 @@ import io
 import secrets
 import string
 from datetime import datetime, timezone, timedelta
+from typing import Any
 
 import qrcode
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -86,8 +87,16 @@ def _make_qr_png(data: str, box: int = 8) -> bytes:
 async def resolve_site_scan(scan_token: str):
     """Anyone holding the URL can see the site basics. We deliberately do NOT
     leak the org_id back to the caller — only the human-readable bits + a
-    list of active SWMS that should be acknowledged at sign-on."""
-    site = await db.simpro_sites.find_one({"scan_token": scan_token}, {"_id": 0})
+    list of active SWMS that should be acknowledged at sign-on.
+
+    Phase 4.12 (v127): also returns `signon_questions` so the public visitor
+    flow can render dynamic questions. Soft-deleted sites are treated like a
+    bad token to avoid info leak."""
+    site = await db.simpro_sites.find_one(
+        {"scan_token": scan_token,
+         "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]},
+        {"_id": 0},
+    )
     if not site:
         raise HTTPException(404, "Scan token not recognised")
 
@@ -103,6 +112,17 @@ async def resolve_site_scan(scan_token: str):
             "code": s.get("code"), "version": s.get("version"),
         })
 
+    # v127 — strip server-only flags off questions before exposing.
+    public_questions = []
+    for q in (site.get("signon_questions") or []):
+        public_questions.append({
+            "id": q.get("id"),
+            "type": q.get("type"),
+            "label": q.get("label"),
+            "required": bool(q.get("required")),
+            "choices": q.get("choices") if q.get("type") == "choice" else None,
+        })
+
     return {
         "scan_token": scan_token,
         "site": {
@@ -112,22 +132,72 @@ async def resolve_site_scan(scan_token: str):
             "suburb": site.get("suburb"),
             "state": site.get("state"),
             "lat": site.get("latitude"), "lng": site.get("longitude"),
+            "kind": site.get("kind") or "simpro",
         },
         "active_swms": swms_rows,
+        "signon_questions": public_questions,
         "signon_url": f"/api/scan/site/{scan_token}/sign-on",
+        "visitor_signon_url": f"/api/scan/site/{scan_token}/sign-on-visitor",
     }
+
+
+class SignOnAnswerIn(BaseModel):
+    question_id: str
+    value: Any | None = None     # bool | str — type matches question type
 
 
 class SignOnIn(BaseModel):
     worker_id: str | None = None
     swms_acknowledged: list[str] = []
     certifications_ack: list[str] = []
+    # v127 extras
+    gps_lat: float | None = None
+    gps_long: float | None = None
+    gps_accuracy_m: float | None = None
+    answers: list[SignOnAnswerIn] = []
+
+
+def _effective_site_gps(site: dict) -> tuple[float | None, float | None]:
+    """v127 — admin gps_override wins, else manual_*, else simpro lat/long."""
+    if site.get("gps_override_lat") is not None and site.get("gps_override_long") is not None:
+        return float(site["gps_override_lat"]), float(site["gps_override_long"])
+    if site.get("kind") == "manual":
+        if site.get("manual_gps_lat") is not None and site.get("manual_gps_long") is not None:
+            return float(site["manual_gps_lat"]), float(site["manual_gps_long"])
+    if site.get("latitude") is not None and site.get("longitude") is not None:
+        return float(site["latitude"]), float(site["longitude"])
+    return None, None
+
+
+def _haversine_m(a_lat: float, a_lng: float, b_lat: float, b_lng: float) -> float:
+    import math
+    r = 6_371_000.0
+    p1, p2 = math.radians(a_lat), math.radians(b_lat)
+    dp = math.radians(b_lat - a_lat)
+    dl = math.radians(b_lng - a_lng)
+    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(h))
+
+
+def _gps_warning(site: dict, lat: float | None, lng: float | None) -> tuple[bool, float | None, bool]:
+    """Returns (warning, distance_m, gps_unavailable). Warn-only at >250m."""
+    if lat is None or lng is None:
+        return False, None, True
+    s_lat, s_lng = _effective_site_gps(site)
+    if s_lat is None or s_lng is None:
+        return False, None, False
+    d = round(_haversine_m(s_lat, s_lng, lat, lng), 1)
+    return d > 250.0, d, False
 
 
 @scan_router.post("/{scan_token}/sign-on")
 async def sign_on_to_site(scan_token: str, body: SignOnIn,
                            user: dict = Depends(get_current_user)):
-    site = await db.simpro_sites.find_one({"scan_token": scan_token}, {"_id": 0})
+    site = await db.simpro_sites.find_one(
+        {"scan_token": scan_token,
+         "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]},
+        {"_id": 0},
+    )
     if not site:
         raise HTTPException(404, "Scan token not recognised")
     if site.get("org_id") != user["org_id"]:
@@ -135,6 +205,7 @@ async def sign_on_to_site(scan_token: str, body: SignOnIn,
         raise HTTPException(404, "Scan token not recognised")
 
     worker_id = body.worker_id or user.get("worker_id") or user["id"]
+    warn, dist, unavail = _gps_warning(site, body.gps_lat, body.gps_long)
     doc = {
         "id": new_id(),
         "org_id": site["org_id"],
@@ -142,13 +213,78 @@ async def sign_on_to_site(scan_token: str, body: SignOnIn,
         "site_name": site.get("name"),
         "worker_id": worker_id,
         "signed_by_user_id": user["id"],
+        "name": user.get("display_name") or user.get("email"),
         "signed_at": now_iso(),
+        "signoff_at": None,
         "source": "qr",
         "swms_acknowledged": body.swms_acknowledged or [],
         "certifications_ack": body.certifications_ack or [],
+        # v127
+        "gps_lat": body.gps_lat,
+        "gps_long": body.gps_long,
+        "gps_accuracy_m": body.gps_accuracy_m,
+        "gps_distance_m": dist,
+        "gps_warning": warn,
+        "gps_unavailable": unavail,
+        "answers": [a.model_dump() for a in body.answers],
     }
     await db.site_signons.insert_one(dict(doc))
     # 24h quick-access pass — no auto-revoke beyond that, manual sign-off only.
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    doc.pop("_id", None)
+    return {**doc, "pass_expires_at": expires_at}
+
+
+class VisitorSignOnIn(BaseModel):
+    name: str
+    company: str | None = None
+    phone: str | None = None
+    gps_lat: float | None = None
+    gps_long: float | None = None
+    gps_accuracy_m: float | None = None
+    swms_acknowledged: list[str] = []
+    answers: list[SignOnAnswerIn] = []
+
+
+@scan_router.post("/{scan_token}/sign-on-visitor")
+async def sign_on_visitor(scan_token: str, body: VisitorSignOnIn):
+    """v127 — Public, no-auth visitor sign-on. Inserts a sign-on row with
+    `source=visitor` and `signed_by_user_id=None`. Used when a contractor
+    or visitor scans the gate sign without a Paneltec account."""
+    if not body.name.strip():
+        raise HTTPException(400, "name is required")
+    site = await db.simpro_sites.find_one(
+        {"scan_token": scan_token,
+         "$or": [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]},
+        {"_id": 0},
+    )
+    if not site:
+        raise HTTPException(404, "Scan token not recognised")
+    warn, dist, unavail = _gps_warning(site, body.gps_lat, body.gps_long)
+    doc = {
+        "id": new_id(),
+        "org_id": site["org_id"],
+        "site_id": site["simpro_site_id"],
+        "site_name": site.get("name"),
+        "worker_id": None,
+        "signed_by_user_id": None,
+        "name": body.name.strip(),
+        "company": body.company,
+        "phone": body.phone,
+        "signed_at": now_iso(),
+        "signoff_at": None,
+        "source": "visitor",
+        "swms_acknowledged": body.swms_acknowledged or [],
+        "certifications_ack": [],
+        "gps_lat": body.gps_lat,
+        "gps_long": body.gps_long,
+        "gps_accuracy_m": body.gps_accuracy_m,
+        "gps_distance_m": dist,
+        "gps_warning": warn,
+        "gps_unavailable": unavail,
+        "answers": [a.model_dump() for a in body.answers],
+    }
+    await db.site_signons.insert_one(dict(doc))
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
     doc.pop("_id", None)
     return {**doc, "pass_expires_at": expires_at}
@@ -163,16 +299,40 @@ def _require_site_admin(user: dict) -> None:
 
 @sites_router.get("")
 async def list_sites(user: dict = Depends(get_current_user)):
-    """List every Simpro-synced site in the user's org. Used by the Sites
-    admin page to render a printable QR row per site + jump into active
-    sign-ons."""
+    """List every Simpro-synced + manual site in the user's org. Soft-deleted
+    rows are hidden (see /sites/recycle-bin for the bin). Phase 4.12 (v127)
+    adds `kind`, `signon_questions`, `gps_override_*`, `manual_*` fields and
+    a live `active_signons_count` per row (last 24h)."""
     rows: list[dict] = []
+    proj = {
+        "_id": 0, "simpro_site_id": 1, "name": 1, "address_full": 1, "address": 1,
+        "suburb": 1, "state": 1, "scan_token": 1, "latitude": 1, "longitude": 1,
+        # v127 additions
+        "kind": 1, "manual_address": 1, "manual_gps_lat": 1, "manual_gps_long": 1,
+        "gps_override_lat": 1, "gps_override_long": 1, "signon_questions": 1,
+        "deleted_at": 1, "simpro_active_jobs": 1,
+    }
     async for s in db.simpro_sites.find(
-        {"org_id": user["org_id"]},
-        {"_id": 0, "simpro_site_id": 1, "name": 1, "address_full": 1, "address": 1,
-         "suburb": 1, "state": 1, "scan_token": 1, "latitude": 1, "longitude": 1},
+        {"org_id": user["org_id"], "$or": [
+            {"deleted_at": None}, {"deleted_at": {"$exists": False}},
+        ]},
+        proj,
     ).sort("name", 1):
         rows.append(s)
+    # Hydrate active sign-on counts (last 24h) in a single aggregation.
+    if rows:
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        counts: dict[str, int] = {}
+        async for grp in db.site_signons.aggregate([
+            {"$match": {"org_id": user["org_id"], "signed_at": {"$gte": since},
+                        "signoff_at": None}},
+            {"$group": {"_id": "$site_id", "n": {"$sum": 1}}},
+        ]):
+            counts[grp["_id"]] = grp["n"]
+        for r in rows:
+            r["active_signons_count"] = counts.get(r["simpro_site_id"], 0)
+            r["kind"] = r.get("kind") or "simpro"
+            r["signon_questions"] = r.get("signon_questions") or []
     return rows
 
 

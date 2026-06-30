@@ -222,12 +222,15 @@ api.include_router(admin_active_sessions_router)
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)
 from sites_qr import scan_router as site_scan_router, sites_router  # noqa: E402
+from sites_signon_v127 import router as sites_v127_router, me_router as me_v127_router  # noqa: E402
 from suppliers_qr import (  # noqa: E402
     scan_router as supplier_scan_router,
     contractors_qr_router,
 )
 api.include_router(site_scan_router)
 api.include_router(sites_router)
+api.include_router(sites_v127_router)
+api.include_router(me_v127_router)
 api.include_router(supplier_scan_router)
 api.include_router(contractors_qr_router)
 api.include_router(asset_navixy_dashboards_router)

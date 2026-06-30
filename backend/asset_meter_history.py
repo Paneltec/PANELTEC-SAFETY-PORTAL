@@ -235,6 +235,20 @@ async def meter_trends(asset_id: str, user: dict = Depends(get_current_user)):
         {"_id": 0, "id": 1, "org_id": 1, "hours_meter": 1, "odo_km": 1,
          "hours_meter_updated_at": 1, "odo_km_updated_at": 1},
     )
+    # Phase 4.12.1 (v128) — Mobile passes a Navixy tracker_id instead of the
+    # internal asset_id. Fall back to a navixy_device_id lookup so the Expo
+    # app's existing wiring keeps working.
+    if not asset and asset_id.isdigit():
+        asset = await db.assets.find_one(
+            {"navixy_device_id": int(asset_id), "org_id": user["org_id"],
+             "deleted_at": None},
+            {"_id": 0, "id": 1, "org_id": 1, "hours_meter": 1, "odo_km": 1,
+             "hours_meter_updated_at": 1, "odo_km_updated_at": 1},
+        )
+        if asset:
+            log.info("assets.id_resolver via tracker_id=%s → asset_id=%s",
+                     asset_id, asset["id"])
+            asset_id = asset["id"]
     if not asset:
         raise HTTPException(404, "Asset not found")
     today = datetime.now(timezone.utc).date()

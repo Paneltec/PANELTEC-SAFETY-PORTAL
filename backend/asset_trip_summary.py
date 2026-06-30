@@ -170,6 +170,20 @@ async def trip_summary(
         {"id": asset_id, "org_id": user["org_id"]},
         {"_id": 0, "id": 1, "org_id": 1, "navixy_device_id": 1, "name": 1, "rego_serial": 1},
     )
+    # Phase 4.12.1 (v128) — Mobile passes a Navixy tracker_id instead of the
+    # internal asset_id. Fall back to a navixy_device_id lookup so the Expo
+    # app's existing wiring keeps working.
+    if not asset and asset_id.isdigit():
+        asset = await db.assets.find_one(
+            {"navixy_device_id": int(asset_id), "org_id": user["org_id"],
+             "deleted_at": None},
+            {"_id": 0, "id": 1, "org_id": 1, "navixy_device_id": 1,
+             "name": 1, "rego_serial": 1},
+        )
+        if asset:
+            log.info("assets.id_resolver via tracker_id=%s → asset_id=%s",
+                     asset_id, asset["id"])
+            asset_id = asset["id"]
     if not asset:
         raise HTTPException(404, "Asset not found")
     if not asset.get("navixy_device_id"):
