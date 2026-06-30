@@ -310,7 +310,15 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 }
 
 const SidebarShell = ({ collapsed }) => (
-  <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
+  // Phase 4.11.4 (v126) — `sticky top-0 h-screen` makes the sidebar
+  // a viewport-tall column that anchors to the top of the page.
+  // Previously the aside had no height constraint and flex
+  // `align-items: stretch` made it grow to the full document height
+  // on long pages (User Manual, Permission Presets), so scrolling the
+  // page scrolled the sidebar in lockstep. Now the sidebar is
+  // viewport-bounded and its inner `<nav overflow-y-auto>` handles
+  // any internal scroll when the rail is taller than the viewport.
+  <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
     <div className={`h-16 flex items-center border-b border-slate-200 ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
         {collapsed

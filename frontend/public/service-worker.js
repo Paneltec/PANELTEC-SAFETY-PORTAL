@@ -730,8 +730,31 @@
  *       shorter viewports rather than getting clipped behind the
  *       topbar. Grid container already carries `items-start` from
  *       Phase 4.4, no change needed there.
+ *
+ * v126 — Phase 4.11.4 — P1 hotfix: AppShell sidebar scrolled with
+ *       page content on long pages.
+ *
+ *       Root cause: `SidebarShell <aside>` had no height constraint
+ *       and no sticky positioning. With the AppShell root flex row
+ *       defaulting to `align-items: stretch`, the sidebar grew to
+ *       the FULL document height on any long page (User Manual,
+ *       Permission Presets Mobile Modules matrix, etc.) — so when
+ *       the page scrolled, the sidebar scrolled with it. Only the
+ *       sidebar's inner `<nav overflow-y-auto>` was prepared to
+ *       handle scroll; the outer aside never got a viewport-height
+ *       bound.
+ *
+ *       Fix: added `sticky top-0 h-screen` to the SidebarShell
+ *       <aside>. The sidebar is now a viewport-tall column anchored
+ *       to the top of the page. Internal `<nav overflow-y-auto>`
+ *       handles any rail content that overflows the viewport height.
+ *       Pages that were already short (Dashboard, SWMS list,
+ *       Vehicles) see no behaviour change; pages that grew tall
+ *       enough to push the sidebar off-screen (User Manual,
+ *       Permission Presets) now see the sidebar pinned in place as
+ *       intended. One-line change.
  */
-const CACHE_VERSION = 'paneltec-v125';
+const CACHE_VERSION = 'paneltec-v126';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
