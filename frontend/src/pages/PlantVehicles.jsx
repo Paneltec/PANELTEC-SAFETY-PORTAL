@@ -10,6 +10,10 @@ import { PageHeader } from '../components/capture/Ui';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
+import {
+  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
+  DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
+} from '../components/ui/dropdown-menu';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -231,8 +235,31 @@ export default function PlantVehicles() {
         anchor.download = `qr-${a.rego_serial || a.scan_token}.png`;
         anchor.click();
         setTimeout(() => URL.revokeObjectURL(url), 5000);
+        toast.success('QR downloaded');
       })
       .catch((e) => toast.error(apiError(e)));
+  };
+
+  // Phase 4.7.2 — Asset-QR popover actions. The QR icon button used to fire
+  // `downloadQr` directly (and silently — no toast), so users assumed it was
+  // dead. Now it opens a small menu with the three actions the brief asked
+  // for: Print QR (reuses the existing bulk Print Labels modal pre-filtered
+  // to this one asset), Copy scan link, and Download PNG.
+  const copyScanLink = async (a) => {
+    const token = a.scan_token;
+    if (!token) { toast.error('No QR token on this asset yet.'); return; }
+    const url = `${window.location.origin}/scan/${token}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success('Scan link copied');
+    } catch {
+      // Fallback for non-secure contexts: textarea + execCommand.
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast.success('Scan link copied'); }
+      catch { toast.error('Could not copy — long-press the URL: ' + url); }
+      document.body.removeChild(ta);
+    }
   };
 
   const openCreate = () => { setDrawerAsset(null); setDrawerOpen(true); };
@@ -415,9 +442,26 @@ export default function PlantVehicles() {
                       </button>
                     );
                   })()}
-                  <button onClick={() => downloadQr(a)} title="Download QR" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-qr-${a.id}`}>
-                    <QrCode />
-                  </button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button title="QR actions" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-qr-${a.id}`}>
+                        <QrCode />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Asset QR</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={() => setPrintIds([a.id])} data-testid={`asset-qr-print-${a.id}`}>
+                        Print QR label…
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => copyScanLink(a)} data-testid={`asset-qr-copy-${a.id}`}>
+                        Copy scan link
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => downloadQr(a)} data-testid={`asset-qr-download-${a.id}`}>
+                        Download PNG
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   {canEdit && (
                     <button onClick={() => setPrintIds([a.id])} title="Print label" className="p-2 rounded-lg hover:bg-slate-100 text-slate-600" data-testid={`asset-label-${a.id}`}>
                       <Printer />

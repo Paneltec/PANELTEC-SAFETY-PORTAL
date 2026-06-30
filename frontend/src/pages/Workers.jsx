@@ -970,7 +970,7 @@ export default function Workers() {
       const { data } = await api.get('/users');
       const map = {};
       (data || []).forEach((u) => {
-        if (u.email) map[u.email.toLowerCase()] = { id: u.id, status: u.status };
+        if (u.email) map[u.email.toLowerCase()] = u; // Phase 4.7.2 — keep the full record so the pill can derive from invite_pending/is_locked
       });
       setUserByEmail(map);
     } catch (_) { /* silent — non-admins get 403, expected */ }
@@ -1032,7 +1032,7 @@ export default function Workers() {
       const { data } = await api.post('/users', {
         email: w.email, name: fullName(w), role: 'worker', workspace_ids: [],
       });
-      setUserByEmail((m) => ({ ...m, [w.email.toLowerCase()]: { id: data.id, status: data.status || 'invited' } }));
+      setUserByEmail((m) => ({ ...m, [w.email.toLowerCase()]: data }));
       toast.success('Login created — use the kebab to send the invite.');
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -1221,17 +1221,24 @@ export default function Workers() {
                       {(() => {
                         const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
                         if (!u) return null;
+                        // Phase 4.7.2 — derive from invite_pending / is_locked
+                        // so the pill flips immediately after Send invite /
+                        // Unlock without relying on the persisted `status`.
+                        let key = 'active', label = 'Active';
+                        if (u.is_locked) { key = 'locked'; label = 'Locked'; }
+                        else if (u.invite_pending && u.status !== 'disabled') { key = 'invited'; label = 'Invite pending'; }
+                        else if (u.status === 'disabled') { key = 'disabled'; label = 'Disabled'; }
+                        else if (u.status === 'invited') { key = 'invited'; label = 'Invite pending'; }
                         const map = {
-                          active:   { cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Active' },
-                          invited:  { cls: 'bg-amber-50 text-amber-700 border border-amber-200', label: 'Invite pending' },
-                          locked:   { cls: 'bg-rose-50 text-rose-700 border border-rose-200', label: 'Locked' },
-                          disabled: { cls: 'bg-slate-100 text-slate-600 border border-slate-200', label: 'Disabled' },
+                          active:   'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                          invited:  'bg-amber-50 text-amber-700 border border-amber-200',
+                          locked:   'bg-rose-50 text-rose-700 border border-rose-200',
+                          disabled: 'bg-slate-100 text-slate-600 border border-slate-200',
                         };
-                        const p = map[u.status] || map.active;
                         return (
-                          <div className={`mt-1 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${p.cls}`}
+                          <div className={`mt-1 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${map[key]}`}
                             data-testid={`worker-login-pill-${w.id}`}>
-                            {p.label}
+                            {label}
                           </div>
                         );
                       })()}

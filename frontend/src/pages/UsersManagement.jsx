@@ -31,9 +31,25 @@ const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disable
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
 
-function StatusPill({ status }) {
-  const map = { active: 'bg-emerald-100 text-emerald-800', invited: 'bg-amber-100 text-amber-800', disabled: 'bg-slate-200 text-slate-600' };
-  return <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${map[status] || 'bg-slate-100'}`}>{status || 'active'}</span>;
+function StatusPill({ user }) {
+  // Phase 4.7.2 — derive from (status, invite_pending, is_locked) so the
+  // pill reflects the current auth state immediately after admin actions
+  // (Send invite / Unlock) without the persisted `status` field needing
+  // to flip. Backend exposes these flags via `/api/users` (_user_out).
+  const status = user?.status || 'active';
+  let key = status, label = status;
+  if (user?.is_locked) { key = 'locked'; label = 'Locked'; }
+  else if (user?.invite_pending && status !== 'disabled') { key = 'invited'; label = 'Invite pending'; }
+  else if (status === 'invited') { label = 'Invited'; }
+  else if (status === 'disabled') { label = 'Disabled'; }
+  else { label = 'Active'; }
+  const map = {
+    active:   'bg-emerald-100 text-emerald-800',
+    invited:  'bg-amber-100 text-amber-800',
+    locked:   'bg-rose-100 text-rose-800',
+    disabled: 'bg-slate-200 text-slate-600',
+  };
+  return <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase ${map[key] || 'bg-slate-100'}`}>{label}</span>;
 }
 
 function inviteMailtoHref(user) {
@@ -264,7 +280,7 @@ export default function UsersManagement() {
                   </div>
                 </div></td>
                 <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
-                <td className="px-4 py-3"><StatusPill status={u.status} /></td>
+                <td className="px-4 py-3"><StatusPill user={u} /></td>
                 <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
                 <td className="px-4 py-3 text-xs text-slate-500">
                   <div className="flex items-center gap-2">

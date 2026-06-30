@@ -1,3 +1,41 @@
+# 2026-06-30 — Phase 4.7.2 tester sweep (v110)
+
+## Bug fixes
+- **Forgot password regression** — Cover.jsx's "Forgot password?" link
+  was a `<Link to="/forgot-password">` to a dead route. Replaced with a
+  button that opens the same `ForgotPasswordModal` used on `/login`.
+  `/login` mount was already correct; verified live both routes open the
+  modal.
+- **Users-list pill stayed "Active" after Send invite** — backend
+  `_user_out` now exposes derived flags `invite_pending` (invite_token_hash
+  set AND `invite_expires_at` in the future) and `is_locked`
+  (`locked_until > now`). `UsersManagement.StatusPill` derives from those
+  flags instead of the persisted `status` field, which doesn't move on
+  invite. Verified live: 9 seed users currently `invite_pending=true`
+  rendered as the amber "Invite pending" pill.
+- **Workers-list silent toast** — `AccessKebab` now closes the picker
+  dialog BEFORE firing the toast + refetch. The Sonner toast was
+  rendering behind the still-open dialog overlay. Same reorder applied
+  to `AccessSection`.
+- **Plant & Vehicles dead QR icon button** — replaced the silent
+  `downloadQr` onClick with a `DropdownMenu` exposing three actions:
+  **Print QR label** (reuses bulk Print Labels modal pre-filtered to
+  the one asset via `setPrintIds([a.id])`), **Copy scan link**
+  (writes `${origin}/scan/${scan_token}` to clipboard with
+  `execCommand` fallback for non-secure contexts), **Download PNG**
+  (the existing handler, now toasts on success). Verified live on 77
+  assets in the Paneltec seed.
+
+## Service worker
+- `CACHE_VERSION` bumped to **`paneltec-v110`** with full changelog.
+
+## Backend touched
+- `users.py` only — `_user_out` augmented with derived flags. No route
+  signatures changed, no breaking changes for existing consumers.
+
+---
+
+
 # 2026-06-30 — Phase 4.7.1 tester sweep + Workers list access controls (v109)
 
 ## Bug fixes

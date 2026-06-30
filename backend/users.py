@@ -43,6 +43,20 @@ class PermissionsIn(BaseModel):
 
 
 def _user_out(doc: dict, has_overrides: bool = False) -> dict:
+    # Phase 4.7.2 — surface derived auth state so the Users list + Workers
+    # list pills can flip to "Invite pending" / "Locked" without needing a
+    # separate `/access-status` round-trip per row. The persisted `status`
+    # field stays the source of truth for admin/disabled flow.
+    from datetime import datetime, timezone
+    def _future(iso_or_dt) -> bool:
+        if not iso_or_dt: return False
+        try:
+            dt = iso_or_dt if hasattr(iso_or_dt, 'tzinfo') else datetime.fromisoformat(str(iso_or_dt).replace('Z','+00:00'))
+            return dt > datetime.now(timezone.utc)
+        except Exception:
+            return False
+    invite_pending = bool(doc.get("invite_token_hash")) and _future(doc.get("invite_expires_at"))
+    is_locked = _future(doc.get("locked_until"))
     return {
         "id": doc["id"],
         "email": doc["email"],
@@ -60,6 +74,8 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "simpro_company_name": doc.get("simpro_company_name"),
         "mobile": doc.get("mobile"),
         "position": doc.get("position"),
+        "invite_pending": invite_pending,
+        "is_locked": is_locked,
     }
 
 

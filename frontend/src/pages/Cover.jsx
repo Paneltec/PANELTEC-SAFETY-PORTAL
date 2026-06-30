@@ -4,6 +4,7 @@ import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, ShieldCheck, UserCog, Do
 import { login, safeNext } from '../lib/auth';
 import { apiError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
+import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -19,6 +20,9 @@ export default function Cover() {
   const [busy, setBusy] = useState(false);
   const { canInstall, isIOS, prompt: triggerInstall, dismiss: dismissInstall } = usePwaInstall();
   const [iosOpen, setIosOpen] = useState(false);
+  // Phase 4.7.2 — same self-serve forgot-password modal the /login page uses.
+  // The previous Cover.jsx pointed at a dead `/forgot-password` route.
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   const handleInstall = async () => {
     if (isIOS) { setIosOpen(true); return; }
@@ -207,7 +211,9 @@ export default function Cover() {
                         className="h-3.5 w-3.5 rounded border-slate-300 text-brand-blue focus:ring-brand-blue/30" data-testid="cover-remember" />
                       Remember me
                     </label>
-                    <Link to="/forgot-password" className="text-brand-blue hover:underline font-medium" data-testid="cover-forgot">Forgot password?</Link>
+                    <Link to="/signup" className="text-brand-blue hover:underline font-medium">No account?</Link>
+                    <button type="button" onClick={() => setForgotOpen(true)}
+                      className="text-brand-blue hover:underline font-medium" data-testid="cover-forgot">Forgot password?</button>
                   </div>
 
                   {error && (
@@ -232,6 +238,7 @@ export default function Cover() {
           </div>
         </div>
       </div>
+      <ForgotPasswordModal open={forgotOpen} onClose={() => setForgotOpen(false)} />
     </div>
   );
 }

@@ -31,9 +31,9 @@ export default function AccessKebab({ userId, canEdit = true, onAfterAction, tes
     setBusy(true);
     try {
       const { data } = await api.post(`/users/${userId}/invite`, { channel });
+      closePicker();
       toast.success(`Invite sent via ${data?.channel || channel}`);
       onAfterAction?.();
-      closePicker();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
@@ -42,9 +42,9 @@ export default function AccessKebab({ userId, canEdit = true, onAfterAction, tes
     setBusy(true);
     try {
       const { data } = await api.post(`/users/${userId}/reset-password`, { channel });
+      closePicker();
       toast.success(`Reset link sent via ${data?.channel || channel}`);
       onAfterAction?.();
-      closePicker();
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };

@@ -241,8 +241,31 @@
  *         the Workers list use the same handlers.
  *       · `AccessSection` (drawer Profile tab) channel dropdown
  *         retired — same picker dialog reused for consistency.
+ *
+ * v110 — Phase 4.7.2: three regressions + one dead button.
+ *       · Fix #1 — `/login` and `/` both open `ForgotPasswordModal`.
+ *         Cover.jsx's "Forgot password?" link was a `<Link to="/forgot-
+ *         password">` to a dead route; replaced with a button that mounts
+ *         the same modal used on `/login`.
+ *       · Fix #2 — Users list pill flips to "Invite pending" immediately
+ *         after Send invite. Backend `_user_out` now exposes derived
+ *         `invite_pending` (invite_token_hash set AND expiry in the
+ *         future) and `is_locked` (locked_until > now). `StatusPill`
+ *         in UsersManagement derives from those flags instead of the
+ *         persisted `status` field, which doesn't move on invite.
+ *       · Fix #3 — `AccessKebab` now closes the picker BEFORE firing the
+ *         toast + refetch. Workers list invite path was completing the
+ *         POST and the refetch but the Sonner toast was rendered behind
+ *         the still-open dialog overlay. Same fix lifts onto AccessSection.
+ *       · Fix #4 — Plant & Vehicles row QR icon button was firing
+ *         `downloadQr` silently. Now opens a `DropdownMenu` with three
+ *         explicit actions: Print QR label (reuses bulk Print Labels
+ *         modal pre-filtered to the asset), Copy scan link (clipboard
+ *         write of `${origin}/scan/${scan_token}` with execCommand
+ *         fallback), and Download PNG (the existing handler, now toasts
+ *         on success).
  */
-const CACHE_VERSION = 'paneltec-v109';
+const CACHE_VERSION = 'paneltec-v110';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
