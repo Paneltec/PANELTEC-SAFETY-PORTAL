@@ -32,8 +32,13 @@ export function PasswordPanel({ flavour, token }) {
 
   useEffect(() => {
     if (!token) { setError('No token supplied.'); return; }
-    if (flavour !== 'invite') { setMeta({ user_email: '' }); return; }
-    axios.post(`${API}/auth/invite/validate`, { token })
+    // Phase 4.7.1 — both flavours pre-flight the token now. Invite uses
+    // `/auth/invite/validate`; reset has its own `/auth/reset/validate`
+    // mirror so we don't show a password form for a dead link.
+    const url = flavour === 'invite'
+      ? `${API}/auth/invite/validate`
+      : `${API}/auth/reset/validate`;
+    axios.post(url, { token })
       .then((r) => setMeta(r.data))
       .catch((e) => setError(e?.response?.data?.detail || 'Link invalid or expired.'));
   }, [token, flavour]);

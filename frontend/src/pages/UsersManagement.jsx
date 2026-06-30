@@ -22,12 +22,7 @@ import {
 } from '../components/ui/select';
 // Phase 4.7 — admin access controls (invite / PIN / reset / unlock).
 import AccessSection from '../components/auth/AccessSection';
-import {
-  DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
-  DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
-} from '../components/ui/dropdown-menu';
-import { PinRevealModal } from '../components/auth/AuthBundle';
-import { MoreVertical } from 'lucide-react';
+import AccessKebab from '../components/auth/AccessKebab';
 
 const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
 const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
@@ -291,7 +286,7 @@ export default function UsersManagement() {
                 {can('users', 'edit') && (
                   <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                     <div className="inline-flex gap-1 items-center">
-                      <AccessKebab userId={u.id} canEdit={u.id !== me?.id} />
+                      <AccessKebab userId={u.id} canEdit={u.id !== me?.id} onAfterAction={load} />
                       <button
                         title="Edit permissions"
                         data-testid={`user-edit-perms-${u.id}`}
@@ -1176,62 +1171,6 @@ function SessionHistoryTab({ userId }) {
   );
 }
 
-// Phase 4.7 — per-row Access kebab (Send invite / Reset / Generate PIN /
-// Unlock). Lightweight wrapper around the same /api/users/{id}/* endpoints
-// AccessSection uses — kept inline so the table doesn't have to manage modal
-// state per row.
-function AccessKebab({ userId, canEdit }) {
-  const [busy, setBusy] = useState(false);
-  const [pin, setPin] = useState(null);
-  const post = async (path, label) => {
-    setBusy(true);
-    try {
-      const { data } = await api.post(path);
-      if (path.endsWith('/pin')) { setPin(data?.pin); }
-      else { toast.success(label); }
-    } catch (e) { toast.error(apiError(e)); }
-    finally { setBusy(false); }
-  };
-  if (!canEdit) return null;
-  return (
-    <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            title="Access actions"
-            data-testid={`access-kebab-${userId}`}
-            disabled={busy}
-            className="inline-flex items-center justify-center w-7 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 disabled:opacity-50">
-            <MoreVertical size={14} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Access</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => post(`/users/${userId}/invite`, 'Invite sent')}
-            data-testid={`access-kebab-invite-${userId}`}>
-            Send invite
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => post(`/users/${userId}/reset-password`, 'Reset link sent')}
-            data-testid={`access-kebab-reset-${userId}`}>
-            Reset password
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => post(`/users/${userId}/pin`, 'PIN generated')}
-            data-testid={`access-kebab-pin-${userId}`}>
-            Generate one-time PIN
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => post(`/users/${userId}/unlock`, 'Account unlocked')}
-            data-testid={`access-kebab-unlock-${userId}`}
-            className="text-rose-700 focus:text-rose-700">
-            Unlock account
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <PinRevealModal pin={pin} open={!!pin} onClose={() => setPin(null)} />
-    </>
-  );
-}
 
 
 

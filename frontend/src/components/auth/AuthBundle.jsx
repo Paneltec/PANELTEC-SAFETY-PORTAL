@@ -155,6 +155,55 @@ export function MustChangePasswordGuard({ children }) {
   );
 }
 
+
+// ───── Channel picker (invite + reset password) ─────────────────────
+// Phase 4.7.1 — backend's `/users/{id}/invite` and `/reset-password` both
+// accept `{ channel: "email" | "sms" | "auto" }`. Surfacing the choice in a
+// tiny dialog (rather than auto-firing) makes intent explicit and lets the
+// admin steer (e.g. fall back to SMS for a worker with no email on file).
+export function ChannelPickerDialog({ open, onClose, title, description, confirmLabel, onConfirm, busy }) {
+  const fire = async (channel) => {
+    await onConfirm?.(channel);
+  };
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && !busy && onClose?.()}>
+      <DialogContent className="max-w-sm" data-testid="channel-picker">
+        <DialogHeader>
+          <DialogTitle className="font-display">{title || 'Send'}</DialogTitle>
+          <DialogDescription>
+            {description || 'Choose how to deliver this link.'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-2 pt-1">
+          <button type="button" onClick={() => fire('auto')} disabled={busy}
+            data-testid="channel-pick-auto"
+            className="w-full text-left px-4 py-3 rounded-lg border-2 border-orange-200 bg-orange-50 hover:border-orange-400 hover:bg-orange-100 transition disabled:opacity-60">
+            <div className="text-sm font-semibold text-slate-900">Auto <span className="ml-1.5 text-[10px] uppercase tracking-wider font-bold text-orange-700 bg-orange-200 px-1.5 py-0.5 rounded">Recommended</span></div>
+            <div className="text-xs text-slate-600 mt-0.5">Try email first, fall back to SMS.</div>
+          </button>
+          <button type="button" onClick={() => fire('email')} disabled={busy}
+            data-testid="channel-pick-email"
+            className="w-full text-left px-4 py-2.5 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-60">
+            <div className="text-sm font-semibold text-slate-900">Email only</div>
+            <div className="text-xs text-slate-500 mt-0.5">Skip SMS even if the worker has a phone.</div>
+          </button>
+          <button type="button" onClick={() => fire('sms')} disabled={busy}
+            data-testid="channel-pick-sms"
+            className="w-full text-left px-4 py-2.5 rounded-lg border border-slate-200 hover:border-slate-400 hover:bg-slate-50 disabled:opacity-60">
+            <div className="text-sm font-semibold text-slate-900">SMS only</div>
+            <div className="text-xs text-slate-500 mt-0.5">Useful for field workers without email.</div>
+          </button>
+        </div>
+        <DialogFooter className="pt-2">
+          <button type="button" onClick={onClose} disabled={busy}
+            className="px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-60">Cancel</button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+
 // ───── PIN reveal modal (used inside AccessSection) ─────────────────
 export function PinRevealModal({ pin, open, onClose }) {
   const copy = () => {

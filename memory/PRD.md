@@ -1,3 +1,47 @@
+# 2026-06-30 — Phase 4.7.1 tester sweep + Workers list access controls (v109)
+
+## Bug fixes
+- **Send invite "Field required" 422** — the kebab was POSTing with no body.
+  Now opens a `ChannelPickerDialog` (Auto / Email / SMS) on Send invite +
+  Reset password and submits `{ channel }`. Verified via curl: invite returns
+  200 with `{ "channel": "email" }`. Same fix applied to `AccessSection`
+  (drawer Profile tab); the standalone channel dropdown retired.
+- **`/reset?token=bogus` showed the form, not the friendly error** — added
+  `POST /api/auth/reset/validate` (mirror of `/invite/validate`) and
+  hooked the web `ResetPasswordPage` to pre-flight the token. A
+  bogus / expired / used token now renders the "Link can't be used"
+  panel with the "Need help? Contact your administrator…" footer
+  rather than a dead password form.
+
+## Enhancement — Workers list (the actual entry point users reach for)
+- Each worker row in `/app/settings/workers` now resolves its linked
+  `users` record by email (admin-only `/api/users` fetch on mount) and
+  renders one of:
+  - `AccessKebab` (Send invite / Reset password / Generate PIN / Unlock) —
+    same component the Users admin uses.
+  - **"+ Login"** button — for workers with an email but no linked user
+    account. Calls `POST /api/users` with `role=worker`, splices the new
+    user into the in-memory map and lets the admin send the invite
+    immediately.
+- Status pill (Active / Invite pending / Locked / Disabled) renders
+  beneath the existing active/inactive badge so admins can scan the
+  list at a glance.
+- Worker-role viewers see neither — the `/api/users` fetch 403s and
+  the local map stays empty, naturally suppressing the controls.
+- `AccessKebab` extracted to `components/auth/AccessKebab.jsx` so both
+  pages share the same handlers.
+
+## Service worker
+- `CACHE_VERSION` bumped to **`paneltec-v109`** with a v109 changelog
+  entry covering both bug fixes + the Workers list integration.
+
+## Out of scope (parked)
+- Bulk invite modal — deferred per user direction.
+- Mobile-side biometric — next dispatch after this is green.
+
+---
+
+
 # 2026-06-29 — Phase 4.7 Web UI shipped (v108)
 
 ## Web UI (token-driven password flows + admin UX) — SHIPPED

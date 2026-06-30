@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
-import { PinRevealModal } from '@/components/auth/AuthBundle';
+import { PinRevealModal, ChannelPickerDialog } from '@/components/auth/AuthBundle';
 
 const STATE_PILL = {
   active:          { label: 'Active',           cls: 'bg-emerald-50 text-emerald-700' },
@@ -13,7 +13,7 @@ const STATE_PILL = {
 
 export default function AccessSection({ userId, compact = false }) {
   const [status, setStatus] = useState(null);
-  const [channel, setChannel] = useState('auto');
+  const [picker, setPicker] = useState(null); // null | { kind: 'invite'|'reset' }
   const [busy, setBusy] = useState(false);
   const [pin, setPin] = useState(null);
 
@@ -23,21 +23,19 @@ export default function AccessSection({ userId, compact = false }) {
   };
   useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [userId]);
 
-  const post = async (path, label) => {
+  const fireChannelAction = async (path, label, channel) => {
     setBusy(true);
     try {
       const { data } = await api.post(path, { channel });
-      if (data?.channel) toast.success(`${label} sent via ${data.channel}`);
-      else toast.success(label);
+      toast.success(`${label} sent via ${data?.channel || channel}`);
+      setPicker(null);
       refresh();
-      return data;
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
 
-  const sendInvite = () => post(`/users/${userId}/invite`, 'Invite');
-  const resendInvite = () => post(`/users/${userId}/invite`, 'Invite resent');
-  const sendReset = () => post(`/users/${userId}/reset-password`, 'Reset link');
+  const sendInvite = (channel) => fireChannelAction(`/users/${userId}/invite`, 'Invite', channel);
+  const sendReset  = (channel) => fireChannelAction(`/users/${userId}/reset-password`, 'Reset link', channel);
   const unlock = async () => {
     setBusy(true);
     try { await api.post(`/users/${userId}/unlock`); toast.success('Account unlocked'); refresh(); }
@@ -76,34 +74,18 @@ export default function AccessSection({ userId, compact = false }) {
         </span>
         {subline && <span className="text-xs text-slate-500">· {subline}</span>}
       </div>
-      <div className="flex items-center gap-2 mb-2">
-        <label className="text-xs text-slate-500">Channel</label>
-        <select value={channel} onChange={(e) => setChannel(e.target.value)}
-          data-testid="access-channel"
-          className="text-sm border border-slate-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-200">
-          <option value="auto">Auto</option>
-          <option value="email">Email</option>
-          <option value="sms">SMS</option>
-        </select>
-      </div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={sendInvite} disabled={busy} data-testid="access-invite"
+        <button onClick={() => setPicker({ kind: 'invite' })} disabled={busy} data-testid="access-invite"
           className="px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold disabled:opacity-60">
-          Send invite
+          {status.state === 'invite_pending' ? 'Resend invite…' : 'Send invite…'}
         </button>
-        {status.state === 'invite_pending' && (
-          <button onClick={resendInvite} disabled={busy} data-testid="access-resend"
-            className="px-3 py-1.5 rounded-lg border border-orange-500 text-orange-700 hover:bg-orange-50 text-xs font-semibold disabled:opacity-60">
-            Resend invite
-          </button>
-        )}
         <button onClick={genPin} disabled={busy} data-testid="access-pin"
           className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-60">
           Generate one-time PIN
         </button>
-        <button onClick={sendReset} disabled={busy} data-testid="access-reset"
+        <button onClick={() => setPicker({ kind: 'reset' })} disabled={busy} data-testid="access-reset"
           className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-60">
-          Reset password
+          Reset password…
         </button>
         {status.state === 'locked' && (
           <button onClick={unlock} disabled={busy} data-testid="access-unlock"
@@ -112,6 +94,18 @@ export default function AccessSection({ userId, compact = false }) {
           </button>
         )}
       </div>
+      <ChannelPickerDialog
+        open={picker?.kind === 'invite'} onClose={() => setPicker(null)}
+        title="Send invite link"
+        description="The worker will receive a one-tap link to set their password and sign in."
+        onConfirm={sendInvite} busy={busy}
+      />
+      <ChannelPickerDialog
+        open={picker?.kind === 'reset'} onClose={() => setPicker(null)}
+        title="Send reset link"
+        description="The worker will receive a link to choose a new password."
+        onConfirm={sendReset} busy={busy}
+      />
       <PinRevealModal pin={pin} open={!!pin} onClose={() => setPin(null)} />
     </section>
   );

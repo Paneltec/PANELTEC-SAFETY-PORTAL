@@ -216,8 +216,33 @@
  *         the redeem JWT, then hydrates `/auth/me` so the rest of
  *         the app sees a populated user object before navigating to
  *         `/app`.
+ *
+ * v109 — Phase 4.7.1: tester sweep + Workers list access controls.
+ *       · Bug fix (#1) — `AccessKebab` now opens `ChannelPickerDialog`
+ *         (Auto / Email / SMS) on Send invite + Reset password and POSTs
+ *         the chosen channel, fixing the backend's "Field required" 422
+ *         that the original "no body" call produced.
+ *       · Bug fix (#2) — `/reset?token=` now pre-flights via the new
+ *         `POST /api/auth/reset/validate` endpoint (mirror of
+ *         `/invite/validate`). A bogus / expired / used token renders
+ *         the friendly "Link can't be used" panel + help footer
+ *         instead of dumping the worker into a password form.
+ *       · Workers list (`pages/Workers.jsx`): each row now resolves
+ *         its linked `users` record by email and renders either an
+ *         `AccessKebab` (Send invite / Reset / PIN / Unlock) OR a
+ *         "+ Login" button that POSTs `/api/users` with role=worker,
+ *         splices the resulting user into the in-memory map and lets
+ *         the admin invite immediately. Includes a small Invite-pending
+ *         / Active / Locked / Disabled pill beneath the existing active
+ *         badge. Worker-role viewers see neither (the `/users` fetch
+ *         403s and the map stays empty).
+ *       · Shared `AccessKebab` extracted out of `UsersManagement.jsx`
+ *         into `components/auth/AccessKebab.jsx` so the Users admin and
+ *         the Workers list use the same handlers.
+ *       · `AccessSection` (drawer Profile tab) channel dropdown
+ *         retired — same picker dialog reused for consistency.
  */
-const CACHE_VERSION = 'paneltec-v108';
+const CACHE_VERSION = 'paneltec-v109';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

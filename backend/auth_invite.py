@@ -333,6 +333,26 @@ async def reset_redeem(body: RedeemIn, request: Request):
     return {"access_token": token, "token_type": "bearer"}
 
 
+# Phase 4.7.1 — mirror of `/auth/invite/validate` so the web `/reset` page can
+# pre-flight the token and render the friendly "Link can't be used" panel
+# (matching the invite UX) instead of letting a worker waste time typing a
+# password against a dead link.
+@router.post("/auth/reset/validate")
+async def reset_validate(body: TokenIn, request: Request):
+    _rate_limit("reset_validate", 10, request)
+    payload = _decode_link_token(body.token, "reset")
+    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    if not user or user.get("reset_token_hash") != _sha(body.token):
+        raise HTTPException(400, "This link has already been used or revoked.")
+    org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0, "name": 1}) or {}
+    return {
+        "user_email":  user["email"],
+        "user_name":   user.get("name"),
+        "org_name":    org.get("name") or "Paneltec",
+        "expires_at":  user.get("reset_expires_at"),
+    }
+
+
 class ForgotIn(BaseModel):
     email: EmailStr
 

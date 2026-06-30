@@ -10,6 +10,8 @@ import { getUser } from '../lib/auth';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
+// Phase 4.7.1 — surface password/access controls on the Workers list.
+import AccessKebab from '../components/auth/AccessKebab';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -958,6 +960,21 @@ export default function Workers() {
   const [tab, setTab] = useState('directory');
   // Per-worker induction-status chip map (loaded once with the matrix call).
   const [chipByWorker, setChipByWorker] = useState({});
+  // Phase 4.7.1 — map of email → { id, status } so we can render the
+  // AccessKebab on linked rows or a "Create login" button otherwise.
+  const [userByEmail, setUserByEmail] = useState({});
+
+  const loadUsers = async () => {
+    if (!canEdit) return; // worker-role view doesn't need this
+    try {
+      const { data } = await api.get('/users');
+      const map = {};
+      (data || []).forEach((u) => {
+        if (u.email) map[u.email.toLowerCase()] = { id: u.id, status: u.status };
+      });
+      setUserByEmail(map);
+    } catch (_) { /* silent — non-admins get 403, expected */ }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -974,7 +991,7 @@ export default function Workers() {
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1002,6 +1019,21 @@ export default function Workers() {
       toast.success(`${fullName(w)} removed`);
       setConfirmDelete(null);
       await load();
+    } catch (e) { toast.error(apiError(e)); }
+  };
+
+  // Phase 4.7.1 — admin "Create login" for a worker without a linked user
+  // account. Defaults role=worker and no workspace assignments (admin can
+  // refine later via Users admin). Returns the new user.id which we splice
+  // into userByEmail so the kebab shows up immediately.
+  const createLogin = async (w) => {
+    if (!w.email) { toast.error('Worker has no email — add one first.'); return; }
+    try {
+      const { data } = await api.post('/users', {
+        email: w.email, name: fullName(w), role: 'worker', workspace_ids: [],
+      });
+      setUserByEmail((m) => ({ ...m, [w.email.toLowerCase()]: { id: data.id, status: data.status || 'invited' } }));
+      toast.success('Login created — use the kebab to send the invite.');
     } catch (e) { toast.error(apiError(e)); }
   };
 
@@ -1184,10 +1216,45 @@ export default function Workers() {
                         {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && !chipByWorker[w.id] && <span className="text-[11px] text-slate-300">—</span>}
                       </div>
                     </td>
-                    <td className="px-3 py-3"><StatusBadge active={w.active} /></td>
+                    <td className="px-3 py-3">
+                      <StatusBadge active={w.active} />
+                      {(() => {
+                        const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
+                        if (!u) return null;
+                        const map = {
+                          active:   { cls: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'Active' },
+                          invited:  { cls: 'bg-amber-50 text-amber-700 border border-amber-200', label: 'Invite pending' },
+                          locked:   { cls: 'bg-rose-50 text-rose-700 border border-rose-200', label: 'Locked' },
+                          disabled: { cls: 'bg-slate-100 text-slate-600 border border-slate-200', label: 'Disabled' },
+                        };
+                        const p = map[u.status] || map.active;
+                        return (
+                          <div className={`mt-1 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${p.cls}`}
+                            data-testid={`worker-login-pill-${w.id}`}>
+                            {p.label}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="sticky right-0 z-[5] bg-white px-3 py-3 text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
                       {canEdit && confirmDelete !== w.id && (
                         <div className="inline-flex gap-1 items-center">
+                          {(() => {
+                            const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
+                            if (u) return (
+                              <AccessKebab userId={u.id} canEdit={canEdit}
+                                testIdSuffix={`worker-${w.id}`}
+                                onAfterAction={loadUsers} />
+                            );
+                            if (w.email) return (
+                              <button onClick={() => createLogin(w)} title="Create login account"
+                                data-testid={`create-login-${w.id}`}
+                                className="inline-flex items-center px-2 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 text-[10px] font-semibold uppercase tracking-wider">
+                                + Login
+                              </button>
+                            );
+                            return null;
+                          })()}
                           <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
                             className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
                           <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
