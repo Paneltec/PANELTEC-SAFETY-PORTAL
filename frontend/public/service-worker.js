@@ -329,23 +329,8 @@
  *         - "Refresh now" reloads BOTH the asset (live counters) and
  *           the meter-trends payload so a successful sync immediately
  *           updates the chart.
- *
- * v113 — Phase 4.8.1 P0 fix: Navixy live counters restored.
- *       · Root cause: `asset_navixy_sync.py` was calling the wrong
- *         Navixy endpoints. `/v2/tracker/counter/list` returns HTTP 400
- *         on this plan; counter calls silently failed and the
- *         "warm-asset" branch actively SKIPPED counter refresh forever,
- *         freezing values at their first-ever reading.
- *       · Fix: new Pass 0.5 calls `/v2/tracker/get_counters` (the
- *         canonical singular endpoint) for EVERY synced asset, warm
- *         or cold, every 15-min cycle. Bounded concurrency sem=8.
- *       · Verified on user-supplied reference asset H89MY: now reports
- *         554.7 hours / 109914.99 km — exact Navixy UI match. 61 of
- *         72 fleet assets refreshed on the first post-fix sync.
- *       · Per-device log line added; meter_history snapshot audited
- *         (writes only to `asset_meter_history`, never to `assets`).
  */
-const CACHE_VERSION = 'paneltec-v113';
+const CACHE_VERSION = 'paneltec-v112';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

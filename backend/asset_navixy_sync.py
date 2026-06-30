@@ -413,50 +413,6 @@ async def _sync_org(org_id: str) -> dict:
                                     navixy_last_position_time_by_tid[tid] = str(lpt)
                 except (httpx.HTTPError, ValueError) as e:
                     log.info("reachability probe (get_states) errored — %s", e)
-
-            # Phase 4.8.1 — Pass 0.5: canonical Navixy counter endpoint.
-            # `/v2/tracker/get_counters` is the endpoint that actually returns
-            # lifetime engine_hours + odometer for every tracker. The previous
-            # `counter/read` / `counter/list` paths return HTTP 400 on this
-            # plan (and any plan that follows current Navixy v2 docs). Runs
-            # for EVERY synced asset, warm or cold, so values stay fresh.
-            async def _get_counters_one(a: dict):
-                nonlocal errors
-                tid = int(a["navixy_device_id"])
-                slot = {"hours": None, "hours_at": None, "odo_km": None, "odo_at": None}
-                async with sem:
-                    try:
-                        r = await c.post(f"{base}/v2/tracker/get_counters",
-                                         json={"hash": h, "tracker_id": tid})
-                        if r.status_code < 400:
-                            d = r.json() or {}
-                            for item in (d.get("list") or []):
-                                if not isinstance(item, dict):
-                                    continue
-                                kind = str(item.get("type") or "").lower()
-                                val = _coerce_float(item.get("value"))
-                                when = item.get("update_time")
-                                if val is None:
-                                    continue
-                                if "hour" in kind and slot["hours"] is None:
-                                    slot["hours"], slot["hours_at"] = val, when
-                                elif ("odometer" in kind or "mileage" in kind) and slot["odo_km"] is None:
-                                    slot["odo_km"], slot["odo_at"] = val, when
-                            if slot["hours"] is not None or slot["odo_km"] is not None:
-                                contacted_tids.add(tid)
-                                source_by_tid[tid] = "panel"
-                                log.info("navixy.sync device_id=%s hours=%s km=%s source=get_counters",
-                                         tid, slot["hours"], slot["odo_km"])
-                    except (httpx.HTTPError, ValueError) as e:
-                        errors += 1
-                        log.debug("get_counters tid=%s err=%s", tid, e)
-                counters_by_tid[tid] = slot
-
-            # Bounded concurrency for fleet-wide call.
-            sem = asyncio.Semaphore(8)
-            if assets:
-                await asyncio.gather(*[_get_counters_one(a) for a in assets])
-
             # Pass 1 — counter/read for both types per COLD tracker only,
             # with bounded concurrency so 100+ devices stay fast.
             sem = asyncio.Semaphore(8)
