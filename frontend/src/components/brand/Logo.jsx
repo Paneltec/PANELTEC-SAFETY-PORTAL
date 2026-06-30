@@ -1,6 +1,6 @@
 import React from 'react';
 
-// Paneltec Civil wordmark — "A"-style chevron icon in brand blue
+// Paneltec Civil wordmark — "A"-style chevron icon in brand orange (Phase 4.10, v115)
 export const Logo = ({ size = 'md', className = '' }) => {
   const sizes = {
     sm: { icon: 18, text: 'text-base' },
@@ -20,12 +20,12 @@ export const Logo = ({ size = 'md', className = '' }) => {
       >
         <path
           d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z"
-          fill="#2C6BFF"
+          fill="#F97316"
         />
-        <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#1E4FD6" strokeWidth="0.5" />
+        <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#EA580C" strokeWidth="0.5" />
       </svg>
       <span className={`font-display font-semibold tracking-tight text-brand-ink ${s.text}`}>
-        Paneltec <span className="text-brand-blue">Civil</span>
+        Paneltec <span className="text-orange-500">Civil</span>
       </span>
     </div>
   );

@@ -408,8 +408,63 @@
  *           - `FormSubmissions.jsx`            — no onPaste handler, paste OK.
  *           - Dialog-mounted controlled inputs — all confirmed standard
  *             controlled-input semantics.
+ *
+ * v115 — Phase 4.10 — brand sweep on public auth surfaces.
+ *       The Phase 3.22 PDF-side brand refresh (cobalt → orange #F97316 +
+ *       slate #1E293B) missed the four public auth pages, which were
+ *       still rendering the old cobalt blue logo + "Sign in" buttons.
+ *       Closed the gap on:
+ *         · `Login.jsx` — all 7 `brand-blue` references (logo wordmark,
+ *           input focus rings, "Forgot password?" link, "Sign in" CTA,
+ *           "Start your free trial" link, remember-me checkbox tint)
+ *           swapped to `orange-500`; `hover:bg-blue-600` →
+ *           `hover:bg-orange-600`.
+ *         · `Cover.jsx` — all 12 `brand-blue` references + 3
+ *           `brand-blue-soft` (the numbered iOS install step circles)
+ *           swapped to `orange-500` + `orange-100`. CTA hover/active
+ *           gradient swapped from `blue-600/blue-700` →
+ *           `orange-600/orange-700`. The slate-900 right-panel hero +
+ *           stats card backgrounds and Simpro outlined button stay
+ *           untouched — those were already on-brand.
+ *         · `Onboard.jsx` (covers both `/onboard?token=` invite redeem
+ *           and `/reset?token=` ResetPasswordPage) — password strength
+ *           meter ramp swapped from the emerald/amber gradient
+ *           `[rose, orange, amber, emerald, emerald-600]` to the brand
+ *           palette `[slate-400, slate-500, orange-400, orange-500,
+ *           orange-600]`. The rest of the page (input borders, button
+ *           backgrounds, header wordmark) was already on-brand from
+ *           Phase 4.7.
+ *       Zero leftover `text-blue-*`, `bg-blue-*`, `border-blue-*` or
+ *       `brand-blue*` classes remain on any of the three files
+ *       (verified via grep). The `text-brand-blue` / `bg-brand-blue` /
+ *       `ring-brand-blue` CSS variables in `index.css` are
+ *       intentionally LEFT IN PLACE because they are still legitimately
+ *       referenced by system/info UI states elsewhere in the app
+ *       (notification dots, "info" alert chips, link colours in body
+ *       copy) — brand-blue is now scoped to system semantics only.
+ *       Out of scope and untouched: every logged-in `/app/*` surface
+ *       (already on-brand since Phase 3.22), the mobile Expo app, and
+ *       the `comms_safe_mode` infrastructure.
+ *
+ *       Follow-up sweep (same v115) — visual QA caught the chevron
+ *       icon mark was still rendering cobalt because:
+ *         a) `components/brand/Logo.jsx` hard-coded `fill="#2C6BFF"` +
+ *            `stroke="#1E4FD6"` for the SVG chevron, AND coloured the
+ *            "Civil" wordmark with `text-brand-blue`. All three
+ *            swapped to `#F97316` / `#EA580C` / `text-orange-500`.
+ *         b) `Cover.jsx` rendered `<img src="/brand/mark.png">` in two
+ *            places (top-left header + above the sign-in card),
+ *            pointing at the legacy cobalt-blue PNG asset. Replaced
+ *            with inline SVG chevrons in orange so the brand colour is
+ *            now controlled by code, not a binary asset. The old PNG
+ *            stays on disk for backwards-compat with any external
+ *            link or unforeseen reference, but is no longer rendered
+ *            anywhere.
+ *         c) `Cover.jsx` 1px left-edge accent stripe on the sign-in
+ *            card was a hard-coded inline `style={{ backgroundColor:
+ *            '#2C6BFF' }}` — swapped to `#F97316`.
  */
-const CACHE_VERSION = 'paneltec-v114';
+const CACHE_VERSION = 'paneltec-v115';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

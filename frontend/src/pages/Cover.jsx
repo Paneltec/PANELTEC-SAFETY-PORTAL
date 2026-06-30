@@ -70,7 +70,13 @@ export default function Cover() {
       {/* Topbar */}
       <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
         <Link to="/" className="flex items-center gap-2.5" data-testid="cover-brand">
-          <img src="/brand/mark.png" alt="" className="h-7 w-auto" />
+          {/* Phase 4.10 v115 — chevron mark inlined as SVG to render in
+              brand orange. The legacy /brand/mark.png is the old cobalt
+              version and is now unreferenced. */}
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
+            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#F97316" />
+            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#EA580C" strokeWidth="0.5" />
+          </svg>
           <span className="font-display text-[13px] font-bold tracking-[0.22em] text-slate-900 md:text-white">PANELTEC CIVIL</span>
         </Link>
         <div className="hidden sm:flex items-center gap-4 text-[12px] tracking-wide text-slate-600 md:text-white/80">
@@ -93,14 +99,14 @@ export default function Cover() {
               <button onClick={() => setIosOpen(false)} className="text-slate-400 hover:text-slate-700" aria-label="Close"><X size={18} /></button>
             </div>
             <ol className="space-y-3 text-sm text-slate-700">
-              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">1</span>
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-orange-100 text-orange-500 font-bold text-xs items-center justify-center shrink-0">1</span>
                 Tap the <Share size={14} className="inline align-text-bottom mx-0.5" /> Share button in Safari&apos;s toolbar.</li>
-              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">2</span>
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-orange-100 text-orange-500 font-bold text-xs items-center justify-center shrink-0">2</span>
                 Scroll down and tap <Plus size={14} className="inline align-text-bottom mx-0.5" /> <strong>Add to Home Screen</strong>.</li>
-              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-brand-blue-soft text-brand-blue font-bold text-xs items-center justify-center shrink-0">3</span>
+              <li className="flex items-start gap-2.5"><span className="inline-flex w-6 h-6 rounded-full bg-orange-100 text-orange-500 font-bold text-xs items-center justify-center shrink-0">3</span>
                 Tap <strong>Add</strong>. The Paneltec icon will appear on your home screen.</li>
             </ol>
-            <button onClick={() => setIosOpen(false)} className="mt-5 w-full py-2.5 rounded-lg bg-brand-blue text-white font-semibold text-sm">Got it</button>
+            <button onClick={() => setIosOpen(false)} className="mt-5 w-full py-2.5 rounded-lg bg-orange-500 text-white font-semibold text-sm">Got it</button>
           </div>
         </div>
       )}
@@ -112,7 +118,7 @@ export default function Cover() {
           <div className="absolute inset-0" style={{ background: 'linear-gradient(110deg, rgba(15,27,45,0.85) 0%, rgba(15,27,45,0.55) 40%, rgba(15,27,45,0) 70%)' }} />
           <div className="relative h-full flex flex-col justify-between p-12 lg:p-16">
             <div className="mt-[12vh] max-w-[520px]">
-              <div className="inline-block text-[11px] font-semibold uppercase tracking-[0.22em] text-brand-blue bg-white/10 backdrop-blur px-3 py-1.5 rounded-full mb-5 border border-white/15">
+              <div className="inline-block text-[11px] font-semibold uppercase tracking-[0.22em] text-orange-500 bg-white/10 backdrop-blur px-3 py-1.5 rounded-full mb-5 border border-white/15">
                 WHS Compliance for civil teams
               </div>
               <h1 className="font-display text-4xl lg:text-5xl xl:text-[56px] font-bold leading-[1.05] text-white tracking-tight" data-testid="cover-hero-headline">
@@ -156,7 +162,7 @@ export default function Cover() {
             <div className="w-full max-w-[460px]">
               {/* Mobile-only hero intro */}
               <div className="md:hidden mb-6 px-2">
-                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-brand-blue mb-2">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.22em] text-orange-500 mb-2">
                   WHS Compliance for civil teams
                 </div>
                 <h1 className="font-display text-2xl font-bold leading-tight tracking-tight text-[#0F1B2D]">
@@ -171,11 +177,18 @@ export default function Cover() {
 
               {/* The elevated login card */}
               <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-10 overflow-hidden" data-testid="cover-card">
-                {/* Accent stripe */}
-                <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: '#2C6BFF' }} aria-hidden="true" />
+                {/* Accent stripe — Phase 4.10 v115: cobalt → brand orange */}
+                <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: '#F97316' }} aria-hidden="true" />
 
-                <img src="/brand/mark.png" alt="Paneltec Civil" className="h-12 w-auto mb-5" data-testid="cover-mark" />
-                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-brand-blue">Sign in to your account</div>
+                {/* Phase 4.10 v115 — chevron mark inlined as SVG to render
+                    in brand orange. The legacy /brand/mark.png is the old
+                    cobalt version and is now unreferenced from any
+                    rendered surface. */}
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mb-5" data-testid="cover-mark">
+                  <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#F97316" />
+                  <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#EA580C" strokeWidth="0.5" />
+                </svg>
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-500">Sign in to your account</div>
                 <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#0F1B2D]">Welcome back</h2>
                 <p className="mt-1.5 text-sm text-slate-600">Sign in below to access your Paneltec Civil dashboard.</p>
 
@@ -185,7 +198,7 @@ export default function Cover() {
                     <input id="cover-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                       placeholder="e.g. you@paneltec.com.au" autoComplete="email" autoFocus required
                       data-testid="cover-email"
-                      className="w-full px-3.5 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
+                      className="w-full px-3.5 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/25 focus:border-orange-500 placeholder:text-slate-400" />
                   </div>
 
                   <div>
@@ -195,7 +208,7 @@ export default function Cover() {
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Enter your password" autoComplete="current-password" required
                         data-testid="cover-password"
-                        className="w-full pl-3.5 pr-11 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/25 focus:border-brand-blue placeholder:text-slate-400" />
+                        className="w-full pl-3.5 pr-11 py-3 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500/25 focus:border-orange-500 placeholder:text-slate-400" />
                       <button type="button" onClick={() => setShowPwd((s) => !s)} tabIndex={-1}
                         aria-label={showPwd ? 'Hide password' : 'Show password'}
                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-700"
@@ -208,12 +221,12 @@ export default function Cover() {
                   <div className="flex items-center justify-between text-[12px]">
                     <label className="inline-flex items-center gap-2 cursor-pointer text-slate-600">
                       <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)}
-                        className="h-3.5 w-3.5 rounded border-slate-300 text-brand-blue focus:ring-brand-blue/30" data-testid="cover-remember" />
+                        className="h-3.5 w-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500/30" data-testid="cover-remember" />
                       Remember me
                     </label>
-                    <Link to="/signup" className="text-brand-blue hover:underline font-medium">No account?</Link>
+                    <Link to="/signup" className="text-orange-500 hover:underline font-medium">No account?</Link>
                     <button type="button" onClick={() => setForgotOpen(true)}
-                      className="text-brand-blue hover:underline font-medium" data-testid="cover-forgot">Forgot password?</button>
+                      className="text-orange-500 hover:underline font-medium" data-testid="cover-forgot">Forgot password?</button>
                   </div>
 
                   {error && (
@@ -224,7 +237,7 @@ export default function Cover() {
                   )}
 
                   <button type="submit" disabled={busy} data-testid="cover-submit"
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-lg bg-brand-blue text-white text-base font-bold tracking-wide hover:bg-blue-600 active:bg-blue-700 transition-colors disabled:opacity-60 shadow-md">
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-lg bg-orange-500 text-white text-base font-bold tracking-wide hover:bg-orange-600 active:bg-orange-700 transition-colors disabled:opacity-60 shadow-md">
                     {busy ? <><Loader2 size={18} className="animate-spin" /> Signing in…</> : <>Sign in to Paneltec Civil <ArrowRight size={18} /></>}
                   </button>
                 </form>

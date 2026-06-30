@@ -10,7 +10,10 @@ const API = (process.env.REACT_APP_BACKEND_URL || '') + '/api';
 
 function StrengthMeter({ value }) {
   const s = passwordStrength(value);
-  const cls = ['bg-rose-500','bg-orange-400','bg-amber-400','bg-emerald-500','bg-emerald-600'][s.score] || 'bg-slate-200';
+  // Phase 4.10 — strength ramp swapped to brand palette: slate for
+  // weak/fair, orange for good/strong/very-strong. The legacy emerald
+  // gradient looked "system-y" and clashed with the orange/slate brand.
+  const cls = ['bg-slate-400','bg-slate-500','bg-orange-400','bg-orange-500','bg-orange-600'][s.score] || 'bg-slate-200';
   return (
     <div data-testid="pw-strength" className="mt-1.5">
       <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
