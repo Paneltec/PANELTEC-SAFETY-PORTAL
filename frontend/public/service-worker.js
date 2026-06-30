@@ -544,8 +544,58 @@
  *       Non-PWA web sessions never see the banner — desktop browser
  *       users aren't affected by the OS icon cache problem so there's
  *       nothing to nudge them about.
+ *
+ * v118 — Phase 4.10.3 — authoritative marketing copy on auth surfaces.
+ *       The Login.jsx right-hand dark panel was still showing the
+ *       day-one generator scaffolding: eyebrow "Paneltec Civil",
+ *       headline "One platform for SWMS, sign-ons, hazards and
+ *       compliance intelligence.", a subhead about "civil contracting
+ *       and construction teams who need oversight without the
+ *       spreadsheets", and four mock stat cards
+ *       (AI SWMS 8 active / Pre-starts 12 captured / Hazards 6 flagged
+ *       / Inspections 6 passed). All four cards were hard-coded
+ *       constants — visible as fake on inspection, and at odds with
+ *       Cover.jsx which has been carrying the user-authored copy for
+ *       weeks.
+ *
+ *       Replaced the right-panel content with the authoritative
+ *       hero block already running on Cover.jsx:
+ *         · eyebrow:  "WHS Compliance for civil teams"
+ *           (orange-500 uppercase tracking-[0.18em], same treatment
+ *            as Cover.jsx so the typographic system stays consistent)
+ *         · headline: three stacked "Build" phrases
+ *             - "Build Safer."     (white)
+ *             - "Build Smarter."   (white)
+ *             - "Build Together."  (paneltec-gold via the CSS var
+ *                                   that Cover.jsx defines and that
+ *                                   index.css now also exposes; the
+ *                                   third line is the brand accent.)
+ *           Class: `font-display text-4xl sm:text-5xl lg:text-6xl
+ *           font-bold leading-tight tracking-tight`.
+ *         · subhead:  "All your civil construction safety forms,
+ *                      inspections, certifications and analytics —
+ *                      in one powerful portal." (slate-300, sm)
+ *         · 4 feature pills replacing the mock stat cards:
+ *             1. ShieldCheckmark24Regular  — Real-time Compliance
+ *             2. Sparkle24Regular          — AI-Powered Insights
+ *             3. Certificate24Regular      — Cert Tracking
+ *             4. ChartMultiple24Regular    — Live Analytics
+ *           Each pill: slate-900 fill, slate-800 border, 3px orange-
+ *           500 left-edge accent stripe, orange-400 Fluent icon,
+ *           white label. No more "8 active / 12 captured / 6
+ *           flagged / 6 passed" mock data anywhere.
+ *
+ *       data-testids added to the new block:
+ *         `login-hero-eyebrow`, `login-hero-headline`,
+ *         `login-hero-subhead`, `login-hero-pills`.
+ *
+ *       Cover.jsx — verified ALREADY shipping the same hero block
+ *       (lines 122-149 desktop + 166-174 mobile). No copy edits
+ *       needed there. Did not touch any other surface, the login
+ *       form fields, the Simpro SSO flow, or the "Start your free
+ *       trial" footer link.
  */
-const CACHE_VERSION = 'paneltec-v117';
+const CACHE_VERSION = 'paneltec-v118';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

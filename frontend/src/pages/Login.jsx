@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Loader2, Briefcase } from 'lucide-react';
+import {
+  ShieldCheckmark24Regular,
+  Sparkle24Regular,
+  Certificate24Regular,
+  ChartMultiple24Regular,
+} from '@fluentui/react-icons';
 import Logo from '../components/brand/Logo';
 import { login, loginWithSimpro, safeNext } from '../lib/auth';
 import api, { apiError } from '../lib/api';
@@ -128,14 +134,40 @@ export default function Login() {
       <div className="hidden lg:flex flex-1 items-center justify-center relative overflow-hidden bg-brand-ink">
         <div className="absolute inset-0 bg-grid-soft opacity-[0.06]" />
         <div className="relative max-w-md px-10 text-slate-200">
-          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500">Paneltec Civil</div>
-          <h2 className="font-display text-3xl font-semibold mt-3 text-white leading-tight">One platform for SWMS, sign-ons, hazards and compliance intelligence.</h2>
-          <p className="mt-4 text-sm text-slate-400">Built for civil contracting and construction teams who need oversight without the spreadsheets.</p>
-          <div className="mt-8 grid grid-cols-2 gap-3 text-xs">
-            {[['AI SWMS', '8 active'], ['Pre-starts', '12 captured'], ['Hazards', '6 flagged'], ['Inspections', '6 passed']].map(([k, v]) => (
-              <div key={k} className="rounded-xl bg-white/5 border border-white/10 p-3">
-                <div className="text-slate-400">{k}</div>
-                <div className="text-white font-display text-base font-semibold mt-1">{v}</div>
+          {/* Phase 4.10.3 (v118) — authoritative marketing copy.
+              Replaces the legacy "One platform for SWMS…" headline and the
+              four mock stat cards (8 active / 12 captured / 6 flagged /
+              6 passed) with the same hero block that anchors Cover.jsx,
+              so the message a worker sees while signing in matches the
+              one they saw on the landing page. */}
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-orange-500"
+               data-testid="login-hero-eyebrow">
+            WHS Compliance for civil teams
+          </div>
+          <h2 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight mt-4 text-white"
+              data-testid="login-hero-headline">
+            <span className="block">Build Safer.</span>
+            <span className="block">Build Smarter.</span>
+            <span className="block" style={{ color: 'var(--paneltec-gold)' }}>Build Together.</span>
+          </h2>
+          <p className="mt-5 text-sm text-slate-300 leading-relaxed"
+             data-testid="login-hero-subhead">
+            All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.
+          </p>
+          <div className="mt-8 grid grid-cols-2 gap-3" data-testid="login-hero-pills">
+            {[
+              { icon: ShieldCheckmark24Regular, label: 'Real-time Compliance' },
+              { icon: Sparkle24Regular,         label: 'AI-Powered Insights' },
+              { icon: Certificate24Regular,     label: 'Cert Tracking' },
+              { icon: ChartMultiple24Regular,   label: 'Live Analytics' },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label}
+                className="relative rounded-xl bg-slate-900 border border-slate-800 p-3 pl-3.5 overflow-hidden">
+                <div className="absolute left-0 top-3 bottom-3 w-[3px] rounded-r bg-orange-500" aria-hidden="true" />
+                <div className="flex items-center gap-2">
+                  <Icon className="text-orange-400 shrink-0" />
+                  <span className="text-sm font-medium text-white leading-tight">{label}</span>
+                </div>
               </div>
             ))}
           </div>
