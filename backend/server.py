@@ -16,6 +16,13 @@ from ask import router as ask_router  # noqa: E402
 from assets import router as assets_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router, assignments_router as form_assignments_router  # noqa: E402
 from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
+# Phase 4.8 — Asset meter trends (daily snapshots + week/month deltas).
+from asset_meter_history import (  # noqa: E402
+    router as asset_meter_history_router,
+    meter_history_daily_snapshot,
+    backfill_30d as meter_history_backfill_30d,
+    ensure_indexes as meter_history_ensure_indexes,
+)
 from asset_navixy_dashboards import router as asset_navixy_dashboards_router  # noqa: E402
 from forms_pickers import router as forms_pickers_router  # noqa: E402
 from auth import get_current_user, router as auth_router  # noqa: E402
@@ -188,6 +195,7 @@ api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
 api.include_router(asset_navixy_sync_router)
+api.include_router(asset_meter_history_router)  # Phase 4.8
 
 from swms_extras import router as swms_extras_router, admin_router as swms_admin_router  # noqa: E402
 api.include_router(swms_extras_router)
@@ -292,11 +300,32 @@ async def on_startup():
             log.info("APScheduler job registered — swms_purge_expired daily at 03:15 UTC")
         except Exception as e:
             log.warning("swms_purge_expired scheduler hook failed: %s", e)
+        # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total
+        # for every Navixy-synced asset. 01:00 UTC keeps it ahead of the
+        # working-day boundary in AU.
+        try:
+            scheduler.add_job(meter_history_daily_snapshot, "cron",
+                              hour=1, minute=0,
+                              id="meter_history_daily_snapshot", max_instances=1,
+                              coalesce=True, replace_existing=True)
+            log.info("APScheduler job registered — meter_history_daily_snapshot daily at 01:00 UTC")
+        except Exception as e:
+            log.warning("meter_history_daily_snapshot scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
         import asyncio as _asyncio
         _asyncio.create_task(sync_navixy_counters())
+        # Phase 4.8 — one-time 30-day backfill of `asset_meter_history`. Idempotent
+        # — relies on the unique (asset_id, snapshot_date) index. Runs in the
+        # background so app startup isn't blocked.
+        async def _meter_history_first_run():
+            try:
+                await meter_history_ensure_indexes()
+                await meter_history_backfill_30d()
+            except Exception as e:
+                log.warning("meter_history first-run backfill failed: %s", e)
+        _asyncio.create_task(_meter_history_first_run())
         log.info("APScheduler started — navixy_sync_counters every 15 min")
     except Exception as e:
         log.warning("APScheduler failed to start: %s", e)

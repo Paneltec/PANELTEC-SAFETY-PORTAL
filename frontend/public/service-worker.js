@@ -300,8 +300,37 @@
  *         single intercept covers ALL of them. Verified live: invite +
  *         forgot-password both return 200 with 0 actual sends and
  *         appear as 2 rows in `comms_outbox_blocked`.
+ *
+ * v112 — Phase 4.8 ASSET METER TRENDS (Week + Month deltas on Live Counters).
+ *       · Backend `asset_meter_history.py`:
+ *         - New collection `asset_meter_history` with unique compound
+ *           index on (asset_id, snapshot_date) — idempotent upserts.
+ *         - APScheduler `meter_history_daily_snapshot` at 01:00 UTC daily
+ *           captures `engine_hours_total` + `odometer_km_total` for every
+ *           Navixy-synced asset from `assets.hours_meter` / `assets.odo_km`.
+ *         - One-time `backfill_30d` fires async on startup. Probes
+ *           Navixy `tracker/counter/list_history` + `list` with day-
+ *           aggregation. Where the plan exposes history, rows are
+ *           written with source="navixy_backfill"; otherwise the asset
+ *           is marked `backfill_skipped` and the daily-snapshot anchor
+ *           still seeds today's row.
+ *         - `GET /api/assets/{id}/meter-trends` returns total + week
+ *           + month with delta, daily averages, sparkline points, and
+ *           an honest `days_available` so the UI can render a
+ *           "Collecting data — N of 7 days" hint without inventing
+ *           numbers.
+ *       · Frontend `LiveCountersPanel.jsx`:
+ *         - Tab strip (Total · This Week · Last Month) inside the
+ *           existing mint-green NAVIXY block. Default = Total (no
+ *           behavioural change for users who never click a tab).
+ *         - Week/Month cards show signed deltas (+12 hrs / +215 km),
+ *           daily averages, and a tiny recharts sparkline beneath
+ *           each metric.
+ *         - "Refresh now" reloads BOTH the asset (live counters) and
+ *           the meter-trends payload so a successful sync immediately
+ *           updates the chart.
  */
-const CACHE_VERSION = 'paneltec-v111';
+const CACHE_VERSION = 'paneltec-v112';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -1,3 +1,60 @@
+# 2026-06-30 — Phase 4.8 Asset Meter Trends (v112)
+
+## Backend
+- New collection **`asset_meter_history`** with unique compound index
+  `(asset_id, snapshot_date)` — idempotent upserts.
+- New APScheduler job **`meter_history_daily_snapshot`** at **01:00 UTC**
+  daily. Pulls `engine_hours_total` + `odometer_km_total` from the live
+  asset doc (kept fresh by the existing 15-min Navixy sync). Confirmed
+  on first run: **69 of 72 Navixy assets written**, 3 skipped (no
+  current counter value).
+- One-time **30-day backfill** runs async on startup. Probes Navixy
+  `tracker/counter/list_history` + `list` with day-aggregation for each
+  asset. Where the Navixy plan exposes history, rows are written with
+  `source="navixy_backfill"`; otherwise the asset is marked
+  `backfill_skipped` and the today-anchor snapshot still seeds row #1.
+  On this preview env Navixy returned no history (plan limit), so all
+  assets currently start with `days_available: 1` and accumulate from
+  here.
+- New endpoint **`GET /api/assets/{id}/meter-trends`** returns:
+  - `total`: `{engine_hours, odometer_km, as_of}` (unchanged shape from
+    live counters).
+  - `week`: `{engine_hours_delta, odometer_km_delta, daily_avg_hours,
+    daily_avg_km, days_available, sparkline[]}` over the last 7 days.
+  - `month`: same over the last 30 days.
+  - `days_available` is honest — sparkline shows only as many points as
+    the DB actually has, so the UI can render the "Collecting data —
+    N of 7 days" hint without inventing numbers.
+
+## Web UI
+- `LiveCountersPanel.jsx` keeps the existing mint-green NAVIXY block
+  intact and adds a **3-tab strip (Total · This Week · Last Month)**
+  just under the dual-heartbeat status line. Default = Total (zero
+  behavioural change for users who never click a tab).
+- Week/Month cards show **signed deltas** (`+12 hrs` / `+215 km`),
+  daily averages, and a **tiny recharts sparkline** beneath each metric
+  (engine hours mint-green, odometer brand orange).
+- "Refresh now" admin button now reloads BOTH the asset (live counters)
+  AND the meter-trends payload so a successful sync updates the chart
+  immediately.
+
+## Service worker
+- `CACHE_VERSION` bumped to **`paneltec-v112`** with full changelog.
+
+## Out of scope (per directive)
+- Manual-entry meter readings for non-Navixy assets — future phase.
+- Annual / YTD trends — Week + Month is enough for now.
+- Asset-to-asset comparison — single asset only.
+- Mobile mirror — queued for a separate dispatch after web tester
+  passes (deep-equivalent on the asset detail screen).
+
+## Note on Comms Safe Mode
+- `COMMS_SAFE_MODE=on` remains in effect. No comms changes this phase.
+- 2 historical "queued" emails kept as audit record per user direction.
+
+---
+
+
 # 2026-06-30 — Phase 4.7.2 tester sweep (v110)
 
 ## Bug fixes

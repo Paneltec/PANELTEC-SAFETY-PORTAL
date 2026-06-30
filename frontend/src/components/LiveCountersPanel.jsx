@@ -1,8 +1,9 @@
 // Phase 3.5 — Live counter chips for the AssetDrawer (Engine hours / Odometer).
 // Renders read-only "synced from Navixy" cards for tracker-linked vehicles
 // and editable number inputs for manually-managed plant.
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Gauge, Activity, RefreshCcw, Loader2, Save, CheckCircle2 } from 'lucide-react';
+import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -26,6 +27,34 @@ function fmtHours(v) {
 function fmtKm(v) {
   if (v == null) return '—';
   return Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
+// Phase 4.8 — tiny inline sparkline. recharts is already bundled (used by the
+// dashboard charts) so this avoids pulling a second viz library. No axes /
+// tooltip / grid — pure trend shape.
+function Sparkline({ data, dataKey, color }) {
+  if (!data || data.length === 0) return null;
+  // Filter out null y-values, recharts will connect through.
+  const safe = data.map((d) => ({ ...d, [dataKey]: d[dataKey] == null ? undefined : d[dataKey] }));
+  return (
+    <div className="h-5 w-full mt-1" data-testid={`sparkline-${dataKey}`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={safe} margin={{ top: 1, right: 1, left: 1, bottom: 1 }}>
+          <Line type="monotone" dataKey={dataKey} stroke={color}
+            strokeWidth={1.5} dot={false} isAnimationActive={false}
+            connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function fmtSigned(n, digits = 1) {
+  if (n == null || isNaN(n)) return '—';
+  const v = Number(n);
+  if (v === 0) return '0';
+  const sign = v > 0 ? '+' : '';
+  return `${sign}${v.toLocaleString(undefined, { maximumFractionDigits: digits })}`;
 }
 
 export default function LiveCountersPanel({ asset, onAssetUpdated }) {
@@ -60,6 +89,16 @@ function NavixyCounters({ asset, onAssetUpdated }) {
   const user = getUser();
   const canRefresh = user?.role === 'admin';
   const [refreshing, setRefreshing] = useState(false);
+  // Phase 4.8 — tabs + meter-trends fetch.
+  const [tab, setTab] = useState('total'); // 'total' | 'week' | 'month'
+  const [trends, setTrends] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/assets/${asset.id}/meter-trends`)
+      .then((r) => { if (alive) setTrends(r.data); })
+      .catch(() => { if (alive) setTrends({ error: true }); });
+    return () => { alive = false; };
+  }, [asset.id]);
 
   const refreshNow = async () => {
     setRefreshing(true);
@@ -72,6 +111,9 @@ function NavixyCounters({ asset, onAssetUpdated }) {
       try {
         const a = await api.get(`/assets/${asset.id}`);
         if (onAssetUpdated) onAssetUpdated(a.data);
+        // also reload trends — the latest snapshot may have shifted
+        const t = await api.get(`/assets/${asset.id}/meter-trends`);
+        setTrends(t.data);
       } catch { /* swallow — UI will reload on its own */ }
     } catch (e) { toast.error(apiError(e)); }
     finally { setRefreshing(false); }
@@ -79,12 +121,73 @@ function NavixyCounters({ asset, onAssetUpdated }) {
 
   const hoursAgo = fmtAgo(asset.hours_meter_updated_at);
   const kmAgo = fmtAgo(asset.odo_km_updated_at);
-  // Phase 4.2-E — dual heartbeat. `navixy_last_seen_at` is our outbound poll
-  // timestamp (we successfully called Navixy). `navixy_last_position_time` is
-  // the upstream sensor's last position fix. Showing both makes the
-  // "Why does my asset say LIVE but the GPS hasn't moved?" diagnostic obvious.
   const syncedAgo = fmtAgo(asset.navixy_last_seen_at);
   const navixyAgo = fmtAgo(asset.navixy_last_position_time);
+
+  const renderTotal = () => (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+      <CounterCardShell
+        icon={Activity} label="Engine hours" unit="hrs"
+        value={fmtHours(asset.hours_meter)}
+        sub={hoursAgo ? `Synced from Navixy · ${hoursAgo}` : 'Synced from Navixy'}
+        accent="border-emerald-200 bg-white"
+        testid="counter-card-hours" />
+      <CounterCardShell
+        icon={Gauge} label="Odometer" unit="km"
+        value={fmtKm(asset.odo_km)}
+        sub={kmAgo ? `Synced from Navixy · ${kmAgo}` : 'Synced from Navixy'}
+        accent="border-emerald-200 bg-white"
+        testid="counter-card-odo" />
+    </div>
+  );
+
+  const renderDelta = (slot, label) => {
+    if (!trends || trends.error) {
+      return <div className="text-xs text-slate-500 py-6 text-center" data-testid={`trends-${label}-empty`}>
+        Collecting data — try again in a few minutes.
+      </div>;
+    }
+    const s = trends[label]; // 'week' | 'month'
+    const total = label === 'week' ? 7 : 30;
+    const collecting = (s.days_available || 0) < total;
+    return (
+      <>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div className="rounded-xl border border-emerald-200 bg-white p-3" data-testid={`counter-card-hours-${label}`}>
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold text-slate-500">
+              <Activity size={12} /> Engine hours
+            </div>
+            <div className="mt-1 font-display text-2xl font-bold text-slate-900">
+              {fmtSigned(s.engine_hours_delta, 1)}
+              <span className="text-sm text-slate-400 font-normal ml-1">hrs</span>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Daily avg: <span className="font-semibold text-slate-700">{s.daily_avg_hours} hrs · {s.daily_avg_km} km</span>
+            </div>
+            <Sparkline data={s.sparkline} dataKey="engine_hours" color="#10B981" />
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-white p-3" data-testid={`counter-card-odo-${label}`}>
+            <div className="flex items-center gap-2 text-[10px] uppercase tracking-wider font-bold text-slate-500">
+              <Gauge size={12} /> Odometer
+            </div>
+            <div className="mt-1 font-display text-2xl font-bold text-slate-900">
+              {fmtSigned(s.odometer_km_delta, 0)}
+              <span className="text-sm text-slate-400 font-normal ml-1">km</span>
+            </div>
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              Daily avg: <span className="font-semibold text-slate-700">{s.daily_avg_hours} hrs · {s.daily_avg_km} km</span>
+            </div>
+            <Sparkline data={s.sparkline} dataKey="odometer_km" color="#F97316" />
+          </div>
+        </div>
+        {collecting && (
+          <div className="mt-2 text-[11px] text-slate-500" data-testid={`trends-${label}-collecting`}>
+            Collecting data — {s.days_available} of {total} day{total === 1 ? '' : 's'} available. Daily snapshots accumulate at 01:00 UTC.
+          </div>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-3" data-testid="live-counters-navixy">
@@ -121,22 +224,33 @@ function NavixyCounters({ asset, onAssetUpdated }) {
           )}
         </div>
       )}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-        <CounterCardShell
-          icon={Activity} label="Engine hours" unit="hrs"
-          value={fmtHours(asset.hours_meter)}
-          sub={hoursAgo ? `Synced from Navixy · ${hoursAgo}` : 'Synced from Navixy'}
-          accent="border-emerald-200 bg-white"
-          testid="counter-card-hours" />
-        <CounterCardShell
-          icon={Gauge} label="Odometer" unit="km"
-          value={fmtKm(asset.odo_km)}
-          sub={kmAgo ? `Synced from Navixy · ${kmAgo}` : 'Synced from Navixy'}
-          accent="border-emerald-200 bg-white"
-          testid="counter-card-odo" />
+
+      {/* Phase 4.8 — tab strip */}
+      <div className="inline-flex items-center gap-0.5 mb-2.5 p-0.5 rounded-lg bg-white border border-emerald-200" role="tablist">
+        {[
+          { k: 'total', label: 'Total' },
+          { k: 'week',  label: 'This Week' },
+          { k: 'month', label: 'Last Month' },
+        ].map((t) => (
+          <button key={t.k} role="tab" aria-selected={tab === t.k}
+            onClick={() => setTab(t.k)}
+            data-testid={`meter-tab-${t.k}`}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors ${
+              tab === t.k ? 'bg-orange-500 text-white' : 'text-slate-600 hover:bg-slate-50'
+            }`}>
+            {t.label}
+          </button>
+        ))}
       </div>
+
+      {tab === 'total' && renderTotal()}
+      {tab === 'week'  && renderDelta('week', 'week')}
+      {tab === 'month' && renderDelta('month', 'month')}
+
       <div className="text-[10px] text-slate-500 mt-2 leading-snug">
-        These values come from the Navixy tracker. Manual edits are disabled — change them in Navixy or, for admin overrides, use the meter reset action.
+        {tab === 'total'
+          ? 'These values come from the Navixy tracker. Manual edits are disabled — change them in Navixy or, for admin overrides, use the meter reset action.'
+          : 'Deltas are computed from daily snapshots of the Navixy counters. Manual edits are disabled.'}
       </div>
     </div>
   );
