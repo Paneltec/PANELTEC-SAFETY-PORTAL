@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import io
 import re
-import time
 from pathlib import Path
 
 from fastapi import APIRouter, Response
@@ -33,18 +32,29 @@ from pdf_brand import ORANGE, SLATE, SLATE_INK, SLATE_MUTED, SLATE_BORDER, PAPER
 router = APIRouter(prefix="/help", tags=["help"])
 
 MANUAL_PATH = Path(__file__).parent / "content" / "user_manual.md"
-_CACHE: dict = {"md": None, "pdf": None, "ts": 0.0}
-_TTL_SECONDS = 300
+# Phase 4.11.1 (v122) — cache is keyed off the markdown file's mtime so
+# both dev edits AND prod redeploys pick up new content without a backend
+# restart. No TTL needed: the moment the file changes, both md+pdf are
+# invalidated. Saves the 5-minute hardcoded staleness window without
+# adding any env-var branching.
+_CACHE: dict = {"mtime": 0.0, "md": None, "pdf": None}
+
+
+def _file_mtime() -> float:
+    try:
+        return MANUAL_PATH.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def _load_markdown() -> str:
-    now = time.time()
-    if _CACHE["md"] is not None and (now - _CACHE["ts"]) < _TTL_SECONDS:
+    mt = _file_mtime()
+    if _CACHE["md"] is not None and _CACHE["mtime"] == mt:
         return _CACHE["md"]
     md = MANUAL_PATH.read_text(encoding="utf-8")
     _CACHE["md"] = md
-    _CACHE["pdf"] = None  # invalidate PDF when md is reloaded
-    _CACHE["ts"] = now
+    _CACHE["pdf"] = None  # invalidate PDF whenever md changes
+    _CACHE["mtime"] = mt
     return md
 
 
@@ -187,8 +197,8 @@ def _draw_brand_header(canvas: _canvas.Canvas, doc: SimpleDocTemplate) -> None:
 
 
 def _build_pdf() -> bytes:
-    now = time.time()
-    if _CACHE["pdf"] is not None and (now - _CACHE["ts"]) < _TTL_SECONDS:
+    mt = _file_mtime()
+    if _CACHE["pdf"] is not None and _CACHE["mtime"] == mt:
         return _CACHE["pdf"]
     md = _load_markdown()
     buf = io.BytesIO()

@@ -430,8 +430,8 @@ export default function Dashboard() {
           <BookOpen20Regular />
           User Manual
         </Link>
-        <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase">Paneltec Civil Intelligence Centre</div>
-        <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900">Live Compliance Dashboard</h1>
+        <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase pr-32 sm:pr-40">Paneltec Civil Intelligence Centre</div>
+        <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900 pr-32 sm:pr-40">Live Compliance Dashboard</h1>
         <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
       </div>
 

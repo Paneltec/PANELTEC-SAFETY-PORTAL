@@ -667,8 +667,24 @@
  *           ID cards, audit exports (dual JSON+PDF), Comms Safe Mode
  *           explainer, mobile/PWA + offline, and a troubleshooting
  *           FAQ. No "Lorem ipsum" or TODO placeholders.
+ *
+ * v122 — Phase 4.11.1 — micro-polish.
+ *       · `Dashboard.jsx` banner — added `pr-32 sm:pr-40` to the
+ *         eyebrow + H1 inside the banner so the absolute-positioned
+ *         "User Manual" button at top-right no longer visually
+ *         collides with "PANELTEC CIVIL INTELLIGENCE CENTRE" /
+ *         "Live Compliance Dashboard". Button stays in place; the
+ *         heading row just reserves the right-side gutter.
+ *       · `help_routes.py` — replaced the 5-minute hard-coded TTL
+ *         with mtime-based invalidation. `_CACHE["mtime"]` is
+ *         compared against `MANUAL_PATH.stat().st_mtime` on every
+ *         request; mismatch → re-read markdown + invalidate PDF
+ *         cache. Both dev edits AND prod redeploys (where the
+ *         markdown file's timestamp changes) pick up new content
+ *         instantly with zero backend restart. Dropped the unused
+ *         `import time`.
  */
-const CACHE_VERSION = 'paneltec-v121';
+const CACHE_VERSION = 'paneltec-v122';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
