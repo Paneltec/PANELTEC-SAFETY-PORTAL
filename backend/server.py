@@ -248,6 +248,15 @@ api.include_router(dashboards_router)
 
 app.include_router(api)
 
+# Phase 4.19 (v143) — Real MongoDB backup grafted from Paneltec Portal.
+# Mount admin-gated via Civil's existing `require_roles("admin")`. The
+# bundle's router carries its own `/api/backup` prefix so it mounts on the
+# FastAPI app directly, not on the `api` sub-router.
+from db import db as _mongo_db  # noqa: E402
+from auth import require_roles  # noqa: E402
+from backup_service import install as install_backup  # noqa: E402
+install_backup(app, _mongo_db, require_roles("admin"))
+
 
 @app.on_event("startup")
 async def on_startup():
@@ -328,6 +337,27 @@ async def on_startup():
             log.info("APScheduler job registered — meter_history_daily_snapshot daily at 01:00 UTC")
         except Exception as e:
             log.warning("meter_history_daily_snapshot scheduler hook failed: %s", e)
+        # Phase 4.19 (v143) — MongoDB backup snapshots.
+        # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
+        # Both wrap `_do_snapshot` (defined in backup_service.install()) which
+        # was stashed on app.state during router mount just above.
+        try:
+            _do_snap = getattr(app.state, "bk_do_snapshot", None)
+            if _do_snap is None:
+                raise RuntimeError("bk_do_snapshot not attached — install_backup() must run first")
+            scheduler.add_job(_do_snap, "cron",
+                              hour="*/6", minute=0,
+                              timezone="Australia/Sydney",
+                              id="backup_snapshot_6h", max_instances=1,
+                              coalesce=True, replace_existing=True)
+            scheduler.add_job(_do_snap, "cron",
+                              day_of_week="mon-fri", hour=17, minute=0,
+                              timezone="Australia/Sydney",
+                              id="backup_snapshot_cob", max_instances=1,
+                              coalesce=True, replace_existing=True)
+            log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney)")
+        except Exception as e:
+            log.warning("backup_snapshot scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.

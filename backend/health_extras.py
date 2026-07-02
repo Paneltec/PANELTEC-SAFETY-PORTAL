@@ -335,36 +335,52 @@ async def health_integrations(user: dict = Depends(get_current_user)):
 
 @router.get("/health/backup")
 async def health_backup(user: dict = Depends(get_current_user)):
-    """Placeholder — real MongoDB backup schedule is TODO. For now we
-    surface the last automated snapshot recorded in `backups.jobs` if
-    that collection exists, else fall back to `up` with a synthetic
-    'just now' stamp so the pill isn't scary."""
+    """Phase 4.19 (v143) — reads real snapshot metadata from `bk_snapshots`
+    (the collection the grafted `backup_service.py` writes into on every
+    manual + scheduled snapshot). Pill logic:
+      • green if the newest snapshot is <=6h old (matches the every-6h cron)
+      • amber if 6h-25h (missed the 6h boundary but still inside the daily fallback)
+      • red if >25h OR the collection is empty."""
     now = datetime.now(timezone.utc)
     history: list[dict] = []
-    async for row in db.backups.find(
-        {"kind": "mongo"},
-        {"_id": 0, "at": 1, "size_bytes": 1, "status": 1},
-    ).sort("at", -1).limit(7):
+    async for row in db.bk_snapshots.find(
+        {}, {"_id": 0, "id": 1, "created_at": 1, "size": 1, "status": 1,
+             "total_documents": 1, "sha256": 1},
+    ).sort("created_at", -1).limit(7):
+        created_at = row.get("created_at")
         history.append({
-            "at": _iso(row.get("at")) if isinstance(row.get("at"), datetime) else row.get("at"),
-            "size_bytes": row.get("size_bytes"),
-            "status": row.get("status", "up"),
+            "id": row.get("id"),
+            "at": created_at if isinstance(created_at, str)
+                  else _iso(created_at) if isinstance(created_at, datetime) else None,
+            "size_bytes": row.get("size"),
+            "status": row.get("status") or "up",
+            "total_documents": row.get("total_documents"),
+            "sha256": row.get("sha256"),
         })
-    if history and history[0].get("at"):
-        try:
-            last_dt = datetime.fromisoformat(str(history[0]["at"]).replace("Z", "+00:00"))
-            hours_since = round((now - last_dt).total_seconds() / 3600.0, 1)
-        except Exception:                     # noqa: BLE001
-            hours_since = 0.0
-    else:
-        # No real backup wiring yet — synth a fresh stamp so the pill is
-        # green rather than red. Real schedule to be added in a later phase.
-        hours_since = 0.0
-        history = [{"at": _iso(now), "status": "up", "size_bytes": None, "placeholder": True}]
 
-    status = "up" if hours_since < 25 else "amber" if hours_since < 49 else "down"
+    if not history:
+        return {"last_backup_at": None, "hours_since": None,
+                "status": "down", "history": [],
+                "detail": "No snapshots on record — schedule not yet run."}
+
+    hours_since = None
+    try:
+        last_dt = datetime.fromisoformat(str(history[0]["at"]).replace("Z", "+00:00"))
+        hours_since = round((now - last_dt).total_seconds() / 3600.0, 1)
+    except Exception:                                  # noqa: BLE001
+        hours_since = None
+
+    if hours_since is None:
+        status = "amber"
+    elif hours_since <= 6:
+        status = "up"
+    elif hours_since <= 25:
+        status = "amber"
+    else:
+        status = "down"
+
     return {
-        "last_backup_at": history[0]["at"] if history else _iso(now),
+        "last_backup_at": history[0]["at"],
         "hours_since": hours_since,
         "status": status,
         "history": history,
