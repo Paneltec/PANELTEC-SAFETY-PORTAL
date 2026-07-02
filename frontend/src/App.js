@@ -20,6 +20,7 @@ import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
 import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
+import BackupTab from '@/pages/settings/BackupTab';
 import Ask from '@/pages/Ask';
 import PublicRenewal from '@/pages/PublicRenewal';
 import NavixyAdmin from '@/pages/NavixyAdmin';
@@ -139,6 +140,7 @@ function App() {
               <Route path="settings/swms-assignments" element={<SwmsAssignmentsAdmin />} />
               <Route path="settings/system" element={<SystemSettings />} />
               <Route path="settings/certifications" element={<Certifications />} />
+              <Route path="settings/backup" element={<BackupTab />} />
               <Route path="forms" element={<Forms />} />
               <Route path="forms/templates/:templateId/submissions" element={<FormSubmissions />} />
               <Route path="outbox" element={<Outbox />} />

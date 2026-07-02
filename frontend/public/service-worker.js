@@ -904,8 +904,33 @@
  *        truncating one. Every row now shows its brand name in
  *        uppercase to the right of the LED dot, exactly like the
  *        MongoDB row already did.
+ * v143 — Phase 4.19 real MongoDB backup service, grafted from the
+ *        Paneltec Portal. Backend: new `backup_service.py` (1,375-line
+ *        FastAPI router mounted at `/api/backup/*`) + `auth_helpers.py`
+ *        for the `?token=` download flow. EXCLUDE_COLLECTIONS widened
+ *        with Civil's ephemeral tables (session_history, email_outbox,
+ *        comms_outbox_blocked, active_signons). Snapshots write to
+ *        GridFS (`bk_fs.files/chunks`) and manifest rows to
+ *        `bk_snapshots`. Retention: 7d keep-all + 30d daily +
+ *        26w weekly + forever monthly, applied after every snapshot.
+ *        Two APScheduler cron jobs registered against the existing
+ *        `AsyncIOScheduler`: `backup_snapshot_6h` (every 6h) +
+ *        `backup_snapshot_cob` (mon-fri 17:00 Sydney). `/api/health/
+ *        backup` now reads real snapshots from `bk_snapshots` — the
+ *        `placeholder: true` synth branch is deleted. Frontend: new
+ *        admin route `/app/settings/backup` mounts BackupTab.jsx
+ *        (self-styled, no shadcn deps, uses Civil's bearer-attaching
+ *        axios instance). Sidebar entry "Backup & Restore" with the
+ *        CloudArrowUp icon, admin-only. Backup pill in the top bar
+ *        now surfaces the real last-snapshot age + size + LAN
+ *        destination count (0 destinations shows "LAN idle" until
+ *        agents register in Stage D). Clicking the pill opens the
+ *        popover; footer link "Open backup admin →" navigates to
+ *        `/app/settings/backup`. Restore panel carries a yellow
+ *        caveat banner: MongoDB `_id`s regenerate on restore but
+ *        Civil's UUID `id` fields are unaffected.
  */
-const CACHE_VERSION = 'paneltec-v142';
+const CACHE_VERSION = 'paneltec-v143';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

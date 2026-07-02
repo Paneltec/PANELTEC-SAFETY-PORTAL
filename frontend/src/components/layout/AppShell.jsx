@@ -31,6 +31,7 @@ import {
   PeopleSettings24Regular, PeopleSettings24Filled,
   PersonAvailable24Regular, PersonAvailable24Filled,
   PlugConnected24Regular, PlugConnected24Filled,
+  CloudArrowUp24Regular, CloudArrowUp24Filled,
   Settings24Regular, Settings24Filled,
   Trophy24Regular, Trophy24Filled,
   Mail24Regular, Mail24Filled,
@@ -86,6 +87,7 @@ const NAV = [
     { to: '/app/settings/integrations', label: 'Integrations', icon: PlugConnected24Regular, iconActive: PlugConnected24Filled, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
+    { to: '/app/settings/backup', label: 'Backup & Restore', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-settings-backup', adminOnly: true, pastel: 'slate' },
     { to: '/app/outbox', label: 'Email outbox', icon: Mail24Regular, iconActive: Mail24Filled, testid: 'nav-outbox', pastel: 'slate' },
     // Phase 4.11 (v121) — top-level Help entry so the user manual is
     // discoverable from anywhere in the app, not just the dashboard

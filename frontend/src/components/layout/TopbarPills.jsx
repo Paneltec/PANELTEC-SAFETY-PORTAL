@@ -126,35 +126,97 @@ export function ApiHealthPill() {
 
 export function BackupPill() {
   const [data, setData] = useState(null);
+  const [lanCount, setLanCount] = useState(null);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let alive = true;
-    api.get('/health/backup').then((r) => alive && setData(r.data)).catch(() => {});
-    return () => { alive = false; };
+    const load = () => {
+      api.get('/health/backup').then((r) => alive && setData(r.data)).catch(() => {});
+      // LAN destination count — 0 while no agents are registered; that's the
+      // expected v143 state and drives the "LAN idle" pill sub-label.
+      api.get('/backup/lan-status').then((r) => {
+        if (!alive) return;
+        const arr = Array.isArray(r.data?.agents) ? r.data.agents
+                   : Array.isArray(r.data) ? r.data : [];
+        setLanCount(arr.length);
+      }).catch(() => alive && setLanCount(0));
+    };
+    load();
+    const t = setInterval(load, 60000);
+    return () => { alive = false; clearInterval(t); };
   }, []);
+
   const status = data?.status || 'amber';
   const tone = DOT_TONES[status] || DOT_TONES.amber;
+
+  const humanSize = (bytes) => {
+    if (!bytes && bytes !== 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+  };
+  const humanAgo = (iso) => {
+    if (!iso) return 'never';
+    const d = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+    if (d < 60) return `${Math.round(d)}s ago`;
+    if (d < 3600) return `${Math.round(d/60)}m ago`;
+    if (d < 86400) return `${Math.round(d/3600)}h ago`;
+    return `${Math.round(d/86400)}d ago`;
+  };
+
+  const newest = (data?.history || [])[0];
+  const detailBits = [];
+  if (data?.last_backup_at) detailBits.push(`Last snap ${humanAgo(data.last_backup_at)}`);
+  if (newest?.size_bytes) detailBits.push(humanSize(newest.size_bytes));
+  detailBits.push(lanCount === null ? 'LAN checking…'
+                  : lanCount === 0 ? 'LAN idle'
+                  : `${lanCount} destination${lanCount === 1 ? '' : 's'} delivered`);
+
   return (
     <div className="relative hidden lg:block">
       <button
         onClick={() => setOpen((v) => !v)}
         data-testid="backup-pill"
+        title={detailBits.join(' · ')}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-[0.15em] ${tone.chip}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
         <DatabaseArrowUp20Regular className="w-3 h-3 -mx-0.5" /> Backup
       </button>
-      {open && data && (
-        <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-slate-950 text-slate-100 border border-orange-500/40 p-3 shadow-2xl z-40" data-testid="backup-popover">
-          <div className="text-[10px] uppercase tracking-[0.2em] text-orange-400 font-bold mb-2">Recent backups</div>
+      {open && (
+        <div className="absolute right-0 mt-2 w-96 rounded-2xl bg-slate-950 text-slate-100 border border-orange-500/40 p-3 shadow-2xl z-40" data-testid="backup-popover">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-orange-400 font-bold">Recent backups</div>
+            <div className="text-[10px] text-slate-500">{detailBits.join(' · ')}</div>
+          </div>
+          {!data && <div className="text-xs text-slate-400 px-2 py-2">Loading…</div>}
+          {data && (data.history || []).length === 0 && (
+            <div className="text-xs text-slate-400 px-2 py-2">
+              No snapshots on record yet. Click <span className="text-orange-300">Open backup admin →</span> below then <span className="font-semibold">Backup now</span>.
+            </div>
+          )}
           <ul className="space-y-1.5">
-            {(data.history || []).map((h, i) => (
-              <li key={i} className="flex items-center gap-2 text-xs">
-                <span className={`w-1.5 h-1.5 rounded-full ${DOT_TONES[h.status] ? DOT_TONES[h.status].dot : DOT_TONES.up.dot}`} />
-                <span className="flex-1 text-slate-300">{h.at ? new Date(h.at).toLocaleString() : '—'}</span>
-                {h.placeholder && <span className="text-[9px] uppercase tracking-wider text-slate-500">seed</span>}
+            {(data?.history || []).slice(0, 5).map((h, i) => (
+              <li key={i} className="flex items-center gap-2 text-xs" data-testid={`backup-row-${i}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${DOT_TONES[h.status] ? DOT_TONES[h.status].dot : DOT_TONES.up.dot} shrink-0`} />
+                <span className="shrink-0 text-slate-200 font-mono text-[11px]">
+                  {h.at ? new Date(h.at).toLocaleString() : '—'}
+                </span>
+                <span className="flex-1 text-right text-slate-400 tabular-nums">
+                  {h.size_bytes ? humanSize(h.size_bytes) : ''}{h.total_documents ? ` · ${h.total_documents.toLocaleString()} docs` : ''}
+                </span>
               </li>
             ))}
           </ul>
+          <Link
+            to="/app/settings/backup"
+            onClick={() => setOpen(false)}
+            data-testid="backup-admin-link"
+            className="mt-3 group inline-flex items-center gap-1 text-[11px] font-semibold text-orange-300 hover:text-orange-200"
+          >
+            Open backup admin
+            <ArrowRight16Regular className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+          </Link>
         </div>
       )}
     </div>
