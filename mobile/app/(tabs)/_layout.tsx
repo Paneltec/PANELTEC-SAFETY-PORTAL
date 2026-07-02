@@ -45,12 +45,11 @@ export default function TabLayout() {
   };
 
   return (
-    <View style={{ flex: 1 }}>
-      {/* Preview-mode ribbon */}
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {isPreviewing && (
         <View testID="preview-ribbon" style={rs.ribbon}>
           <Ionicons name="eye" size={12} color="#fff" />
-          <Text style={rs.ribbonText}>Preview mode · {previewedRole || 'unknown'}</Text>
+          <Text style={rs.ribbonText}>PREVIEW MODE · {(previewedRole || 'unknown').toUpperCase()}</Text>
         </View>
       )}
 
@@ -58,11 +57,11 @@ export default function TabLayout() {
         <TouchableOpacity testID="signoff-banner" style={rs.signoffBanner} onPress={handleSignOff} activeOpacity={0.8}>
           <Ionicons name="location" size={14} color="#fff" />
           <Text style={rs.signoffText} numberOfLines={1}>
-            On-site: {activeSignOn.site_name}
+            ON-SITE: {activeSignOn.site_name.toUpperCase()}
           </Text>
           <View style={rs.signoffBtn}>
             <Ionicons name="log-out" size={12} color="#fff" />
-            <Text style={rs.signoffBtnText}>Sign Off</Text>
+            <Text style={rs.signoffBtnText}>SIGN OFF</Text>
           </View>
         </TouchableOpacity>
       )}
@@ -70,30 +69,28 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: Colors.blue,
+          tabBarActiveTintColor: Colors.orange,
           tabBarInactiveTintColor: Colors.textTertiary,
           tabBarStyle: {
-            backgroundColor: Colors.white,
+            backgroundColor: Colors.surface,
             borderTopColor: Colors.border,
-            height: 60,
+            borderTopWidth: 1,
+            height: 64,
             paddingBottom: 8,
-            paddingTop: 4,
+            paddingTop: 6,
           },
-          tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
         }}
       >
-        {/* Home — always visible */}
         <Tabs.Screen
           name="dashboard"
           options={{
             title: 'Home',
             tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
             tabBarBadge: queueCount > 0 ? queueCount : undefined,
-            tabBarBadgeStyle: queueCount > 0 ? { backgroundColor: Colors.violet, fontSize: 10, minWidth: 18, height: 18, lineHeight: 18 } : undefined,
+            tabBarBadgeStyle: queueCount > 0 ? { backgroundColor: Colors.orange, fontSize: 10, minWidth: 18, height: 18, lineHeight: 18 } : undefined,
           }}
         />
-
-        {/* Capture — show if any capture module is on */}
         <Tabs.Screen
           name="capture"
           options={{
@@ -102,18 +99,14 @@ export default function TabLayout() {
             href: showCapture ? undefined : null,
           }}
         />
-
-        {/* QR Sign-On — gated by sign_on module */}
         <Tabs.Screen
           name="qr-signon"
           options={{
-            title: 'QR Sign-On',
+            title: 'QR Scan',
             tabBarIcon: ({ color, size }) => <Ionicons name="qr-code" size={size} color={color} />,
             href: modules.sign_on ? undefined : null,
           }}
         />
-
-        {/* Outbox — always visible */}
         <Tabs.Screen
           name="outbox"
           options={{
@@ -121,18 +114,14 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="mail" size={size} color={color} />,
           }}
         />
-
-        {/* Vehicles — gated by plant_vehicles */}
         <Tabs.Screen
           name="vehicles"
           options={{
-            title: 'Vehicles',
+            title: 'Fleet',
             tabBarIcon: ({ color, size }) => <Ionicons name="car" size={size} color={color} />,
             href: modules.plant_vehicles ? undefined : null,
           }}
         />
-
-        {/* My Work — always visible */}
         <Tabs.Screen
           name="my-work"
           options={{
@@ -140,8 +129,6 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="briefcase" size={size} color={color} />,
           }}
         />
-
-        {/* Profile — always visible */}
         <Tabs.Screen
           name="settings"
           options={{
@@ -149,8 +136,6 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
           }}
         />
-
-        {/* Hidden tabs */}
         <Tabs.Screen name="compliance" options={{ href: null }} />
         <Tabs.Screen
           name="ask"
@@ -168,17 +153,17 @@ export default function TabLayout() {
 const rs = StyleSheet.create({
   ribbon: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#334155', paddingVertical: 5, paddingHorizontal: 12,
+    backgroundColor: Colors.surfaceLight, paddingVertical: 5, paddingHorizontal: 12,
   },
-  ribbonText: { fontSize: 11, fontWeight: '600', color: '#fff', letterSpacing: 0.5 },
+  ribbonText: { fontSize: 10, fontWeight: '700', color: Colors.orange, letterSpacing: 1 },
   signoffBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#EA580C', paddingVertical: 8, paddingHorizontal: 16,
+    backgroundColor: Colors.orange, paddingVertical: 10, paddingHorizontal: 16,
   },
-  signoffText: { flex: 1, fontSize: 13, fontWeight: '600', color: '#fff' },
+  signoffText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: 0.8 },
   signoffBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.2)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
-  signoffBtnText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  signoffBtnText: { fontSize: 10, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
 });

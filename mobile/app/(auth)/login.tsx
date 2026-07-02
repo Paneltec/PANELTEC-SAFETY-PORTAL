@@ -31,17 +31,12 @@ export default function LoginScreen() {
     (async () => {
       const avail = await isBiometricAvailable();
       const enabled = await isBiometricEnabled();
-      if (avail && enabled) {
-        setBioReady(true);
-        const t = await getBiometricType();
-        setBioType(t);
-      }
+      if (avail && enabled) { setBioReady(true); setBioType(await getBiometricType()); }
     })();
   }, []);
 
   const handleBiometricLogin = async () => {
-    setError('');
-    setBusy(true);
+    setError(''); setBusy(true);
     try {
       const result = await authenticateWithBiometric();
       if (result.success && result.token) {
@@ -53,13 +48,8 @@ export default function LoginScreen() {
         if (me.must_change_password) setMustChangePassword(true);
         setAuth(true);
       }
-    } catch {
-      await clearBiometric();
-      setBioReady(false);
-      setError('Session expired — please sign in with your password.');
-    } finally {
-      setBusy(false);
-    }
+    } catch { await clearBiometric(); setBioReady(false); setError('Session expired — please sign in with your password.'); }
+    finally { setBusy(false); }
   };
 
   const submit = async () => {
@@ -76,167 +66,117 @@ export default function LoginScreen() {
         const t = await getBiometricType();
         Alert.alert(`Enable ${t}?`, `Sign in faster next time with ${t}.`, [
           { text: 'Not now', onPress: () => setAuth(true) },
-          { text: 'Enable', onPress: async () => {
-            const tok = await getToken();
-            if (tok) await storeBiometricToken(tok);
-            setAuth(true);
-          }},
+          { text: 'Enable', onPress: async () => { const tok = await getToken(); if (tok) await storeBiometricToken(tok); setAuth(true); }},
         ]);
-      } else {
-        setAuth(true);
-      }
+      } else { setAuth(true); }
     } catch (err: any) {
       const msg = apiError(err) || 'Invalid email or password.';
       const detail = err?.response?.data?.detail;
       if (typeof detail === 'string' && detail.toLowerCase().includes('disabled')) {
-        setError('Account disabled — contact your organisation administrator to re-enable your account.');
-      } else {
-        setError(msg);
-      }
-    } finally {
-      setBusy(false);
-    }
+        setError('Account disabled — contact your organisation administrator.');
+      } else { setError(msg); }
+    } finally { setBusy(false); }
   };
 
   const submitSimpro = async () => {
     setError('');
     if (!email) { setError('Enter your work email to sign in with Simpro.'); return; }
     setBusySimpro(true);
-    try {
-      await loginWithSimpro(email);
-      await refreshModules();
-      setAuth(true);
-    } catch (err: any) {
-      const msg = apiError(err) || 'Could not sign in with Simpro.';
-      setError(msg);
-    } finally {
-      setBusySimpro(false);
-    }
+    try { await loginWithSimpro(email); await refreshModules(); setAuth(true); }
+    catch (err: any) { setError(apiError(err) || 'Could not sign in with Simpro.'); }
+    finally { setBusySimpro(false); }
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={s.safe}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-          <View style={styles.logoWrap}>
-            <View style={styles.logoIcon}>
-              <Ionicons name="shield-checkmark" size={24} color={Colors.blue} />
+        <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
+          <View style={s.logoRow}>
+            <View style={s.logoIcon}>
+              <Ionicons name="shield-checkmark" size={22} color={Colors.orange} />
             </View>
-            <Text style={styles.logoText}>Paneltec <Text style={{ color: Colors.blue }}>Civil</Text></Text>
+            <Text style={s.logoText}>PANELTEC <Text style={{ color: Colors.orange }}>CIVIL</Text></Text>
           </View>
 
-          <Text style={styles.heading}>Build Safer.</Text>
-          <Text style={styles.heading}>Build Smarter.</Text>
-          <Text style={[styles.heading, { color: '#F4C430' }]}>Build Together.</Text>
-          <Text style={styles.sub}>All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.</Text>
+          <Text style={s.h1}>Build Safer.</Text>
+          <Text style={s.h1}>Build Smarter.</Text>
+          <Text style={[s.h1, { color: Colors.orange }]}>Build Together.</Text>
+          <Text style={s.sub}>All your civil construction safety forms, inspections, certifications and analytics — in one powerful portal.</Text>
 
-          <View style={styles.valueGrid}>
-            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
-              <Ionicons name="shield-checkmark" size={14} color="#F4C430" />
-              <Text style={[styles.valueText, { color: '#F4C430' }]}>Real-time Compliance</Text>
-            </View>
-            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
-              <Ionicons name="sparkles" size={14} color="#F4C430" />
-              <Text style={[styles.valueText, { color: '#F4C430' }]}>AI-Powered Insights</Text>
-            </View>
-            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
-              <Ionicons name="ribbon" size={14} color="#F4C430" />
-              <Text style={[styles.valueText, { color: '#F4C430' }]}>Cert Tracking</Text>
-            </View>
-            <View style={[styles.valueChip, { borderColor: '#F4C43060' }]}>
-              <Ionicons name="bar-chart" size={14} color="#F4C430" />
-              <Text style={[styles.valueText, { color: '#F4C430' }]}>Live Analytics</Text>
-            </View>
+          <View style={s.chipRow}>
+            {[
+              { icon: 'shield-checkmark', label: 'REAL-TIME COMPLIANCE' },
+              { icon: 'sparkles', label: 'AI-POWERED INSIGHTS' },
+              { icon: 'ribbon', label: 'CERT TRACKING' },
+              { icon: 'bar-chart', label: 'LIVE ANALYTICS' },
+            ].map((c) => (
+              <View key={c.label} style={s.chip}>
+                <Ionicons name={c.icon as any} size={12} color={Colors.orange} />
+                <Text style={s.chipText}>{c.label}</Text>
+              </View>
+            ))}
           </View>
 
-          <View testID="demo-banner" style={styles.demoBanner}>
-            <Ionicons name="information-circle" size={16} color={Colors.blue} />
+          <View testID="demo-banner" style={s.demoBanner}>
+            <Ionicons name="information-circle" size={16} color={Colors.orange} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.demoTitle}>Demo credentials</Text>
-              <Text style={styles.demoBody}>Email demo@paneltec.com · Password demo123</Text>
+              <Text style={s.demoTitle}>DEMO CREDENTIALS</Text>
+              <Text style={s.demoBody}>Email demo@paneltec.com · Password demo123</Text>
             </View>
           </View>
 
-          <View testID="login-form" style={styles.form}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              testID="login-email"
-              style={styles.input}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@company.com"
-              placeholderTextColor={Colors.textTertiary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
+          <View testID="login-form" style={s.form}>
+            <Text style={s.label}>EMAIL</Text>
+            <TextInput testID="login-email" style={s.input} value={email} onChangeText={setEmail}
+              placeholder="you@company.com" placeholderTextColor={Colors.textTertiary}
+              keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
 
-            <Text style={styles.label}>Password</Text>
-            <TextInput
-              testID="login-password"
-              style={styles.input}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="••••••••"
-              placeholderTextColor={Colors.textTertiary}
-              secureTextEntry
-            />
+            <Text style={s.label}>PASSWORD</Text>
+            <TextInput testID="login-password" style={s.input} value={password} onChangeText={setPassword}
+              placeholder="••••••••" placeholderTextColor={Colors.textTertiary} secureTextEntry />
 
-            {error ? <Text testID="login-error" style={styles.error}>{error}</Text> : null}
+            {error ? <Text testID="login-error" style={s.error}>{error}</Text> : null}
 
-            <TouchableOpacity testID="forgot-password-link" onPress={() => setShowForgot(true)} style={{ marginTop: 6 }}>
-              <Text style={styles.link}>Forgot password?</Text>
+            <TouchableOpacity testID="forgot-password-link" onPress={() => setShowForgot(true)} style={{ marginTop: 8 }}>
+              <Text style={s.link}>Forgot password?</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity testID="login-submit" style={styles.btn} onPress={submit} disabled={busy} activeOpacity={0.7}>
-              {busy ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.btnText}>Sign in</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#fff" />
-                </>
+            <TouchableOpacity testID="login-submit" style={s.btn} onPress={submit} disabled={busy} activeOpacity={0.7}>
+              {busy ? <ActivityIndicator color="#fff" size="small" /> : (
+                <><Text style={s.btnText}>SIGN IN</Text><Ionicons name="arrow-forward" size={16} color="#fff" /></>
               )}
             </TouchableOpacity>
           </View>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
+          <View style={s.divider}>
+            <View style={s.dividerLine} />
+            <Text style={s.dividerText}>OR</Text>
+            <View style={s.dividerLine} />
           </View>
 
-          <TouchableOpacity
-            testID="login-with-simpro"
-            style={[styles.simproBtn, (busySimpro || !email) && { opacity: 0.6 }]}
-            onPress={submitSimpro}
-            disabled={busySimpro || !email}
-            activeOpacity={0.7}
-          >
-            {busySimpro ? (
-              <ActivityIndicator color={Colors.text} size="small" />
-            ) : (
-              <Ionicons name="briefcase" size={14} color={Colors.text} />
-            )}
-            <Text style={styles.simproBtnText}>Sign in with Simpro</Text>
+          <TouchableOpacity testID="login-with-simpro" style={[s.secBtn, (busySimpro || !email) && { opacity: 0.5 }]}
+            onPress={submitSimpro} disabled={busySimpro || !email} activeOpacity={0.7}>
+            {busySimpro ? <ActivityIndicator color={Colors.textSecondary} size="small" /> :
+              <Ionicons name="briefcase" size={14} color={Colors.textSecondary} />}
+            <Text style={s.secBtnText}>SIGN IN WITH SIMPRO</Text>
           </TouchableOpacity>
-          <Text style={styles.simproHint}>For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.</Text>
+          <Text style={s.hint}>For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.</Text>
 
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>No account yet? </Text>
+          <View style={s.footer}>
+            <Text style={s.footerText}>No account yet? </Text>
             <TouchableOpacity testID="login-to-signup" onPress={() => router.push('/(auth)/signup')}>
-              <Text style={styles.link}>Start your free trial</Text>
+              <Text style={s.link}>Start your free trial</Text>
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity testID="login-pin-redeem" onPress={() => router.push('/(auth)/pin-redeem')} style={{ marginTop: 12, alignItems: 'center' }}>
-            <Text style={styles.link}>Have a PIN?</Text>
+            <Text style={s.link}>Have a PIN?</Text>
           </TouchableOpacity>
 
           {bioReady && (
-            <TouchableOpacity testID="login-biometric" style={styles.bioBtn} onPress={handleBiometricLogin} disabled={busy} activeOpacity={0.7}>
-              <Ionicons name={bioType === 'Face ID' ? 'scan' : 'finger-print'} size={20} color={Colors.blue} />
-              <Text style={styles.bioBtnText}>Sign in with {bioType}</Text>
+            <TouchableOpacity testID="login-biometric" style={s.bioBtn} onPress={handleBiometricLogin} disabled={busy} activeOpacity={0.7}>
+              <Ionicons name={bioType === 'Face ID' ? 'scan' : 'finger-print'} size={20} color={Colors.orange} />
+              <Text style={s.bioBtnText}>Sign in with {bioType}</Text>
             </TouchableOpacity>
           )}
 
@@ -247,56 +187,35 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 40, paddingBottom: 32 },
-  logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 32 },
-  logoIcon: { width: 36, height: 36, borderRadius: 8, backgroundColor: Colors.blueSoft, alignItems: 'center', justifyContent: 'center' },
-  logoText: { fontSize: 20, fontWeight: '700', color: Colors.ink },
-  heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5, lineHeight: 34 },
+  logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 32 },
+  logoIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  logoText: { fontSize: 18, fontWeight: '800', color: Colors.ink, letterSpacing: 1.5 },
+  h1: { fontSize: 28, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5, lineHeight: 34 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, lineHeight: 19 },
-  valueGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
-  valueChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20,
-    borderWidth: 1, backgroundColor: 'rgba(255,255,255,0.05)',
-  },
-  valueText: { fontSize: 11, fontWeight: '600', color: '#fff' },
-  demoBanner: {
-    flexDirection: 'row', gap: 10, marginTop: 20, padding: 12, borderRadius: 12,
-    backgroundColor: Colors.blueSoft, borderWidth: 1, borderColor: '#BFDBFE', alignItems: 'flex-start',
-  },
-  demoTitle: { fontSize: 12, fontWeight: '600', color: Colors.blue },
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)', backgroundColor: Colors.orangeSoft },
+  chipText: { fontSize: 9, fontWeight: '700', color: Colors.orange, letterSpacing: 0.8 },
+  demoBanner: { flexDirection: 'row', gap: 10, marginTop: 20, padding: 12, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'flex-start' },
+  demoTitle: { fontSize: 10, fontWeight: '700', color: Colors.orange, letterSpacing: 1 },
   demoBody: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   form: { marginTop: 24 },
-  label: { fontSize: 14, fontWeight: '500', color: '#334155', marginBottom: 6, marginTop: 12 },
-  input: {
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text,
-  },
+  label: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1.2, marginBottom: 6, marginTop: 14 },
+  input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: Colors.text },
   error: { color: Colors.red, fontSize: 12, marginTop: 8 },
-  btn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.blue, borderRadius: 10, paddingVertical: 14, marginTop: 20, minHeight: 50,
-  },
-  btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.orange, borderRadius: 12, paddingVertical: 15, marginTop: 20, minHeight: 52 },
+  btnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
   footer: { flexDirection: 'row', marginTop: 24, justifyContent: 'center' },
   footerText: { fontSize: 14, color: Colors.textSecondary },
-  link: { fontSize: 14, fontWeight: '600', color: Colors.blue },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16, marginBottom: 4 },
+  link: { fontSize: 14, fontWeight: '600', color: Colors.orange },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20, marginBottom: 4 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
-  dividerText: { fontSize: 10, fontWeight: '600', letterSpacing: 1, color: Colors.textTertiary },
-  simproBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
-    paddingVertical: 14, marginTop: 12, backgroundColor: Colors.white, minHeight: 50,
-  },
-  simproBtnText: { fontSize: 15, fontWeight: '500', color: Colors.text },
-  simproHint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, textAlign: 'center' },
-  bioBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
-    paddingVertical: 14, marginTop: 12, backgroundColor: Colors.blueSoft, minHeight: 50,
-  },
-  bioBtnText: { fontSize: 15, fontWeight: '600', color: Colors.blue },
+  dividerText: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.textTertiary },
+  secBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, marginTop: 12, backgroundColor: Colors.surface, minHeight: 52 },
+  secBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.5 },
+  hint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, textAlign: 'center' },
+  bioBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)', borderRadius: 12, paddingVertical: 14, marginTop: 12, backgroundColor: Colors.orangeSoft, minHeight: 52 },
+  bioBtnText: { fontSize: 14, fontWeight: '700', color: Colors.orange },
 });
