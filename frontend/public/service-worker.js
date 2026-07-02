@@ -794,8 +794,18 @@
  *        Hazards, Sites, Plant, Workers, Certs, Suppliers, Audit,
  *        Incidents, Inspections, Pre-starts, Documents, Ask
  *        Intelligence. All added to the SW precache list.
+ * v133 — Phase 4.16. Tech-aesthetic top-bar refresh: new ApiHealthPill +
+ *        BackupPill (green LED dots polling `/api/health/integrations`
+ *        and `/health/backup` every 60s), plus a rebuilt orange-avatar
+ *        user pill. Clicking the pill opens a rich dark-navy dropdown
+ *        card with session-timeout picker, suspicious-login alert
+ *        segmented buttons (both/email/sms/off backed by new
+ *        `PATCH /api/me/suspicious-alerts`), Change-password, My apps
+ *        (new stub page listing integrations), Users & permissions
+ *        (admin-only), and Clear-cache-&-reload with a confirm. User
+ *        Manual updated with a "Your account" section.
  */
-const CACHE_VERSION = 'paneltec-v132';
+const CACHE_VERSION = 'paneltec-v133';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

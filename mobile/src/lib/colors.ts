@@ -1,47 +1,76 @@
-// Brand colors matching Paneltec Civil design system
+// Dark Navy + Orange Tech Aesthetic — Paneltec Civil Design System
 export const Colors = {
-  blue: '#2C6BFF',
-  blueSoft: '#EBF0FF',
-  mint: '#D1FAE5',
-  violet: '#7C3AED',
-  violetSoft: '#EDE9FE',
-  amber: '#F59E0B',
-  amberSoft: '#FEF3C7',
-  red: '#EF4444',
-  redSoft: '#FEE2E2',
-  ink: '#0F172A',
-  bg: '#F8FAFC',
+  // Core backgrounds
+  bg: '#020617',           // slate-950 — deepest bg
+  surface: '#0F172A',      // slate-900 — card/section bg
+  surfaceLight: '#1E293B', // slate-800 — elevated cards
+  surfaceHover: '#334155', // slate-700 — hover/press state
+
+  // Borders
+  border: '#334155',       // slate-700
+  borderLight: '#1E293B',  // slate-800
+  borderFocus: '#F97316',  // orange — focused inputs
+
+  // Text
+  ink: '#F8FAFC',          // slate-50 — primary text (light)
+  text: '#F8FAFC',         // slate-50
+  textSecondary: '#94A3B8',// slate-400
+  textTertiary: '#64748B', // slate-500
   white: '#FFFFFF',
-  border: '#E2E8F0',
-  borderLight: '#F1F5F9',
-  text: '#0F172A',
-  textSecondary: '#64748B',
-  textTertiary: '#94A3B8',
+
+  // Orange accent
+  orange: '#F97316',       // orange-500 — primary CTA
+  orangeLight: '#FB923C',  // orange-400
+  orangeDark: '#EA580C',   // orange-600
+  orangeSoft: 'rgba(249,115,22,0.12)', // orange bg tint
+
+  // Legacy blues (still used for certain elements)
+  blue: '#F97316',         // REMAPPED to orange for primary actions
+  blueSoft: 'rgba(249,115,22,0.12)',
+
+  // Semantic
   emerald: '#10B981',
   emeraldDark: '#047857',
+  mint: '#064E3B',         // dark mint for dark theme
+  red: '#EF4444',
+  redSoft: 'rgba(239,68,68,0.15)',
+  amber: '#F59E0B',
+  amberSoft: 'rgba(245,158,11,0.15)',
+  violet: '#A78BFA',
+  violetSoft: 'rgba(167,139,250,0.15)',
+
+  // Gold admin
+  gold: '#EAB308',
+  goldSoft: 'rgba(234,179,8,0.15)',
+
+  // Paneltec
   paneltecGold: '#F4C430',
 };
 
 export const StatusColors: Record<string, { bg: string; text: string; border: string }> = {
-  draft: { bg: '#F1F5F9', text: '#475569', border: '#E2E8F0' },
-  submitted: { bg: '#EBF0FF', text: '#2C6BFF', border: '#BFDBFE' },
-  approved: { bg: '#D1FAE5', text: '#047857', border: '#A7F3D0' },
-  rejected: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  changes_requested: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
-  open: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
-  in_progress: { bg: '#EBF0FF', text: '#2C6BFF', border: '#BFDBFE' },
-  closed: { bg: '#D1FAE5', text: '#047857', border: '#A7F3D0' },
-  low: { bg: '#F1F5F9', text: '#475569', border: '#E2E8F0' },
-  medium: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
-  high: { bg: '#FFF7ED', text: '#C2410C', border: '#FED7AA' },
-  critical: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  active: { bg: '#D1FAE5', text: '#047857', border: '#A7F3D0' },
-  inactive: { bg: '#F1F5F9', text: '#475569', border: '#E2E8F0' },
-  suspended: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  pending: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
-  completed: { bg: '#D1FAE5', text: '#047857', border: '#A7F3D0' },
-  revoked: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  valid: { bg: '#D1FAE5', text: '#047857', border: '#A7F3D0' },
-  expired: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  expiring_soon: { bg: '#FEF3C7', text: '#B45309', border: '#FDE68A' },
+  draft: { bg: '#1E293B', text: '#94A3B8', border: '#334155' },
+  submitted: { bg: 'rgba(249,115,22,0.12)', text: '#FB923C', border: 'rgba(249,115,22,0.3)' },
+  approved: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  rejected: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  changes_requested: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  open: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  in_progress: { bg: 'rgba(249,115,22,0.12)', text: '#FB923C', border: 'rgba(249,115,22,0.3)' },
+  closed: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  low: { bg: '#1E293B', text: '#94A3B8', border: '#334155' },
+  medium: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  high: { bg: 'rgba(249,115,22,0.12)', text: '#FB923C', border: 'rgba(249,115,22,0.3)' },
+  critical: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  active: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  inactive: { bg: '#1E293B', text: '#94A3B8', border: '#334155' },
+  suspended: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  pending: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  completed: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  revoked: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  valid: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  expired: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  expiring_soon: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  queued: { bg: 'rgba(245,158,11,0.12)', text: '#FBBF24', border: 'rgba(245,158,11,0.3)' },
+  sent: { bg: 'rgba(16,185,129,0.12)', text: '#34D399', border: 'rgba(16,185,129,0.3)' },
+  failed: { bg: 'rgba(239,68,68,0.12)', text: '#F87171', border: 'rgba(239,68,68,0.3)' },
+  cancelled: { bg: '#1E293B', text: '#94A3B8', border: '#334155' },
 };

@@ -31,6 +31,7 @@ import PlantVehicles from '@/pages/PlantVehicles';
 import ScanResolver from '@/pages/ScanResolver';
 import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
+import MyApps from '@/pages/MyApps';
 import PermissionPresetsAdmin from '@/pages/PermissionPresetsAdmin';
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
@@ -131,6 +132,7 @@ function App() {
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
               <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
+              <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
               <Route path="settings/workers" element={<Workers />} />
               <Route path="settings/form-assignments" element={<FormAssignmentsAdmin />} />

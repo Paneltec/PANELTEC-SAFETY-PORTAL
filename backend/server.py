@@ -236,6 +236,10 @@ api.include_router(contractors_qr_router)
 api.include_router(asset_navixy_dashboards_router)
 api.include_router(forms_pickers_router)
 api.include_router(help_router)
+# Phase 4.16 (v133) — top-bar API-health / backup pills + per-user
+# suspicious-login alert prefs.
+from health_extras import router as health_extras_router  # noqa: E402
+api.include_router(health_extras_router)
 
 app.include_router(api)
 

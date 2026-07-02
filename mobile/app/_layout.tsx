@@ -54,7 +54,7 @@ function RootNav() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <ChangePasswordModal
         visible={isAuth && mustChangePassword}
         locked={true}

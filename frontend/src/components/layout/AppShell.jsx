@@ -51,6 +51,7 @@ import {
 import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { ChangePasswordModal } from '../auth/AuthBundle';
+import { ApiHealthPill, BackupPill, UserDropdownCard } from './TopbarPills';
 
 const NAV = [
   { section: 'Overview', items: [
@@ -266,6 +267,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       </button>
       <OutboxBell />
 
+      {/* Phase 4.16 (v133) — tech-aesthetic pills */}
+      <ApiHealthPill />
+      <BackupPill />
+
       {safeMode?.effective === 'on' && (
         <Link
           to="/app/settings/comms-safe-mode"
@@ -279,29 +284,24 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 ml-1" data-testid="user-menu-trigger">
-            <Avatar className="h-8 w-8 bg-brand-blue text-white">
-              <AvatarFallback className="bg-brand-blue text-white text-xs font-semibold">{initials(user)}</AvatarFallback>
-            </Avatar>
+          <button className="flex items-center gap-2 ml-1 pl-1 pr-2 py-0.5 rounded-full hover:bg-slate-100" data-testid="user-menu-trigger">
+            <span className="grid place-items-center w-8 h-8 rounded-full bg-orange-500 text-white text-xs font-bold shadow-sm">
+              {initials(user)}
+            </span>
+            <span className="hidden sm:inline text-xs font-semibold tracking-wider uppercase text-slate-700">
+              {(user?.name || user?.email || 'YOU').split(' ')[0]}
+            </span>
             <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          <DropdownMenuLabel>
-            <div className="text-sm font-medium">{user?.name || 'Demo User'}</div>
-            <div className="text-xs text-slate-500 font-normal">{user?.email}</div>
-            <div className="text-[10px] mt-1 uppercase tracking-wider text-brand-blue font-semibold">{user?.role}</div>
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem asChild data-testid="menu-profile">
-            <Link to="/app/profile">My Profile</Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setChangePwOpen(true)} data-testid="menu-change-password">
-            <KeyRoundIcon size={14} className="mr-2" /> Change password…
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleSignOut} data-testid="menu-sign-out">
-            <LogOut size={14} className="mr-2" /> Sign out
-          </DropdownMenuItem>
+        <DropdownMenuContent align="end" className="w-96 p-0 bg-slate-950 text-slate-100 border border-orange-500/40 rounded-2xl shadow-2xl overflow-hidden"
+          style={{ backgroundImage: 'radial-gradient(rgba(249,115,22,0.10) 1px, transparent 1px)', backgroundSize: '18px 18px' }}>
+          <UserDropdownCard
+            user={user}
+            onChangePassword={() => setChangePwOpen(true)}
+            onSignOut={handleSignOut}
+            onNavigate={navigate}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
