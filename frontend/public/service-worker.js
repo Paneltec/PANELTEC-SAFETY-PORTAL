@@ -943,8 +943,27 @@
  *        Also: reactivated `worker_stephen@paneltec.com.au` (status
  *        `disabled` → `active`) so the tester can exercise the
  *        non-admin browser-side sidebar/route-guard flow.
+ * v145 — Portal→Civil cleanup pass on the backup bundle.
+ *        Backend `backup_service.py`: `verify_snapshot()` no longer
+ *        keys off a hardcoded Portal collection table (customers_master,
+ *        weigh_tickets, products, sp_form_templates, sp_workers, users
+ *        with Portal `user_id` schema, app_settings). Now dynamic —
+ *        one `collection · <name>` row per manifest.collections[] +
+ *        a `document count parity` row (Σ len(rows) ≡ manifest.
+ *        total_documents) + a warn-only `unexpected files` row for
+ *        any `mongo/*.json` not listed in the manifest. Portal
+ *        "Iter 66" comment removed; two Portal-flavoured comments
+ *        rewritten to say Hub / Hub admin bearer.
+ *        Frontend `BackupTab.jsx`: `portalToken()` → `civilToken()`
+ *        rename, and the localStorage key is now read from Civil's
+ *        `TOKEN_KEY` import (`paneltec_token`) instead of the wrong
+ *        `paneltec_session_token`. This unblocks the four call-sites
+ *        that bypass the axios interceptor: snapshot download
+ *        (button + `<a href>`), installer .py download, and
+ *        docker-compose.yml download. Two Portal comment/copy
+ *        strings rewritten to Civil wording.
  */
-const CACHE_VERSION = 'paneltec-v144';
+const CACHE_VERSION = 'paneltec-v145';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

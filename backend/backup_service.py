@@ -590,7 +590,7 @@ def install(app, db, require_admin):
                                 authorization: Optional[str] = Header(None),
                                 token: Optional[str] = Query(None)):
         """Either:
-        * Authenticated admin (Bearer token from the portal) — manual
+        * Authenticated admin (Bearer token from the Hub UI) — manual
           "Download Snapshot" button in Settings.
         * A registered agent (presents X-Agent-Token via Authorization:
           `Agent <token>` or ?token=).
@@ -929,13 +929,19 @@ def install(app, db, require_admin):
                      dependencies=[Depends(require_admin)])
     async def verify_snapshot(snap_id: str):
         """Proof-of-restore — pull the snapshot ZIP back out of GridFS,
-        unzip a sample of critical collections in-memory, and run
-        assertions that catch the most common corruption modes:
-          • manifest.json present + parseable
-          • Each critical collection unzips, parses as JSON, has rows
-          • SHA256 of the live bytes matches the stored manifest hash
-          • Per-collection row-count sanity (≥ threshold)
-        Never touches the live DB — just streams + parses bytes.
+        parse every collection listed in the manifest, and confirm the
+        archive is self-consistent. Never touches the live DB — just
+        streams + parses bytes.
+
+        Check contract (all dynamic; no hardcoded collection list):
+          1. manifest.json present, parseable, and snapshot_id matches
+          2. sha256 integrity — recompute over ZIP bytes vs stored hash
+          3. one row per manifest.collections[] → `mongo/<name>.json`
+             is in the ZIP, parses as a JSON list
+          4. document count parity — Σ len(rows) across all mongo/*.json
+             equals manifest.total_documents
+          5. unexpected files (warn-only) — any `mongo/*.json` in the
+             ZIP that isn't listed in manifest.collections[]
 
         Stamps the result onto the bk_snapshots row so the UI can
         show "Last verified: 2 min ago · OK" next to the snapshot."""
@@ -944,26 +950,17 @@ def install(app, db, require_admin):
         if not snap:
             raise HTTPException(404, "snapshot not found")
 
-        # Critical-collection contract: each entry =
-        #   (collection_name, min_rows, schema_required_keys)
-        # Tunable per deployment; baseline matches Paneltec's current
-        # production footprint as of Iter 66.
-        CRITICAL = [
-            ("customers_master", 1, {"id"}),
-            ("weigh_tickets",    1, {"id", "ticket_no"}),
-            ("products",         1, {"id", "name"}),
-            ("sp_form_templates", 1, {"id"}),
-            ("sp_workers",       1, {"id"}),
-            ("users",            1, {"user_id", "email"}),
-            ("app_settings",     0, set()),    # may be empty by design
-        ]
-
         started = datetime.now(timezone.utc)
-        checks: List[Dict[str, Any]] = []
+        collection_checks: List[Dict[str, Any]] = []
         manifest_check = {"name": "manifest.json", "ok": False,
                           "detail": "not loaded"}
         sha_check = {"name": "sha256 integrity", "ok": False,
                      "detail": "not computed"}
+        parity_check = {"name": "document count parity", "ok": False,
+                        "detail": "not computed"}
+        unexpected_check = {"name": "unexpected files", "ok": True,
+                            "detail": "no extra archive members"}
+        manifest: Optional[Dict[str, Any]] = None
 
         try:
             # Pull bytes from GridFS in chunks → SHA + ZIP parse in one pass.
@@ -993,7 +990,7 @@ def install(app, db, require_admin):
             except zipfile.BadZipFile as bz:
                 raise HTTPException(500, f"snapshot is not a valid ZIP: {bz}")
 
-            # Manifest check
+            # ---- 1. manifest.json ----
             try:
                 manifest_bytes = z.read("manifest.json")
                 manifest = json.loads(manifest_bytes)
@@ -1018,8 +1015,15 @@ def install(app, db, require_admin):
                 manifest_check = {"name": "manifest.json", "ok": False,
                                   "detail": f"parse error: {me}"}
 
-            # Per-collection checks
-            for cname, min_rows, required_keys in CRITICAL:
+            manifest_collections: List[str] = (
+                list(manifest.get("collections") or [])
+                if isinstance(manifest, dict) else []
+            )
+
+            # ---- 3. per-collection presence + parseability ----
+            observed_totals = 0
+            manifest_set = set(manifest_collections)
+            for cname in manifest_collections:
                 check: Dict[str, Any] = {
                     "name": f"collection · {cname}",
                     "ok": False,
@@ -1031,39 +1035,72 @@ def install(app, db, require_admin):
                     raw = z.read(arcname)
                 except KeyError:
                     check["detail"] = f"missing from ZIP ({arcname})"
-                    checks.append(check)
+                    collection_checks.append(check)
                     continue
                 try:
                     rows = json.loads(raw)
                 except Exception as je:
                     check["detail"] = f"JSON parse error: {je}"
-                    checks.append(check)
+                    collection_checks.append(check)
                     continue
                 if not isinstance(rows, list):
                     check["detail"] = f"expected list, got {type(rows).__name__}"
-                    checks.append(check)
+                    collection_checks.append(check)
                     continue
-                check["rows"] = len(rows)
-                if len(rows) < min_rows:
-                    check["detail"] = (f"only {len(rows)} row(s), expected ≥ {min_rows}"
-                                       if min_rows > 0
-                                       else "ok (empty allowed)")
-                    check["ok"] = (min_rows == 0)
-                    checks.append(check)
-                    continue
-                # Schema sample: first row must have required keys.
-                if required_keys and rows:
-                    missing = required_keys - set(rows[0].keys())
-                    if missing:
-                        check["detail"] = (f"schema mismatch — row[0] missing "
-                                           f"{sorted(missing)}")
-                        checks.append(check)
-                        continue
+                n = len(rows)
+                check["rows"] = n
                 check["ok"] = True
-                check["detail"] = f"{len(rows)} row(s), schema sample OK"
-                checks.append(check)
+                check["detail"] = f"{n} row(s) present"
+                observed_totals += n
+                collection_checks.append(check)
 
-            all_checks = [manifest_check, sha_check] + checks
+            # ---- 4. document count parity ----
+            expected_total = (manifest.get("total_documents")
+                              if isinstance(manifest, dict) else None)
+            if expected_total is None:
+                parity_check = {
+                    "name": "document count parity",
+                    "ok": False,
+                    "detail": "manifest.total_documents missing",
+                }
+            elif observed_totals == expected_total:
+                parity_check = {
+                    "name": "document count parity",
+                    "ok": True,
+                    "detail": (f"{observed_totals} rows across "
+                               f"{len(manifest_collections)} collections "
+                               f"matches manifest"),
+                }
+            else:
+                parity_check = {
+                    "name": "document count parity",
+                    "ok": False,
+                    "detail": (f"MISMATCH: manifest says {expected_total}, "
+                               f"ZIP has {observed_totals}"),
+                }
+
+            # ---- 5. unexpected files (warn-only) ----
+            extras: List[str] = []
+            for name in z.namelist():
+                if not name.startswith("mongo/") or not name.endswith(".json"):
+                    continue
+                base = name[len("mongo/"):-len(".json")]
+                if base not in manifest_set:
+                    extras.append(name)
+            if extras:
+                sample = ", ".join(extras[:5])
+                more = f" (+{len(extras)-5} more)" if len(extras) > 5 else ""
+                unexpected_check = {
+                    "name": "unexpected files",
+                    "ok": True,   # warn-only, non-blocking
+                    "warn": True,
+                    "detail": f"{len(extras)} extra file(s) not in manifest: {sample}{more}",
+                }
+
+            all_checks = ([manifest_check, sha_check]
+                          + collection_checks
+                          + [parity_check, unexpected_check])
+            # `ok` is a hard pass — treats warn-only rows as passing.
             ok = all(c["ok"] for c in all_checks)
             duration_ms = int(
                 (datetime.now(timezone.utc) - started).total_seconds() * 1000
@@ -1261,7 +1298,7 @@ def install(app, db, require_admin):
         # start flow works without distributing an admin session.
         agent = await _resolve_agent(authorization, token)
         if not agent:
-            # Fall back to portal admin auth.
+            # Fall back to Hub admin bearer.
             ok, _ = await verify_bearer_token(db, authorization)
             if not ok:
                 raise HTTPException(401, "auth required")

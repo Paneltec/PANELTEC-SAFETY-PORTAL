@@ -44,8 +44,8 @@ const PAPER = "#f3efe6";
 const ACCENT = "#fbbf24";
 
 const API = (process.env.REACT_APP_BACKEND_URL || "") + "/api/backup";
-const portalToken = () => localStorage.getItem("paneltec_session_token") || "";
-const authHdr = () => ({ Authorization: `Bearer ${portalToken()}` });
+const civilToken = () => localStorage.getItem(TOKEN_KEY) || "";
+const authHdr = () => ({ Authorization: `Bearer ${civilToken()}` });
 
 const fmtBytes = (n) => {
   if (!n) return "—";
@@ -117,13 +117,13 @@ export default function BackupTab() {
   };
 
   const downloadSnap = (snap) => {
-    // Use a direct anchor with the portal bearer token in the query
+    // Use a direct anchor with the Civil bearer token in the query
     // string. The browser handles streaming + the standard "Saving…"
     // progress indicator natively, instead of pulling 184 MB into a
     // JS Blob (which appears to hang the button for 30+ seconds).
-    const tok = portalToken();
+    const tok = civilToken();
     if (!tok) {
-      alert("No portal session — please refresh the page and re-login.");
+      alert("No Paneltec session — please refresh and sign in again.");
       return;
     }
     const url = `${process.env.REACT_APP_BACKEND_URL}/api/backup/snapshots/${snap.id}/data?token=${encodeURIComponent(tok)}`;
@@ -209,11 +209,11 @@ export default function BackupTab() {
                       <VerifyButton snap={s} onDone={refresh}/>
                       {/* A real <a> rendered into the DOM (not a
                           programmatic window.open) so Chrome treats this
-                          like any other download link. The portal bearer
+                          like any other download link. The Civil bearer
                           is embedded as ?token= so the browser can hit
                           the endpoint without a JS fetch dance. */}
                       <a
-                        href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/snapshots/${s.id}/data?token=${encodeURIComponent(portalToken())}`}
+                        href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/snapshots/${s.id}/data?token=${encodeURIComponent(civilToken())}`}
                         download={`paneltec-snapshot-${s.id}.zip`}
                         data-testid={`backup-download-${s.id}`}
                         style={{

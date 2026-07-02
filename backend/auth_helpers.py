@@ -13,7 +13,7 @@ from typing import Any, Optional, Tuple
 
 
 async def verify_bearer_token(db: Any, authorization: Optional[str]) -> Tuple[bool, Optional[dict]]:
-    """Decode a portal Bearer JWT and look up the matching user.
+    """Decode a Civil Bearer JWT and look up the matching user.
 
     Returns ``(ok, user_doc_without_id)``. Never raises — designed for
     fallback auth paths (e.g. ``?token=`` query param on a plain
@@ -43,7 +43,7 @@ async def verify_bearer_token(db: Any, authorization: Optional[str]) -> Tuple[bo
             algorithms=["HS256"],
         )
         u = await db.users.find_one(
-            {"user_id": payload["sub"]},
+            {"id": payload["sub"]},
             {"_id": 0},
         )
         return bool(u), u
