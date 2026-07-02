@@ -983,8 +983,21 @@
  *        symptom that was actually Cloudflare/ingress killing the
  *        long-running synchronous HTTP request while apt-get kept
  *        installing to completion server-side.
+ * v147 — Settings → Integrations page now consumes
+ *        `/api/health/integrations` (matches Settings → My Apps —
+ *        the source of truth). Previously it hit `/api/integrations`
+ *        which returns the per-org config-lifecycle status
+ *        (`connected/error/not_connected`) — ignorant of Comms Safe
+ *        Mode. M365 + TextMagic correctly show as `Down` with a
+ *        secondary `Disarmed` badge when Comms Safe Mode is on;
+ *        Simpro idle-with-creds correctly shows `Connected` (v140
+ *        semantic fix); Navixy and Simpro cards now surface the
+ *        live `detail` string ("Ready · last call 4d ago · 466
+ *        records cached", "72 assets synced · last sync 12m ago").
+ *        The per-integration admin pages and their
+ *        `GET /integrations/{kind}` config CRUD flow are untouched.
  */
-const CACHE_VERSION = 'paneltec-v146';
+const CACHE_VERSION = 'paneltec-v147';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
