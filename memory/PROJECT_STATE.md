@@ -1,7 +1,7 @@
 # Paneltec Civil — Active Maintenance Project
 
-**NEXT PHASE: 4.17 v134.2 — 5 remaining Dashboard-tab mounts. See PHASE_4_17_PLAN.md.**
-Latest shipped: paneltec-v135 (module dashboards infra + 4/9 mounts).
+**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v136 (all 9 modules have Dashboard-tab analytics).**
+Pre-existing schematic serving bug also fixed in this pass (missing `@router.get("/schematics/{filename}")` decorator in help_routes.py).
 
 THIS IS A LIVE, IN-PRODUCTION APP. DO NOT REBUILD.
 

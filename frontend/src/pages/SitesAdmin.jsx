@@ -23,6 +23,9 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
+// Phase 4.17 v134.2 — Dashboard/List tabs.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
 
@@ -132,7 +135,23 @@ export default function SitesAdmin() {
         }
       />
 
-      <HowThisWorks schematicSlug="sites_qr" />
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="sites-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="sites-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="sites-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{filtered.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4" data-testid="sites-tab-dashboard-content">
+          <HowThisWorks schematicSlug="sites_qr" />
+          <ModuleDashboard
+            module="sites" title="Sites"
+            tagline="Sign-on volumes, GPS anomalies and active-crew visibility across every site."
+            moduleColour="orange"
+            quickActions={[{ label: 'Add site', route: '/app/sites' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4" data-testid="sites-tab-list-content">
 
       <div className="mb-4 flex items-center gap-3">
         <input
@@ -243,6 +262,8 @@ export default function SitesAdmin() {
           </table>
         </div>
       )}
+        </TabsContent>
+      </Tabs>
 
       {printFor && <SitePrintModal site={printFor} onClose={() => setPrintFor(null)} />}
       {editFor && <EditSiteDrawer site={editFor} onClose={() => setEditFor(null)} onSaved={() => { setEditFor(null); reload(); }} />}

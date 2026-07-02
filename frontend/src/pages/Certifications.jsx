@@ -8,6 +8,9 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+// Phase 4.17 v134.2 — Dashboard/List tabs.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import CertEditModal from '../components/certifications/CertEditModal';
 import CertDeleteConfirm from '../components/certifications/CertDeleteConfirm';
@@ -146,6 +149,23 @@ export default function Certifications() {
         </div>
       </div>
 
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="certifications-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="certifications-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="certifications-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{rows.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4" data-testid="certifications-tab-dashboard-content">
+          <ModuleDashboard
+            module="certifications" title="Certifications"
+            tagline="Every certification across your crew — ranked by what's expiring or expired."
+            moduleColour="amber"
+            quickActions={[{ label: 'View list', route: '/app/certifications' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4" data-testid="certifications-tab-list-content">
+
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex flex-wrap gap-1.5" data-testid="cert-filter-chips">
@@ -261,6 +281,8 @@ export default function Certifications() {
           </table>
         </div>
       )}
+        </TabsContent>
+      </Tabs>
 
       {/* Phase 3.17 — row action modals */}
       {previewCert && (

@@ -320,6 +320,7 @@ def get_tile(filename: str) -> Response:
             "Content-Disposition": f'inline; filename="{filename}"',
         },
     )
+@router.get("/schematics/{filename}")
 def get_schematic(filename: str) -> Response:
     # Reject path-traversal attempts up front — filename must be a bare
     # name, no separators, and terminate with .png.

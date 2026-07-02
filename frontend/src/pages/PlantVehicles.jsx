@@ -8,6 +8,9 @@ import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
+// Phase 4.17 v134.2 — Dashboard/List tabs.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
@@ -305,6 +308,25 @@ export default function PlantVehicles() {
 
       <HowThisWorks schematicSlug="plant_vehicles" />
 
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="vehicles-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="vehicles-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="vehicles-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{assets.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4" data-testid="vehicles-tab-dashboard-content">
+          <ModuleDashboard
+            module="vehicles" title="Plant & Vehicles"
+            tagline="Unified asset register — live Navixy fleet + manually-added plant, tools and containers."
+            moduleColour="emerald"
+            quickActions={canEdit ? [
+              { label: 'Add Asset', route: '/app/vehicles' },
+              { label: 'Integrations', route: '/app/settings/integrations' },
+            ] : []}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4" data-testid="vehicles-tab-list-content">
       {error && (
         <div className="mb-4 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700" data-testid="assets-error">{error}</div>
       )}
@@ -486,6 +508,8 @@ export default function PlantVehicles() {
           </ul>
         )}
       </div>
+        </TabsContent>
+      </Tabs>
 
       <VehicleMapModal vehicle={activeMapAsset} open={!!activeMapAsset} onClose={() => setActiveMapAsset(null)} />
       {drawerOpen && (

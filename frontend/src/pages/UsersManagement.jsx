@@ -16,6 +16,9 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
+// Phase 4.17 v134.2 — Dashboard/List tabs.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import { RESOURCE_LABELS, EMAIL_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import {
@@ -198,7 +201,25 @@ export default function UsersManagement() {
             </button>
           </div>) : null} />
 
-      <HowThisWorks schematicSlug="workers_access" />
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="users-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="users-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{users.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4" data-testid="users-tab-dashboard-content">
+          <HowThisWorks schematicSlug="workers_access" />
+          <ModuleDashboard
+            module="workers" title="Users & Workers"
+            tagline="Roles, activity and access — with expiring invites and locked accounts surfaced first."
+            moduleColour="violet"
+            quickActions={can('users', 'edit') ? [
+              { label: 'Invite user', route: '/app/settings/users' },
+            ] : []}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4" data-testid="users-tab-list-content">
 
       {!can('users', 'edit') && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900" data-testid="users-readonly-banner">
@@ -344,6 +365,8 @@ export default function UsersManagement() {
           </tbody>
         </table>
       </div>
+        </TabsContent>
+      </Tabs>
 
       {bulkConfirmOpen && (
         <div data-testid="users-bulk-delete-modal"

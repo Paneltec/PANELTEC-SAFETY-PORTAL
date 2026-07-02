@@ -7,6 +7,9 @@ import DeleteRecordButton from '../components/DeleteRecordButton';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
+// Phase 4.17 v134.2 — Dashboard/List tabs.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
@@ -177,6 +180,22 @@ export default function AuditExports() {
 
       <HowThisWorks schematicSlug="audit_exports" />
 
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="audit-exports-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="audit-exports-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="audit-exports-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{groups.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4" data-testid="audit-exports-tab-dashboard-content">
+          <ModuleDashboard
+            module="audit_exports" title="Audit Exports"
+            tagline="Signed evidence packs for Comcare, SafeWork and client audits — tracked by coverage and freshness."
+            moduleColour="orange"
+            quickActions={[{ label: 'New export', route: '/app/settings/audit-exports' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4" data-testid="audit-exports-tab-list-content">
       {groups.length === 0 ? <EmptyState title="No exports yet" body="Generate your first audit pack." />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
@@ -259,6 +278,8 @@ export default function AuditExports() {
           </table>
         </div>
        )}
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent data-testid="export-modal" className="max-w-lg">

@@ -822,8 +822,18 @@
  *        curl, waiting only on the frontend Tab wrapping. Cache bump so
  *        stuck-SW browsers pick up the SWMS/Hazards/Incidents/Inspections
  *        Dashboard tabs on next load.
+ * v136 — Phase 4.17 v134.2 COMPLETE. Every one of the 9 major modules
+ *        now has its Dashboard tab as the default landing tab, backed by
+ *        the shared `<ModuleDashboard />` component and the real
+ *        `/api/dashboards/{module}` aggregators shipped in v134/v135.
+ *        v134.2 wired the final 5 mounts: Sites (`SitesAdmin.jsx`),
+ *        Plant & Vehicles (`PlantVehicles.jsx`), Workers
+ *        (`UsersManagement.jsx`), Certifications (`Certifications.jsx`)
+ *        and Audit Exports (`AuditExports.jsx`). Existing HowThisWorks
+ *        panels moved into the Dashboard tab; List tab preserves every
+ *        pre-v134 affordance untouched.
  */
-const CACHE_VERSION = 'paneltec-v135';
+const CACHE_VERSION = 'paneltec-v136';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
