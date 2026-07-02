@@ -871,8 +871,28 @@
  *        successful sync is >24h — that's a real "sync cron not
  *        running" signal, not a red-vs-green bug (auto_sync_enabled
  *        is currently `false` for this org).
+ * v140 — Phase 4.18.2 Simpro semantics correction. Simpro is an
+ *        on-demand integration — you only call it when you need to
+ *        fetch a worker/vendor/site/job. Between demands it sits idle
+ *        in "ready" state. v139 was flagging that idleness as amber
+ *        "stale", which was wrong. v140 flips it: credentials + no
+ *        error = **green "Ready"** regardless of how long ago the last
+ *        call was. Amber only when a recent (< 24h) call errored;
+ *        red when credentials are missing or errors have persisted
+ *        > 24h. User Manual §13 gains an "Idle green is normal for
+ *        on-demand integrations" note.
+ * v141 — Phase 4.18.2 clickable integration rows. Every row in the
+ *        top-bar API-health popover (Simpro / Navixy / Microsoft 365
+ *        / TextMagic) is now a `<Link>` deep-linking to its admin
+ *        config page under `/app/settings/integrations/<provider>`.
+ *        Hover reveals an orange left-edge accent stripe, a right-
+ *        chevron and a lifted background — matching the sidebar
+ *        interaction language. Popover closes on navigation. MongoDB
+ *        stays a static row (no route — infrastructure) with a
+ *        subtle "· System" label. User Manual §13 gets a one-line
+ *        "click any row to jump to its config" note.
  */
-const CACHE_VERSION = 'paneltec-v139';
+const CACHE_VERSION = 'paneltec-v141';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

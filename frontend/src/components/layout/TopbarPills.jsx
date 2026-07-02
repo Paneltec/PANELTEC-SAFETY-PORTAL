@@ -20,6 +20,16 @@ const DOT_TONES = {
   down:  { chip: 'bg-slate-900 text-rose-300 border-rose-500/40',        dot: 'bg-rose-500 shadow-[0_0_10px_2px_rgba(244,63,94,0.6)]' },
 };
 
+// Phase 4.18.2 v141 — each integration row in the popover deep-links to its
+// admin config page. MongoDB is infrastructure — leave it non-clickable so
+// users don't accidentally hunt for a page that doesn't exist.
+const INTEGRATION_ROUTES = {
+  simpro: '/app/settings/integrations/simpro',
+  navixy: '/app/settings/integrations/navixy',
+  m365: '/app/settings/integrations/microsoft365',
+  textmagic: '/app/settings/integrations/textmagic',
+};
+
 export function ApiHealthPill() {
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(false);
@@ -48,11 +58,12 @@ export function ApiHealthPill() {
           <ul className="space-y-1.5">
             {data.items.map((it) => {
               const t = DOT_TONES[it.status] || DOT_TONES.amber;
-              return (
-                <li key={it.kind} className="flex items-center gap-2 text-xs" data-testid={`api-health-row-${it.kind}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />
-                  <span className="flex-1 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
-                    {it.name}
+              const route = INTEGRATION_ROUTES[it.kind];
+              const inner = (
+                <>
+                  <span className={`w-1.5 h-1.5 rounded-full ${t.dot} shrink-0`} />
+                  <span className="flex-1 min-w-0 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
+                    <span className="truncate">{it.name}</span>
                     {it.disarmed && (
                       <span title="Deliberately disarmed by Comms Safe Mode"
                             data-testid={`api-health-disarmed-${it.kind}`}
@@ -60,8 +71,41 @@ export function ApiHealthPill() {
                         🛡 disarmed
                       </span>
                     )}
+                    {!route && it.kind === 'mongodb' && (
+                      <span className="text-[9px] font-semibold text-slate-500 tracking-wider normal-case">
+                        · System
+                      </span>
+                    )}
                   </span>
-                  <span className="text-slate-400 text-right">{it.detail || '—'}</span>
+                  <span className="text-slate-400 text-right truncate max-w-[220px]">{it.detail || '—'}</span>
+                  {route && (
+                    <ArrowRight16Regular className="shrink-0 w-3.5 h-3.5 text-slate-600 group-hover:text-orange-400 transition-colors" />
+                  )}
+                </>
+              );
+              if (!route) {
+                return (
+                  <li key={it.kind}
+                      className="relative flex items-center gap-2 text-xs px-2 py-1 rounded-md"
+                      data-testid={`api-health-row-${it.kind}`}>
+                    {inner}
+                  </li>
+                );
+              }
+              return (
+                <li key={it.kind} data-testid={`api-health-row-${it.kind}`}>
+                  <Link
+                    to={route}
+                    onClick={() => setOpen(false)}
+                    data-testid={`api-health-link-${it.kind}`}
+                    className="group relative flex items-center gap-2 text-xs px-2 py-1 rounded-md
+                               hover:bg-slate-900/50 transition-colors
+                               before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5
+                               before:rounded-full before:bg-orange-500 before:opacity-0
+                               hover:before:opacity-100 before:transition-opacity"
+                  >
+                    {inner}
+                  </Link>
                 </li>
               );
             })}

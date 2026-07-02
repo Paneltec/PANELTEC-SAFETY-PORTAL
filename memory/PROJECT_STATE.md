@@ -1,6 +1,6 @@
 # Paneltec Civil — Active Maintenance Project
 
-**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v139 (Phase 4.18.1 integration-lights truth-serum with Comms-Safe-Mode disarm semantics; M365/TextMagic show red-🛡-disarmed while safe mode is on).**
+**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v141 (Phase 4.18.2 clickable integration rows in API-pill popover; deep-links to per-provider config pages under `/app/settings/integrations/<provider>`).**
 Pre-existing schematic serving bug also fixed in v136 (missing `@router.get("/schematics/{filename}")` decorator in help_routes.py).
 
 THIS IS A LIVE, IN-PRODUCTION APP. DO NOT REBUILD.

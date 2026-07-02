@@ -84,26 +84,50 @@ _HEALTH_TTL = 60
 
 
 def _check_simpro(cfg: dict | None) -> dict:
-    """Green if `config.api_token` is set and `last_sync_at` < 24h.
-    Amber 24h–7d. Red if credentials missing or last sync > 7d."""
+    """Simpro is an **on-demand** integration — you only call it when you
+    need to fetch a worker/vendor/site/job. Between demands it sits idle in
+    "ready" state. So freshness of `last_sync_at` is NOT a health signal;
+    only credentials + last known error state matter.
+
+    - Green if credentials present AND no persistent error.
+    - Amber if credentials present but the last call errored transiently
+      (< 24h ago).
+    - Red if credentials missing, OR the last error is > 24h old with no
+      successful call since (implies the integration is genuinely broken).
+    """
     if not cfg or not (cfg.get("config") or {}).get("api_token"):
         return {"status": "down", "detail": "Not connected"}
-    last_sync = _parse_dt(cfg.get("last_sync_at") or (cfg.get("config") or {}).get("last_sync_at"))
-    if last_sync is None:
-        return {"status": "amber",
-                "detail": "Credentials configured, not verified yet",
-                "last_checked_at": None}
-    age = datetime.now(timezone.utc) - last_sync
+
+    status_field = (cfg.get("status") or "").lower()
+    last_error = cfg.get("last_error")
+    last_sync = _parse_dt(cfg.get("last_sync_at"))
+    last_tested = _parse_dt(cfg.get("last_tested_at"))
     n = cfg.get("last_sync_count")
-    count_txt = f" · {n} records" if isinstance(n, int) and n > 0 else ""
-    if age < timedelta(hours=24):
-        return {"status": "up", "detail": f"Last sync {_fmt_ago(last_sync)}{count_txt}",
-                "last_checked_at": _iso(last_sync)}
-    if age < timedelta(days=7):
-        return {"status": "amber", "detail": f"Stale · last sync {_fmt_ago(last_sync)}{count_txt}",
-                "last_checked_at": _iso(last_sync)}
-    return {"status": "down", "detail": f"Last sync {_fmt_ago(last_sync)}{count_txt}",
-            "last_checked_at": _iso(last_sync)}
+    count_txt = f" · {n} records cached" if isinstance(n, int) and n > 0 else ""
+
+    # Error path — recent transient vs sustained.
+    if status_field == "error" or last_error:
+        err_when = _parse_dt(cfg.get("last_error_at") or cfg.get("updated_at"))
+        if err_when and (datetime.now(timezone.utc) - err_when) > timedelta(hours=24):
+            return {"status": "down",
+                    "detail": f"Not reachable — {str(last_error or 'check credentials')[:60]}",
+                    "last_checked_at": _iso(err_when)}
+        return {"status": "amber",
+                "detail": f"Credentials present, test call failed {_fmt_ago(err_when)}",
+                "last_checked_at": _iso(err_when)}
+
+    # Happy path — credentials + status connected + no error → Ready.
+    # Show whichever timestamp is more recent as context.
+    ref = last_sync if last_sync else last_tested
+    if last_sync:
+        return {"status": "up",
+                "detail": f"Ready · last call {_fmt_ago(last_sync)}{count_txt}",
+                "last_checked_at": _iso(ref)}
+    if last_tested:
+        return {"status": "up",
+                "detail": f"Ready · verified {_fmt_ago(last_tested)}",
+                "last_checked_at": _iso(ref)}
+    return {"status": "up", "detail": "Ready"}
 
 
 async def _check_navixy(cfg: dict | None, org_id: str) -> dict:
