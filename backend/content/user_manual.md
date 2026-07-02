@@ -1,6 +1,6 @@
 # Paneltec Civil — User Manual
 
-_Last updated for paneltec-v134 · Web platform · Australian English_
+_Last updated for paneltec-v137 · Web platform · Australian English_
 
 Welcome to Paneltec Civil — the connected WHS compliance platform built for Australian civil contracting and construction teams. This manual walks you through every screen and feature you'll touch day-to-day. If you only read one section, make it **Getting started** below; everything else can wait until you need it.
 
@@ -181,6 +181,15 @@ Sidebar → **Workers** (under Settings) → **+ Add worker**. Fill name, mobile
 ### Sending an invite
 Workers list → row action menu → **Send invite**. Choose the channel (email or SMS) — both deliver a one-time PIN + a redeem link. The pill on the worker row updates: `Invite pending` → `Active` once they redeem.
 
+### Bulk invite (paste-a-list)
+Users list → **Bulk invite** (top-right, next to **Invite user**). Paste any number of emails — commas, spaces, semicolons and newlines all count as separators. Hit **Parse** to see a preview table splitting the list into three columns:
+
+- **New** — email is validly formatted and not already in your org. These are the only rows that will actually get sent.
+- **Already exists** — matched an existing user by email (case-insensitive). Skipped silently on submit.
+- **Invalid** — didn't parse as `x@y.z`. Skipped.
+
+Pick a default **Role** (worker / manager / admin) and a **Channel** (Auto / Email / SMS), then **Send N invites**. A progress bar walks each row through the standard `POST /users` endpoint one at a time; per-row ✓ sent / ✗ failed appears live in the table. A summary toast fires at the end. All messages respect Comms Safe Mode — blocked deliveries land in the outbox instead of hitting the network.
+
 ### Generating a one-time PIN
 Same menu → **Generate PIN** if email/SMS isn't appropriate. You'll see a 6-digit PIN and a copyable redeem URL — share via your usual secure channel.
 
@@ -236,12 +245,14 @@ Each asset has a **Live Counters** panel with two tabs:
 Below the live counters is the **Today's Trip** card with three tabs (Today / Week / Month). Each shows distance, drive time, idle time, max speed, and a km-per-day sparkline. Data comes from Navixy's `/v2/track/list` and is cached for 60 seconds.
 
 ### Adding a historical meter reading manually
-If a Navixy device has no panel counter (the lifetime odometer reads "Not available"), you can anchor future deltas with a manual snapshot:
+Every asset's **Live Counters** card has a **"…"** overflow trigger in the top-right (right next to Refresh now on Navixy-tracked assets, or next to the panel title on manual-only assets). Click it to open **Add historical reading**:
 
-1. Open the asset → **Live Counters** card.
-2. Click **+ Add a historical reading**.
-3. Pick a date + enter the total km that day.
-4. **Save**. The reading is stored with `source: manual`.
+1. Pick a **Date** (defaults to today; max = today, past dates always allowed).
+2. Enter **Engine hours (total, cumulative)** and / or **Odometer (total, cumulative km)** — you can submit one or both, whichever you have.
+3. Client-side check: if there's a snapshot already on file for a later date, we won't let you save a bigger value against an earlier date (that would break the delta chain). Same-day corrections are allowed — the backend upserts.
+4. **Save reading**. A toast confirms, the asset auto-refreshes, and the source pill on the affected metric flips to **Manually entered** on the next render.
+
+The old inline "+ Add a historical reading" button on the unreliable-odometer card still works too — it's kept as a shortcut for the specific case where a Navixy device returns an empty counter set (Kroll Recycler XT04CS pattern).
 
 ### Understanding source pills
 Each metric carries a small label explaining where the number came from:

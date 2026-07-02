@@ -1040,7 +1040,11 @@ AGGREGATORS: Dict[str, Aggregator] = {
 
 @router.get("/{module}")
 async def module_dashboard(module: str, user: dict = Depends(get_current_user)):
-    module = (module or "").strip().lower()
+    # Normalise `-` → `_` so `/api/dashboards/audit-exports` and
+    # `/api/dashboards/audit_exports` behave identically. Frontend routes
+    # tend to prefer hyphens for URL slugs; MongoDB collection names in the
+    # aggregator registry use underscores.
+    module = (module or "").strip().lower().replace("-", "_")
     if not module:
         raise HTTPException(status_code=400, detail="module required")
 

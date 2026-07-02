@@ -2,7 +2,7 @@
 // Renders read-only "synced from Navixy" cards for tracker-linked vehicles
 // and editable number inputs for manually-managed plant.
 import React, { useEffect, useState } from 'react';
-import { Gauge, Activity, RefreshCcw, Loader2, Save, CheckCircle2 } from 'lucide-react';
+import { Gauge, Activity, RefreshCcw, Loader2, Save, CheckCircle2, MoreHorizontal, X, ClipboardEdit } from 'lucide-react';
 import { LineChart, Line, ResponsiveContainer } from 'recharts';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
@@ -69,6 +69,171 @@ export default function LiveCountersPanel({ asset, onAssetUpdated }) {
       {/* Phase 4.9 — Today / Week / Month trip card. Only for Navixy assets. */}
       {isNavixy && <TripSummaryCard asset={asset} />}
     </div>
+  );
+}
+
+// Phase 4.18 (v137) — Shared "Add historical reading" modal, opened from the
+// "..." overflow menu on both Navixy and Manual counter panels. Lets admins
+// backfill an old engine-hours / odometer snapshot against any past date so
+// the meter-trends chart can anchor deltas correctly (see
+// `POST /api/assets/{id}/meter-history`, Phase 4.9 Part 5).
+//
+// Client-side monotonicity: reads the newest existing snapshot from
+// `/api/assets/{id}/meter-history?limit=1` and refuses submits whose date is
+// AT-OR-BEFORE that snapshot but whose values are GREATER — that would break
+// the delta chain. (Same-day corrections are allowed; the backend upserts.)
+function HistoricalReadingModal({ asset, open, onClose, onSaved }) {
+  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [hours, setHours] = useState('');
+  const [km, setKm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [latest, setLatest] = useState(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setDate(new Date().toISOString().slice(0, 10));
+    setHours('');
+    setKm('');
+    setLatest(null);
+    // Use `/meter-trends` — the same endpoint the counters card already
+    // subscribes to. It returns the newest snapshot alongside week/month
+    // deltas, which is enough for the monotonicity guard below.
+    api.get(`/assets/${asset.id}/meter-trends`)
+      .then((r) => {
+        const t = r.data?.total || r.data;
+        if (t && (t.snapshot_date || t.date)) {
+          setLatest({
+            snapshot_date: t.snapshot_date || t.date,
+            engine_hours_total: t.engine_hours_total ?? t.hours_total,
+            odometer_km_total: t.odometer_km_total ?? t.km_total,
+          });
+        }
+      })
+      .catch(() => setLatest(null));
+  }, [open, asset.id]);
+
+  if (!open) return null;
+
+  const submit = async () => {
+    if (!date) { toast.error('Pick a date'); return; }
+    const h = hours === '' ? null : Number(hours);
+    const k = km === '' ? null : Number(km);
+    if (h == null && k == null) { toast.error('Enter engine hours, odometer, or both'); return; }
+    if (h != null && (!Number.isFinite(h) || h < 0)) { toast.error('Engine hours must be ≥ 0'); return; }
+    if (k != null && (!Number.isFinite(k) || k < 0)) { toast.error('Odometer must be ≥ 0'); return; }
+
+    // Monotonicity guard against the newest existing snapshot on the client.
+    if (latest && latest.snapshot_date && latest.snapshot_date >= date) {
+      const latestH = Number(latest.engine_hours_total ?? latest.hours_total ?? 0);
+      const latestK = Number(latest.odometer_km_total ?? latest.km_total ?? 0);
+      if (h != null && h > latestH) {
+        toast.error(`Engine hours ${h} is greater than a later snapshot (${latestH} on ${latest.snapshot_date})`);
+        return;
+      }
+      if (k != null && k > latestK) {
+        toast.error(`Odometer ${k} km is greater than a later snapshot (${latestK} on ${latest.snapshot_date})`);
+        return;
+      }
+    }
+
+    setBusy(true);
+    try {
+      const payload = { date };
+      if (h != null) payload.engine_hours = h;
+      if (k != null) payload.odometer_km = k;
+      await api.post(`/assets/${asset.id}/meter-history`, payload);
+      toast.success('Historical reading saved', {
+        description: 'Source will show as "Manually entered" on next refresh.',
+      });
+      try {
+        const a = await api.get(`/assets/${asset.id}`);
+        if (onSaved) onSaved(a.data);
+      } catch { /* swallow */ }
+      onClose();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+         onClick={onClose} data-testid="meter-history-modal">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-bold text-orange-600">
+              <ClipboardEdit size={12} /> Add historical reading
+            </div>
+            <h3 className="font-display text-lg font-semibold text-slate-900 mt-0.5">{asset.name || `${asset.make || ''} ${asset.model || ''}`.trim() || 'Asset'}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Backfill an engine-hours or odometer snapshot so meter deltas anchor correctly.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 rounded-md hover:bg-slate-100 text-slate-400"
+                  aria-label="Close" data-testid="meter-history-modal-close"><X size={18} /></button>
+        </div>
+
+        <div className="space-y-3">
+          <label className="block">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Date</span>
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+                   max={new Date().toISOString().slice(0, 10)}
+                   className="mt-1 w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm"
+                   data-testid="meter-history-date" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Engine hours (total, cumulative)</span>
+            <input type="number" step="0.1" min="0" placeholder="e.g. 1240.5" value={hours}
+                   onChange={(e) => setHours(e.target.value)}
+                   className="mt-1 w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm font-semibold tabular-nums"
+                   data-testid="meter-history-hours" />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">Odometer (total, cumulative km)</span>
+            <input type="number" step="1" min="0" placeholder="e.g. 84120" value={km}
+                   onChange={(e) => setKm(e.target.value)}
+                   className="mt-1 w-full px-2.5 py-1.5 border border-slate-300 rounded-lg text-sm font-semibold tabular-nums"
+                   data-testid="meter-history-km" />
+          </label>
+          {latest?.snapshot_date && (
+            <div className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-2"
+                 data-testid="meter-history-latest">
+              Newest snapshot on file: <span className="font-semibold text-slate-700">{latest.snapshot_date}</span>
+              {latest.engine_hours_total != null && <> · {Number(latest.engine_hours_total).toLocaleString()} hrs</>}
+              {latest.odometer_km_total != null && <> · {Number(latest.odometer_km_total).toLocaleString()} km</>}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+                  className="px-3 py-1.5 rounded-lg text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                  data-testid="meter-history-cancel">Cancel</button>
+          <button onClick={submit} disabled={busy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-orange-500 hover:bg-orange-600 text-white disabled:opacity-50"
+                  data-testid="meter-history-submit">
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />} Save reading
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Small "..." trigger + tooltip label. Renders as a subtle icon button so it
+// blends into a counter-panel header alongside "Refresh now".
+function AddReadingTrigger({ onClick, testid, accent = 'emerald' }) {
+  const tone = accent === 'slate'
+    ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200'
+    : 'text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100/60 border-emerald-200';
+  return (
+    <button onClick={onClick} data-testid={testid}
+            title="Add historical reading"
+            className={`inline-flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
+      <MoreHorizontal size={13} />
+    </button>
   );
 }
 
@@ -281,10 +446,11 @@ function UnreliableOdoCard({ asset, onAssetUpdated }) {
   );
 }
 
-function NavixyCounters({ asset, onAssetUpdated }) {
-  const user = getUser();
+function NavixyCounters({ asset, onAssetUpdated }) {  const user = getUser();
   const canRefresh = user?.role === 'admin';
+  const canEdit = user?.role === 'admin';
   const [refreshing, setRefreshing] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   // Phase 4.8 — tabs + meter-trends fetch.
   const [tab, setTab] = useState('total'); // 'total' | 'week' | 'month'
   const [trends, setTrends] = useState(null);
@@ -416,6 +582,7 @@ function NavixyCounters({ asset, onAssetUpdated }) {
           <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px]">LIVE</span>
           <span>Live counters · Navixy</span>
         </div>
+        <div className="inline-flex items-center gap-1.5">
         {canRefresh && (
           <button onClick={refreshNow} disabled={refreshing}
             className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 disabled:opacity-50"
@@ -424,6 +591,11 @@ function NavixyCounters({ asset, onAssetUpdated }) {
             Refresh now
           </button>
         )}
+        {canEdit && (
+          <AddReadingTrigger accent="emerald" testid="live-counters-history-open"
+                             onClick={() => setHistoryOpen(true)} />
+        )}
+        </div>
       </div>
       {(syncedAgo || navixyAgo) && (
         <div
@@ -472,11 +644,20 @@ function NavixyCounters({ asset, onAssetUpdated }) {
           ? 'These values come from the Navixy tracker. Manual edits are disabled — change them in Navixy or, for admin overrides, use the meter reset action.'
           : 'Deltas are computed from daily snapshots of the Navixy counters. Manual edits are disabled.'}
       </div>
+
+      <HistoricalReadingModal
+        asset={asset} open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onSaved={(a) => { if (onAssetUpdated) onAssetUpdated(a); }}
+      />
     </div>
   );
 }
 
 function ManualCounters({ asset, onAssetUpdated }) {
+  const user = getUser();
+  const canEdit = user?.role === 'admin';
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [hours, setHours] = useState(asset.hours_meter ?? '');
   const [km, setKm] = useState(asset.odo_km ?? '');
   const [busy, setBusy] = useState(null); // 'hours' | 'km' | null
@@ -510,7 +691,13 @@ function ManualCounters({ asset, onAssetUpdated }) {
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3" data-testid="live-counters-manual">
-      <div className="text-[10px] uppercase tracking-wider font-bold text-slate-600 mb-2">Live counters · Manual</div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-[10px] uppercase tracking-wider font-bold text-slate-600">Live counters · Manual</div>
+        {canEdit && (
+          <AddReadingTrigger accent="slate" testid="live-counters-manual-history-open"
+                             onClick={() => setHistoryOpen(true)} />
+        )}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
         {/* Engine hours */}
         <div className="px-3 py-2.5 rounded-xl border border-slate-200 bg-white" data-testid="counter-card-hours">
@@ -557,6 +744,11 @@ function ManualCounters({ asset, onAssetUpdated }) {
           <div className="text-[10px] text-slate-500 mt-1">{kmAgo ? `Last updated ${kmAgo}` : 'Not yet recorded'}</div>
         </div>
       </div>
+      <HistoricalReadingModal
+        asset={asset} open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        onSaved={(a) => { if (onAssetUpdated) onAssetUpdated(a); }}
+      />
     </div>
   );
 }

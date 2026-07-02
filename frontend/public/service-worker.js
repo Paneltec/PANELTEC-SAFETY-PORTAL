@@ -832,8 +832,27 @@
  *        and Audit Exports (`AuditExports.jsx`). Existing HowThisWorks
  *        panels moved into the Dashboard tab; List tab preserves every
  *        pre-v134 affordance untouched.
+ * v137 — Phase 4.18 quick-wins bundle.
+ *        • Users & Permissions: new **Bulk invite** button next to
+ *          Invite user. Paste any list of emails — comma / space / newline
+ *          separated — parse dedupes + validates against existing users,
+ *          preview table shows New / Already exists / Invalid per row,
+ *          progress bar walks each new address through `POST /users`
+ *          with per-row ✓ sent / ✗ failed status and a summary toast.
+ *        • Plant & Vehicles: general **Add historical reading** overflow
+ *          trigger on every Live Counters panel (Navixy + manual).
+ *          Modal takes date + engine_hours + odometer_km, checks
+ *          client-side monotonicity against the newest existing snapshot,
+ *          then POSTs to `/api/assets/{id}/meter-history` — source pill
+ *          flips to "Manually entered" on next refresh.
+ *        • Dashboards: `/api/dashboards/audit-exports` (hyphen) is now
+ *          aliased to `/api/dashboards/audit_exports` (underscore) via a
+ *          normalise-on-input patch in `dashboards.py`.
+ *        • User Manual: new "Bulk invite" subsection under §7 Workers,
+ *          and an expanded "Add historical meter reading manually"
+ *          subsection under §9 Plant & Vehicles.
  */
-const CACHE_VERSION = 'paneltec-v136';
+const CACHE_VERSION = 'paneltec-v137';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

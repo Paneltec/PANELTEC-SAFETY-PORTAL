@@ -1,7 +1,7 @@
 # Paneltec Civil — Active Maintenance Project
 
-**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v136 (all 9 modules have Dashboard-tab analytics).**
-Pre-existing schematic serving bug also fixed in this pass (missing `@router.get("/schematics/{filename}")` decorator in help_routes.py).
+**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v137 (Phase 4.18 quick-wins: Bulk invite, general "Add historical reading" modal on Live Counters, and `/api/dashboards/audit-exports` alias).**
+Pre-existing schematic serving bug also fixed in v136 (missing `@router.get("/schematics/{filename}")` decorator in help_routes.py).
 
 THIS IS A LIVE, IN-PRODUCTION APP. DO NOT REBUILD.
 

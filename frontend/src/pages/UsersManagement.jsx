@@ -134,6 +134,7 @@ export default function UsersManagement() {
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
@@ -194,6 +195,11 @@ export default function UsersManagement() {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download size={14} /> Import from Simpro
+            </button>
+            <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
+              title="Paste multiple email addresses at once"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <FlPersonAdd /> Bulk invite
             </button>
             <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
@@ -428,6 +434,8 @@ export default function UsersManagement() {
         />
       )}
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
+      {bulkInviteOpen && <BulkInviteModal existingEmails={users.map((u) => (u.email || '').toLowerCase())}
+                                          onClose={() => setBulkInviteOpen(false)} onDone={load} />}
       {importOpen && <ImportFromSimproDrawer
         companies={simproStatus.companies}
         onClose={() => setImportOpen(false)}
@@ -872,6 +880,233 @@ function InviteModal({ onClose, onDone }) {
             {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
         <div className="flex gap-2 justify-end"><button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm">Cancel</button>
           <button onClick={submit} disabled={busy || !form.email || !form.name} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm" data-testid="invite-submit">Send invite</button></div>
+      </div>
+    </div>
+  );
+}
+
+// Phase 4.18 (v137) — Bulk invite modal. Paste any number of emails, hit
+// "Parse" to dedupe / validate / cross-reference against existing users,
+// then "Send" to loop the standard POST /users endpoint one email at a time.
+// Server-side notifications route through the normal outbox (COMMS_SAFE_MODE
+// captures them if outbound comms are blocked — surfaced by the toast).
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function BulkInviteModal({ existingEmails, onClose, onDone }) {
+  const [rawText, setRawText] = useState('');
+  const [channel, setChannel] = useState('auto'); // auto | email | sms — informational for now
+  const [role, setRole] = useState('worker');
+  const [parsed, setParsed] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState(null); // {done, total, results: [{email, status, error?}]}
+
+  const parse = () => {
+    // Split on commas, whitespace, semicolons, newlines. Trim, lowercase for
+    // dedupe. Preserve display-cased original in `email`.
+    const parts = rawText.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+    const seen = new Set();
+    const existing = new Set(existingEmails || []);
+    const rows = [];
+    for (const p of parts) {
+      const lower = p.toLowerCase();
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+      const ok = EMAIL_RE.test(p);
+      let state = 'new';
+      if (!ok) state = 'invalid';
+      else if (existing.has(lower)) state = 'exists';
+      rows.push({ email: p, state });
+    }
+    setParsed(rows);
+    setProgress(null);
+  };
+
+  const sendable = (parsed || []).filter((r) => r.state === 'new');
+
+  const submit = async () => {
+    if (sendable.length === 0) { toast.error('Nothing to send'); return; }
+    setBusy(true);
+    setProgress({ done: 0, total: sendable.length, results: [] });
+
+    let done = 0;
+    const results = [];
+    for (const row of sendable) {
+      try {
+        // Reuse the standard user-create endpoint — this both creates the
+        // record and queues the invite email via M365 (respects safe mode).
+        await api.post('/users', {
+          email: row.email,
+          name: row.email.split('@')[0],
+          role,
+          workspace_ids: [],
+        });
+        results.push({ email: row.email, status: 'ok' });
+      } catch (e) {
+        results.push({ email: row.email, status: 'error', error: apiError(e) });
+      }
+      done += 1;
+      setProgress({ done, total: sendable.length, results: [...results] });
+    }
+
+    const okCount = results.filter((r) => r.status === 'ok').length;
+    const failCount = results.length - okCount;
+    if (failCount === 0) {
+      toast.success(`${okCount} invite${okCount === 1 ? '' : 's'} queued`, {
+        description: 'Delivery follows the org comms settings (COMMS_SAFE_MODE aware).',
+      });
+    } else {
+      toast.warning(`${okCount} sent · ${failCount} failed`, {
+        description: 'Check the per-row status below for details.',
+      });
+    }
+    setBusy(false);
+    onDone();
+  };
+
+  const summary = parsed
+    ? {
+        total: parsed.length,
+        neu: parsed.filter((r) => r.state === 'new').length,
+        exists: parsed.filter((r) => r.state === 'exists').length,
+        invalid: parsed.filter((r) => r.state === 'invalid').length,
+      }
+    : null;
+
+  const stateBadge = (state) => {
+    if (state === 'new') return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-100 text-emerald-800">New</span>;
+    if (state === 'exists') return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-slate-200 text-slate-600">Already exists</span>;
+    return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-amber-100 text-amber-800">Invalid</span>;
+  };
+
+  const rowStatusBadge = (email) => {
+    if (!progress) return null;
+    const hit = progress.results.find((r) => r.email === email);
+    if (!hit) return <span className="text-[10px] text-slate-400">…</span>;
+    if (hit.status === 'ok') return <span className="text-[10px] font-semibold text-emerald-600" title="Sent">✓ sent</span>;
+    return <span className="text-[10px] font-semibold text-rose-600" title={hit.error || 'failed'}>✗ {hit.error?.slice(0, 40) || 'failed'}</span>;
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()} data-testid="bulk-invite-modal">
+        <div className="px-6 pt-5 pb-3 border-b border-slate-100">
+          <h2 className="font-display text-xl">Bulk invite users</h2>
+          <p className="text-xs text-slate-500 mt-1">Paste emails (comma / newline / whitespace-separated). We'll dedupe, validate, and send one invite per new address.</p>
+        </div>
+
+        <div className="px-6 py-4 overflow-y-auto flex-1">
+          {!parsed && (
+            <>
+              <label className="block mb-3">
+                <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Emails</div>
+                <textarea rows={7} value={rawText} onChange={(e) => setRawText(e.target.value)}
+                  placeholder="ali@company.com, jane@company.com&#10;stephen@paneltec.com.au"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+                  data-testid="bulk-invite-emails" />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Default role</div>
+                  <select value={role} onChange={(e) => setRole(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    data-testid="bulk-invite-role">
+                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </label>
+                <label className="block">
+                  <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Channel</div>
+                  <select value={channel} onChange={(e) => setChannel(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    data-testid="bulk-invite-channel">
+                    <option value="auto">Auto (email if provided)</option>
+                    <option value="email">Email only</option>
+                    <option value="sms">SMS only</option>
+                  </select>
+                </label>
+              </div>
+              <div className="mt-3 text-[11px] text-slate-500">
+                Comms Safe Mode is respected — blocked messages will land in the outbox instead of being delivered.
+              </div>
+            </>
+          )}
+
+          {parsed && summary && (
+            <>
+              <div className="flex flex-wrap gap-2 mb-3" data-testid="bulk-invite-summary">
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-slate-100 text-slate-700">Total: {summary.total}</span>
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-100 text-emerald-800">New: {summary.neu}</span>
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-slate-200 text-slate-600">Already exists: {summary.exists}</span>
+                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-amber-100 text-amber-800">Invalid: {summary.invalid}</span>
+              </div>
+
+              {progress && (
+                <div className="mb-3" data-testid="bulk-invite-progress">
+                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand-blue transition-all"
+                         style={{ width: `${Math.round(progress.done / progress.total * 100)}%` }} />
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-1">{progress.done} / {progress.total} processed</div>
+                </div>
+              )}
+
+              <div className="border border-slate-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">Email</th>
+                      <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">State</th>
+                      {progress && <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">Result</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {parsed.map((r) => (
+                      <tr key={r.email} data-testid={`bulk-invite-row-${r.email}`}>
+                        <td className="px-3 py-1.5 font-mono text-[12px] text-slate-700">{r.email}</td>
+                        <td className="px-3 py-1.5">{stateBadge(r.state)}</td>
+                        {progress && (
+                          <td className="px-3 py-1.5">
+                            {r.state === 'new' ? rowStatusBadge(r.email) : <span className="text-[10px] text-slate-400">skipped</span>}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
+          {!parsed && (
+            <>
+              <button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm" data-testid="bulk-invite-cancel">Cancel</button>
+              <button onClick={parse} disabled={!rawText.trim()}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-900 text-white disabled:opacity-50"
+                      data-testid="bulk-invite-parse">Parse</button>
+            </>
+          )}
+          {parsed && !busy && (progress === null || progress.done < progress.total) && (
+            <>
+              <button onClick={() => { setParsed(null); setProgress(null); }} className="px-4 py-2 border border-slate-300 rounded-lg text-sm" data-testid="bulk-invite-edit">Edit list</button>
+              <button onClick={submit} disabled={busy || sendable.length === 0}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-brand-blue text-white disabled:opacity-50"
+                      data-testid="bulk-invite-send">
+                Send {sendable.length} invite{sendable.length === 1 ? '' : 's'}
+              </button>
+            </>
+          )}
+          {busy && (
+            <button disabled className="px-4 py-2 rounded-lg text-sm font-semibold bg-brand-blue/70 text-white inline-flex items-center gap-2" data-testid="bulk-invite-busy">
+              Sending…
+            </button>
+          )}
+          {progress && !busy && progress.done === progress.total && (
+            <button onClick={onClose}
+                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white"
+                    data-testid="bulk-invite-close">Done</button>
+          )}
+        </div>
       </div>
     </div>
   );
