@@ -8,6 +8,9 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
+// Phase 4.17 v134.1 — Dashboard tab.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 
 const TEMPLATES = {
   'Site walk': [
@@ -38,6 +41,22 @@ export default function InspectionsList() {
       <PageHeader crumb="Capture / Inspection Reports" title="Inspection Reports"
         subtitle="Scheduled inspections — site walk, plant, working at height."
         action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-create-btn" />} />
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="inspections-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="inspections-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="inspections-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4">
+          <ModuleDashboard
+            module="inspections" title="Inspections"
+            tagline="Site walk, plant, working at height — pass rate trended and every fail surfaced."
+            moduleColour="emerald"
+            quickActions={[{ label: 'New inspection', route: '/app/inspections/new' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
        : (
@@ -71,6 +90,8 @@ export default function InspectionsList() {
           </table>
         </div>
        )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

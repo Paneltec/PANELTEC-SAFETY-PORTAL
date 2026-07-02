@@ -8,6 +8,10 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
+import HowThisWorks from '../components/help/HowThisWorks';
+// Phase 4.17 v134.1 — Dashboard tab (analytics) + List tab (existing UI).
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
@@ -21,6 +25,22 @@ export default function HazardsList() {
       <PageHeader crumb="Capture / Hazard Reports" title="Hazard Reports"
         subtitle="Snap a hazard — AI classifies severity and drafts the report."
         action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="hazards-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="hazards-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="hazards-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4">
+          <ModuleDashboard
+            module="hazards" title="Hazards"
+            tagline="Photo-first hazard capture with AI-classified severity, tracked from open through closure."
+            moduleColour="amber"
+            quickActions={[{ label: 'Report hazard', route: '/app/hazards/new' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No hazards reported" body="Report your first hazard with a photo and AI classification." action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-empty-create" />} />
        : (
@@ -52,6 +72,8 @@ export default function HazardsList() {
           ))}
         </div>
        )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

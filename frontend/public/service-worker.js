@@ -804,8 +804,26 @@
  *        (new stub page listing integrations), Users & permissions
  *        (admin-only), and Clear-cache-&-reload with a confirm. User
  *        Manual updated with a "Your account" section.
+ * v134 — Phase 4.17 v134.0 + partial v134.1. Per-module analytics dashboards.
+ *        Backend: `/api/dashboards/{module}` aggregator registry — SWMS,
+ *        Hazards, Incidents, Inspections, Sites, Plant & Vehicles, Workers,
+ *        Certifications and Audit Exports are ALL live with real
+ *        aggregation (60s per-org cache; `dashboards.query` structured
+ *        logs). Frontend: shared dark-navy `<ModuleDashboard />` (recharts
+ *        + orange tech aesthetic) is mounted inside a `<Tabs>` layout on
+ *        SWMS, Hazards, Incidents and Inspections (Dashboard is the
+ *        default tab; List keeps every pre-v134 affordance intact). User
+ *        Manual gets a new "Module dashboards" section and the whole
+ *        section list has been re-sequenced (1–15) to fix the v133
+ *        numbering drift.
+ * v135 — Phase 4.17 v134.1 checkpoint. Sites, Plant & Vehicles, Workers,
+ *        Certifications and Audit Exports pages still need their
+ *        Dashboard-tab mount — aggregators are live and verified via
+ *        curl, waiting only on the frontend Tab wrapping. Cache bump so
+ *        stuck-SW browsers pick up the SWMS/Hazards/Incidents/Inspections
+ *        Dashboard tabs on next load.
  */
-const CACHE_VERSION = 'paneltec-v133';
+const CACHE_VERSION = 'paneltec-v135';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

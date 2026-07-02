@@ -241,6 +241,11 @@ api.include_router(help_router)
 from health_extras import router as health_extras_router  # noqa: E402
 api.include_router(health_extras_router)
 
+# Phase 4.17 v134.0 — Per-module analytics dashboards (SWMS live, other 8
+# modules return `todo: true` skeletons until v134.1/2 wire them up).
+from dashboards import router as dashboards_router  # noqa: E402
+api.include_router(dashboards_router)
+
 app.include_router(api)
 
 

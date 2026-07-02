@@ -17,6 +17,12 @@ import {
   Field, inputClass, EmptyState, StatusBadge,
 } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
+// Phase 4.17 v134.0 — Module dashboards. SWMS is the reference mount: its
+// Dashboard tab renders the shared analytics component (with the schematic
+// hero) while the List tab keeps the pre-v134 list + bulk / paste / scan
+// affordances untouched.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -177,8 +183,35 @@ export default function SwmsList() {
         subtitle="Draft, review and approve SWMS across your workspaces."
         action={headerActions} />
 
-      <HowThisWorks schematicSlug="swms" />
+      {/* Phase 4.17 v134.0 — Tabs. Dashboard is the default landing; the
+          existing list stays fully intact under the List tab. */}
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="swms-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200"
+                  data-testid="swms-tabs-list">
+          <TabsTrigger value="dashboard" data-testid="swms-tab-dashboard">
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="list" data-testid="swms-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
+          </TabsTrigger>
+        </TabsList>
 
+        <TabsContent value="dashboard" className="mt-4" data-testid="swms-tab-dashboard-content">
+          <HowThisWorks schematicSlug="swms" />
+          <ModuleDashboard
+            module="swms"
+            title="SWMS"
+            tagline="Draft · AI parse · Review · Approve. Live view of your Safe Work Method Statements across every workspace."
+            schematicSlug="swms"
+            moduleColour="orange"
+            quickActions={[
+              { label: 'Create SWMS', route: '/app/swms/new' },
+              { label: 'Assignments', route: '/app/swms/assignments' },
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="list" className="mt-4" data-testid="swms-tab-list-content">
       {/* Phase 4.5 — bulk-action toolbar appears whenever the user has
           selected at least one row. Sticky-top so it stays in view as
           the list scrolls under it. */}
@@ -263,6 +296,8 @@ export default function SwmsList() {
           </table>
         </div>
        )}
+        </TabsContent>
+      </Tabs>
 
       <PasteSwmsDialog open={pasteOpen} onClose={() => setPasteOpen(false)}
         onCreated={(doc) => { setPasteOpen(false); handleCreated(doc, 'paste'); }} />

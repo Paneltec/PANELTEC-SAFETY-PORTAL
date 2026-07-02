@@ -8,6 +8,9 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
+// Phase 4.17 v134.1 — Dashboard tab.
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
+import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 
 const CATS = [
   ['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical', 'Medical'],
@@ -30,6 +33,22 @@ export default function IncidentsList() {
         subtitle="Structured incident capture with witness statements and evidence."
         action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />} />
 
+      <Tabs defaultValue="dashboard" className="mt-2" data-testid="incidents-tabs">
+        <TabsList className="bg-slate-100 border border-slate-200">
+          <TabsTrigger value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger value="list" data-testid="incidents-tab-list">
+            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="dashboard" className="mt-4">
+          <ModuleDashboard
+            module="incidents" title="Incidents"
+            tagline="Every incident captured with follow-up ownership — from near miss through LTI."
+            moduleColour="violet"
+            quickActions={[{ label: 'Log incident', route: '/app/incidents/new' }]}
+          />
+        </TabsContent>
+        <TabsContent value="list" className="mt-4">
       <div className="flex flex-wrap gap-2 mb-4">
         <select className={inputClass + ' w-auto'} value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })} data-testid="incident-filter-status">
           <option value="">All statuses</option><option value="open">open</option><option value="in_progress">in progress</option><option value="closed">closed</option>
@@ -68,6 +87,8 @@ export default function IncidentsList() {
           </table>
         </div>
        )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

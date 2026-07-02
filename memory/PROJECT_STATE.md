@@ -1,7 +1,7 @@
 # Paneltec Civil — Active Maintenance Project
 
-**NEXT PHASE: 4.17 (v134) — Module dashboards. See PHASE_4_17_PLAN.md.**
-Latest shipped: paneltec-v133 (tech-aesthetic top bar + rich user dropdown).
+**NEXT PHASE: 4.17 v134.2 — 5 remaining Dashboard-tab mounts. See PHASE_4_17_PLAN.md.**
+Latest shipped: paneltec-v135 (module dashboards infra + 4/9 mounts).
 
 THIS IS A LIVE, IN-PRODUCTION APP. DO NOT REBUILD.
 

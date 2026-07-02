@@ -1,6 +1,6 @@
 # Paneltec Civil — User Manual
 
-_Last updated for paneltec-v121 · Web platform · Australian English_
+_Last updated for paneltec-v134 · Web platform · Australian English_
 
 Welcome to Paneltec Civil — the connected WHS compliance platform built for Australian civil contracting and construction teams. This manual walks you through every screen and feature you'll touch day-to-day. If you only read one section, make it **Getting started** below; everything else can wait until you need it.
 
@@ -21,28 +21,6 @@ Here's what a typical shift looks like from a worker's perspective through to th
 ![Paneltec Civil user journey](/api/help/schematics/paneltec_user_journey.png)
 
 _Fig 2. User journey — from sign-in through site arrival, daily work capture, AI processing, live dashboard, to reports and audit._
-
----
-
----
-
-## 12. Your account
-
-Your avatar in the top-right of every page opens the account panel. From here you can control the security and behaviour of your own session.
-
-**Session timeout** — how long your browser stays signed in before it drops you back to the login screen. Options range from 15 minutes (kiosk-safe) through the 12-hour default up to 7 days for trusted personal devices. The setting applies only to the browser you save it in.
-
-**Suspicious-login alerts** — when a sign-in arrives from a new device or location, we ping you with a one-tap "That wasn't me" link that revokes the session and forces a password reset. Choose Both / Email / SMS / Off. When Comms Safe Mode is on, alerts are captured but not delivered — the panel calls that out with an amber banner.
-
-**Change password** — opens a small modal that requires your current password and the new one twice. Sessions elsewhere are not signed out; use "Active sessions" to revoke those.
-
-**My apps** — a quick view of the third-party integrations your organisation has connected (Simpro, Navixy, Microsoft 365, TextMagic, MongoDB) and their current health. Full configuration lives under Settings → Integrations.
-
-**Users & permissions** (admin-only) — jumps straight to the org's users, roles and workspace access matrix.
-
-**Clear cache & reload** — wipes local caches and reloads the app. Use this if the UI feels stuck after a deploy. Any unsaved work will be lost, so save first.
-
-**Top-bar pills** — the small `● API · 5/5` and `● BACKUP` chips are live health indicators. Green = all up, amber = partial, red = down. Click either for a per-integration or per-backup breakdown.
 
 ---
 
@@ -76,7 +54,27 @@ The home-screen tile is the orange Paneltec chevron on slate-900. If you install
 
 ---
 
-## 2. The dashboard (Live Compliance Dashboard)
+## 2. Your account
+
+Your avatar in the top-right of every page opens the account panel. From here you can control the security and behaviour of your own session.
+
+**Session timeout** — how long your browser stays signed in before it drops you back to the login screen. Options range from 15 minutes (kiosk-safe) through the 12-hour default up to 7 days for trusted personal devices. The setting applies only to the browser you save it in.
+
+**Suspicious-login alerts** — when a sign-in arrives from a new device or location, we ping you with a one-tap "That wasn't me" link that revokes the session and forces a password reset. Choose Both / Email / SMS / Off. When Comms Safe Mode is on, alerts are captured but not delivered — the panel calls that out with an amber banner.
+
+**Change password** — opens a small modal that requires your current password and the new one twice. Sessions elsewhere are not signed out; use "Active sessions" to revoke those.
+
+**My apps** — a quick view of the third-party integrations your organisation has connected (Simpro, Navixy, Microsoft 365, TextMagic, MongoDB) and their current health. Full configuration lives under Settings → Integrations.
+
+**Users & permissions** (admin-only) — jumps straight to the org's users, roles and workspace access matrix.
+
+**Clear cache & reload** — wipes local caches and reloads the app. Use this if the UI feels stuck after a deploy. Any unsaved work will be lost, so save first.
+
+**Top-bar pills** — the small `● API · 5/5` and `● BACKUP` chips are live health indicators. Green = all up, amber = partial, red = down. Click either for a per-integration or per-backup breakdown.
+
+---
+
+## 3. The dashboard (Live Compliance Dashboard)
 
 The dashboard is your daily landing page. It's split into three columns:
 
@@ -90,7 +88,39 @@ The header carries the **User Manual** button (you're reading it now), the works
 
 ---
 
-## 3. SWMS — Safe Work Method Statements
+## 4. Module dashboards
+
+Every major module (SWMS, Hazards, Incidents, Inspections, Sites, Plant & Vehicles, Workers, Certifications, Audit Exports) opens onto its own **Dashboard tab** — an at-a-glance analytics view tuned to that module's data. It's the default landing tab; the familiar list you're used to sits one click away under **List**.
+
+**What you get on every module dashboard**
+
+- **Hero band** — dark-navy header with the module name, tagline, live refresh timestamp, and the module schematic on the right for context.
+- **KPI tiles** — 4–5 slate-900 tiles with the numbers that matter for that module (e.g. Total SWMS · Drafts · Approved · AI-parsed for SWMS; Open · Closed this week · High-severity for Hazards). Where a KPI doesn't yet have a data source, the tile shows `0` with a small "Coming soon" tooltip instead of a fabricated number.
+- **Charts** — one or two recharts visualisations (bar / line / donut) driven by real aggregation off the same collections that back the list. Every module gets a 12-month trend (or 30-day, where appropriate) plus a status/type breakdown donut.
+- **Records needing attention** — top 5 rows from that module that need someone's eyes right now (e.g. SWMS awaiting sign-off, high-severity open hazards, overdue inspections). Click any row to jump into the record.
+- **Quick actions** — the primary "Create X" and "View list" buttons in the module's accent colour.
+
+**Live refresh**
+
+Dashboards fetch `GET /api/dashboards/{module}` on mount and re-poll every 60 seconds. A 60-second per-org cache sits behind the endpoint so multiple simultaneous viewers don't hammer MongoDB — the hero band shows a small "cache hit · 60 s window" chip when you're inside that window. If nothing has changed you'll still see the tiles update to the latest generated_at.
+
+**Where to find each module's dashboard**
+
+- SWMS → Sidebar → SWMS → Dashboard tab
+- Hazards → Sidebar → Hazards → Dashboard tab
+- Incidents → Sidebar → Incidents → Dashboard tab
+- Inspections → Sidebar → Inspections → Dashboard tab
+- Sites → Sidebar → Sites → Dashboard tab
+- Plant & Vehicles → Sidebar → Vehicles → Dashboard tab
+- Workers → Sidebar → Users & Workers → Dashboard tab
+- Certifications → Sidebar → Certifications → Dashboard tab
+- Audit Exports → Sidebar → Audit Exports → Dashboard tab
+
+These are separate from the org-wide **Live Compliance Dashboard** (Section 3); that stays as your one-page rollup across every module.
+
+---
+
+## 5. SWMS — Safe Work Method Statements
 
 ![SWMS lifecycle](/api/help/schematics/paneltec_swms.png)
 
@@ -122,7 +152,7 @@ Select multiple SWMS rows via the checkboxes → **Delete selected**. Deleted SW
 
 ---
 
-## 4. Hazards, Incidents, Inspections, Pre-starts
+## 6. Hazards, Incidents, Inspections, Pre-starts
 
 All four are captured the same way:
 
@@ -139,7 +169,7 @@ The PWA runs the same forms on your phone. Tap **+** from the dashboard, choose 
 
 ---
 
-## 5. Workers, Users & Permissions
+## 7. Workers, Users & Permissions
 
 ![Worker onboarding & access](/api/help/schematics/paneltec_workers_access.png)
 
@@ -165,7 +195,7 @@ Same Permissions tab → **Mobile Modules** section. Each module (Daily Pre-Star
 
 ---
 
-## 6. Contractors & Suppliers
+## 8. Contractors & Suppliers
 
 ### Importing from Simpro
 Sidebar → **Suppliers** → **Import from Simpro** (top-right). Choose the vendor list, map fields if needed, click **Import**. Existing suppliers are matched by ABN; new ones are created with `Source: Simpro` pill.
@@ -184,7 +214,7 @@ Print the QR via the asset / supplier / worker row's **Print** action.
 
 ---
 
-## 7. Plant & Vehicles
+## 9. Plant & Vehicles
 
 ![Plant & Vehicles telemetry sources](/api/help/schematics/paneltec_plant_vehicles.png)
 
@@ -224,7 +254,7 @@ Each metric carries a small label explaining where the number came from:
 
 ---
 
-## 8. Sites & Site sign-on
+## 10. Sites & Site sign-on
 
 ![Sites & QR sign-on flow](/api/help/schematics/paneltec_sites_qr.png)
 
@@ -234,7 +264,7 @@ Sidebar → **Sites**. Each site has a public QR for worker sign-on. Coming-soon
 
 ---
 
-## 9. Certifications & Inductions
+## 11. Certifications & Inductions
 
 ### Adding a certification
 Sidebar → **Certifications** → **+ Add certification**. Pick the worker, choose the cert type (White Card, First Aid, Working at Heights, etc.), enter issue/expiry dates, attach the certificate PDF or photo. Save.
@@ -250,7 +280,7 @@ Workers list → row → **Print ID card** generates an A6 card PDF with photo, 
 
 ---
 
-## 10. Audit Exports
+## 12. Audit Exports
 
 ![Audit pack contents & delivery](/api/help/schematics/paneltec_audit_exports.png)
 
@@ -267,7 +297,7 @@ Download both from the audit pack row. Scheduled exports (weekly / monthly auto-
 
 ---
 
-## 11. Comms Safe Mode
+## 13. Comms Safe Mode
 
 ![Comms Safe Mode kill switch flow](/api/help/schematics/paneltec_comms_safe_mode.png)
 
@@ -287,7 +317,7 @@ Edit `/app/backend/.env`, set `COMMS_SAFE_MODE=off`, then `sudo supervisorctl re
 
 ---
 
-## 12. Mobile app (PWA)
+## 14. Mobile app (PWA)
 
 ### Installing
 See **Section 1 — Getting started**.
@@ -303,7 +333,7 @@ The PWA pre-caches the app shell + your last-viewed module screens. If you lose 
 
 ---
 
-## 13. Troubleshooting & FAQ
+## 15. Troubleshooting & FAQ
 
 - **"My changes aren't showing"** — Hard refresh (Cmd/Ctrl + Shift + R). Paneltec's service worker auto-detects new versions and prompts a reload, but a manual hard refresh always works.
 
