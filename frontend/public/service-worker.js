@@ -1031,8 +1031,22 @@
  *        progress feedback during the LibreOffice conversion instead of
  *        an empty preview pane. `Open in new tab` and `Download PDF`
  *        buttons remain functional throughout. No backend changes.
+ *
+ * v150 — SitePrintModal (Sites → Print QR) and SupplierPrintModal
+ *        (Contractors → Print QR) now delegate their body rendering to
+ *        PdfPreviewModal via the new optional `headerExtras` /
+ *        `footerExtras` props. The layout tabs (Gate Sign A4 / Avery
+ *        30-up, Business card / Lanyard) stay in each modal's header,
+ *        but the iframe, loading overlay, "Open in new tab" and
+ *        "Download PDF" escape hatches now come from the shared
+ *        component. Consolidates PDF preview UX across all four print
+ *        surfaces (Document Library, Site QR, Supplier QR, Inductions
+ *        Preview) so future improvements can't miss a sibling modal.
+ *        No backend changes. PdfPreviewModal's watchdog behaviour and
+ *        blob-mode fallback unchanged; the two new props default to
+ *        null so existing callers are unaffected.
  */
-const CACHE_VERSION = 'paneltec-v149';
+const CACHE_VERSION = 'paneltec-v150';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

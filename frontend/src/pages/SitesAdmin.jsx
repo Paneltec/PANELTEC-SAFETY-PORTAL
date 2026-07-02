@@ -669,66 +669,55 @@ function SectionTitle({ children }) {
   return <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-700">{children}</h3>;
 }
 
-// ─────────────────── Print modal (unchanged from v4.2) ───────────────────
+// ─────────────────── Print modal (v150 — delegates body to PdfPreviewModal) ───────────────────
 
 function SitePrintModal({ site, onClose }) {
   const [layout, setLayout] = useState('gate_sign');
   const [directUrl, setDirectUrl] = useState(null);
-  const [busy, setBusy] = useState(false);
 
   const generate = useCallback(async (l) => {
-    setBusy(true);
+    setDirectUrl(null);
     try {
       const r = await api.get(`/sites/${encodeURIComponent(site.simpro_site_id)}/scan-pdf`,
         { params: { layout: l }, responseType: 'blob' });
       const { src } = await stashInlinePdf(r.data, `${site.name || 'site'}-qr.pdf`);
       setDirectUrl(src);
     } catch (e) { toast.error(apiError(e)); }
-    finally { setBusy(false); }
   }, [site.simpro_site_id, site.name]);
 
   useEffect(() => { generate(layout); }, [generate, layout]);
 
+  // Layout toggle rendered inside PdfPreviewModal's header via headerExtras.
+  const layoutTabs = (
+    <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold" data-testid="site-print-layouts">
+      <button onClick={() => setLayout('gate_sign')}
+        data-testid="site-print-layout-gate-sign"
+        className={`px-3 py-1.5 ${layout === 'gate_sign' ? 'bg-orange-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+        Gate Sign A4
+      </button>
+      <button onClick={() => setLayout('avery')}
+        data-testid="site-print-layout-avery"
+        className={`px-3 py-1.5 border-l border-slate-300 ${layout === 'avery' ? 'bg-orange-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+        Avery 30-up
+      </button>
+    </div>
+  );
+
+  const tokenFooter = (
+    <div className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 text-[11px] text-slate-500" data-testid="site-print-token-footer">
+      Token: <span className="font-mono">{site.scan_token || 'generated'}</span> · Use New tab / Download PDF above to print.
+    </div>
+  );
+
   return (
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      data-testid="site-print-modal">
-      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-orange-600">Site QR</div>
-            <div className="font-display font-bold text-slate-900 truncate">{site.name}</div>
-          </div>
-          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
-            <button onClick={() => setLayout('gate_sign')}
-              data-testid="site-print-layout-gate-sign"
-              className={`px-3 py-1.5 ${layout === 'gate_sign' ? 'bg-orange-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
-              Gate Sign A4
-            </button>
-            <button onClick={() => setLayout('avery')}
-              data-testid="site-print-layout-avery"
-              className={`px-3 py-1.5 border-l border-slate-300 ${layout === 'avery' ? 'bg-orange-500 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
-              Avery 30-up
-            </button>
-          </div>
-          <button onClick={onClose} data-testid="site-print-close"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-200">✕</button>
-        </div>
-        <div className="flex-1 bg-slate-100 relative">
-          {busy ? (
-            <div className="absolute inset-0 grid place-items-center">
-              <Loader2 size={22} className="animate-spin text-orange-500" />
-            </div>
-          ) : directUrl ? (
-            <iframe data-testid="site-print-iframe" title="Site QR PDF" src={directUrl}
-              className="w-full h-full border-0" />
-          ) : null}
-        </div>
-        <div className="px-5 py-2.5 border-t border-slate-200 bg-slate-50 text-[11px] text-slate-500">
-          Token: <span className="font-mono">{site.scan_token || 'generated'}</span> · Open in a new tab to print, or download via the browser PDF toolbar.
-        </div>
-      </div>
+    <div data-testid="site-print-modal">
+      <PdfPreviewModal
+        file={{ filename: `${site.name || 'site'}-qr.pdf` }}
+        directUrl={directUrl}
+        headerExtras={layoutTabs}
+        footerExtras={tokenFooter}
+        onClose={onClose}
+      />
     </div>
   );
 }

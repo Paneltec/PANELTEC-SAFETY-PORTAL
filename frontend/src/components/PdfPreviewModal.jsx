@@ -33,7 +33,7 @@ const PDF_OK = (mime, name) => {
 
 export const isPdfPreviewable = PDF_OK;
 
-export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
+export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras, footerExtras, onClose }) {
   // Three modes:
   //   1. file={id, filename}            → mint a signed token, build iframe src.
   //   2. directUrl + file={filename}    → caller already has a same-origin
@@ -65,6 +65,10 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
     let alive = true;
     setIframeBlocked(false);
     setIframeLoaded(false);
+    // v150 — reset err on prop change so a stale error from a previous
+    // mount (e.g. SitePrintModal delegating with directUrl=null before
+    // generation completes) doesn't leak into the fresh render.
+    setErr(null);
     // v149 — the 6 s watchdog exists to catch ad-blocker silence on `blob:`
     // URLs. `directUrl` (same-origin stash) and preview-token modes are
     // HTTPS same-origin — no ad-blocker interference — but the backend
@@ -87,6 +91,10 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
       return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
     }
     // Mode 1 — fetch a signed preview token.
+    // v150 — skip if the caller hasn't provided a real file id. This
+    // happens when a wrapper (SitePrintModal / SupplierPrintModal)
+    // delegates with directUrl=null while it computes the stash URL.
+    if (!file.id) return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
     (async () => {
       try {
         const r = await api.post(`/files/${file.id}/preview-token`);
@@ -125,6 +133,16 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
   }, [onClose]);
 
   const downloadPdf = async () => {
+    // v150 — directUrl mode → we already have a same-origin stash URL.
+    // Trigger a download from it directly; browser honours the `download`
+    // attribute despite the response's inline Content-Disposition.
+    if (directUrl) {
+      const a = document.createElement('a');
+      a.href = directUrl;
+      a.download = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
     // blobUrl mode → we already have the PDF bytes locally; just trigger
     // the download with the desired filename.
     if (blobUrl) {
@@ -185,6 +203,10 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-white hover:border-slate-400 disabled:opacity-50">
             <ExternalLink size={12} /> <span className="hidden sm:inline">New tab</span>
           </button>
+          {/* v150 — optional caller-supplied header controls (e.g. layout
+              tabs for the Site/Supplier QR flows). Rendered between the
+              built-in New tab / Download buttons and the Close X. */}
+          {headerExtras}
           <button onClick={onClose} title="Close (Esc)"
             data-testid="pdf-modal-close"
             className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-200">
@@ -258,6 +280,10 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
             </>
           )}
         </div>
+
+        {/* v150 — optional caller-supplied footer strip (e.g. the "Token: <t>"
+            hint on the Site QR modal). Rendered below the body area. */}
+        {footerExtras}
       </div>
     </div>
   );

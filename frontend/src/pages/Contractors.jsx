@@ -197,11 +197,10 @@ export default function ContractorsList() {
 function SupplierPrintModal({ contractor, onClose }) {
   const [layout, setLayout] = useState('business_card');
   const [directUrl, setDirectUrl] = useState(null);
-  const [busy, setBusy] = useState(false);
 
   React.useEffect(() => {
     let alive = true;
-    setBusy(true);
+    setDirectUrl(null);
     api.get(`/contractors/${contractor.id}/scan-pdf`,
       { params: { layout }, responseType: 'blob' })
       .then(async (r) => {
@@ -210,47 +209,35 @@ function SupplierPrintModal({ contractor, onClose }) {
         const { src } = await stashInlinePdf(r.data, `${contractor.name || 'supplier'}-qr.pdf`);
         if (alive) setDirectUrl(src);
       })
-      .catch((e) => alive && toast.error(apiError(e)))
-      .finally(() => alive && setBusy(false));
+      .catch((e) => alive && toast.error(apiError(e)));
     return () => { alive = false; };
   }, [contractor.id, contractor.name, layout]);
 
+  // v150 — delegate body render to PdfPreviewModal for consistent
+  // New tab / Download / loading overlay / blocked-fallback UX.
+  const layoutTabs = (
+    <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold" data-testid="supplier-print-layouts">
+      <button onClick={() => setLayout('business_card')}
+        data-testid="supplier-print-layout-business-card"
+        className={`px-3 py-1.5 ${layout === 'business_card' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+        Business card
+      </button>
+      <button onClick={() => setLayout('lanyard')}
+        data-testid="supplier-print-layout-lanyard"
+        className={`px-3 py-1.5 border-l border-slate-300 ${layout === 'lanyard' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+        Lanyard
+      </button>
+    </div>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-      data-testid="supplier-print-modal">
-      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-200 bg-slate-50 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-wider font-bold text-violet-700">Supplier induction QR</div>
-            <div className="font-display font-bold text-slate-900 truncate">{contractor.name}</div>
-          </div>
-          <div className="inline-flex rounded-lg border border-slate-300 overflow-hidden text-xs font-semibold">
-            <button onClick={() => setLayout('business_card')}
-              data-testid="supplier-print-layout-business-card"
-              className={`px-3 py-1.5 ${layout === 'business_card' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
-              Business card
-            </button>
-            <button onClick={() => setLayout('lanyard')}
-              data-testid="supplier-print-layout-lanyard"
-              className={`px-3 py-1.5 border-l border-slate-300 ${layout === 'lanyard' ? 'bg-violet-600 text-white' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
-              Lanyard
-            </button>
-          </div>
-          <button onClick={onClose} data-testid="supplier-print-close"
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-slate-500 hover:bg-slate-200">✕</button>
-        </div>
-        <div className="flex-1 bg-slate-100 relative">
-          {busy ? (
-            <div className="absolute inset-0 grid place-items-center">
-              <Loader2 size={22} className="animate-spin text-violet-600" />
-            </div>
-          ) : directUrl ? (
-            <iframe data-testid="supplier-print-iframe" title="Supplier QR PDF" src={directUrl}
-              className="w-full h-full border-0" />
-          ) : null}
-        </div>
-      </div>
+    <div data-testid="supplier-print-modal">
+      <PdfPreviewModal
+        file={{ filename: `${contractor.name || 'supplier'}-qr.pdf` }}
+        directUrl={directUrl}
+        headerExtras={layoutTabs}
+        onClose={onClose}
+      />
     </div>
   );
 }
