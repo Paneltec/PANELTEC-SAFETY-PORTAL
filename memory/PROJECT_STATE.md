@@ -1,6 +1,6 @@
 # Paneltec Civil — Active Maintenance Project
 
-**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v137 (Phase 4.18 quick-wins: Bulk invite, general "Add historical reading" modal on Live Counters, and `/api/dashboards/audit-exports` alias).**
+**PHASE 4.17 COMPLETE. Latest shipped: paneltec-v139 (Phase 4.18.1 integration-lights truth-serum with Comms-Safe-Mode disarm semantics; M365/TextMagic show red-🛡-disarmed while safe mode is on).**
 Pre-existing schematic serving bug also fixed in v136 (missing `@router.get("/schematics/{filename}")` decorator in help_routes.py).
 
 THIS IS A LIVE, IN-PRODUCTION APP. DO NOT REBUILD.

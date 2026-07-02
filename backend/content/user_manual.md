@@ -320,6 +320,8 @@ Comms Safe Mode is a kill switch that intercepts every outbound email (Microsoft
 ### When it's on
 You'll see an orange **COMMS SAFE MODE** chip in the top-right of every page when it's active. It's intentionally enabled during onboarding and testing to prevent accidental mass-emails to real recipients.
 
+**Top-bar API pill behaviour** — while Safe Mode is on, the **Microsoft 365** and **TextMagic** rows in the integrations popover show **red** with a small `🛡 disarmed` chip next to the name and the detail _"Disarmed by Comms Safe Mode"_. That's expected. The lights answer the question _"will this integration actually fire outbound traffic right now?"_ — and the answer is no, because you've deliberately disarmed it. A yellow banner at the bottom of the popover reminds you of this. The moment you lift Safe Mode both lights re-arm on the next 60 s refresh (or immediately if you close and re-open the popover; the cache key includes the safe-mode flag).
+
 ### Viewing blocked messages
 Sidebar → **Settings → Comms Safe Mode**. The table shows every blocked message with timestamp, channel, recipient, subject and reason. Useful for verifying your invite/renewal flow is sending the right content before going live.
 

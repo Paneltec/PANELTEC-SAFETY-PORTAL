@@ -851,8 +851,28 @@
  *        • User Manual: new "Bulk invite" subsection under §7 Workers,
  *          and an expanded "Add historical meter reading manually"
  *          subsection under §9 Plant & Vehicles.
+ * v138 — Phase 4.18.1 integration health-light truth-serum (first pass).
+ *        See v139 for the corrected semantics — v138 read credentials
+ *        and marked M365/TextMagic green while COMMS_SAFE_MODE was on,
+ *        which is misleading. v139 flips the meaning.
+ * v139 — Phase 4.18.1 CORRECTED. `/api/health/integrations` now
+ *        answers the question "will this integration actually fire
+ *        outbound traffic right now?" — not "does it have credentials?".
+ *        Microsoft 365 and TextMagic hard-return red with a
+ *        `disarmed: true` flag and detail "Disarmed by Comms Safe Mode"
+ *        whenever `COMMS_SAFE_MODE=on`. The top-bar popover shows a
+ *        subtle "🛡 disarmed" chip next to those rows and a yellow
+ *        banner at the bottom explaining that lifting safe mode
+ *        re-arms both integrations automatically. Cache key now
+ *        includes the safe-mode flag so a toggle re-computes on the
+ *        next call instead of waiting for the 60s TTL. User Manual
+ *        §13 (Comms Safe Mode) updated with the "red on purpose"
+ *        expectation. Simpro stays honestly amber when its last
+ *        successful sync is >24h — that's a real "sync cron not
+ *        running" signal, not a red-vs-green bug (auto_sync_enabled
+ *        is currently `false` for this org).
  */
-const CACHE_VERSION = 'paneltec-v137';
+const CACHE_VERSION = 'paneltec-v139';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

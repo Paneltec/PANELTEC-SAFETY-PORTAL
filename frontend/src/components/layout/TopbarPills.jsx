@@ -51,12 +51,29 @@ export function ApiHealthPill() {
               return (
                 <li key={it.kind} className="flex items-center gap-2 text-xs" data-testid={`api-health-row-${it.kind}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${t.dot}`} />
-                  <span className="flex-1 font-semibold uppercase tracking-wider">{it.name}</span>
-                  <span className="text-slate-400">{it.detail || '—'}</span>
+                  <span className="flex-1 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
+                    {it.name}
+                    {it.disarmed && (
+                      <span title="Deliberately disarmed by Comms Safe Mode"
+                            data-testid={`api-health-disarmed-${it.kind}`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0 rounded border border-slate-600 bg-slate-800/60 text-slate-300 text-[9px] font-semibold tracking-wider normal-case">
+                        🛡 disarmed
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-slate-400 text-right">{it.detail || '—'}</span>
                 </li>
               );
             })}
           </ul>
+          {data.comms_safe_mode === 'on' && (
+            <div className="mt-3 px-2 py-1.5 rounded-md bg-amber-950/40 border border-amber-700/40 text-[10px] text-amber-300 leading-snug"
+                 data-testid="api-health-safe-mode-note">
+              Comms Safe Mode is <span className="font-bold">ON</span> — outbound
+              email & SMS integrations show red on purpose. They'll re-arm the
+              moment safe mode is lifted.
+            </div>
+          )}
         </div>
       )}
     </div>
