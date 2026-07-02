@@ -321,18 +321,56 @@ const METRIC_ROWS = [
   { key: 'inspections', label: 'Inspections', field: 'inspections_count', icon: 'ShieldCheck' },
 ];
 
+// Phase 4.15 (paneltec-v132) — Colourful hero-emblem per capture tile,
+// served from `/api/help/tiles/`. When the PNG fails to load we fall
+// back to the original pastel-Fluent-icon square so tiles never render
+// as broken images. Keys without an entry render the icon fallback.
+const TILE_EMBLEM_BY_KEY = {
+  'swms':             '/api/help/tiles/tile_swms.png',
+  'pre-starts':       '/api/help/tiles/tile_prestarts.png',
+  'hazards':          '/api/help/tiles/tile_hazards.png',
+  'incidents':        '/api/help/tiles/tile_incidents.png',
+  'inspections':      '/api/help/tiles/tile_inspections.png',
+  'workers':          '/api/help/tiles/tile_workers.png',
+  'certifications':   '/api/help/tiles/tile_certs.png',
+  'users':            '/api/help/tiles/tile_workers.png',
+  'suppliers':        '/api/help/tiles/tile_suppliers.png',
+  'document-library': '/api/help/tiles/tile_documents.png',
+  'vehicles':         '/api/help/tiles/tile_plant.png',
+  'sites':            '/api/help/tiles/tile_sites.png',
+  'audit-exports':    '/api/help/tiles/tile_audit.png',
+  'ask-intel':        '/api/help/tiles/tile_ask_intel.jpeg',
+};
+
 function CaptureCard({ tool, onClick }) {
   const Icon = ICONS[tool.icon] || FileText;
   const bgUrl = TILE_BG_BY_KEY[tool.key];
   const iconClass = ICON_PASTEL_BY_KEY[tool.key] || 'bg-brand-blue-soft text-brand-blue';
+  const emblem = TILE_EMBLEM_BY_KEY[tool.key];
+  const [emblemBroken, setEmblemBroken] = useState(false);
+  const showEmblem = emblem && !emblemBroken;
   return (
     <button onClick={onClick} data-testid={`capture-card-${tool.key}`}
       style={bgUrl ? { backgroundImage: `url(${bgUrl})` } : undefined}
       className="tile-bg group w-full text-left rounded-2xl border border-slate-200 bg-white p-4 hover:border-brand-blue/30 hover:shadow-card transition-all">
       <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-xl ${iconClass} flex items-center justify-center shrink-0`}>
-          <Icon size={18} />
-        </div>
+        {showEmblem ? (
+          <img
+            src={emblem}
+            alt=""
+            width={96}
+            height={96}
+            loading="lazy"
+            onError={() => setEmblemBroken(true)}
+            data-testid={`capture-card-${tool.key}-emblem`}
+            className="w-24 h-24 rounded-xl object-cover shrink-0 shadow-sm bg-white group-hover:scale-105 transition-transform"
+          />
+        ) : (
+          <div className={`w-10 h-10 rounded-xl ${iconClass} flex items-center justify-center shrink-0`}
+            data-testid={`capture-card-${tool.key}-icon-fallback`}>
+            <Icon size={18} />
+          </div>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <h3 className="font-display text-base font-semibold">{tool.title}</h3>

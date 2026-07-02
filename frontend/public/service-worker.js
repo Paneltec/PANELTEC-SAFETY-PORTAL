@@ -786,8 +786,16 @@
  *        /app/settings/users, /app/audit-exports, /app/settings/
  *        comms-safe-mode). Panel open/closed state persists per-slug
  *        in localStorage. Schematic PNGs added to the precache list.
+ * v132 — Phase 4.15. Dashboard capture tiles gained a colourful hero
+ *        emblem — 96×96 rounded PNG served from `/api/help/tiles/` in
+ *        the same mtime-cached pattern as the schematics. On image
+ *        load failure the tile silently falls back to the original
+ *        pastel Fluent-icon square. Thirteen emblems shipped: SWMS,
+ *        Hazards, Sites, Plant, Workers, Certs, Suppliers, Audit,
+ *        Incidents, Inspections, Pre-starts, Documents, Ask
+ *        Intelligence. All added to the SW precache list.
  */
-const CACHE_VERSION = 'paneltec-v131';
+const CACHE_VERSION = 'paneltec-v132';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
@@ -803,6 +811,19 @@ const PRECACHE = [
   '/api/help/schematics/paneltec_workers_access.png',
   '/api/help/schematics/paneltec_audit_exports.png',
   '/api/help/schematics/paneltec_comms_safe_mode.png',
+  '/api/help/tiles/tile_swms.png',
+  '/api/help/tiles/tile_hazards.png',
+  '/api/help/tiles/tile_sites.png',
+  '/api/help/tiles/tile_plant.png',
+  '/api/help/tiles/tile_workers.png',
+  '/api/help/tiles/tile_certs.png',
+  '/api/help/tiles/tile_suppliers.png',
+  '/api/help/tiles/tile_audit.png',
+  '/api/help/tiles/tile_incidents.png',
+  '/api/help/tiles/tile_inspections.png',
+  '/api/help/tiles/tile_prestarts.png',
+  '/api/help/tiles/tile_documents.png',
+  '/api/help/tiles/tile_ask_intel.jpeg',
 ];
 
 self.addEventListener('install', (event) => {

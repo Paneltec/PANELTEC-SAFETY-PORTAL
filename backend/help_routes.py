@@ -37,6 +37,17 @@ MANUAL_PATH = Path(__file__).parent / "content" / "user_manual.md"
 # journey diagrams live alongside the markdown so both the browser render
 # and the PDF export can embed them.
 SCHEMATICS_DIR = Path(__file__).parent / "content" / "schematics"
+# Phase 4.15 (paneltec-v132) — Colourful hero-emblems that swap the flat
+# Fluent icon on each Dashboard capture tile. Same serving pattern as the
+# schematics — mtime-cached, 24h public cache, filename whitelist.
+TILES_DIR = Path(__file__).parent / "content" / "tiles"
+_TILE_ALLOWED_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+_TILE_CONTENT_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
 # Phase 4.11.1 (v122) — cache is keyed off the markdown file's mtime so
 # both dev edits AND prod redeploys pick up new content without a backend
 # restart. No TTL needed: the moment the file changes, both md+pdf are
@@ -288,7 +299,27 @@ def manual_pdf() -> Response:
 # browser (embedded in the manual markdown via `![]()`) and, indirectly,
 # to the PDF renderer which reads them straight off disk via
 # `_resolve_schematic_path`.
-@router.get("/schematics/{filename}")
+@router.get("/tiles/{filename}")
+def get_tile(filename: str) -> Response:
+    """Phase 4.15 (v132) — Colourful dashboard tile emblems. Rejects
+    path-traversal, restricts to a small extension whitelist, and mirrors
+    the schematics endpoint's 24h client cache."""
+    if "/" in filename or ".." in filename:
+        raise HTTPException(status_code=404, detail="Not found")
+    ext = Path(filename).suffix.lower()
+    if ext not in _TILE_ALLOWED_EXT:
+        raise HTTPException(status_code=404, detail="Not found")
+    p = TILES_DIR / filename
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    return Response(
+        content=p.read_bytes(),
+        media_type=_TILE_CONTENT_TYPES.get(ext, "application/octet-stream"),
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
+    )
 def get_schematic(filename: str) -> Response:
     # Reject path-traversal attempts up front — filename must be a bare
     # name, no separators, and terminate with .png.
