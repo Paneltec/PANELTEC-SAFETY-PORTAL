@@ -1016,8 +1016,23 @@
  *        AssetDrawer.jsx (label PDF). Server helper lives in
  *        `backend/file_pdf.py::stash_inline_pdf`; frontend helper in
  *        `frontend/src/lib/pdfStash.js`. No auth changes.
+ *
+ * v149 — PdfPreviewModal watchdog now armed only in legacy `blob:` mode.
+ *        The 6 s timer was originally added to catch ad-blocker silence
+ *        on `blob:` iframe URLs, but with v148's stashInlinePdf migration
+ *        the primary paths are `directUrl` (same-origin stash) and the
+ *        signed preview-token iframe URL — neither are ad-blocker
+ *        susceptible. Cold DOCX→PDF LibreOffice conversions routinely
+ *        take 10–30 s on first hit, so the timer was firing before the
+ *        PDF arrived, unmounting the iframe and showing a false "browser
+ *        blocked the preview" UI. Fix: gate the watchdog behind
+ *        `isBlobMode`. Also added a small "Preparing PDF…" overlay that
+ *        stays up until the iframe fires `onLoad`, so the user sees
+ *        progress feedback during the LibreOffice conversion instead of
+ *        an empty preview pane. `Open in new tab` and `Download PDF`
+ *        buttons remain functional throughout. No backend changes.
  */
-const CACHE_VERSION = 'paneltec-v148';
+const CACHE_VERSION = 'paneltec-v149';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

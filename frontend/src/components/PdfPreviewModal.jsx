@@ -55,30 +55,36 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
   const [pipeline, setPipeline] = useState(null);
   const [err, setErr] = useState(null);
   const [iframeBlocked, setIframeBlocked] = useState(false);
+  // v149 — track iframe onLoad so we can overlay a "Converting…" hint while
+  // the backend runs LibreOffice on the DOCX (cold conversion is 10–30 s).
+  const [iframeLoaded, setIframeLoaded] = useState(false);
   const isBlobMode = !!blobUrl && !directUrl;
 
   useEffect(() => {
     if (!file) return;
     let alive = true;
     setIframeBlocked(false);
-    // Watchdog — if the iframe hasn't fired `onload` within 6 s, we assume
-    // it's been blocked (Chrome's CSP enforcement is silent, and ad
-    // blockers don't surface ERR_BLOCKED_BY_CLIENT through the iframe
-    // either). The blocked-fallback UI lets the user pop the PDF in a new
-    // tab where the same-origin policy doesn't apply.
-    const watchdog = setTimeout(() => {
-      if (alive) setIframeBlocked(true);
-    }, 6000);
+    setIframeLoaded(false);
+    // v149 — the 6 s watchdog exists to catch ad-blocker silence on `blob:`
+    // URLs. `directUrl` (same-origin stash) and preview-token modes are
+    // HTTPS same-origin — no ad-blocker interference — but the backend
+    // may take 10–30 s to convert a DOCX via LibreOffice on first hit, so
+    // arming the watchdog there unmounted the iframe before the PDF
+    // arrived, producing a false "browser blocked the preview" UI. Gate
+    // the watchdog to blob mode only.
+    const watchdog = isBlobMode
+      ? setTimeout(() => { if (alive) setIframeBlocked(true); }, 6000)
+      : null;
     // Mode 2 — caller-supplied same-origin URL. Render immediately.
     if (directUrl) {
       setSrc(directUrl);
-      return () => { alive = false; clearTimeout(watchdog); };
+      return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
     }
     // Mode 3 — caller-supplied blob URL. Render but keep the watchdog on
     // because ad blockers routinely refuse blob: URLs.
     if (blobUrl) {
       setSrc(blobUrl);
-      return () => { alive = false; clearTimeout(watchdog); };
+      return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
     }
     // Mode 1 — fetch a signed preview token.
     (async () => {
@@ -92,15 +98,25 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
         setSrc(`${process.env.REACT_APP_BACKEND_URL}/api/files/${file.id}/pdf?t=${encodeURIComponent(t)}`);
         // Pipeline isn't available via the signed iframe URL; do a tiny
         // bearer HEAD-style fetch on /pdf to grab the header for display.
+        // v149 — this parallel fetch also serves as our "PDF is ready"
+        // signal. Chrome's PDF viewer plugin intercepts iframe PDF
+        // rendering and often doesn't fire `onLoad`, so we can't rely on
+        // that alone to hide the "Preparing…" overlay. When this fetch
+        // resolves the backend has finished the LibreOffice conversion
+        // (or served from cache), so we mark the iframe as loaded too.
         api.get(`/files/${file.id}/pdf`, { responseType: 'blob' })
-          .then((rr) => { if (alive) setPipeline(rr.headers?.['x-pipeline'] || null); })
+          .then((rr) => {
+            if (!alive) return;
+            setPipeline(rr.headers?.['x-pipeline'] || null);
+            setIframeLoaded(true);
+          })
           .catch(() => {});
       } catch (e) {
         if (alive) setErr(apiError(e));
       }
     })();
-    return () => { alive = false; clearTimeout(watchdog); };
-  }, [file, blobUrl, directUrl]);
+    return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
+  }, [file, blobUrl, directUrl, isBlobMode]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -218,11 +234,28 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
               </div>
             </div>
           ) : (
-            <iframe data-testid="pdf-modal-iframe"
-              title={file.filename || 'PDF preview'}
-              src={src}
-              onLoad={() => setIframeBlocked(false)}
-              className="w-full h-full border-0" />
+            <>
+              <iframe data-testid="pdf-modal-iframe"
+                title={file.filename || 'PDF preview'}
+                src={src}
+                onLoad={() => { setIframeBlocked(false); setIframeLoaded(true); }}
+                className="w-full h-full border-0" />
+              {/* v149 — cold LibreOffice conversion for DOCX/XLSX/PPTX/ODT/RTF
+                  can take 10–30 s. Show a friendly overlay until the iframe
+                  onLoad fires. Skips for blob mode (already local). */}
+              {!isBlobMode && !iframeLoaded && (
+                <div className="absolute inset-0 grid place-items-center bg-slate-100/85 pointer-events-none"
+                     data-testid="pdf-modal-converting">
+                  <div className="text-center max-w-sm px-6">
+                    <Loader2 size={24} className="text-blue-600 animate-spin mx-auto" />
+                    <div className="text-[13px] font-semibold text-slate-800 mt-2">Preparing PDF…</div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                      Converting document to PDF. This can take up to 30 seconds on first open.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
