@@ -777,8 +777,17 @@
  *        top of `/app/help` in the browser AND inside the downloaded
  *        PDF (ReportLab `Image` flowable, proportionally scaled to
  *        page width). No other manual copy changed.
+ * v131 — Phase 4.14. Rolled the colourful platform schematics across
+ *        the app. Six new module diagrams (SWMS, Sites+QR, Plant &
+ *        Vehicles, Workers, Audit Exports, Comms Safe Mode) embedded
+ *        in the corresponding User Manual sections and, via a new
+ *        `<HowThisWorks />` collapsible card, on each module's main
+ *        page (Dashboard, /app/swms, /app/sites, /app/vehicles,
+ *        /app/settings/users, /app/audit-exports, /app/settings/
+ *        comms-safe-mode). Panel open/closed state persists per-slug
+ *        in localStorage. Schematic PNGs added to the precache list.
  */
-const CACHE_VERSION = 'paneltec-v130';
+const CACHE_VERSION = 'paneltec-v131';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
@@ -786,6 +795,14 @@ const PRECACHE = [
   '/brand/icon-192.png',
   '/brand/icon-512.png',
   '/brand/apple-touch-icon.png',
+  '/api/help/schematics/paneltec_architecture.png',
+  '/api/help/schematics/paneltec_user_journey.png',
+  '/api/help/schematics/paneltec_swms.png',
+  '/api/help/schematics/paneltec_sites_qr.png',
+  '/api/help/schematics/paneltec_plant_vehicles.png',
+  '/api/help/schematics/paneltec_workers_access.png',
+  '/api/help/schematics/paneltec_audit_exports.png',
+  '/api/help/schematics/paneltec_comms_safe_mode.png',
 ];
 
 self.addEventListener('install', (event) => {

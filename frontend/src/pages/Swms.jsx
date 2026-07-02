@@ -11,6 +11,7 @@ import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser, getToken } from '../lib/auth';
+import HowThisWorks from '../components/help/HowThisWorks';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
   Field, inputClass, EmptyState, StatusBadge,
@@ -175,6 +176,8 @@ export default function SwmsList() {
       <PageHeader crumb="Capture / AI SWMS" title="Safe Work Method Statements"
         subtitle="Draft, review and approve SWMS across your workspaces."
         action={headerActions} />
+
+      <HowThisWorks schematicSlug="swms" />
 
       {/* Phase 4.5 — bulk-action toolbar appears whenever the user has
           selected at least one row. Sticky-top so it stays in view as

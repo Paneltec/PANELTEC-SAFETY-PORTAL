@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+import HowThisWorks from '../components/help/HowThisWorks';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
 
@@ -130,6 +131,8 @@ export default function SitesAdmin() {
           </div>
         }
       />
+
+      <HowThisWorks schematicSlug="sites_qr" />
 
       <div className="mb-4 flex items-center gap-3">
         <input

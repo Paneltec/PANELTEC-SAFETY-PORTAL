@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { Zap, Mail, MessageSquare, Lock, ChevronRight } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
+import HowThisWorks from '../components/help/HowThisWorks';
 
 const CHANNEL_ICON = { email: Mail, sms: MessageSquare };
 
@@ -51,6 +52,8 @@ export default function CommsSafeMode() {
   return (
     <div data-testid="comms-safe-mode-page">
       <PageHeader title="Comms Safe Mode" subtitle="Outbound email and SMS kill switch." />
+
+      <HowThisWorks schematicSlug="comms_safe_mode" />
 
       <div className={`mb-6 rounded-2xl border p-5 flex items-start gap-4 ${
         eff === 'on'

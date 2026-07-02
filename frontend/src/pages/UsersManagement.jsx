@@ -15,6 +15,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+import HowThisWorks from '../components/help/HowThisWorks';
 import { RESOURCE_LABELS, EMAIL_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import {
@@ -178,7 +179,7 @@ export default function UsersManagement() {
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="users-page">
-      <PageHeader crumb="Settings / Users" title="Users & permissions"
+      <PageHeader crumb="Settings / Users" title="Users &amp; permissions"
         subtitle={`${users.length} users in your org`}
         action={can('users', 'edit') ? (
           <div className="flex items-center gap-2">
@@ -196,6 +197,8 @@ export default function UsersManagement() {
               <FlPersonAdd /> Invite user
             </button>
           </div>) : null} />
+
+      <HowThisWorks schematicSlug="workers_access" />
 
       {!can('users', 'edit') && (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-900" data-testid="users-readonly-banner">

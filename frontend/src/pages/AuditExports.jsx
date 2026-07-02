@@ -6,6 +6,7 @@ import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
+import HowThisWorks from '../components/help/HowThisWorks';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
@@ -173,6 +174,8 @@ export default function AuditExports() {
       <PageHeader crumb="Compliance / Audit Exports" title="Audit Exports"
         subtitle="Generate signed evidence packs for Comcare, SafeWork and client audits."
         action={<button onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600" data-testid="export-create-btn">+ New export</button>} />
+
+      <HowThisWorks schematicSlug="audit_exports" />
 
       {groups.length === 0 ? <EmptyState title="No exports yet" body="Generate your first audit pack." />
        : (

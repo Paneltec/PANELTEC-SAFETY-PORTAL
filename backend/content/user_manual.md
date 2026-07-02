@@ -70,6 +70,10 @@ The header carries the **User Manual** button (you're reading it now), the works
 
 ## 3. SWMS — Safe Work Method Statements
 
+![SWMS lifecycle](/api/help/schematics/paneltec_swms.png)
+
+_Fig. SWMS lifecycle — Create → AI parse → Review & approve → Issue & track._
+
 ### Creating a SWMS from scratch
 1. Sidebar → **AI SWMS** → **+ New SWMS** (top-right).
 2. Fill the task name, location, hazards, controls, PPE, and responsible person.
@@ -115,6 +119,10 @@ The PWA runs the same forms on your phone. Tap **+** from the dashboard, choose 
 
 ## 5. Workers, Users & Permissions
 
+![Worker onboarding & access](/api/help/schematics/paneltec_workers_access.png)
+
+_Fig. Worker onboarding & access._
+
 ### Adding a worker
 Sidebar → **Workers** (under Settings) → **+ Add worker**. Fill name, mobile, email, role, induction status. If your Simpro integration is connected, workers sync automatically — manual adds are for crew not in Simpro.
 
@@ -156,6 +164,10 @@ Print the QR via the asset / supplier / worker row's **Print** action.
 
 ## 7. Plant & Vehicles
 
+![Plant & Vehicles telemetry sources](/api/help/schematics/paneltec_plant_vehicles.png)
+
+_Fig. Plant & Vehicles telemetry sources._
+
 ### Asset list and QR codes
 Sidebar → **Plant & Vehicles**. Each asset has a QR menu on the row:
 
@@ -192,6 +204,10 @@ Each metric carries a small label explaining where the number came from:
 
 ## 8. Sites & Site sign-on
 
+![Sites & QR sign-on flow](/api/help/schematics/paneltec_sites_qr.png)
+
+_Fig. Sites & QR sign-on flow._
+
 Sidebar → **Sites**. Each site has a public QR for worker sign-on. Coming-soon features in this section: scheduled site closures, geofenced auto-sign-out, and the supervisor dashboard for live headcount. Full release in a near-term phase — until then, the sign-on QR works end-to-end for sign-in records.
 
 ---
@@ -214,6 +230,10 @@ Workers list → row → **Print ID card** generates an A6 card PDF with photo, 
 
 ## 10. Audit Exports
 
+![Audit pack contents & delivery](/api/help/schematics/paneltec_audit_exports.png)
+
+_Fig. Audit pack contents & delivery._
+
 Sidebar → **Audit Exports** → **+ New audit pack**. Choose the date range and the modules to include (SWMS, pre-starts, hazards, incidents, inspections, contractor compliance, certifications). Click **Generate**.
 
 The pack produces **two artefacts at the same time**:
@@ -226,6 +246,10 @@ Download both from the audit pack row. Scheduled exports (weekly / monthly auto-
 ---
 
 ## 11. Comms Safe Mode
+
+![Comms Safe Mode kill switch flow](/api/help/schematics/paneltec_comms_safe_mode.png)
+
+_Fig. Comms Safe Mode kill switch flow._
 
 ### What it is
 Comms Safe Mode is a kill switch that intercepts every outbound email (Microsoft 365) and SMS (TextMagic) at the org level. When `on`, no real worker or contractor receives any communication — messages are logged to the **blocked outbox** with the full payload preserved for inspection.

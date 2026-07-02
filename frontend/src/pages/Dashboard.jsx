@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
+import HowThisWorks from '../components/help/HowThisWorks';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -440,6 +441,8 @@ export default function Dashboard() {
           </Link>
         </div>
       </div>
+
+      <HowThisWorks schematicSlug="architecture" title="Platform overview" />
 
       {/* Compliance Snapshot — value-prop cards (Thread B) */}
       <section className="mb-8" data-testid="compliance-snapshot">

@@ -4,6 +4,7 @@ import { MapPin, Truck, Loader2, Archive, X, List as ListIcon, Map as MapIcon, R
 import { toast } from 'sonner';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
+import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
@@ -301,6 +302,8 @@ export default function PlantVehicles() {
           </div>
         }
       />
+
+      <HowThisWorks schematicSlug="plant_vehicles" />
 
       {error && (
         <div className="mb-4 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-sm text-rose-700" data-testid="assets-error">{error}</div>
