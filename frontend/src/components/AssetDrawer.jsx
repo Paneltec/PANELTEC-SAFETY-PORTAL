@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { stashInlinePdf } from '../lib/pdfStash';
 import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
 import LiveCountersPanel from './LiveCountersPanel';
 import { Link, useNavigate } from 'react-router-dom';

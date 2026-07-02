@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { X, Download, ExternalLink, Loader2, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { stashInlinePdf } from '../lib/pdfStash';
 
 // File types that the backend can convert to PDF (mirrors file_pdf.py `_pipeline_for`).
 const PDF_OK = (mime, name) => {

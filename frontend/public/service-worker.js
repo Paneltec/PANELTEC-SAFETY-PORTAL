@@ -996,8 +996,28 @@
  *        records cached", "72 assets synced · last sync 12m ago").
  *        The per-integration admin pages and their
  *        `GET /integrations/{kind}` config CRUD flow are untouched.
+ *
+ * v148 — Ad-blocker bypass for PDF preview/download. Chrome ad-blocker
+ *        extensions (uBlock, Adblock Plus) match `blob:` URLs against
+ *        their filter heuristics and were surfacing PDFs as
+ *        `ERR_BLOCKED_BY_CLIENT` — the user saw print sheets fail to
+ *        render, "Download PDF" clicks do nothing, and Print-Labels
+ *        (Avery L7160) return blank. Fix: replace
+ *        `URL.createObjectURL(blob)` at all v148 PDF surfaces with
+ *        `stashInlinePdf(blob, filename)` → the blob is POSTed to
+ *        `POST /api/files/inline-pdf` and served back from
+ *        `GET /api/files/inline/{stash_id}` — a same-origin URL that
+ *        no ad-blocker filter matches. Migrated 8 files:
+ *        Workers.jsx (print sheet + wallet card), PlantVehicles.jsx
+ *        (Print Labels avery_l7160), UserManual.jsx (manual PDF),
+ *        DocumentLibrary.jsx (download), InductionsMatrix.jsx (export
+ *        + preview), InductionCardModal.jsx (card PDF),
+ *        PdfPreviewModal.jsx (universal preview iframe),
+ *        AssetDrawer.jsx (label PDF). Server helper lives in
+ *        `backend/file_pdf.py::stash_inline_pdf`; frontend helper in
+ *        `frontend/src/lib/pdfStash.js`. No auth changes.
  */
-const CACHE_VERSION = 'paneltec-v147';
+const CACHE_VERSION = 'paneltec-v148';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
