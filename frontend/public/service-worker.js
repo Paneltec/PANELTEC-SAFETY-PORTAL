@@ -962,8 +962,29 @@
  *        (button + `<a href>`), installer .py download, and
  *        docker-compose.yml download. Two Portal comment/copy
  *        strings rewritten to Civil wording.
+ * v146 — Server-tools installer now runs as a background job.
+ *        Backend `file_pdf.py`: `POST /admin/install-libreoffice`
+ *        returns 202 immediately with `{job_id, started_at,
+ *        install_running:true, packages}` and spawns apt-get in a
+ *        detached asyncio task. Overlap → 409 with the running
+ *        job_id. Module-level `_INSTALL_STATE` tracks live progress
+ *        (rolling last-50-lines deque) with a 20-min wall-clock
+ *        SIGKILL. `GET /admin/server-tools/health` now surfaces
+ *        `install_running`, `install_job_id`, `install_started_at`,
+ *        `install_finished_at`, `install_exit_code`, and
+ *        `install_log_tail`.
+ *        Frontend `SystemSettings.jsx`: rewritten to poll health
+ *        every 5 s while an install is running, render the live
+ *        `install_log_tail` in a collapsible <pre>, handle 409 by
+ *        attaching to the running job, and auto-resume the polling
+ *        loop if the page is reloaded mid-install (detected via
+ *        `install_running:true` on mount).
+ *        Fixes the "install goes part of the way then stops"
+ *        symptom that was actually Cloudflare/ingress killing the
+ *        long-running synchronous HTTP request while apt-get kept
+ *        installing to completion server-side.
  */
-const CACHE_VERSION = 'paneltec-v145';
+const CACHE_VERSION = 'paneltec-v146';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

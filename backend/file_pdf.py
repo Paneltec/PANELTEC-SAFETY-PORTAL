@@ -38,8 +38,11 @@ import os
 import subprocess
 import tempfile
 import time
+import uuid
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -645,45 +648,142 @@ async def file_pdf_bundle(body: BundleIn, user: dict = Depends(get_current_user)
     return Response(content=buf.getvalue(), media_type="application/pdf", headers=headers)
 
 
-# ────────────────── admin install hook ──────────────────
+# ────────────────── admin install hook (v146 — background job) ──────────────────
+#
+# Prior to v146 this endpoint blocked the HTTP request for the full duration
+# of `apt-get install`, which on a first-time install fetches ~650 MB of
+# LibreOffice deps and takes 5–10 minutes. The public URL runs behind
+# Cloudflare + Kubernetes ingress, both of which enforce a ~100 s idle-read
+# timeout; the browser saw a 5xx while the backend kept installing to
+# completion server-side. Users experienced "install goes part-way then
+# stops" but the packages actually finished landing.
+#
+# v146 fix: POST returns 202 immediately with a job_id, and the subprocess
+# runs as a detached asyncio task. `_INSTALL_STATE` tracks live progress
+# (rolling last-50-lines log tail) so `GET /admin/server-tools/health`
+# can surface it. The frontend polls health every 5 s until
+# `install_running=false`.
+_INSTALL_STATE: Dict[str, Any] = {
+    "install_running": False,
+    "job_id": None,
+    "started_at": None,
+    "finished_at": None,
+    "exit_code": None,
+    "packages": None,
+    "log_tail": deque(maxlen=50),
+}
+_INSTALL_WALL_CLOCK_S = 20 * 60   # 20-minute hard ceiling
 
-@router.post("/admin/install-libreoffice")
+
+def _install_log_tail_str() -> str:
+    return "\n".join(_INSTALL_STATE["log_tail"])
+
+
+async def _run_apt_install(job_id: str, pkgs: list) -> None:
+    """Background task — runs `apt-get install` and streams stdout/stderr
+    line-by-line into the module-level `_INSTALL_STATE["log_tail"]` deque.
+    Enforces the 20-min wall-clock cap by SIGKILLing the subprocess."""
+    _INSTALL_STATE["log_tail"].append(
+        f"[paneltec] Job {job_id} — installing: {', '.join(pkgs)}"
+    )
+    cmd = [
+        "bash", "-lc",
+        f"apt-get update -qq && apt-get install -y --no-install-recommends "
+        f"{' '.join(pkgs)} 2>&1; echo '---'; "
+        f"which libreoffice || which soffice || true; "
+        f"echo '---'; which tesseract || true; "
+        f"echo '---'; which pdftotext || true",
+    ]
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+
+        async def _reader():
+            assert proc is not None and proc.stdout is not None
+            while True:
+                line_b = await proc.stdout.readline()
+                if not line_b:
+                    return
+                line = line_b.decode("utf-8", errors="replace").rstrip()
+                if line:
+                    _INSTALL_STATE["log_tail"].append(line)
+
+        try:
+            await asyncio.wait_for(_reader(), timeout=_INSTALL_WALL_CLOCK_S)
+            rc = await proc.wait()
+        except asyncio.TimeoutError:
+            _INSTALL_STATE["log_tail"].append(
+                f"[paneltec] wall-clock timeout after {_INSTALL_WALL_CLOCK_S}s — killing subprocess"
+            )
+            try:
+                proc.kill()
+                await proc.wait()
+            except Exception as ke:
+                _INSTALL_STATE["log_tail"].append(f"[paneltec] kill failed: {ke}")
+            rc = -1
+
+        _INSTALL_STATE["exit_code"] = rc
+        _INSTALL_STATE["log_tail"].append(f"[paneltec] apt-get exited rc={rc}")
+    except Exception as e:
+        log.exception("install_libreoffice background task crashed")
+        _INSTALL_STATE["exit_code"] = -1
+        _INSTALL_STATE["log_tail"].append(f"[paneltec] background task crashed: {e}")
+    finally:
+        _INSTALL_STATE["install_running"] = False
+        _INSTALL_STATE["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
+@router.post("/admin/install-libreoffice", status_code=202)
 async def install_libreoffice(
     include_ocr: bool = Query(True, description="Also install Tesseract + Poppler for OCR"),
     user: dict = Depends(get_current_user),
 ):
-    """Admin-only one-click toolchain installer. Runs `apt-get install`
-    synchronously and returns the install log. Does NOT auto-trigger — the
-    user must explicitly call this during a maintenance window."""
+    """Admin-only one-click toolchain installer. Kicks off apt-get in a
+    background asyncio task and returns 202 immediately with a job_id so
+    the caller can poll `/admin/server-tools/health` for progress —
+    apt-get runs for 5–10 min on a cold cache, longer than any edge
+    HTTP proxy will hold a connection open."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Only admin can install system packages")
+    if _INSTALL_STATE["install_running"]:
+        raise HTTPException(
+            409,
+            {
+                "detail": "Install already running",
+                "job_id": _INSTALL_STATE["job_id"],
+                "started_at": _INSTALL_STATE["started_at"],
+            },
+        )
     pkgs = [
         "libreoffice-core", "libreoffice-writer",
         "libreoffice-calc", "libreoffice-impress",
     ]
     if include_ocr:
         pkgs += ["tesseract-ocr", "poppler-utils"]
-    cmd = [
-        "bash", "-lc",
-        f"apt-get update -qq && apt-get install -y --no-install-recommends "
-        f"{' '.join(pkgs)} 2>&1 | tail -300; "
-        f"echo '---'; which libreoffice || which soffice || true; "
-        f"echo '---'; which tesseract || true; "
-        f"echo '---'; which pdftotext || true",
-    ]
-    try:
-        p = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
-        )
-        out_b, _ = await asyncio.wait_for(p.communicate(), timeout=900)
-        out = out_b.decode("utf-8", errors="replace")
-        rc = p.returncode
-    except asyncio.TimeoutError:
-        raise HTTPException(504, "Install timed out after 15 minutes")
+
+    job_id = str(uuid.uuid4())
+    started = datetime.now(timezone.utc).isoformat()
+    _INSTALL_STATE.update({
+        "install_running": True,
+        "job_id": job_id,
+        "started_at": started,
+        "finished_at": None,
+        "exit_code": None,
+        "packages": list(pkgs),
+    })
+    _INSTALL_STATE["log_tail"].clear()
+
+    asyncio.create_task(_run_apt_install(job_id, pkgs))
+
     return {
-        "rc": rc, "include_ocr": include_ocr,
-        "tools": await _tool_status(),
-        "log_tail": out[-6000:],
+        "job_id": job_id,
+        "started_at": started,
+        "install_running": True,
+        "packages": pkgs,
     }
 
 
@@ -732,7 +832,13 @@ async def server_tools_health(user: dict = Depends(get_current_user)):
     """Phase 3.13 — health-check shape requested by the Settings page.
     Returns `{libreoffice:{ok,version,path}, tesseract:{...}, poppler:{...}}`.
     Same data as `/admin/system-tools` but normalised to the `ok` key the
-    UI uses to colour the chip green/red without a key-mapping helper."""
+    UI uses to colour the chip green/red without a key-mapping helper.
+
+    v146 — also surfaces the background install job progress so the UI
+    can poll a single endpoint and show a live log tail while apt-get
+    is still running (`install_running`, `install_job_id`,
+    `install_log_tail`, `install_exit_code`, `install_started_at`,
+    `install_finished_at`)."""
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     s = await _tool_status()
@@ -742,6 +848,12 @@ async def server_tools_health(user: dict = Depends(get_current_user)):
         "libreoffice": _norm(s["libreoffice"]),
         "tesseract":   _norm(s["tesseract"]),
         "poppler":     _norm(s["poppler"]),
+        "install_running":     bool(_INSTALL_STATE["install_running"]),
+        "install_job_id":      _INSTALL_STATE["job_id"],
+        "install_started_at":  _INSTALL_STATE["started_at"],
+        "install_finished_at": _INSTALL_STATE["finished_at"],
+        "install_exit_code":   _INSTALL_STATE["exit_code"],
+        "install_log_tail":    _install_log_tail_str() or None,
     }
 
 

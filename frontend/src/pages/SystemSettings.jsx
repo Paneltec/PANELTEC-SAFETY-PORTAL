@@ -1,10 +1,16 @@
-// Phase 3.10 — Settings → System page. Admin-only.
+// Phase 3.10 / v146 — Settings → System page. Admin-only.
 // Shows the install status of optional server toolchains (LibreOffice,
 // Tesseract OCR, Poppler) and a single "Install all server tools" button.
-// Does NOT auto-trigger — admin must click. Streaming log isn't supported
-// here (it's a synchronous POST that returns the tail of apt-get output);
-// the spinner with "Installing… 5–10 min" is shown until completion.
-import { useEffect, useState } from 'react';
+//
+// v146 fix: install is now a background job on the backend. POST returns
+// 202 immediately with a `job_id`; we poll `/admin/server-tools/health`
+// every 5 s and render `install_log_tail` live. Fixes the "goes part of
+// the way then stops" symptom caused by Cloudflare/ingress killing the
+// long-running synchronous HTTP request while apt-get kept installing.
+// If the page is reloaded mid-install we detect `install_running=true`
+// on mount and resume the polling loop automatically — no orphan
+// spinners.
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, XCircle, Loader2, FileText, Settings as Cog } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -20,54 +26,118 @@ import {
   Eye20Regular as Eye,
 } from '@fluentui/react-icons';
 
+const POLL_INTERVAL_MS   = 5_000;
+const POLL_CEILING_MS    = 25 * 60 * 1000;  // 25 min belt-and-braces
+
 export default function SystemSettings() {
   const me = getUser();
   const canInstall = me?.role === 'admin';
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);
-  const [lastLog, setLastLog] = useState(null);
+  const [logTail, setLogTail] = useState('');
+  const [exitCode, setExitCode] = useState(null);
+  const [jobId, setJobId] = useState(null);
+  const pollTimer = useRef(null);
+  const pollStartedAt = useRef(0);
 
-  const refresh = async () => {
+  const normTools = (h) => ({
+    libreoffice: { installed: !!h?.libreoffice?.ok, version: h?.libreoffice?.version || null, path: h?.libreoffice?.path || null },
+    tesseract:   { installed: !!h?.tesseract?.ok,   version: h?.tesseract?.version   || null, path: h?.tesseract?.path   || null },
+    poppler:     { installed: !!h?.poppler?.ok,     version: h?.poppler?.version     || null, path: h?.poppler?.path     || null },
+  });
+
+  const stopPolling = useCallback(() => {
+    if (pollTimer.current) {
+      clearInterval(pollTimer.current);
+      pollTimer.current = null;
+    }
+  }, []);
+
+  const applyHealth = useCallback((h) => {
+    setStatus(normTools(h));
+    setLogTail(h?.install_log_tail || '');
+    setExitCode(h?.install_exit_code ?? null);
+    setJobId(h?.install_job_id || null);
+    return !!h?.install_running;
+  }, []);
+
+  const pollTick = useCallback(async () => {
+    try {
+      const r = await api.get('/admin/server-tools/health');
+      const stillRunning = applyHealth(r.data);
+      const allOk = r.data?.libreoffice?.ok && r.data?.tesseract?.ok && r.data?.poppler?.ok;
+      const elapsed = Date.now() - pollStartedAt.current;
+      if (!stillRunning || allOk || elapsed > POLL_CEILING_MS) {
+        stopPolling();
+        setInstalling(false);
+        if (!stillRunning && r.data?.install_exit_code === 0 && allOk) {
+          toast.success('LibreOffice + OCR installed — XLSX / PPTX / OCR now available.');
+        } else if (!stillRunning && r.data?.install_exit_code !== 0 && r.data?.install_exit_code !== null) {
+          toast.error(`Install finished with exit code ${r.data.install_exit_code} — check log below.`);
+        } else if (elapsed > POLL_CEILING_MS) {
+          toast.error('Install still running after 25 min — check server logs.');
+        }
+      }
+    } catch (e) {
+      // Transient network hiccup — keep polling; the ceiling will stop us.
+      // Only surface a toast on the very first tick.
+    }
+  }, [applyHealth, stopPolling]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollStartedAt.current = Date.now();
+    pollTimer.current = setInterval(pollTick, POLL_INTERVAL_MS);
+  }, [pollTick, stopPolling]);
+
+  // Initial mount — fetch health once, and resume polling if a job is
+  // already running server-side (page reload mid-install).
+  const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      // Phase 3.13 — point at the dedicated health endpoint. Normalise the
-      // `{ok, version, path}` shape back into the legacy `{installed, ...}`
-      // keys the ToolCard component already consumes, so we don't have to
-      // touch downstream rendering.
       const r = await api.get('/admin/server-tools/health');
-      const h = r.data || {};
-      const norm = (t) => ({
-        installed: !!t?.ok, version: t?.version || null, path: t?.path || null,
-      });
-      setStatus({
-        libreoffice: norm(h.libreoffice),
-        tesseract:   norm(h.tesseract),
-        poppler:     norm(h.poppler),
-      });
+      const running = applyHealth(r.data);
+      if (running) {
+        setInstalling(true);
+        startPolling();
+      }
     } catch (e) {
       toast.error(apiError(e));
     } finally { setLoading(false); }
-  };
-  useEffect(() => { refresh(); }, []);
+  }, [applyHealth, startPolling]);
+  useEffect(() => {
+    refresh();
+    return () => stopPolling();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const install = async () => {
-    if (!canInstall) return;
+    if (!canInstall || installing) return;
     setInstalling(true);
+    setLogTail('');
+    setExitCode(null);
     try {
       const r = await api.post('/admin/install-libreoffice', null, {
-        params: { include_ocr: true }, timeout: 900_000,
+        params: { include_ocr: true }, timeout: 15_000,
       });
-      setStatus(r.data?.tools || null);
-      setLastLog(r.data?.log_tail || '');
-      const ok = r.data?.tools?.libreoffice?.installed;
-      toast[ok ? 'success' : 'error'](
-        ok ? 'LibreOffice + OCR installed — XLSX / PPTX / OCR now available.'
-           : 'Install completed with errors — check the log below.',
-      );
-    } catch (e) { toast.error(apiError(e)); }
-    finally { setInstalling(false); }
+      setJobId(r.data?.job_id || null);
+      startPolling();
+    } catch (e) {
+      // 409 = already running → just attach to the running job.
+      if (e?.response?.status === 409) {
+        const running = e.response.data?.detail || {};
+        setJobId(running.job_id || null);
+        toast.info('An install is already running — attached to the existing job.');
+        startPolling();
+        return;
+      }
+      toast.error(apiError(e));
+      setInstalling(false);
+    }
   };
+
+  const showLog = installing || (exitCode !== null && exitCode !== 0) || (logTail && !status?.libreoffice?.installed);
 
   return (
     <div className="p-6 max-w-5xl mx-auto" data-testid="system-settings">
@@ -115,8 +185,8 @@ export default function SystemSettings() {
             <h3 className="font-display font-bold text-slate-900">Install all server tools</h3>
             <p className="text-xs text-slate-500 mt-1">
               Installs LibreOffice + Tesseract + Poppler in one apt-get run.
-              <b className="text-slate-700"> Not installed · ~5–10 min · ~650 MB total.</b>
-              {' '}Admin-only. Run during a maintenance window.
+              <b className="text-slate-700"> ~5–10 min · ~650 MB total.</b>
+              {' '}Runs as a background job — safe to reload this page mid-install.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -135,16 +205,24 @@ export default function SystemSettings() {
           </div>
         </div>
         {installing && (
-          <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg">
-            Installing in the background — keep this tab open. Typical time 5–10 min.
-            File conversions for XLSX / PPTX will start working immediately on completion.
+          <p className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded-lg"
+             data-testid="install-progress-note">
+            Installing in the background — polling every 5 s. Safe to leave the tab open
+            or reload the page; the install continues server-side and this panel
+            re-attaches on next visit.
+            {jobId && <span className="ml-2 font-mono text-[10px] opacity-60">job {jobId.slice(0, 8)}…</span>}
           </p>
         )}
-        {lastLog && (
-          <pre data-testid="install-log"
-               className="mt-4 max-h-72 overflow-auto rounded-lg bg-slate-900 text-emerald-300 text-[11px] p-3 font-mono whitespace-pre-wrap">
-            {lastLog}
-          </pre>
+        {showLog && logTail && (
+          <details className="mt-4" open>
+            <summary className="cursor-pointer text-[11px] font-bold text-slate-600 select-none">
+              Install log (last 50 lines) {installing && <span className="text-amber-600">· live</span>}
+            </summary>
+            <pre data-testid="install-log"
+                 className="mt-2 max-h-72 overflow-auto rounded-lg bg-slate-900 text-emerald-300 text-[11px] p-3 font-mono whitespace-pre-wrap">
+              {logTail}
+            </pre>
+          </details>
         )}
       </div>
 
