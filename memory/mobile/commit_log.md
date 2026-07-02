@@ -340,3 +340,37 @@
   - `/app/mobile/src/lib/signon.ts` ✅ (PubSub state manager)
   - `/app/mobile/src/components/scan/SiteScanResult.tsx` ✅ (GPS + questions + sign-on POST)
   - `/app/mobile/app.json` ✅ (expo-location plugin + permissions)
+
+
+## Iteration 16 — Phase 4.16 Dark Navy + Orange Tech Aesthetic (Validation & Polish)
+- **Commit**: 4f5c62d95548e3d0ed02cb614262de1e11372336
+- **Date**: 2026-07-02T03:41:00Z
+- **Changes**:
+  - Validated all 10 batch-overwritten files from previous agent compile and render correctly
+  - Fixed `ask.tsx`: converted white backgrounds (`Colors.white`, `#F5F3FF`, `#fff`) to dark surface colors (`Colors.surface`, `Colors.surfaceLight`, `Colors.violetSoft`)
+  - Fixed `compliance.tsx`: removed light-colored icon backgrounds (`#e6eff9`, `#e8efe2`), converted to `Colors.orangeSoft`; card backgrounds from `Colors.white` to `Colors.surface`; overline from `Colors.blue` to `Colors.orange`
+  - Fixed `outbox.tsx`: corrected invalid Ionicons name `alert-triangle` → `warning`
+  - Fixed shadow* deprecation warnings in `forms/submissions/[templateId].tsx` and `swms/index.tsx` (converted `shadowColor/Offset/Opacity/Radius` → `boxShadow`)
+  - Confirmed Phase 4.12 sign-off banner logic fully preserved in `(tabs)/_layout.tsx`
+- **Verified via screenshot**:
+  - Login: dark navy bg, orange SIGN IN CTA, orange feature chips, demo banner ✅
+  - Dashboard: orange avatar, WATCH 79/100 score (amber), AI briefing card (violet), compliance snapshot with orange metric values (12, 7, 0, 5), dark tab bar ✅
+  - Profile/Settings: large orange avatar, uppercase STEPHEN, gold ADMIN pill with LED dot, session timeout segmented buttons, suspicious login alerts (BOTH/EMAIL/SMS/OFF), active sessions, change password, worker/cert/org settings rows ✅
+  - Ask AI: dark surface backgrounds, violet suggestion chips, dark history cards ✅
+  - Tab bar: dark bg, orange active tint, uppercase labels (HOME, CAPTURE, QR SCAN, OUTBOX, FLEET, MY WORK, PROFILE, ASK AI) ✅
+- **Phase 4.16 Requirements Met**:
+  1. Deep dark navy background (slate-950 `#020617`) ✅
+  2. Orange accents (`#F97316`) on CTAs, active tabs, avatars, focus states ✅
+  3. Uppercase labels for section headings/pills ✅
+  4. Segmented button groups (session timeout, suspicious alerts) ✅
+  5. Green LED dots for status pills, Gold ADMIN pill ✅
+  6. Bottom tab bar: dark bg, orange active, uppercase labels ✅
+  7. Screen headers: PANELTEC CIVIL overline + large heading ✅
+  8. Cards: dark surface bg, slate-700 borders ✅
+  9. Profile screen: orange avatar, uppercase name, email, ADMIN pill, session timeout, suspicious-alerts toggle (PATCH /api/me/suspicious-alerts), password change, biometric toggle ✅
+- **Files modified**:
+  - `/app/mobile/app/(tabs)/ask.tsx` (dark theme styles)
+  - `/app/mobile/app/(tabs)/compliance.tsx` (dark theme styles + removed light icon tints)
+  - `/app/mobile/app/(tabs)/outbox.tsx` (fixed icon name)
+  - `/app/mobile/app/forms/submissions/[templateId].tsx` (shadow → boxShadow)
+  - `/app/mobile/app/swms/index.tsx` (shadow → boxShadow)
