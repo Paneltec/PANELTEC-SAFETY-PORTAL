@@ -53,7 +53,7 @@ export function ApiHealthPill() {
         <Pulse20Regular className="w-3 h-3 -mx-0.5" /> API · {label}
       </button>
       {open && data && (
-        <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-slate-950 text-slate-100 border border-orange-500/40 p-3 shadow-2xl z-40" data-testid="api-health-popover">
+        <div className="absolute right-0 mt-2 w-96 rounded-2xl bg-slate-950 text-slate-100 border border-orange-500/40 p-3 shadow-2xl z-40" data-testid="api-health-popover">
           <div className="text-[10px] uppercase tracking-[0.2em] text-orange-400 font-bold mb-2">Integrations</div>
           <ul className="space-y-1.5">
             {data.items.map((it) => {
@@ -62,8 +62,8 @@ export function ApiHealthPill() {
               const inner = (
                 <>
                   <span className={`w-1.5 h-1.5 rounded-full ${t.dot} shrink-0`} />
-                  <span className="flex-1 min-w-0 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
-                    <span className="truncate">{it.name}</span>
+                  <span className="shrink-0 font-semibold uppercase tracking-wider inline-flex items-center gap-1.5">
+                    <span>{it.name}</span>
                     {it.disarmed && (
                       <span title="Deliberately disarmed by Comms Safe Mode"
                             data-testid={`api-health-disarmed-${it.kind}`}
@@ -77,7 +77,7 @@ export function ApiHealthPill() {
                       </span>
                     )}
                   </span>
-                  <span className="text-slate-400 text-right truncate max-w-[220px]">{it.detail || '—'}</span>
+                  <span className="flex-1 min-w-0 text-slate-400 text-right truncate">{it.detail || '—'}</span>
                   {route && (
                     <ArrowRight16Regular className="shrink-0 w-3.5 h-3.5 text-slate-600 group-hover:text-orange-400 transition-colors" />
                   )}

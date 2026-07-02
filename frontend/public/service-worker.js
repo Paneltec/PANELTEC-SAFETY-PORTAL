@@ -891,8 +891,21 @@
  *        stays a static row (no route — infrastructure) with a
  *        subtle "· System" label. User Manual §13 gets a one-line
  *        "click any row to jump to its config" note.
+ * v142 — Phase 4.18.2 popover layout fix. v141 shipped with the
+ *        integration name column set `flex-1 min-w-0` while the
+ *        detail column was set `max-w-[220px]` — bigger than the
+ *        popover's own inner width, which caused the name span to
+ *        collapse to zero on the first four rows (Simpro, Navixy,
+ *        Microsoft 365, TextMagic) and completely disappear. Only
+ *        MongoDB survived because its "· System" chip forced a
+ *        minimum. Fix: widen popover w-72 → w-96, flip the flex
+ *        priority so the name span becomes `shrink-0` (never
+ *        collapses) and the detail span becomes the flex-growing /
+ *        truncating one. Every row now shows its brand name in
+ *        uppercase to the right of the LED dot, exactly like the
+ *        MongoDB row already did.
  */
-const CACHE_VERSION = 'paneltec-v141';
+const CACHE_VERSION = 'paneltec-v142';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
