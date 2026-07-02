@@ -6,6 +6,24 @@ Welcome to Paneltec Civil — the connected WHS compliance platform built for Au
 
 ---
 
+## Platform Overview
+
+Paneltec Civil is a WHS compliance platform purpose-built for Australian civil construction teams. This diagram shows how the pieces fit together — from the people who use it, through the modules that capture and process work, to the integrations that keep it all in sync, and the reports that come out the other end.
+
+![Paneltec Civil architecture](/api/help/schematics/paneltec_architecture.png)
+
+_Fig 1. Platform architecture — personas, modules, integrations and outputs._
+
+## A day in the life
+
+Here's what a typical shift looks like from a worker's perspective through to the admin dashboard and audit trail:
+
+![Paneltec Civil user journey](/api/help/schematics/paneltec_user_journey.png)
+
+_Fig 2. User journey — from sign-in through site arrival, daily work capture, AI processing, live dashboard, to reports and audit._
+
+---
+
 ## 1. Getting started
 
 ### What Paneltec Civil is and who it's for

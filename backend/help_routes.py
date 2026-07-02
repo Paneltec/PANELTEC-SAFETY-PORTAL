@@ -18,12 +18,13 @@ import io
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, HTTPException, Response
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
     Paragraph, SimpleDocTemplate, Spacer, PageBreak, ListFlowable, ListItem,
+    Image,
 )
 from reportlab.pdfgen import canvas as _canvas
 
@@ -32,6 +33,10 @@ from pdf_brand import ORANGE, SLATE, SLATE_INK, SLATE_MUTED, SLATE_BORDER, PAPER
 router = APIRouter(prefix="/help", tags=["help"])
 
 MANUAL_PATH = Path(__file__).parent / "content" / "user_manual.md"
+# Phase 4.11.5 (paneltec-v130) — colourful platform schematic + user
+# journey diagrams live alongside the markdown so both the browser render
+# and the PDF export can embed them.
+SCHEMATICS_DIR = Path(__file__).parent / "content" / "schematics"
 # Phase 4.11.1 (v122) — cache is keyed off the markdown file's mtime so
 # both dev edits AND prod redeploys pick up new content without a backend
 # restart. No TTL needed: the moment the file changes, both md+pdf are
@@ -102,17 +107,60 @@ def _md_inline(text: str) -> str:
     return text
 
 
+_IMG_RE = re.compile(r"^!\[([^\]]*)\]\(([^)]+)\)\s*$")
+
+
+def _resolve_schematic_path(url: str) -> Path | None:
+    """Map a markdown image URL like `/api/help/schematics/foo.png` back
+    onto its on-disk file so ReportLab can embed it. Returns None for any
+    non-schematic URL (external images are silently skipped in the PDF
+    render — they still render fine in the browser)."""
+    marker = "/help/schematics/"
+    idx = url.find(marker)
+    if idx == -1:
+        return None
+    fname = url[idx + len(marker):].split("?", 1)[0].split("#", 1)[0]
+    if not fname or "/" in fname or ".." in fname:
+        return None
+    p = SCHEMATICS_DIR / fname
+    return p if p.is_file() else None
+
+
+def _image_flowable(url: str, alt: str) -> Image | None:
+    """Full-width proportional Image flowable, or None if the URL cannot
+    be resolved to a local schematic."""
+    p = _resolve_schematic_path(url)
+    if p is None:
+        return None
+    max_w = A4[0] - 36 * mm     # left+right margin = 18mm each
+    from reportlab.lib.utils import ImageReader
+    ir = ImageReader(str(p))
+    iw, ih = ir.getSize()
+    scale = min(1.0, max_w / iw)
+    return Image(str(p), width=iw * scale, height=ih * scale, hAlign="CENTER")
+
+
 def _md_to_flowables(md: str, styles: dict) -> list:
     """Block-level markdown → ReportLab flowables. Intentionally simple
     — headings (`#`/`##`/`###`), paragraphs, bullet lists, horizontal
-    rules, and italic captions. No tables / code blocks (the manual
-    doesn't use them)."""
+    rules, italic captions, and — Phase 4.11.5 — full-width inline
+    images referenced with `![alt](url)`. No tables / code blocks (the
+    manual doesn't use them)."""
     flow = []
     lines = md.splitlines()
     i = 0
     while i < len(lines):
         ln = lines[i].rstrip()
         if not ln.strip():
+            i += 1
+            continue
+        m_img = _IMG_RE.match(ln)
+        if m_img:
+            img = _image_flowable(m_img.group(2), m_img.group(1))
+            if img is not None:
+                flow.append(Spacer(1, 6))
+                flow.append(img)
+                flow.append(Spacer(1, 4))
             i += 1
             continue
         if ln.startswith("# "):
@@ -234,3 +282,26 @@ def manual_pdf() -> Response:
                         "Content-Disposition":
                             'inline; filename="paneltec-civil-user-manual.pdf"',
                     })
+
+
+# Phase 4.11.5 (paneltec-v130) — Serves the schematic PNGs both to the
+# browser (embedded in the manual markdown via `![]()`) and, indirectly,
+# to the PDF renderer which reads them straight off disk via
+# `_resolve_schematic_path`.
+@router.get("/schematics/{filename}")
+def get_schematic(filename: str) -> Response:
+    # Reject path-traversal attempts up front — filename must be a bare
+    # name, no separators, and terminate with .png.
+    if "/" in filename or ".." in filename or not filename.endswith(".png"):
+        raise HTTPException(status_code=404, detail="Not found")
+    p = SCHEMATICS_DIR / filename
+    if not p.is_file():
+        raise HTTPException(status_code=404, detail="Not found")
+    data = p.read_bytes()
+    return Response(
+        content=data, media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="{filename}"',
+        },
+    )

@@ -771,8 +771,14 @@
  *        black-panel flip on refresh. All internal links + the 401
  *        axios interceptor + the AppShell idle-timeout redirect now
  *        target `/` instead of `/login`.
+ * v130 — Phase 4.11.5. User Manual gains a colourful platform-schematic
+ *        block (`/api/help/schematics/{filename}`). Two full-width
+ *        diagrams — architecture and user-journey — now render at the
+ *        top of `/app/help` in the browser AND inside the downloaded
+ *        PDF (ReportLab `Image` flowable, proportionally scaled to
+ *        page width). No other manual copy changed.
  */
-const CACHE_VERSION = 'paneltec-v129';
+const CACHE_VERSION = 'paneltec-v130';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

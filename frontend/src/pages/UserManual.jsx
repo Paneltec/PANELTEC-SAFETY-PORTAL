@@ -113,6 +113,19 @@ export default function UserManual() {
     em: ({ children }) => <em className="italic text-slate-600">{children}</em>,
     hr: () => <hr className="my-8 border-slate-200" />,
     blockquote: ({ children }) => <blockquote className="border-l-4 border-orange-500 bg-orange-50 pl-4 py-2 my-3 text-slate-700 italic">{children}</blockquote>,
+    // Phase 4.11.5 (paneltec-v130) — Full-width schematic renderer for the
+    // architecture + user-journey diagrams at the top of the manual. Falls
+    // back to the browser default for any other image.
+    img: ({ node, src, alt, ...p }) => (
+      <img
+        {...p}
+        src={src}
+        alt={alt || ''}
+        loading="lazy"
+        data-testid={src?.includes('/schematics/') ? `manual-schematic-${(src.split('/').pop() || '').replace(/\.png$/, '')}` : undefined}
+        className="block w-full max-w-full h-auto my-6 rounded-2xl border border-slate-200 shadow-sm bg-white"
+      />
+    ),
   };
 
   const onDownload = async () => {
