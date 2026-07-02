@@ -6,12 +6,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
 
 const ITEMS = [
-  { key: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const, route: '/forms', bg: '#e6eff9', tint: '#1e4a8c' },
-  { key: 'suppliers', title: 'Suppliers', desc: 'Live from Simpro — org-local notes, tasks, folders and members.', icon: 'business' as const, route: '/suppliers', bg: '#e8efe2', tint: '#2e5e2e' },
-  { key: 'document-library', title: 'Document Library', desc: 'All risk & compliance documents, organised and AI-tagged.', icon: 'folder-open' as const, route: '/document-library', bg: '#e6eff9', tint: '#1e4a8c' },
-  { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
-  { key: 'renewals', title: 'Renewal Links', desc: 'Single-use links for contractor document uploads.', icon: 'link' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
-  { key: 'audit-exports', title: 'Audit Exports', desc: 'Generate signed evidence packs for audits.', icon: 'download' as const, route: '/contractors', bg: Colors.blueSoft, tint: Colors.blue },
+  { key: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const, route: '/forms' },
+  { key: 'suppliers', title: 'Suppliers', desc: 'Live from Simpro — org-local notes, tasks, folders and members.', icon: 'business' as const, route: '/suppliers' },
+  { key: 'document-library', title: 'Document Library', desc: 'All risk & compliance documents, organised and AI-tagged.', icon: 'folder-open' as const, route: '/document-library' },
+  { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors' },
+  { key: 'renewals', title: 'Renewal Links', desc: 'Single-use links for contractor document uploads.', icon: 'link' as const, route: '/contractors' },
+  { key: 'audit-exports', title: 'Audit Exports', desc: 'Generate signed evidence packs for audits.', icon: 'download' as const, route: '/contractors' },
 ];
 
 export default function ComplianceScreen() {
@@ -32,8 +32,8 @@ export default function ComplianceScreen() {
             onPress={() => router.push(item.route as any)}
             activeOpacity={0.7}
           >
-            <View style={[styles.iconWrap, item.bg ? { backgroundColor: item.bg } : undefined]}>
-              <Ionicons name={item.icon} size={22} color={item.tint || Colors.blue} />
+            <View style={styles.iconWrap}>
+              <Ionicons name={item.icon} size={22} color={Colors.orange} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.cardTitle}>{item.title}</Text>
@@ -51,16 +51,16 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
-  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.blue },
-  heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
+  overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
+  heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4, letterSpacing: 1 },
   sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4, marginBottom: 20 },
   card: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 16, padding: 16, marginBottom: 10,
   },
   iconWrap: {
-    width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.blueSoft,
+    width: 44, height: 44, borderRadius: 12, backgroundColor: Colors.orangeSoft,
     alignItems: 'center', justifyContent: 'center',
   },
   cardTitle: { fontSize: 16, fontWeight: '600', color: Colors.ink },

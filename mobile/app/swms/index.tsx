@@ -316,7 +316,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: '#0F172A', paddingHorizontal: 16, paddingVertical: 12,
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8,
+    boxShadow: '0px -4px 8px rgba(0,0,0,0.15)',
     elevation: 12,
   },
   bulkLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },

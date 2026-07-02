@@ -38,7 +38,7 @@ export default function OutboxScreen() {
 
         {!data.m365_connected && (
           <View testID="m365-banner" style={s.warnBanner}>
-            <Ionicons name="alert-triangle" size={16} color={Colors.amber} />
+            <Ionicons name="warning" size={16} color={Colors.amber} />
             <Text style={s.warnText}>Microsoft 365 not connected. Queued emails won't send until M365 is configured in Settings.</Text>
           </View>
         )}

@@ -144,7 +144,7 @@ const s = StyleSheet.create({
     position: 'absolute', bottom: 24, right: 16,
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#1e4a8c', borderRadius: 28, paddingHorizontal: 20, paddingVertical: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 4,
+    boxShadow: '0px 2px 6px rgba(0,0,0,0.15)', elevation: 4,
   },
   fabText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 });
