@@ -8,11 +8,17 @@
 // Header shows filename + pipeline chip (from response header `X-Pipeline`).
 // Footer: "Download PDF" (forces ?dl=1), "Open in new tab", "Close".
 // ESC closes. Mobile: full-screen below 768 px via Tailwind responsive utilities.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, Download, ExternalLink, Loader2, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
+import * as pdfjsLib from 'pdfjs-dist';
 import api, { apiError } from '../lib/api';
 import { stashInlinePdf } from '../lib/pdfStash';
+
+// v151 — pdfjs-dist workerSrc. Serve the worker as a same-origin static
+// asset so no CSP `worker-src` update is needed and it stays offline-cacheable
+// via the service worker.
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdfjs/pdf.worker.min.js';
 
 // File types that the backend can convert to PDF (mirrors file_pdf.py `_pipeline_for`).
 const PDF_OK = (mime, name) => {
@@ -58,6 +64,11 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
   // v149 — track iframe onLoad so we can overlay a "Converting…" hint while
   // the backend runs LibreOffice on the DOCX (cold conversion is 10–30 s).
   const [iframeLoaded, setIframeLoaded] = useState(false);
+  // v151 — pdfjs-dist rendering state. `pdfDoc` is the loaded document,
+  // `pdfError` flips to true on any pdfjs failure and falls back to the
+  // legacy iframe path.
+  const [pdfDoc, setPdfDoc] = useState(null);
+  const [pdfError, setPdfError] = useState(false);
   const isBlobMode = !!blobUrl && !directUrl;
 
   useEffect(() => {
@@ -125,6 +136,37 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
     })();
     return () => { alive = false; if (watchdog) clearTimeout(watchdog); };
   }, [file, blobUrl, directUrl, isBlobMode]);
+
+  // v151 — pdfjs render effect. Whenever `src` changes we fetch the bytes
+  // and load them into pdfjs. Canvas render is then handled inside
+  // <PdfCanvasView/> below. If any step fails we flip `pdfError` which
+  // shows the legacy iframe fallback + a one-time toast.
+  useEffect(() => {
+    if (!src) return;
+    let alive = true;
+    setPdfDoc(null);
+    setPdfError(false);
+    (async () => {
+      try {
+        const resp = await fetch(src);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const hdrPipeline = resp.headers.get('x-pipeline');
+        if (hdrPipeline && alive) setPipeline(hdrPipeline);
+        const buf = await resp.arrayBuffer();
+        if (!alive) return;
+        const doc = await pdfjsLib.getDocument({ data: buf }).promise;
+        if (!alive) { try { doc.destroy(); } catch (_) {} return; }
+        setPdfDoc(doc);
+        setIframeLoaded(true);
+      } catch (e) {
+        if (!alive) return;
+        console.warn('pdfjs render failed; falling back to iframe', e);
+        setPdfError(true);
+        toast.info('Using compatibility mode — inline preview may not render on this browser.');
+      }
+    })();
+    return () => { alive = false; };
+  }, [src]);
 
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -255,16 +297,17 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
                 <div className="text-[12px] text-slate-600 mt-2">Preparing PDF…</div>
               </div>
             </div>
-          ) : (
+          ) : pdfError ? (
+            // v151 — pdfjs load or render failed. Fall back to the legacy
+            // iframe path so users on browsers where pdfjs is broken still
+            // see something. The "New tab" / "Download PDF" buttons above
+            // remain functional regardless.
             <>
               <iframe data-testid="pdf-modal-iframe"
                 title={file.filename || 'PDF preview'}
                 src={src}
                 onLoad={() => { setIframeBlocked(false); setIframeLoaded(true); }}
                 className="w-full h-full border-0" />
-              {/* v149 — cold LibreOffice conversion for DOCX/XLSX/PPTX/ODT/RTF
-                  can take 10–30 s. Show a friendly overlay until the iframe
-                  onLoad fires. Skips for blob mode (already local). */}
               {!isBlobMode && !iframeLoaded && (
                 <div className="absolute inset-0 grid place-items-center bg-slate-100/85 pointer-events-none"
                      data-testid="pdf-modal-converting">
@@ -278,12 +321,109 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
                 </div>
               )}
             </>
+          ) : pdfDoc ? (
+            // v151 — primary render: pdfjs-dist to <canvas>. Works
+            // regardless of the browser's built-in PDF viewer, ad
+            // blockers, corporate PDF-download policy, or extensions.
+            <PdfCanvasView doc={pdfDoc} />
+          ) : (
+            // pdfjs is parsing the bytes — brief spinner (usually <1 s
+            // for cached ReportLab PDFs, 5–15 s for cold LibreOffice DOCX).
+            <div className="absolute inset-0 grid place-items-center" data-testid="pdf-modal-parsing">
+              <div className="text-center max-w-sm px-6">
+                <Loader2 size={24} className="text-blue-600 animate-spin mx-auto" />
+                <div className="text-[13px] font-semibold text-slate-800 mt-2">Preparing PDF…</div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-snug">
+                  Converting document to PDF. This can take up to 30 seconds on first open.
+                </p>
+              </div>
+            </div>
           )}
         </div>
 
         {/* v150 — optional caller-supplied footer strip (e.g. the "Token: <t>"
             hint on the Site QR modal). Rendered below the body area. */}
         {footerExtras}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────── v151 — pdfjs canvas renderer ───────────────────
+// Renders every page of a PDFDocumentProxy to a <canvas>, fit-to-width
+// based on the container's live width. Pages are laid out vertically
+// with soft separators. No zoom or nav — user can Ctrl+scroll in-browser
+// or hit "New tab" for the browser's own viewer.
+function PdfCanvasView({ doc }) {
+  const containerRef = useRef(null);
+  const canvasRefs = useRef([]);
+  const [containerWidth, setContainerWidth] = useState(0);
+  const numPages = doc?.numPages || 0;
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    setContainerWidth(el.clientWidth);
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) setContainerWidth(e.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!doc || !containerWidth) return;
+    let cancelled = false;
+    const activeTasks = [];
+    (async () => {
+      for (let i = 1; i <= numPages; i++) {
+        if (cancelled) break;
+        try {
+          const page = await doc.getPage(i);
+          const canvas = canvasRefs.current[i - 1];
+          if (!canvas) continue;
+          const base = page.getViewport({ scale: 1 });
+          // Fit page width to container minus a bit of horizontal padding.
+          const targetWidth = Math.max(240, containerWidth - 32);
+          const scale = targetWidth / base.width;
+          const viewport = page.getViewport({ scale });
+          const dpr = window.devicePixelRatio || 1;
+          canvas.width = Math.floor(viewport.width * dpr);
+          canvas.height = Math.floor(viewport.height * dpr);
+          canvas.style.width = `${viewport.width}px`;
+          canvas.style.height = `${viewport.height}px`;
+          const ctx = canvas.getContext('2d');
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          // v151.1 — track the render task so we can cancel it on effect
+          // cleanup (avoids "same canvas during multiple render()" when
+          // the ResizeObserver fires mid-render).
+          const task = page.render({ canvasContext: ctx, viewport });
+          activeTasks.push(task);
+          await task.promise;
+        } catch (e) {
+          if (!cancelled && e?.name !== 'RenderingCancelledException') {
+            console.warn(`pdfjs page ${i} render failed`, e);
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      for (const t of activeTasks) { try { t.cancel(); } catch (_) {} }
+    };
+  }, [doc, numPages, containerWidth]);
+
+  return (
+    <div ref={containerRef}
+         className="absolute inset-0 overflow-auto bg-slate-100 p-3"
+         data-testid="pdf-modal-canvas-container">
+      <div className="flex flex-col items-center gap-3">
+        {Array.from({ length: numPages }).map((_, i) => (
+          <canvas key={i}
+            ref={(el) => { canvasRefs.current[i] = el; }}
+            data-testid={`pdf-modal-page-${i + 1}`}
+            className="shadow-md bg-white" />
+        ))}
       </div>
     </div>
   );

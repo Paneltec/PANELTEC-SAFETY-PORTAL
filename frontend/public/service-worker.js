@@ -1045,8 +1045,20 @@
  *        No backend changes. PdfPreviewModal's watchdog behaviour and
  *        blob-mode fallback unchanged; the two new props default to
  *        null so existing callers are unaffected.
+ *
+ * v151 — PDF preview no longer relies on Chrome's built-in PDF viewer.
+ *        `pdfjs-dist` (Mozilla PDF.js) bundled — PDFs render to <canvas>
+ *        inside the modal, working regardless of browser, extension,
+ *        ad blocker, or corporate PDF-download policy. The legacy
+ *        iframe render path is retained as an automatic fallback if
+ *        pdfjs fails to load or parse (a one-time toast tells the user
+ *        "Using compatibility mode"). The pdf.worker.min.js file is
+ *        served as a same-origin static asset from `/pdfjs/` and
+ *        included in the SW precache so it's available offline. The
+ *        "Download PDF" and "New tab" escape hatches remain in the
+ *        modal header regardless of which render path wins.
  */
-const CACHE_VERSION = 'paneltec-v150';
+const CACHE_VERSION = 'paneltec-v151';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
@@ -1075,6 +1087,9 @@ const PRECACHE = [
   '/api/help/tiles/tile_prestarts.png',
   '/api/help/tiles/tile_documents.png',
   '/api/help/tiles/tile_ask_intel.jpeg',
+  // v151 — pdfjs-dist worker. Bundled so PDF preview works offline and on
+  // repeat loads.
+  '/pdfjs/pdf.worker.min.js',
 ];
 
 self.addEventListener('install', (event) => {
