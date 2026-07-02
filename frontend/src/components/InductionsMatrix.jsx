@@ -130,11 +130,12 @@ export default function InductionsMatrix({ onWorkerClick }) {
         setPreviewFilename(filename);
         toast.success(`Preview ready · ${workerIds.length} worker(s)`);
       } else {
-        const url = URL.createObjectURL(blob);
+        // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+        const filename = `paneltec-inductions-${Date.now()}.pdf`;
+        const { src } = await stashInlinePdf(blob, filename);
         const a = document.createElement('a');
-        a.href = url; a.download = `paneltec-inductions-${Date.now()}.pdf`;
+        a.href = src; a.download = filename;
         document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 30_000);
         toast.success(`Printed ${workerIds.length} worker(s)`);
       }
       setPrintOpen(false);

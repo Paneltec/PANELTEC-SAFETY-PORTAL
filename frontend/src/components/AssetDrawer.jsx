@@ -202,14 +202,14 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
     finally { setUhfSaving(false); }
   };
 
-  const downloadLabel = (layout) => {
-    api.get(`/assets/${current.id}/label.pdf`, { params: { layout }, responseType: 'blob' })
-      .then((r) => {
-        const url = URL.createObjectURL(r.data);
-        window.open(url, '_blank', 'noopener');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      })
-      .catch((e) => toast.error(apiError(e)));
+  const downloadLabel = async (layout) => {
+    try {
+      const r = await api.get(`/assets/${current.id}/label.pdf`,
+        { params: { layout }, responseType: 'blob' });
+      // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+      const { src } = await stashInlinePdf(r.data, `label-${layout}-${current.id.slice(0,8)}.pdf`);
+      window.open(src, '_blank', 'noopener');
+    } catch (e) { toast.error(apiError(e)); }
   };
 
   const qrSrc = useMemo(() => {

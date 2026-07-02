@@ -6,6 +6,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
+import { stashInlinePdf } from '../lib/pdfStash';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
@@ -89,16 +90,21 @@ function PairingChips({ asset }) {
 
 function PrintLabelsModal({ assetIds, onClose }) {
   const [layout, setLayout] = useState('a6');
-  const openLabel = () => {
-    // Use signed URL via Bearer-style fallback: include header via fetch+blob.
-    api.get(`/assets/${assetIds[0]}/label.pdf`, {
-      responseType: 'blob',
-      params: { layout, ids: layout === 'avery_l7160' ? assetIds.join(',') : undefined },
-    }).then((r) => {
-      const blobUrl = URL.createObjectURL(r.data);
-      window.open(blobUrl, '_blank', 'noopener');
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
-    }).catch((e) => toast.error(apiError(e)));
+  const openLabel = async () => {
+    try {
+      // v148 — stashInlinePdf → same-origin URL so Chrome ad-blockers
+      // stop silently rejecting the label preview tab (was: blob: URL
+      // → about:blank / blank page).
+      const r = await api.get(`/assets/${assetIds[0]}/label.pdf`, {
+        responseType: 'blob',
+        params: { layout, ids: layout === 'avery_l7160' ? assetIds.join(',') : undefined },
+      });
+      const filename = `labels-${layout}-${assetIds.length}assets.pdf`;
+      const { src } = await stashInlinePdf(r.data, filename);
+      window.open(src, '_blank', 'noopener');
+    } catch (e) {
+      toast.error(apiError(e));
+    }
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"

@@ -121,12 +121,13 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, onClose }) {
       const r = await api.get(`/files/${file.id}/pdf`, {
         params: { dl: 1 }, responseType: 'blob',
       });
-      const url = URL.createObjectURL(r.data);
+      // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+      const filename = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+      const { src: stashSrc } = await stashInlinePdf(r.data, filename);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = (file.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+      a.href = stashSrc;
+      a.download = filename;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (e) { toast.error(apiError(e)); }
   };
 

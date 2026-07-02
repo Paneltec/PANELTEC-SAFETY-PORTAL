@@ -7,6 +7,7 @@ import { AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight,
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { stashInlinePdf } from '../lib/pdfStash';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
@@ -525,19 +526,19 @@ function IdCardSection({ worker, canEdit }) {
         params: { layout },
         responseType: 'blob',
       });
-      const blob = new Blob([r.data], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
+      // v148 — same-origin stash URL instead of blob: to bypass Chrome
+      // ad-blockers that silently reject `blob:` navigation.
+      const filename = `worker-${worker.id.slice(0, 8)}-${layout}.pdf`;
+      const { src } = await stashInlinePdf(r.data, filename);
       if (action === 'download') {
         const a = document.createElement('a');
-        a.href = url; a.download = `worker-${worker.id.slice(0, 8)}-${layout}.pdf`;
+        a.href = src; a.download = filename;
         document.body.appendChild(a); a.click(); a.remove();
       } else {
         // Open in a new tab → user can print from the browser preview.
-        const w = window.open(url, '_blank');
+        const w = window.open(src, '_blank');
         if (!w) toast.error('Pop-up blocked — use Download instead.');
       }
-      // We don't revoke immediately so the preview/print window can still read it.
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) { toast.error(apiError(e)); }
     finally { setPrinting(false); }
   };
@@ -1048,10 +1049,10 @@ export default function Workers() {
       const r = await api.get(`/workers/${w.id}/id-card.pdf`, {
         params: { layout: 'wallet' }, responseType: 'blob',
       });
-      const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }));
-      const win = window.open(url, '_blank');
+      // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe).
+      const { src } = await stashInlinePdf(r.data, `worker-${w.id.slice(0, 8)}-wallet.pdf`);
+      const win = window.open(src, '_blank');
       if (!win) toast.error('Pop-up blocked — open the worker drawer and use Download instead.');
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (e) { toast.error(apiError(e)); }
   };
 

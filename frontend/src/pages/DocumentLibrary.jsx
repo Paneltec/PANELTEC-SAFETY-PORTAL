@@ -12,6 +12,7 @@ import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as 
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+import { stashInlinePdf } from '../lib/pdfStash';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
@@ -706,12 +707,13 @@ export function DocumentLibraryFolder() {
                             });
                             if (!res.ok) throw new Error(`HTTP ${res.status}`);
                             const blob = await res.blob();
-                            const url = URL.createObjectURL(blob);
+                            // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+                            const filename = (f.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+                            const { src } = await stashInlinePdf(blob, filename);
                             const a = document.createElement('a');
-                            a.href = url;
-                            a.download = (f.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+                            a.href = src;
+                            a.download = filename;
                             document.body.appendChild(a); a.click(); a.remove();
-                            URL.revokeObjectURL(url);
                           } catch (e) { toast.error(e.message || 'Could not download PDF'); }
                         };
                         return (

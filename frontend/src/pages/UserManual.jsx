@@ -6,6 +6,7 @@ import {
   Dismiss16Regular,
 } from '@fluentui/react-icons';
 import api from '../lib/api';
+import { stashInlinePdf } from '../lib/pdfStash';
 
 // Phase 4.11 (paneltec-v121) — in-app rendering of the User Manual
 // sourced from /api/help/manual.md (markdown SOT in
@@ -131,11 +132,11 @@ export default function UserManual() {
   const onDownload = async () => {
     try {
       const r = await api.get('/help/manual.pdf', { responseType: 'blob' });
-      const url = URL.createObjectURL(r.data);
+      // v148 — same-origin stash URL (ad-blocker-safe)
+      const { src } = await stashInlinePdf(r.data, 'paneltec-civil-user-manual.pdf');
       const a = document.createElement('a');
-      a.href = url; a.download = 'paneltec-civil-user-manual.pdf';
+      a.href = src; a.download = 'paneltec-civil-user-manual.pdf';
       document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
     } catch { /* network errors surface via api interceptor */ }
   };
 

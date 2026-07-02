@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+import { stashInlinePdf } from '../lib/pdfStash';
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
@@ -208,12 +209,13 @@ export default function InductionCardModal({
       const r = await api.get(`/files/${data.doc_file_id}/pdf`, {
         params: { dl: 1 }, responseType: 'blob',
       });
-      const url = URL.createObjectURL(r.data);
+      // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+      const filename = (data.name || 'induction').replace(/[^a-zA-Z0-9_\-]+/g, '_') + '.pdf';
+      const { src } = await stashInlinePdf(r.data, filename);
       const a = document.createElement('a');
-      a.href = url;
-      a.download = (data.name || 'induction').replace(/[^a-zA-Z0-9_\-]+/g, '_') + '.pdf';
+      a.href = src;
+      a.download = filename;
       document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (e) { toast.error(apiError(e)); }
   };
 
