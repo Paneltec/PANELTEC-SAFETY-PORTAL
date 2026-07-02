@@ -432,6 +432,62 @@ def install(app, db, require_admin):
         ).sort("created_at", -1).limit(limit).to_list(limit)
         return rows
 
+    # ------------------------------------------------------------
+    # SCHEDULE — read-only view of the live APScheduler cron jobs
+    # that server.py registers on startup (backup_snapshot_6h +
+    # backup_snapshot_cob). We introspect the running scheduler
+    # rather than hard-coding cron strings so the panel stays
+    # accurate if the cadence is ever changed in server.py.
+    # ------------------------------------------------------------
+    @api_router.get("/schedule", dependencies=[Depends(require_admin)])
+    async def get_schedule():
+        scheduler = getattr(app.state, "scheduler", None)
+        job_ids = ["backup_snapshot_6h", "backup_snapshot_cob"]
+        jobs_out: List[Dict[str, Any]] = []
+        for jid in job_ids:
+            entry: Dict[str, Any] = {
+                "id": jid,
+                "cron": None,
+                "timezone": None,
+                "next_run_at": None,
+            }
+            try:
+                job = scheduler.get_job(jid) if scheduler else None
+            except Exception:
+                job = None
+            if job is not None:
+                trg = job.trigger
+                # Build a human-readable cron string from the non-default
+                # trigger fields. APScheduler's CronTrigger.fields carries
+                # `is_default=True` on any field left at "*".
+                try:
+                    parts = []
+                    for f in getattr(trg, "fields", []) or []:
+                        if getattr(f, "is_default", False):
+                            continue
+                        parts.append(f"{f.name}={f}")
+                    entry["cron"] = ", ".join(parts) if parts else None
+                except Exception:
+                    entry["cron"] = None
+                try:
+                    tz = getattr(trg, "timezone", None)
+                    entry["timezone"] = str(tz) if tz else None
+                except Exception:
+                    entry["timezone"] = None
+                nrt = getattr(job, "next_run_time", None)
+                entry["next_run_at"] = nrt.isoformat() if nrt else None
+            jobs_out.append(entry)
+
+        # Retention last-run timestamp lives in the same app_state doc the
+        # retention endpoints write to.
+        doc = await db.app_state.find_one(
+            {"_id": "backup_retention"}, {"_id": 0, "last_run_at": 1},
+        ) or {}
+        return {
+            "jobs": jobs_out,
+            "retention_last_run_at": doc.get("last_run_at"),
+        }
+
     @api_router.get("/retention", dependencies=[Depends(require_admin)])
     async def get_retention():
         """Returns current retention policy + last-run telemetry so the

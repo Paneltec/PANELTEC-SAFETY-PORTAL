@@ -896,21 +896,21 @@ function RetField({ label, value, unit, min, max, disabled, onChange, hint, test
 
 
 // ============================================================
-// Auto-snapshot scheduler — without this the operator has to remember
-// to click "Backup now". The Hub does the work on a timer; the LAN
-// agent picks up the result on its next 60-s poll. Reads/writes
-// /api/backup/schedule (separate from BackupTab's own polling URL).
+// Auto-snapshot schedule — read-only view of the two APScheduler
+// cron jobs that server.py registers on startup (backup_snapshot_6h
+// + backup_snapshot_cob). Introspects the live scheduler via
+// GET /api/backup/schedule so the panel reflects reality even if the
+// cron cadence is ever tuned in server.py.
 // ============================================================
 function ScheduleCard() {
   const SCHED_API = (process.env.REACT_APP_BACKEND_URL || "") + "/api/backup/schedule";
-  const [cfg, setCfg] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [data, setData] = useState(null);
   const [err, setErr] = useState("");
 
   const load = useCallback(async () => {
     try {
       const r = await api.get(SCHED_API, { headers: authHdr() });
-      setCfg(r.data);
+      setData(r.data);
       setErr("");
     } catch (e) {
       setErr(e?.response?.data?.detail || e.message);
@@ -918,20 +918,7 @@ function ScheduleCard() {
   }, [SCHED_API]);
   useEffect(() => { load(); }, [load]);
 
-  const save = async (patch) => {
-    setBusy(true);
-    setErr("");
-    try {
-      const r = await api.put(SCHED_API, patch, { headers: authHdr() });
-      setCfg(r.data);
-    } catch (e) {
-      setErr(e?.response?.data?.detail || e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (!cfg) {
+  if (!data) {
     return (
       <Section title="Auto-snapshot schedule" icon={<RefreshCw className="w-4 h-4"/>}>
         <div style={{ padding: 10, color: "#64748b" }}>{err || "Loading…"}</div>
@@ -939,135 +926,76 @@ function ScheduleCard() {
     );
   }
 
-  const interval = cfg.interval_hours;
-  const presets = [3, 6, 12, 24];
-
-  // Common AU timezones for the dropdown — the backend accepts any
-  // IANA name so power users can manually paste an obscure one.
-  const tzOptions = [
-    "Australia/Sydney",
-    "Australia/Melbourne",
-    "Australia/Brisbane",
-    "Australia/Perth",
-    "Australia/Adelaide",
-    "Australia/Hobart",
-    "Australia/Darwin",
-    "UTC",
-  ];
+  const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+  const fmt = (iso) => {
+    if (!iso) return "—";
+    try {
+      const d = new Date(iso);
+      return d.toLocaleString();
+    } catch { return iso; }
+  };
+  const labelFor = (id) => ({
+    backup_snapshot_6h:  "Every 6 hours",
+    backup_snapshot_cob: "Close-of-business (mon-fri)",
+  }[id] || id);
 
   return (
     <Section title="Auto-snapshot schedule"
       icon={<RefreshCw className="w-4 h-4"/>}>
       <div style={cardStyle()} data-testid="backup-schedule-card">
-        {/* ---- Cadence ---- */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8,
-                          fontWeight: 700, fontSize: 13 }}>
-            <input type="checkbox"
-              data-testid="backup-schedule-enabled"
-              checked={!!cfg.enabled}
-              disabled={busy}
-              onChange={e => save({ enabled: e.target.checked })}/>
-            Cadence auto-snapshot
-          </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, color: "#475569", fontWeight: 700 }}>
-              Every
-            </span>
-            <select value={interval}
-              data-testid="backup-schedule-interval"
-              disabled={busy || !cfg.enabled}
-              onChange={e => save({ interval_hours: Number(e.target.value) })}
-              style={{ ...inp(), width: 90 }}>
-              {presets.includes(interval) ? null : (
-                <option value={interval}>{interval}h (custom)</option>
-              )}
-              {presets.map(h => (
-                <option key={h} value={h}>{h} h</option>
-              ))}
-            </select>
-          </div>
+        <div style={{ fontSize: 12, color: "#475569", marginBottom: 10 }}>
+          The Hub runs these APScheduler cron jobs automatically. The LAN agent
+          picks up each new snapshot on its next 60-second poll — no manual
+          clicks needed.
         </div>
-
-        {/* ---- Close-of-business trigger ---- */}
-        <div style={{ marginTop: 14, paddingTop: 14,
-                      borderTop: "1px dashed #e2e8f0",
-                      display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 8,
-                          fontWeight: 700, fontSize: 13 }}>
-            <input type="checkbox"
-              data-testid="backup-cob-enabled"
-              checked={!!cfg.cob_enabled}
-              disabled={busy}
-              onChange={e => save({ cob_enabled: e.target.checked })}/>
-            Close-of-business snapshot
-          </label>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 12, color: "#475569", fontWeight: 700 }}>at</span>
-            <input type="time"
-              data-testid="backup-cob-time"
-              value={cfg.cob_time || "17:00"}
-              disabled={busy || !cfg.cob_enabled}
-              onChange={e => {
-                if (/^\d{1,2}:\d{2}$/.test(e.target.value)) {
-                  save({ cob_time: e.target.value });
-                }
-              }}
-              style={{ ...inp(), width: 110 }}/>
-            <select value={cfg.cob_timezone || "Australia/Sydney"}
-              data-testid="backup-cob-timezone"
-              disabled={busy || !cfg.cob_enabled}
-              onChange={e => save({ cob_timezone: e.target.value })}
-              style={{ ...inp(), width: 200 }}>
-              {tzOptions.includes(cfg.cob_timezone) ? null : (
-                <option value={cfg.cob_timezone}>{cfg.cob_timezone} (custom)</option>
-              )}
-              {tzOptions.map(tz => <option key={tz} value={tz}>{tz}</option>)}
-            </select>
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 6,
-                          fontSize: 12, color: "#475569" }}>
-            <input type="checkbox"
-              data-testid="backup-cob-weekdays"
-              checked={!!cfg.cob_weekdays_only}
-              disabled={busy || !cfg.cob_enabled}
-              onChange={e => save({ cob_weekdays_only: e.target.checked })}/>
-            Weekdays only
-          </label>
-        </div>
-
-        <div style={{ marginTop: 10, fontSize: 12, color: "#64748b" }}>
-          {cfg.enabled
-            ? <>The Hub creates a fresh snapshot every <strong>{interval}h</strong></>
-            : <>Cadence auto-snapshot is disabled</>}
-          {cfg.cob_enabled && (
-            <> · plus an extra one at <strong>{cfg.cob_time}</strong> {cfg.cob_timezone}{cfg.cob_weekdays_only ? " on weekdays" : " every day"}</>
-          )}
-          {(cfg.enabled || cfg.cob_enabled) && (
-            <>. The LAN agent picks them up on its next 60-second poll — no manual clicks needed.</>
-          )}
-          {!cfg.enabled && !cfg.cob_enabled && (
-            <> — snapshots are only created when you click <strong>Backup now</strong>.</>
-          )}
-        </div>
-        {(cfg.last_auto_run_at || cfg.last_auto_error_at) && (
-          <div style={{ marginTop: 8, fontSize: 11, color: "#475569",
-                        fontFamily: "monospace" }}>
-            {cfg.last_auto_run_at && (
-              <div>
-                Last auto-run: {fmtAge(cfg.last_auto_run_at)}
-                {" "}({cfg.last_auto_run_at.slice(0,19).replace("T"," ")})
-                {cfg.last_auto_reason && <> · reason: <strong>{cfg.last_auto_reason}</strong></>}
-              </div>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ textAlign: "left", color: "#64748b",
+                         fontSize: 11, textTransform: "uppercase",
+                         letterSpacing: "0.05em" }}>
+              <th style={{ padding: "6px 8px" }}>Job</th>
+              <th style={{ padding: "6px 8px" }}>Cron</th>
+              <th style={{ padding: "6px 8px" }}>Timezone</th>
+              <th style={{ padding: "6px 8px" }}>Next run</th>
+            </tr>
+          </thead>
+          <tbody>
+            {jobs.map((j) => (
+              <tr key={j.id} data-testid={`backup-schedule-row-${j.id}`}
+                  style={{ borderTop: "1px solid #e2e8f0" }}>
+                <td style={{ padding: "8px", fontWeight: 700, color: "#0f172a" }}>
+                  {labelFor(j.id)}
+                  <div style={{ fontWeight: 400, fontSize: 11,
+                                color: "#94a3b8", fontFamily: "monospace" }}>
+                    {j.id}
+                  </div>
+                </td>
+                <td style={{ padding: "8px", fontFamily: "monospace",
+                             color: "#0f172a" }}>
+                  {j.cron || "—"}
+                </td>
+                <td style={{ padding: "8px", color: "#475569" }}>
+                  {j.timezone || "—"}
+                </td>
+                <td style={{ padding: "8px", color: "#475569" }}>
+                  {fmt(j.next_run_at)}
+                </td>
+              </tr>
+            ))}
+            {jobs.length === 0 && (
+              <tr>
+                <td colSpan={4} style={{ padding: 12, color: "#94a3b8" }}>
+                  No scheduled jobs registered.
+                </td>
+              </tr>
             )}
-            {cfg.last_cob_run_date && (
-              <div>Last COB snap: {cfg.last_cob_run_date}</div>
-            )}
-            {cfg.last_auto_error_at && (
-              <div style={{ color: "#b91c1c" }}>
-                Last error: {fmtAge(cfg.last_auto_error_at)} — {cfg.last_auto_error}
-              </div>
-            )}
+          </tbody>
+        </table>
+        {data.retention_last_run_at && (
+          <div style={{ marginTop: 10, fontSize: 11, color: "#475569",
+                        fontFamily: "monospace" }}
+               data-testid="backup-schedule-retention-last-run">
+            Retention last run: {fmt(data.retention_last_run_at)}
           </div>
         )}
         {err && (

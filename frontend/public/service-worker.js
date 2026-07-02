@@ -929,8 +929,22 @@
  *        `/app/settings/backup`. Restore panel carries a yellow
  *        caveat banner: MongoDB `_id`s regenerate on restore but
  *        Civil's UUID `id` fields are unaffected.
+ * v144 — Narrow follow-up to Stage B:
+ *        Backend: new read-only `GET /api/backup/schedule` (admin-gated)
+ *        introspects the running APScheduler for `backup_snapshot_6h`
+ *        and `backup_snapshot_cob`, returning `{jobs:[{id,cron,timezone,
+ *        next_run_at}], retention_last_run_at}`. No cron cadence is
+ *        hard-coded — we read the live triggers.
+ *        Frontend: `BackupTab.jsx` `ScheduleCard` collapsed from an
+ *        interactive editor (which pointed at a non-existent endpoint
+ *        and rendered the literal text "Not Found") to a read-only
+ *        two-row table showing each job's cron string, timezone, and
+ *        next-run timestamp.
+ *        Also: reactivated `worker_stephen@paneltec.com.au` (status
+ *        `disabled` → `active`) so the tester can exercise the
+ *        non-admin browser-side sidebar/route-guard flow.
  */
-const CACHE_VERSION = 'paneltec-v143';
+const CACHE_VERSION = 'paneltec-v144';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
