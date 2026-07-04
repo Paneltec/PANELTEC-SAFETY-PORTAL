@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
+import { copyToClipboard } from '@/lib/clipboard';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { passwordRuleError, passwordStrength } from '@/lib/passwordRules';
 
@@ -207,8 +208,10 @@ export function ChannelPickerDialog({ open, onClose, title, description, confirm
 // ───── PIN reveal modal (used inside AccessSection) ─────────────────
 export function PinRevealModal({ pin, open, onClose }) {
   const copy = () => {
-    navigator.clipboard?.writeText(pin || '');
-    toast.success('PIN copied to clipboard');
+    // v154.1 — iframe-safe wrapper so a locked-down permissions
+    // policy falls through to execCommand / manual-select modal
+    // instead of throwing an uncaught error at the toast site.
+    copyToClipboard(pin || '', { successMsg: 'PIN copied to clipboard' });
   };
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>

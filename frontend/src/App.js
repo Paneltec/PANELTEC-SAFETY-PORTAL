@@ -1,5 +1,6 @@
 import React from 'react';
 import '@/App.css';
+import '@/lib/clipboard';   // v154.1 — arms the navigator.clipboard.writeText safety-net at app boot
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'sonner';
 

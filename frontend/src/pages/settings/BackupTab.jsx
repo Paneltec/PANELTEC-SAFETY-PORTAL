@@ -1655,8 +1655,7 @@ function AgentsCard({ agents, freshAgent, setFreshAgent, onReload }) {
               data-testid="backup-download-installer-btn">
               <Download className="w-3.5 h-3.5"/>Plain installer (.py)
             </button>
-            <button onClick={() => { navigator.clipboard?.writeText(freshAgent.token);
-                                     alert("Token copied"); }}
+            <button onClick={() => copyToClipboard(freshAgent.token, { successMsg: "Token copied" })}
               style={btn()}>
               <Copy className="w-3.5 h-3.5"/>Copy token
             </button>

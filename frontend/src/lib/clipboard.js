@@ -179,3 +179,62 @@ function showManualCopyModal(text) {
 }
 
 export default copyToClipboard;
+
+
+// ===============================================================
+// v154.1 · Nuclear-option safety net.
+//
+// A raw `navigator.clipboard.writeText(...)` call at any site that
+// bypasses `copyToClipboard()` (bad merge, hasty PR, third-party
+// component, etc.) would still throw the "Clipboard API has been
+// blocked because of a permissions policy" runtime error under the
+// Emergent preview iframe or any hardened corporate WebView.
+//
+// To make this failure mode structurally impossible, we monkey-
+// patch `navigator.clipboard.writeText` at module load. The patch
+// preserves the async signature that call sites expect
+// (`await navigator.clipboard.writeText(text)`) so no existing
+// behaviour changes on happy paths — but any thrown Permissions-
+// Policy / NotAllowed error is caught and routed through our
+// three-tier fallback chain (execCommand → manual-select modal).
+//
+// Idempotent — the `__pt_wrapped` sentinel ensures a hot-reload
+// doesn't double-wrap. Also feature-gated: only wraps if
+// `navigator.clipboard` and `.writeText` actually exist.
+// ===============================================================
+try {
+  if (typeof navigator !== 'undefined'
+      && navigator.clipboard
+      && typeof navigator.clipboard.writeText === 'function'
+      && !navigator.clipboard.__pt_wrapped) {
+
+    const originalWriteText = navigator.clipboard.writeText.bind(navigator.clipboard);
+
+    navigator.clipboard.writeText = async function ptWrappedWriteText(text) {
+      try {
+        return await originalWriteText(text);
+      } catch (_e) {
+        // The Permissions-Policy path — fall through to the
+        // wrapper's tier-2 execCommand + tier-3 manual-select
+        // fallback. Silent (no toast) so a call site that already
+        // fired its own success toast on the async path doesn't
+        // get a conflicting message.
+        await copyToClipboard(text, { silent: true });
+        // Return undefined to match the original signature — a
+        // resolved promise means "the write happened or was
+        // handled" to any awaiter that doesn't inspect the value.
+        return undefined;
+      }
+    };
+
+    // Sentinel so a webpack hot-reload doesn't wrap the wrapper
+    // (Function.prototype.bind creates a new function each time,
+    // otherwise we'd get nested wrappers on every module reload).
+    Object.defineProperty(navigator.clipboard, '__pt_wrapped', {
+      value: true, enumerable: false, configurable: true, writable: false,
+    });
+  }
+} catch (_e) {
+  // Some non-browser or hardened runtime — silently skip. The
+  // explicit `copyToClipboard(...)` call sites still work fine.
+}

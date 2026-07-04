@@ -1128,7 +1128,34 @@
  *          or a red "never polled" chip alongside the existing
  *          last-seen pill.
  */
-const CACHE_VERSION = 'paneltec-v154';
+ *
+ * v154.1 · Clipboard hotfix — two missed call sites + nuclear
+ *          safety net.
+ *          · Fixed the "Copy token" button in the fresh-agent
+ *            panel (`BackupTab.jsx` line 1658) — used raw
+ *            `navigator.clipboard?.writeText(freshAgent.token)`
+ *            and threw the Permissions-Policy error under the
+ *            Emergent preview iframe. This was THE button the
+ *            operator needed to unblock the LAN agent restart —
+ *            regression traced to the fresh-agent panel not
+ *            being in the original v154 sweep because the
+ *            optional-chain `?.writeText` pattern slipped past
+ *            the grep.
+ *          · Fixed `PinRevealModal.copy` in
+ *            `components/auth/AuthBundle.jsx` (line 210) — same
+ *            bypass shape.
+ *          · Nuclear safety net: `lib/clipboard.js` now monkey-
+ *            patches `navigator.clipboard.writeText` at module
+ *            load. Any raw call anywhere in the app (including
+ *            future regressions, third-party libs, hasty PRs)
+ *            transparently routes through the three-tier
+ *            fallback chain on Permissions-Policy failure.
+ *            Sentinel-guarded against hot-reload double-wrap.
+ *          · The wrapper is now imported at App boot
+ *            (`App.js` line 3) so the monkey-patch arms before
+ *            any Copy button can fire.
+ */
+const CACHE_VERSION = 'paneltec-v154.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
