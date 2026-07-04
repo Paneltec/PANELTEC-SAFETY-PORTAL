@@ -391,9 +391,11 @@ export default function AppShell() {
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
         <RebrandNudge />
         <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main">
-          {/* v156 — subtle fade + slide-up on every route change. Keying by
-              pathname re-runs the CSS animation on navigation. */}
-          <div key={location.pathname} className="animate-fade-up">
+          {/* v156.1 — Opacity-only route transition. `animate-route-fade` has
+              NO `transform` keyframe, so this wrapper never becomes a
+              containing block for `position: fixed` modal descendants (which
+              is what broke the Suppliers Edit modal in v156). */}
+          <div key={location.pathname} className="animate-route-fade">
             <Outlet />
           </div>
         </main>

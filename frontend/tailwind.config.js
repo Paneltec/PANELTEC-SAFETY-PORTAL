@@ -104,6 +104,17 @@ module.exports = {
                     '0%': { opacity: '0', transform: 'translateY(8px)' },
                     '100%': { opacity: '1', transform: 'translateY(0)' },
                 },
+                // v156.1 — Opacity-only route transition. Keyframe deliberately
+                // omits any `transform` property because a transformed ancestor
+                // creates a new containing block and breaks `position: fixed`
+                // descendants (e.g. the Suppliers Edit modal was rendering at
+                // y≈6500px because its fixed backdrop was contained by the
+                // outlet wrapper that carried `animate-fade-up`'s
+                // `translateY(0)` fill-mode). Do NOT add `transform` here.
+                'route-fade': {
+                    '0%':   { opacity: '0' },
+                    '100%': { opacity: '1' },
+                },
                 'modal-in': {
                     '0%': { opacity: '0', transform: 'scale(0.98)' },
                     '100%': { opacity: '1', transform: 'scale(1)' },
@@ -136,6 +147,7 @@ module.exports = {
                 'accordion-up': 'accordion-up 0.2s ease-out',
                 'float-y': 'float-y 6s ease-in-out infinite',
                 'fade-up': 'fade-up 300ms ease-out both',
+                'route-fade': 'route-fade 260ms ease-out both',
                 'modal-in': 'modal-in 180ms ease-out both',
                 'shimmer-x': 'shimmer-x 1.4s linear infinite',
                 'shake-x': 'shake-x 320ms ease-out',
