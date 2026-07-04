@@ -174,7 +174,7 @@ export default function PermissionPresetsAdmin() {
 
                 {/* Matrix grid */}
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-sm">
+                  <table className="zebra-list w-full text-sm">
                     <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
                       <tr>
                         <th className="text-left px-3 py-2 font-semibold">Resource</th>
@@ -344,7 +344,7 @@ function PresetEditDialog({ open, initial, templatePerms, onClose, onSaved }) {
             <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} data-testid="preset-edit-description"
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></label>
           <div className="rounded-xl border border-slate-200 overflow-x-auto max-h-[50vh] overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="zebra-list w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider sticky top-0">
                 <tr>
                   <th className="text-left px-3 py-2 font-semibold">Resource</th>

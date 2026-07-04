@@ -416,7 +416,7 @@ export default function Suppliers() {
           ) : null} />
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
-          <table className="w-full text-sm" data-testid="suppliers-table">
+          <table className="zebra-list w-full text-sm" data-testid="suppliers-table">
             <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
               <tr>
                 <th className="px-3 py-3 w-8">

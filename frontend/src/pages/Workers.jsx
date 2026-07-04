@@ -362,7 +362,7 @@ function CertificationsPanel({ workerId, canEdit }) {
             </div>
           ) : (
             <div className="border border-slate-200 rounded-lg overflow-x-auto">
-              <table className="w-full text-xs" data-testid="cert-table">
+              <table className="zebra-list w-full text-xs" data-testid="cert-table">
                 <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
                   <tr>
                     <th className="text-left px-3 py-2">Name</th>
@@ -1134,7 +1134,7 @@ export default function Workers() {
           ) : null} />
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
-          <table className="w-full text-sm" data-testid="workers-table">
+          <table className="zebra-list w-full text-sm" data-testid="workers-table">
             <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
               <tr>
                 <th className="px-3 py-3 w-8"></th>

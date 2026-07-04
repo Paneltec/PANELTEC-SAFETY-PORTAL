@@ -191,6 +191,13 @@ class DashboardMetrics(BaseModel):
     registers_connected: int = 26
     monitoring_scope: str = "Organisation wide"
     workspaces_scope: str = "All allowed workspaces"
+    # v157.1 — Per-metric growth deltas computed against the count of docs
+    # that existed at the START of the current calendar quarter. A value of
+    # `None` (null on the wire) means the previous period had zero docs and
+    # a percentage delta would be undefined — the frontend hides the row.
+    # `delta_label` is a single string ("vs last quarter" or similar).
+    deltas: Optional[dict] = None
+    delta_label: Optional[str] = None
 
 
 def doc_with_id(payload: dict, **extra: Any) -> dict:

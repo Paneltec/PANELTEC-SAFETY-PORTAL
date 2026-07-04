@@ -263,7 +263,7 @@ export default function UsersManagement() {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <table className="w-full text-sm">
+        <table className="zebra-list w-full text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
               {can('users', 'edit') && (
@@ -717,7 +717,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               />
             </div>
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-sm">
+              <table className="zebra-list w-full text-sm">
                 <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
                   <tr><th className="text-left px-3 py-2">Resource</th>{ACTIONS.map((a) => <th key={a} className="px-3 py-2">{a}</th>)}</tr>
                 </thead>
@@ -1050,7 +1050,7 @@ function BulkInviteModal({ existingEmails, onClose, onDone }) {
               )}
 
               <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
+                <table className="zebra-list w-full text-sm">
                   <thead className="bg-slate-50">
                     <tr>
                       <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">Email</th>
@@ -1303,7 +1303,7 @@ function ImportFromSimproDrawer({ companies, onClose, onDone }) {
               <AlertCircle size={14} /> No employees match your filters.
             </div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="zebra-list w-full text-sm">
               <thead className="bg-white text-[11px] uppercase tracking-wider text-slate-500 sticky top-0 border-b border-slate-200">
                 <tr>
                   <th className="text-left px-4 py-2.5 w-8"></th>
@@ -1415,7 +1415,7 @@ function SessionHistoryTab({ userId }) {
 
   return (
     <div className="mt-5 rounded-xl border border-slate-200 overflow-x-auto" data-testid="session-history-table">
-      <table className="w-full text-sm">
+      <table className="zebra-list w-full text-sm">
         <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
           <tr>
             <th className="text-left px-3 py-2 font-semibold">Login</th>

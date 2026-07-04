@@ -180,7 +180,7 @@ export default function SitesAdmin() {
         </div>
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid="sites-list">
-          <table className="w-full text-sm">
+          <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="px-4 py-2.5 w-8">
@@ -620,7 +620,7 @@ function RecycleBinModal({ onClose, onRestored }) {
           ) : rows.length === 0 ? (
             <div className="p-8 text-center text-sm text-slate-500">Recycle bin is empty.</div>
           ) : (
-            <table className="w-full text-sm">
+            <table className="zebra-list w-full text-sm">
               <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
                 <tr>
                   <th className="text-left px-4 py-2.5">Site</th>
@@ -841,7 +841,7 @@ export function SiteDetail() {
         {signons.length === 0 ? (
           <div className="p-8 text-center text-sm text-slate-500">Nobody is signed on right now.</div>
         ) : (
-          <table className="w-full text-sm">
+          <table className="zebra-list w-full text-sm">
             <thead className="bg-white text-[10px] uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="text-left px-4 py-2">Worker</th>

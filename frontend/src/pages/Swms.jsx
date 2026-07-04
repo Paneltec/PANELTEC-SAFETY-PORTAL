@@ -138,7 +138,7 @@ export default function SwmsList() {
           ? <EmptyState title="Recycle bin is empty" body="Anything you delete will appear here for 30 days." />
           : (
             <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-              <table className="w-full text-sm">
+              <table className="zebra-list w-full text-sm">
                 <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
                   <tr>
                     <th className="text-left px-4 py-3">Title</th>
@@ -251,7 +251,7 @@ export default function SwmsList() {
             action={<NewButton to="/app/swms/new" label="Create SWMS" testid="swms-empty-create" />} />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
                 <th className="px-3 py-3 w-10">

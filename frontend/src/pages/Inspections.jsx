@@ -61,7 +61,7 @@ export default function InspectionsList() {
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Template</th><th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Results</th></tr></thead>
             <tbody>
               {items.map((it) => {

@@ -133,7 +133,7 @@ export default function ContractorsList() {
        : visibleItems.length === 0 ? <EmptyState title="No contractors" body={tab === 'missing' ? 'Every active contractor has an open renewal link.' : 'Add your first contractor.'} action={<NewButton to="/app/contractors/new" label="Add contractor" testid="contractor-empty-create" />} />
        : (
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr>
               <th className="px-3 py-3 w-8"></th>
               <th className="text-left px-4 py-3">Company</th>
@@ -438,7 +438,7 @@ export function ContractorDetail() {
         {(!doc.documents || doc.documents.length === 0)
           ? <div className="text-sm text-slate-400 italic">No documents yet.</div>
           : (
-            <table className="w-full text-sm">
+            <table className="zebra-list w-full text-sm">
               <tbody>
                 {doc.documents.map((d) => (
                   <tr key={d.id} className="border-t border-slate-100" data-testid={`doc-row-${d.id}`}>

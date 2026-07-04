@@ -6,7 +6,7 @@ import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
-import { AnimatedNumber } from '../components/ui/polish';
+import { AnimatedNumber, TrendDelta } from '../components/ui/polish';
 import { getUser } from '../lib/auth';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
@@ -385,7 +385,7 @@ function CaptureCard({ tool, onClick }) {
   );
 }
 
-function MetricChip({ row, value, loading }) {
+function MetricChip({ row, value, loading, delta, deltaLabel }) {
   const Icon = ICONS[row.icon] || FileText;
   return (
     <div className="stat-card p-3 flex items-center gap-3" data-testid={`metric-${row.key}`}>
@@ -394,10 +394,21 @@ function MetricChip({ row, value, loading }) {
         <div className="text-sm font-medium text-slate-800 truncate">{row.label}</div>
         <div className="text-[10px] uppercase tracking-wider text-slate-400">this quarter</div>
       </div>
-      <div className="font-display text-2xl font-bold tracking-tight text-slate-900">
-        {loading
-          ? <span className="inline-block w-10 h-6 rounded animate-shimmer-x" />
-          : <AnimatedNumber value={Number.isFinite(value) ? value : 0} duration={1100} testid={`metric-${row.key}-value`} />}
+      <div className="flex flex-col items-end shrink-0">
+        <div className="font-display text-2xl font-bold tracking-tight text-slate-900">
+          {loading
+            ? <span className="inline-block w-10 h-6 rounded animate-shimmer-x" />
+            : <AnimatedNumber value={Number.isFinite(value) ? value : 0} duration={1100} testid={`metric-${row.key}-value`} />}
+        </div>
+        {/* v157.1 — TrendDelta line. Rendered only when the backend returned
+            a non-null delta (i.e. the previous period had at least one live
+            record). Otherwise the row is hidden to avoid misleading "+∞%"
+            or fake data. */}
+        {!loading && delta != null && (
+          <div className="mt-0.5" data-testid={`metric-${row.key}-delta`}>
+            <TrendDelta value={delta} suffix={`% ${deltaLabel || ''}`.trim()} testid={`metric-${row.key}-delta-chip`}/>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -564,7 +575,14 @@ export default function Dashboard() {
           <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Key metrics</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {METRIC_ROWS.map((row) => (
-              <MetricChip key={row.key} row={row} loading={loading} value={m?.[row.field] ?? 0} />
+              <MetricChip
+                key={row.key}
+                row={row}
+                loading={loading}
+                value={m?.[row.field] ?? 0}
+                delta={m?.deltas?.[row.field]}
+                deltaLabel={m?.delta_label}
+              />
             ))}
           </div>
 

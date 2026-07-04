@@ -1,5 +1,6 @@
 """Dashboard metrics + file serving."""
 import mimetypes
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +24,38 @@ async def _count(collection: str, org_id: str, workspace_id: Optional[str]) -> i
     return await db[collection].count_documents(q)
 
 
+async def _count_before(collection: str, org_id: str, workspace_id: Optional[str], before_iso: str) -> int:
+    """v157.1 — Count of live (non-deleted) docs whose `created_at` predates
+    the ISO cutoff. Used to compute per-metric quarter-over-quarter deltas.
+    Note: this reflects "how many of the currently-live docs were created
+    before the cutoff", not "how many existed at the cutoff moment". The
+    delta therefore expresses NET GROWTH inside the quarter, ignoring docs
+    that were both created and soft-deleted before the cutoff (edge case,
+    accepted for the sake of a single index-friendly query)."""
+    q = {"org_id": org_id, "deleted_at": None, "created_at": {"$lt": before_iso}}
+    if workspace_id:
+        q["workspace_id"] = workspace_id
+    return await db[collection].count_documents(q)
+
+
+def _quarter_start_iso(now: Optional[datetime] = None) -> str:
+    """ISO-8601 timestamp for the first day 00:00 UTC of the current
+    calendar quarter (Q1: Jan, Q2: Apr, Q3: Jul, Q4: Oct)."""
+    now = now or datetime.now(timezone.utc)
+    q_month = ((now.month - 1) // 3) * 3 + 1
+    start = datetime(now.year, q_month, 1, tzinfo=timezone.utc)
+    return start.isoformat()
+
+
+def _delta_pct(current: int, previous: int) -> Optional[float]:
+    """Percentage growth from `previous` to `current`. Returns `None` when
+    `previous == 0` — the frontend hides the delta row so we never show a
+    misleading "+∞%" or "−100%" for cold-start collections."""
+    if previous <= 0:
+        return None
+    return round(((current - previous) / previous) * 100, 1)
+
+
 @router.get("/metrics", response_model=DashboardMetrics)
 async def metrics(
     workspace: Optional[str] = Query(None),
@@ -35,6 +68,26 @@ async def metrics(
     haz_c = await _count("hazards", org_id, workspace)
     inc_c = await _count("incidents", org_id, workspace)
     insp_c = await _count("inspections", org_id, workspace)
+
+    # v157.1 — quarter-over-quarter deltas. Only computed when the previous
+    # period had at least one live doc; otherwise `None` and the frontend
+    # hides the delta line.
+    q_start = _quarter_start_iso()
+    swms_prev = await _count_before("swms", org_id, workspace, q_start)
+    pre_prev = await _count_before("pre_starts", org_id, workspace, q_start)
+    diary_prev = await _count_before("site_diary_entries", org_id, workspace, q_start)
+    haz_prev = await _count_before("hazards", org_id, workspace, q_start)
+    inc_prev = await _count_before("incidents", org_id, workspace, q_start)
+    insp_prev = await _count_before("inspections", org_id, workspace, q_start)
+
+    deltas = {
+        "swms_count":         _delta_pct(swms_c,  swms_prev),
+        "prestarts_count":    _delta_pct(pre_c,   pre_prev),
+        "diary_count":        _delta_pct(diary_c, diary_prev),
+        "hazards_count":      _delta_pct(haz_c,   haz_prev),
+        "incidents_count":    _delta_pct(inc_c,   inc_prev),
+        "inspections_count":  _delta_pct(insp_c,  insp_prev),
+    }
 
     # Records needing attention = open/in_progress hazards + open incidents + draft SWMS awaiting review
     needs_attention = await db.hazards.count_documents(
@@ -66,6 +119,8 @@ async def metrics(
         attention_score=score,
         attention_band=band,
         records_needing_attention=needs_attention,
+        deltas=deltas,
+        delta_label="vs last quarter",
     )
 
 
