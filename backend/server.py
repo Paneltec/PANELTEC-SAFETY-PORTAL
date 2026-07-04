@@ -274,6 +274,25 @@ async def on_startup():
     except Exception as e:
         log.warning("Cert reminder scan failed at startup: %s", e)
 
+    # v151.1 — auto-install server tools (LibreOffice / Tesseract / Poppler)
+    # if the container overlay has wiped them. See file_pdf.py for the full
+    # rationale. Fire-and-forget: apt runs in a background asyncio task,
+    # backend boot is not blocked, and a failure here never kills startup.
+    try:
+        from file_pdf import ensure_server_tools_or_install_bg
+        status = ensure_server_tools_or_install_bg()
+        if status["action"] == "noop":
+            log.info("Server tools OK — libreoffice/tesseract/poppler all present")
+        elif status["action"] == "queued":
+            log.info(
+                "Server tools missing (%s) — triggering async reinstall (job_id=%s)",
+                ", ".join(status["missing"]), status["job_id"],
+            )
+        else:
+            log.info("Server tools check: %s", status)
+    except Exception as e:
+        log.warning("Server tools auto-install skipped at startup: %s", e)
+
     # Phase 3.7 — one-shot migration of seeded select fields → dynamic pickers.
     try:
         from migrate_form_pickers import migrate_form_pickers

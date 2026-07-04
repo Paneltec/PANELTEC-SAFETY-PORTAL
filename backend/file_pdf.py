@@ -688,6 +688,12 @@ async def _run_apt_install(job_id: str, pkgs: list) -> None:
     )
     cmd = [
         "bash", "-lc",
+        # v151.1 — `dpkg --configure -a` first cleans up any interrupted
+        # prior install (e.g. an earlier apt run that was killed by a
+        # container refresh mid-transaction). Idempotent no-op on a clean
+        # system. Without it, apt-get refuses to proceed with "dpkg was
+        # interrupted, you must manually run 'dpkg --configure -a'".
+        f"dpkg --configure -a 2>&1 || true; "
         f"apt-get update -qq && apt-get install -y --no-install-recommends "
         f"{' '.join(pkgs)} 2>&1; echo '---'; "
         f"which libreoffice || which soffice || true; "
@@ -735,6 +741,77 @@ async def _run_apt_install(job_id: str, pkgs: list) -> None:
     finally:
         _INSTALL_STATE["install_running"] = False
         _INSTALL_STATE["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+
+# ────────────────── v151.1 — auto-install on backend boot ──────────────────
+#
+# WHY: Our pod runs the Emergent-managed base image
+# `mono_fullstack_base_image_cloud_arm:release-15062026-2` which does NOT
+# include LibreOffice / Tesseract / Poppler. The image's writable overlay
+# is tied to the container lifecycle — supervisor service restarts survive,
+# but any container refresh (memory pressure, forced Emergent update, node
+# reschedule) resets `/usr`, wiping the apt-installed packages we needed
+# for DOCX→PDF conversion and OCR. Users saw the Server Tools admin pill
+# regress to red after each container refresh (v146 first spotted it).
+#
+# Emergent doesn't expose a Dockerfile / apt-packages hook to us from
+# inside the pod (only `/app/.emergent/emergent.yml` which is an opaque
+# image reference). So the durable fix here is to detect the missing
+# tools every time the backend boots and dispatch the same apt-get task
+# that `POST /admin/install-libreoffice` uses. Fire-and-forget:
+# `on_startup` returns immediately and apt runs in the background. The
+# health endpoint's `install_running=true` + `log_tail` show progress
+# to any admin watching, without them touching a button.
+def ensure_server_tools_or_install_bg() -> Dict[str, Any]:
+    """Detect libreoffice/tesseract/poppler and kick off an async apt-get
+    if any are missing. Idempotent — a no-op if all tools are present or
+    if an install is already in flight. Fires-and-forgets; caller must
+    never await. Returns a small status dict for logging."""
+    import shutil
+    tools = {
+        "libreoffice": shutil.which("libreoffice") or shutil.which("soffice"),
+        "tesseract":   shutil.which("tesseract"),
+        "poppler":     shutil.which("pdftotext"),
+    }
+    missing = [name for name, path in tools.items() if not path]
+
+    if not missing:
+        return {"missing": [], "action": "noop", "reason": "all tools present"}
+
+    if _INSTALL_STATE.get("install_running"):
+        return {
+            "missing": missing,
+            "action": "skip",
+            "reason": "install already running",
+            "job_id": _INSTALL_STATE.get("job_id"),
+        }
+
+    # Always install the full toolchain so a partial wipe doesn't leave us
+    # with mismatched versions. Same package list as the manual endpoint.
+    pkgs = [
+        "libreoffice-core", "libreoffice-writer",
+        "libreoffice-calc", "libreoffice-impress",
+        "tesseract-ocr", "poppler-utils",
+    ]
+    job_id = str(uuid.uuid4())
+    started = datetime.now(timezone.utc).isoformat()
+    _INSTALL_STATE.update({
+        "install_running": True,
+        "job_id": job_id,
+        "started_at": started,
+        "finished_at": None,
+        "exit_code": None,
+        "packages": list(pkgs),
+    })
+    _INSTALL_STATE["log_tail"].clear()
+    _INSTALL_STATE["log_tail"].append(
+        f"[paneltec] auto-install on boot — missing: {', '.join(missing)}"
+    )
+    # Fire-and-forget. `_run_apt_install` handles its own exceptions and
+    # always flips `install_running` back to False in its finally block.
+    asyncio.create_task(_run_apt_install(job_id, pkgs))
+    return {"missing": missing, "action": "queued", "job_id": job_id}
+
 
 
 @router.post("/admin/install-libreoffice", status_code=202)
