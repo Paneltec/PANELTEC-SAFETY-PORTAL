@@ -58,6 +58,7 @@ import Onboard, { ResetPasswordPage } from '@/pages/Onboard';
 import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 // Phase 4.7.3 — Comms Safe Mode admin page.
 import CommsSafeMode from '@/pages/CommsSafeMode';
+import CacheBusterBanner from '@/components/CacheBusterBanner';
 
 // Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
 // at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
@@ -73,6 +74,12 @@ function App() {
     <div className="App">
       <BrowserRouter>
         <WorkspaceProvider>
+          {/* v154.3 — Cache-buster banner sits at the very top of every
+              route so a stale-bundle user can one-click hard-reload
+              regardless of which page they landed on. Renders above
+              the SilentAgentAlert (which lives inside BackupTab) by
+              virtue of being outside <Routes>. */}
+          <CacheBusterBanner/>
           <Routes>
             <Route path="/" element={<Cover />} />
             <Route path="/login" element={<LoginRedirect />} />

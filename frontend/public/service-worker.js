@@ -1183,7 +1183,40 @@
  *          those files. Sentinel-guarded against hot-reload.
  *          Armed at App boot via `App.js` line 4.
  */
-const CACHE_VERSION = 'paneltec-v154.2';
+ *
+ * v154.3 · Cache-buster banner.
+ *          `CacheBusterBanner.jsx` mounts at the top of `App.js`
+ *          (above <Routes>) and polls `/api/health/version` every
+ *          5 minutes while the tab is visible. When the response
+ *          disagrees with the compile-time constant
+ *          `lib/version.js#RUNNING_VERSION` embedded in the running
+ *          bundle, a sticky amber banner renders with a "Reload now"
+ *          CTA that:
+ *            1. Unregisters ALL service worker registrations
+ *            2. Clears every Cache Storage entry via the Cache API
+ *            3. Hard-reloads the tab
+ *          Prevents the "no visible effect after fix" trap that hit
+ *          the July 4 2026 docker-compose download unblocker — the
+ *          server-side fix was live, but the user's tab was pinned
+ *          to a stale SW bundle. Non-technical users no longer need
+ *          to know about Cmd/Ctrl+Shift+R.
+ *
+ *          30-second boot grace suppresses false-positives during
+ *          SW install races. Session-scoped "Later" dismissal only
+ *          (no localStorage) — the banner reappears on next mount
+ *          so a bounced tab still re-surfaces the update.
+ *
+ *          Renders ABOVE the SilentAgentAlert banner by design — a
+ *          bundle mismatch might itself be the reason the silent-
+ *          agent state is stale.
+ *
+ *          Reminder for future bumps: update BOTH
+ *          `/app/frontend/public/service-worker.js#CACHE_VERSION`
+ *          AND `/app/frontend/src/lib/version.js#RUNNING_VERSION`
+ *          together, otherwise the banner will render immediately
+ *          after every deploy.
+ */
+const CACHE_VERSION = 'paneltec-v154.3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
