@@ -544,6 +544,14 @@ def install(app, db, require_admin):
             if delivery.get("destination_id"):
                 d = next((x for x in dests if x.get("id") == delivery["destination_id"]), None)
                 dest_name = d.get("name") if d else None
+            # v155b.1 — fallback: if the agent report didn't carry a
+            # destination_id (legacy agents pre-v155b), but the tenant
+            # has exactly one enabled destination, attribute the
+            # delivery to it. Makes the hero card read cleanly.
+            if not dest_name:
+                enabled = [x for x in dests if x.get("enabled")]
+                if len(enabled) == 1:
+                    dest_name = enabled[0].get("name")
             agent_name = None
             if delivery.get("agent_id"):
                 a = next((x for x in agents if x.get("id") == delivery["agent_id"]), None)

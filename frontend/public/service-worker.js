@@ -1230,7 +1230,19 @@
  *          Also deletes the 11 dormant v155a extraction files
  *          under `pages/settings/backup/` (Path A cleanup).
  */
-const CACHE_VERSION = 'paneltec-v155b';
+ *
+ * v155b.1 · Delivery attribution fallback.
+ *          `/api/backup/summary` now falls back to "the sole enabled
+ *          destination" when `bk_agent_logs.destination_id` is null
+ *          (legacy agents pre-v155b). Makes the hero card's Last
+ *          delivery line read "…→ Office UGREEN tower via Office
+ *          Pi" instead of just "…via Office Pi". No agent-side
+ *          changes required. Sole-destination heuristic — silently
+ *          skipped if the tenant has 0 or >1 enabled destinations.
+ *          Frontend untouched; SW bump exists solely to force
+ *          browsers to see the enriched summary payload.
+ */
+const CACHE_VERSION = 'paneltec-v155b.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

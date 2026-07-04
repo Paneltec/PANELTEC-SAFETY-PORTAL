@@ -8,4 +8,4 @@
 // user's tab is running a stale bundle — the banner surfaces a
 // one-click SW-unregister + hard-reload flow.
 
-export const RUNNING_VERSION = 'paneltec-v155b';
+export const RUNNING_VERSION = 'paneltec-v155b.1';
