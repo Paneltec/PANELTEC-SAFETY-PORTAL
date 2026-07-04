@@ -84,19 +84,21 @@ export default function SystemSettings() {
       if (done) {
         stopPolling();
         setInstalling(false);
-        if (allOk && !stillRunning && autoHealing.current) {
+        if (allOk && !stillRunning && autoHealingRef.current) {
           // Silent success on auto-heal — a toast here would be noisy.
-          autoHealing.current = false;
+          autoHealingRef.current = false;
+          setAutoHealing(false);
         } else if (!stillRunning && r.data?.install_exit_code === 0 && allOk) {
           toast.success('LibreOffice + OCR installed — XLSX / PPTX / OCR now available.');
         } else if (!stillRunning && r.data?.install_exit_code !== 0 && r.data?.install_exit_code !== null) {
           toast.error(`Install finished with exit code ${r.data.install_exit_code} — check log below.`);
         } else if (elapsed > ceiling) {
-          if (autoHealing.current) {
+          if (autoHealingRef.current) {
             // Fell off the auto-heal cap — apt is likely broken, show a
             // subtle nudge but don't panic.
             toast.error('Server tools still missing after 5 min — click Install now or check server logs.');
-            autoHealing.current = false;
+            autoHealingRef.current = false;
+            setAutoHealing(false);
           } else {
             toast.error('Install still running after 25 min — check server logs.');
           }

@@ -1057,8 +1057,25 @@
  *        included in the SW precache so it's available offline. The
  *        "Download PDF" and "New tab" escape hatches remain in the
  *        modal header regardless of which render path wins.
+ *
+ * v152 — Server Tools UI self-heals without a manual refresh.
+ *        Settings → Server Tools (`SystemSettings.jsx`) now arms its
+ *        health-poll loop on mount whenever ANY tool reports
+ *        `ok:false`, not just when the backend flags
+ *        `install_running:true`. Pairs with the v151.1 backend
+ *        `ensure_server_tools_or_install_bg()` startup hook so pods
+ *        that lose LibreOffice/Tesseract/Poppler on restart auto-
+ *        install AND the UI transitions from "Auto-install pending…"
+ *        (blue spinner) → green checkmark within seconds of the apt
+ *        run finishing — no user refresh required. Auto-heal cycles
+ *        are capped at 5 minutes wall-clock (manual "Install now"
+ *        still gets the full 25 min ceiling) so a genuinely broken
+ *        pod doesn't loop forever. Also fixes the misleading red
+ *        "Not installed" X that flashed during the auto-install
+ *        window; the amber "Auto-install pending…" state now
+ *        renders instead.
  */
-const CACHE_VERSION = 'paneltec-v151';
+const CACHE_VERSION = 'paneltec-v152';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
