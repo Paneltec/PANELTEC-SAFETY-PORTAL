@@ -167,10 +167,25 @@ async def send_email(body: EmailSendIn, user: dict = Depends(get_current_user)):
 async def list_outbox(
     status: Optional[EmailStatus] = Query(None),
     related_record_type: Optional[str] = Query(None),
+    scope: Optional[str] = Query(None, description="v160.0 — `me` narrows to caller's own outbox"),
     limit: int = Query(200, ge=1, le=500),
     user: dict = Depends(get_current_user),
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
+    # v160.0 — non-privileged callers auto-scope to their own outbox.
+    # A worker's phone can only see emails they sent (`created_by`) OR
+    # emails addressed to them (their email in the `to` list).
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    if scope == "team":
+        if not privileged:
+            raise HTTPException(403, "Permission denied: outbox.team_view")
+    elif scope == "me" or not privileged:
+        me_email = (user.get("email") or "").lower()
+        q["$or"] = [
+            {"created_by": user["id"]},
+            {"to": me_email},
+            {"to": {"$in": [me_email]}},
+        ]
     if status:
         q["status"] = status
     if related_record_type:
@@ -185,6 +200,14 @@ async def get_outbox(email_id: str, user: dict = Depends(get_current_user)):
     doc = await db.outbound_emails.find_one({"id": email_id, "org_id": user["org_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")
+    # v160.0 — deep-link protection: a worker cannot open someone else's
+    # outbox row even if they know the id.
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    if not privileged:
+        me_email = (user.get("email") or "").lower()
+        owns = (doc.get("created_by") == user["id"]) or (me_email and me_email in (doc.get("to") or []))
+        if not owns:
+            raise HTTPException(403, "Permission denied: outbox.team_view")
     return doc
 
 

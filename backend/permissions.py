@@ -21,8 +21,11 @@ ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view"]
 # on these resources only see records where `created_by == user.id`.
 # Supervisors/HSEQ Leads/Admin/Auditor inherit `team_view=True` via their
 # role defaults below, so their behavior is unchanged.
+# v160.0 — added `inductions` (induction matrix is admin-oriented; worker
+# phone sees only their own row via a dedicated endpoint).
 TEAM_SCOPED_RESOURCES: set[str] = {
     "swms", "pre_starts", "site_diary", "hazards", "incidents", "inspections",
+    "inductions",
 }
 
 # Resource catalog. `email_supported=False` hides the email column entirely

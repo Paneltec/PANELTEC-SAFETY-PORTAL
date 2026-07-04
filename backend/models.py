@@ -186,7 +186,7 @@ class DashboardMetrics(BaseModel):
     incidents_count: int
     inspections_count: int
     attention_score: int
-    attention_band: Literal["Strong", "Watch", "Action needed"]
+    attention_band: Literal["Strong", "Watch", "Action needed", "hidden"]
     records_needing_attention: int
     registers_connected: int = 26
     monitoring_scope: str = "Organisation wide"

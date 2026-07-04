@@ -62,6 +62,11 @@ async def metrics(
     user: dict = Depends(get_current_user),
 ):
     org_id = user["org_id"]
+    # v160.0 — WATCH card gating. Non-privileged callers (workers,
+    # contractors, auditors on the phone) get a zeroed attention block so
+    # the mobile can safely hide the aggregate card without a second call.
+    # Web callers are always admin/hseq/supervisor so this is a no-op there.
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
     swms_c = await _count("swms", org_id, workspace)
     pre_c = await _count("pre_starts", org_id, workspace)
     diary_c = await _count("site_diary_entries", org_id, workspace)
@@ -90,24 +95,30 @@ async def metrics(
     }
 
     # Records needing attention = open/in_progress hazards + open incidents + draft SWMS awaiting review
-    needs_attention = await db.hazards.count_documents(
-        {"org_id": org_id, "deleted_at": None, "status": {"$in": ["open", "in_progress"]}}
-    )
-    needs_attention += await db.incidents.count_documents(
-        {"org_id": org_id, "deleted_at": None, "follow_up_status": {"$in": ["open", "in_progress"]}}
-    )
-    needs_attention += await db.swms.count_documents(
-        {"org_id": org_id, "deleted_at": None, "status": "submitted"}
-    )
-
-    # Attention score: simple heuristic — start at 100, subtract per attention item, floor 40
-    score = max(40, 100 - needs_attention * 3)
-    if score >= 85:
-        band = "Strong"
-    elif score >= 65:
-        band = "Watch"
+    if privileged:
+        needs_attention = await db.hazards.count_documents(
+            {"org_id": org_id, "deleted_at": None, "status": {"$in": ["open", "in_progress"]}}
+        )
+        needs_attention += await db.incidents.count_documents(
+            {"org_id": org_id, "deleted_at": None, "follow_up_status": {"$in": ["open", "in_progress"]}}
+        )
+        needs_attention += await db.swms.count_documents(
+            {"org_id": org_id, "deleted_at": None, "status": "submitted"}
+        )
+        # Attention score: simple heuristic — start at 100, subtract per attention item, floor 40
+        score = max(40, 100 - needs_attention * 3)
+        if score >= 85:
+            band = "Strong"
+        elif score >= 65:
+            band = "Watch"
+        else:
+            band = "Action needed"
     else:
-        band = "Action needed"
+        # v160.0 — worker phone: no aggregate WATCH signal. The mobile
+        # dashboard renders the card only when band != None.
+        needs_attention = 0
+        score = 0
+        band = "hidden"
 
     return DashboardMetrics(
         swms_count=swms_c,

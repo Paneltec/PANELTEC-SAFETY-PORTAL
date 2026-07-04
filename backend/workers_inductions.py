@@ -456,12 +456,26 @@ def _status_for(cert: dict) -> str:
 @router.get("/matrix")
 async def induction_matrix(user: dict = Depends(get_current_user)):
     """Live matrix payload. The frontend renders rows × columns with status
-    chips and inline-edit affordances."""
+    chips and inline-edit affordances.
+    v160.0 — worker phone: auto-scopes the `workers` list to just the caller's
+    own linked row so a non-privileged user never sees other people's cells.
+    Admin/HSEQ/supervisor unaffected."""
     org = user["org_id"]
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    # v160.0 — non-privileged: filter to caller's own worker row.
+    worker_q: dict = {"org_id": org, "deleted_at": None}
+    if not privileged:
+        me = await db.workers.find_one(
+            {"org_id": org, "deleted_at": None,
+             "$or": [{"user_id": user["id"]},
+                     {"email": (user.get("email") or "").lower()}]},
+            {"_id": 0, "id": 1},
+        )
+        worker_q["id"] = (me or {}).get("id") or "__no_match__"
     # Workers list (active only).
     workers: list[dict] = []
     async for w in db.workers.find(
-        {"org_id": org, "deleted_at": None},
+        worker_q,
         {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "name": 1,
          "email": 1, "company": 1, "status": 1},
     ).sort([("last_name", 1), ("first_name", 1), ("name", 1)]):

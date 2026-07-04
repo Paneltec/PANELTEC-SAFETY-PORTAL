@@ -183,23 +183,31 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Quick links */}
+        {/* Quick links — v160.0: admin-only links hidden for workers. */}
         <Text style={st.sectionLabel}>SETTINGS</Text>
         <View style={st.section}>
-          {[
-            { label: 'Workers', icon: 'people' as const, route: '/workers', moduleKey: 'inductions' as const },
-            { label: 'Certifications', icon: 'ribbon' as const, route: '/certifications', moduleKey: 'certifications' as const },
-            { label: 'Organisation', icon: 'business' as const, moduleKey: undefined },
-            { label: 'Users', icon: 'people-circle' as const, route: '/users', moduleKey: undefined },
-            { label: 'Compliance Hub', icon: 'shield-checkmark' as const, route: '/(tabs)/compliance', moduleKey: undefined },
-          ].filter(item => !item.moduleKey || modules[item.moduleKey]).map((item) => (
-            <TouchableOpacity key={item.label} testID={`settings-${item.label.toLowerCase().replace(/\s/g, '-')}`}
-              style={st.row} activeOpacity={0.7} onPress={() => item.route ? router.push(item.route as any) : undefined}>
-              <Ionicons name={item.icon} size={18} color={Colors.textSecondary} />
-              <Text style={st.rowText}>{item.label.toUpperCase()}</Text>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-            </TouchableOpacity>
-          ))}
+          {(() => {
+            const role = (user?.role || '').toLowerCase();
+            const isPrivileged = role === 'admin' || role === 'hseq_lead' || role === 'supervisor';
+            const items: any[] = [
+              { label: 'Workers', icon: 'people', route: '/workers', moduleKey: 'inductions', adminOnly: false },
+              { label: 'Certifications', icon: 'ribbon', route: '/certifications', moduleKey: 'certifications', adminOnly: false },
+              { label: 'Organisation', icon: 'business', route: undefined, moduleKey: undefined, adminOnly: true },
+              { label: 'Users', icon: 'people-circle', route: '/users', moduleKey: 'users_directory', adminOnly: true },
+              { label: 'Compliance Hub', icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: undefined, adminOnly: true },
+            ];
+            return items
+              .filter((item) => !item.adminOnly || isPrivileged)
+              .filter((item) => !item.moduleKey || (modules as any)[item.moduleKey])
+              .map((item) => (
+                <TouchableOpacity key={item.label} testID={`settings-${item.label.toLowerCase().replace(/\s/g, '-')}`}
+                  style={st.row} activeOpacity={0.7} onPress={() => item.route ? router.push(item.route as any) : undefined}>
+                  <Ionicons name={item.icon} size={18} color={Colors.textSecondary} />
+                  <Text style={st.rowText}>{item.label.toUpperCase()}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                </TouchableOpacity>
+              ));
+          })()}
         </View>
 
         {/* Actions */}

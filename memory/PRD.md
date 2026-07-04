@@ -2343,3 +2343,84 @@ Verification:
 Suppliers Edit modal regression — verified in v159.3 (still opens at
 y≈180 which is inside [50, 800]). No architectural changes to that
 component in v159.4.
+
+---
+
+## v160.0 — Phone-app own-only sweep (2026-07-04)
+
+Delivered (items 1-4 per user's brief, all high-visibility surfaces):
+
+1. **WATCH card hidden on worker phone**
+   - `dashboard.py:/api/dashboard/metrics` — non-privileged callers get
+     `attention_band='hidden'`, `attention_score=0`, `records_needing_attention=0`.
+   - `models.py:DashboardMetrics.attention_band` literal extended with `"hidden"`.
+   - `mobile/app/(tabs)/dashboard.tsx` — attention-score card wrapped in
+     `{band !== 'hidden' && (…)}`.
+   - Admin/HSEQ/supervisor unaffected — real WATCH signal preserved.
+2. **Outbox filtered to own**
+   - `email_outbox.py:/api/email/outbox` — non-privileged auto-filtered by
+     `created_by == user.id OR to contains user.email`.
+   - Detail route `/outbox/{id}` — 403 for foreign records.
+   - `?scope=me` / `?scope=team` params (team rejected 403 for workers).
+3. **Settings tab: admin-only rows hidden**
+   - `mobile/app/(tabs)/settings.tsx` — Organisation, Users, Compliance Hub
+     tiles now gated by `isAdmin || isHseqLead || isSupervisor`. Workers see
+     only Workers (if `inductions` module enabled) and Certifications.
+4. **Inductions team-scoped**
+   - `permissions.py:TEAM_SCOPED_RESOURCES` — added `inductions`.
+   - `workers_inductions.py:/api/workers/inductions/matrix` — non-privileged
+     workers list auto-clamped to caller's own worker row (matched via
+     `user_id` or `email` link on the `workers` collection).
+
+Additional:
+- Version bump → `paneltec-v160.0` (`service-worker.js` + `version.js`).
+- Metro restarted with cache clear.
+- 6 new pytest cases (42 total, all passing).
+
+### List-endpoint audit table
+
+| Endpoint | Status before v160 | Action taken |
+|---|---|---|
+| `/api/workers` | Already scoped in v159 via `?scope=me` and worker.id auto-filter | No change |
+| `/api/contractors` | Gated in v159.0 (require_permission) | No change |
+| `/api/suppliers` | Gated in v159.0 | No change |
+| `/api/assets` | Gated in v159.0 with thin serializer | No change |
+| `/api/documents/*` | Gated in v159.0 | No change |
+| `/api/incidents` | Team-scoped in v159.2 (`created_by == user.id`) | No change |
+| `/api/hazards` | Team-scoped in v159.2 | No change |
+| `/api/inspections` | Team-scoped in v159.2 | No change |
+| `/api/pre-starts` | Team-scoped in v159.2 | No change |
+| `/api/site-diary` | Team-scoped in v159.2 | No change |
+| `/api/swms` | Team-scoped in v159.2 | No change |
+| `/api/workers/certifications/*` | Auto-scope in v159.1 | No change |
+| `/api/ask/*` | Gated in v159.1 (`require_ask_access`) | No change |
+| `/api/dashboard/metrics` | Returned WATCH signal to all callers | **v160.0**: hides for non-privileged |
+| `/api/email/outbox` | Returned org-wide | **v160.0**: auto-scoped `created_by/to == me` |
+| `/api/email/outbox/{id}` | 200 for any org record | **v160.0**: 403 on foreign records |
+| `/api/workers/inductions/matrix` | Returned all workers | **v160.0**: single-row for non-privileged |
+| `/api/dashboard/activity` | (not implemented) | N/A |
+| `/api/dashboard/pulse` | (not implemented) | N/A |
+
+### Verification curls
+
+```
+WORKER /api/dashboard/metrics          → band='hidden' score=0 needs=0        ✅
+ADMIN  /api/dashboard/metrics          → band='Watch' score=82 needs=6        ✅
+WORKER /api/workers/inductions/matrix  → worker_count=0 (unlinked → clamped)  ✅
+ADMIN  /api/workers/inductions/matrix  → full org list                        ✅
+WORKER /api/email/outbox               → count=0 (own only)                   ✅
+WORKER /api/email/outbox?scope=team    → HTTP 403                             ✅
+ADMIN  /api/email/outbox               → count=14 (full org)                  ✅
+pytest backend/tests/test_worker_leaks.py → 42 passed                         ✅
+```
+
+Not touched (per user's "STOP after items 1-4" clause if pressured):
+- Item 5 (Home dashboard general sweep — activity/team/pulse endpoints do
+  not exist in this codebase; verified via `grep`).
+- Item 6 (broader list-endpoint audit — table above documents all
+  currently-suspicious endpoints; no other list endpoint returns
+  cross-user data on inspection).
+- Item 7 (deep-link protection — applied opportunistically on the two
+  endpoints touched: outbox detail + induction matrix. Certifications,
+  incidents, hazards, inspections, pre_starts, site_diary, swms already
+  covered by v159.2's `get_item` gate).

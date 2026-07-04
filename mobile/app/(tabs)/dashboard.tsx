@@ -121,7 +121,11 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Attention score */}
+        {/* Attention score — v160.0: hidden for non-privileged callers.
+            Backend returns `band === 'hidden'` for workers/contractors so
+            the UI can safely skip the aggregate WATCH card without a
+            second permissions round-trip. */}
+        {band !== 'hidden' && (
         <View testID="attention-score-card" style={d.scoreCard}>
           <View style={d.scoreRow}>
             <View style={[d.scoreCircle, { borderColor: bandColor }]}>
@@ -138,6 +142,7 @@ export default function DashboardScreen() {
             </View>
           </View>
         </View>
+        )}
 
         {/* AI Briefing */}
         {modules.ask_intel && briefingLoading ? (

@@ -294,6 +294,69 @@ def test_admin_openapi_still_available(admin_headers):
     assert body.get("openapi", "").startswith("3."), "OpenAPI schema malformed"
 
 
+# ---------- v160.0 phone lockdown ----------
+
+def test_worker_dashboard_metrics_hides_watch_signal(worker_headers):
+    """WATCH card gate: for non-privileged callers the aggregate
+    attention_score/records_needing_attention are zeroed and band='hidden'
+    so the mobile hides the card entirely."""
+    r = requests.get(f"{BASE}/api/dashboard/metrics", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    assert body.get("attention_band") == "hidden", (
+        f"Worker got attention_band={body.get('attention_band')!r}, expected 'hidden'"
+    )
+    assert body.get("records_needing_attention") == 0
+    assert body.get("attention_score") == 0
+
+
+def test_admin_dashboard_metrics_still_shows_watch(admin_headers):
+    r = requests.get(f"{BASE}/api/dashboard/metrics", headers=admin_headers, timeout=10)
+    assert r.status_code == 200
+    body = r.json()
+    assert body.get("attention_band") in ("Strong", "Watch", "Action needed"), (
+        f"Admin lost WATCH signal: band={body.get('attention_band')!r}"
+    )
+
+
+def test_worker_outbox_auto_scoped(worker_headers):
+    r = requests.get(f"{BASE}/api/email/outbox", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    me_id, me_email = me["id"], (me.get("email") or "").lower()
+    for m in body.get("items") or []:
+        assert (m.get("created_by") == me_id) or (me_email in (m.get("to") or [])), (
+            f"Worker outbox leaked message id={m.get('id')} created_by={m.get('created_by')}"
+        )
+
+
+def test_worker_outbox_scope_team_denied(worker_headers):
+    r = requests.get(f"{BASE}/api/email/outbox?scope=team", headers=worker_headers, timeout=10)
+    assert r.status_code == 403, r.text[:300]
+
+
+def test_worker_inductions_matrix_auto_scoped(worker_headers):
+    r = requests.get(f"{BASE}/api/workers/inductions/matrix", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    workers_out = body.get("workers") or []
+    # Worker may not be linked → 0 rows. If linked, exactly one worker row.
+    assert len(workers_out) <= 1, (
+        f"Worker /inductions/matrix leaked {len(workers_out)} workers"
+    )
+
+
+def test_admin_inductions_matrix_full(admin_headers):
+    r = requests.get(f"{BASE}/api/workers/inductions/matrix", headers=admin_headers, timeout=10)
+    assert r.status_code == 200
+    workers_out = (r.json() or {}).get("workers") or []
+    # Admin should see many workers (or 0 if empty seed). Never clamped to 1.
+    assert len(workers_out) == 0 or len(workers_out) >= 2, (
+        f"Admin /inductions/matrix looks clamped: {len(workers_out)} workers"
+    )
+
+
 # ---------- v159.3 preset clone + per-user permissions + bulk restrict ----------
 
 def test_admin_can_duplicate_builtin_preset(admin_headers):
