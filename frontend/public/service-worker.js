@@ -1074,8 +1074,25 @@
  *        "Not installed" X that flashed during the auto-install
  *        window; the amber "Auto-install pending…" state now
  *        renders instead.
+ *
+ * v153 — BackupTab red banner alert when any LAN agent is silent.
+ *        Non-dismissable banner renders at the top of
+ *        `/app/settings/backup` whenever:
+ *          (a) any registered agent has never checked in
+ *              (last_seen_at === null),
+ *          (b) any registered agent has been silent for more than
+ *              60 minutes, or
+ *          (c) `lan-status.health === "down"` while the Hub is still
+ *              producing snapshots (latest_snapshot_age_min < 30).
+ *        Surfaces the 42-hour cold-delivery scenario that let the
+ *        July 4 2026 outage stay invisible: snapshots kept ticking,
+ *        only the delivery leg was cold. Non-dismissable by design —
+ *        no localStorage hide, no X button, no cookie flag. Uses the
+ *        existing `/api/backup/agents` + `/api/backup/lan-status`
+ *        endpoints; no backend changes. "Show token & agent config"
+ *        CTA smoothly scrolls to the Agents card below.
  */
-const CACHE_VERSION = 'paneltec-v152';
+const CACHE_VERSION = 'paneltec-v153';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
