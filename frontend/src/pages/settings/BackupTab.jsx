@@ -24,6 +24,7 @@ import axios from "axios";
 import { TOKEN_KEY, API_BASE } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
 import { downloadFile } from "../../lib/download";
+import BackupStatusHero from "./BackupStatusHero";
 
 // Paneltec Civil (v143) — the bundle uses absolute `/api/backup/*` paths so we
 // keep a local axios instance whose baseURL points at the app root (not
@@ -148,6 +149,13 @@ export default function BackupTab() {
         </div>
       )}
 
+      {/* v155b — Traffic-light hero card summarising snapshot age,
+          delivery age, next scheduled snapshot and traffic-light
+          health. Mounted at the very top so a glance answers "is
+          my backup working?" without scrolling. Reads GET
+          /api/backup/summary; polls 60 s while tab visible. */}
+      <BackupStatusHero/>
+
       {/* v153 — Red banner surfaces the "silent agent" scenario the
           moment the operator opens this tab. Non-dismissable by design:
           a delivery outage stays visible until the underlying agent
@@ -167,6 +175,7 @@ export default function BackupTab() {
       <RetentionCard/>
 
       {/* ───── Manual snapshot + history ───── */}
+      <div data-testid="backup-snapshot-history-anchor"/>
       <Section title="Snapshot history"
         icon={<Server className="w-4 h-4"/>}
         action={

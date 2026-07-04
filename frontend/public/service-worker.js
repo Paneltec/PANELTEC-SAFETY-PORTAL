@@ -1216,7 +1216,21 @@
  *          together, otherwise the banner will render immediately
  *          after every deploy.
  */
-const CACHE_VERSION = 'paneltec-v154.3';
+ *
+ * v155b · Backup admin traffic-light hero card.
+ *          New `/api/backup/summary` aggregator + new
+ *          `BackupStatusHero.jsx` mounted at the top of
+ *          `BackupTab.jsx` (above the v153 SilentAgentAlert). One
+ *          glance answers "is my backup working?" — green Healthy /
+ *          amber Attention / red Down / grey Setup incomplete pill,
+ *          plus three data lines (last snapshot, last delivery,
+ *          next scheduled) and two CTAs (Backup now, Show history).
+ *          Polls 60 s while tab visible. Setup Wizard and Advanced
+ *          accordion follow in v155c. Existing cards untouched.
+ *          Also deletes the 11 dormant v155a extraction files
+ *          under `pages/settings/backup/` (Path A cleanup).
+ */
+const CACHE_VERSION = 'paneltec-v155b';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

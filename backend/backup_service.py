@@ -488,6 +488,145 @@ def install(app, db, require_admin):
             "retention_last_run_at": doc.get("last_run_at"),
         }
 
+    # ============================================================
+    # v155b · /summary — traffic-light aggregator for the Backup
+    # admin hero card.
+    #
+    # Composes read-only over bk_snapshots, bk_agent_logs, bk_agents,
+    # bk_destinations and the live APScheduler `backup_snapshot_6h`
+    # job. No schema changes, no new writes. Returns a single roll-up
+    # the client uses to render the hero card + decide whether to
+    # show the (future v155c) setup wizard.
+    # ============================================================
+    @api_router.get("/summary", dependencies=[Depends(require_admin)])
+    async def get_summary():
+        now = datetime.now(timezone.utc)
+
+        def _parse(iso):
+            if not iso: return None
+            if isinstance(iso, datetime):
+                return iso if iso.tzinfo else iso.replace(tzinfo=timezone.utc)
+            try:
+                s = str(iso).replace("Z", "+00:00")
+                d = datetime.fromisoformat(s)
+                return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+            except Exception:
+                return None
+
+        def _age_h(iso):
+            d = _parse(iso)
+            if not d: return None
+            return (now - d).total_seconds() / 3600.0
+
+        # ---- Latest snapshot on the Hub
+        snap = await db.bk_snapshots.find_one(
+            {}, {"_id": 0, "id": 1, "created_at": 1, "size": 1, "total_documents": 1},
+            sort=[("created_at", -1)],
+        )
+
+        # ---- Latest successful LAN delivery
+        delivery = await db.bk_agent_logs.find_one(
+            {"status": "ok"}, {"_id": 0}, sort=[("received_at", -1)],
+        )
+
+        # ---- Agents + destinations
+        agents = await db.bk_agents.find(
+            {}, {"_id": 0, "token_hash": 0},
+        ).to_list(50)
+        dests = await db.bk_destinations.find(
+            {}, {"_id": 0, "password": 0},
+        ).to_list(50)
+
+        # ---- Enrich last_delivery with dest_name + agent_name
+        last_delivery_out = None
+        if delivery:
+            dest_name = None
+            if delivery.get("destination_id"):
+                d = next((x for x in dests if x.get("id") == delivery["destination_id"]), None)
+                dest_name = d.get("name") if d else None
+            agent_name = None
+            if delivery.get("agent_id"):
+                a = next((x for x in agents if x.get("id") == delivery["agent_id"]), None)
+                agent_name = a.get("name") if a else None
+            last_delivery_out = {
+                "received_at": delivery.get("received_at"),
+                "bytes_written": delivery.get("bytes_written"),
+                "target_path": delivery.get("target_path"),
+                "dest_name": dest_name,
+                "agent_name": agent_name,
+            }
+
+        # ---- Next scheduled snapshot
+        next_snapshot_at = None
+        scheduler = getattr(app.state, "scheduler", None)
+        try:
+            job = scheduler.get_job("backup_snapshot_6h") if scheduler else None
+            nrt = getattr(job, "next_run_time", None) if job else None
+            if nrt:
+                next_snapshot_at = nrt.isoformat()
+        except Exception:
+            next_snapshot_at = None
+
+        # ---- Setup completeness
+        setup = {
+            "destination_configured": any(d.get("enabled") for d in dests),
+            "agent_registered": len(agents) > 0,
+            "agent_first_seen": any(a.get("first_seen_at") for a in agents),
+            "first_delivery_ok": delivery is not None,
+        }
+        setup["complete"] = all(setup.values())
+
+        # ---- Traffic-light health
+        snap_age_h = _age_h(snap.get("created_at")) if snap else None
+        del_age_h  = _age_h(delivery.get("received_at")) if delivery else None
+
+        def _agent_silent(a):
+            if a.get("last_seen_at") is None:
+                return True   # never checked in
+            age = _age_h(a.get("last_seen_at"))
+            return age is not None and age > 25.0
+        any_silent = agents and any(_agent_silent(a) for a in agents)
+
+        if not setup["complete"]:
+            health, why = "setup", "Backup setup is incomplete."
+        elif (snap_age_h is not None and snap_age_h > 25) \
+             or (del_age_h is not None and del_age_h > 25) \
+             or any_silent:
+            reasons = []
+            if snap_age_h is not None and snap_age_h > 25:
+                reasons.append(f"last snapshot is {snap_age_h:.1f}h old")
+            if del_age_h is not None and del_age_h > 25:
+                reasons.append(f"last delivery is {del_age_h:.1f}h old")
+            if any_silent:
+                silent = [a.get("name") or "agent" for a in agents if _agent_silent(a)]
+                reasons.append(f"agent silent: {', '.join(silent)}")
+            health = "down"
+            why = "Down because " + "; ".join(reasons) + "."
+        elif (snap_age_h is not None and snap_age_h > 7) \
+             or (del_age_h is not None and del_age_h > 7):
+            reasons = []
+            if snap_age_h is not None and snap_age_h > 7:
+                reasons.append(f"last snapshot is {snap_age_h:.1f}h old")
+            if del_age_h is not None and del_age_h > 7:
+                reasons.append(f"last delivery is {del_age_h:.1f}h old")
+            health = "attention"
+            why = "Attention: " + "; ".join(reasons) + "."
+        else:
+            health = "healthy"
+            why = "Snapshots landing on the NAS as expected."
+
+        return {
+            "health": health,
+            "health_reason": why,
+            "last_snapshot": snap,
+            "last_delivery": last_delivery_out,
+            "next_snapshot_at": next_snapshot_at,
+            "setup": setup,
+            "agent_count": len(agents),
+            "destination_count": len(dests),
+        }
+
+
     @api_router.get("/retention", dependencies=[Depends(require_admin)])
     async def get_retention():
         """Returns current retention policy + last-run telemetry so the
