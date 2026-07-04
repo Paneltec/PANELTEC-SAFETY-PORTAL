@@ -1,10 +1,38 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# Paneltec Civil — .gitignore (v160.0.1)
+# Repo hygiene for a FARM + Expo stack.
+# See https://help.github.com/articles/ignoring-files/ for docs.
 
-# IDE and editors
-.idea/
-.vscode/
+# =====================================================================
+# Environment / secrets — CRITICAL. Never commit these.
+# =====================================================================
+.env
+.env.*
+!.env.example
+!.env.sample
+*.env
+!example.env
+!sample.env
 
-# Dependencies
+# Credentials, keys, tokens
+*.pem
+*.key
+*_rsa
+*_dsa
+id_ecdsa*
+id_ed25519*
+*.p12
+*.pfx
+*.p8
+*.mobileprovision
+*.jks
+*.keystore
+*token.json*
+*credentials.json*
+*.tokens.json
+
+# =====================================================================
+# Node / Yarn / npm
+# =====================================================================
 node_modules/
 /node_modules
 /.pnp
@@ -15,56 +43,113 @@ node_modules/
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+.npm/
+.eslintcache
+.stylelintcache
 
-# Testing
-/coverage
-
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-*.tsbuildinfo
-
-# Production builds
-/build
-dist/
-dist
-
-# Environment files (comprehensive coverage)
-
-*token.json*
-*credentials.json*
-
-# Logs and debug files
+# Log files
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-dump.rdb
+*.log
 
-# System files
-.DS_Store
-*.pem
+# =====================================================================
+# React / CRA / Next / builds
+# =====================================================================
+/build
+build/
+dist/
+dist
+/out/
+.next/
+.turbo/
+next-env.d.ts
+*.tsbuildinfo
+/coverage
+service-worker.js.map
 
-# Python
+# =====================================================================
+# Expo / React Native
+# =====================================================================
+.expo/
+.expo-shared/
+mobile/.expo/
+mobile/.metro-cache/
+mobile/web-build/
+mobile/dist/
+mobile/ios/build/
+mobile/android/app/build/
+mobile/android/.gradle/
+mobile/android/build/
+mobile/android/app/release/
+metro-cache/
+/tmp/metro-*
+
+# =====================================================================
+# Python / FastAPI
+# =====================================================================
 __pycache__/
-*pyc*
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
 venv/
 .venv/
+env/
+ENV/
+.python-version
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.hypothesis/
+.tox/
 
-# Development tools
-chainlit.md
-.chainlit
+# =====================================================================
+# Data / uploads / local databases
+# =====================================================================
+data/
+mongodb/
+db-backups/
+*.db
+*.sqlite
+*.sqlite3
+dump.rdb
+/app/uploads/
+/app/tmp/
+uploads/
+
+# =====================================================================
+# Cache / build artifacts
+# =====================================================================
+.cache/
+.parcel-cache/
+frontend/node_modules/.cache/
+frontend/node_modules/.cache/default-development/*.pack
+frontend/node_modules/.cache/default-development/*.pack_
+
+# =====================================================================
+# System / IDE
+# =====================================================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*.suo
+*.iml
 .ipynb_checkpoints/
 .ac
 
-# Deployment
-.vercel
-
-# Data and databases
-agenthub/agents/youtube/db
-
-# Archive files and large assets
+# =====================================================================
+# Archives / large binaries — never commit to a code repo
+# =====================================================================
 **/*.zip
 **/*.tar.gz
 **/*.tar
@@ -73,52 +158,49 @@ agenthub/agents/youtube/db
 *.deb
 *.dylib
 
-# Build caches
-.cache/
+# =====================================================================
+# Deployment platforms
+# =====================================================================
+.vercel
+.netlify/
 
+# =====================================================================
+# Development tooling
+# =====================================================================
+chainlit.md
+.chainlit
+
+# =====================================================================
+# Emergent-specific
+# =====================================================================
+.emergent/
+!.emergent/emergent.yml
+/root/.emergent/
+
+# =====================================================================
+# Project-specific — memory / test creds
+# Test credentials point at the seeded dev DB only (not production).
+# Kept out of git regardless.
+# =====================================================================
 memory/test_credentials.md
 
-# Mobile development
+# Android SDK bundle (if ever shipped locally)
 android-sdk/
 
-# Expo
-mobile/.expo/
-mobile/.metro-cache/
-frontend/node_modules/.cache/default-development/2.pack
+# LAN backup agent local state
+scripts/paneltec_backup_state.json
+scripts/*.log
+
+# Ad-hoc data files
+agenthub/agents/youtube/db
 frontend/node_modules/.cache/default-development/3.pack
-frontend/node_modules/.cache/default-development/6.pack
-frontend/node_modules/.cache/default-development/8.pack
-frontend/node_modules/.cache/default-development/16.pack
 frontend/node_modules/.cache/default-development/18.pack
-frontend/node_modules/.cache/default-development/11.pack
-frontend/node_modules/.cache/default-development/15.pack
-frontend/node_modules/.cache/default-development/19.pack
-frontend/node_modules/.cache/default-development/9.pack
-frontend/node_modules/.cache/default-development/4.pack
-frontend/node_modules/.cache/default-development/7.pack
-frontend/node_modules/.cache/default-development/10.pack
-frontend/node_modules/.cache/default-development/13.pack
-frontend/node_modules/.cache/default-development/5.pack
-frontend/node_modules/.cache/default-development/17.pack
-frontend/node_modules/.cache/default-development/23.pack
-frontend/node_modules/.cache/default-development/12.pack
-frontend/node_modules/.cache/default-development/25.pack
-frontend/node_modules/.cache/default-development/24.pack
-frontend/node_modules/.cache/default-development/29.pack
-frontend/node_modules/.cache/default-development/14.pack
-frontend/node_modules/.cache/default-development/28.pack
-frontend/node_modules/.cache/default-development/33.pack
-frontend/node_modules/.cache/default-development/35.pack
-frontend/node_modules/.cache/default-development/36.pack
-frontend/node_modules/.cache/default-development/38.pack
-frontend/node_modules/.cache/default-development/0.pack
-frontend/node_modules/.cache/default-development/1.pack
-frontend/node_modules/.cache/default-development/20.pack
-frontend/node_modules/.cache/default-development/21.pack
-frontend/node_modules/.cache/default-development/32.pack
-frontend/node_modules/.cache/default-development/34.pack
-frontend/node_modules/.cache/default-development/37.pack
-frontend/node_modules/.cache/default-development/22.pack
 frontend/node_modules/.cache/default-development/27.pack
+frontend/node_modules/.cache/default-development/35.pack
+frontend/node_modules/.cache/default-development/38.pack
 frontend/node_modules/.cache/default-development/17.pack_
+frontend/node_modules/.cache/default-development/0.pack
 frontend/node_modules/.cache/default-development/18.pack_
+frontend/node_modules/.cache/default-development/11.pack
+frontend/node_modules/.cache/default-development/29.pack
+frontend/node_modules/.cache/default-development/37.pack
