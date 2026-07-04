@@ -1,21 +1,29 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/lib/colors';
+import { useAuth } from '../../src/lib/AuthContext';
+import type { ModuleId } from '../../src/lib/modules';
 
-const ITEMS = [
-  { key: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const, route: '/forms' },
-  { key: 'suppliers', title: 'Suppliers', desc: 'Live from Simpro — org-local notes, tasks, folders and members.', icon: 'business' as const, route: '/suppliers' },
-  { key: 'document-library', title: 'Document Library', desc: 'All risk & compliance documents, organised and AI-tagged.', icon: 'folder-open' as const, route: '/document-library' },
-  { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.', icon: 'people' as const, route: '/contractors' },
-  { key: 'renewals', title: 'Renewal Links', desc: 'Single-use links for contractor document uploads.', icon: 'link' as const, route: '/contractors' },
-  { key: 'audit-exports', title: 'Audit Exports', desc: 'Generate signed evidence packs for audits.', icon: 'download' as const, route: '/contractors' },
+// v158.1 — Each tile carries a `moduleKey`; if the admin has turned that
+// module off for the user's role, the tile is hidden from this hub.
+// `renewals` and `audit_exports` don't have their own module toggle
+// (web-only workflows) and are shown to everyone who can reach the tab.
+const ITEMS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null }[] = [
+  { key: 'forms',             title: 'Forms Library',      desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const,   route: '/forms',            moduleKey: 'forms' },
+  { key: 'suppliers',         title: 'Suppliers',          desc: 'Live from Simpro — org-local notes, tasks, folders and members.',    icon: 'business' as const,    route: '/suppliers',        moduleKey: 'suppliers' },
+  { key: 'document-library',  title: 'Document Library',   desc: 'All risk & compliance documents, organised and AI-tagged.',           icon: 'folder-open' as const, route: '/document-library', moduleKey: 'document_library' },
+  { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.',                        icon: 'people' as const,      route: '/contractors',      moduleKey: 'contractors' },
+  { key: 'renewals',          title: 'Renewal Links',      desc: 'Single-use links for contractor document uploads.',                   icon: 'link' as const,        route: '/contractors',      moduleKey: null },
+  { key: 'audit-exports',     title: 'Audit Exports',      desc: 'Generate signed evidence packs for audits.',                          icon: 'download' as const,    route: '/contractors',      moduleKey: null },
 ];
 
 export default function ComplianceScreen() {
   const router = useRouter();
+  const { modules } = useAuth();
+  const visibleItems = useMemo(() => ITEMS.filter(it => it.moduleKey == null || modules[it.moduleKey]), [modules]);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -24,7 +32,7 @@ export default function ComplianceScreen() {
         <Text style={styles.heading}>Compliance Hub</Text>
         <Text style={styles.sub}>Suppliers, documents, contractor management and audit packs.</Text>
 
-        {ITEMS.map((item) => (
+        {visibleItems.map((item) => (
           <TouchableOpacity
             key={item.key}
             testID={`compliance-${item.key}`}

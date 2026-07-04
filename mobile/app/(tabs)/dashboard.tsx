@@ -23,13 +23,18 @@ const METRIC_ROWS: { key: string; label: string; field: string; icon: any; modul
   { key: 'inspections', label: 'Inspections', field: 'inspections_count', icon: 'checkmark-circle', moduleKey: 'inspection' },
 ];
 
-const MANAGE_TOOLS = [
-  { key: 'forms', title: 'Forms Library', desc: 'Fillable templates with signature, photo & GPS', icon: 'clipboard', route: '/forms' },
-  { key: 'workers', title: 'Workers', desc: 'Field crew synced from Simpro', icon: 'people', route: '/workers' },
-  { key: 'suppliers', title: 'Suppliers', desc: 'Simpro suppliers, tasks, notes & folders', icon: 'business', route: '/suppliers' },
-  { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents', icon: 'folder-open', route: '/document-library' },
-  { key: 'users', title: 'Users', desc: 'Manage users, imports & permissions', icon: 'people-circle', route: '/users' },
-  { key: 'compliance', title: 'Compliance Hub', desc: 'Contractor register & audit exports', icon: 'shield-checkmark', route: '/(tabs)/compliance' },
+// v158.1 — Each entry MUST carry a `moduleKey` so the render below can
+// hide the tile when the admin turns the module off for the user's role.
+// `null` means "always show" — used only for the compliance-hub tab
+// container (gated indirectly by its child module toggles) and the users
+// tile (kept always-on to match `profile` semantics).
+const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null }[] = [
+  { key: 'forms',            title: 'Forms Library',    desc: 'Fillable templates with signature, photo & GPS', icon: 'clipboard',        route: '/forms',            moduleKey: 'forms' },
+  { key: 'workers',          title: 'Workers',          desc: 'Field crew synced from Simpro',                  icon: 'people',           route: '/workers',          moduleKey: 'workers' },
+  { key: 'suppliers',        title: 'Suppliers',        desc: 'Simpro suppliers, tasks, notes & folders',       icon: 'business',         route: '/suppliers',        moduleKey: 'suppliers' },
+  { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents',                    icon: 'folder-open',      route: '/document-library', moduleKey: 'document_library' },
+  { key: 'users',            title: 'Users',            desc: 'Manage users, imports & permissions',            icon: 'people-circle',    route: '/users',            moduleKey: null },
+  { key: 'compliance',       title: 'Compliance Hub',   desc: 'Contractor register & audit exports',            icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: null },
 ];
 
 const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId }[] = [
@@ -56,6 +61,10 @@ export default function DashboardScreen() {
   const canEdit = WRITE_ROLES.has(user?.role);
   const visibleMetrics = useMemo(() => METRIC_ROWS.filter(m => modules[m.moduleKey]), [modules]);
   const visibleCapture = useMemo(() => CAPTURE_TOOLS.filter(t => modules[t.moduleKey]), [modules]);
+  // v158.1 — Tiles with `moduleKey: null` (users, compliance hub) are always
+  // visible; tiles with a moduleKey must have that module toggled on for
+  // the current user's role.
+  const visibleManage  = useMemo(() => MANAGE_TOOLS.filter(t => t.moduleKey == null || modules[t.moduleKey]), [modules]);
 
   const loadData = async () => {
     try {
@@ -179,8 +188,8 @@ export default function DashboardScreen() {
         )}
 
         {/* Manage */}
-        <Text style={d.sectionLabel}>MANAGE & COMPLY</Text>
-        {MANAGE_TOOLS.map((t) => (
+        {visibleManage.length > 0 && <Text style={d.sectionLabel}>MANAGE & COMPLY</Text>}
+        {visibleManage.map((t) => (
           <TouchableOpacity key={t.key} testID={`manage-card-${t.key}`} style={d.captureCard}
             onPress={() => router.push(t.route as any)} activeOpacity={0.7}>
             <View style={d.captureIcon}>

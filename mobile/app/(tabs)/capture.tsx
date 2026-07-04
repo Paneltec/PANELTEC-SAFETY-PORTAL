@@ -14,7 +14,7 @@ const TOOLS: { key: string; moduleKey: ModuleId | null; title: string; desc: str
   { key: 'hazards', moduleKey: 'hazard', title: 'Hazard Reports from Photos', desc: 'Snap a hazard — AI classifies risk and drafts the report.', icon: 'warning', route: '/hazards' },
   { key: 'incidents', moduleKey: 'incident', title: 'Incident Reports', desc: 'Structured incident capture with witness statements and evidence.', icon: 'alert-circle', route: '/incidents' },
   { key: 'inspections', moduleKey: 'inspection', title: 'Inspection Reports', desc: 'Plant, scaffold and site walk inspections with pass/fail items.', icon: 'checkmark-circle', route: '/inspections' },
-  { key: 'forms', moduleKey: null, title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard', route: '/forms' },
+  { key: 'forms', moduleKey: 'forms', title: 'Forms Library', desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard', route: '/forms' },
 ];
 
 export default function CaptureScreen() {
