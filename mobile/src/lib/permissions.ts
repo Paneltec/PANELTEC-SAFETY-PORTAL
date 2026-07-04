@@ -5,10 +5,15 @@ const PERMS_KEY = 'paneltec_perms';
 
 export type PermMatrix = Record<string, Record<string, boolean>>;
 
-// Resource keys matching the backend
+// v158 — Resource keys mirroring `PERMISSIONS_SCHEMA` on the backend
+// (`/app/backend/permissions.py`). Kept in sync manually; the runtime
+// `canDo()` check works against any string, so a drift here is only a
+// cosmetic issue for any future mobile permissions viewer.
 export const RESOURCE_KEYS = [
   'swms', 'pre_starts', 'site_diary', 'hazards', 'incidents', 'inspections',
   'contractors', 'renewals', 'audit_exports', 'vehicles', 'integrations', 'users',
+  // v158 — added to match backend `PERMISSIONS_SCHEMA` (Phase 3.18 + assets).
+  'workers', 'inductions', 'certifications', 'documents', 'forms', 'assets',
 ] as const;
 
 export const RESOURCE_LABELS: Record<string, string> = {
@@ -17,6 +22,13 @@ export const RESOURCE_LABELS: Record<string, string> = {
   contractors: 'Contractors', renewals: 'Renewal links',
   audit_exports: 'Audit exports', vehicles: 'Vehicles',
   integrations: 'Integrations', users: 'Users & permissions',
+  // v158 — added labels.
+  workers: 'Workers',
+  inductions: 'Inductions',
+  certifications: 'Certifications',
+  documents: 'Documents',
+  forms: 'Forms',
+  assets: 'Plant & Vehicles',
 };
 
 // Map mobile route keys to backend resource names (routes use dashes, backend uses underscores)
@@ -24,6 +36,12 @@ export const ROUTE_TO_RESOURCE: Record<string, string> = {
   swms: 'swms', 'pre-starts': 'pre_starts', 'site-diary': 'site_diary',
   hazards: 'hazards', incidents: 'incidents', inspections: 'inspections',
   contractors: 'contractors',
+  // v158 — added mobile route mappings.
+  forms: 'forms',
+  workers: 'workers',
+  certifications: 'certifications',
+  'document-library': 'documents',
+  vehicles: 'assets',
 };
 
 // Email convenience endpoints (same as web)

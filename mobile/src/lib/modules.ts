@@ -4,15 +4,18 @@ import { previewRole, isPreviewMode } from './preview';
 
 const MODULES_KEY = 'paneltec_mobile_modules';
 
-/** All 13 module IDs the backend can return */
+/** All module IDs the backend can return (v158). */
 export type ModuleId =
   | 'pre_start' | 'site_diary' | 'hazard' | 'incident' | 'inspection'
-  | 'swms' | 'inductions' | 'plant_vehicles' | 'service_maintenance'
-  | 'certifications' | 'ask_intel' | 'sign_on' | 'profile';
+  | 'swms' | 'inductions' | 'plant_vehicles'
+  | 'certifications' | 'ask_intel' | 'sign_on' | 'profile'
+  // v158 — 5 new modules exposed in the web admin.
+  | 'forms' | 'document_library' | 'contractors' | 'suppliers' | 'workers';
 
 export type ModuleMap = Record<ModuleId, boolean>;
 
-/** Minimal safe fallback — sign_on + profile only */
+/** Minimal safe fallback — sign_on + profile only. Everything else is
+ *  off until the backend hydrates the real matrix. */
 export const SAFE_FALLBACK: ModuleMap = {
   pre_start: false,
   site_diary: false,
@@ -22,20 +25,34 @@ export const SAFE_FALLBACK: ModuleMap = {
   swms: false,
   inductions: false,
   plant_vehicles: false,
-  service_maintenance: false,
   certifications: false,
   ask_intel: false,
   sign_on: true,
   profile: true,
+  // v158 defaults — off in safe-fallback so a user with no cached matrix
+  // never sees a module they shouldn't. The real defaults are applied by
+  // the backend `DEFAULTS` map on the first `/me/mobile-modules` fetch.
+  forms: false,
+  document_library: false,
+  contractors: false,
+  suppliers: false,
+  workers: false,
 };
 
 const ALL_KEYS: ModuleId[] = Object.keys(SAFE_FALLBACK) as ModuleId[];
 
-/** Normalise a raw API response — missing keys default to false */
+/** v158 — retired legacy module keys. Silently dropped on read so a
+ *  cached AsyncStorage matrix from a pre-v158 app version can't leak
+ *  a stale `service_maintenance` toggle into the runtime map. */
+const RETIRED_KEYS = new Set<string>(['service_maintenance']);
+
+/** Normalise a raw API response — missing keys default to false, retired
+ *  keys silently dropped. */
 function normalise(raw: Record<string, boolean> | undefined): ModuleMap {
   if (!raw) return { ...SAFE_FALLBACK };
   const out = { ...SAFE_FALLBACK };
   for (const k of ALL_KEYS) {
+    if (RETIRED_KEYS.has(k)) continue;
     out[k] = raw[k] === true;
   }
   return out;

@@ -41,7 +41,7 @@ function CompanyChip({ label }: { label: string }) {
   );
 }
 
-export default function WorkersScreen() {
+function WorkersScreenInner() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [rows, setRows] = useState<any[]>([]);
@@ -336,3 +336,10 @@ const s = StyleSheet.create({
   syncCancel: { alignItems: 'center', marginTop: 12, paddingVertical: 10 },
   syncCancelText: { fontSize: 14, fontWeight: '600', color: Colors.textTertiary },
 });
+
+// v158 — Wrap the screen in a ModuleGate so admins can turn this feature
+// off per-role via the Mobile App Modules admin allocator.
+import { ModuleGate } from '../src/components/ModuleGate';
+export default function GatedScreen() {
+  return <ModuleGate module="workers" featureName="Workers directory"><WorkersScreenInner /></ModuleGate>;
+}

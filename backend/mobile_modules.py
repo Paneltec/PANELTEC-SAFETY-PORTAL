@@ -34,10 +34,19 @@ log = logging.getLogger("paneltec.mobile_modules")
 # ──────────────────────────────────────────────────────────────────────
 MODULE_KEYS = [
     "pre_start", "site_diary", "hazard", "incident", "inspection",
-    "swms", "inductions", "plant_vehicles", "service_maintenance",
+    "swms", "inductions", "plant_vehicles",
     "certifications", "ask_intel", "sign_on", "profile",
+    # v158 — 5 new mobile modules exposed to admins in the allocator.
+    # `service_maintenance` was retired (rolled into `plant_vehicles`) —
+    # `_normalise` silently drops any legacy value stored under that key.
+    "forms", "document_library", "contractors", "suppliers", "workers",
 ]
 ROLE_KEYS = ["worker", "supervisor", "contractor", "admin"]
+
+# v158 — Keys we accept on read but never write. Any existing docs in
+# `org_settings.mobile_modules` that were saved before v158 may still
+# carry `service_maintenance`; `_normalise` will drop it silently.
+_RETIRED_MODULE_KEYS = {"service_maintenance"}
 
 # Default matrix. Workers / supervisors get the full operational kit.
 # Contractors are deliberately minimal — they only need to sign-on, see
@@ -46,17 +55,23 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
     "worker": {
         "pre_start": True, "site_diary": True, "hazard": True, "incident": True,
         "inspection": True, "swms": True, "inductions": True,
-        "plant_vehicles": True, "service_maintenance": False,
+        "plant_vehicles": True,
         "certifications": True, "ask_intel": False,
         "sign_on": True, "profile": True,
+        # v158 defaults per user brief.
+        "forms": True, "document_library": True,
+        "contractors": False, "suppliers": False, "workers": False,
     },
     "supervisor": {k: True for k in MODULE_KEYS},
     "contractor": {
         "pre_start": False, "site_diary": False, "hazard": False, "incident": False,
         "inspection": False, "swms": True, "inductions": True,
-        "plant_vehicles": False, "service_maintenance": False,
+        "plant_vehicles": False,
         "certifications": False, "ask_intel": False,
         "sign_on": True, "profile": True,
+        # v158 defaults per user brief.
+        "forms": True, "document_library": True,
+        "contractors": True, "suppliers": False, "workers": False,
     },
     # Admin column is always-on in the UI and persisted as such so the
     # mobile app can ungate every module if an admin ever signs in there.
@@ -68,10 +83,16 @@ def _normalise(matrix: Dict[str, Dict[str, bool]]) -> Dict[str, Dict[str, bool]]
     """Coerce an incoming payload into the canonical shape. Unknown keys
     are dropped, missing keys fall back to the defaults, and the admin
     row is force-set to all-true so the UI lock can never be bypassed
-    by a hand-crafted PUT."""
+    by a hand-crafted PUT.
+
+    v158 — retired module keys (see `_RETIRED_MODULE_KEYS`) are silently
+    dropped on read so pre-v158 documents don't leak stale toggles into
+    the response payload."""
     out: Dict[str, Dict[str, bool]] = {}
     for role in ROLE_KEYS:
         row_in = (matrix or {}).get(role) or {}
+        # Strip retired keys before we even look at them.
+        row_in = {k: v for k, v in row_in.items() if k not in _RETIRED_MODULE_KEYS}
         row = {}
         for mod in MODULE_KEYS:
             if role == "admin":

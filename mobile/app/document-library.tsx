@@ -33,7 +33,7 @@ function humanSize(n: number | undefined) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function DocumentLibraryScreen() {
+function DocumentLibraryScreenInner() {
   const router = useRouter();
   const params = useLocalSearchParams<{ folderId?: string }>();
   const folderId = params.folderId;
@@ -394,3 +394,10 @@ const ds = StyleSheet.create({
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
   navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
 });
+
+// v158 — Wrap the screen in a ModuleGate so admins can turn this feature
+// off per-role via the Mobile App Modules admin allocator.
+import { ModuleGate } from '../src/components/ModuleGate';
+export default function GatedScreen() {
+  return <ModuleGate module="document_library" featureName="Document Library"><DocumentLibraryScreenInner /></ModuleGate>;
+}

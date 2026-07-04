@@ -26,11 +26,16 @@ import {
   DocumentBulletList20Regular as SwmsIcon,
   HatGraduation20Regular as InductionsIcon,
   VehicleTruck20Regular as PlantIcon,
-  Wrench20Regular as ServiceIcon,
   Ribbon20Regular as CertsIcon,
   Lightbulb20Regular as AskIcon,
   QrCode20Regular as SignOnIcon,
   Person20Regular as ProfileIcon,
+  // v158 — icons for the 5 new modules.
+  DocumentText20Regular as FormsIcon,
+  FolderOpen20Regular as DocLibraryIcon,
+  Handshake20Regular as ContractorsIcon,
+  Building20Regular as SuppliersIcon,
+  People20Regular as WorkersIcon,
   LockClosed20Regular,
   Save20Regular,
   ArrowReset20Regular,
@@ -57,11 +62,17 @@ const MODULES = [
   { key: 'swms',                label: 'SWMS',                   Icon: SwmsIcon },
   { key: 'inductions',          label: 'Inductions',             Icon: InductionsIcon },
   { key: 'plant_vehicles',      label: 'Plant & Vehicles',       Icon: PlantIcon },
-  { key: 'service_maintenance', label: 'Service & Maintenance',  Icon: ServiceIcon },
   { key: 'certifications',      label: 'Certifications',         Icon: CertsIcon },
   { key: 'ask_intel',           label: 'Ask Intelligence',       Icon: AskIcon },
   { key: 'sign_on',             label: 'Sign-on / Site Check-in',Icon: SignOnIcon },
   { key: 'profile',             label: 'My Profile',             Icon: ProfileIcon },
+  // v158 — 5 new modules. `service_maintenance` was retired (rolled into
+  // `plant_vehicles`); backend drops it on read.
+  { key: 'forms',               label: 'Forms Library',          Icon: FormsIcon },
+  { key: 'document_library',    label: 'Document Library',       Icon: DocLibraryIcon },
+  { key: 'contractors',         label: 'Contractors register',   Icon: ContractorsIcon },
+  { key: 'suppliers',           label: 'Suppliers',              Icon: SuppliersIcon },
+  { key: 'workers',             label: 'Workers directory',      Icon: WorkersIcon },
 ];
 
 function ToggleCell({ on, locked, onChange, testid }) {

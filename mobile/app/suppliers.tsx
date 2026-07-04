@@ -32,7 +32,7 @@ function mergeSupplier(s: any, meta: any) {
   };
 }
 
-export default function SuppliersScreen() {
+function SuppliersScreenInner() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -495,3 +495,10 @@ const s = StyleSheet.create({
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
   navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
 });
+
+// v158 — Wrap the screen in a ModuleGate so admins can turn this feature
+// off per-role via the Mobile App Modules admin allocator.
+import { ModuleGate } from '../src/components/ModuleGate';
+export default function GatedScreen() {
+  return <ModuleGate module="suppliers" featureName="Suppliers"><SuppliersScreenInner /></ModuleGate>;
+}

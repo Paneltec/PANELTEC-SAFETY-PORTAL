@@ -93,7 +93,7 @@ const imp = StyleSheet.create({
 });
 
 /* ─── Main screen ─── */
-export default function FormsListScreen() {
+function FormsListScreenInner() {
   const router = useRouter();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -422,3 +422,10 @@ const s = StyleSheet.create({
   pickerItemText: { fontSize: 14, color: Colors.text, fontWeight: '500' },
   pickerCount: { fontSize: 12, color: Colors.textTertiary },
 });
+
+// v158 — Wrap the screen in a ModuleGate so admins can turn this feature
+// off per-role via the Mobile App Modules admin allocator.
+import { ModuleGate } from '../../src/components/ModuleGate';
+export default function GatedScreen() {
+  return <ModuleGate module="forms" featureName="Forms Library"><FormsListScreenInner /></ModuleGate>;
+}
