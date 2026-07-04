@@ -211,3 +211,136 @@ code {
     animation: paneltec-field-missing-pulse-kf 1.4s ease-out 1;
     border-radius: 0.75rem;
 }
+
+/* ─────────────── v156 · App-wide polish pass ───────────────
+   Additive-only utilities. No existing selectors mutated.
+   Keep animations subtle (150-300 ms, ease-out) — no bounces. */
+
+/* Global focus-visible ring — orange-tinted, offset. Applies to any
+   interactive element via :focus-visible so mouse users don't see it.
+   Overrides browser default without disabling accessibility outlines. */
+@layer base {
+    :focus-visible {
+        outline: none !important;
+        box-shadow:
+            0 0 0 2px #ffffff,
+            0 0 0 4px rgba(249, 115, 22, 0.55);
+        border-radius: 6px;
+    }
+    /* Elements that already have their own focus treatment (e.g. inside
+       shadcn primitives) — restore native shadow chain. */
+    [data-radix-focus-guard]:focus-visible,
+    [role="dialog"]:focus-visible {
+        box-shadow: none !important;
+    }
+}
+
+/* Hover-lift utility for buttons and cards. */
+.hover-lift {
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+}
+.hover-lift:hover {
+    transform: translateY(-2px);
+}
+.hover-lift:active {
+    transform: translateY(0) scale(0.98);
+}
+
+/* Skeleton shimmer keyframe backing `.animate-shimmer-x` (tailwind ref). */
+@keyframes paneltec-shimmer-x {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+.animate-shimmer-x {
+    background: linear-gradient(90deg,
+        rgba(203, 213, 225, 0.35) 0%,
+        rgba(226, 232, 240, 0.85) 50%,
+        rgba(203, 213, 225, 0.35) 100%);
+    background-size: 200% 100%;
+    animation: paneltec-shimmer-x 1.4s linear infinite;
+}
+
+/* One-shot sheen for the brand logo — fires once on mount, no loop. */
+.paneltec-logo-sheen {
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+.paneltec-logo-sheen::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -40%;
+    width: 40%;
+    background: linear-gradient(120deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.55) 45%,
+        rgba(255, 255, 255, 0) 90%);
+    transform: skewX(-18deg);
+    animation: paneltec-logo-sheen-kf 1400ms ease-out 300ms 1 both;
+    pointer-events: none;
+    z-index: 2;
+}
+@keyframes paneltec-logo-sheen-kf {
+    0%   { left: -40%; opacity: 0; }
+    30%  { opacity: 1; }
+    100% { left: 130%; opacity: 0; }
+}
+
+/* Modal backdrop + inner-card open animation. Apply .modal-backdrop-in on
+   the fixed backdrop, .modal-card-in on the inner card. */
+@keyframes paneltec-modal-fade { 0% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes paneltec-modal-scale {
+    0%   { opacity: 0; transform: scale(0.97) translateY(6px); }
+    100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+.modal-backdrop-in {
+    animation: paneltec-modal-fade 180ms ease-out both;
+    backdrop-filter: blur(2px);
+}
+.modal-card-in {
+    animation: paneltec-modal-scale 200ms ease-out both;
+    transform-origin: center center;
+}
+
+/* Inline validation micro-animations. */
+@keyframes paneltec-shake-x {
+    0%, 100% { transform: translateX(0); }
+    20%, 60% { transform: translateX(-4px); }
+    40%, 80% { transform: translateX(4px); }
+}
+.validate-shake { animation: paneltec-shake-x 320ms ease-out; }
+
+/* Subtle gradient border for hero / primary stat cards. Adds a hairline
+   navy→orange line. Compose with the card's own background. */
+.brand-hairline {
+    position: relative;
+    background-clip: padding-box;
+    border: 1px solid transparent;
+}
+.brand-hairline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg, #0B1220 0%, #F97316 100%);
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+}
+
+/* Global reduced-motion respect. */
+@media (prefers-reduced-motion: reduce) {
+    .animate-shimmer-x,
+    .paneltec-logo-sheen::after,
+    .modal-backdrop-in,
+    .modal-card-in,
+    .validate-shake { animation: none !important; }
+    .hover-lift { transition: none !important; }
+    .hover-lift:hover,
+    .hover-lift:active { transform: none !important; }
+}

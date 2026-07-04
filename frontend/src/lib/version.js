@@ -1,4 +1,4 @@
-// Paneltec Civil · v155c — single-source-of-truth version constant
+// Paneltec Civil · v156 — single-source-of-truth version constant
 // for the currently running JS bundle.
 //
 // Bump this string every time the service-worker CACHE_VERSION in
@@ -8,4 +8,4 @@
 // user's tab is running a stale bundle — the banner surfaces a
 // one-click SW-unregister + hard-reload flow.
 
-export const RUNNING_VERSION = 'paneltec-v155c';
+export const RUNNING_VERSION = 'paneltec-v156';

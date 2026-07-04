@@ -1,6 +1,8 @@
 import React from 'react';
 
 // Paneltec Civil wordmark — "A"-style chevron icon in brand orange (Phase 4.10, v115)
+// v156 — added a one-shot sheen sweep on mount via `.paneltec-logo-sheen`.
+// Purely CSS; not looping. Respects prefers-reduced-motion.
 export const Logo = ({ size = 'md', className = '' }) => {
   const sizes = {
     sm: { icon: 18, text: 'text-base' },
@@ -9,7 +11,7 @@ export const Logo = ({ size = 'md', className = '' }) => {
   };
   const s = sizes[size] || sizes.md;
   return (
-    <div className={`flex items-center gap-2 ${className}`} data-testid="brand-logo">
+    <div className={`paneltec-logo-sheen inline-flex items-center gap-2 rounded-md px-1 ${className}`} data-testid="brand-logo">
       <svg
         width={s.icon}
         height={s.icon}

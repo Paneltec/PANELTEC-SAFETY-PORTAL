@@ -215,10 +215,10 @@ export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras
 
   if (!file) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6"
+    <div className="fixed inset-0 z-50 bg-slate-900/70 grid place-items-center p-0 md:p-6 modal-backdrop-in"
          onClick={(e) => e.target === e.currentTarget && onClose?.()}
          data-testid="pdf-preview-modal">
-      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <div className="w-full h-full md:max-w-5xl md:h-[88vh] bg-white md:rounded-2xl shadow-2xl flex flex-col overflow-hidden modal-card-in">
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-200 bg-slate-50">
           <div className="flex-1 min-w-0">

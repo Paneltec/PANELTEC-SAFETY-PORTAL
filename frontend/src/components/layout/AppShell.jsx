@@ -334,6 +334,7 @@ const SidebarShell = ({ collapsed }) => (
 
 export default function AppShell() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(getUser());
@@ -389,7 +390,13 @@ export default function AppShell() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
         <RebrandNudge />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main"><Outlet /></main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main">
+          {/* v156 — subtle fade + slide-up on every route change. Keying by
+              pathname re-runs the CSS animation on navigation. */}
+          <div key={location.pathname} className="animate-fade-up">
+            <Outlet />
+          </div>
+        </main>
       </div>
       {warnInfo && (
         <SessionWarningModal

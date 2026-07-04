@@ -79,6 +79,13 @@ module.exports = {
                 'card': '0 1px 2px rgba(16,24,40,0.04), 0 8px 24px rgba(16,24,40,0.06)',
                 'card-lg': '0 4px 8px rgba(16,24,40,0.04), 0 24px 48px rgba(16,24,40,0.08)',
                 'float': '0 12px 40px rgba(16,24,40,0.10)',
+                // v156 — brand-tinted elevations for premium feel on the dark
+                // navy + orange theme. Use `shadow-brand-sm/md/lg` where a
+                // subtle orange halo elevates a primary CTA or hero card.
+                'brand-sm': '0 1px 2px rgba(11,18,32,0.06), 0 4px 12px rgba(249,115,22,0.08)',
+                'brand-md': '0 4px 8px rgba(11,18,32,0.06), 0 12px 32px rgba(249,115,22,0.10)',
+                'brand-lg': '0 8px 16px rgba(11,18,32,0.08), 0 24px 60px rgba(249,115,22,0.14)',
+                'brand-glow': '0 0 0 3px rgba(249,115,22,0.14), 0 0 24px rgba(249,115,22,0.20)',
             },
             keyframes: {
                 'accordion-down': {
@@ -97,13 +104,48 @@ module.exports = {
                     '0%': { opacity: '0', transform: 'translateY(8px)' },
                     '100%': { opacity: '1', transform: 'translateY(0)' },
                 },
+                'modal-in': {
+                    '0%': { opacity: '0', transform: 'scale(0.98)' },
+                    '100%': { opacity: '1', transform: 'scale(1)' },
+                },
+                'shimmer-x': {
+                    '0%':   { backgroundPosition: '-200% 0' },
+                    '100%': { backgroundPosition: '200% 0' },
+                },
+                'logo-sheen': {
+                    '0%':   { transform: 'translateX(-120%) skewX(-15deg)', opacity: '0' },
+                    '30%':  { opacity: '1' },
+                    '100%': { transform: 'translateX(220%) skewX(-15deg)', opacity: '0' },
+                },
+                'shake-x': {
+                    '0%, 100%': { transform: 'translateX(0)' },
+                    '20%, 60%': { transform: 'translateX(-4px)' },
+                    '40%, 80%': { transform: 'translateX(4px)' },
+                },
+                'count-in': {
+                    '0%':   { opacity: '0', transform: 'translateY(4px)' },
+                    '100%': { opacity: '1', transform: 'translateY(0)' },
+                },
+                'typing-dot': {
+                    '0%, 60%, 100%': { opacity: '0.25', transform: 'translateY(0)' },
+                    '30%':           { opacity: '1', transform: 'translateY(-2px)' },
+                },
             },
             animation: {
                 'accordion-down': 'accordion-down 0.2s ease-out',
                 'accordion-up': 'accordion-up 0.2s ease-out',
                 'float-y': 'float-y 6s ease-in-out infinite',
-                'fade-up': 'fade-up 600ms ease-out both',
-            }
+                'fade-up': 'fade-up 300ms ease-out both',
+                'modal-in': 'modal-in 180ms ease-out both',
+                'shimmer-x': 'shimmer-x 1.4s linear infinite',
+                'shake-x': 'shake-x 320ms ease-out',
+                'count-in': 'count-in 200ms ease-out both',
+            },
+            transitionDuration: {
+                '150': '150ms',
+                '200': '200ms',
+                '300': '300ms',
+            },
         }
     },
     plugins: [require("tailwindcss-animate")],
