@@ -65,14 +65,19 @@ export default function DashboardScreen() {
   // visible; tiles with a moduleKey must have that module toggled on for
   // the current user's role.
   const visibleManage  = useMemo(() => MANAGE_TOOLS.filter(t => {
-    // v159.1 — Compliance Hub tile only appears when at least one child
-    // module is enabled (contractors/workers/document_library/forms/swms/inductions).
+    // v160.0.1 — Compliance Hub tile is management-flavoured. Even when
+    // child modules like swms/forms/inductions are on for a worker,
+    // workers reach those surfaces via the Capture tab. Hide the hub
+    // tile entirely for non-privileged roles.
     if ((t as any).complianceHub) {
+      const role = (user?.role || '').toLowerCase();
+      const isPrivileged = role === 'admin' || role === 'hseq_lead' || role === 'supervisor' || role === 'contractor';
+      if (!isPrivileged) return false;
       const children: ModuleId[] = ['contractors', 'workers', 'document_library', 'forms', 'swms', 'inductions'];
       return children.some(k => modules[k]);
     }
     return t.moduleKey == null || modules[t.moduleKey];
-  }), [modules]);
+  }), [modules, user]);
 
   const loadData = async () => {
     try {
@@ -179,8 +184,11 @@ export default function DashboardScreen() {
           </View>
         ) : null}
 
-        {/* Metrics */}
-        {visibleMetrics.length > 0 && (
+        {/* Metrics — v160.0.1: COMPLIANCE SNAPSHOT chips show org-wide
+            quarter counts. Hide for non-privileged callers so a worker's
+            phone never surfaces "AI SWMS 12 / Incidents 4" numbers that
+            include colleagues' records. */}
+        {visibleMetrics.length > 0 && (metrics?.attention_band !== 'hidden') && (
           <>
             <Text style={d.sectionLabel}>COMPLIANCE SNAPSHOT</Text>
             <View style={d.metricsGrid}>
