@@ -1155,7 +1155,35 @@
  *            (`App.js` line 3) so the monkey-patch arms before
  *            any Copy button can fire.
  */
-const CACHE_VERSION = 'paneltec-v154.1';
+ *
+ * v154.2 · Download hotfix — iframe-safe anchor click.
+ *          Reported blocker: `downloadCompose` in `BackupTab.jsx`
+ *          created a Blob URL and an `<a download>` element but
+ *          NEVER appended the anchor to the DOM before `.click()`.
+ *          Under the Emergent preview iframe and any sandboxed
+ *          WebView the click is a silent no-op — the download
+ *          handler refuses to fire on a detached anchor. Same
+ *          bug shape in `downloadInstaller`. Both migrated to
+ *          the new `lib/download.js` `downloadFile()` wrapper
+ *          (three-tier fallback: anchor-in-DOM → data-URL popup
+ *          → manual-copy modal with content pre-selected).
+ *
+ *          Nuclear safety net: `lib/download.js` monkey-patches
+ *          `HTMLAnchorElement.prototype.click` at module load.
+ *          When any anchor has a `download` attribute AND is
+ *          not currently connected to the DOM, the wrapper
+ *          transparently attaches it, clicks it, and detaches
+ *          it after a tick. Every raw `URL.createObjectURL +
+ *          <a download>.click()` call site in the app
+ *          (Certifications CSV, Workers CSV/photo, Forms JSON,
+ *          FormSubmissions CSV, DocumentLibrary, Suppliers CSV,
+ *          InductionsMatrix XLSX, InductionCardModal PDF,
+ *          UserManual PDF, PdfPreviewModal, PlantVehicles QR)
+ *          inherits the fix immediately — no code changes to
+ *          those files. Sentinel-guarded against hot-reload.
+ *          Armed at App boot via `App.js` line 4.
+ */
+const CACHE_VERSION = 'paneltec-v154.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

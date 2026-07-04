@@ -23,6 +23,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import { TOKEN_KEY, API_BASE } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
+import { downloadFile } from "../../lib/download";
 
 // Paneltec Civil (v143) — the bundle uses absolute `/api/backup/*` paths so we
 // keep a local axios instance whose baseURL points at the app root (not
@@ -1531,15 +1532,13 @@ function AgentsCard({ agents, freshAgent, setFreshAgent, onReload }) {
     if (!freshAgent?.token) return;
     const hubUrl = process.env.REACT_APP_BACKEND_URL;
     const url = `${API}/agent/install.py?token=${encodeURIComponent(freshAgent.token)}&hub_url=${encodeURIComponent(hubUrl)}`;
+    // v154.2 — iframe-safe download wrapper: async → data-URL popup
+    // → manual-copy modal. Never a silent no-op.
     fetch(url, { headers: authHdr() })
       .then(r => r.text())
-      .then(text => {
-        const blob = new Blob([text], { type: "text/x-python" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "paneltec_backup_agent.py";
-        a.click();
-      });
+      .then(text => downloadFile(text, "paneltec_backup_agent.py", {
+        contentType: "text/x-python", silent: true,
+      }));
   };
 
   // Fetch the docker-compose.yml as text — used by both Download and
@@ -1577,11 +1576,13 @@ function AgentsCard({ agents, freshAgent, setFreshAgent, onReload }) {
   const downloadCompose = async () => {
     const text = composeText || (await fetchComposeText());
     if (!text) return;
-    const blob = new Blob([text], { type: "text/yaml" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "paneltec-agent-compose.yml";
-    a.click();
+    // v154.2 — iframe-safe download wrapper: attaches the anchor
+    // to the DOM before .click() (fixing the silent no-op that
+    // blocked the July 4 2026 LAN agent onboarding), falls back
+    // to a data-URL popup and then to a manual-copy modal.
+    await downloadFile(text, "paneltec-agent-compose.yml", {
+      contentType: "text/yaml", silent: true,
+    });
   };
 
   // One-click clipboard copy — copies ONLY the YAML, not any
