@@ -1092,7 +1092,43 @@
  *        endpoints; no backend changes. "Show token & agent config"
  *        CTA smoothly scrolls to the Agents card below.
  */
-const CACHE_VERSION = 'paneltec-v153';
+ *
+ * v154 — Clipboard iframe-safe wrapper + silent-agent diagnostics.
+ *        · New `lib/clipboard.js` exports `copyToClipboard(text, opts)`
+ *          with three-tier fallback: async Clipboard API →
+ *          `document.execCommand('copy')` on a hidden textarea →
+ *          manual-select modal with the text pre-highlighted in a
+ *          readonly `<textarea>`. Guarantees NO uncaught runtime
+ *          error from any Copy button under any iframe permissions
+ *          policy. Fixes the Emergent preview-iframe blocker that
+ *          made the agent token uncopyable ("The Clipboard API has
+ *          been blocked because of a permissions policy applied to
+ *          the current document").
+ *        · Sweep — every raw `navigator.clipboard.writeText` call
+ *          in `src/` migrated to the wrapper: PlantVehicles
+ *          (scan link copy), Contractors (renewal link copy),
+ *          Renewals (two link-copy call sites), ScanResolver
+ *          (share link copy) and BackupTab (compose YAML copy).
+ *          Zero raw calls remain outside `lib/clipboard.js`.
+ *        · Backend `POST /api/backup/agent/pending` and
+ *          `POST /api/backup/agent/report` now stamp `first_seen_at`
+ *          on the agent's very first successful call, letting the
+ *          UI distinguish "never polled since register" from
+ *          "polled once then stopped". `AgentRegister` inserts
+ *          initialise the field to null.
+ *        · BackupTab silent-agent banner gains a **tick counter**:
+ *          when > 1 agent registered in the last 24 h have
+ *          `last_seen_at === null`, the banner surfaces
+ *          "This is the Nth registered agent that hasn't checked
+ *           in. If restarting the agent binary hasn't helped, the
+ *           process itself may not be running on the office
+ *           machine." Diagnostic gold for the "re-register keeps
+ *          not helping" scenario.
+ *        · Agents table row now surfaces "First check-in: X ago"
+ *          or a red "never polled" chip alongside the existing
+ *          last-seen pill.
+ */
+const CACHE_VERSION = 'paneltec-v154';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { HelpCircle, Loader2, Settings, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { copyToClipboard } from '../lib/clipboard';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import EmailButton from '../components/EmailButton';
@@ -159,7 +160,7 @@ export default function Renewals() {
                             recipients={r.contractor_email ? [r.contractor_email] : []}
                             variant="primary" size="sm" label="Email link"
                           />
-                          <button onClick={() => { navigator.clipboard.writeText(r.public_url); toast.success('Link copied'); }} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy /> Copy</button>
+                          <button onClick={() => copyToClipboard(r.public_url, { successMsg: 'Link copied' })} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy /> Copy</button>
                         </>
                       )}
                       {canEdit && r.status !== 'used' && (
@@ -220,7 +221,7 @@ export default function Renewals() {
             <div className="space-y-2 pt-2">
               <div className="text-xs text-slate-500">Public link (single-use, expires {created.expires_at?.slice(0, 10)}):</div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs break-all" data-testid="generated-public-url">{created.public_url}</div>
-              <button onClick={() => { navigator.clipboard.writeText(created.public_url); toast.success('Link copied'); }} className="text-xs text-brand-blue hover:underline">Copy link</button>
+              <button onClick={() => copyToClipboard(created.public_url, { successMsg: 'Link copied' })} className="text-xs text-brand-blue hover:underline">Copy link</button>
             </div>
           )}
           <DialogFooter>

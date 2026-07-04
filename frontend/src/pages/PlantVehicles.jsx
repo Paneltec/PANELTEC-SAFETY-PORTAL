@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom';
 import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
 import { stashInlinePdf } from '../lib/pdfStash';
+import { copyToClipboard } from '../lib/clipboard';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
@@ -259,17 +260,8 @@ export default function PlantVehicles() {
     const token = a.scan_token;
     if (!token) { toast.error('No QR token on this asset yet.'); return; }
     const url = `${window.location.origin}/scan/${token}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      toast.success('Scan link copied');
-    } catch {
-      // Fallback for non-secure contexts: textarea + execCommand.
-      const ta = document.createElement('textarea');
-      ta.value = url; document.body.appendChild(ta); ta.select();
-      try { document.execCommand('copy'); toast.success('Scan link copied'); }
-      catch { toast.error('Could not copy — long-press the URL: ' + url); }
-      document.body.removeChild(ta);
-    }
+    // v154 — iframe-safe wrapper: async → execCommand → manual modal.
+    await copyToClipboard(url, { successMsg: 'Scan link copied' });
   };
 
   const openCreate = () => { setDrawerAsset(null); setDrawerOpen(true); };

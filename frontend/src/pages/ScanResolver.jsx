@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import axios from 'axios';
 import { getToken } from '../lib/auth';
 import api, { apiError } from '../lib/api';
+import { copyToClipboard } from '../lib/clipboard';
 import Logo from '../components/brand/Logo';
 
 const PUBLIC_BASE = `${process.env.REACT_APP_BACKEND_URL}/api`;
@@ -89,10 +90,7 @@ export default function ScanResolver() {
 
   const copyLink = () => {
     const url = `${window.location.origin}/scan/${token}`;
-    navigator.clipboard?.writeText(url).then(
-      () => toast.success('Link copied'),
-      () => toast.error('Could not copy link'),
-    );
+    copyToClipboard(url, { successMsg: 'Link copied' });
   };
 
   const launchForm = async (templateId) => {

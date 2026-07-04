@@ -835,6 +835,7 @@ def install(app, db, require_admin):
             "token_hash": _hash_token(token),
             "created_at": _now_iso(),
             "last_seen_at": None,
+            "first_seen_at": None,  # v154 — set on the first agent/pending poll
             "mdns_services": [],
         })
         return {"id": agent_id, "token": token}     # plaintext shown ONCE
@@ -862,10 +863,16 @@ def install(app, db, require_admin):
         agent = await _resolve_agent(authorization)
         if not agent:
             raise HTTPException(401, "agent token required")
-        # Update last-seen.
+        # v154 — stamp first_seen_at on the very first successful poll
+        # so the UI can distinguish "never polled" from "polled then
+        # stopped". Idempotent: only writes when currently null.
+        now = _now_iso()
+        set_fields: Dict[str, Any] = {"last_seen_at": now}
+        if not agent.get("first_seen_at"):
+            set_fields["first_seen_at"] = now
         await db.bk_agents.update_one(
             {"id": agent["id"]},
-            {"$set": {"last_seen_at": _now_iso()}},
+            {"$set": set_fields},
         )
         # Latest snapshot.
         latest = await db.bk_snapshots.find_one(
@@ -899,6 +906,11 @@ def install(app, db, require_admin):
         # Update agent's mDNS cache so the UI can show "I found 3
         # SMB targets on your LAN" without the cloud needing to scan.
         agent_update: Dict[str, Any] = {"last_seen_at": _now_iso()}
+        # v154 — first_seen_at defensive backfill: normally set by
+        # agent/pending but this ensures even a report-only agent
+        # gets stamped once.
+        if not agent.get("first_seen_at"):
+            agent_update["first_seen_at"] = _now_iso()
         if report.mdns_services is not None:
             agent_update["mdns_services"] = report.mdns_services
         # Latest disk usage snapshot — overwritten every poll so we

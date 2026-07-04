@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
+import { copyToClipboard } from '../lib/clipboard';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -475,7 +476,7 @@ export function ContractorDetail() {
             <div className="space-y-2 pt-2">
               <div className="text-xs text-slate-500">Public link (single-use, expires {created.expires_at?.slice(0, 10)}):</div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs break-all" data-testid="renewal-public-url">{created.public_url}</div>
-              <button onClick={() => { navigator.clipboard.writeText(created.public_url); toast.success('Link copied'); }} className="text-xs text-brand-blue hover:underline">Copy link</button>
+              <button onClick={() => copyToClipboard(created.public_url, { successMsg: 'Link copied' })} className="text-xs text-brand-blue hover:underline">Copy link</button>
             </div>
           )}
           <DialogFooter>

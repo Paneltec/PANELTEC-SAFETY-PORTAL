@@ -22,6 +22,7 @@
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import axios from "axios";
 import { TOKEN_KEY, API_BASE } from "../../lib/api";
+import { copyToClipboard } from "../../lib/clipboard";
 
 // Paneltec Civil (v143) — the bundle uses absolute `/api/backup/*` paths so we
 // keep a local axios instance whose baseURL points at the app root (not
@@ -267,6 +268,16 @@ export default function BackupTab() {
 }
 
 
+// v154 helper — English ordinal suffix for the banner tick counter
+// ("2nd", "3rd", "11th"). Kept minimal — this file already has plenty
+// of small utilities.
+function ordinalSuffix(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+
 // ============================================================
 // v153 · Silent-agent red-banner alert.
 // Non-dismissable. Renders at the very top of the Backup admin
@@ -310,6 +321,7 @@ function SilentAgentAlert({ agents, loading }) {
   const now = Date.now();
   const STALE_MIN = 60;
   const staleMs = STALE_MIN * 60 * 1000;
+  const dayMs = 24 * 60 * 60 * 1000;
 
   const neverSeen = agents.filter(a => a.last_seen_at == null);
   const stale = agents.filter(a => {
@@ -317,6 +329,18 @@ function SilentAgentAlert({ agents, loading }) {
     const t = new Date(a.last_seen_at).getTime();
     return isFinite(t) && (now - t) > staleMs;
   });
+
+  // v154 — tick counter: how many "never checked in" agents have
+  // been REGISTERED in the last 24h. When > 1 this is almost
+  // always the sign that the operator is re-registering hoping to
+  // fix the outage, when the real problem is that the agent
+  // PROCESS on the LAN box has stopped running.
+  const recentGhostCount = agents.filter(a => {
+    if (a.last_seen_at != null) return false;
+    if (!a.created_at) return false;
+    const c = new Date(a.created_at).getTime();
+    return isFinite(c) && (now - c) < dayMs;
+  }).length;
 
   const hubProducing = lan && lan.health === "down"
     && typeof lan.latest_snapshot_age_min === "number"
@@ -404,6 +428,24 @@ function SilentAgentAlert({ agents, loading }) {
               current token to resume delivery. If the token is lost,
               rotate it below.
             </div>
+            {recentGhostCount > 1 && (
+              <div data-testid="silent-agent-tick-counter"
+                   style={{
+                     marginTop: 8, padding: "8px 12px",
+                     background: "rgba(0,0,0,0.32)",
+                     borderRadius: 6, fontSize: 12, color: "#fecaca",
+                     borderLeft: "3px solid #fca5a5",
+                   }}>
+                This is the <strong style={{ color: "#fff" }}>
+                  {recentGhostCount}
+                  {ordinalSuffix(recentGhostCount)}
+                </strong>{" "}
+                registered agent in the last 24&nbsp;h that hasn't
+                checked in. If restarting the agent binary hasn't
+                helped, the process itself may not be running on the
+                office machine.
+              </div>
+            )}
           </div>
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button
@@ -1543,27 +1585,19 @@ function AgentsCard({ agents, freshAgent, setFreshAgent, onReload }) {
   };
 
   // One-click clipboard copy — copies ONLY the YAML, not any
-  // surrounding page content. Falls back to a textarea-select trick
-  // on browsers without Clipboard API.
+  // surrounding page content. v154: delegates to the shared
+  // iframe-safe wrapper so a locked-down permissions policy
+  // falls through to execCommand and then to the manual-select
+  // modal instead of throwing an uncaught error.
   const copyCompose = async () => {
     const text = composeText || (await fetchComposeText());
     if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
+    const r = await copyToClipboard(text, { silent: true });
+    if (r.ok) {
       setCopyState("copied");
       setTimeout(() => setCopyState(""), 2200);
-    } catch (e) {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      ta.style.position = "fixed";
-      ta.style.opacity = "0";
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); setCopyState("copied"); }
-      catch (_) { alert("Clipboard not available — please use Download instead."); }
-      document.body.removeChild(ta);
-      setTimeout(() => setCopyState(""), 2200);
     }
+    // On manual fallback the shared modal takes over — no toast noise here.
   };
 
   return (
@@ -1706,7 +1740,19 @@ function AgentsCard({ agents, freshAgent, setFreshAgent, onReload }) {
             {agents.map(a => (
               <tr key={a.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
                 <td style={td()}><strong>{a.name}</strong></td>
-                <td style={td()}>{a.last_seen_at ? fmtAge(a.last_seen_at) : <Pill>never</Pill>}</td>
+                <td style={td()}>
+                  {a.last_seen_at ? fmtAge(a.last_seen_at) : <Pill>never</Pill>}
+                  {/* v154 — first-check-in row so admins can tell
+                      "never polled since register" apart from
+                      "polled once then stopped". */}
+                  <div style={{ fontSize: 10, color: "#64748b", marginTop: 2 }}
+                       data-testid={`backup-agent-first-seen-${a.id}`}>
+                    First check-in:{" "}
+                    {a.first_seen_at
+                      ? fmtAge(a.first_seen_at)
+                      : <span style={{ color: "#b91c1c", fontWeight: 700 }}>never polled</span>}
+                  </div>
+                </td>
                 <td style={td()}>{(a.mdns_services || []).length}</td>
                 <td style={td()}>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end",
