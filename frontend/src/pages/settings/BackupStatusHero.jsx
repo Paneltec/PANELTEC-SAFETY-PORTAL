@@ -90,10 +90,19 @@ export default function BackupStatusHero() {
   };
 
   const scrollToHistory = () => {
-    const el = document.querySelector('[data-testid="backup-snapshot-history-anchor"]')
-      || Array.from(document.querySelectorAll('*')).find(n =>
-        (n.textContent || '').trim() === 'Snapshot history');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // v155c — Snapshot History now lives inside the AdvancedAccordion.
+    // Fire the global event so AdvancedAccordion opens the section AND
+    // scrolls to it in the correct order (scrolling to a collapsed
+    // section lands at the wrong offset). Fallback to the legacy
+    // anchor scroll if the accordion isn't mounted yet.
+    window.dispatchEvent(new CustomEvent('paneltec:openAccordionSection', {
+      detail: { id: 'snapshot-history' },
+    }));
+    setTimeout(() => {
+      const el = document.querySelector('[data-testid="accordion-section-snapshot-history"]')
+        || document.querySelector('[data-testid="backup-snapshot-history-anchor"]');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 120);
   };
 
   if (!data) {

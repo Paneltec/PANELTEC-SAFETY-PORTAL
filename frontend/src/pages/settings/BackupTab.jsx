@@ -25,6 +25,9 @@ import { TOKEN_KEY, API_BASE } from "../../lib/api";
 import { copyToClipboard } from "../../lib/clipboard";
 import { downloadFile } from "../../lib/download";
 import BackupStatusHero from "./BackupStatusHero";
+import SetupWizard from "./SetupWizard";
+import HowItWorks from "./HowItWorks";
+import AdvancedAccordion from "./AdvancedAccordion";
 
 // Paneltec Civil (v143) — the bundle uses absolute `/api/backup/*` paths so we
 // keep a local axios instance whose baseURL points at the app root (not
@@ -40,7 +43,8 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 import { Download, RefreshCw, Trash2, Plus, Key, Wifi,
-         AlertCircle, CheckCircle2, Server, Shield, Copy, Archive } from "lucide-react";
+         AlertCircle, CheckCircle2, Server, Shield, Copy, Archive,
+         Upload } from "lucide-react";
 
 const INK = "#0e1a2b";
 const PAPER = "#f3efe6";
@@ -156,123 +160,151 @@ export default function BackupTab() {
           /api/backup/summary; polls 60 s while tab visible. */}
       <BackupStatusHero/>
 
+      {/* v155c — Setup wizard auto-hides once setup.complete === true.
+          Renders BETWEEN hero and silent-agent alert so setup issues
+          take priority over delivery alerts. */}
+      <SetupWizard/>
+
       {/* v153 — Red banner surfaces the "silent agent" scenario the
           moment the operator opens this tab. Non-dismissable by design:
           a delivery outage stays visible until the underlying agent
           silence is resolved. */}
       <SilentAgentAlert agents={agents} loading={loading}/>
 
-      <ArchitectureBanner/>
+      {/* v155c — Collapsible plain-English explainer, replaces the
+          old ArchitectureBanner. No dismiss flag, no localStorage. */}
+      <HowItWorks/>
 
       {/* ───── Live delivery health (top of page so it's the first
             thing the operator sees) ───── */}
       <LanDeliveryCard/>
 
-      {/* ───── Auto-snapshot schedule ───── */}
-      <ScheduleCard/>
-
-      {/* ───── Retention policy (grandfather-father-son) ───── */}
-      <RetentionCard/>
-
-      {/* ───── Manual snapshot + history ───── */}
-      <div data-testid="backup-snapshot-history-anchor"/>
-      <Section title="Snapshot history"
-        icon={<Server className="w-4 h-4"/>}
-        action={
-          <button
-            type="button"
-            onClick={snapshotNow}
-            disabled={busy}
-            data-testid="backup-now-btn"
-            style={{
-              background: ACCENT, color: INK,
-              padding: "8px 18px", fontWeight: 800, fontSize: 12,
-              letterSpacing: "0.18em", textTransform: "uppercase",
-              border: "1px solid " + INK, cursor: busy ? "wait" : "pointer",
-              fontFamily: "Archivo, sans-serif",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
-            <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`}/>
-            {busy ? "Building…" : "Backup now"}
-          </button>
-        }>
-        {loading ? (
-          <div style={{ padding: 18, color: "#64748b" }}>Loading…</div>
-        ) : snapshots.length === 0 ? (
-          <Empty>No snapshots yet. Click <strong>Backup now</strong> to make one.</Empty>
-        ) : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: INK, color: PAPER }}>
-                <th style={th()}>When</th>
-                <th style={th()}>Size</th>
-                <th style={th()}>Documents</th>
-                <th style={th()}>Collections</th>
-                <th style={th()}>SHA256</th>
-                <th style={th()}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshots.map(s => (
-                <tr key={s.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
-                  <td style={td()}>{fmtAge(s.created_at)}<div style={{ fontSize: 11, color: "#64748b" }}>{s.created_at?.slice(0,19).replace("T"," ")}</div></td>
-                  <td style={td()}>{fmtBytes(s.size)}</td>
-                  <td style={td()}>{(s.total_documents || 0).toLocaleString()}</td>
-                  <td style={td()}>{(s.collections || []).length}</td>
-                  <td style={{ ...td(), fontFamily: "monospace", fontSize: 10, color: "#475569" }}>{s.sha256?.slice(0,16)}…</td>
-                  <td style={td()}>
-                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end",
-                                  flexWrap: "wrap" }}>
-                      <VerifyButton snap={s} onDone={refresh}/>
-                      {/* A real <a> rendered into the DOM (not a
-                          programmatic window.open) so Chrome treats this
-                          like any other download link. The Civil bearer
-                          is embedded as ?token= so the browser can hit
-                          the endpoint without a JS fetch dance. */}
-                      <a
-                        href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/snapshots/${s.id}/data?token=${encodeURIComponent(civilToken())}`}
-                        download={`paneltec-snapshot-${s.id}.zip`}
-                        data-testid={`backup-download-${s.id}`}
-                        style={{
-                          ...btn(ACCENT),
-                          textDecoration: "none",
-                        }}>
-                        <Download className="w-3.5 h-3.5"/>Download
-                      </a>
-                    </div>
-                    {s.last_verified_at && (
-                      <div style={{ fontSize: 10, marginTop: 4,
-                                    color: s.last_verified_ok ? "#065f46" : "#7f1d1d",
-                                    textAlign: "right" }}>
-                        {s.last_verified_ok ? "✓" : "✗"} Verified {fmtAge(s.last_verified_at)}
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </Section>
-
-      {/* ───── Destinations (UGREEN tower etc.) ───── */}
-      <DestinationsCard
-        destinations={destinations}
-        onReload={refresh}
-        discovered={discovered}/>
-
-      {/* ───── Agents (LAN-side puller) ───── */}
-      <AgentsCard
-        agents={agents}
-        freshAgent={freshAgent}
-        setFreshAgent={setFreshAgent}
-        onReload={refresh}/>
-
-      {/* ───── mDNS-discovered SMB targets (read-only feed) ───── */}
-      <DiscoveryCard discovered={discovered}/>
-
-      {/* ───── Restore from snapshot ───── */}
-      <RestoreCard/>
+      {/* v155c — All 7 advanced admin cards live inside a single
+          Advanced accordion. Collapsed by default (no localStorage,
+          resets per visit). Multi-open — user can expand any
+          combination independently. Cards mount unconditionally
+          (accordion is display-only), so their internal polling
+          continues even when the section is collapsed. */}
+      <AdvancedAccordion sections={[
+        { id: "schedule",
+          title: "Auto-snapshot schedule",
+          icon: <RefreshCw className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <ScheduleCard/> },
+        { id: "retention",
+          title: "Retention policy",
+          icon: <Trash2 className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <RetentionCard/> },
+        { id: "snapshot-history",
+          title: "Snapshot history",
+          icon: <Archive className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: (
+            <>
+              {/* Legacy anchor retained so any older link still resolves. */}
+              <div data-testid="backup-snapshot-history-anchor"/>
+              <Section title="Snapshot history"
+                icon={<Server className="w-4 h-4"/>}
+                action={
+                  <button
+                    type="button"
+                    onClick={snapshotNow}
+                    disabled={busy}
+                    data-testid="backup-now-btn"
+                    style={{
+                      background: ACCENT, color: INK,
+                      padding: "8px 18px", fontWeight: 800, fontSize: 12,
+                      letterSpacing: "0.18em", textTransform: "uppercase",
+                      border: "1px solid " + INK, cursor: busy ? "wait" : "pointer",
+                      fontFamily: "Archivo, sans-serif",
+                      display: "flex", alignItems: "center", gap: 6,
+                    }}>
+                    <RefreshCw className={`w-3.5 h-3.5 ${busy ? "animate-spin" : ""}`}/>
+                    {busy ? "Building…" : "Backup now"}
+                  </button>
+                }>
+                {loading ? (
+                  <div style={{ padding: 18, color: "#64748b" }}>Loading…</div>
+                ) : snapshots.length === 0 ? (
+                  <Empty>No snapshots yet. Click <strong>Backup now</strong> to make one.</Empty>
+                ) : (
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: INK, color: PAPER }}>
+                        <th style={th()}>When</th>
+                        <th style={th()}>Size</th>
+                        <th style={th()}>Documents</th>
+                        <th style={th()}>Collections</th>
+                        <th style={th()}>SHA256</th>
+                        <th style={th()}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snapshots.map(s => (
+                        <tr key={s.id} style={{ borderBottom: "1px solid rgba(0,0,0,0.07)" }}>
+                          <td style={td()}>{fmtAge(s.created_at)}<div style={{ fontSize: 11, color: "#64748b" }}>{s.created_at?.slice(0,19).replace("T"," ")}</div></td>
+                          <td style={td()}>{fmtBytes(s.size)}</td>
+                          <td style={td()}>{(s.total_documents || 0).toLocaleString()}</td>
+                          <td style={td()}>{(s.collections || []).length}</td>
+                          <td style={{ ...td(), fontFamily: "monospace", fontSize: 10, color: "#475569" }}>{s.sha256?.slice(0,16)}…</td>
+                          <td style={td()}>
+                            <div style={{ display: "flex", gap: 6, justifyContent: "flex-end",
+                                          flexWrap: "wrap" }}>
+                              <VerifyButton snap={s} onDone={refresh}/>
+                              {/* A real <a> rendered into the DOM (not a
+                                  programmatic window.open) so Chrome treats this
+                                  like any other download link. The Civil bearer
+                                  is embedded as ?token= so the browser can hit
+                                  the endpoint without a JS fetch dance. */}
+                              <a
+                                href={`${process.env.REACT_APP_BACKEND_URL}/api/backup/snapshots/${s.id}/data?token=${encodeURIComponent(civilToken())}`}
+                                download={`paneltec-snapshot-${s.id}.zip`}
+                                data-testid={`backup-download-${s.id}`}
+                                style={{
+                                  ...btn(ACCENT),
+                                  textDecoration: "none",
+                                }}>
+                                <Download className="w-3.5 h-3.5"/>Download
+                              </a>
+                            </div>
+                            {s.last_verified_at && (
+                              <div style={{ fontSize: 10, marginTop: 4,
+                                            color: s.last_verified_ok ? "#065f46" : "#7f1d1d",
+                                            textAlign: "right" }}>
+                                {s.last_verified_ok ? "✓" : "✗"} Verified {fmtAge(s.last_verified_at)}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </Section>
+            </>
+          ) },
+        { id: "destinations",
+          title: "Destinations",
+          icon: <Server className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <DestinationsCard
+            destinations={destinations}
+            onReload={refresh}
+            discovered={discovered}/> },
+        { id: "agents",
+          title: "Agents (LAN-side puller)",
+          icon: <Shield className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <AgentsCard
+            agents={agents}
+            freshAgent={freshAgent}
+            setFreshAgent={setFreshAgent}
+            onReload={refresh}/> },
+        { id: "discovery",
+          title: "Discovered SMB targets",
+          icon: <Wifi className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <DiscoveryCard discovered={discovered}/> },
+        { id: "restore",
+          title: "Restore from snapshot",
+          icon: <Upload className="w-4 h-4" style={{ color: "#64748b" }}/>,
+          children: <RestoreCard/> },
+      ]}/>
     </div>
   );
 }
