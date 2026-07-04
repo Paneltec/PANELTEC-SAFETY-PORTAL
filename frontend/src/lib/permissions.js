@@ -47,5 +47,15 @@ export const DELETE_SUPPORTED = {
   workers: true, inductions: true, certifications: true, documents: true, forms: true,
 };
 
-// 5-action matrix (Phase 3.18 added `delete`).
-export const ACTIONS = ['open', 'view', 'edit', 'delete', 'email'];
+// v159.2 — `team_view` gates the six team-scoped resources.
+export const TEAM_VIEW_SUPPORTED = {
+  swms: true, pre_starts: true, site_diary: true,
+  hazards: true, incidents: true, inspections: true,
+  contractors: false, renewals: false, audit_exports: false,
+  vehicles: false, assets: false, integrations: false, users: false,
+  workers: false, inductions: false, certifications: false,
+  documents: false, forms: false,
+};
+
+// 6-action matrix (v159.2 added `team_view`).
+export const ACTIONS = ['open', 'view', 'edit', 'delete', 'email', 'team_view'];

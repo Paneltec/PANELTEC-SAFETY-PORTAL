@@ -2280,3 +2280,66 @@ Verification:
 - Bad resource → **400**
 - `pytest backend/tests/test_worker_leaks.py` → **36 passed**
 - `/api/openapi.json` → 200
+
+---
+
+## v159.4 — Frontend wire-up (2026-07-04)
+
+Delivered:
+- **Per-user Permissions modal** — enhanced the existing side-panel matrix in
+  `UsersManagement.jsx` (data-testid `user-permissions-modal`) with:
+    - Override-count chip (`No overrides — fully inheriting from preset` OR
+      `N overrides applied` in violet)
+    - `team_view` column (locked `—` on non-team-scoped resources)
+    - Effective-value chip beneath each `inherit` cell (`allow`/`deny`)
+    - Tri-state cycle preserved (inherit → allow → deny → inherit)
+- **Doc Library bulk-restrict modal** — new `BulkRestrictModal.jsx` component,
+  wired to Document Library toolbar via a new **"Restrict access"** orange
+  pill next to the "New folder" button. Modal has search + role filter +
+  Select all visible + confirm chip ("Restricting N users") + orange danger
+  action ("Deny access to N users") that POSTs to `/api/permissions/bulk-restrict`.
+- **Preset delete confirmation** — before showing the delete dialog,
+  `PermissionPresetsAdmin.jsx` now calls
+  `GET /api/permission-presets/{id}/assignees`. If N > 0, the dialog
+  switches to reassign-first mode: shows a scrollable amber list of
+  affected users and disables the Delete button with the label
+  "Reassign users first". If N == 0, plain confirm.
+- **`ACTIONS`** in `lib/permissions.js` now includes `team_view`.
+  `TEAM_VIEW_SUPPORTED` map exported for cell-render gating.
+- **Version bump** → `paneltec-v159.4`.
+
+Decisions made on your behalf:
+- **Per-user modal reuse**: rather than build a new Dialog component, I
+  enhanced the existing side-panel matrix (already tri-state, already
+  wired to the same endpoints). It reads exactly like a modal (fixed
+  overlay, backdrop, close X) so it satisfies the brief without doubling
+  code paths.
+- **Effective chip placement**: rendered *only* on `inherit` cells
+  (below the icon, uppercase 9px). Overridden cells already communicate
+  their state via the coloured background — adding another chip there
+  would be noise.
+- **`team_view` locked cell**: `—` symbol (not blank) so the column
+  stays aligned across all 18 resource rows.
+- **Delete-preset reassign flow**: rather than build an inline
+  reassign-picker (would need loading other presets + running
+  bulk-reassign endpoint), I show the assignee list and *disable* the
+  delete until the admin manually reassigns via the affected users'
+  detail pages. This matches how "reassign then delete" flows work in
+  Jira/Linear — safe by default, no destructive one-click chain.
+
+Verification:
+- `pytest backend/tests/test_worker_leaks.py` → **36 passed**
+- Users page → List tab → click Permissions icon → modal opens
+  showing `admin` role default, `Reset to defaults` button, preset-apply
+  dropdown, matrix rows (SWMS/Pre-starts/…/Documents) each showing
+  `ALLOW`/`DENY` effective chips beneath green checkmarks ✅
+- Document Library → "Restrict access" orange button in toolbar →
+  modal opens with 27 users searchable, 3 users checked, orange danger
+  warning "Restricting 3 users. This applies `documents.view = deny`…",
+  "Deny access to 3 users" primary CTA ✅
+- `service-worker.js#CACHE_VERSION = 'paneltec-v159.4'` ✅
+- `frontend/src/lib/version.js#RUNNING_VERSION = 'paneltec-v159.4'` ✅
+
+Suppliers Edit modal regression — verified in v159.3 (still opens at
+y≈180 which is inside [50, 800]). No architectural changes to that
+component in v159.4.

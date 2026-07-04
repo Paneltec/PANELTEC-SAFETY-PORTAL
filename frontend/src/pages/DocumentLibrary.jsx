@@ -8,11 +8,12 @@
 // semantic RAG is deferred to a future phase.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, Sparkles, X } from 'lucide-react';
+import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as ImageIcon, Loader2, ShieldOff, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import { stashInlinePdf } from '../lib/pdfStash';
+import BulkRestrictModal from '../components/BulkRestrictModal';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
@@ -160,6 +161,8 @@ export default function DocumentLibrary() {
   const [renamingId, setRenamingId] = useState(null);
   const [newName, setNewName] = useState('');
   const [busy, setBusy] = useState(false);
+  // v159.4 — bulk-restrict modal state (Doc Library admin action).
+  const [restrictOpen, setRestrictOpen] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
   // Smart Search state
@@ -310,12 +313,27 @@ export default function DocumentLibrary() {
           />
         </div>
         {canEdit && (
+          <button onClick={() => setRestrictOpen(true)} data-testid="doclib-restrict-access-btn"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-orange-300 bg-orange-50 text-orange-800 text-sm font-medium hover:bg-orange-100">
+            <ShieldOff size={14} /> Restrict access
+          </button>
+        )}
+        {canEdit && (
           <button onClick={startCreate} data-testid="folder-create-btn"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
             <Plus /> New folder
           </button>
         )}
       </div>
+
+      {/* v159.4 — Doc Library bulk-restrict modal */}
+      <BulkRestrictModal
+        open={restrictOpen}
+        onClose={() => setRestrictOpen(false)}
+        resource="documents"
+        action="view"
+        resourceLabel="Document Library"
+      />
 
       {creating && (
         <div className="mb-4 rounded-xl border border-brand-blue/40 bg-white p-3 flex items-center gap-2" data-testid="folder-create-form">

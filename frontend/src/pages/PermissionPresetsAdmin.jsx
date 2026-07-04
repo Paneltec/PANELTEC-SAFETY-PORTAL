@@ -88,6 +88,19 @@ export default function PermissionPresetsAdmin() {
     finally { setBusy(false); }
   };
 
+  // v159.4 — before opening the delete confirm, look up how many users
+  // currently share this preset's exact matrix. The confirm dialog uses
+  // this to warn "N users use this preset" and offer a reassign flow.
+  const [deleteAssignees, setDeleteAssignees] = useState(null);
+  const requestDelete = async (preset) => {
+    setConfirmDelete(preset);
+    setDeleteAssignees(null);
+    try {
+      const { data } = await api.get(`/permission-presets/${preset.id}/assignees`);
+      setDeleteAssignees(data || { count: 0, users: [] });
+    } catch { setDeleteAssignees({ count: 0, users: [] }); }
+  };
+
   // v159.3 — one-click clone of any preset (built-in or custom).
   const handleDuplicate = async (preset) => {
     const sourceId = preset.is_builtin ? preset.key : preset.id;
@@ -184,7 +197,7 @@ export default function PermissionPresetsAdmin() {
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
                         <Edit20Regular /> Edit
                       </button>
-                      <button onClick={() => setConfirmDelete(selected)} data-testid="preset-detail-delete"
+                      <button onClick={() => requestDelete(selected)} data-testid="preset-detail-delete"
                         className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-rose-300 text-rose-700 bg-white text-sm font-medium hover:bg-rose-50">
                         <Delete20Regular /> Delete
                       </button>
@@ -270,16 +283,35 @@ export default function PermissionPresetsAdmin() {
       <Dialog open={!!confirmDelete} onOpenChange={(v) => !v && setConfirmDelete(null)}>
         <DialogContent data-testid="preset-delete-confirm">
           <DialogHeader>
-            <DialogTitle className="font-display">Delete preset?</DialogTitle>
+            <DialogTitle className="font-display">
+              {deleteAssignees && deleteAssignees.count > 0 ? 'Delete preset — reassign users first' : 'Delete preset?'}
+            </DialogTitle>
             <DialogDescription>
-              {confirmDelete ? `"${confirmDelete.label}" will be removed for everyone in your org. Users who currently have this preset applied keep their permissions — only future "apply preset" loses this option.` : ''}
+              {!confirmDelete ? '' : (deleteAssignees === null
+                ? `Checking how many users are on "${confirmDelete.label}"…`
+                : deleteAssignees.count > 0
+                  ? `"${confirmDelete.label}" is currently applied to ${deleteAssignees.count} user${deleteAssignees.count === 1 ? '' : 's'}. Reassign them to another preset from the user detail page before deleting — otherwise their custom overrides remain but the preset link is lost.`
+                  : `"${confirmDelete.label}" will be removed for everyone in your org. No users currently share this preset's exact matrix, so nothing else changes.`)}
             </DialogDescription>
           </DialogHeader>
+          {deleteAssignees && deleteAssignees.count > 0 && (
+            <div className="max-h-48 overflow-y-auto rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs space-y-1" data-testid="preset-delete-assignees">
+              {deleteAssignees.users.slice(0, 20).map((u) => (
+                <div key={u.id} className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-slate-800 truncate">{u.name || u.email}</span>
+                  <span className="text-[10px] uppercase tracking-wide text-amber-800">{u.role}</span>
+                </div>
+              ))}
+              {deleteAssignees.users.length > 20 && (
+                <div className="text-[11px] text-amber-700 pt-1">+ {deleteAssignees.users.length - 20} more…</div>
+              )}
+            </div>
+          )}
           <DialogFooter>
             <button onClick={() => setConfirmDelete(null)} className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700">Cancel</button>
-            <button onClick={handleDelete} disabled={busy} data-testid="preset-delete-confirm-btn"
-              className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 disabled:opacity-60">
-              {busy ? 'Deleting…' : 'Delete'}
+            <button onClick={handleDelete} disabled={busy || (deleteAssignees && deleteAssignees.count > 0)} data-testid="preset-delete-confirm-btn"
+              className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed">
+              {busy ? 'Deleting…' : (deleteAssignees && deleteAssignees.count > 0 ? 'Reassign users first' : 'Delete')}
             </button>
           </DialogFooter>
         </DialogContent>

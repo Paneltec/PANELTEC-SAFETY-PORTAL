@@ -19,7 +19,7 @@ import HowThisWorks from '../components/help/HowThisWorks';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
-import { RESOURCE_LABELS, EMAIL_SUPPORTED, useCan } from '../lib/permissions';
+import { RESOURCE_LABELS, EMAIL_SUPPORTED, TEAM_VIEW_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback } from '../components/ui/avatar';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -502,6 +502,8 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
   const cycle = (resource, action) => {
     if (action === 'email' && !EMAIL_SUPPORTED[resource]) return;
+    // v159.2 — team_view only cycles on the six team-scoped resources.
+    if (action === 'team_view' && !TEAM_VIEW_SUPPORTED[resource]) return;
     setPerms((p) => {
       const o = { ...(p.overrides || {}) };
       const sub = { ...(o[resource] || {}) };
@@ -733,18 +735,36 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                       {ACTIONS.map((act) => {
                         const ov = perms.overrides?.[res]?.[act];
                         const isEmail = act === 'email';
-                        const supported = !isEmail || EMAIL_SUPPORTED[res];
+                        const isTeamView = act === 'team_view';
+                        const supported = (!isEmail || EMAIL_SUPPORTED[res])
+                          && (!isTeamView || TEAM_VIEW_SUPPORTED[res]);
                         const eff = perms.effective?.[res]?.[act];
                         let icon, cls;
                         if (!supported) { icon = <span className="text-slate-300">—</span>; cls = ''; }
                         else if (ov === true) { icon = <Check size={14} className="text-emerald-600" />; cls = 'bg-emerald-50'; }
                         else if (ov === false) { icon = <XIcon size={14} className="text-red-600" />; cls = 'bg-red-50'; }
                         else { icon = eff ? <Check size={14} className="text-slate-400" /> : <Minus size={14} className="text-slate-300" />; cls = ''; }
+                        // v159.4 — effective-value chip beneath the tri-state
+                        // icon. Only shown when the cell is `inherit` — that's
+                        // the only time admins wonder what actually resolves.
+                        const showEffChip = supported && ov === undefined;
                         return (
                           <td key={act} className={`px-3 py-2 text-center cursor-pointer ${cls}`}
                             onClick={() => canEdit && supported && cycle(res, act)}
-                            data-testid={`perm-${res}-${act}`} title={ov === undefined ? 'Inherits from role' : `Override: ${ov}`}>
-                            <div className="flex justify-center">{icon}</div>
+                            data-testid={`perm-${res}-${act}`}
+                            title={
+                              !supported ? 'Not supported for this resource'
+                              : ov === undefined ? `Inherits from preset — effective: ${eff ? 'allow' : 'deny'}`
+                              : `Override: ${ov ? 'allow' : 'deny'}`
+                            }>
+                            <div className="flex flex-col items-center gap-0.5">
+                              {icon}
+                              {showEffChip && (
+                                <span className={`text-[9px] leading-none font-semibold uppercase tracking-wide ${eff ? 'text-emerald-600/70' : 'text-slate-400'}`}>
+                                  {eff ? 'allow' : 'deny'}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         );
                       })}
