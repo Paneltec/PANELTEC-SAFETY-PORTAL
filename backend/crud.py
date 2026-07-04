@@ -17,7 +17,7 @@ from models import (
     HazardIn, IncidentIn, InspectionIn, PreStartIn, SiteDiaryIn, SwmsIn,
     SwmsReview, new_id, now_iso,
 )
-from permissions import require_permission
+from permissions import require_permission, resolve_team_scope
 
 
 def _scoped(user: dict, workspace_id: Optional[str] = None) -> dict:
@@ -42,10 +42,17 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         include_superseded: bool = Query(False),
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
+        scope: Optional[str] = Query(None, description="`me` = own records only, `team` = org-wide (needs team_view)"),
         limit: int = Query(200, ge=1, le=500),
         user: dict = Depends(require_permission(resource, "view")),
     ):
         q = _scoped(user, workspace_id)
+        # v159.2 — team-scoping. If the caller lacks `team_view` on this
+        # resource (or explicitly asked `?scope=me`), narrow the query to
+        # records they created themselves.
+        own_only = await resolve_team_scope(user, resource, scope)
+        if own_only is not None:
+            q["created_by"] = own_only
         if status:
             q["status"] = status
         elif collection == "swms" and not include_superseded:
@@ -67,6 +74,14 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
             {"id": item_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
         if not doc:
             raise HTTPException(status_code=404, detail="Not found")
+        # v159.2 — team-scoping on detail: workers without `team_view` can
+        # only open their own records. Others (supervisor+/auditor) unchanged.
+        own_only = await resolve_team_scope(user, resource, None)
+        if own_only is not None and doc.get("created_by") != own_only:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied: {resource}.team_view",
+            )
         return doc
 
     @r.post("", status_code=201)

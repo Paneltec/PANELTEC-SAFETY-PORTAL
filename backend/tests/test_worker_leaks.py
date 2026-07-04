@@ -219,3 +219,76 @@ def test_mobile_modules_response_includes_defaults_version(admin_headers):
     assert "users_directory" in (body.get("module_keys") or []), (
         "users_directory missing from module_keys catalogue"
     )
+
+
+# ---------- v159.2 team-scoping gates ----------
+
+@pytest.mark.parametrize("resource", ["incidents", "hazards", "inspections",
+                                       "pre-starts", "site-diary", "swms"])
+def test_worker_list_auto_scoped_to_own_records(worker_headers, resource):
+    """Worker without team_view sees only their own records on
+    `GET /api/{resource}`. `created_by` must be uniform (or list empty)."""
+    r = requests.get(f"{BASE}/api/{resource}", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    assert isinstance(rows, list)
+    creators = {row.get("created_by") for row in rows}
+    creators.discard(None)
+    assert len(creators) <= 1, (
+        f"Worker /api/{resource} leaked multiple created_by values: {creators}"
+    )
+
+
+def test_worker_scope_team_denied(worker_headers):
+    """Worker asking `?scope=team` must be rejected with 403 (no team_view)."""
+    for resource in ("incidents", "hazards"):
+        r = requests.get(
+            f"{BASE}/api/{resource}?scope=team", headers=worker_headers, timeout=10,
+        )
+        assert r.status_code == 403, (
+            f"Worker got {r.status_code} on /api/{resource}?scope=team, expected 403"
+        )
+        assert "team_view" in (r.json().get("detail") or "").lower(), r.text[:300]
+
+
+def test_admin_sees_full_incident_list(admin_headers, worker_headers):
+    """Admin has team_view — must see at least as many rows as the worker."""
+    admin = requests.get(f"{BASE}/api/incidents", headers=admin_headers, timeout=10)
+    worker = requests.get(f"{BASE}/api/incidents", headers=worker_headers, timeout=10)
+    assert admin.status_code == 200 and worker.status_code == 200
+    assert len(admin.json()) >= len(worker.json()), (
+        f"Admin saw fewer incidents ({len(admin.json())}) than worker "
+        f"({len(worker.json())}) — team-scoping is over-filtering."
+    )
+
+
+def test_worker_scope_me_explicit_returns_own(worker_headers):
+    r = requests.get(f"{BASE}/api/hazards?scope=me", headers=worker_headers, timeout=10)
+    assert r.status_code == 200
+    rows = r.json()
+    creators = {row.get("created_by") for row in rows}
+    creators.discard(None)
+    assert len(creators) <= 1, f"scope=me leaked others' hazards: {creators}"
+
+
+def test_worker_cannot_open_someone_elses_hazard(admin_headers, worker_headers):
+    """If any hazard exists that the worker DIDN'T create, worker → 403
+    on the detail route."""
+    admin_rows = requests.get(f"{BASE}/api/hazards", headers=admin_headers, timeout=10).json()
+    # Login worker just for its id via /auth/me
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    worker_id = me.get("id")
+    foreign = next((h for h in admin_rows if h.get("created_by") != worker_id), None)
+    if not foreign:
+        pytest.skip("No hazards owned by another user in this org to test against.")
+    r = requests.get(f"{BASE}/api/hazards/{foreign['id']}", headers=worker_headers, timeout=10)
+    assert r.status_code == 403, (
+        f"Worker leaked hazard {foreign['id']} — expected 403 got {r.status_code}"
+    )
+
+
+def test_admin_openapi_still_available(admin_headers):
+    r = requests.get(f"{BASE}/api/openapi.json", timeout=15)
+    assert r.status_code == 200, r.text[:200]
+    body = r.json()
+    assert body.get("openapi", "").startswith("3."), "OpenAPI schema malformed"

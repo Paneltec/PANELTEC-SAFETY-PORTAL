@@ -14,8 +14,16 @@ from auth import get_current_user
 from db import db
 from models import now_iso
 
-Action = Literal["open", "view", "edit", "delete", "email"]
-ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email"]
+Action = Literal["open", "view", "edit", "delete", "email", "team_view"]
+ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view"]
+
+# v159.2 — Resources subject to team-scoping: workers who lack `team_view`
+# on these resources only see records where `created_by == user.id`.
+# Supervisors/HSEQ Leads/Admin/Auditor inherit `team_view=True` via their
+# role defaults below, so their behavior is unchanged.
+TEAM_SCOPED_RESOURCES: set[str] = {
+    "swms", "pre_starts", "site_diary", "hazards", "incidents", "inspections",
+}
 
 # Resource catalog. `email_supported=False` hides the email column entirely
 # (also force-denied server-side). `delete_supported=False` means delete
@@ -151,7 +159,10 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
     },
     "auditor": {
         r: _grant(open=True, view=True, edit=False,
-                  email=PERMISSIONS_SCHEMA[r]["email_supported"])
+                  email=PERMISSIONS_SCHEMA[r]["email_supported"],
+                  # v159.2 — auditors need org-wide visibility on the six
+                  # team-scoped resources so their evidence packs stay complete.
+                  team_view=(r in TEAM_SCOPED_RESOURCES))
         for r in RESOURCES if r != "users"
     } | {"users": _grant()},
 }
@@ -176,6 +187,40 @@ async def can(user: dict, resource: str, action: str) -> bool:
     if action in res_over:
         return bool(res_over[action])
     return _role_default(user["role"], resource, action)
+
+
+async def resolve_team_scope(
+    user: dict,
+    resource: str,
+    requested_scope: Optional[str] = None,
+) -> Optional[str]:
+    """v159.2 — Decide whether a list/detail query for `resource` should be
+    filtered to the caller's own records (`created_by == user.id`).
+
+    Returns:
+      • `user["id"]` — caller must be limited to their own records.
+      • `None`       — caller has team_view and sees everything.
+
+    Behaviour:
+      • `?scope=me`   → always return `user["id"]` (even for admin).
+      • `?scope=team` → require team_view; else raise 403.
+      • no scope      → return `user["id"]` iff caller lacks team_view.
+
+    For resources outside `TEAM_SCOPED_RESOURCES`, no filter is applied.
+    """
+    if resource not in TEAM_SCOPED_RESOURCES:
+        return None
+    if requested_scope == "me":
+        return str(user["id"])
+    has_team = await can(user, resource, "team_view")
+    if requested_scope == "team":
+        if not has_team:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Permission denied: {resource}.team_view",
+            )
+        return None
+    return None if has_team else str(user["id"])
 
 
 async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:

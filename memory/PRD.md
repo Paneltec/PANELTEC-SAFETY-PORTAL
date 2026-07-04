@@ -2175,3 +2175,50 @@ Mobile worker home visually confirmed:
 - No Users tile, no Ask AI tab, no Fleet tab
 - Compliance Hub visible (workers keep inductions + swms + forms by default)
 - Bottom tabs: Home · Capture · QR Scan · Outbox · My Work · Profile
+
+---
+
+## v159.2 — Team-scoping (2026-07-04)
+
+Delivered:
+- **`team_view` action** added to `permissions.ACTIONS` (6-action matrix now:
+  `open, view, edit, delete, email, team_view`). Introduces
+  `TEAM_SCOPED_RESOURCES = {swms, pre_starts, site_diary, hazards, incidents, inspections}`.
+- **Role defaults**: admin/hseq_lead/supervisor keep `team_view=True` on the
+  six resources via existing `_all(True)` / `_all_no_delete(True)` helpers.
+  Auditor explicitly granted `team_view=True` for those six so evidence packs
+  stay complete. Worker/contractor default to `team_view=False`.
+- **`resolve_team_scope(user, resource, scope)`** in `permissions.py`:
+    - `?scope=me`   → always returns `user.id` (own-only)
+    - `?scope=team` → 403 unless caller has `team_view`
+    - unspecified   → own-only iff caller lacks `team_view`
+- **`crud.py:list_items`** wires `resolve_team_scope` into the Mongo query
+  (adds `created_by == user.id` when required). Applies to all six routers
+  (swms, pre-starts, site-diary, hazards, incidents, inspections).
+- **`crud.py:get_item`** returns **403** with detail `{resource}.team_view`
+  when a non-privileged caller opens a record owned by someone else.
+- **Mobile "My Work"** (`mobile/app/(tabs)/my-work.tsx`) now passes
+  `?scope=me` explicitly for the 6 fetches — self-documenting; backend
+  auto-scopes anyway.
+- **Version bump** → `paneltec-v159.2` in both `service-worker.js` and
+  `frontend/src/lib/version.js`.
+- **Regression suite**: 11 new pytest cases (`test_worker_leaks.py` grew
+  from 17 to 28 cases, all passing).
+- **`org_settings` dedup** — one-time migration `/app/scripts/dedup_org_settings.py`
+  keeps most-recent doc, deletes older duplicates, adds `uniq_org_id`
+  unique index. **Kept**: `_id=6a4246777db5b84b9bfdc811` (updated_at
+  `2026-07-04T08:24:33`). **Deleted**: `_id=6a461900e60bbc457d1f694d`
+  (updated_at `2026-07-02T03:42:27`). Index `uniq_org_id` created.
+
+Verification:
+- Worker `GET /api/incidents` → 200, 0 rows (auto-scoped)
+- Worker `GET /api/incidents?scope=team` → **403** `incidents.team_view`
+- Worker `GET /api/hazards/{other-user-id}` → **403** `hazards.team_view`
+- Admin `GET /api/incidents` → 200, 4 rows
+- Admin `GET /api/hazards` → 200, 5 rows
+- Admin `GET /api/dashboard/metrics` → org-wide (incidents=4, hazards=5,
+  swms=12, prestarts=7, inspections=6) — no over-filtering
+- `GET /api/openapi.json` → 200, valid `openapi=3.x`
+- `pytest backend/tests/test_worker_leaks.py` → **28 passed**
+
+v159.3 (per-user overrides + preset cloning) remains deferred.

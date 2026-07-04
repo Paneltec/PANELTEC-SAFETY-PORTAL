@@ -27,8 +27,11 @@ export default function MyWorkScreen() {
 
   const load = async () => {
     try {
+      // v159.2 — explicit `?scope=me` is self-documenting; the backend
+      // auto-scopes non-privileged callers anyway, but this makes the
+      // intent visible in server logs + curl repro cases.
       const results = await Promise.allSettled(
-        GROUPS_CONFIG.map(g => api.get(`/${g.key.replace('_', '-')}`).then(r => ({ ...g, items: (r.data || []).slice(0, 5) })))
+        GROUPS_CONFIG.map(g => api.get(`/${g.key.replace('_', '-')}`, { params: { scope: 'me' } }).then(r => ({ ...g, items: (r.data || []).slice(0, 5) })))
       );
       setGroups(results.map((r, i) => r.status === 'fulfilled' ? r.value : { ...GROUPS_CONFIG[i], items: [] }));
     } catch {} finally { setLoading(false); setRefreshing(false); }
