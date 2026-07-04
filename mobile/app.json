@@ -15,7 +15,8 @@
         "NSPhotoLibraryUsageDescription": "Attach site photos to reports",
         "NSFaceIDUsageDescription": "Sign in quickly with Face ID",
         "NSLocationWhenInUseUsageDescription": "Capture GPS for site sign-on"
-      }
+      },
+      "bundleIdentifier": "com.emergent.whscompliance.fv5aib"
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +24,15 @@
         "backgroundColor": "#000"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "USE_BIOMETRIC", "USE_FINGERPRINT", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "USE_BIOMETRIC",
+        "USE_FINGERPRINT",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ],
+      "package": "com.emergent.whscompliance.fv5aib"
     },
     "web": {
       "bundler": "metro",
@@ -36,15 +45,21 @@
       "expo-secure-store",
       [
         "expo-local-authentication",
-        { "faceIDPermission": "Sign in quickly with Face ID" }
+        {
+          "faceIDPermission": "Sign in quickly with Face ID"
+        }
       ],
       [
         "expo-location",
-        { "locationWhenInUsePermission": "Capture GPS for site sign-on" }
+        {
+          "locationWhenInUsePermission": "Capture GPS for site sign-on"
+        }
       ],
       [
         "expo-camera",
-        { "cameraPermission": "Scan QR codes for crew sign-on" }
+        {
+          "cameraPermission": "Scan QR codes for crew sign-on"
+        }
       ],
       [
         "expo-splash-screen",
