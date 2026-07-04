@@ -23,6 +23,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from auth import get_current_user
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 # Phase 3.22c — every card-style PDF now goes through the shared 2-colour
@@ -118,6 +119,34 @@ def _internal(doc: dict) -> dict:
     out["navixy_last_seen_at"] = _navixy_last_seen_at(out)
     out["navixy_health"] = _compute_navixy_health(out)
     return out
+
+
+# v159.0 — Non-admin callers (supervisor / auditor) get a thin asset row that
+# omits cost, service history, insurance and GPS trail data. Admin + hseq_lead
+# still see the full document. Worker access is denied outright by the
+# permissions matrix (`assets.view=False`) — this projection is a defence-in-
+# depth safety net in case an override ever grants a non-privileged role the
+# view action.
+_ASSET_SENSITIVE_FIELDS = (
+    "cost", "service_cost", "purchase_price",
+    "gps_last_seen_lat", "gps_last_seen_lng", "gps_history",
+    "driver_id", "service_history", "insurance_details",
+    # Also strip the raw lat/lng breadcrumbs on non-admin views.
+    "last_known_lat", "last_known_lng",
+)
+
+
+def _serialise_thin_asset(doc: dict) -> dict:
+    out = _internal(doc)
+    for field in _ASSET_SENSITIVE_FIELDS:
+        out.pop(field, None)
+    return out
+
+
+def _wants_full_asset(user: dict) -> bool:
+    """Only admin + hseq_lead callers see the full asset row (cost / GPS /
+    service history). Everyone else gets `_serialise_thin_asset`."""
+    return user.get("role") in {"admin", "hseq_lead"}
 
 
 # ────────────── Phase 3.15 — Navixy health chip ──────────────
@@ -295,7 +324,7 @@ async def list_assets(
     asset_type: Optional[str] = Query(None),
     q: Optional[str] = Query(None),
     limit: int = Query(500, ge=1, le=2000),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("assets", "view")),
 ):
     org_id = user["org_id"]
     # Backfill from Navixy on every list — fast & idempotent.
@@ -316,8 +345,9 @@ async def list_assets(
         ]
 
     rows: list[dict] = []
+    full = _wants_full_asset(user)
     async for row in db.assets.find(query, {"_id": 0}).sort("name", 1).limit(limit):
-        rows.append(_internal(row))
+        rows.append(_internal(row) if full else _serialise_thin_asset(row))
 
     total_q = {"org_id": org_id, "deleted_at": None}
     total = await db.assets.count_documents(total_q)
@@ -327,8 +357,8 @@ async def list_assets(
 
 
 @router.post("", status_code=201)
-async def create_asset(body: AssetIn, user: dict = Depends(get_current_user)):
-    # `assets.edit` is enforced by the middleware. Workers cannot reach here.
+async def create_asset(body: AssetIn, user: dict = Depends(require_permission("assets", "edit"))):
+    # `assets.edit` is enforced by the dep. Workers cannot reach here.
     ts = now_iso()
     workspace_id = body.workspace_id or (user.get("workspace_ids") or [None])[0]
     doc = {
@@ -366,15 +396,15 @@ async def create_asset(body: AssetIn, user: dict = Depends(get_current_user)):
 
 
 @router.get("/{asset_id}")
-async def get_asset(asset_id: str, user: dict = Depends(get_current_user)):
+async def get_asset(asset_id: str, user: dict = Depends(require_permission("assets", "view"))):
     doc = await db.assets.find_one({"org_id": user["org_id"], "id": asset_id, "deleted_at": None}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Asset not found")
-    return doc
+    return doc if _wants_full_asset(user) else _serialise_thin_asset(doc)
 
 
 @router.put("/{asset_id}")
-async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(get_current_user)):
+async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(require_permission("assets", "edit"))):
     existing = await db.assets.find_one({"org_id": user["org_id"], "id": asset_id, "deleted_at": None})
     if not existing:
         raise HTTPException(404, "Asset not found")
@@ -403,7 +433,7 @@ async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(get_cu
 
 
 @router.delete("/{asset_id}", status_code=204)
-async def archive_asset(asset_id: str, user: dict = Depends(get_current_user)):
+async def archive_asset(asset_id: str, user: dict = Depends(require_permission("assets", "delete"))):
     res = await db.assets.update_one(
         {"org_id": user["org_id"], "id": asset_id, "deleted_at": None},
         {"$set": {"status": "retired", "updated_at": now_iso()}},
@@ -431,7 +461,7 @@ def _make_qr_png(payload: str, box_size: int = 8) -> bytes:
 
 
 @router.get("/{asset_id}/qr.png")
-async def asset_qr_png(asset_id: str, user: dict = Depends(get_current_user)):
+async def asset_qr_png(asset_id: str, user: dict = Depends(require_permission("assets", "view"))):
     doc = await db.assets.find_one({"org_id": user["org_id"], "id": asset_id, "deleted_at": None})
     if not doc:
         raise HTTPException(404, "Asset not found")
@@ -586,7 +616,7 @@ async def asset_label_pdf(
     asset_id: str,
     layout: Literal["a6", "avery_l7160", "on_metal", "combo"] = Query("a6"),
     ids: Optional[str] = Query(None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("assets", "view")),
 ):
     org_id = user["org_id"]
     docs: list[dict]
@@ -638,7 +668,7 @@ async def asset_label_pdf(
 # ────────────────────── NFC / UHF pairing ──────────────────────
 
 @router.post("/{asset_id}/nfc-pair")
-async def nfc_pair(asset_id: str, body: NfcPairIn, user: dict = Depends(get_current_user)):
+async def nfc_pair(asset_id: str, body: NfcPairIn, user: dict = Depends(require_permission("assets", "edit"))):
     org_id = user["org_id"]
     asset = await db.assets.find_one({"org_id": org_id, "id": asset_id, "deleted_at": None})
     if not asset:
@@ -657,7 +687,7 @@ async def nfc_pair(asset_id: str, body: NfcPairIn, user: dict = Depends(get_curr
 
 
 @router.delete("/{asset_id}/nfc-pair")
-async def nfc_unpair(asset_id: str, user: dict = Depends(get_current_user)):
+async def nfc_unpair(asset_id: str, user: dict = Depends(require_permission("assets", "edit"))):
     res = await db.assets.update_one(
         {"org_id": user["org_id"], "id": asset_id, "deleted_at": None},
         {"$set": {"nfc_uid": None, "updated_at": now_iso()}},
@@ -668,7 +698,7 @@ async def nfc_unpair(asset_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.post("/{asset_id}/uhf-pair")
-async def uhf_pair(asset_id: str, body: UhfPairIn, user: dict = Depends(get_current_user)):
+async def uhf_pair(asset_id: str, body: UhfPairIn, user: dict = Depends(require_permission("assets", "edit"))):
     """Phase 5 stub — accept and store the EPC so labels can carry it later."""
     epc = body.uhf_epc.strip().upper()
     res = await db.assets.update_one(

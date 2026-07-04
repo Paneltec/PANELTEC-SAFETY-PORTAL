@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from auth import get_current_user
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
@@ -159,7 +160,7 @@ class FolderPatch(BaseModel):
 
 
 @router.get("/folders")
-async def list_folders(user: dict = Depends(get_current_user)):
+async def list_folders(user: dict = Depends(require_permission("documents", "view"))):
     """Top-level folders only. Per-worker subfolders (created via the
     Worker Certifications upload flow) are returned via
     `GET /folders/{id}/subfolders`."""
@@ -187,7 +188,7 @@ async def list_folders(user: dict = Depends(get_current_user)):
 
 
 @router.get("/folders/{folder_id}/subfolders")
-async def list_subfolders(folder_id: str, user: dict = Depends(get_current_user)):
+async def list_subfolders(folder_id: str, user: dict = Depends(require_permission("documents", "view"))):
     """Children of a single folder (used by the Document Library to navigate
     into per-worker certification folders)."""
     parent = await db.doc_folders.find_one(
@@ -209,7 +210,7 @@ async def list_subfolders(folder_id: str, user: dict = Depends(get_current_user)
 
 
 @router.post("/folders", status_code=201)
-async def create_folder(body: FolderIn, user: dict = Depends(get_current_user)):
+async def create_folder(body: FolderIn, user: dict = Depends(require_permission("documents", "edit"))):
     _require(user, WRITE_ROLES)
     last = await db.doc_folders.find_one(
         {"org_id": user["org_id"], "deleted_at": None},
@@ -231,7 +232,7 @@ async def create_folder(body: FolderIn, user: dict = Depends(get_current_user)):
 
 @router.patch("/folders/{folder_id}")
 async def rename_folder(
-    folder_id: str, body: FolderPatch, user: dict = Depends(get_current_user),
+    folder_id: str, body: FolderPatch, user: dict = Depends(require_permission("documents", "edit")),
 ):
     _require(user, WRITE_ROLES)
     existing = await db.doc_folders.find_one(
@@ -262,7 +263,7 @@ async def rename_folder(
 
 
 @router.delete("/folders/{folder_id}", status_code=204)
-async def delete_folder(folder_id: str, user: dict = Depends(get_current_user)):
+async def delete_folder(folder_id: str, user: dict = Depends(require_permission("documents", "delete"))):
     _require(user, DELETE_FOLDER_ROLES, action="delete")
     existing = await db.doc_folders.find_one(
         {"id": folder_id, "org_id": user["org_id"], "deleted_at": None},
@@ -322,7 +323,7 @@ def _stub_ai_tags(filename: str) -> List[str]:
 
 
 @router.get("/folders/{folder_id}/files")
-async def list_files(folder_id: str, user: dict = Depends(get_current_user)):
+async def list_files(folder_id: str, user: dict = Depends(require_permission("documents", "view"))):
     await _resolve_folder(folder_id, user["org_id"])
     cursor = db.doc_files.find(
         {"folder_id": folder_id, "org_id": user["org_id"], "deleted_at": None},
@@ -336,7 +337,7 @@ async def list_files(folder_id: str, user: dict = Depends(get_current_user)):
 async def upload_files(
     folder_id: str,
     files: List[UploadFile] = File(...),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("documents", "edit")),
 ):
     _require(user, WRITE_ROLES, action="upload")
     folder = await _resolve_folder(folder_id, user["org_id"])
@@ -394,7 +395,7 @@ async def upload_files(
 
 
 @router.delete("/files/{file_id}", status_code=204)
-async def delete_file(file_id: str, user: dict = Depends(get_current_user)):
+async def delete_file(file_id: str, user: dict = Depends(require_permission("documents", "delete"))):
     _require(user, WRITE_ROLES, action="delete")
     ts = now_iso()
     result = await db.doc_files.update_one(
@@ -407,7 +408,7 @@ async def delete_file(file_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/files/{file_id}/download")
-async def download_file(file_id: str, user: dict = Depends(get_current_user)):
+async def download_file(file_id: str, user: dict = Depends(require_permission("documents", "view"))):
     doc = await db.doc_files.find_one(
         {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},
@@ -430,7 +431,7 @@ async def download_file(file_id: str, user: dict = Depends(get_current_user)):
 @router.get("/search")
 async def search(
     q: str = Query(min_length=1, max_length=120),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("documents", "view")),
 ):
     pattern = re.escape(q.strip())
     cursor = db.doc_files.find(
@@ -475,7 +476,7 @@ supplier_folders_router = _AR(prefix="/suppliers", tags=["supplier-folders"])
 
 
 @supplier_folders_router.get("/{supplier_id}/folders")
-async def supplier_list_folders(supplier_id: str, user: dict = Depends(get_current_user)):
+async def supplier_list_folders(supplier_id: str, user: dict = Depends(require_permission("documents", "view"))):
     cursor = db.doc_folders.find(
         {"org_id": user["org_id"], "supplier_id": supplier_id, "deleted_at": None},
         {"_id": 0},
@@ -487,7 +488,7 @@ async def supplier_list_folders(supplier_id: str, user: dict = Depends(get_curre
 
 @supplier_folders_router.post("/{supplier_id}/folders", status_code=201)
 async def supplier_create_folder(
-    supplier_id: str, body: FolderIn, user: dict = Depends(get_current_user),
+    supplier_id: str, body: FolderIn, user: dict = Depends(require_permission("documents", "edit")),
 ):
     _require(user, WRITE_ROLES)
     last = await db.doc_folders.find_one(

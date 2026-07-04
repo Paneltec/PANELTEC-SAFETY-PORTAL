@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, EmailStr, Field
 
 from auth import get_current_user
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 

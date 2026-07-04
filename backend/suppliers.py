@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from auth import get_current_user
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
@@ -60,7 +61,7 @@ def _serialise(doc: dict) -> dict:
 
 
 @router.get("/meta")
-async def list_meta(user: dict = Depends(get_current_user)):
+async def list_meta(user: dict = Depends(require_permission("suppliers", "view"))):
     """Return all supplier_meta rows for the org as a `{sid: meta}` map.
     The page calls this once on load and merges with the live Simpro feed."""
     cursor = db.supplier_meta.find(
@@ -71,7 +72,7 @@ async def list_meta(user: dict = Depends(get_current_user)):
 
 
 @router.get("/{simpro_supplier_id}/meta")
-async def get_meta(simpro_supplier_id: str, user: dict = Depends(get_current_user)):
+async def get_meta(simpro_supplier_id: str, user: dict = Depends(require_permission("suppliers", "view"))):
     doc = await db.supplier_meta.find_one(
         {"simpro_supplier_id": simpro_supplier_id,
          "org_id": user["org_id"], "deleted_at": None},
@@ -90,7 +91,7 @@ async def get_meta(simpro_supplier_id: str, user: dict = Depends(get_current_use
 async def upsert_meta(
     simpro_supplier_id: str,
     body: SupplierMetaPatch,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("suppliers", "edit")),
 ):
     _require_write(user)
     update = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {
@@ -134,7 +135,7 @@ class RenewalEmailIn(BaseModel):
 async def send_renewal(
     simpro_supplier_id: str,
     body: RenewalEmailIn,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("suppliers", "edit")),
 ):
     """Queue a compliance-renewal email to this supplier via the org's M365
     outbox (or stash it for later send when M365 isn't connected)."""

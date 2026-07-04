@@ -132,7 +132,10 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "renewals":        _grant(),
         "audit_exports":   _grant(),
         "vehicles":        _grant(),
-        "assets":          _grant(open=True, view=True, edit=False, email=False),
+        # v159.0 hardening — workers no longer see the Plant & Vehicles
+        # register (cost, GPS trail, service history, driver linkage all
+        # leaked previously). Reserved for supervisor+.
+        "assets":          _grant(),
         "integrations":    _grant(),
         "users":           _grant(),
         # Phase 3.18 — Workers see their own data only; routes filter by user.
