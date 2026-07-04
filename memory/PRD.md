@@ -2128,3 +2128,50 @@ authoritative hero copy lives in `PaneltecHero.jsx` only.
 - Visual smoke screenshot verified hero copy identical on /login
   right panel and / cover hero.
 
+
+---
+
+## v159.1 — Structural fixes (2026-07-04)
+
+Delivered:
+- **Mobile tab gates**: `Ask AI`, `Fleet`, and the Users dashboard tile now
+  hide when the caller's mobile-module row disables them. Compliance Hub
+  tile auto-hides when ALL its child modules (contractors, workers,
+  document_library, forms, swms, inductions) are off.
+- **New `users_directory` module** added to `mobile_modules.MODULE_KEYS`
+  and rendered as a toggle row in the Web Admin allocator (default: off
+  for all non-admin roles).
+- **Ask Intelligence gate**: `require_ask_access` in `backend/ask.py`
+  now blocks non-privileged callers on `GET /api/ask/briefing` and
+  `POST /api/ask` unless the `ask_intel` module is enabled for their role
+  (admin + hseq_lead bypass).
+- **Certifications scope-me enforcement**: `GET /api/workers/certifications/all`
+  and `/search` now force `worker_id == caller` for non-privileged roles
+  (worker / contractor / auditor) regardless of query string; only
+  admin / hseq_lead / supervisor can see the full org list.
+- **"New defaults available" banner** in `MobileModulesSection.jsx` —
+  persistent (no localStorage dismiss). Shows when the stored
+  `defaults_version` != current `DEFAULTS_VERSION` (v159.1). Cleared by
+  either "Apply hardened defaults" (writes server defaults matrix) or
+  the normal Save button — both stamp `defaults_version` server-side.
+- **Version bumps**: `frontend/public/service-worker.js#CACHE_VERSION`
+  and `frontend/src/lib/version.js#RUNNING_VERSION` → `paneltec-v159.1`.
+- **Regression suite**: 5 new pytest cases in
+  `backend/tests/test_worker_leaks.py` — worker→403 on ask/briefing +
+  POST /api/ask, worker /certifications/all auto-scoped, admin sees
+  full cert list, `/settings/mobile-modules` exposes `defaults_version`.
+  All 17 cases pass.
+
+Curl verification:
+- Worker `GET /api/ask/briefing` → 403 ✅
+- Worker `POST /api/ask` → 403 ✅
+- Worker `GET /api/workers/certifications/all` → 0 rows (auto-scoped) ✅
+- Worker `GET /api/workers/certifications/all?scope=me` → 0 rows ✅
+- Admin `GET /api/workers/certifications/all` → 203 rows / 12 workers ✅
+- Admin `GET /api/settings/mobile-modules` → `defaults_version=v159.1`,
+  `users_directory` in module_keys, worker default `False` ✅
+
+Mobile worker home visually confirmed:
+- No Users tile, no Ask AI tab, no Fleet tab
+- Compliance Hub visible (workers keep inductions + swms + forms by default)
+- Bottom tabs: Home · Capture · QR Scan · Outbox · My Work · Profile

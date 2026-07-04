@@ -36,6 +36,11 @@ import {
   Handshake20Regular as ContractorsIcon,
   Building20Regular as SuppliersIcon,
   People20Regular as WorkersIcon,
+  // v159.1 — Users Directory tile is a distinct module (admin/HSEQ tooling)
+  // separate from `workers` (field-crew register). Using PeopleSettings so
+  // the icon reads as "user administration" not "field crew".
+  PeopleSettings20Regular as UsersDirectoryIcon,
+  Sparkle20Regular as DefaultsIcon,
   LockClosed20Regular,
   Save20Regular,
   ArrowReset20Regular,
@@ -73,6 +78,8 @@ const MODULES = [
   { key: 'contractors',         label: 'Contractors register',   Icon: ContractorsIcon },
   { key: 'suppliers',           label: 'Suppliers',              Icon: SuppliersIcon },
   { key: 'workers',             label: 'Workers directory',      Icon: WorkersIcon },
+  // v159.1 — Users Directory tile toggle (admin tooling).
+  { key: 'users_directory',     label: 'Users directory',        Icon: UsersDirectoryIcon },
 ];
 
 function ToggleCell({ on, locked, onChange, testid }) {
@@ -232,8 +239,19 @@ function PhonePreview({ canEdit }) {
 export default function MobileModulesSection({ canEdit }) {
   const [loading, setLoading]   = useState(true);
   const [saving, setSaving]     = useState(false);
+  const [applyingDefaults, setApplyingDefaults] = useState(false);
   const [original, setOriginal] = useState(null);
   const [matrix, setMatrix]     = useState(null);
+  // v159.1 — server-reported defaults metadata. When
+  // `needs_migration_review === true` we render a persistent banner so
+  // the admin consciously reviews + applies the new hardened defaults.
+  // Banner clears once the stored `defaults_version` matches on next load.
+  const [defaultsMeta, setDefaultsMeta] = useState({
+    needs_migration_review: false,
+    defaults_version: null,
+    stored_defaults_version: null,
+    server_defaults: null,
+  });
 
   const load = async () => {
     setLoading(true);
@@ -241,6 +259,12 @@ export default function MobileModulesSection({ canEdit }) {
       const { data } = await api.get('/settings/mobile-modules');
       setOriginal(deepClone(data.mobile_modules));
       setMatrix(deepClone(data.mobile_modules));
+      setDefaultsMeta({
+        needs_migration_review: !!data.needs_migration_review,
+        defaults_version: data.defaults_version || null,
+        stored_defaults_version: data.stored_defaults_version || null,
+        server_defaults: data.defaults || null,
+      });
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -273,8 +297,33 @@ export default function MobileModulesSection({ canEdit }) {
         : 'Saved.');
       setOriginal(deepClone(r.data.mobile_modules));
       setMatrix(deepClone(r.data.mobile_modules));
+      // v159.1 — the PUT stamps `defaults_version` server-side, so reload
+      // the metadata so the banner dismisses without a page refresh.
+      await load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setSaving(false); }
+  };
+
+  // v159.1 — one-click migration: overwrite the current matrix with the
+  // server-supplied hardened defaults and persist. Uses the same PUT so
+  // the audit log picks up a diff row per role/module that changes.
+  const applyServerDefaults = async () => {
+    if (!defaultsMeta.server_defaults) return;
+    setApplyingDefaults(true);
+    try {
+      const next = deepClone(defaultsMeta.server_defaults);
+      // Admin row is enforced all-true server-side, but mirror here so
+      // the UI reflects the effective state immediately.
+      next.admin = Object.fromEntries(MODULES.map((mo) => [mo.key, true]));
+      const r = await api.put('/settings/mobile-modules', { mobile_modules: next });
+      toast.success(r.data.changes
+        ? `Hardened defaults applied — ${r.data.changes} change${r.data.changes === 1 ? '' : 's'}.`
+        : 'Hardened defaults applied.');
+      setOriginal(deepClone(r.data.mobile_modules));
+      setMatrix(deepClone(r.data.mobile_modules));
+      await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setApplyingDefaults(false); }
   };
 
   if (loading || !matrix) {
@@ -283,6 +332,51 @@ export default function MobileModulesSection({ canEdit }) {
 
   return (
     <div className="space-y-4" data-testid="mobile-modules-section">
+      {/* v159.1 — "New defaults available" banner. Persistent (no
+          localStorage dismiss) until the admin clicks Apply defaults or
+          Save on the current matrix — either action stamps
+          `defaults_version` server-side so the banner disappears on the
+          next load. */}
+      {canEdit && defaultsMeta.needs_migration_review && (
+        <div
+          data-testid="mobile-modules-defaults-banner"
+          className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4"
+        >
+          <div className="shrink-0 w-10 h-10 rounded-xl bg-amber-100 text-amber-700 inline-flex items-center justify-center">
+            <DefaultsIcon />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-semibold text-amber-900">
+              New hardened defaults available
+              {defaultsMeta.defaults_version ? ` · ${defaultsMeta.defaults_version}` : ''}
+            </div>
+            <p className="text-[13px] text-amber-800 mt-1 leading-relaxed max-w-3xl">
+              Paneltec has published a stricter default module matrix
+              (workers no longer see Plant &amp; Vehicles, Document Library
+              or the Users tile by default). Your current saved matrix was
+              stamped
+              <span className="font-mono px-1"> {defaultsMeta.stored_defaults_version || 'pre-v159'} </span>.
+              Review the toggles below and click <strong>Apply hardened defaults</strong>
+              to overwrite in one step, or make manual edits and hit Save.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <button
+                type="button"
+                onClick={applyServerDefaults}
+                disabled={applyingDefaults || saving}
+                data-testid="mobile-modules-apply-defaults"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-60"
+              >
+                <DefaultsIcon /> {applyingDefaults ? 'Applying…' : 'Apply hardened defaults'}
+              </button>
+              <span className="text-[12px] text-amber-700">
+                Or edit manually and press Save — either action clears this banner.
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-5">
         <div className="shrink-0 w-10 h-10 rounded-xl bg-orange-50 text-orange-600 inline-flex items-center justify-center">
           <Phone20Regular />

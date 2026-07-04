@@ -10,7 +10,9 @@ export type ModuleId =
   | 'swms' | 'inductions' | 'plant_vehicles'
   | 'certifications' | 'ask_intel' | 'sign_on' | 'profile'
   // v158 — 5 new modules exposed in the web admin.
-  | 'forms' | 'document_library' | 'contractors' | 'suppliers' | 'workers';
+  | 'forms' | 'document_library' | 'contractors' | 'suppliers' | 'workers'
+  // v159.1 — Users Directory tile is gated behind its own module toggle.
+  | 'users_directory';
 
 export type ModuleMap = Record<ModuleId, boolean>;
 
@@ -37,6 +39,7 @@ export const SAFE_FALLBACK: ModuleMap = {
   contractors: false,
   suppliers: false,
   workers: false,
+  users_directory: false,
 };
 
 const ALL_KEYS: ModuleId[] = Object.keys(SAFE_FALLBACK) as ModuleId[];

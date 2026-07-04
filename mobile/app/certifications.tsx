@@ -87,12 +87,18 @@ export default function CertificationsScreen() {
   const load = useCallback(async () => {
     try {
       const q = search.trim();
-      const url = q ? `/workers/certifications/search?q=${encodeURIComponent(q)}` : '/workers/certifications/all';
-      const { data } = await api.get(url);
+      // v159.1 — worker/contractor callers are auto-scoped server-side to
+      // their own row, but we ALSO pass `?scope=me` here so the URL is
+      // self-documenting when an HSEQ Lead uses the same client shell.
+      const wantMineOnly = user && !['admin', 'hseq_lead', 'supervisor'].includes((user.role || '').toLowerCase());
+      const finalUrl = q
+        ? `/workers/certifications/search?q=${encodeURIComponent(q)}${wantMineOnly ? '&scope=me' : ''}`
+        : `/workers/certifications/all${wantMineOnly ? '?scope=me' : ''}`;
+      const { data } = await api.get(finalUrl);
       setRows(data || []);
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
     finally { setLoading(false); setRefreshing(false); }
-  }, [search]);
+  }, [search, user]);
 
   useEffect(() => { getUser().then(setUser); }, []);
   useEffect(() => { setLoading(true); load(); }, [load]);

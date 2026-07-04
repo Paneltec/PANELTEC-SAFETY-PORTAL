@@ -40,6 +40,8 @@ MODULE_KEYS = [
     # `service_maintenance` was retired (rolled into `plant_vehicles`) —
     # `_normalise` silently drops any legacy value stored under that key.
     "forms", "document_library", "contractors", "suppliers", "workers",
+    # v159.1 — Users Directory tile (admin-only by default).
+    "users_directory",
 ]
 ROLE_KEYS = ["worker", "supervisor", "contractor", "admin"]
 
@@ -65,8 +67,10 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
         # Contractors / suppliers / workers directory stay OFF.
         "forms": True, "document_library": False,
         "contractors": False, "suppliers": False, "workers": False,
+        # v159.1 — workers never see the Users tile; admin only.
+        "users_directory": False,
     },
-    "supervisor": {k: True for k in MODULE_KEYS},
+    "supervisor": {k: True for k in MODULE_KEYS if k != "users_directory"} | {"users_directory": False},
     "contractor": {
         # v159.0 — contractors need to see hazards + incidents that pertain
         # to their crew, so hazard/incident flipped ON by default per audit §3.
@@ -78,11 +82,20 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
         # v158 defaults per user brief.
         "forms": True, "document_library": True,
         "contractors": True, "suppliers": False, "workers": False,
+        "users_directory": False,
     },
     # Admin column is always-on in the UI and persisted as such so the
     # mobile app can ungate every module if an admin ever signs in there.
     "admin": {k: True for k in MODULE_KEYS},
 }
+
+
+# v159.1 — bump this string whenever DEFAULTS shift so we can nudge admins
+# to review the new hardened matrix. Persisted alongside the stored doc as
+# `defaults_version`; when missing/older, the GET /settings/mobile-modules
+# response includes `needs_migration_review: true` so the admin UI can show
+# a "New defaults available — review and save" banner.
+DEFAULTS_VERSION = "v159.1"
 
 
 def _normalise(matrix: Dict[str, Dict[str, bool]]) -> Dict[str, Dict[str, bool]]:
@@ -137,11 +150,19 @@ async def get_mobile_modules(user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     matrix = await _load_matrix(user["org_id"])
+    doc = await db.org_settings.find_one(
+        {"org_id": user["org_id"]}, {"_id": 0, "defaults_version": 1},
+    )
+    stored_version = (doc or {}).get("defaults_version")
+    needs_review = stored_version != DEFAULTS_VERSION
     return {
         "mobile_modules": matrix,
         "module_keys": MODULE_KEYS,
         "role_keys": ROLE_KEYS,
         "defaults": DEFAULTS,
+        "defaults_version": DEFAULTS_VERSION,
+        "stored_defaults_version": stored_version,
+        "needs_migration_review": needs_review,
     }
 
 
@@ -156,7 +177,8 @@ async def put_mobile_modules(
     after = _normalise(body.mobile_modules)
     await db.org_settings.update_one(
         {"org_id": user["org_id"]},
-        {"$set": {"mobile_modules": after, "updated_at": now_iso()},
+        {"$set": {"mobile_modules": after, "defaults_version": DEFAULTS_VERSION,
+                  "updated_at": now_iso()},
          "$setOnInsert": {"org_id": user["org_id"], "created_at": now_iso()}},
         upsert=True,
     )

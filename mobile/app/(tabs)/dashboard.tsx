@@ -33,8 +33,8 @@ const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route
   { key: 'workers',          title: 'Workers',          desc: 'Field crew synced from Simpro',                  icon: 'people',           route: '/workers',          moduleKey: 'workers' },
   { key: 'suppliers',        title: 'Suppliers',        desc: 'Simpro suppliers, tasks, notes & folders',       icon: 'business',         route: '/suppliers',        moduleKey: 'suppliers' },
   { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents',                    icon: 'folder-open',      route: '/document-library', moduleKey: 'document_library' },
-  { key: 'users',            title: 'Users',            desc: 'Manage users, imports & permissions',            icon: 'people-circle',    route: '/users',            moduleKey: null },
-  { key: 'compliance',       title: 'Compliance Hub',   desc: 'Contractor register & audit exports',            icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: null },
+  { key: 'users',            title: 'Users',            desc: 'Manage users, imports & permissions',            icon: 'people-circle',    route: '/users',            moduleKey: 'users_directory' },
+  { key: 'compliance',       title: 'Compliance Hub',   desc: 'Contractor register & audit exports',            icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: null, complianceHub: true },
 ];
 
 const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId }[] = [
@@ -64,7 +64,15 @@ export default function DashboardScreen() {
   // v158.1 — Tiles with `moduleKey: null` (users, compliance hub) are always
   // visible; tiles with a moduleKey must have that module toggled on for
   // the current user's role.
-  const visibleManage  = useMemo(() => MANAGE_TOOLS.filter(t => t.moduleKey == null || modules[t.moduleKey]), [modules]);
+  const visibleManage  = useMemo(() => MANAGE_TOOLS.filter(t => {
+    // v159.1 — Compliance Hub tile only appears when at least one child
+    // module is enabled (contractors/workers/document_library/forms/swms/inductions).
+    if ((t as any).complianceHub) {
+      const children: ModuleId[] = ['contractors', 'workers', 'document_library', 'forms', 'swms', 'inductions'];
+      return children.some(k => modules[k]);
+    }
+    return t.moduleKey == null || modules[t.moduleKey];
+  }), [modules]);
 
   const loadData = async () => {
     try {

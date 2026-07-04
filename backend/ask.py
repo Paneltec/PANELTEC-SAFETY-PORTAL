@@ -22,6 +22,23 @@ from models import new_id, now_iso
 
 router = APIRouter(prefix="/ask", tags=["ask"])
 
+# v159.1 — Ask Intelligence gate. Non-admin/hseq callers must have the
+# `ask_intel` mobile module toggled on for their role. Admins bypass.
+PRIVILEGED_ASK_ROLES = {"admin", "hseq_lead"}
+
+
+async def require_ask_access(user: dict = Depends(get_current_user)) -> dict:
+    if user.get("role") in PRIVILEGED_ASK_ROLES:
+        return user
+    doc = await db.org_settings.find_one(
+        {"org_id": user["org_id"]}, {"_id": 0, "mobile_modules": 1},
+    )
+    row = (((doc or {}).get("mobile_modules") or {}).get(user.get("role") or "") or {})
+    if not row.get("ask_intel"):
+        raise HTTPException(403, "Permission denied: ask_intel module disabled for your role")
+    return user
+
+
 _briefing_cache: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 3600  # 1 hour
 
@@ -91,7 +108,7 @@ async def _evidence(org_id: str, workspace_id: Optional[str]) -> dict:
 
 
 @router.post("")
-async def ask(body: AskIn, user: dict = Depends(get_current_user)):
+async def ask(body: AskIn, user: dict = Depends(require_ask_access)):
     evidence = await _evidence(user["org_id"], body.workspace_id)
     user_text = (f"Question: {body.question}\n\nEvidence (JSON):\n"
                  f"{json.dumps(evidence, ensure_ascii=False)[:24000]}")
@@ -111,7 +128,7 @@ async def ask(body: AskIn, user: dict = Depends(get_current_user)):
 
 
 @router.get("/briefing")
-async def briefing(workspace_id: Optional[str] = Query(None), user: dict = Depends(get_current_user)):
+async def briefing(workspace_id: Optional[str] = Query(None), user: dict = Depends(require_ask_access)):
     cache_key = f"{user['org_id']}::{workspace_id or '*'}"
     now = time.time()
     if cache_key in _briefing_cache:

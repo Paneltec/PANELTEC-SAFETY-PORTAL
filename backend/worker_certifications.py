@@ -436,11 +436,29 @@ async def upload_cert_file(
 # ────────────────────── Global view + search ──────────────────────
 
 @router.get("/certifications/all")
-async def list_all_certs(user: dict = Depends(get_current_user)):
+async def list_all_certs(
+    scope: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     today = date.today()
-    cursor = db.worker_certifications.find(
-        {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
-    ).sort([("expiry_date", 1)])
+    q: dict = {"org_id": user["org_id"], "deleted_at": None}
+    # v159.1 — scope resolution:
+    #   • Privileged roles (admin/hseq_lead/supervisor) may pass
+    #     `?scope=me` to opt into "just my own certs".
+    #   • ALL other roles (worker/contractor/auditor/etc.) are FORCED to
+    #     scope=me regardless of the query string — a worker can never
+    #     enumerate their colleagues' certifications from this endpoint.
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    effective_scope = scope if privileged else "me"
+    if effective_scope == "me":
+        me = await db.workers.find_one(
+            {"org_id": user["org_id"], "deleted_at": None,
+             "$or": [{"user_id": user["id"]},
+                     {"email": (user.get("email") or "").lower()}]},
+            {"_id": 0, "id": 1},
+        )
+        q["worker_id"] = (me or {}).get("id") or "__no_match__"
+    cursor = db.worker_certifications.find(q, {"_id": 0}).sort([("expiry_date", 1)])
     certs = await cursor.to_list(5000)
     worker_ids = list({c["worker_id"] for c in certs})
     worker_map: dict = {}
@@ -462,12 +480,22 @@ async def list_all_certs(user: dict = Depends(get_current_user)):
 
 @router.get("/certifications/search")
 async def search_certs(q: str = "", user: dict = Depends(get_current_user)):
-    """Lightweight text search across cert name, issuer, worker name, tags."""
+    """Lightweight text search across cert name, issuer, worker name, tags.
+    v159.1 — non-privileged roles are automatically scoped to their own
+    worker row so a mobile client can search without leaking org data."""
     q = (q or "").strip().lower()
     today = date.today()
-    cursor = db.worker_certifications.find(
-        {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
-    )
+    mongo_q: dict = {"org_id": user["org_id"], "deleted_at": None}
+    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    if not privileged:
+        me = await db.workers.find_one(
+            {"org_id": user["org_id"], "deleted_at": None,
+             "$or": [{"user_id": user["id"]},
+                     {"email": (user.get("email") or "").lower()}]},
+            {"_id": 0, "id": 1},
+        )
+        mongo_q["worker_id"] = (me or {}).get("id") or "__no_match__"
+    cursor = db.worker_certifications.find(mongo_q, {"_id": 0})
     certs = await cursor.to_list(5000)
     worker_ids = list({c["worker_id"] for c in certs})
     worker_map: dict = {}
