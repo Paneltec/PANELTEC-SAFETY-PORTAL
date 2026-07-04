@@ -42,6 +42,10 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     "certifications":  {"label": "Certifications",       "email_supported": True,  "delete_supported": True},
     "documents":       {"label": "Documents",            "email_supported": False, "delete_supported": True},
     "forms":           {"label": "Forms",                "email_supported": False, "delete_supported": True},
+    # v159.0 — new resource for supplier data (Simpro suppliers, notes,
+    # tasks, folders, members). Previously the suppliers endpoints used
+    # only `get_current_user`, leaking data to worker/contractor roles.
+    "suppliers":       {"label": "Suppliers",             "email_supported": False, "delete_supported": True},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -91,6 +95,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "certifications":  _all_no_delete(True),
         "documents":       {**_all_no_delete(True), "email": False},
         "forms":           {**_all_no_delete(True), "email": False},
+        # v159.0 — HSEQ Lead sees all supplier data.
+        "suppliers":       {**_all_no_delete(True), "email": False},
     },
     "supervisor": {
         "swms":            _all_no_delete(True),
@@ -112,6 +118,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "certifications":  _grant(open=True, view=True, edit=False, email=False),
         "documents":       _grant(open=True, view=True, edit=False, email=False),
         "forms":           _grant(open=True, view=True, edit=True,  email=False),
+        # v159.0 — Supervisor can view supplier data.
+        "suppliers":       _grant(open=True, view=True, edit=False, email=False),
     },
     "worker": {
         "swms":            _grant(open=True, view=True, edit=False, email=False),
@@ -128,11 +136,15 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "integrations":    _grant(),
         "users":           _grant(),
         # Phase 3.18 — Workers see their own data only; routes filter by user.
+        # v159.0 hardening — documents locked to open/view=false so a worker
+        # can't pull the Document Library list. Own inductions still reachable
+        # via the induction/certification flow. Suppliers permission denied.
         "workers":         _grant(open=True, view=True, edit=False, email=False),
         "inductions":      _grant(open=True, view=True, edit=False, email=False),
         "certifications":  _grant(open=True, view=True, edit=False, email=False),
-        "documents":       _grant(open=True, view=True, edit=False, email=False),
+        "documents":       _grant(),
         "forms":           _grant(open=True, view=True, edit=True,  email=False),
+        "suppliers":       _grant(),
     },
     "auditor": {
         r: _grant(open=True, view=True, edit=False,

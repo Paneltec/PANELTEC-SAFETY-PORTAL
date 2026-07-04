@@ -82,7 +82,7 @@ async def list_contractors(
     trade: Optional[str] = None,
     missing_renewal_link: Optional[bool] = Query(False),
     search: Optional[str] = Query(None, max_length=120),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("contractors", "view")),
 ):
     q = {"org_id": user["org_id"], "deleted_at": None}
     if status:
@@ -126,7 +126,7 @@ async def list_contractors(
 
 
 @router.get("/{cid}")
-async def get_contractor(cid: str, user: dict = Depends(get_current_user)):
+async def get_contractor(cid: str, user: dict = Depends(require_permission("contractors", "view"))):
     doc = await db.contractors.find_one({"id": cid, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")

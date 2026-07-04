@@ -47,6 +47,25 @@ def _serialise(doc: dict) -> dict:
     return out
 
 
+# v159.0 — Thin projection returned to non-admin/hseq callers. Deliberately
+# excludes phone, email, DOB, address, availability, certifications, insurance,
+# pay, notes and every free-text PII field. A worker-role user hitting
+# `GET /api/workers` sees a directory-lite view only.
+_THIN_FIELDS = ("id", "first_name", "last_name", "role", "active",
+                "avatar_url", "trade", "company_label", "source",
+                "simpro_employee_id", "simpro_company_id")
+
+
+def _serialise_thin(doc: dict) -> dict:
+    full = _serialise(doc)
+    return {k: full.get(k) for k in _THIN_FIELDS if k in full}
+
+
+def _wants_full(user: dict) -> bool:
+    """Only admin + hseq_lead callers get the full PII-carrying worker row."""
+    return user.get("role") in {"admin", "hseq_lead"}
+
+
 def _validate_availability(av: Any) -> Optional[dict]:
     """Coerce an availability blob into the canonical shape.
     Returns None when input is None (means "clear")."""
@@ -143,12 +162,37 @@ class SyncRequest(BaseModel):
 
 
 @router.get("")
-async def list_workers(user: dict = Depends(get_current_user)):
+async def list_workers(
+    scope: Optional[Literal["me", "team", "all"]] = None,
+    user: dict = Depends(require_permission("workers", "view")),
+):
+    # v159.0 — `?scope=me` returns just the caller's own worker row (with
+    # full fields — a user always sees their own PII). Any other scope
+    # falls through to the normal directory list, with a thin projection
+    # applied for non-admin/hseq callers.
+    if scope == "me":
+        me = await db.workers.find_one(
+            {"org_id": user["org_id"], "user_id": user["id"], "deleted_at": None},
+            {"_id": 0},
+        )
+        if not me:
+            # Fall back: try matching by email (Simpro-linked workers may not
+            # carry a `user_id` link).
+            me = await db.workers.find_one(
+                {"org_id": user["org_id"], "email": (user.get("email") or "").lower(), "deleted_at": None},
+                {"_id": 0},
+            )
+        return [_serialise(me)] if me else []
+
     cursor = db.workers.find(
         {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
     ).sort([("active", -1), ("last_name", 1), ("first_name", 1)])
     rows = await cursor.to_list(2000)
-    return [_serialise(r) for r in rows]
+    if _wants_full(user):
+        return [_serialise(r) for r in rows]
+    # Everyone else (worker/supervisor/contractor with view perm) gets the
+    # thin projection — a directory of names + roles + status. No PII.
+    return [_serialise_thin(r) for r in rows]
 
 
 @router.post("", status_code=201)

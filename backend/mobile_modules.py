@@ -55,16 +55,22 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
     "worker": {
         "pre_start": True, "site_diary": True, "hazard": True, "incident": True,
         "inspection": True, "swms": True, "inductions": True,
-        "plant_vehicles": True,
+        # v159.0 hardening — worker no longer sees Plant & Vehicles module by
+        # default. Reserved for supervisor+ per the audit §3 matrix.
+        "plant_vehicles": False,
         "certifications": True, "ask_intel": False,
         "sign_on": True, "profile": True,
-        # v158 defaults per user brief.
-        "forms": True, "document_library": True,
+        # v159.0 — Document Library flipped OFF by default. Worker retrieves
+        # own induction docs via the induction flow, not the library.
+        # Contractors / suppliers / workers directory stay OFF.
+        "forms": True, "document_library": False,
         "contractors": False, "suppliers": False, "workers": False,
     },
     "supervisor": {k: True for k in MODULE_KEYS},
     "contractor": {
-        "pre_start": False, "site_diary": False, "hazard": False, "incident": False,
+        # v159.0 — contractors need to see hazards + incidents that pertain
+        # to their crew, so hazard/incident flipped ON by default per audit §3.
+        "pre_start": False, "site_diary": False, "hazard": True, "incident": True,
         "inspection": False, "swms": True, "inductions": True,
         "plant_vehicles": False,
         "certifications": False, "ask_intel": False,
