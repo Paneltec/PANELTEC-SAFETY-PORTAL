@@ -6,6 +6,8 @@ import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
+import { AnimatedNumber } from '../components/ui/polish';
+import { getUser } from '../lib/auth';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -383,16 +385,20 @@ function CaptureCard({ tool, onClick }) {
   );
 }
 
-function MetricChip({ row, value }) {
+function MetricChip({ row, value, loading }) {
   const Icon = ICONS[row.icon] || FileText;
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3 flex items-center gap-3" data-testid={`metric-${row.key}`}>
-      <div className="w-9 h-9 rounded-lg bg-slate-50 text-slate-600 flex items-center justify-center shrink-0"><Icon size={16} /></div>
+    <div className="stat-card p-3 flex items-center gap-3" data-testid={`metric-${row.key}`}>
+      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center shrink-0 shadow-sm"><Icon size={17} /></div>
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-slate-800 truncate">{row.label}</div>
         <div className="text-[10px] uppercase tracking-wider text-slate-400">this quarter</div>
       </div>
-      <div className="font-display text-xl font-semibold">{value}</div>
+      <div className="font-display text-2xl font-bold tracking-tight text-slate-900">
+        {loading
+          ? <span className="inline-block w-10 h-6 rounded animate-shimmer-x" />
+          : <AnimatedNumber value={Number.isFinite(value) ? value : 0} duration={1100} testid={`metric-${row.key}-value`} />}
+      </div>
     </div>
   );
 }
@@ -456,6 +462,44 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-[1400px] mx-auto" data-testid="dashboard-page">
+      {/* v157 — Personalised hero greeting on top of the existing banner. Uses
+          time-of-day salutation + logged-in user's first name + today's date.
+          Includes a slow-drifting orange/blue radial glow for premium feel
+          (opacity kept ≤ 0.08 per spec — not distracting). */}
+      <div className="mb-6 rounded-2xl overflow-hidden relative border border-slate-800/60"
+           style={{ background: 'linear-gradient(135deg, #0B1220 0%, #0F1B33 55%, #1A2B4D 100%)' }}
+           data-testid="dashboard-hero-v157">
+        <div className="hero-drift-glow" aria-hidden />
+        <div className="relative px-6 sm:px-8 py-6 sm:py-7 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-semibold tracking-[0.22em] text-orange-400 uppercase">Paneltec Civil · Intelligence Centre</div>
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold mt-2 leading-tight tracking-tight text-white">
+              {(() => {
+                const h = new Date().getHours();
+                const salute = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+                const u = getUser();
+                const first = (u?.name || u?.full_name || u?.email || 'there').split(' ')[0].split('@')[0];
+                return `${salute}, ${first}.`;
+              })()}
+            </h1>
+            <p className="mt-2 text-sm text-slate-300 max-w-2xl">
+              {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              {' · '}
+              {loading
+                ? 'Loading today\u2019s compliance pulse\u2026'
+                : ((m?.records_needing_attention ?? 0) === 0
+                    ? 'Compliance is running clean org-wide.'
+                    : `${m.records_needing_attention} record${m.records_needing_attention === 1 ? '' : 's'} need attention — quick review recommended.`)}
+            </p>
+          </div>
+          <Link to="/app/help" data-testid="dashboard-user-manual-btn-v157"
+            className="btn-primary-gradient self-start sm:self-end shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs sm:text-sm">
+            <BookOpen20Regular />
+            User Manual
+          </Link>
+        </div>
+      </div>
+
       <div
         className="page-banner mb-8 px-6 sm:px-8 py-7 sm:py-9 border border-slate-200 shadow-sm relative"
         style={{ backgroundImage: 'url(/tile-bgs/compliance.png)' }}
@@ -520,7 +564,7 @@ export default function Dashboard() {
           <div className="text-[11px] font-semibold tracking-[0.16em] text-slate-500 uppercase mb-1">Key metrics</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {METRIC_ROWS.map((row) => (
-              <MetricChip key={row.key} row={row} value={loading ? '…' : (m?.[row.field] ?? 0)} />
+              <MetricChip key={row.key} row={row} loading={loading} value={m?.[row.field] ?? 0} />
             ))}
           </div>
 

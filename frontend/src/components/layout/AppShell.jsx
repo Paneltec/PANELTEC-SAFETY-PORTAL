@@ -131,15 +131,15 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
                   <li key={it.to}>
                     <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
                       className={({ isActive }) =>
-                        `group flex items-center gap-3 rounded-lg pr-2.5 py-2 text-sm transition-colors border-l-4 ${
+                        `group flex items-center gap-3 rounded-lg pr-2.5 pl-2.5 py-2 text-sm transition-all ${
                           isActive
-                            ? 'border-orange-500 bg-orange-50 pl-1.5 text-slate-900 font-semibold'
-                            : 'border-transparent pl-1.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900'
+                            ? 'sidebar-active text-slate-900'
+                            : 'sidebar-idle text-slate-700 hover:text-slate-900'
                         }`} title={collapsed ? it.label : undefined}>
                       {({ isActive }) => (
                         <>
                           <IconFilled
-                            className={`shrink-0 transition-colors ${isActive ? 'text-orange-500' : `${tint.idle} ${tint.hover}`}`}
+                            className={`shrink-0 transition-colors sidebar-icon ${isActive ? 'text-orange-500' : `${tint.idle} ${tint.hover}`}`}
                             style={{ width: 20, height: 20 }}
                           />
                           {!collapsed && <span className="truncate flex-1">{it.label}</span>}

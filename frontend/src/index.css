@@ -287,20 +287,226 @@ code {
     100% { left: 130%; opacity: 0; }
 }
 
-/* Modal backdrop + inner-card open animation. Apply .modal-backdrop-in on
-   the fixed backdrop, .modal-card-in on the inner card. */
-@keyframes paneltec-modal-fade { 0% { opacity: 0; } 100% { opacity: 1; } }
-@keyframes paneltec-modal-scale {
-    0%   { opacity: 0; transform: scale(0.97) translateY(6px); }
-    100% { opacity: 1; transform: scale(1) translateY(0); }
+/* ─────────────── v157 · "Actually Visible Bling" pass ───────────────
+   Obvious, professional polish. Additive-only. */
+
+/* Brand hairline top-border for cards — navy → orange gradient. */
+.brand-hairline-top {
+    position: relative;
 }
+.brand-hairline-top::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #0B1220 0%, #F97316 100%);
+    border-top-left-radius: inherit;
+    border-top-right-radius: inherit;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* Universal hover-lift on cards (stronger than v156). Applied via .polish-card */
+.polish-card {
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out, border-color 200ms ease-out;
+    will-change: transform, box-shadow;
+}
+.polish-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(11,18,32,0.06), 0 20px 48px rgba(249,115,22,0.14);
+    border-color: rgba(249,115,22,0.35);
+}
+
+/* Primary CTA — gradient orange, glow on hover, press-scale. */
+.btn-primary-gradient {
+    background: linear-gradient(135deg, #F97316 0%, #EA580C 100%);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(11,18,32,0.06), 0 4px 12px rgba(249,115,22,0.24);
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out, filter 200ms ease-out;
+}
+.btn-primary-gradient:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(11,18,32,0.08), 0 12px 32px rgba(249,115,22,0.40);
+    filter: brightness(1.05);
+}
+.btn-primary-gradient:active { transform: translateY(0) scale(0.98); }
+
+/* Sidebar active-state — 3px orange left bar + gradient wash + glow. */
+.sidebar-active {
+    background: linear-gradient(90deg,
+        rgba(249,115,22,0.14) 0%,
+        rgba(249,115,22,0.04) 60%,
+        rgba(249,115,22,0) 100%) !important;
+    box-shadow: inset 3px 0 0 #F97316,
+                inset 0 0 0 1px rgba(249,115,22,0.15);
+    color: #0B1220 !important;
+    font-weight: 600;
+}
+.sidebar-active .sidebar-icon { color: #F97316 !important; }
+
+/* Sidebar hover — subtle background lift + slide-in dot. */
+.sidebar-idle {
+    position: relative;
+    transition: background 180ms ease-out, transform 180ms ease-out;
+}
+.sidebar-idle::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: #F97316;
+    opacity: 0;
+    transform: translateY(-50%) translateX(-6px);
+    transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+.sidebar-idle:hover::before {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+}
+.sidebar-idle:hover {
+    background: rgba(249,115,22,0.05);
+}
+
+/* Pulsing status dot for topbar pills (when state ≠ green). */
+@keyframes paneltec-dot-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 currentColor; }
+    50%      { opacity: 0.85; box-shadow: 0 0 0 4px transparent; }
+}
+.status-dot-pulse {
+    animation: paneltec-dot-pulse 1.8s ease-in-out infinite;
+}
+
+/* Stat / metric card — brand hairline + hover glow. */
+.stat-card {
+    position: relative;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    transition: transform 200ms ease-out, box-shadow 200ms ease-out;
+    overflow: hidden;
+}
+.stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #0B1220 0%, #F97316 100%);
+    z-index: 1;
+    pointer-events: none;
+}
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 12px rgba(11,18,32,0.06), 0 20px 48px rgba(249,115,22,0.16);
+    border-color: rgba(249,115,22,0.35);
+}
+
+/* Slow-drifting radial glow for dark hero backgrounds. */
+@keyframes paneltec-hero-drift {
+    0%, 100% { transform: translate(0, 0); }
+    50%      { transform: translate(-30px, 20px); }
+}
+.hero-drift-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at 30% 20%, rgba(249,115,22,0.20) 0%, rgba(249,115,22,0) 55%),
+                radial-gradient(circle at 80% 70%, rgba(59,130,246,0.14) 0%, rgba(59,130,246,0) 55%);
+    animation: paneltec-hero-drift 18s ease-in-out infinite;
+    pointer-events: none;
+}
+
+/* Row hover on list tables. */
+.row-lift {
+    transition: background 160ms ease-out, box-shadow 160ms ease-out;
+}
+.row-lift:hover {
+    background: rgba(249,115,22,0.045);
+    box-shadow: inset 3px 0 0 rgba(249,115,22,0.55);
+}
+
+/* Icon-button pill — consistent hover ring. */
+.icon-btn-ring {
+    transition: background 160ms ease-out, box-shadow 160ms ease-out, color 160ms ease-out;
+}
+.icon-btn-ring:hover {
+    background: rgba(249,115,22,0.08);
+    box-shadow: 0 0 0 3px rgba(249,115,22,0.18);
+    color: #EA580C;
+}
+
+/* Avatar glow — hover ring. */
+.avatar-glow {
+    transition: box-shadow 200ms ease-out, transform 200ms ease-out;
+}
+.avatar-glow:hover {
+    box-shadow: 0 0 0 3px rgba(249,115,22,0.35), 0 4px 12px rgba(249,115,22,0.25);
+}
+.avatar-glow:active { transform: scale(0.96); }
+
+/* Toast redesign — brand accent left border, backdrop blur, slide in. */
+[data-sonner-toast] {
+    backdrop-filter: blur(10px);
+    background: rgba(255,255,255,0.94) !important;
+    border: 1px solid rgba(226,232,240,0.9) !important;
+    box-shadow: 0 12px 40px rgba(11,18,32,0.12) !important;
+    border-radius: 12px !important;
+    position: relative;
+    overflow: hidden;
+}
+[data-sonner-toast]::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 4px;
+    background: linear-gradient(180deg, #F97316 0%, #EA580C 100%);
+}
+[data-sonner-toast][data-type="success"]::before {
+    background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+}
+[data-sonner-toast][data-type="error"]::before {
+    background: linear-gradient(180deg, #EF4444 0%, #B91C1C 100%);
+}
+[data-sonner-toast][data-type="warning"]::before {
+    background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%);
+}
+
+/* Modal backdrop blur — increase from tiny to 12px. */
 .modal-backdrop-in {
-    animation: paneltec-modal-fade 180ms ease-out both;
-    backdrop-filter: blur(2px);
+    backdrop-filter: blur(12px) !important;
+}
+
+/* Spring-in for modal card — scale 0.94 → 1 on open. Only the card itself
+   gets `transform`; never propagate transforms to ancestors (v156.1 lesson). */
+@keyframes paneltec-modal-spring {
+    0%   { opacity: 0; transform: scale(0.94); }
+    60%  { opacity: 1; transform: scale(1.01); }
+    100% { opacity: 1; transform: scale(1); }
 }
 .modal-card-in {
-    animation: paneltec-modal-scale 200ms ease-out both;
-    transform-origin: center center;
+    animation: paneltec-modal-spring 260ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+/* Glass card — translucent navy for dark-theme surfaces. */
+.glass-card {
+    background: rgba(11, 18, 32, 0.72);
+    backdrop-filter: blur(16px) saturate(140%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .polish-card, .btn-primary-gradient, .stat-card,
+    .row-lift, .icon-btn-ring, .avatar-glow,
+    .status-dot-pulse, .hero-drift-glow {
+        animation: none !important;
+        transition: none !important;
+    }
+    .polish-card:hover, .btn-primary-gradient:hover,
+    .stat-card:hover { transform: none !important; }
 }
 
 /* Inline validation micro-animations. */
