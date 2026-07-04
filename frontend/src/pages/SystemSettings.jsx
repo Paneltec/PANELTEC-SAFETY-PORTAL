@@ -27,7 +27,10 @@ import {
 } from '@fluentui/react-icons';
 
 const POLL_INTERVAL_MS   = 5_000;
-const POLL_CEILING_MS    = 25 * 60 * 1000;  // 25 min belt-and-braces
+const POLL_CEILING_MS    = 25 * 60 * 1000;  // 25 min belt-and-braces (manual install)
+const AUTO_POLL_CEILING_MS = 5 * 60 * 1000; // v152 — 5 min cap for auto-poll on
+                                            // mount-when-not-ok (prevents forever
+                                            // polling if apt is genuinely broken).
 
 export default function SystemSettings() {
   const me = getUser();
@@ -38,8 +41,10 @@ export default function SystemSettings() {
   const [logTail, setLogTail] = useState('');
   const [exitCode, setExitCode] = useState(null);
   const [jobId, setJobId] = useState(null);
+  const [autoHealing, setAutoHealing] = useState(false);
   const pollTimer = useRef(null);
   const pollStartedAt = useRef(0);
+  const autoHealingRef = useRef(false);
 
   const normTools = (h) => ({
     libreoffice: { installed: !!h?.libreoffice?.ok, version: h?.libreoffice?.version || null, path: h?.libreoffice?.path || null },
@@ -68,15 +73,33 @@ export default function SystemSettings() {
       const stillRunning = applyHealth(r.data);
       const allOk = r.data?.libreoffice?.ok && r.data?.tesseract?.ok && r.data?.poppler?.ok;
       const elapsed = Date.now() - pollStartedAt.current;
-      if (!stillRunning || allOk || elapsed > POLL_CEILING_MS) {
+      // v152 — auto-heal cycles get a tighter cap so we don't loop
+      // forever on a genuinely broken pod.
+      const ceiling = autoHealingRef.current ? AUTO_POLL_CEILING_MS : POLL_CEILING_MS;
+      // v152 — stop when: all three green AND no install running, OR
+      // wall-clock cap. Note we now poll even when install_running=false
+      // (auto-heal case), so `!stillRunning` alone is NOT a stop signal
+      // anymore — a green result is.
+      const done = (allOk && !stillRunning) || elapsed > ceiling;
+      if (done) {
         stopPolling();
         setInstalling(false);
-        if (!stillRunning && r.data?.install_exit_code === 0 && allOk) {
+        if (allOk && !stillRunning && autoHealing.current) {
+          // Silent success on auto-heal — a toast here would be noisy.
+          autoHealing.current = false;
+        } else if (!stillRunning && r.data?.install_exit_code === 0 && allOk) {
           toast.success('LibreOffice + OCR installed — XLSX / PPTX / OCR now available.');
         } else if (!stillRunning && r.data?.install_exit_code !== 0 && r.data?.install_exit_code !== null) {
           toast.error(`Install finished with exit code ${r.data.install_exit_code} — check log below.`);
-        } else if (elapsed > POLL_CEILING_MS) {
-          toast.error('Install still running after 25 min — check server logs.');
+        } else if (elapsed > ceiling) {
+          if (autoHealing.current) {
+            // Fell off the auto-heal cap — apt is likely broken, show a
+            // subtle nudge but don't panic.
+            toast.error('Server tools still missing after 5 min — click Install now or check server logs.');
+            autoHealing.current = false;
+          } else {
+            toast.error('Install still running after 25 min — check server logs.');
+          }
         }
       }
     } catch (e) {
@@ -98,8 +121,15 @@ export default function SystemSettings() {
     try {
       const r = await api.get('/admin/server-tools/health');
       const running = applyHealth(r.data);
+      const allOk = r.data?.libreoffice?.ok && r.data?.tesseract?.ok && r.data?.poppler?.ok;
       if (running) {
         setInstalling(true);
+        autoHealingRef.current = false;
+        setAutoHealing(false);
+        startPolling();
+      } else if (!allOk) {
+        autoHealingRef.current = true;
+        setAutoHealing(true);
         startPolling();
       }
     } catch (e) {
@@ -161,6 +191,7 @@ export default function SystemSettings() {
           purpose="DOCX / XLSX / PPTX / ODT / RTF → PDF"
           tool={status?.libreoffice}
           loading={loading}
+          autoHealing={autoHealing}
           testid="tool-libreoffice"
         />
         <ToolCard
@@ -168,6 +199,7 @@ export default function SystemSettings() {
           purpose="Extract text from scanned PDFs and photos"
           tool={status?.tesseract}
           loading={loading}
+          autoHealing={autoHealing}
           testid="tool-tesseract"
         />
         <ToolCard
@@ -175,6 +207,7 @@ export default function SystemSettings() {
           purpose="PDF text extraction for Smart Search indexing"
           tool={status?.poppler}
           loading={loading}
+          autoHealing={autoHealing}
           testid="tool-poppler"
         />
       </div>
@@ -242,7 +275,7 @@ export default function SystemSettings() {
   );
 }
 
-function ToolCard({ icon: Icon, title, purpose, tool, loading, testid }) {
+function ToolCard({ icon: Icon, title, purpose, tool, loading, testid, autoHealing }) {
   const ok = tool?.installed;
   return (
     <div data-testid={testid}
@@ -257,12 +290,14 @@ function ToolCard({ icon: Icon, title, purpose, tool, loading, testid }) {
         </div>
         {loading ? <Loader2 size={14} className="text-slate-300 animate-spin" />
           : ok ? <CheckCircle2 size={16} className="text-emerald-600" data-testid={`${testid}-installed`} />
-               : <XCircle size={16} className="text-slate-400" data-testid={`${testid}-missing`} />}
+               : autoHealing ? <Loader2 size={14} className="text-blue-500 animate-spin" data-testid={`${testid}-autohealing`} />
+                             : <XCircle size={16} className="text-slate-400" data-testid={`${testid}-missing`} />}
       </div>
       <div className="mt-2.5 text-[11px] text-slate-600 font-mono break-all min-h-[2.5em]">
         {loading ? '…'
           : ok ? (tool.version || tool.path || 'Installed')
-               : <span className="text-slate-400 italic">Not installed</span>}
+               : autoHealing ? <span className="text-blue-600 italic not-italic font-sans">Auto-install pending…</span>
+                             : <span className="text-slate-400 italic">Not installed</span>}
       </div>
     </div>
   );
