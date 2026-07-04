@@ -21,6 +21,7 @@ import {
   Sparkle20Filled,
   Add20Regular,
   Edit20Regular,
+  Copy20Regular as Duplicate20Regular,
   Delete20Regular,
   Save20Regular,
   Checkmark16Filled,
@@ -32,7 +33,13 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 
-const ACTIONS = ['open', 'view', 'edit', 'delete', 'email'];
+const ACTIONS = ['open', 'view', 'edit', 'delete', 'email', 'team_view'];
+// v159.2 — `team_view` only applies to these 6 team-scoped resources.
+// For every other resource we render a locked "—" cell so admins don't
+// think toggling it does anything.
+const TEAM_VIEW_RESOURCES = new Set([
+  'swms', 'pre_starts', 'site_diary', 'hazards', 'incidents', 'inspections',
+]);
 
 export default function PermissionPresetsAdmin() {
   const can = useCan();
@@ -77,6 +84,19 @@ export default function PermissionPresetsAdmin() {
       setConfirmDelete(null);
       setSelectedKey(null);
       await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  // v159.3 — one-click clone of any preset (built-in or custom).
+  const handleDuplicate = async (preset) => {
+    const sourceId = preset.is_builtin ? preset.key : preset.id;
+    setBusy(true);
+    try {
+      const { data: created } = await api.post(`/permission-presets/${sourceId}/duplicate`);
+      toast.success(`Cloned "${preset.label}" → "${created.label}"`);
+      await load();
+      setSelectedKey(created.key);
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
@@ -152,6 +172,11 @@ export default function PermissionPresetsAdmin() {
                   </div>
                   {canEdit && !selected.is_builtin && (
                     <div className="flex items-center gap-2">
+                      <button onClick={() => handleDuplicate(selected)}
+                        disabled={busy} data-testid="preset-detail-duplicate"
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60">
+                        <Duplicate20Regular /> Duplicate
+                      </button>
                       <button onClick={() => setEditing({
                           id: selected.id, label: selected.label, description: selected.description || '',
                           permissions: JSON.parse(JSON.stringify(selected.permissions || {})),
@@ -166,11 +191,29 @@ export default function PermissionPresetsAdmin() {
                     </div>
                   )}
                   {selected.is_builtin && (
-                    <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 px-2.5 py-1 rounded-full bg-slate-100">
-                      <Lock20Regular style={{ width: 12, height: 12 }} /> Read-only
+                    <div className="flex items-center gap-2">
+                      {canEdit && (
+                        <button onClick={() => handleDuplicate(selected)}
+                          disabled={busy} data-testid="preset-detail-duplicate"
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-violet-300 bg-violet-50 text-sm font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-60">
+                          <Duplicate20Regular /> Duplicate &amp; edit
+                        </button>
+                      )}
+                      <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 px-2.5 py-1 rounded-full bg-slate-100">
+                        <Lock20Regular style={{ width: 12, height: 12 }} /> Read-only
+                      </div>
                     </div>
                   )}
                 </div>
+
+                {/* v159.3 — "Based on X" chip for cloned custom presets. */}
+                {!selected.is_builtin && selected.based_on && (
+                  <div className="mb-3 -mt-2 inline-flex items-center gap-1.5 text-[11px] font-semibold text-violet-800 px-2.5 py-1 rounded-full bg-violet-100"
+                       data-testid="preset-based-on-chip">
+                    <Duplicate20Regular style={{ width: 12, height: 12 }} />
+                    Based on {selected.based_on.replace(/_/g, ' ')}
+                  </div>
+                )}
 
                 {/* Matrix grid */}
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -186,6 +229,16 @@ export default function PermissionPresetsAdmin() {
                         <tr key={r} className="border-t border-slate-100">
                           <td className="px-3 py-2 font-medium text-slate-700">{r}</td>
                           {ACTIONS.map((a) => {
+                            // v159.2 — `team_view` only meaningful for the six
+                            // team-scoped resources. Render a locked dash for
+                            // everything else so the column still lines up.
+                            if (a === 'team_view' && !TEAM_VIEW_RESOURCES.has(r)) {
+                              return (
+                                <td key={a} className="text-center px-3 py-2 text-slate-300" data-testid={`preset-cell-${r}-${a}`}>
+                                  —
+                                </td>
+                              );
+                            }
                             const v = !!selected.permissions?.[r]?.[a];
                             return (
                               <td key={a} className="text-center px-3 py-2" data-testid={`preset-cell-${r}-${a}`}>

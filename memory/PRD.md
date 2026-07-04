@@ -2222,3 +2222,61 @@ Verification:
 - `pytest backend/tests/test_worker_leaks.py` → **28 passed**
 
 v159.3 (per-user overrides + preset cloning) remains deferred.
+
+---
+
+## v159.3 — Per-user overrides + preset cloning + Doc Library bulk restrict (2026-07-04)
+
+Delivered (backend + high-value frontend hooks):
+- **Preset cloning**: `POST /api/permission-presets/{preset_id}/duplicate`
+  (works for built-in keys and custom preset ids). Returns an editable
+  clone stamped with `based_on = <source key>`. Auto-labels the clone
+  `{source_label} (Custom)` with `#2`, `#3` … suffixes to avoid label
+  collisions in the same org. Deep-copies the matrix and re-runs
+  `_validate_permissions` so email flags stay coherent.
+- **Preset assignees**: `GET /api/permission-presets/{preset_id}/assignees`
+  returns the users currently sharing this preset's exact matrix.
+  Powers the delete-confirmation ("N users use this preset — reassign
+  before deleting").
+- **Custom out schema** now surfaces `based_on` for chip rendering.
+- **Bulk restrict**: `POST /api/permissions/bulk-restrict` — new
+  `backend/bulk_permissions.py` router. Accepts
+  `{user_ids, resource, action, value, reason?}`, org-scoped, admin-only.
+  Preserves existing overrides — merges the single cell into each
+  target user's `overrides[resource][action]`.
+- **`team_view` column** rendered in the Web Admin Permissions Matrix,
+  with a locked `—` cell for resources outside the six team-scoped ones.
+- **Duplicate button** in `PermissionPresetsAdmin.jsx` for both built-in
+  ("Duplicate & edit" pill in violet) and custom presets ("Duplicate"
+  neutral pill). Cloned preset auto-selects; the violet "Based on X"
+  chip appears above the matrix.
+- **Version bump**: `paneltec-v159.3` in both `service-worker.js` and
+  `frontend/src/lib/version.js`.
+- **Pytest**: 8 new v159.3 cases (36 total, all passing) covering the
+  full happy-path + admin/worker gating + input validation.
+
+Deferred to v159.4 (visual polish, functionally covered by existing
+backend endpoints):
+- **Per-user permissions modal** (matrix tri-state UI on each user row).
+  The `GET/PUT /api/users/{id}/permissions` and
+  `POST /api/users/{id}/permissions/reset` endpoints already exist and
+  are pytest-verified — a Users & Permissions page wire-up is all that
+  remains.
+- **Doc Library "Restrict access" toolbar button** — again, backend
+  endpoint is ready + tested; a multi-select modal + confirmation
+  dialog need to be added to the Document Library toolbar.
+
+Verification:
+- Admin `POST /permission-presets/field_worker/duplicate` → 201, clone
+  carries `based_on='field_worker'`, `label='Field Worker (Custom) #2'`
+- Worker same call → **403**
+- Built-in preset delete → **400** (cannot delete)
+- Admin `GET /users/{worker_id}/permissions` → 200 with
+  `effective.incidents.team_view=False`
+- Worker same GET → **403**
+- Admin `POST /permissions/bulk-restrict {resource:documents, action:view, value:false}` →
+  200, `updated=1`; follow-up GET confirms `effective.documents.view=False`
+- Worker same POST → **403**
+- Bad resource → **400**
+- `pytest backend/tests/test_worker_leaks.py` → **36 passed**
+- `/api/openapi.json` → 200

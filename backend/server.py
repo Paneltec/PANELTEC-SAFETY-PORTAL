@@ -175,6 +175,8 @@ api.include_router(users_router)
 from permission_presets import router as preset_router, apply_router as preset_apply_router  # noqa: E402
 api.include_router(preset_router)
 api.include_router(preset_apply_router)
+from bulk_permissions import router as bulk_permissions_router  # noqa: E402
+api.include_router(bulk_permissions_router)
 api.include_router(workspaces_router)
 app.include_router(org_router)
 app.include_router(mobile_modules_router)

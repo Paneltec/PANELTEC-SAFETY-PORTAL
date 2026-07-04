@@ -292,3 +292,130 @@ def test_admin_openapi_still_available(admin_headers):
     assert r.status_code == 200, r.text[:200]
     body = r.json()
     assert body.get("openapi", "").startswith("3."), "OpenAPI schema malformed"
+
+
+# ---------- v159.3 preset clone + per-user permissions + bulk restrict ----------
+
+def test_admin_can_duplicate_builtin_preset(admin_headers):
+    """Cloning a built-in preset creates an editable custom row with a
+    `based_on` audit-trail field."""
+    r = requests.post(
+        f"{BASE}/api/permission-presets/field_worker/duplicate",
+        headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 201, r.text[:300]
+    clone = r.json()
+    assert clone["is_builtin"] is False
+    assert clone["based_on"] == "field_worker"
+    assert "Custom" in clone["label"]
+    assert clone["permissions"], "Clone must carry a non-empty matrix"
+    # Cleanup: delete the clone so repeated test runs don't pile up rows.
+    requests.delete(
+        f"{BASE}/api/permission-presets/{clone['id']}",
+        headers=admin_headers, timeout=10,
+    )
+
+
+def test_worker_cannot_duplicate_preset(worker_headers):
+    r = requests.post(
+        f"{BASE}/api/permission-presets/field_worker/duplicate",
+        headers=worker_headers, timeout=10,
+    )
+    assert r.status_code == 403, (
+        f"Worker leaked preset clone endpoint — got {r.status_code}"
+    )
+
+
+def test_builtin_preset_cannot_be_deleted(admin_headers):
+    r = requests.delete(
+        f"{BASE}/api/permission-presets/field_worker", headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 400, (
+        f"Built-in preset deletion should 400 — got {r.status_code}"
+    )
+
+
+def test_admin_can_read_and_write_user_permissions(admin_headers, worker_headers):
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    uid = me["id"]
+    # Read
+    r = requests.get(
+        f"{BASE}/api/users/{uid}/permissions", headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    assert "effective" in body and "overrides" in body
+    # Write a benign no-op override (documents.email=False for a resource
+    # that doesn't support email anyway — persisted but effectively inert).
+    new_overrides = dict(body.get("overrides") or {})
+    r2 = requests.put(
+        f"{BASE}/api/users/{uid}/permissions",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"overrides": new_overrides}, timeout=10,
+    )
+    assert r2.status_code == 200, r2.text[:300]
+
+
+def test_worker_cannot_read_own_permissions_endpoint(worker_headers):
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    r = requests.get(
+        f"{BASE}/api/users/{me['id']}/permissions", headers=worker_headers, timeout=10,
+    )
+    assert r.status_code == 403, (
+        f"Worker leaked own permissions GET — got {r.status_code}"
+    )
+
+
+def test_bulk_restrict_denies_documents_view(admin_headers, worker_headers):
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    payload = {
+        "user_ids": [me["id"]],
+        "resource": "documents",
+        "action": "view",
+        "value": False,
+        "reason": "v159.3 pytest — bulk restrict smoke",
+    }
+    r = requests.post(
+        f"{BASE}/api/permissions/bulk-restrict",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json=payload, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    assert body["updated"] == 1
+    assert body["missing_user_ids"] == []
+    # Sanity: the worker's effective docs.view is now False.
+    r2 = requests.get(
+        f"{BASE}/api/users/{me['id']}/permissions", headers=admin_headers, timeout=10,
+    )
+    eff = r2.json().get("effective") or {}
+    assert eff.get("documents", {}).get("view") is False, (
+        f"Bulk restrict didn't stick: documents.view={eff.get('documents', {}).get('view')}"
+    )
+    # Cleanup — reset the worker's overrides so subsequent tests aren't affected.
+    requests.post(
+        f"{BASE}/api/users/{me['id']}/permissions/reset",
+        headers=admin_headers, timeout=10,
+    )
+
+
+def test_worker_cannot_bulk_restrict(worker_headers):
+    r = requests.post(
+        f"{BASE}/api/permissions/bulk-restrict",
+        headers={**worker_headers, "Content-Type": "application/json"},
+        json={"user_ids": ["x"], "resource": "documents", "action": "view", "value": False},
+        timeout=10,
+    )
+    assert r.status_code == 403, (
+        f"Worker leaked bulk-restrict — got {r.status_code}"
+    )
+
+
+def test_bulk_restrict_rejects_bad_resource(admin_headers):
+    r = requests.post(
+        f"{BASE}/api/permissions/bulk-restrict",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"user_ids": ["x"], "resource": "banana", "action": "view", "value": False},
+        timeout=10,
+    )
+    assert r.status_code == 400, r.text[:200]

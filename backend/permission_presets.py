@@ -196,6 +196,7 @@ def _custom_out(doc: dict) -> dict:
         "icon": doc.get("icon"),
         "permissions": doc.get("permissions") or {},
         "is_builtin": False,
+        "based_on": doc.get("based_on"),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
         "created_by": doc.get("created_by"),
@@ -298,6 +299,99 @@ async def delete_preset(preset_id: str,
     if res.deleted_count == 0:
         raise HTTPException(404, "Preset not found")
     return {"ok": True}
+
+
+@router.post("/{preset_id}/duplicate", status_code=201)
+async def duplicate_preset(preset_id: str,
+                           actor: dict = Depends(require_permission("users", "edit"))):
+    """v159.3 — Clone a built-in OR custom preset into an editable custom
+    row. The clone gets a `based_on` audit-trail field pointing at the
+    original preset key, so the UI can render a "Based on X" chip.
+
+    Behaviour:
+      • Source resolution: `preset_id` may be a built-in key
+        (e.g. `field_worker`) or the id of an existing custom preset in
+        the caller's org.
+      • Naming: `{label} (Custom)` with `_2`, `_3` … suffix if that name
+        is already taken in the org.
+      • Key: `_slugify(label)_<6-char rand>` — always unique.
+      • Permissions are deep-copied (no shared refs). Built-in email
+        restrictions re-applied via `_validate_permissions`.
+    """
+    source: Optional[dict] = None
+    if preset_id in BUILT_IN_BY_KEY:
+        source = BUILT_IN_BY_KEY[preset_id]
+        source_key = source["key"]
+    else:
+        source = await db.permission_presets.find_one(
+            {"id": preset_id, "org_id": actor["org_id"]}, {"_id": 0},
+        )
+        if not source:
+            raise HTTPException(404, "Preset not found")
+        source_key = source.get("key")
+
+    base_label = f"{source['label']} (Custom)"
+    # Deduplicate on label across the org's custom presets.
+    label = base_label
+    suffix = 2
+    while await db.permission_presets.find_one(
+        {"org_id": actor["org_id"], "label": label},
+    ):
+        label = f"{base_label} #{suffix}"
+        suffix += 1
+
+    key = f"{_slugify(source['label'])}_{new_id()[:6]}"
+    doc = {
+        "id": new_id(),
+        "org_id": actor["org_id"],
+        "key": key,
+        "label": label,
+        "description": source.get("description") or "",
+        "icon": source.get("icon") or "Sparkles",
+        "permissions": _validate_permissions(source.get("permissions") or {}),
+        "based_on": source_key,
+        "created_by": actor["id"],
+        "created_at": now_iso(),
+        "updated_at": now_iso(),
+        "is_builtin": False,
+    }
+    await db.permission_presets.insert_one(dict(doc))
+    return _custom_out(doc)
+
+
+@router.get("/{preset_id}/assignees")
+async def preset_assignees(preset_id: str,
+                           actor: dict = Depends(require_permission("users", "view"))):
+    """v159.3 — Return the list of users currently sharing this preset's
+    exact permission matrix. Used by the delete-preset confirmation to
+    prompt "N users use this preset — reassign to X before deleting."
+
+    The match is best-effort: we compare the preset's permissions to each
+    user's stored `user_permissions.overrides` verbatim. Users whose
+    matrix has diverged (per-user override edits) will NOT appear."""
+    if preset_id in BUILT_IN_BY_KEY:
+        source = BUILT_IN_BY_KEY[preset_id]
+    else:
+        source = await db.permission_presets.find_one(
+            {"id": preset_id, "org_id": actor["org_id"]}, {"_id": 0},
+        )
+        if not source:
+            raise HTTPException(404, "Preset not found")
+    target_matrix = _validate_permissions(source.get("permissions") or {})
+    overrides_docs = await db.user_permissions.find(
+        {"org_id": actor["org_id"]}, {"_id": 0, "user_id": 1, "overrides": 1},
+    ).to_list(5000)
+    matching_ids = [
+        d["user_id"] for d in overrides_docs
+        if _validate_permissions(d.get("overrides") or {}) == target_matrix
+    ]
+    if not matching_ids:
+        return {"count": 0, "users": []}
+    users = await db.users.find(
+        {"id": {"$in": matching_ids}, "org_id": actor["org_id"]},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role": 1},
+    ).to_list(5000)
+    return {"count": len(users), "users": users}
 
 
 # ---------- Apply preset to user ----------
