@@ -256,14 +256,14 @@ export default function CertificationsScreen() {
                   <TouchableOpacity testID={`gcert-file-${c.id}`}
                     style={[gst.actionBtn, { backgroundColor: '#e6eff9' }]}>
                     <Ionicons name="document" size={11} color="#1e4a8c" />
-                    <Text style={[gst.actionBtnText, { color: '#1e4a8c' }]}>File</Text>
+                    <Text style={[gst.actionBtnText, { color: Colors.orangeLight }]}>File</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity testID={`gcert-open-${c.id}`}
                   style={[gst.actionBtn, { backgroundColor: '#F1F5F9' }]}
                   onPress={() => router.push({ pathname: '/workers', params: { openWorkerId: c.worker_id } })}>
                   <Ionicons name="open" size={11} color="#475569" />
-                  <Text style={[gst.actionBtnText, { color: '#475569' }]}>Worker</Text>
+                  <Text style={[gst.actionBtnText, { color: Colors.textSecondary }]}>Worker</Text>
                 </TouchableOpacity>
               </View>
             </View>

@@ -97,7 +97,7 @@ const s = StyleSheet.create({
   body: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#475569',
+    color: Colors.textSecondary,
     textAlign: 'center',
     marginBottom: 20,
   },

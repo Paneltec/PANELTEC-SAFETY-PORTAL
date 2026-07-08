@@ -98,9 +98,9 @@ const s = StyleSheet.create({
   countBadge: { backgroundColor: Colors.orangeSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   countText: { fontSize: 12, fontWeight: '700', color: Colors.orange },
   itemRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 10 },
-  itemBorder: { borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  itemBorder: { borderTopWidth: 1, borderTopColor: Colors.border },
   itemTitle: { fontSize: 14, fontWeight: '500', color: Colors.ink },
   itemDate: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
-  viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  viewAllRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Colors.border },
   viewAllText: { fontSize: 11, color: Colors.orange, fontWeight: '700', letterSpacing: 0.8 },
 });

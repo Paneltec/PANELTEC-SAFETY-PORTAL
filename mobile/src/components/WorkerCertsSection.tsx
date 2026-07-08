@@ -246,7 +246,7 @@ export default function WorkerCertsSection({ workerId, canEdit }: {
               {(c.file_url || c.file_id) && (
                 <TouchableOpacity testID={`cert-view-${c.id}`} style={[st.actionChip, { backgroundColor: '#e6eff9' }]}>
                   <Ionicons name="document" size={11} color="#1e4a8c" />
-                  <Text style={[st.actionChipText, { color: '#1e4a8c' }]}>File</Text>
+                  <Text style={[st.actionChipText, { color: Colors.orangeLight }]}>File</Text>
                 </TouchableOpacity>
               )}
               {canEdit && (

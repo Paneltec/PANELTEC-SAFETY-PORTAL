@@ -117,17 +117,17 @@ const s = StyleSheet.create({
   tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: Colors.border, padding: 2 },
   tab: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   tabActive: { backgroundColor: '#F97316' },
-  tabText: { fontSize: 10, fontWeight: '600', color: '#64748B' },
+  tabText: { fontSize: 10, fontWeight: '600', color: Colors.textTertiary },
   tabTextActive: { color: '#fff' },
 
   tilesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tile: { width: '48%' as any, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
-  tileLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: '#64748B' },
+  tileLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: Colors.textTertiary },
   tileValue: { fontSize: 20, fontWeight: '700', color: Colors.ink, marginTop: 2 },
   tileUnit: { fontSize: 10, fontWeight: '500', color: '#94A3B8' },
 
   metaRow: { marginTop: 8 },
-  metaText: { fontSize: 10, color: '#64748B' },
+  metaText: { fontSize: 10, color: Colors.textTertiary },
   collectingText: { fontSize: 10, color: '#92400E', marginTop: 4 },
 
   sparkWrap: { marginTop: 6 },

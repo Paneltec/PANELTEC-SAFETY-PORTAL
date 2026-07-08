@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
   heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
   sub: { fontSize: 14, color: Colors.textSecondary, marginTop: 6 },
   form: { marginTop: 24 },
-  label: { fontSize: 14, fontWeight: '500', color: '#334155', marginBottom: 6, marginTop: 12 },
+  label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 6, marginTop: 12 },
   input: {
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text,

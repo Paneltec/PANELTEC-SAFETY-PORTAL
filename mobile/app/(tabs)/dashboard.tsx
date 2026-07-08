@@ -299,15 +299,15 @@ const d = StyleSheet.create({
   // "COMPLIANCE SNAPSHOT") were `textTertiary` — reads as barely-there
   // grey. Bumped to slate-600 with tighter letterSpacing so the headers
   // clearly organise the surface without shouting.
-  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4, color: '#475569', marginBottom: 10, marginTop: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4, color: Colors.textSecondary, marginBottom: 10, marginTop: 8 },
   metricNum: { fontSize: 24, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5 },
   metricLabel: { fontSize: 11, fontWeight: '700', color: '#1e293b', marginTop: 2 },
-  metricSub: { fontSize: 9, color: '#64748b', fontWeight: '700', letterSpacing: 0.8 },
+  metricSub: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 0.8 },
   captureTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
   // v160.0.3 — Manage/Capture tile descriptions were `textSecondary`
   // which faded to near-white on the light-blue tile background. Dark
   // slate ensures the descriptor line reads as an equal citizen.
-  captureDesc: { fontSize: 12, color: '#334155', marginTop: 3, fontWeight: '500' },
+  captureDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 3, fontWeight: '500' },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   metricCard: { width: '48%', flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 12 },
   metricIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center' },

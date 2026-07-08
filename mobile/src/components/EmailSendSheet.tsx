@@ -229,7 +229,7 @@ const s = StyleSheet.create({
   ccToggleText: { fontSize: 12, color: Colors.textTertiary },
   attachChip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.bg, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 },
   attachText: { fontSize: 12, color: Colors.text },
-  m365Good: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.mint, borderWidth: 1, borderColor: '#A7F3D0' },
+  m365Good: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.mint, borderWidth: 1, borderColor: Colors.emerald },
   m365GoodText: { fontSize: 12, color: Colors.emeraldDark },
   m365Warn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.amberSoft, borderWidth: 1, borderColor: '#FDE68A' },
   m365WarnText: { fontSize: 12, color: '#B45309' },

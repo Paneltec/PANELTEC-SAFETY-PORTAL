@@ -42,11 +42,11 @@ function SelectModal({ visible, options, selected, onSelect, onClose }: any) {
         <View style={fs.pickerBox}>
           <Text style={fs.pickerTitle}>Select option</Text>
           <TouchableOpacity style={fs.pickerItem} onPress={() => onSelect('')}>
-            <Text style={[fs.pickerItemText, !selected && { color: '#1e4a8c', fontWeight: '700' }]}>— Select —</Text>
+            <Text style={[fs.pickerItemText, !selected && { color: Colors.orangeLight, fontWeight: '700' }]}>— Select —</Text>
           </TouchableOpacity>
           {(options || []).map((o: string) => (
             <TouchableOpacity key={o} style={fs.pickerItem} onPress={() => onSelect(o)}>
-              <Text style={[fs.pickerItemText, selected === o && { color: '#1e4a8c', fontWeight: '700' }]}>{o}</Text>
+              <Text style={[fs.pickerItemText, selected === o && { color: Colors.orangeLight, fontWeight: '700' }]}>{o}</Text>
               {selected === o && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
             </TouchableOpacity>
           ))}
@@ -470,7 +470,7 @@ const fs = StyleSheet.create({
     backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, minHeight: 48,
   },
-  gpsBtnText: { fontSize: 13, fontWeight: '600', color: '#1e4a8c' },
+  gpsBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
   gpsInfo: {
     marginTop: 8, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, overflow: 'hidden',

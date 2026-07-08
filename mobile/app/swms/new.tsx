@@ -99,7 +99,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2, marginBottom: 16 },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 12 },
-  label: { fontSize: 14, fontWeight: '500', color: '#334155', marginBottom: 6, marginTop: 12 },
+  label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 6, marginTop: 12 },
   input: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
   btnRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 },
   row: { backgroundColor: Colors.bg, borderRadius: 8, padding: 10, marginBottom: 4 },

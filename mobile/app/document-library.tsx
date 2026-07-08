@@ -392,7 +392,7 @@ const ds = StyleSheet.create({
   aiTagText: { fontSize: 9, fontWeight: '700', color: '#4f3a8c', textTransform: 'uppercase', letterSpacing: 0.5 },
   fileAction: { padding: 8 },
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
-  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
+  navBackText: { fontSize: 14, fontWeight: '600', color: Colors.orangeLight },
 });
 
 // v158 — Wrap the screen in a ModuleGate so admins can turn this feature

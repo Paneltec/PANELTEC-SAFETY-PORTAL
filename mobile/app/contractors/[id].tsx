@@ -114,7 +114,7 @@ const s = StyleSheet.create({
   empty: { fontSize: 13, color: Colors.textTertiary, fontStyle: 'italic' },
   docRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
-    borderTopWidth: 1, borderTopColor: Colors.borderLight,
+    borderTopWidth: 1, borderTopColor: Colors.border,
   },
   docType: { fontSize: 14, color: Colors.text, fontWeight: '500' },
   docExpiry: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },

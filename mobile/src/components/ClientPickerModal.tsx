@@ -101,10 +101,10 @@ export default function ClientPickerModal({ company, selectedIds, onClose, onApp
         </View>
         <View style={st.actionRow}>
           <TouchableOpacity testID="client-picker-select-all" style={[st.actionBtn, { backgroundColor: '#e6eff9' }]} onPress={selectAll}>
-            <Text style={[st.actionBtnText, { color: '#1e4a8c' }]}>Select filtered</Text>
+            <Text style={[st.actionBtnText, { color: Colors.orangeLight }]}>Select filtered</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="client-picker-clear-all" style={[st.actionBtn, { backgroundColor: '#F1F5F9' }]} onPress={clearAll}>
-            <Text style={[st.actionBtnText, { color: '#475569' }]}>Clear all</Text>
+            <Text style={[st.actionBtnText, { color: Colors.textSecondary }]}>Clear all</Text>
           </TouchableOpacity>
         </View>
 

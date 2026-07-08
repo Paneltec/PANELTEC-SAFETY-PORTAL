@@ -190,7 +190,7 @@ function SuppliersScreenInner() {
                 <TouchableOpacity testID={`notes-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#e6eff9' }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('notes'); }}>
                   <Ionicons name="document-text" size={12} color="#1e4a8c" />
-                  <Text style={[s.chipCount, { color: '#1e4a8c' }]}>Notes</Text>
+                  <Text style={[s.chipCount, { color: Colors.orangeLight }]}>Notes</Text>
                 </TouchableOpacity>
                 <TouchableOpacity testID={`folders-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#ece6f4' }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('folders'); }}>
@@ -362,7 +362,7 @@ function EditSupplierModal({ supplier, allSuppliers, canEdit, onClose, onSaved }
               {AU_STATES.map((st) => (
                 <TouchableOpacity key={st} testID={`state-${st}`} style={s.pickerItem}
                   onPress={() => { setForm({ ...form, custom_state: st }); setStateOpen(false); }}>
-                  <Text style={[s.pickerItemText, form.custom_state === st && { color: Colors.blue, fontWeight: '700' }]}>{st}</Text>
+                  <Text style={[s.pickerItemText, form.custom_state === st && { color: Colors.orangeLight, fontWeight: '700' }]}>{st}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -455,7 +455,7 @@ const s = StyleSheet.create({
   emptyBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 4, maxWidth: 280 },
   errorCard: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, backgroundColor: '#F5EFE0', borderWidth: 1, borderColor: '#D8CFB8', borderRadius: 16, marginTop: 16 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, textAlign: 'center', marginTop: 12 },
-  errorBody: { fontSize: 13, color: '#475569', textAlign: 'center', marginTop: 8, maxWidth: 300 },
+  errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, maxWidth: 300 },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardName: { fontSize: 15, fontWeight: '600', color: Colors.ink },
@@ -479,7 +479,7 @@ const s = StyleSheet.create({
   simproBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fbf3df', borderBottomWidth: 1, borderBottomColor: '#e6d99c' },
   simproBannerText: { fontSize: 11, color: '#8c6a1a', flex: 1, lineHeight: 16 },
   modalBody: { flex: 1, padding: 16 },
-  fieldLabel: { fontSize: 12, fontWeight: '600', color: '#334155', marginBottom: 4, marginTop: 12 },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12 },
   fieldInput: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingVertical: 8 },
   modalFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: '#F8FAFC' },
@@ -493,7 +493,7 @@ const s = StyleSheet.create({
   pickerItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   pickerItemText: { fontSize: 15, color: Colors.text },
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
-  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
+  navBackText: { fontSize: 14, fontWeight: '600', color: Colors.orangeLight },
 });
 
 // v158 — Wrap the screen in a ModuleGate so admins can turn this feature

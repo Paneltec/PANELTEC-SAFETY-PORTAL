@@ -537,7 +537,7 @@ function FolderFiles({ folder, canEdit, onBack }: any) {
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <TouchableOpacity testID="folder-back" style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={onBack}>
           <Ionicons name="arrow-back" size={14} color={Colors.blue} />
-          <Text style={{ fontSize: 12, color: Colors.blue, fontWeight: '600' }}>Back to folders</Text>
+          <Text style={{ fontSize: 12, color: Colors.orangeLight, fontWeight: '600' }}>Back to folders</Text>
         </TouchableOpacity>
         {canEdit && (
           <TouchableOpacity testID="folder-upload" style={[ds.panelAddBtn, { backgroundColor: '#4f3a8c' }]} onPress={pickAndUpload} disabled={uploading}>
@@ -577,7 +577,7 @@ function PickerModal({ visible, title, options, selected, onSelect, onClose }: a
           <Text style={ds.pickerTitle}>{title}</Text>
           {options.map((o: string) => (
             <TouchableOpacity key={o} style={ds.pickerItem} onPress={() => onSelect(o)}>
-              <Text style={[ds.pickerItemText, selected === o && { color: Colors.blue, fontWeight: '700' }]}>{o.replace('_', ' ')}</Text>
+              <Text style={[ds.pickerItemText, selected === o && { color: Colors.orangeLight, fontWeight: '700' }]}>{o.replace('_', ' ')}</Text>
             </TouchableOpacity>
           ))}
         </View>

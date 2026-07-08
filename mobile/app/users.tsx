@@ -287,7 +287,7 @@ function ImportFromSimproModal({ companies, onClose, onImported }: any) {
               <Text style={us.pickerTitle}>Default role</Text>
               {ROLES.map((r) => (
                 <TouchableOpacity key={r} style={us.pickerItem} onPress={() => { setDefaultRole(r); setRoleOpen(false); }}>
-                  <Text style={[us.pickerItemText, defaultRole === r && { color: Colors.blue, fontWeight: '700' }]}>{ROLE_LABELS[r]}</Text>
+                  <Text style={[us.pickerItemText, defaultRole === r && { color: Colors.orangeLight, fontWeight: '700' }]}>{ROLE_LABELS[r]}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -323,10 +323,10 @@ const us = StyleSheet.create({
   cardEmail: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   cardMeta: { flexDirection: 'row', gap: 6, marginTop: 6 },
   roleBadge: { backgroundColor: Colors.blueSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  roleText: { fontSize: 10, fontWeight: '700', color: Colors.blue, textTransform: 'uppercase', letterSpacing: 0.5 },
+  roleText: { fontSize: 10, fontWeight: '700', color: Colors.orangeLight, textTransform: 'uppercase', letterSpacing: 0.5 },
   pill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   pillText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 10, borderTopWidth: 1, borderTopColor: Colors.borderLight, paddingTop: 10 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 10, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 },
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.bg },
   dangerBtn: { borderColor: Colors.redSoft },
   actionText: { fontSize: 11, fontWeight: '500', color: Colors.textSecondary },
@@ -354,5 +354,5 @@ const us = StyleSheet.create({
   pickerItem: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.borderLight },
   pickerItemText: { fontSize: 15, color: Colors.text },
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
-  navBackText: { fontSize: 14, fontWeight: '600', color: '#1e4a8c' },
+  navBackText: { fontSize: 14, fontWeight: '600', color: Colors.orangeLight },
 });

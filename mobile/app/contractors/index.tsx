@@ -96,7 +96,7 @@ const s = StyleSheet.create({
   filterChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, marginRight: 8 },
   filterChipActive: { borderColor: Colors.blue, backgroundColor: Colors.blueSoft },
   filterText: { fontSize: 13, color: Colors.textSecondary, textTransform: 'capitalize' },
-  filterTextActive: { color: Colors.blue, fontWeight: '600' },
+  filterTextActive: { color: Colors.orangeLight, fontWeight: '600' },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },

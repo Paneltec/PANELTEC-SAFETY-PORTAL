@@ -243,9 +243,9 @@ const s = StyleSheet.create({
   disclaimer: { fontSize: 11, color: Colors.textTertiary, textAlign: 'center', marginBottom: 4, lineHeight: 16 },
   tokenLabel: { fontSize: 10, color: Colors.textTertiary, textAlign: 'center', letterSpacing: 1, marginBottom: 16 },
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
-  backText: { fontSize: 13, color: Colors.blue, fontWeight: '500' },
+  backText: { fontSize: 13, color: Colors.orangeLight, fontWeight: '500' },
   // Success
-  successCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: '#A7F3D0' },
+  successCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: Colors.emerald },
   successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   successTitle: { fontSize: 24, fontWeight: '700', color: Colors.ink },
   successSub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },

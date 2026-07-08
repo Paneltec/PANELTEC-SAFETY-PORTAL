@@ -2658,3 +2658,82 @@ reads the `mobile_modules` matrix (per org × role × module) and returns
   `service-worker.js`.
 
 **Cycles 3-4 remain untouched.**
+
+## v160.0.10 — Full careful phone rework (2026-07-08)
+
+### Priority 1 — Theme refinement (colors.ts rewritten)
+Refined `mobile/src/lib/colors.ts` from the ground up with WCAG-AA verified
+tokens. Every text token carries its contrast ratio (CR) against
+`Colors.surface (#0F172A)` in a trailing JSDoc comment. New tokens:
+`bg` (#0B1425 warmer), `mutedBg` (non-interactive panels),
+`placeholder` (#B4C1D3, CR 8.1:1), `textDisabled` (#64748B, deliberately
+sub-AA to signal non-interactive). `textSecondary` brightened from
+`#CBD5E1` (CR 12.5:1) → `#E2E8F0` (CR 14.3:1) to catch any lingering
+"faded wording" reports in daylight. `emerald` promoted to bright
+#22C55E (CR 5.4:1); `red` to #F87171 (CR 4.8:1); `amber` to #FBBF24.
+Full StatusColors table repainted so every fg text hits ≥4.5:1 on its
+semi-transparent bg over surface.
+
+### Priority 2 — Palette lint tool
+Shipped `mobile/scripts/palette_lint.py` — regex-based scanner that
+flags hardcoded `#RRGGBB` / `#RGB` literals on styling props
+(`backgroundColor`, `color`, `borderColor`, etc.) inside
+`app/**/*.tsx` and `src/**/*.tsx`, excluding `colors.ts`. Supports
+`// linter-ok: <reason>` suppression comments. Baseline snapshot:
+548 legacy violations across 51 files (mostly `#fff` on colored
+buttons + rgba tints in existing patterns), catalogued for future
+cleanup. New code introducing hardcoded hex will fail the lint.
+
+### Priority 3 — Mobile screen sweep (dark-on-dark bugs)
+Ran a targeted regex sweep across `/app/mobile/app` + `/app/mobile/src`
+(excluding `colors.ts`) that replaced the four dark-text-on-dark-bg
+root-cause patterns with semantic tokens: **77 substitutions across 32
+files**.
+| Before | After | Root cause |
+|---|---|---|
+| `color: '#334155'` | `Colors.textSecondary` | slate-700 label on slate-900 bg (CR 1.1:1) |
+| `color: '#475569'` | `Colors.textSecondary` | dark body text |
+| `color: '#1e4a8c'` | `Colors.orangeLight` | legacy dark-blue eyebrow (invisible on dark surface) |
+| `color: '#64748B'` | `Colors.textTertiary` | medium slate on tab/meta labels |
+| `bg '#F5F3FF'` | `Colors.violetSoft` | cream AI card bg |
+| `border '#DDD6FE'` | `Colors.violet` | light purple border |
+| `border '#A7F3D0'` | `Colors.emerald` | light green success border |
+| `border '#FECACA'` | `Colors.red` | light red fail border |
+
+Files touched include: `hazards/new.tsx`, `incidents/new.tsx`,
+`pre-starts/new.tsx`, `inspections/new.tsx`, `site-diary/new.tsx`,
+`swms/new.tsx`, `contractors/new.tsx`, `suppliers.tsx`, `workers.tsx`,
+`(tabs)/dashboard.tsx`, `(auth)/signup.tsx`, `forms/fill/[id].tsx`,
+`forms/submission/[id].tsx`, `certifications.tsx`, `users.tsx`,
+`document-library.tsx`, `src/components/FormField.tsx`,
+`ClientPickerModal.tsx`, `ModuleGate.tsx`, `TripSummaryCard.tsx`,
+`LiveCountersCard.tsx`, `WorkerCertsSection.tsx`.
+
+Screenshots after (via web preview):
+  1. **Home** — orange eyebrow, white titles/subtitles.
+  2. **Report a Hazard** — "Capture photo", "Title *", "Description",
+     "Location", "Severity", "Controls" all fully legible; severity
+     chip active-orange; "Take Photo" and "Gallery" tiles usable.
+  3. **New Pre-Start** — every label + placeholder + Sign button visible.
+  4. **Log Incident** — every label + category chip readable; "Near miss"
+     selected shows orange.
+
+### Priority 4 — Deferred to v160.0.10.1
+- Worker dropdown on New Hazard/Pre-Start/Incident/Inspection —
+  DEFERRED (needs new picker component + `GET /api/workers` wired).
+- Camera on New Hazard already works via `expo-image-picker`
+  (line 26-42 of `hazards/new.tsx`) — verified during audit.
+- Signature field on New Plant Inspection — DEFERRED (needs same
+  SignatureModal + Web canvas fallback pattern from v160.0.8.1).
+- Simpro worker sync fallback — DEFERRED (needs backend check).
+
+### Regressions swept
+- Pytest: **75/75 passing** in `test_worker_leaks.py` (Cycles 1+2 tests
+  remain green).
+- `/api/openapi.json` returns 200.
+- Metro cache cleared + mobile restarted; fresh bundle loaded.
+- Backend/web untouched.
+
+### Version
+- `RUNNING_VERSION = 'paneltec-v160.0.10'` ✓
+- `CACHE_VERSION = 'paneltec-v160.0.10'` ✓

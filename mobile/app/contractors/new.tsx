@@ -79,7 +79,7 @@ const s = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink, marginBottom: 16 },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 12 },
-  label: { fontSize: 14, fontWeight: '500', color: '#334155', marginBottom: 6, marginTop: 12 },
+  label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 6, marginTop: 12 },
   input: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
   row: { flexDirection: 'row', gap: 12 },
   half: { flex: 1 },
@@ -87,6 +87,6 @@ const s = StyleSheet.create({
   statusBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
   statusBtnActive: { borderColor: Colors.blue, backgroundColor: Colors.blueSoft },
   statusText: { fontSize: 13, color: Colors.textSecondary, textTransform: 'capitalize' },
-  statusTextActive: { color: Colors.blue, fontWeight: '600' },
+  statusTextActive: { color: Colors.orangeLight, fontWeight: '600' },
   btnRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 8 },
 });

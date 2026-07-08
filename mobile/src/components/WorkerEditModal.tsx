@@ -70,7 +70,7 @@ function PickerModal({ visible, title, options, selected, onSelect, onClose }: a
           <Text style={cs.pickerTitle}>{title}</Text>
           {options.map((o: any) => (
             <TouchableOpacity key={o.value ?? o} style={cs.pickerItem} onPress={() => onSelect(o.value ?? o)}>
-              <Text style={[cs.pickerItemText, (selected === (o.value ?? o)) && { color: '#1e4a8c', fontWeight: '700' }]}>
+              <Text style={[cs.pickerItemText, (selected === (o.value ?? o)) && { color: Colors.orangeLight, fontWeight: '700' }]}>
                 {o.label ?? o}
               </Text>
               {selected === (o.value ?? o) && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
@@ -374,7 +374,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                           trackColor={{ true: '#1e4a8c', false: '#CBD5E1' }}
                           disabled={!canEdit}
                         />
-                        <Text style={[cs.dayLabel, row.enabled && { color: '#1e4a8c', fontWeight: '600' }]}>{d.label}</Text>
+                        <Text style={[cs.dayLabel, row.enabled && { color: Colors.orangeLight, fontWeight: '600' }]}>{d.label}</Text>
                       </View>
                       {row.enabled && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, flex: 1 }}>
@@ -503,7 +503,7 @@ const cs = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 14, backgroundColor: Colors.surface,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#1e4a8c' },
+  headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.orangeLight },
   headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 2 },
   headerSubtitle: { fontSize: 11, color: Colors.textSecondary, marginTop: 4, lineHeight: 16 },
   simproBanner: {
@@ -511,7 +511,7 @@ const cs = StyleSheet.create({
     paddingHorizontal: 16, paddingVertical: 8,
     backgroundColor: Colors.surfaceLight, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  simproBannerText: { fontSize: 11, color: '#1e4a8c' },
+  simproBannerText: { fontSize: 11, color: Colors.orangeLight },
   // Sections
   sectionWrap: { borderWidth: 1, borderColor: Colors.border, borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
   sectionHeader: {
@@ -521,7 +521,7 @@ const cs = StyleSheet.create({
   },
   sectionTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.ink },
   sectionBadge: { backgroundColor: '#e6eff9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  sectionBadgeText: { fontSize: 9, fontWeight: '700', color: '#1e4a8c', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.orangeLight, textTransform: 'uppercase', letterSpacing: 0.5 },
   sectionBody: { padding: 12, backgroundColor: Colors.white },
   // Form
   label: { fontSize: 11, fontWeight: '500', color: Colors.textSecondary, marginBottom: 4 },

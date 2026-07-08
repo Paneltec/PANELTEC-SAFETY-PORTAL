@@ -277,9 +277,9 @@ const s = StyleSheet.create({
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   backBtn: { padding: 4, marginTop: 2 },
-  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: '#1e4a8c' },
+  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.orangeLight },
   heading: { fontSize: 24, fontWeight: '700', color: Colors.ink, marginTop: 2, letterSpacing: -0.5 },
-  subtitle: { fontSize: 12, color: '#1e4a8c', marginTop: 2, opacity: 0.7 },
+  subtitle: { fontSize: 12, color: Colors.orangeLight, marginTop: 2, opacity: 0.7 },
   toolbar: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 },
   searchBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
@@ -292,7 +292,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: Colors.surfaceLight, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
   },
-  syncBtnText: { fontSize: 12, fontWeight: '600', color: '#1e4a8c' },
+  syncBtnText: { fontSize: 12, fontWeight: '600', color: Colors.orangeLight },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: '#1e4a8c', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,

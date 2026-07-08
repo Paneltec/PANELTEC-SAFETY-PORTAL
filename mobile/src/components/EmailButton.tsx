@@ -53,7 +53,7 @@ const s = StyleSheet.create({
   btn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    borderWidth: 1, borderColor: '#DDD6FE', backgroundColor: Colors.violetSoft,
+    borderWidth: 1, borderColor: Colors.violet, backgroundColor: Colors.violetSoft,
   },
   text: { fontSize: 12, fontWeight: '500', color: Colors.violet },
 });

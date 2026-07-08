@@ -276,7 +276,7 @@ const s = StyleSheet.create({
   signInText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   tokenLabel: { fontSize: 10, color: Colors.textTertiary, textAlign: 'center', letterSpacing: 1, marginBottom: 12 },
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
-  backText: { fontSize: 13, color: Colors.blue, fontWeight: '500' },
+  backText: { fontSize: 13, color: Colors.orangeLight, fontWeight: '500' },
   // Modal
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
   modal: { backgroundColor: Colors.surface, borderRadius: 20, width: '100%', maxWidth: 420, maxHeight: '80%', overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },

@@ -98,8 +98,8 @@ const s = StyleSheet.create({
   bodyText: { fontSize: 14, color: Colors.text, lineHeight: 20 },
   empty: { fontSize: 13, color: Colors.textTertiary, fontStyle: 'italic' },
   listItem: { fontSize: 14, color: Colors.text, marginBottom: 4, lineHeight: 20 },
-  aiCard: { backgroundColor: Colors.violetSoft, borderWidth: 1, borderColor: '#DDD6FE', borderRadius: 16, padding: 16, marginBottom: 10 },
+  aiCard: { backgroundColor: Colors.violetSoft, borderWidth: 1, borderColor: Colors.violet, borderRadius: 16, padding: 16, marginBottom: 10 },
   aiLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.violet, marginBottom: 6 },
   aiText: { fontSize: 12, color: Colors.text, marginBottom: 2 },
-  aiSummary: { fontSize: 13, color: '#475569', marginTop: 4, lineHeight: 18 },
+  aiSummary: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
 });
