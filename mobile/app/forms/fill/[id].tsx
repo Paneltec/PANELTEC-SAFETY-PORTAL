@@ -186,34 +186,41 @@ function CompanySelectorField({ value, onChange, testId, required }: any) {
     return () => { alive = false; };
   }, []);
 
-  // Segmented control for exactly 2 companies — the common case
-  // (Paneltec Civil / Viatec) that users asked for a "toggle".
+  // v160.0.12.3 — Single-state flip toggle for exactly 2 companies. Shows
+  // only the currently-selected company; tapping flips to the other. Saves
+  // one row of vertical space vs the segmented control.
   if (companies.length === 2) {
+    const current = companies.find((c) => c.id === value) || companies[0];
+    const other = companies.find((c) => c.id !== current.id) || companies[1];
+    // Auto-seed the form field with the first company on mount so the
+    // caller doesn't submit with a blank company_selector.
+    if (!value) {
+      // set-on-mount without an effect — safe because setState guards against
+      // duplicate updates.
+      setTimeout(() => onChange(current.id), 0);
+    }
     return (
-      <View testID={testId} style={{ flexDirection: 'row', backgroundColor: Colors.surfaceLight, borderRadius: 12, padding: 4, gap: 4 }}>
-        {companies.map((c) => {
-          const active = value === c.id;
-          return (
-            <TouchableOpacity
-              key={c.id}
-              testID={`${testId}-opt-${c.id}`}
-              onPress={() => onChange(c.id)}
-              activeOpacity={0.75}
-              style={{
-                flex: 1, paddingVertical: 12, borderRadius: 10,
-                backgroundColor: active ? Colors.orange : 'transparent',
-                alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
-              }}
-            >
-              {active && <Ionicons name="checkmark-circle" size={16} color="#0F172A" />}
-              <Text style={{
-                fontSize: 14, fontWeight: '700',
-                color: active ? '#0F172A' : Colors.textSecondary,
-              }}>{c.name}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      <TouchableOpacity
+        testID={testId}
+        onPress={() => onChange(other.id)}
+        activeOpacity={0.7}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 10,
+          backgroundColor: Colors.orange, borderRadius: 999,
+          paddingVertical: 10, paddingHorizontal: 16, alignSelf: 'flex-start',
+          borderWidth: 2, borderColor: Colors.orangeLight,
+        }}
+      >
+        <Ionicons name="checkmark-circle" size={16} color="#0F172A" />
+        <Text testID={`${testId}-label`} style={{ color: '#0F172A', fontSize: 15, fontWeight: '800' }}>
+          {current.name}
+        </Text>
+        <View style={{ width: 1, height: 14, backgroundColor: '#0F172A', opacity: 0.4 }} />
+        <Ionicons name="swap-horizontal" size={16} color="#0F172A" />
+        <Text style={{ color: '#0F172A', opacity: 0.75, fontSize: 12, fontWeight: '600' }}>
+          Tap to switch
+        </Text>
+      </TouchableOpacity>
     );
   }
 

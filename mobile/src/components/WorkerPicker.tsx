@@ -247,12 +247,12 @@ const s = StyleSheet.create({
   err: { color: Colors.red, padding: 12, fontSize: 13 },
   empty: { color: Colors.textTertiary, padding: 20, textAlign: 'center', fontSize: 13 },
   row: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 8,
-    borderBottomWidth: 1, borderBottomColor: Colors.borderLight,
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 8,
+    borderBottomWidth: 1, borderBottomColor: Colors.borderLight, minHeight: 44,
   },
   rowSelected: { backgroundColor: Colors.orangeSoft, borderRadius: 8 },
-  rowName: { fontSize: 15, fontWeight: '600', color: Colors.ink },
-  rowMeta: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
+  rowName: { fontSize: 14, fontWeight: '600', color: Colors.ink },
+  rowMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
   doneBtn: {
     backgroundColor: Colors.orange, paddingVertical: 12, borderRadius: 10,
     alignItems: 'center', marginTop: 10,
