@@ -62,17 +62,18 @@ async def metrics(
     user: dict = Depends(get_current_user),
 ):
     org_id = user["org_id"]
-    # v160.0 — WATCH card gating. Non-privileged callers (workers,
-    # contractors, auditors on the phone) get a zeroed attention block so
-    # the mobile can safely hide the aggregate card without a second call.
-    # Web callers are always admin/hseq/supervisor so this is a no-op there.
+    # v160.0.8 — clamp metric counts for non-privileged callers. Workers see
+    # only their own created records; monitoring_scope reads "Personal".
     privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
-    swms_c = await _count("swms", org_id, workspace)
-    pre_c = await _count("pre_starts", org_id, workspace)
-    diary_c = await _count("site_diary_entries", org_id, workspace)
-    haz_c = await _count("hazards", org_id, workspace)
-    inc_c = await _count("incidents", org_id, workspace)
-    insp_c = await _count("inspections", org_id, workspace)
+    scope_filter: dict = {}
+    if not privileged:
+        scope_filter = {"created_by": user["id"]}
+    swms_c = await db.swms.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    pre_c = await db.pre_starts.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    diary_c = await db.site_diary_entries.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    haz_c = await db.hazards.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    inc_c = await db.incidents.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    insp_c = await db.inspections.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
 
     # v157.1 — quarter-over-quarter deltas. Only computed when the previous
     # period had at least one live doc; otherwise `None` and the frontend
@@ -132,6 +133,7 @@ async def metrics(
         records_needing_attention=needs_attention,
         deltas=deltas,
         delta_label="vs last quarter",
+        monitoring_scope=("Organisation wide" if privileged else "Personal"),
     )
 
 

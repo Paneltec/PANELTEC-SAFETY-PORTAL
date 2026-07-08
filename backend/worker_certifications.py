@@ -252,6 +252,20 @@ class CertPatch(BaseModel):
 @router.get("/{worker_id}/certifications")
 async def list_certs(worker_id: str, user: dict = Depends(get_current_user)):
     await _require_worker(worker_id, user["org_id"])
+    # v160.0.8 — scope check: non-privileged callers may only view their
+    # OWN worker row's certifications. Match by linked user_id or email.
+    role_key = (user.get("role") or "").lower()
+    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    if not privileged:
+        me = await db.workers.find_one(
+            {"org_id": user["org_id"], "deleted_at": None,
+             "$or": [{"user_id": user["id"]},
+                     {"email": (user.get("email") or "").lower()}]},
+            {"_id": 0, "id": 1},
+        )
+        if not me or me.get("id") != worker_id:
+            raise HTTPException(status_code=403,
+                                detail="Permission denied: certifications.team_view")
     today = date.today()
     cursor = db.worker_certifications.find(
         {"org_id": user["org_id"], "worker_id": worker_id, "deleted_at": None},

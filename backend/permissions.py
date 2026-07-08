@@ -14,8 +14,8 @@ from auth import get_current_user
 from db import db
 from models import now_iso
 
-Action = Literal["open", "view", "edit", "delete", "email", "team_view"]
-ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view"]
+Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use"]
+ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view", "use"]
 
 # v159.2 — Resources subject to team-scoping: workers who lack `team_view`
 # on these resources only see records where `created_by == user.id`.
@@ -25,7 +25,7 @@ ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view"]
 # phone sees only their own row via a dedicated endpoint).
 TEAM_SCOPED_RESOURCES: set[str] = {
     "swms", "pre_starts", "site_diary", "hazards", "incidents", "inspections",
-    "inductions",
+    "inductions", "workers",
 }
 
 # Resource catalog. `email_supported=False` hides the email column entirely
@@ -57,6 +57,10 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # tasks, folders, members). Previously the suppliers endpoints used
     # only `get_current_user`, leaking data to worker/contractor roles.
     "suppliers":       {"label": "Suppliers",             "email_supported": False, "delete_supported": True},
+    # v160.0.8 — AI features (SWMS drafter, diary structurer, hazard vision).
+    # `use` action gates the paid LLM endpoints; admin/hseq/supervisor grant,
+    # worker/contractor deny by default.
+    "ai":              {"label": "AI features",           "email_supported": False, "delete_supported": False},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -123,14 +127,16 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "assets":          _grant(open=True, view=True, edit=False, email=False),
         "integrations":    _grant(open=False, view=False, edit=False, email=False),
         "users":           _grant(open=False, view=False, edit=False, email=False),
-        # Phase 3.18 — Supervisor reads workers/inductions/certs, edits inductions only.
-        "workers":         _grant(open=True, view=True, edit=False, email=False),
-        "inductions":      _grant(open=True, view=True, edit=True,  email=False),
+        # v160.0.8 — v160.0.7 audit: expand supervisor team_view.
+        "workers":         _grant(open=True, view=True, edit=False, email=False, team_view=True),
+        "inductions":      _grant(open=True, view=True, edit=True,  email=False, team_view=True),
         "certifications":  _grant(open=True, view=True, edit=False, email=False),
         "documents":       _grant(open=True, view=True, edit=False, email=False),
-        "forms":           _grant(open=True, view=True, edit=True,  email=False),
+        "forms":           _grant(open=True, view=True, edit=True,  email=False, team_view=True),
         # v159.0 — Supervisor can view supplier data.
         "suppliers":       _grant(open=True, view=True, edit=False, email=False),
+        # v160.0.8 — Supervisor: team_view on workers/forms, AI use ON.
+        "ai":              _grant(open=True, view=True, edit=True, use=True),
     },
     "worker": {
         "swms":            _grant(open=True, view=True, edit=False, email=False),
@@ -159,6 +165,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "documents":       _grant(),
         "forms":           _grant(open=True, view=True, edit=True,  email=False),
         "suppliers":       _grant(),
+        # v160.0.8 — Worker denied AI feature use (paid LLM endpoints).
+        "ai":              _grant(),
     },
     "auditor": {
         r: _grant(open=True, view=True, edit=False,

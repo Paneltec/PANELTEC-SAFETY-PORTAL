@@ -104,17 +104,21 @@ def test_admin_can_see_all_registers(admin_headers, path):
 
 # ---------- workers thin projection ----------
 
-def test_worker_workers_list_is_thin(worker_headers):
+def test_worker_workers_list_is_own_row_only(worker_headers):
+    """v160.0.8 — Worker calling `GET /api/workers` now sees at most their
+    OWN worker row (own PII is legitimate). Previous v159.0 thin-projection
+    directory has been removed for non-privileged callers so a worker can
+    no longer enumerate colleagues at all."""
     r = requests.get(f"{BASE}/api/workers", headers=worker_headers, timeout=10)
     assert r.status_code == 200, r.text[:300]
     rows = r.json()
-    assert isinstance(rows, list) and rows, "worker /api/workers returned no rows"
-    for row in rows[:20]:
-        leaked = WORKER_PII_FIELDS.intersection(row.keys())
-        assert not leaked, (
-            f"Thin projection leaked PII fields to worker: {leaked}\n"
-            f"row keys={list(row.keys())}"
-        )
+    assert isinstance(rows, list)
+    # 0 rows is acceptable (worker not linked to a workers doc yet).
+    # If present, must be exactly one row and it must belong to the caller.
+    assert len(rows) <= 1, (
+        f"Worker /api/workers leaked {len(rows)} rows — expected ≤1 (own row)\n"
+        f"first row keys={list((rows[0] if rows else {}).keys())}"
+    )
 
 
 def test_admin_workers_list_has_full_fields(admin_headers):
@@ -655,3 +659,174 @@ def test_delete_category_with_records_returns_409(admin_headers):
     finally:
         mc[db_name].doc_files.delete_one({"id": "test-dummy-160-1"})
         requests.delete(f"{BASE}/api/document-categories/{cat_id}", headers=admin_headers, timeout=10)
+
+
+# ────────────────── v160.0.8 Path C Cycle 1 — 7 permission patches ──────────────────
+# Locks in the C1-C3 (CRITICAL) + S1-S4 (SCOPING) fixes shipped in v160.0.8.
+# These endpoints previously leaked colleague/org data to worker JWTs.
+
+def test_v160_0_8_c1_worker_cert_list_own_worker_only(worker_headers, admin_headers):
+    """C1: `GET /api/workers/{id}/certifications` must 403 when a worker
+    passes a colleague's worker_id. Previously the endpoint only checked
+    that the record existed in the caller's org — a worker could enumerate
+    any colleague's cert list by iterating worker ids."""
+    # Find a worker_id that is NOT the caller's own via admin.
+    all_workers = requests.get(f"{BASE}/api/workers", headers=admin_headers, timeout=10).json()
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    me_email = (me.get("email") or "").lower()
+    foreign = next((w for w in all_workers
+                    if (w.get("email") or "").lower() != me_email), None)
+    if not foreign:
+        pytest.skip("Only one worker in org — cannot test cross-worker leak.")
+    r = requests.get(
+        f"{BASE}/api/workers/{foreign['id']}/certifications",
+        headers=worker_headers, timeout=10,
+    )
+    assert r.status_code == 403, (
+        f"C1 leak: worker got {r.status_code} on colleague's certs\n"
+        f"body={r.text[:300]}"
+    )
+    assert "team_view" in (r.json().get("detail") or "").lower()
+
+
+def test_v160_0_8_c2_worker_dashboard_monitoring_scope_is_personal(worker_headers):
+    """C2: `GET /api/dashboard/metrics` for a non-privileged caller must
+    return `monitoring_scope='Personal'` and clamp counts to their own
+    records. Previously monitoring_scope leaked 'Organisation wide' plus
+    the org-wide totals in `swms_count`, `hazards_count`, etc."""
+    r = requests.get(f"{BASE}/api/dashboard/metrics", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    assert body.get("monitoring_scope") == "Personal", (
+        f"C2 leak: worker monitoring_scope={body.get('monitoring_scope')!r}, "
+        f"expected 'Personal'"
+    )
+
+
+def test_v160_0_8_c2_admin_dashboard_monitoring_scope_is_org(admin_headers):
+    """C2 counterpart: admin must still see 'Organisation wide'."""
+    r = requests.get(f"{BASE}/api/dashboard/metrics", headers=admin_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    assert r.json().get("monitoring_scope") == "Organisation wide"
+
+
+def test_v160_0_8_c3_worker_health_integrations_forbidden(worker_headers):
+    """C3: `GET /api/health/integrations` must gate on `integrations.view`.
+    Previously used bare `get_current_user` — a worker could poll live
+    Simpro/M365/TextMagic/Navixy connection status + last-error snippets."""
+    r = requests.get(f"{BASE}/api/health/integrations", headers=worker_headers, timeout=10)
+    assert r.status_code == 403, (
+        f"C3 leak: worker got {r.status_code} on /api/health/integrations\n"
+        f"body={r.text[:300]}"
+    )
+    assert "integrations" in (r.json().get("detail") or "").lower()
+
+
+def test_v160_0_8_s1_worker_workers_list_clamps_to_own(worker_headers):
+    """S1: `GET /api/workers` for a non-privileged caller must return at
+    most one row (the caller's own worker doc). Previously returned a
+    thin projection of the whole company directory."""
+    r = requests.get(f"{BASE}/api/workers", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    assert isinstance(rows, list)
+    assert len(rows) <= 1, (
+        f"S1 leak: worker /api/workers returned {len(rows)} rows, expected ≤1"
+    )
+
+
+def test_v160_0_8_s2_worker_form_submissions_scoped_to_own(worker_headers, admin_headers):
+    """S2: `GET /api/forms/templates/{id}/submissions` must filter to
+    `submitted_by == user.id` for non-privileged callers. Previously
+    a worker could list every colleague's completed forms per template."""
+    templates = requests.get(f"{BASE}/api/forms/templates", headers=admin_headers, timeout=10).json()
+    if not templates:
+        pytest.skip("No form templates in org to exercise this fix.")
+    tpl = templates[0]
+    r = requests.get(
+        f"{BASE}/api/forms/templates/{tpl['id']}/submissions",
+        headers=worker_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    me = requests.get(f"{BASE}/api/auth/me", headers=worker_headers, timeout=10).json()
+    me_id = me["id"]
+    for row in rows:
+        assert row.get("submitted_by") == me_id, (
+            f"S2 leak: worker saw submission {row.get('id')} "
+            f"submitted_by={row.get('submitted_by')} (own id={me_id})"
+        )
+
+
+def test_v160_0_8_s3_worker_ai_endpoints_forbidden(worker_headers):
+    """S3: `POST /api/ai/swms-draft` (and siblings) must 403 for workers.
+    Previously any authenticated user could invoke the paid Claude LLM —
+    no permission gate, no rate limit, direct hit to the org's LLM budget."""
+    r = requests.post(
+        f"{BASE}/api/ai/swms-draft",
+        headers={**worker_headers, "Content-Type": "application/json"},
+        json={"job_description": "Install roadside barrier", "location": "Sydney"},
+        timeout=15,
+    )
+    assert r.status_code == 403, (
+        f"S3 leak: worker got {r.status_code} on /api/ai/swms-draft\n"
+        f"body={r.text[:300]}"
+    )
+    assert "ai" in (r.json().get("detail") or "").lower()
+
+
+def test_v160_0_8_s3_worker_ai_diary_structure_forbidden(worker_headers):
+    """S3 counterpart: diary-structure endpoint must also 403."""
+    r = requests.post(
+        f"{BASE}/api/ai/diary-structure",
+        headers={**worker_headers, "Content-Type": "application/json"},
+        json={"raw_notes": "Delivered rebar 9am"},
+        timeout=15,
+    )
+    assert r.status_code == 403
+
+
+def test_v160_0_8_s4_worker_ask_suggestions_forbidden(worker_headers):
+    """S4: `GET /api/ask/suggestions` must respect the Ask Intelligence
+    gate (`ask_intel` module). Previously used bare `get_current_user` so
+    a worker with no Ask access could still enumerate the org's saved
+    suggested questions — a signal of what management is asking Claude."""
+    r = requests.get(f"{BASE}/api/ask/suggestions", headers=worker_headers, timeout=15)
+    assert r.status_code == 403, (
+        f"S4 leak: worker got {r.status_code} on /api/ask/suggestions\n"
+        f"body={r.text[:300]}"
+    )
+
+
+def test_v160_0_8_admin_ai_swms_draft_allowed(admin_headers):
+    """S3 admin counterpart: admin must still be able to hit AI endpoints
+    (subject to rate limit). We do a HEAD-of-day 429 check by inspecting
+    the response — either the LLM answers 200 or Emergent key returns 503,
+    but NEVER 403 for admin (who has ai.use)."""
+    r = requests.post(
+        f"{BASE}/api/ai/swms-draft",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"job_description": "Install kerb and gutter", "location": "Newcastle"},
+        timeout=45,
+    )
+    # Accept 200 (LLM answered), 429 (over quota — legit for repeat runs),
+    # or 503 (LLM misconfigured in test env). NEVER 403 for admin.
+    assert r.status_code in (200, 429, 503), (
+        f"Admin got unexpected {r.status_code} on /api/ai/swms-draft\n"
+        f"body={r.text[:300]}"
+    )
+
+
+def test_v160_0_8_permissions_schema_has_ai_resource(admin_headers):
+    """v160.0.8 schema: the `ai` resource must appear in the openapi/effective
+    permissions matrix so admin UIs can toggle it per-user."""
+    me = requests.get(f"{BASE}/api/auth/me", headers=admin_headers, timeout=10).json()
+    r = requests.get(
+        f"{BASE}/api/users/{me['id']}/permissions", headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:200]
+    eff = r.json().get("effective") or {}
+    assert "ai" in eff, "v160.0.8 permissions schema missing `ai` resource"
+    assert "use" in (eff.get("ai") or {}), (
+        "v160.0.8 permissions schema missing `ai.use` action"
+    )

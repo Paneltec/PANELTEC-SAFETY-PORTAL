@@ -170,7 +170,14 @@ async def list_workers(
     # full fields — a user always sees their own PII). Any other scope
     # falls through to the normal directory list, with a thin projection
     # applied for non-admin/hseq callers.
-    if scope == "me":
+    # v160.0.8 — non-privileged callers (worker, contractor, auditor) are
+    # ALWAYS clamped to their own worker row, regardless of `scope`. The
+    # previous thin-projection directory still leaked names+roles of every
+    # colleague. Supervisor keeps team-visible thin directory via team_view.
+    role_key = (user.get("role") or "").lower()
+    supervisor_privileged = role_key == "supervisor"
+    admin_privileged = role_key in {"admin", "hseq_lead"}
+    if scope == "me" or (not admin_privileged and not supervisor_privileged):
         me = await db.workers.find_one(
             {"org_id": user["org_id"], "user_id": user["id"], "deleted_at": None},
             {"_id": 0},
@@ -190,8 +197,7 @@ async def list_workers(
     rows = await cursor.to_list(2000)
     if _wants_full(user):
         return [_serialise(r) for r in rows]
-    # Everyone else (worker/supervisor/contractor with view perm) gets the
-    # thin projection — a directory of names + roles + status. No PII.
+    # Supervisor (has team_view) gets the thin projection directory.
     return [_serialise_thin(r) for r in rows]
 
 

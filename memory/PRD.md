@@ -2526,3 +2526,40 @@ Fix (client + server, defense in depth):
 - `/app/mobile/app/certifications.tsx` — header restyle + preview-aware scope
 - `/app/backend/worker_certifications.py` — `as_role` param on both endpoints
 - `/app/backend/tests/test_worker_leaks.py` — +3 new tests
+
+## v160.0.8 — Path C Cycle 1 (7-point permission patch, 2026-07-08)
+
+Applied the 7 patches identified in the v160.0.7 functional audit. Cycles
+2–4 explicitly deferred.
+
+**Backend patches:**
+- `permissions.py` — added `ai` resource + `use` action to
+  `PERMISSIONS_SCHEMA`; supervisor+ granted `ai.use`; worker/contractor
+  denied by default. `TEAM_SCOPED_RESOURCES` already carried `workers`.
+- `dashboard.py` (C2) — non-privileged callers get `monitoring_scope="Personal"`,
+  counts clamped by `created_by == user.id`, and no aggregate WATCH signal.
+- `worker_certifications.py` (C1) — `GET /workers/{id}/certifications`
+  now 403s when a worker asks for a colleague's cert list.
+- `health_extras.py` (C3) — `GET /health/integrations` now gated by
+  `require_permission("integrations", "view")`.
+- `workers.py` (S1) — non-privileged callers (worker/contractor) get at
+  most their own worker row on `GET /workers`; thin-directory listing
+  removed for them. Supervisor+ keep team directory.
+- `forms.py` (S2) — `GET /forms/templates/{id}/submissions` clamps to
+  `submitted_by == user.id` for non-privileged callers.
+- `ai.py` (S3) — all 3 endpoints gated by `require_permission("ai","use")`
+  + 20/user/day rate limit stored in `ai_usage` (compound unique index on
+  `user_id, day`). Over-quota → 429 with rollback so retries after
+  midnight aren't penalised.
+- `ask.py` (S4) — `GET /ask/suggestions` now uses `require_ask_access`
+  (honours per-role `ask_intel` module toggle).
+
+**Tests:** 51 → **62 passing** in `test_worker_leaks.py` (+11 v160.0.8
+regression tests covering all 7 patches + admin counterparts + schema
+lock).
+
+**Curl evidence captured (localhost + external ingress spot-check).**
+Rate-limit counter verified in `ai_usage` collection.
+
+**Version bump:** `paneltec-v160.0.8` in both `version.js` and
+`service-worker.js` (already set from prior edit).

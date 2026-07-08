@@ -7,12 +7,17 @@ Three endpoints:
 
 All return strict JSON. On any LLM failure we raise 503 — the frontend then
 falls back to manual entry.
+
+v160.0.8 — Gated by `permissions.ai.use` and rate-limited to 20 calls per
+user per calendar day (UTC) via the `ai_usage` collection. Rate-limit
+breaches return 429 with a friendly message.
 """
 import base64
 import json
 import os
 import re
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -20,13 +25,50 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form
 from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 
 from auth import get_current_user
+from db import db
 from models import DiaryStructureIn, SwmsDraftIn
+from permissions import require_permission
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 
 CLAUDE_MODEL = "claude-sonnet-4-5-20250929"
 UPLOAD_DIR = Path(__file__).parent / "uploads" / "hazards"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# v160.0.8 — daily per-user cap on paid Claude endpoints.
+AI_DAILY_LIMIT = 20
+
+
+async def _check_and_increment_usage(user_id: str, endpoint: str) -> None:
+    """Enforce a 20-req/user/calendar-day (UTC) cap. Increments the counter
+    on the way through so an over-quota caller gets 429 and NO LLM spend."""
+    from pymongo import ReturnDocument
+    day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    doc = await db.ai_usage.find_one_and_update(
+        {"user_id": user_id, "day": day},
+        {"$inc": {"count": 1},
+         "$setOnInsert": {"user_id": user_id, "day": day}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    count = (doc or {}).get("count", 1)
+    if count > AI_DAILY_LIMIT:
+        # Roll back the increment so retries after midnight aren't penalised.
+        await db.ai_usage.update_one(
+            {"user_id": user_id, "day": day}, {"$inc": {"count": -1}},
+        )
+        raise HTTPException(
+            status_code=429,
+            detail=(f"AI daily limit reached ({AI_DAILY_LIMIT}/day). "
+                    f"Try again tomorrow or contact your admin to raise the cap."),
+        )
+
+
+async def require_ai_use(user: dict = Depends(require_permission("ai", "use"))) -> dict:
+    """Gate + rate-limit dependency for every AI route."""
+    await _check_and_increment_usage(user["id"], "ai")
+    return user
+
 
 JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
@@ -90,7 +132,7 @@ Use Australian WHS terminology (SafeWork NSW / Comcare).
 
 
 @router.post("/swms-draft")
-async def swms_draft(body: SwmsDraftIn, user: dict = Depends(get_current_user)):
+async def swms_draft(body: SwmsDraftIn, user: dict = Depends(require_ai_use)):
     user_text = f"Job description: {body.job_description}"
     if body.location:
         user_text += f"\nLocation/context: {body.location}"
@@ -118,7 +160,7 @@ If a section has no content, return an empty array (or empty string for weather)
 
 
 @router.post("/diary-structure")
-async def diary_structure(body: DiaryStructureIn, user: dict = Depends(get_current_user)):
+async def diary_structure(body: DiaryStructureIn, user: dict = Depends(require_ai_use)):
     data = await _claude_json(DIARY_SYSTEM, f"Raw site notes:\n{body.raw_notes}")
     for k in ("activities", "delays", "deliveries", "visitors", "safety_observations"):
         data.setdefault(k, [])
@@ -139,7 +181,7 @@ Pick severity conservatively — if a person could be seriously injured, choose 
 
 
 @router.post("/hazard-vision")
-async def hazard_vision(file: UploadFile = File(...), user: dict = Depends(get_current_user)):
+async def hazard_vision(file: UploadFile = File(...), user: dict = Depends(require_ai_use)):
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 

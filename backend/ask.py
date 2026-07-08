@@ -225,7 +225,7 @@ def _serialise(doc: dict) -> dict:
 
 
 @router.get("/suggestions")
-async def list_suggestions(user: dict = Depends(get_current_user)):
+async def list_suggestions(user: dict = Depends(require_ask_access)):
     await _seed_default_suggestions(user["org_id"], user["id"])
     cursor = db.ask_suggestions.find(
         {"org_id": user["org_id"], "deleted_at": None},

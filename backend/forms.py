@@ -595,10 +595,15 @@ async def list_submissions(template_id: str, user: dict = Depends(get_current_us
     )
     if not template:
         raise HTTPException(404, "Template not found")
-    rows = await db.form_submissions.find(
-        {"template_id": template_id, "org_id": user["org_id"], "deleted_at": None},
-        {"_id": 0},
-    ).sort("submitted_at", -1).to_list(2000)
+    # v160.0.8 — non-privileged callers (worker/contractor) only see their
+    # own submissions. Supervisors get everything (team_view). Prevents
+    # a worker from enumerating colleagues' completed forms via the
+    # `?template_id=` query.
+    q: dict = {"template_id": template_id, "org_id": user["org_id"], "deleted_at": None}
+    role_key = (user.get("role") or "").lower()
+    if role_key not in {"admin", "hseq_lead", "supervisor", "auditor"}:
+        q["submitted_by"] = user["id"]
+    rows = await db.form_submissions.find(q, {"_id": 0}).sort("submitted_at", -1).to_list(2000)
     out = []
     for r in rows:
         out.append({

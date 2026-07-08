@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from auth import get_current_user
 from db import db
+from permissions import require_permission
 import comms_safe_mode
 
 log = logging.getLogger("paneltec.health")
@@ -257,7 +258,7 @@ def _check_textmagic(cfg: dict | None, safe_mode_on: bool) -> dict:
 
 
 @router.get("/health/integrations")
-async def health_integrations(user: dict = Depends(get_current_user)):
+async def health_integrations(user: dict = Depends(require_permission("integrations", "view"))):
     """Aggregate live status of every third-party integration for the caller's
     org. Called by the top-bar API-health pill every 60s. The individual rows
     also power the click-through popover.
