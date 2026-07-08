@@ -187,8 +187,11 @@ export default function DashboardScreen() {
         {/* Metrics — v160.0.1: COMPLIANCE SNAPSHOT chips show org-wide
             quarter counts. Hide for non-privileged callers so a worker's
             phone never surfaces "AI SWMS 12 / Incidents 4" numbers that
-            include colleagues' records. */}
-        {visibleMetrics.length > 0 && (metrics?.attention_band !== 'hidden') && (
+            include colleagues' records.
+            v160.0.2 — also gated by the `compliance_snapshot` module
+            toggle so an admin can flip it off in the Web Admin Mobile
+            App Modules panel without deploying code. Either gate hides. */}
+        {modules.compliance_snapshot && visibleMetrics.length > 0 && (metrics?.attention_band !== 'hidden') && (
           <>
             <Text style={d.sectionLabel}>COMPLIANCE SNAPSHOT</Text>
             <View style={d.metricsGrid}>

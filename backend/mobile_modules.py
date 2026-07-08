@@ -42,6 +42,11 @@ MODULE_KEYS = [
     "forms", "document_library", "contractors", "suppliers", "workers",
     # v159.1 — Users Directory tile (admin-only by default).
     "users_directory",
+    # v160.0.2 — Compliance Snapshot chip row on phone Home.
+    # Aggregated org counts (SWMS / Pre-starts / Site diary / Hazards /
+    # Incidents / Inspections). Belt-and-braces gate on top of the
+    # existing `attention_band='hidden'` server signal — either can hide.
+    "compliance_snapshot",
 ]
 ROLE_KEYS = ["worker", "supervisor", "contractor", "admin"]
 
@@ -69,6 +74,8 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
         "contractors": False, "suppliers": False, "workers": False,
         # v159.1 — workers never see the Users tile; admin only.
         "users_directory": False,
+        # v160.0.2 — workers never see org-wide aggregate counts.
+        "compliance_snapshot": False,
     },
     "supervisor": {k: True for k in MODULE_KEYS if k != "users_directory"} | {"users_directory": False},
     "contractor": {
@@ -83,6 +90,8 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
         "forms": True, "document_library": True,
         "contractors": True, "suppliers": False, "workers": False,
         "users_directory": False,
+        # v160.0.2 — contractors don't need org-wide compliance aggregates.
+        "compliance_snapshot": False,
     },
     # Admin column is always-on in the UI and persisted as such so the
     # mobile app can ungate every module if an admin ever signs in there.
@@ -95,7 +104,7 @@ DEFAULTS: Dict[str, Dict[str, bool]] = {
 # `defaults_version`; when missing/older, the GET /settings/mobile-modules
 # response includes `needs_migration_review: true` so the admin UI can show
 # a "New defaults available — review and save" banner.
-DEFAULTS_VERSION = "v159.1"
+DEFAULTS_VERSION = "v160.0.2"
 
 
 def _normalise(matrix: Dict[str, Dict[str, bool]]) -> Dict[str, Dict[str, bool]]:

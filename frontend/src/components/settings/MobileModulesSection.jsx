@@ -80,6 +80,10 @@ const MODULES = [
   { key: 'workers',             label: 'Workers directory',      Icon: WorkersIcon },
   // v159.1 — Users Directory tile toggle (admin tooling).
   { key: 'users_directory',     label: 'Users directory',        Icon: UsersDirectoryIcon },
+  // v160.0.2 — Compliance Snapshot chip row (phone Home). Aggregated
+  // org counts (SWMS / Pre-starts / Site diary / Hazards / Incidents /
+  // Inspections). Default off for worker/contractor.
+  { key: 'compliance_snapshot', label: 'Compliance Snapshot (Home chip row)', Icon: DefaultsIcon },
 ];
 
 function ToggleCell({ on, locked, onChange, testid }) {

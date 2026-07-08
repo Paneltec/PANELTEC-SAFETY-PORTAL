@@ -212,8 +212,8 @@ def test_mobile_modules_response_includes_defaults_version(admin_headers):
     body = r.json()
     assert "defaults_version" in body, "Missing defaults_version in response"
     assert "needs_migration_review" in body, "Missing needs_migration_review in response"
-    assert body["defaults_version"] == "v159.1", (
-        f"Server defaults_version is {body['defaults_version']!r}, expected v159.1"
+    assert body["defaults_version"] == "v160.0.2", (
+        f"Server defaults_version is {body['defaults_version']!r}, expected v160.0.2"
     )
     # `users_directory` must be present in the module catalogue.
     assert "users_directory" in (body.get("module_keys") or []), (
@@ -482,3 +482,27 @@ def test_bulk_restrict_rejects_bad_resource(admin_headers):
         timeout=10,
     )
     assert r.status_code == 400, r.text[:200]
+
+
+# ---------- v160.0.2 compliance_snapshot module ----------
+
+def test_worker_me_modules_hides_compliance_snapshot(worker_headers):
+    """Worker's `/api/me/mobile-modules` must expose `compliance_snapshot:false`
+    so the phone Home skips the chip row without a second round-trip."""
+    r = requests.get(f"{BASE}/api/me/mobile-modules", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    modules = (body or {}).get("modules") or body
+    assert modules.get("compliance_snapshot") is False, (
+        f"Worker compliance_snapshot={modules.get('compliance_snapshot')!r}, expected False"
+    )
+
+
+def test_admin_me_modules_shows_compliance_snapshot(admin_headers):
+    r = requests.get(f"{BASE}/api/me/mobile-modules", headers=admin_headers, timeout=10)
+    assert r.status_code == 200, r.text[:300]
+    body = r.json()
+    modules = (body or {}).get("modules") or body
+    assert modules.get("compliance_snapshot") is True, (
+        f"Admin compliance_snapshot={modules.get('compliance_snapshot')!r}, expected True"
+    )

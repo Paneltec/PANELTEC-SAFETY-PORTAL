@@ -12,7 +12,9 @@ export type ModuleId =
   // v158 — 5 new modules exposed in the web admin.
   | 'forms' | 'document_library' | 'contractors' | 'suppliers' | 'workers'
   // v159.1 — Users Directory tile is gated behind its own module toggle.
-  | 'users_directory';
+  | 'users_directory'
+  // v160.0.2 — Compliance Snapshot chip row on phone Home.
+  | 'compliance_snapshot';
 
 export type ModuleMap = Record<ModuleId, boolean>;
 
@@ -40,6 +42,8 @@ export const SAFE_FALLBACK: ModuleMap = {
   suppliers: false,
   workers: false,
   users_directory: false,
+  // v160.0.2 — Compliance Snapshot chip row default OFF in safe-fallback.
+  compliance_snapshot: false,
 };
 
 const ALL_KEYS: ModuleId[] = Object.keys(SAFE_FALLBACK) as ModuleId[];
