@@ -6,6 +6,7 @@ import { Colors } from '../../src/lib/colors';
 import SiteScanResult from '../../src/components/scan/SiteScanResult';
 import WorkerScanResult from '../../src/components/scan/WorkerScanResult';
 import SupplierScanResult from '../../src/components/scan/SupplierScanResult';
+import AssetScanResult from '../../src/components/scan/AssetScanResult';
 
 type ScanType = 'site' | 'worker' | 'supplier' | null;
 
@@ -18,6 +19,9 @@ function parseQR(raw: string): { type: ScanType; token: string } | null {
   if (workerMatch) return { type: 'worker', token: workerMatch[1] };
   const supplierMatch = trimmed.match(/\/scan\/supplier\/([^/?#]+)/);
   if (supplierMatch) return { type: 'supplier', token: supplierMatch[1] };
+  // v160.0.11 — bare `/scan/<token>` = asset (vehicle/plant) QR.
+  const assetMatch = trimmed.match(/\/scan\/([^/?#]+)$/);
+  if (assetMatch) return { type: 'asset', token: assetMatch[1] };
   return { type: 'site', token: trimmed };
 }
 
@@ -41,6 +45,7 @@ export default function QRSignOnScreen() {
   if (resolvedType === 'site' && resolvedToken) return <SafeAreaView style={s.safe}><SiteScanResult token={resolvedToken} onReset={handleReset} /></SafeAreaView>;
   if (resolvedType === 'worker' && resolvedToken) return <SafeAreaView style={s.safe}><WorkerScanResult token={resolvedToken} onReset={handleReset} /></SafeAreaView>;
   if (resolvedType === 'supplier' && resolvedToken) return <SafeAreaView style={s.safe}><SupplierScanResult token={resolvedToken} onReset={handleReset} /></SafeAreaView>;
+  if (resolvedType === 'asset' && resolvedToken) return <SafeAreaView style={s.safe}><AssetScanResult token={resolvedToken} onReset={handleReset} /></SafeAreaView>;
 
   return (
     <SafeAreaView style={s.safe}>

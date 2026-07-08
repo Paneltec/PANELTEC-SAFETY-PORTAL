@@ -133,6 +133,12 @@ class PreStartIn(BaseModel):
     gps_accuracy: Optional[float] = None
     gps_street: Optional[str] = None
     gps_suburb: Optional[str] = None
+    # v160.0.11 — vehicle-QR scanned pre-start link. Optional so ad-hoc
+    # (non-vehicle) pre-starts still validate.
+    asset_id: Optional[str] = None
+    asset_label: Optional[str] = None
+    asset_rego: Optional[str] = None
+    asset_meter_reading: Optional[float] = None
 
 
 class SiteDiaryIn(BaseModel):

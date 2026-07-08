@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
 import { getUser } from '../../src/lib/auth';
@@ -11,10 +11,23 @@ import { Colors } from '../../src/lib/colors';
 
 export default function PreStartNewScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ asset_id?: string }>();
   const [busy, setBusy] = useState(false);
   const [crewIds, setCrewIds] = useState<string[]>([]);
   const [gps, setGps] = useState<GpsFix | null>(null);
+  const [asset, setAsset] = useState<any>(null);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), crew_lead: '', work_summary: '', hazards_discussed: '', sign_ons: [{ name: '', role: '', signature_ts: null as string | null }] });
+
+  // v160.0.11 — if we arrived via `/pre-starts/new?asset_id=<id>` (from a
+  // Vehicle-QR scan), fetch the asset and pin it to the pre-start.
+  useEffect(() => {
+    if (!params.asset_id) return;
+    let live = true;
+    api.get(`/assets/${params.asset_id}`)
+      .then(({ data }) => { if (live && data) setAsset(data); })
+      .catch(() => { /* silent — worker may not have direct asset read */ });
+    return () => { live = false; };
+  }, [params.asset_id]);
 
   const addSign = () => setForm(f => ({ ...f, sign_ons: [...f.sign_ons, { name: '', role: '', signature_ts: null }] }));
   const updSign = (i: number, patch: any) => setForm(f => ({ ...f, sign_ons: f.sign_ons.map((s, j) => j === i ? { ...s, ...patch } : s) }));
@@ -37,6 +50,10 @@ export default function PreStartNewScreen() {
         gps_accuracy: gps?.accuracy,
         gps_street: gps?.street,
         gps_suburb: gps?.suburb,
+        asset_id: asset?.id || params.asset_id,
+        asset_label: asset?.label,
+        asset_rego: asset?.rego_serial,
+        asset_meter_reading: asset?.meter_reading,
       });
       Alert.alert('Success', 'Pre-start saved');
       router.back();
@@ -48,6 +65,18 @@ export default function PreStartNewScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <ScrollView testID="prestart-new" style={s.scroll} contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
         <Text style={s.heading}>New Pre-Start</Text>
+        {(asset || params.asset_id) && (
+          <View testID="prestart-asset-banner" style={{ backgroundColor: Colors.orangeSoft, borderWidth: 1, borderColor: 'rgba(249,115,22,0.35)', borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <Ionicons name={(asset?.type === 'vehicle') ? 'car' : 'construct'} size={22} color={Colors.orangeLight} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 10, fontWeight: '800', letterSpacing: 1.1, color: Colors.orangeLight }}>PRE-START FOR</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: Colors.ink }}>
+                {asset?.label || asset?.rego_serial || `Asset ${params.asset_id?.slice(0,8)}…`}
+              </Text>
+              {asset?.rego_serial && <Text style={{ fontSize: 12, color: Colors.textSecondary }}>{asset.rego_serial}{asset?.meter_reading != null ? ` · ${asset.meter_reading} ${asset.meter_unit || ''}` : ''}</Text>}
+            </View>
+          </View>
+        )}
         <View style={s.card}>
           <Text style={s.label}>Date *</Text>
           <TextInput testID="ps-date" style={s.input} value={form.date} onChangeText={v => setForm({...form, date: v})} placeholderTextColor={Colors.placeholder} />
