@@ -382,36 +382,49 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, maxWidth: 180,
   },
   dropdownBtnText: { fontSize: 12, fontWeight: '600', color: Colors.ink },
+  // v160.0.3 — polished card: firmer border, subtle brand-tinted shadow
+  // so a real elevation reads instead of a flat outline.
   card: {
-    backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.white, borderWidth: 1, borderColor: '#dbe4ef',
     borderRadius: 18, padding: 16, marginBottom: 12,
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   catBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
   catBadgeText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   iconBtn: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   cardName: { fontSize: 18, fontWeight: '800', color: Colors.ink, letterSpacing: -0.2 },
-  cardDesc: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, lineHeight: 18 },
+  // v160.0.3 — description was `Colors.textSecondary` which reads as
+  // washed-out grey on the phone. Bumped to a darker slate so the copy
+  // is legible without hunting.
+  cardDesc: { fontSize: 13, color: '#1f2937', marginTop: 4, lineHeight: 18 },
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
-  metaText: { fontSize: 11, color: Colors.textTertiary },
+  // v160.0.3 — meta ("N fields") was `textTertiary` (near-invisible).
+  // Darkened to slate-500 with weight 600 so it registers as info.
+  metaText: { fontSize: 11, color: '#475569', fontWeight: '600' },
   sentBadge: { backgroundColor: '#ecfdf5', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   sentBadgeText: { fontSize: 10, fontWeight: '700', color: '#047857', textTransform: 'uppercase', letterSpacing: 0.5 },
   aiBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#f5f3ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   aiBadgeText: { fontSize: 10, fontWeight: '700', color: '#7c3aed', textTransform: 'uppercase', letterSpacing: 0.5 },
   cardBtns: { flexDirection: 'row', gap: 8, marginTop: 14 },
+  // v160.0.3 — Preview button was `#bfdbfe` on white → looked disabled.
+  // Bumped border to a full blue-500 and gave a light-blue fill so both
+  // Preview + Fill buttons read as clearly interactive.
   previewBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: '#bfdbfe', backgroundColor: '#fff', minHeight: 48,
+    paddingVertical: 12, borderRadius: 12, borderWidth: 2, borderColor: '#3b82f6', backgroundColor: '#eff6ff', minHeight: 48,
   },
-  previewBtnText: { fontSize: 13, fontWeight: '600', color: '#2563eb' },
+  previewBtnText: { fontSize: 13, fontWeight: '700', color: '#1e40af' },
   fillBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    paddingVertical: 12, borderRadius: 12, backgroundColor: '#1e293b', minHeight: 48,
+    paddingVertical: 12, borderRadius: 12, backgroundColor: '#0f172a', minHeight: 48,
+    shadowColor: '#f59e0b', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 3,
   },
-  fillBtnText: { fontSize: 13, fontWeight: '600', color: '#fff' },
+  fillBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
   empty: { alignItems: 'center', paddingTop: 60, gap: 6 },
-  emptyTitle: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  emptyHint: { fontSize: 12, color: Colors.textTertiary },
+  emptyTitle: { fontSize: 15, fontWeight: '700', color: '#334155' },
+  emptyHint: { fontSize: 13, color: '#64748b', fontWeight: '500' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, width: '100%', maxWidth: 320 },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 8 },
