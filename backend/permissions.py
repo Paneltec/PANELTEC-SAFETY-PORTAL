@@ -6,9 +6,10 @@ A permission check resolves in this order:
   3. False (deny by default)
 """
 from __future__ import annotations
+import time
 from typing import Dict, Literal, Optional
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 from auth import get_current_user
 from db import db
@@ -290,3 +291,124 @@ async def upsert_overrides(user_id: str, org_id: str, overrides: dict, updated_b
 async def has_any_overrides(user_id: str) -> bool:
     doc = await db.user_permissions.find_one({"user_id": user_id})
     return bool(doc and doc.get("overrides"))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# v160.0.9 — Path C Cycle 2: Module-system enforcement
+#
+# `require_module()` verifies that the mobile-app caller's role has the
+# given module enabled in their org's `mobile_modules` matrix. This
+# closes the loophole where an admin toggling a module OFF only hid the
+# tile on the phone — the endpoint stayed callable via direct API. Now
+# the endpoint responds 403.
+#
+# Design notes:
+#   • Only enforced when the caller sends `x-client-platform: mobile`.
+#     Web calls bypass entirely (they use per-user role/permission gates
+#     already; module toggles are a phone-UX construct).
+#   • `admin` and `hseq_lead` always bypass (allow_privileged=True) so a
+#     misconfigured toggle can't lock an operator out of their own kit.
+#   • Cached in-memory for 60s per (org_id, role) to avoid a Mongo hit
+#     per request. The org_settings write handler bumps a counter that
+#     invalidates callers cheaply; a stale 60s window is acceptable
+#     because module toggles are exceptional, not high-frequency.
+# ═══════════════════════════════════════════════════════════════════════
+
+_MODULES_CACHE: Dict[str, tuple[float, Dict[str, bool]]] = {}
+_MODULES_TTL_SEC = 60.0
+# Roles that always bypass the module gate. These are the operator/HSEQ
+# rows that MUST be able to reach every endpoint even if a module is off
+# in the mobile UI for other roles.
+_MODULE_PRIVILEGED_ROLES = {"admin", "hseq_lead"}
+
+
+def is_mobile_client(request: Optional[Request]) -> bool:
+    """True when the caller declares itself the Expo mobile app.
+
+    Two signals accepted (either is enough):
+      1. `x-client-platform: mobile` header (preferred, set by
+         `mobile/src/lib/api.ts` interceptor).
+      2. `User-Agent` contains `Expo` or `okhttp` (native fetch on
+         Android) — legacy fallback for older builds that predate the
+         header rollout.
+    """
+    if request is None:
+        return False
+    try:
+        h = request.headers
+    except Exception:
+        return False
+    plat = (h.get("x-client-platform") or "").strip().lower()
+    if plat == "mobile":
+        return True
+    ua = (h.get("user-agent") or "").lower()
+    return "expo" in ua or "okhttp" in ua or "reactnative" in ua
+
+
+async def _load_role_modules(org_id: str, role: str) -> Dict[str, bool]:
+    """Cached read of the mobile_modules row for (org, role). Falls
+    back to the DEFAULTS table if the org row is missing (fresh orgs
+    that have never saved the matrix)."""
+    cache_key = f"{org_id}:{role}"
+    now = time.monotonic()
+    hit = _MODULES_CACHE.get(cache_key)
+    if hit and hit[0] > now:
+        return hit[1]
+    # Import inside the function to avoid a circular import
+    # (`mobile_modules` imports from `auth` which imports from us).
+    from mobile_modules import _load_matrix, DEFAULTS, ROLE_KEYS
+    try:
+        matrix = await _load_matrix(org_id)
+    except Exception:
+        matrix = {r: dict(DEFAULTS.get(r, {})) for r in ROLE_KEYS}
+    row = dict(matrix.get(role) or DEFAULTS.get(role) or {})
+    _MODULES_CACHE[cache_key] = (now + _MODULES_TTL_SEC, row)
+    return row
+
+
+def invalidate_modules_cache(org_id: Optional[str] = None) -> None:
+    """Clear the in-memory module cache. Called from the PUT handler in
+    `mobile_modules.py` after an admin saves a new matrix so subsequent
+    calls see the change immediately (without waiting for the TTL)."""
+    if org_id is None:
+        _MODULES_CACHE.clear()
+        return
+    dead = [k for k in _MODULES_CACHE if k.startswith(f"{org_id}:")]
+    for k in dead:
+        _MODULES_CACHE.pop(k, None)
+
+
+def require_module(module_id: str, allow_privileged: bool = True):
+    """FastAPI dependency factory. Verifies the caller's role has the
+    given mobile module enabled. Web callers (no mobile platform
+    header) bypass. Admin/hseq_lead bypass unless `allow_privileged=False`.
+
+    Raises 403 with `{"detail": f"Module '{module_id}' disabled for your role"}`.
+    """
+    async def dep(
+        request: Request,
+        user: dict = Depends(get_current_user),
+    ) -> dict:
+        # Web caller? Skip — the module gate is a phone-UX construct.
+        if not is_mobile_client(request):
+            return user
+        role = (user.get("role") or "").lower()
+        if allow_privileged and role in _MODULE_PRIVILEGED_ROLES:
+            return user
+        row = await _load_role_modules(user["org_id"], role)
+        # Defensive default: if the module key is missing from the stored
+        # doc (e.g. a new module added mid-cycle), fall back to the
+        # DEFAULTS table so we never block a legitimate call because of
+        # a schema drift. If STILL missing, default False (deny).
+        if module_id in row:
+            enabled = bool(row[module_id])
+        else:
+            from mobile_modules import DEFAULTS
+            enabled = bool((DEFAULTS.get(role) or {}).get(module_id, False))
+        if not enabled:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Module '{module_id}' disabled for your role",
+            )
+        return user
+    return dep

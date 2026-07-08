@@ -17,7 +17,12 @@ from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/contractors", tags=["contractors"])
+from permissions import require_permission, require_module
+
+router = APIRouter(
+    prefix="/contractors", tags=["contractors"],
+    dependencies=[Depends(require_module("contractors"))],  # v160.0.9
+)
 
 DocType = Literal["public_liability", "workers_comp", "white_card", "sw_license", "induction", "other"]
 ContractorStatus = Literal["active", "inactive", "suspended"]

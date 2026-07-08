@@ -17,10 +17,11 @@ from pymongo import ReturnDocument
 
 from ai import CLAUDE_MODEL, _claude_json, _emergent_key
 from auth import get_current_user
+from permissions import require_module
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/ask", tags=["ask"])
+router = APIRouter(prefix="/ask", tags=["ask"], dependencies=[Depends(require_module("ask_intel"))])  # v160.0.9
 
 # v159.1 — Ask Intelligence gate. Non-admin/hseq callers must have the
 # `ask_intel` mobile module toggled on for their role. Admins bypass.

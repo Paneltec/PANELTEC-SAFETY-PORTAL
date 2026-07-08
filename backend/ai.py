@@ -27,7 +27,7 @@ from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
 from auth import get_current_user
 from db import db
 from models import DiaryStructureIn, SwmsDraftIn
-from permissions import require_permission
+from permissions import require_permission, require_module
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 

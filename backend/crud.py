@@ -17,7 +17,7 @@ from models import (
     HazardIn, IncidentIn, InspectionIn, PreStartIn, SiteDiaryIn, SwmsIn,
     SwmsReview, new_id, now_iso,
 )
-from permissions import require_permission, resolve_team_scope
+from permissions import require_permission, require_module, resolve_team_scope
 
 
 def _scoped(user: dict, workspace_id: Optional[str] = None) -> dict:
@@ -32,8 +32,15 @@ def _strip(doc: dict) -> dict:
     return doc
 
 
-def build_router(prefix: str, collection: str, model: Type[BaseModel], resource: str) -> APIRouter:
-    r = APIRouter(prefix=f"/{prefix}", tags=[prefix])
+def build_router(prefix: str, collection: str, model: Type[BaseModel], resource: str,
+                 module_id: Optional[str] = None) -> APIRouter:
+    # v160.0.9 — router-level `require_module()` gate. When `module_id`
+    # is set, every route on this router is subject to the mobile
+    # module toggle for the caller's role. Web callers bypass (no
+    # `x-client-platform: mobile` header).
+    from fastapi import Depends as _Dep
+    router_deps = [_Dep(require_module(module_id))] if module_id else []
+    r = APIRouter(prefix=f"/{prefix}", tags=[prefix], dependencies=router_deps)
 
     @r.get("")
     async def list_items(
@@ -166,12 +173,14 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
 
 
 # ---------- Build the six entity routers ----------
-swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms")
-prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts")
-diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary")
-hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards")
-incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents")
-inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections")
+# v160.0.9 — each router now carries the corresponding mobile module id
+# so the phone gets 403 when an admin turns the module OFF.
+swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms",         "swms")
+prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts",   "pre_start")
+diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary",   "site_diary")
+hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards",      "hazard")
+incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents",    "incident")
+inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection")
 
 
 # ---------- SWMS review (extra endpoint) ----------

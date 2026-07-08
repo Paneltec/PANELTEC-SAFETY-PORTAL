@@ -16,7 +16,13 @@ from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/workers", tags=["workers"])
+from permissions import require_permission, resolve_team_scope, require_module
+
+router = APIRouter(
+    prefix="/workers", tags=["workers"],
+    # v160.0.9 — mobile module gate. Web callers bypass (no platform header).
+    dependencies=[Depends(require_module("workers"))],
+)
 
 WRITE_ROLES = {"admin", "hseq_lead"}
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")

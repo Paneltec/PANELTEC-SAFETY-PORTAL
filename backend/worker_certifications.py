@@ -28,7 +28,12 @@ from document_library import (
 )
 
 log = logging.getLogger("paneltec.worker_certs")
-router = APIRouter(prefix="/workers", tags=["worker-certifications"])
+from permissions import require_permission, resolve_team_scope, require_module
+
+router = APIRouter(
+    prefix="/workers", tags=["worker-certifications"],
+    dependencies=[Depends(require_module("certifications"))],  # v160.0.9
+)
 
 WRITE_ROLES = {"admin", "hseq_lead"}
 DEFAULT_FOLDER_NAME = "Licences & Tickets"

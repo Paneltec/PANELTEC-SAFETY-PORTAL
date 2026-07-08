@@ -2604,3 +2604,57 @@ and `CACHE_VERSION` (service-worker.js).
 
 **Regression sweep:** 62/62 pytest still green. OpenAPI 200. Web fill
 form loads with corrected header. Metro cache cleared.
+
+## v160.0.9 — Path C Cycle 2: Module-system backend sweep (2026-07-08)
+
+Introduced `require_module()` FastAPI dependency in `permissions.py` that
+reads the `mobile_modules` matrix (per org × role × module) and returns
+403 for mobile callers whose role has the requested module OFF. Cycles
+3-4 explicitly untouched per instruction.
+
+**Design:**
+- Only enforced when the caller sends `x-client-platform: mobile` header
+  OR a User-Agent containing `Expo` / `okhttp` / `reactnative` (legacy
+  fallback for older builds). Web callers bypass entirely.
+- `admin` and `hseq_lead` always bypass (`allow_privileged=True`) so a
+  misconfigured toggle can never lock an operator out of their own kit.
+- 60-second in-memory TTL cache keyed on `(org_id, role)` avoids a Mongo
+  hit on every request. `mobile_modules.py::put_mobile_modules` calls
+  `invalidate_modules_cache(org_id)` on save so the phone sees the new
+  toggle on the next call (no TTL wait).
+
+**Applied to routers (router-level `dependencies=[Depends(require_module(...))]`):**
+| Module | Router |
+|---|---|
+| `swms` | `/api/swms/*` |
+| `pre_start` | `/api/pre-starts/*` |
+| `site_diary` | `/api/site-diary/*` |
+| `hazard` | `/api/hazards/*` |
+| `incident` | `/api/incidents/*` |
+| `inspection` | `/api/inspections/*` |
+| `workers` | `/api/workers/*` (via workers.py) |
+| `forms` | `/api/forms/*` |
+| `certifications` | `/api/workers/*` (worker_certifications.py sub-router) |
+| `ask_intel` | `/api/ask/*` |
+| `document_library` | `/api/document-library/*` |
+| `contractors` | `/api/contractors/*` |
+| `suppliers` | `/api/suppliers/*` |
+| — (deferred to v160.0.9.1) | `/api/ai/*` (permission gate already sufficient), `/api/assets/*` (multiple co-located sub-routers, needs targeted approach), `/api/workers/inductions/*` (card_router), `/api/qr-signon/*`, `/api/users/*`. |
+
+**Mobile client update:**
+- `mobile/src/lib/api.ts` — axios default `x-client-platform: mobile`
+  header set on every request. Existing Expo Go builds hit the UA
+  fallback so no phone-side rebuild is required for enforcement to kick
+  in on the phone itself.
+
+**Test suite:** 62 → **75 passing** (+13 v160.0.9 regression tests).
+
+**Deliverables verified:**
+- Curl (localhost + external ingress): worker+mobile blocked, worker+web
+  bypasses, admin+mobile bypasses, UA fallback works.
+- `/api/openapi.json` returns 200.
+- All 75 pytests green.
+- Version bumped to `paneltec-v160.0.9` on `version.js` +
+  `service-worker.js`.
+
+**Cycles 3-4 remain untouched.**

@@ -211,6 +211,13 @@ async def put_mobile_modules(
             "at":         now_iso(),
             "diff":       diff,
         })
+    # v160.0.9 — flush the require_module() in-memory cache so the phone
+    # sees the new toggle on its next API call (without waiting the 60s TTL).
+    try:
+        from permissions import invalidate_modules_cache
+        invalidate_modules_cache(user["org_id"])
+    except Exception:
+        pass
     return {"ok": True, "mobile_modules": after, "changes": len(diff)}
 
 

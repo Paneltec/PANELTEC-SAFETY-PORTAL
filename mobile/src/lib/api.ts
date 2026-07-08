@@ -10,6 +10,11 @@ export const USER_KEY = 'paneltec_user';
 
 const api = axios.create({ baseURL: API_BASE, timeout: 120000 });
 
+// v160.0.9 — Explicit platform header lets the backend enforce the
+// mobile_modules toggle matrix (Cycle 2). Web callers do not set this,
+// so they bypass the module gate.
+api.defaults.headers.common['x-client-platform'] = 'mobile';
+
 // Global logout handler — set by AuthContext
 let _forceLogout: ((reason: string) => void) | null = null;
 export function setForceLogoutHandler(fn: (reason: string) => void) { _forceLogout = fn; }

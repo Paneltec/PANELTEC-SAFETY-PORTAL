@@ -21,11 +21,14 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from auth import get_current_user
-from permissions import require_permission
+from permissions import require_permission, require_module
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/document-library", tags=["document-library"])
+router = APIRouter(
+    prefix="/document-library", tags=["document-library"],
+    dependencies=[Depends(require_module("document_library"))],  # v160.0.9
+)
 
 UPLOAD_DIR = Path(__file__).parent / "uploads" / "document_library"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

@@ -830,3 +830,132 @@ def test_v160_0_8_permissions_schema_has_ai_resource(admin_headers):
     assert "use" in (eff.get("ai") or {}), (
         "v160.0.8 permissions schema missing `ai.use` action"
     )
+
+
+
+# ────────────────── v160.0.9 Path C Cycle 2 — Module-system enforcement ──────────────────
+MOBILE_HDR = {"x-client-platform": "mobile"}
+
+
+def _mobile_hdrs(base_hdrs):
+    return {**base_hdrs, **MOBILE_HDR}
+
+
+def _put_matrix(admin_headers, matrix_by_role: dict):
+    r = requests.put(
+        f"{BASE}/api/settings/mobile-modules",
+        headers=admin_headers, timeout=10,
+        json={"mobile_modules": matrix_by_role},
+    )
+    assert r.status_code == 200, r.text[:300]
+
+
+@pytest.fixture
+def modules_matrix_snapshot(admin_headers):
+    """Capture the full matrix before a test, restore after."""
+    r = requests.get(
+        f"{BASE}/api/settings/mobile-modules",
+        headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    original = (r.json() or {}).get("mobile_modules") or {}
+    yield original
+    _put_matrix(admin_headers, original)
+
+
+def _set_worker_module(admin_headers, current: dict, module: str, enabled: bool):
+    worker_row = dict(current.get("worker") or {})
+    worker_row[module] = bool(enabled)
+    new_matrix = {**current, "worker": worker_row}
+    _put_matrix(admin_headers, new_matrix)
+
+
+def test_v160_0_9_web_bypass_no_mobile_header(worker_headers, modules_matrix_snapshot, admin_headers):
+    """Web callers bypass the module gate. Hazard OFF + no mobile header → 200."""
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "hazard", False)
+    r = requests.get(f"{BASE}/api/hazards", headers=worker_headers, timeout=10)
+    assert r.status_code == 200, (
+        f"Web worker with hazard=OFF got {r.status_code}, expected 200 (bypass)\n"
+        f"body={r.text[:200]}"
+    )
+
+
+def test_v160_0_9_mobile_worker_blocked_when_module_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "hazard", False)
+    r = requests.get(f"{BASE}/api/hazards", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403, (
+        f"Mobile worker with hazard=OFF got {r.status_code}, expected 403\n"
+        f"body={r.text[:200]}"
+    )
+    assert "hazard" in (r.json().get("detail") or "").lower()
+
+
+def test_v160_0_9_mobile_worker_allowed_when_module_on(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "hazard", True)
+    r = requests.get(f"{BASE}/api/hazards", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 200
+
+
+def test_v160_0_9_admin_always_bypasses_module_gate(admin_headers, modules_matrix_snapshot):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "hazard", False)
+    r = requests.get(f"{BASE}/api/hazards", headers=_mobile_hdrs(admin_headers), timeout=10)
+    assert r.status_code == 200
+
+
+def test_v160_0_9_mobile_worker_blocked_incident_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "incident", False)
+    r = requests.get(f"{BASE}/api/incidents", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_prestart_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "pre_start", False)
+    r = requests.get(f"{BASE}/api/pre-starts", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_forms_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "forms", False)
+    r = requests.get(f"{BASE}/api/forms/templates", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_ask_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "ask_intel", False)
+    r = requests.get(f"{BASE}/api/ask/suggestions", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_document_library_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "document_library", False)
+    r = requests.get(f"{BASE}/api/document-library/folders", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_suppliers_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "suppliers", False)
+    r = requests.get(f"{BASE}/api/suppliers/meta", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_contractors_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "contractors", False)
+    r = requests.get(f"{BASE}/api/contractors", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_mobile_worker_blocked_workers_off(worker_headers, modules_matrix_snapshot, admin_headers):
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "workers", False)
+    r = requests.get(f"{BASE}/api/workers", headers=_mobile_hdrs(worker_headers), timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_9_user_agent_fallback_detected(worker_headers, modules_matrix_snapshot, admin_headers):
+    """Fallback path: an older mobile build with no `x-client-platform`
+    but a `User-Agent` containing `Expo` is still treated as mobile."""
+    _set_worker_module(admin_headers, modules_matrix_snapshot, "hazard", False)
+    hdrs = {**worker_headers, "User-Agent": "Expo/54.0 (iPhone; iOS 17.6)"}
+    r = requests.get(f"{BASE}/api/hazards", headers=hdrs, timeout=10)
+    assert r.status_code == 403, (
+        f"UA-based mobile detection failed — expected 403 for hazard=OFF, got {r.status_code}"
+    )

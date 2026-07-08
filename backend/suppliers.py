@@ -20,11 +20,14 @@ from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 
 from auth import get_current_user
-from permissions import require_permission
+from permissions import require_permission, require_module
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/suppliers", tags=["suppliers"])
+router = APIRouter(
+    prefix="/suppliers", tags=["suppliers"],
+    dependencies=[Depends(require_module("suppliers"))],  # v160.0.9
+)
 
 WRITE_ROLES = {"admin", "hseq_lead"}
 

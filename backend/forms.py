@@ -27,7 +27,12 @@ from auth import get_current_user
 from db import db
 from models import new_id, now_iso
 
-router = APIRouter(prefix="/forms", tags=["forms"])
+from permissions import require_permission, require_module
+
+router = APIRouter(
+    prefix="/forms", tags=["forms"],
+    dependencies=[Depends(require_module("forms"))],  # v160.0.9
+)
 
 WRITE_ROLES = {"admin", "hseq_lead"}
 ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general"}
