@@ -330,7 +330,14 @@ async def list_files(folder_id: str, user: dict = Depends(require_permission("do
         {"_id": 0},
     ).sort([("uploaded_at", -1)])
     files = await cursor.to_list(500)
-    return [_serialise_file(f) for f in files]
+    # v160.1 — per-record category visibility. Records without a
+    # `category_id` behave exactly as before this cycle (migration-safe).
+    from document_categories import category_visible  # local import: avoids circular
+    visible: list = []
+    for f in files:
+        if await category_visible(user, f.get("category_id"), f.get("subject_worker_id")):
+            visible.append(f)
+    return [_serialise_file(f) for f in visible]
 
 
 @router.post("/folders/{folder_id}/files", status_code=201)

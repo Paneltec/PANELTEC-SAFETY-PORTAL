@@ -177,6 +177,9 @@ api.include_router(preset_router)
 api.include_router(preset_apply_router)
 from bulk_permissions import router as bulk_permissions_router  # noqa: E402
 api.include_router(bulk_permissions_router)
+# v160.1 — Document categorization backend (Phase 1). UI is Phase 2.
+from document_categories import router as document_categories_router  # noqa: E402
+api.include_router(document_categories_router)
 api.include_router(workspaces_router)
 app.include_router(org_router)
 app.include_router(mobile_modules_router)

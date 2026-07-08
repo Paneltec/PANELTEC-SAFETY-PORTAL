@@ -11,11 +11,13 @@ export const Colors = {
   borderLight: '#1E293B',  // slate-800
   borderFocus: '#F97316',  // orange — focused inputs
 
-  // Text
+  // Text — v160.0.4: brightened secondary/tertiary so field text is
+  // readable in bright sun. Primary near-white; secondary light slate;
+  // tertiary medium slate — legible, not ghosted.
   ink: '#F8FAFC',          // slate-50 — primary text (light)
   text: '#F8FAFC',         // slate-50
-  textSecondary: '#94A3B8',// slate-400
-  textTertiary: '#64748B', // slate-500
+  textSecondary: '#CBD5E1',// slate-300 (was 400 — lifted for readability)
+  textTertiary: '#94A3B8', // slate-400 (was 500 — lifted for readability)
   white: '#FFFFFF',
 
   // Orange accent

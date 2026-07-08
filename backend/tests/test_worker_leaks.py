@@ -506,3 +506,104 @@ def test_admin_me_modules_shows_compliance_snapshot(admin_headers):
     assert modules.get("compliance_snapshot") is True, (
         f"Admin compliance_snapshot={modules.get('compliance_snapshot')!r}, expected True"
     )
+
+
+# ---------- v160.1 document categorization ----------
+
+def test_worker_cannot_create_category(worker_headers):
+    r = requests.post(
+        f"{BASE}/api/document-categories",
+        headers={**worker_headers, "Content-Type": "application/json"},
+        json={"name": "Sneaky", "scope": "shared", "applies_to": ["document"]},
+        timeout=10,
+    )
+    assert r.status_code == 403, r.text[:300]
+
+
+def test_admin_can_create_list_and_delete_empty_category(admin_headers):
+    r = requests.post(
+        f"{BASE}/api/document-categories",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"name": "TasWater Inductions v160.1", "scope": "employee",
+              "sensitive": True, "applies_to": ["induction", "document"]},
+        timeout=10,
+    )
+    assert r.status_code == 201, r.text[:300]
+    cat = r.json()
+    assert cat["scope"] == "employee"
+    assert cat["slug"].startswith("taswater_inductions")
+    assert cat["sensitive"] is True
+    cat_id = cat["id"]
+    # List — admin sees at least this one
+    r2 = requests.get(f"{BASE}/api/document-categories", headers=admin_headers, timeout=10)
+    assert r2.status_code == 200
+    ids = {c["id"] for c in r2.json()}
+    assert cat_id in ids
+    # Delete (no records reference it) → 200
+    r3 = requests.delete(f"{BASE}/api/document-categories/{cat_id}", headers=admin_headers, timeout=10)
+    assert r3.status_code == 200, r3.text[:300]
+
+
+def test_worker_list_categories_filtered(admin_headers, worker_headers):
+    """Worker sees only categories where `role_acl.worker=true` or an
+    employee-scope category they own a record under. Fresh employee-scope
+    category with 0 records should NOT appear."""
+    r = requests.post(
+        f"{BASE}/api/document-categories",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"name": "Private Cat v160.1", "scope": "employee",
+              "applies_to": ["document"]},
+        timeout=10,
+    )
+    cat_id = r.json()["id"]
+    r2 = requests.get(f"{BASE}/api/document-categories", headers=worker_headers, timeout=10)
+    # Worker may lack documents.view perm entirely → 403 is acceptable
+    # (means the endpoint is protected). If 200, ensure the private cat
+    # is filtered out.
+    if r2.status_code == 200:
+        ids = {c["id"] for c in r2.json()}
+        assert cat_id not in ids, "Worker leaked an employee-scope category they don't own records in"
+    else:
+        assert r2.status_code == 403, f"Unexpected {r2.status_code}"
+    requests.delete(f"{BASE}/api/document-categories/{cat_id}", headers=admin_headers, timeout=10)
+
+
+def test_delete_category_with_records_returns_409(admin_headers):
+    """Insert a category, seed one dummy document referencing it via the
+    same POST /doc_files upsert-shape, then delete → expect 409."""
+    from pymongo import MongoClient
+    from dotenv import load_dotenv
+    import os
+    load_dotenv("/app/backend/.env")
+    mongo_url = os.environ.get("MONGO_URL")
+    db_name = os.environ.get("DB_NAME")
+    if not mongo_url or not db_name:
+        import pytest
+        pytest.skip("MONGO_URL/DB_NAME not available in test env")
+
+    r = requests.post(
+        f"{BASE}/api/document-categories",
+        headers={**admin_headers, "Content-Type": "application/json"},
+        json={"name": "Conflict Cat v160.1", "scope": "shared",
+              "applies_to": ["document"]},
+        timeout=10,
+    )
+    cat = r.json()
+    cat_id = cat["id"]
+    mc = MongoClient(mongo_url)
+    dummy = {
+        "id": "test-dummy-160-1", "org_id": cat["org_id"],
+        "folder_id": "x", "filename": "x.pdf", "stored_name": "x.pdf",
+        "category_id": cat_id, "deleted_at": None,
+        "uploaded_at": "2026-07-08T00:00:00Z",
+    }
+    mc[db_name].doc_files.insert_one(dict(dummy))
+    try:
+        r2 = requests.delete(f"{BASE}/api/document-categories/{cat_id}", headers=admin_headers, timeout=10)
+        assert r2.status_code == 409, r2.text[:300]
+        detail = r2.json().get("detail") or {}
+        assert detail.get("count") == 1, f"expected count=1 got {detail}"
+        assert detail.get("breakdown", {}).get("documents") == 1
+    finally:
+        mc[db_name].doc_files.delete_one({"id": "test-dummy-160-1"})
+        requests.delete(f"{BASE}/api/document-categories/{cat_id}", headers=admin_headers, timeout=10)
