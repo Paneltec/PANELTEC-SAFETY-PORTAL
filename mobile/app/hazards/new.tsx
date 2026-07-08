@@ -10,6 +10,8 @@ import api, { apiError } from '../../src/lib/api';
 import { getUser } from '../../src/lib/auth';
 import PrimaryButton from '../../src/components/PrimaryButton';
 import GhostButton from '../../src/components/GhostButton';
+import WorkerPicker from '../../src/components/WorkerPicker';
+import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import { Colors } from '../../src/lib/colors';
 
 export default function HazardNewScreen() {
@@ -18,6 +20,8 @@ export default function HazardNewScreen() {
   const [aiBusy, setAiBusy] = useState(false);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [reportedBy, setReportedBy] = useState<string | null>(null);
+  const [gps, setGps] = useState<GpsFix | null>(null);
   const [form, setForm] = useState({
     title: '', description: '', location: '', severity: 'medium',
     controls: [] as string[], status: 'open',
@@ -99,6 +103,12 @@ export default function HazardNewScreen() {
         photo_url: photoUri,
         ai_analysis: aiAnalysis,
         controls: form.controls.filter(Boolean),
+        reported_by: reportedBy,
+        gps_latitude: gps?.latitude,
+        gps_longitude: gps?.longitude,
+        gps_accuracy: gps?.accuracy,
+        gps_street: gps?.street,
+        gps_suburb: gps?.suburb,
       });
       Alert.alert('Success', 'Hazard reported');
       router.back();
@@ -171,7 +181,22 @@ export default function HazardNewScreen() {
           <TextInput testID="hazard-description" style={[s.input, { minHeight: 70, textAlignVertical: 'top' }]} value={form.description} onChangeText={v => setForm({...form, description: v})} placeholder="Describe the hazard" placeholderTextColor={Colors.textTertiary} multiline />
 
           <Text style={s.label}>Location</Text>
-          <TextInput testID="hazard-location" style={s.input} value={form.location} onChangeText={v => setForm({...form, location: v})} placeholder="Where?" placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="hazard-location" style={s.input} value={form.location} onChangeText={v => setForm({...form, location: v})} placeholder="Where?" placeholderTextColor={Colors.placeholder} />
+          <GpsLocationChip
+            value={gps}
+            onChange={(fix) => {
+              setGps(fix);
+              if (fix?.formatted && !form.location) setForm(f => ({ ...f, location: fix.formatted! }));
+            }}
+          />
+
+          <WorkerPicker
+            label="Reported by"
+            required
+            value={reportedBy}
+            onChange={(id) => setReportedBy(id)}
+            testID="hazard-reported-by"
+          />
 
           <Text style={s.label}>Severity</Text>
           <View style={s.severityRow}>

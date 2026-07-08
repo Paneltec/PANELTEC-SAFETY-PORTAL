@@ -2737,3 +2737,27 @@ Screenshots after (via web preview):
 ### Version
 - `RUNNING_VERSION = 'paneltec-v160.0.10'` ✓
 - `CACHE_VERSION = 'paneltec-v160.0.10'` ✓
+
+## v160.0.10.1 — Deferred P4 features + GPS auto-populate (2026-07-08)
+
+**Bundle verification signal (user complaint "phone doesn't look any different"):**
+- The Home screen's overline now reads `PANELTEC CIVIL · paneltec-v160.0.10.1` (rendered live from `src/lib/version.ts::MOBILE_BUNDLE_VERSION`). Any future stale-cache issue is trivial to diagnose — the version marker updates or it doesn't.
+
+**Shipped features:**
+1. **WorkerPicker** (`src/components/WorkerPicker.tsx`) — reusable searchable dropdown. Single OR multi-select. Fetches from `GET /api/workers` (v160.0.8-scoped). Verified end-to-end: opened on Hazard form, listed 60+ workers, filtered on "stephen" returned STEPHEN BEADLE / Stephen Guy / STEPHEN MORGAN.
+2. **GpsLocationChip** (`src/components/GpsLocationChip.tsx`) — one-tap "Get current location" with reverse-geocode. On native (Expo Go) uses `expo-location`. On Expo web uses `navigator.geolocation` + Nominatim reverse-geocode. Verified end-to-end: chip populated with "Coppersmith Lane, Erskineville · -33.90270, 151.18580 · ±0m" and auto-filled the free-text Location input.
+3. **Backend model extensions** (`models.py`) — `HazardIn`, `IncidentIn`, `InspectionIn` gain optional `reported_by` / `person_involved` / `operator` + `gps_latitude` / `gps_longitude` / `gps_accuracy` / `gps_street` / `gps_suburb`. `InspectionIn` also adds `operator_signature` (base64 PNG data URL). All fields optional → migration-safe for existing records.
+4. **Hazard new form wired end-to-end** — `hazards/new.tsx` uses `WorkerPicker` for "Reported by *" and `GpsLocationChip` for GPS. On save the new fields are posted with the payload. Curl-verified persistence.
+
+**Camera:** already worked via `expo-image-picker` in `hazards/new.tsx` (line 26-42) — audit confirmed, no code change needed.
+
+**Deferred to v160.0.10.2 (context-budget clip):**
+- Wire `WorkerPicker` + `GpsLocationChip` into `incidents/new.tsx`, `pre-starts/new.tsx`, `inspections/new.tsx`.
+- Wire signature-modal onto `inspections/new.tsx` (operator sign-off).
+- Simpro-fallback for workers list (unverified this cycle — the current dropdown source is the local `workers` collection which is Simpro-synced nightly; on-demand fallback not yet in place).
+
+**Regression sweep:**
+- Pytest: **75/75 passing**. `/api/openapi.json` 200. Backend + hazards E2E curl-verified.
+- Metro cache cleared + `mobile` restarted. Fresh bundle proven by home-screen version marker.
+
+**Version:** `paneltec-v160.0.10.1` on `version.js`, `service-worker.js`, and `mobile/src/lib/version.ts`.

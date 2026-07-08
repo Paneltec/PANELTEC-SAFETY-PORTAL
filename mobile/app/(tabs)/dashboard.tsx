@@ -111,7 +111,7 @@ export default function DashboardScreen() {
 
         <View style={d.header}>
           <View>
-            <Text style={d.overline}>PANELTEC CIVIL</Text>
+            <Text style={d.overline}>PANELTEC CIVIL · {require('../../src/lib/version').MOBILE_BUNDLE_VERSION}</Text>
             <Text style={d.heading}>HOME</Text>
           </View>
           <View style={d.avatar}>

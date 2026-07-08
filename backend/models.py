@@ -145,6 +145,13 @@ class HazardIn(BaseModel):
     controls: List[str] = Field(default_factory=list)
     status: HazardStatus = "open"
     ai_analysis: Optional[dict] = None
+    # v160.0.10.1 — new fields (all optional to preserve migration safety)
+    reported_by: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_street: Optional[str] = None
+    gps_suburb: Optional[str] = None
 
 
 class IncidentIn(BaseModel):
@@ -158,6 +165,13 @@ class IncidentIn(BaseModel):
     evidence_photos: List[str] = Field(default_factory=list)
     follow_up_actions: List[dict] = Field(default_factory=list)
     follow_up_status: IncidentStatus = "open"
+    # v160.0.10.1
+    person_involved: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_street: Optional[str] = None
+    gps_suburb: Optional[str] = None
 
 
 class InspectionChecklistItem(BaseModel):
@@ -174,6 +188,14 @@ class InspectionIn(BaseModel):
     checklist_items: List[InspectionChecklistItem] = Field(default_factory=list)
     corrective_actions: List[dict] = Field(default_factory=list)
     notes: Optional[str] = None
+    # v160.0.10.1
+    operator: Optional[str] = None
+    operator_signature: Optional[str] = None  # base64 PNG data URL
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_street: Optional[str] = None
+    gps_suburb: Optional[str] = None
 
 
 # ---------- Dashboard ----------
