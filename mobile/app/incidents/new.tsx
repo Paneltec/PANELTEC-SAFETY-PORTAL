@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import api, { apiError } from '../../src/lib/api';
 import { getUser } from '../../src/lib/auth';
 import PrimaryButton from '../../src/components/PrimaryButton';
+import WorkerPicker from '../../src/components/WorkerPicker';
+import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import { Colors } from '../../src/lib/colors';
 
 const CATS = [['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical', 'Medical'], ['ltc', 'Lost-time'], ['env', 'Environmental'], ['property', 'Property']];
@@ -11,14 +13,28 @@ const CATS = [['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical'
 export default function IncidentNewScreen() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [personInvolved, setPersonInvolved] = useState<string | null>(null);
+  const [gps, setGps] = useState<GpsFix | null>(null);
   const [form, setForm] = useState({ title: '', occurred_at: new Date().toISOString().slice(0, 16), location: '', category: 'near_miss', description: '', immediate_actions: '', follow_up_status: 'open' });
 
   const save = async () => {
     if (!form.title || !form.description) { Alert.alert('Error', 'Title and description required'); return; }
+    if (!personInvolved) { Alert.alert('Error', 'Person involved is required'); return; }
     setBusy(true);
     try {
       const user = await getUser();
-      await api.post('/incidents', { ...form, workspace_id: user?.workspace_ids?.[0], occurred_at: new Date(form.occurred_at).toISOString(), follow_up_actions: [] });
+      await api.post('/incidents', {
+        ...form,
+        workspace_id: user?.workspace_ids?.[0],
+        occurred_at: new Date(form.occurred_at).toISOString(),
+        follow_up_actions: [],
+        person_involved: personInvolved,
+        gps_latitude: gps?.latitude,
+        gps_longitude: gps?.longitude,
+        gps_accuracy: gps?.accuracy,
+        gps_street: gps?.street,
+        gps_suburb: gps?.suburb,
+      });
       Alert.alert('Success', 'Incident logged');
       router.back();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
@@ -31,7 +47,7 @@ export default function IncidentNewScreen() {
         <Text style={s.heading}>Log Incident</Text>
         <View style={s.card}>
           <Text style={s.label}>Title *</Text>
-          <TextInput testID="inc-title" style={s.input} value={form.title} onChangeText={v => setForm({...form, title: v})} placeholder="What happened?" placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="inc-title" style={s.input} value={form.title} onChangeText={v => setForm({...form, title: v})} placeholder="What happened?" placeholderTextColor={Colors.placeholder} />
           <Text style={s.label}>Category</Text>
           <View style={s.catRow}>
             {CATS.map(([k, l]) => (
@@ -41,11 +57,25 @@ export default function IncidentNewScreen() {
             ))}
           </View>
           <Text style={s.label}>Location</Text>
-          <TextInput testID="inc-location" style={s.input} value={form.location} onChangeText={v => setForm({...form, location: v})} placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="inc-location" style={s.input} value={form.location} onChangeText={v => setForm({...form, location: v})} placeholderTextColor={Colors.placeholder} />
+          <GpsLocationChip
+            value={gps}
+            onChange={(fix) => {
+              setGps(fix);
+              if (fix?.formatted && !form.location) setForm(f => ({ ...f, location: fix.formatted! }));
+            }}
+          />
+          <WorkerPicker
+            label="Person involved"
+            required
+            value={personInvolved}
+            onChange={(id) => setPersonInvolved(id)}
+            testID="inc-person-involved"
+          />
           <Text style={s.label}>Description *</Text>
-          <TextInput testID="inc-description" style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]} value={form.description} onChangeText={v => setForm({...form, description: v})} multiline placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="inc-description" style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]} value={form.description} onChangeText={v => setForm({...form, description: v})} multiline placeholderTextColor={Colors.placeholder} />
           <Text style={s.label}>Immediate actions taken</Text>
-          <TextInput testID="inc-immediate" style={[s.input, { minHeight: 50, textAlignVertical: 'top' }]} value={form.immediate_actions} onChangeText={v => setForm({...form, immediate_actions: v})} multiline placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="inc-immediate" style={[s.input, { minHeight: 50, textAlignVertical: 'top' }]} value={form.immediate_actions} onChangeText={v => setForm({...form, immediate_actions: v})} multiline placeholderTextColor={Colors.placeholder} />
         </View>
         <View style={s.btnRow}>
           <PrimaryButton testID="inc-submit" onPress={save} busy={busy}>Save incident</PrimaryButton>

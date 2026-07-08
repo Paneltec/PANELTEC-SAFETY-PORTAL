@@ -1,11 +1,14 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
 import { getUser } from '../../src/lib/auth';
 import PrimaryButton from '../../src/components/PrimaryButton';
 import GhostButton from '../../src/components/GhostButton';
+import WorkerPicker from '../../src/components/WorkerPicker';
+import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
+import SignatureModal from '../../src/components/SignatureModal';
 import { Colors } from '../../src/lib/colors';
 
 const TEMPLATES: Record<string, string[]> = {
@@ -33,6 +36,10 @@ export default function InspectionNewScreen() {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [tpl, setTpl] = useState('');
+  const [operator, setOperator] = useState<string | null>(null);
+  const [gps, setGps] = useState<GpsFix | null>(null);
+  const [signature, setSignature] = useState<string | null>(null);
+  const [sigOpen, setSigOpen] = useState(false);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), checklist_items: [] as CheckItem[], notes: '' });
 
   const pickTpl = (name: string) => {
@@ -45,10 +52,23 @@ export default function InspectionNewScreen() {
 
   const save = async () => {
     if (!tpl) { Alert.alert('Error', 'Pick a template first'); return; }
+    if (!operator) { Alert.alert('Error', 'Operator is required'); return; }
+    if (!signature) { Alert.alert('Error', 'Operator signature is required'); return; }
     setBusy(true);
     try {
       const user = await getUser();
-      await api.post('/inspections', { ...form, workspace_id: user?.workspace_ids?.[0], template_name: tpl });
+      await api.post('/inspections', {
+        ...form,
+        workspace_id: user?.workspace_ids?.[0],
+        template_name: tpl,
+        operator,
+        operator_signature: signature,
+        gps_latitude: gps?.latitude,
+        gps_longitude: gps?.longitude,
+        gps_accuracy: gps?.accuracy,
+        gps_street: gps?.street,
+        gps_suburb: gps?.suburb,
+      });
       Alert.alert('Success', 'Inspection saved');
       router.back();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
@@ -104,7 +124,36 @@ export default function InspectionNewScreen() {
 
         <View style={s.card}>
           <Text style={s.label}>Date *</Text>
-          <TextInput testID="insp-date" style={s.input} value={form.date} onChangeText={v => setForm({ ...form, date: v })} placeholderTextColor={Colors.textTertiary} />
+          <TextInput testID="insp-date" style={s.input} value={form.date} onChangeText={v => setForm({ ...form, date: v })} placeholderTextColor={Colors.placeholder} />
+          <WorkerPicker
+            label="Operator"
+            required
+            value={operator}
+            onChange={(id) => setOperator(id)}
+            testID="insp-operator"
+          />
+          <GpsLocationChip value={gps} onChange={setGps} />
+        </View>
+
+        <View style={s.card}>
+          <Text style={s.label}>Operator signature *</Text>
+          {signature ? (
+            <View>
+              <Image source={{ uri: signature }} style={{ width: '100%', height: 120, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: Colors.border }} />
+              <TouchableOpacity testID="insp-resign" style={{ alignSelf: 'flex-end', marginTop: 6 }} onPress={() => setSigOpen(true)}>
+                <Text style={{ color: Colors.orangeLight, fontWeight: '600', fontSize: 12 }}>Re-sign</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              testID="insp-sign-btn"
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.surfaceLight, borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.border, borderRadius: 10, paddingVertical: 20 }}
+              onPress={() => setSigOpen(true)}
+            >
+              <Ionicons name="create-outline" size={18} color={Colors.orangeLight} />
+              <Text style={{ color: Colors.orangeLight, fontWeight: '600' }}>Tap to sign</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={s.checklistCard}>
@@ -171,6 +220,12 @@ export default function InspectionNewScreen() {
             <PrimaryButton testID="insp-submit" onPress={save} busy={busy}>Save</PrimaryButton>
           </View>
         </View>
+        <SignatureModal
+          visible={sigOpen}
+          title="Operator signature"
+          onSave={(dataUrl) => { setSignature(dataUrl); setSigOpen(false); }}
+          onClose={() => setSigOpen(false)}
+        />
       </ScrollView>
     </KeyboardAvoidingView>
   );

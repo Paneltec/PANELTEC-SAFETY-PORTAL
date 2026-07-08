@@ -126,6 +126,13 @@ class PreStartIn(BaseModel):
     hazards_discussed: str = ""
     sign_ons: List[PreStartSignOn] = Field(default_factory=list)
     notes: Optional[str] = None
+    # v160.0.10.2
+    crew_worker_ids: List[str] = Field(default_factory=list)
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_street: Optional[str] = None
+    gps_suburb: Optional[str] = None
 
 
 class SiteDiaryIn(BaseModel):
