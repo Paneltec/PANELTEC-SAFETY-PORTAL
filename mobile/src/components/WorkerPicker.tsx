@@ -193,10 +193,11 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={s.rowName}>{nameOf(item)}</Text>
-                    <Text style={s.rowMeta}>
-                      {item.trade || item.role || '—'}
-                      {(item.company_label || item.company) ? ` · ${item.company_label || item.company}` : ''}
-                    </Text>
+                    {/* v160.0.12.4 — company suffix dropped; the top toggle
+                        already scopes the list. Meta hidden if empty. */}
+                    {(item.trade || item.role) ? (
+                      <Text style={s.rowMeta}>{item.trade || item.role}</Text>
+                    ) : null}
                   </View>
                   {isSelected(item.id) && (
                     <Ionicons name="checkmark" size={20} color={Colors.orange} />

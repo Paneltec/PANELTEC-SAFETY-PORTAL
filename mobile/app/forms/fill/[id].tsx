@@ -382,8 +382,11 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
                 <View pointerEvents="none" style={{ position: 'absolute', top: '50%', left: '50%', width: 140, height: 140, marginLeft: -70, marginTop: -70, borderWidth: 3, borderColor: Colors.orange, borderRadius: 14, opacity: 0.85 }} />
               </View>
             ) : Platform.OS === 'web' ? (
-              <View style={{ padding: 12, backgroundColor: '#F1F5F9', borderRadius: 10 }}>
-                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>Web preview — paste the QR URL below.</Text>
+              <View style={{ padding: 12, backgroundColor: Colors.surfaceLight, borderRadius: 10, borderWidth: 1, borderColor: Colors.orange, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="information-circle" size={16} color={Colors.orangeLight} />
+                <Text style={{ color: Colors.ink, fontSize: 13, fontWeight: '600', flex: 1 }}>
+                  Web preview — paste the QR URL below.
+                </Text>
               </View>
             ) : (
               <TouchableOpacity testID={`${testId}-cam-permission`} onPress={() => requestCamPerm()} style={{ backgroundColor: Colors.orangeSoft, padding: 12, borderRadius: 10, alignItems: 'center' }}>
@@ -681,12 +684,11 @@ export default function FillOutScreen() {
               {f.type === 'worker_picker' && (() => {
                 // v160.0.12.2 — When the form has a company_selector field
                 // and a value is set, filter the picker to that company.
+                // v160.0.12.4 — Filter silently; hint text removed as
+                // redundant with the top-level toggle.
                 const companyId = values['co_v160012'];
                 const co = companies.find((c) => c.id === companyId);
                 const filter = co ? { simpro_company_id: co.simpro_company_id || null, name: co.name } : null;
-                const hint = !companyId
-                  ? 'Select a company above to filter workers'
-                  : `Filtered to ${co?.name || companyId}`;
                 return (
                   <View testID={`field-${f.id}`}>
                     <WorkerPicker
@@ -694,7 +696,6 @@ export default function FillOutScreen() {
                       mode="single"
                       value={values[f.id] || null}
                       companyFilter={filter}
-                      hint={hint}
                       onChange={(wid: string | null) => setVal(f.id, wid)}
                     />
                   </View>
