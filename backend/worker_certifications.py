@@ -438,6 +438,7 @@ async def upload_cert_file(
 @router.get("/certifications/all")
 async def list_all_certs(
     scope: Optional[str] = None,
+    as_role: Optional[str] = None,
     user: dict = Depends(get_current_user),
 ):
     today = date.today()
@@ -448,7 +449,17 @@ async def list_all_certs(
     #   • ALL other roles (worker/contractor/auditor/etc.) are FORCED to
     #     scope=me regardless of the query string — a worker can never
     #     enumerate their colleagues' certifications from this endpoint.
-    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    # v160.0.6 — defense in depth for preview-as-worker:
+    #   Web admin's Live Preview iframe passes `?as_role=worker`. When an
+    #   otherwise-privileged caller passes a non-privileged `as_role`,
+    #   we downgrade `privileged` so the endpoint returns just the
+    #   caller's own row — matching what the real worker would see.
+    role_key = (user.get("role") or "").lower()
+    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    if privileged and as_role:
+        ar = as_role.lower()
+        if ar and ar not in {"admin", "hseq_lead", "supervisor"}:
+            privileged = False
     effective_scope = scope if privileged else "me"
     if effective_scope == "me":
         me = await db.workers.find_one(
@@ -479,14 +490,24 @@ async def list_all_certs(
 
 
 @router.get("/certifications/search")
-async def search_certs(q: str = "", user: dict = Depends(get_current_user)):
+async def search_certs(
+    q: str = "",
+    as_role: Optional[str] = None,
+    user: dict = Depends(get_current_user),
+):
     """Lightweight text search across cert name, issuer, worker name, tags.
     v159.1 — non-privileged roles are automatically scoped to their own
-    worker row so a mobile client can search without leaking org data."""
+    worker row so a mobile client can search without leaking org data.
+    v160.0.6 — honours `?as_role=` from the preview-as-worker iframe."""
     q = (q or "").strip().lower()
     today = date.today()
     mongo_q: dict = {"org_id": user["org_id"], "deleted_at": None}
-    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
+    role_key = (user.get("role") or "").lower()
+    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    if privileged and as_role:
+        ar = as_role.lower()
+        if ar and ar not in {"admin", "hseq_lead", "supervisor"}:
+            privileged = False
     if not privileged:
         me = await db.workers.find_one(
             {"org_id": user["org_id"], "deleted_at": None,

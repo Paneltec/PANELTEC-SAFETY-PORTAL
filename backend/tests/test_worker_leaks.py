@@ -204,6 +204,54 @@ def test_admin_certifications_all_returns_full_list(admin_headers):
     )
 
 
+# ─── v160.0.6 — admin preview-as-worker defense in depth ───
+
+def test_admin_certifications_all_with_as_role_worker_clamps_to_admin_row(admin_headers):
+    """Web admin's Live Preview iframe passes `?as_role=worker`. The endpoint
+    must downgrade the privileged admin to non-privileged scoping so the
+    preview shows what a real worker would see — not the org-wide list."""
+    r = requests.get(
+        f"{BASE}/api/workers/certifications/all?as_role=worker",
+        headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    assert isinstance(rows, list)
+    worker_ids = {row.get("worker_id") for row in rows}
+    # Either 0 rows (admin has no linked worker row) OR exactly 1 (the
+    # admin's own linked worker row). Never the full org.
+    assert len(worker_ids) <= 1, (
+        f"as_role=worker leaked {len(worker_ids)} worker_ids in {len(rows)} rows"
+    )
+
+
+def test_admin_certifications_all_with_as_role_admin_returns_full_list(admin_headers):
+    """`as_role=admin` (or any privileged role) must NOT downgrade — the
+    preview-as-admin path should still see the org-wide list."""
+    r = requests.get(
+        f"{BASE}/api/workers/certifications/all?as_role=admin",
+        headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    assert isinstance(rows, list)
+
+
+def test_admin_certifications_search_with_as_role_worker_clamps(admin_headers):
+    """Same defense applies to the search endpoint."""
+    r = requests.get(
+        f"{BASE}/api/workers/certifications/search?q=&as_role=contractor",
+        headers=admin_headers, timeout=10,
+    )
+    assert r.status_code == 200, r.text[:300]
+    rows = r.json()
+    worker_ids = {row.get("worker_id") for row in rows}
+    assert len(worker_ids) <= 1, (
+        f"search as_role=contractor leaked {len(worker_ids)} worker_ids"
+    )
+
+
+
 def test_mobile_modules_response_includes_defaults_version(admin_headers):
     """The v159.1 admin GET must expose `defaults_version` and
     `needs_migration_review` so the Web UI can render the banner."""

@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../src/lib/api';
 import { getUser } from '../src/lib/auth';
 import { Colors } from '../src/lib/colors';
+import { previewRole, isPreviewMode } from '../src/lib/preview';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -87,13 +88,24 @@ export default function CertificationsScreen() {
   const load = useCallback(async () => {
     try {
       const q = search.trim();
-      // v159.1 — worker/contractor callers are auto-scoped server-side to
-      // their own row, but we ALSO pass `?scope=me` here so the URL is
-      // self-documenting when an HSEQ Lead uses the same client shell.
-      const wantMineOnly = user && !['admin', 'hseq_lead', 'supervisor'].includes((user.role || '').toLowerCase());
+      // v160.0.6 — Preview-mode data-leak fix:
+      // The `wantMineOnly` flag drives whether we send `?scope=me`. Before
+      // this fix it read `user.role` (the REAL role from the JWT), so an
+      // admin using the web preview-as-worker iframe still fetched the
+      // full org list. Now we honour the previewed role when the app is
+      // running in preview mode. We also pass `as_role=<preview>` so the
+      // backend can enforce scoping on its side as defense in depth.
+      const effectiveRole = (isPreviewMode && previewRole
+        ? previewRole
+        : (user?.role || '')
+      ).toLowerCase();
+      const wantMineOnly = user && !['admin', 'hseq_lead', 'supervisor'].includes(effectiveRole);
+      const asRoleParam = isPreviewMode && previewRole
+        ? `&as_role=${encodeURIComponent(previewRole)}`
+        : '';
       const finalUrl = q
-        ? `/workers/certifications/search?q=${encodeURIComponent(q)}${wantMineOnly ? '&scope=me' : ''}`
-        : `/workers/certifications/all${wantMineOnly ? '?scope=me' : ''}`;
+        ? `/workers/certifications/search?q=${encodeURIComponent(q)}${wantMineOnly ? '&scope=me' : ''}${asRoleParam}`
+        : `/workers/certifications/all?${wantMineOnly ? 'scope=me' : ''}${asRoleParam.replace(/^&/, '')}`.replace(/\?$/, '');
       const { data } = await api.get(finalUrl);
       setRows(data || []);
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
@@ -147,18 +159,18 @@ export default function CertificationsScreen() {
       {/* Butter header banner */}
       <View testID="certs-header" style={gst.headerBanner}>
         <TouchableOpacity onPress={() => router.back()} style={gst.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#92400E" />
+          <Ionicons name="arrow-back" size={20} color={Colors.ink} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={gst.overline}>SETTINGS</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="ribbon" size={18} color="#92400E" />
+            <Ionicons name="ribbon" size={18} color={Colors.orangeLight} />
             <Text style={gst.heading}>Certifications</Text>
           </View>
           <Text style={gst.subtitle}>Compliance attention queue</Text>
         </View>
         <TouchableOpacity testID="certs-export" style={gst.exportBtn} onPress={exportCsv}>
-          <Ionicons name="download" size={14} color="#92400E" />
+          <Ionicons name="download" size={14} color={Colors.orangeLight} />
           <Text style={gst.exportBtnText}>CSV</Text>
         </TouchableOpacity>
       </View>
@@ -264,20 +276,26 @@ export default function CertificationsScreen() {
 
 const gst = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  // v160.0.6 — dark header. Was cream `#FEF3C7` with `Colors.ink`
+  // (near-white) title on top → title invisible in bright sun. Now:
+  // slate-900 surface + slate-700 border matches the rest of the shell;
+  // orange overline/icon ties the screen to the Certifications module's
+  // amber-orange accent without harming legibility.
   headerBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: '#FEF3C7', paddingHorizontal: 16, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#FDE68A',
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   backBtn: { padding: 4, marginTop: 2 },
-  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: '#92400E' },
+  overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.orangeLight },
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
-  subtitle: { fontSize: 12, color: '#92400E', marginTop: 2, opacity: 0.7 },
+  subtitle: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   exportBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#FDE68A', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    backgroundColor: Colors.orangeSoft, borderWidth: 1, borderColor: Colors.orange,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
   },
-  exportBtnText: { fontSize: 11, fontWeight: '600', color: '#92400E' },
+  exportBtnText: { fontSize: 11, fontWeight: '600', color: Colors.orangeLight },
   searchRow: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 8 },
   searchBox: {
     flexDirection: 'row', alignItems: 'center', gap: 8,

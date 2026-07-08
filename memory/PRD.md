@@ -2483,3 +2483,46 @@ Plus ~60 other stale `Colors.white` and hardcoded `'#fff'` backgrounds across
 5. SWMS list — dark, empty state readable
 6. Hazards list — dark, empty state readable
 7. Profile / Settings — dark cards, orange SIGN OUT CTA
+
+## v160.0.6 — Certifications header contrast + preview-as-worker data-leak fix (2026-07-08)
+
+**Issue 1 — Ghost header:** `mobile/app/certifications.tsx` header banner
+used a cream `#FEF3C7` background with `Colors.ink` (near-white) title on
+top → title invisible after the v160.0.4/5 dark-theme flip. Fixed by
+switching the banner to `Colors.surface` (slate-900), overline/icon to
+`Colors.orangeLight`, subtitle to `Colors.textSecondary`, and the CSV
+button to an orange-soft outlined pill.
+
+**Issue 2 — Preview-as-worker data leak:** Server-side scoping was
+already correct for a real worker JWT (v159.1) — verified by curl:
+worker sees 0 certs, admin sees 203. The visible "everyone's records"
+came from the web admin's Live Preview iframe: an admin JWT means the
+mobile client's `wantMineOnly` check evaluates false (real role admin),
+so no `?scope=me` is sent, and the backend returns the full list.
+
+Fix (client + server, defense in depth):
+- `mobile/app/certifications.tsx` — import `previewRole`, `isPreviewMode`
+  from `src/lib/preview`. `effectiveRole` = previewed role when in
+  preview mode, else the real JWT role. Client now sends `&scope=me` +
+  `&as_role=<preview>` whenever an admin is previewing as a
+  non-privileged role.
+- `backend/worker_certifications.py` — both `/certifications/all` and
+  `/certifications/search` now accept `?as_role=`. When a privileged
+  caller passes a non-privileged `as_role`, the endpoint downgrades to
+  non-privileged scoping → returns only the caller's own linked row.
+
+**Verification:**
+- pytest → **51/51 passing** (+3 new: as_role=worker clamps, as_role=admin
+  stays full, search as_role=contractor clamps).
+- Curl matrix:
+  - worker JWT → `count=0` (0 distinct worker_ids)
+  - admin JWT → `count=203` (12 distinct worker_ids)
+  - admin JWT + `?as_role=worker` → `count=1` (1 distinct worker_id, the
+    admin's own linked worker row) — leak plugged.
+
+**Files touched (5):**
+- `/app/frontend/src/lib/version.js` — `paneltec-v160.0.6`
+- `/app/frontend/public/service-worker.js` — CACHE_VERSION bumped
+- `/app/mobile/app/certifications.tsx` — header restyle + preview-aware scope
+- `/app/backend/worker_certifications.py` — `as_role` param on both endpoints
+- `/app/backend/tests/test_worker_leaks.py` — +3 new tests
