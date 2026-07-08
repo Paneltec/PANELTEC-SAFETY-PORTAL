@@ -2563,3 +2563,44 @@ Rate-limit counter verified in `ai_usage` collection.
 
 **Version bump:** `paneltec-v160.0.8` in both `version.js` and
 `service-worker.js` (already set from prior edit).
+
+## v160.0.8.1 — Cycle 1.5 hotfix (Fill-form UX, 2026-07-08)
+
+Two phone bugs reported on the "Confined Space Entry Permit" fill screen:
+
+**Issue 1 — Header contrast**
+Root cause: `styles.header.backgroundColor = '#e6eff9'` (cream/pale-blue) with
+`Colors.ink` (near-white) title = illegible. Same pattern present on the
+submission detail header, workers list header, WorkerEditModal panels, and
+SupplierDrawer form box (v160.0.5 palette flip never reached these files).
+
+Fix: swapped to `Colors.surface` (slate-900) bg + `Colors.orangeLight`
+overline + `Colors.ink` title. Consistent with v160.0.6 Certifications
+header pattern.
+
+**Issue 2 — "Tap to sign" broken**
+Root cause: `react-native-signature-canvas` @5.0.2 depends on
+`react-native-webview`, which does NOT support the web target. On Expo web
+the modal DID open but rendered a red **"React Native WebView does not
+support this platform"** message.
+
+Fix: added a canvas-backed `SignaturePadWeb` component
+(`src/components/SignaturePadWeb.tsx`) and gated with `Platform.OS === 'web'`
+in the SignatureModal. Native paths keep the existing WebView-based
+`SignatureScreen`. Signature is saved as base64 PNG data URL — same
+interface as the native path so the calling screen is agnostic.
+
+**Cream/light-hex panel-bg audit (mobile-wide sweep):**
+- BEFORE: 20 full-panel/header uses of `#e6eff9` / `#f7eed1` / `#eff5fc` /
+  `#b9d2ec` / `#e6eff960` in fill screen, workers screen, submission
+  detail, WorkerEditModal, SupplierDrawer.
+- AFTER: 0 remaining panel-scale uses. Remaining hits (chips/badges on
+  suppliers, certifications, ClientPickerModal, WorkerCertsSection,
+  WorkerEditModal.sectionBadge, statusDraft) are semantic status colors
+  and were intentionally preserved.
+
+**Version:** `paneltec-v160.0.8.1` on both `RUNNING_VERSION` (version.js)
+and `CACHE_VERSION` (service-worker.js).
+
+**Regression sweep:** 62/62 pytest still green. OpenAPI 200. Web fill
+form loads with corrected header. Metro cache cleared.

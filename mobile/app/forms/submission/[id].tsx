@@ -114,7 +114,7 @@ const vs = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: '#e6eff9', borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: '#1e4a8c' },
   headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },

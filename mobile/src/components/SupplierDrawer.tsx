@@ -245,7 +245,7 @@ function NotesPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
   return (
     <View testID="notes-panel">
       {canEdit && (
-        <View style={[ds.formBox, { borderColor: '#b9d2ec', backgroundColor: '#e6eff940' }]}>
+        <View style={[ds.formBox, { borderColor: Colors.border, backgroundColor: Colors.surfaceLight }]}>
           <TextInput testID="note-draft" style={[ds.formInput, { minHeight: 60 }]} multiline
             placeholder="Write a note..." placeholderTextColor={Colors.textTertiary}
             value={draft} onChangeText={setDraft} />

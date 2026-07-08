@@ -10,6 +10,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import SignatureScreen from 'react-native-signature-canvas';
+import SignaturePadWeb from '../../../src/components/SignaturePadWeb';
 import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 
@@ -63,21 +64,29 @@ function SignatureModal({ visible, onSave, onClose }: any) {
       <SafeAreaView style={{ flex: 1, backgroundColor: Colors.surface }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.ink }}>Sign below</Text>
-          <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={Colors.textTertiary} /></TouchableOpacity>
+          <TouchableOpacity testID="sig-modal-close" onPress={onClose}><Ionicons name="close" size={22} color={Colors.textTertiary} /></TouchableOpacity>
         </View>
-        <SignatureScreen
-          ref={sigRef}
-          onOK={(sig: string) => onSave(sig)}
-          onEmpty={() => Alert.alert('Please sign first')}
-          descriptionText=""
-          clearText="Clear"
-          confirmText="Save"
-          webStyle={`.m-signature-pad { box-shadow: none; border: 1px solid #e2e8f0; border-radius: 12px; margin: 16px; }
-            .m-signature-pad--body { border: none; }
-            .m-signature-pad--footer .button { background-color: #1e4a8c; color: white; border-radius: 8px; padding: 10px 24px; font-weight: 600; }
-            .m-signature-pad--footer .button.clear { background-color: #f1f5f9; color: #475569; }`}
-          style={{ flex: 1 }}
-        />
+        {Platform.OS === 'web' ? (
+          // v160.0.8.1 — react-native-signature-canvas / react-native-webview
+          // renders a red "does not support this platform" error on web,
+          // so we swap to a canvas-backed pad. Native paths keep the
+          // existing WebView-based SignatureScreen.
+          <SignaturePadWeb onSave={onSave} onClose={onClose} />
+        ) : (
+          <SignatureScreen
+            ref={sigRef}
+            onOK={(sig: string) => onSave(sig)}
+            onEmpty={() => Alert.alert('Please sign first')}
+            descriptionText=""
+            clearText="Clear"
+            confirmText="Save"
+            webStyle={`.m-signature-pad { box-shadow: none; border: 1px solid ${Colors.border}; border-radius: 12px; margin: 16px; background: #fff; }
+              .m-signature-pad--body { border: none; }
+              .m-signature-pad--footer .button { background-color: ${Colors.orange}; color: white; border-radius: 8px; padding: 10px 24px; font-weight: 600; }
+              .m-signature-pad--footer .button.clear { background-color: ${Colors.surfaceLight}; color: ${Colors.textSecondary}; }`}
+            style={{ flex: 1 }}
+          />
+        )}
       </SafeAreaView>
     </Modal>
   );
@@ -398,15 +407,16 @@ const fs = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: '#e6eff9', borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: '#1e4a8c' },
+  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.orangeLight },
   headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
   draftBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#f7eed1', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+    backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
   },
-  draftBadgeText: { fontSize: 9, fontWeight: '600', color: '#8c6a1a' },
+  draftBadgeText: { fontSize: 9, fontWeight: '600', color: '#FBBF24' },
   gpsBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
@@ -435,29 +445,29 @@ const fs = StyleSheet.create({
   colorRadioText: { fontSize: 14 },
   photoBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1,
-    backgroundColor: '#eff5fc', borderWidth: 2, borderStyle: 'dashed', borderColor: '#b9d2ec',
+    backgroundColor: Colors.surfaceLight, borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.border,
     borderRadius: 10, paddingVertical: 12, minHeight: 48,
   },
-  photoBtnText: { fontSize: 13, fontWeight: '600', color: '#1e4a8c' },
+  photoBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   photoThumb: { width: 80, height: 80, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
   photoImg: { width: '100%', height: '100%' },
   photoRemove: { position: 'absolute', top: 2, right: 2 },
   sigOpenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#eff5fc', borderWidth: 2, borderStyle: 'dashed', borderColor: '#b9d2ec',
+    backgroundColor: Colors.surfaceLight, borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.border,
     borderRadius: 10, paddingVertical: 20, minHeight: 48,
   },
-  sigOpenBtnText: { fontSize: 13, fontWeight: '600', color: '#1e4a8c' },
-  sigPreview: { width: '100%', height: 120, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  sigOpenBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
+  sigPreview: { width: '100%', height: 120, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   resignBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
     paddingHorizontal: 10, paddingVertical: 6,
   },
-  resignBtnText: { fontSize: 12, fontWeight: '500', color: '#1e4a8c' },
+  resignBtnText: { fontSize: 12, fontWeight: '500', color: Colors.orangeLight },
   gpsBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#eff5fc', borderWidth: 1, borderColor: '#b9d2ec',
+    backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, paddingHorizontal: 16, paddingVertical: 12, minHeight: 48,
   },
   gpsBtnText: { fontSize: 13, fontWeight: '600', color: '#1e4a8c' },

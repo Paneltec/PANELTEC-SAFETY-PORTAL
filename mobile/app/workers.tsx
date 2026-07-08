@@ -273,8 +273,8 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   headerBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    backgroundColor: '#e6eff9', paddingHorizontal: 16, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   backBtn: { padding: 4, marginTop: 2 },
   overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: '#1e4a8c' },
@@ -290,7 +290,7 @@ const s = StyleSheet.create({
   toolbarActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
   syncBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#e6eff9', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.surfaceLight, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
   },
   syncBtnText: { fontSize: 12, fontWeight: '600', color: '#1e4a8c' },
   addBtn: {

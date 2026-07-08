@@ -500,8 +500,8 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
 const cs = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#e6eff9',
-    borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    paddingHorizontal: 16, paddingVertical: 14, backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#1e4a8c' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 2 },
@@ -509,7 +509,7 @@ const cs = StyleSheet.create({
   simproBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: '#e6eff960', borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    backgroundColor: Colors.surfaceLight, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   simproBannerText: { fontSize: 11, color: '#1e4a8c' },
   // Sections
@@ -537,7 +537,7 @@ const cs = StyleSheet.create({
   pickerBtnText: { fontSize: 13, color: Colors.text },
   // Availability
   dayRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 6, gap: 4 },
-  dayRowEnabled: { backgroundColor: '#e6eff9' },
+  dayRowEnabled: { backgroundColor: Colors.surfaceLight },
   dayRowDisabled: { backgroundColor: '#F8FAFC' },
   dayLabel: { fontSize: 12, color: Colors.textSecondary },
   dayError: { fontSize: 10, color: '#7a1f33', fontWeight: '500', marginLeft: 4 },
