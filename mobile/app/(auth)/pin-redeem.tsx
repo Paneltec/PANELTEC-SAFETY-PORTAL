@@ -123,7 +123,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
   desc: { fontSize: 13, color: Colors.textSecondary, marginTop: 6, lineHeight: 19, marginBottom: 8 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
+  input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
   pinInput: { fontSize: 28, fontWeight: '700', letterSpacing: 8, textAlign: 'center', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: '#F97316' },
   submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
   submitText: { fontSize: 15, fontWeight: '700', color: '#fff' },

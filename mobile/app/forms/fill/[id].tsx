@@ -60,7 +60,7 @@ function SignatureModal({ visible, onSave, onClose }: any) {
   const sigRef = useRef<any>(null);
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={{ flex: 1, backgroundColor: '#fff' }}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: Colors.surface }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
           <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.ink }}>Sign below</Text>
           <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={Colors.textTertiary} /></TouchableOpacity>
@@ -449,7 +449,7 @@ const fs = StyleSheet.create({
     borderRadius: 10, paddingVertical: 20, minHeight: 48,
   },
   sigOpenBtnText: { fontSize: 13, fontWeight: '600', color: '#1e4a8c' },
-  sigPreview: { width: '100%', height: 120, backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  sigPreview: { width: '100%', height: 120, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   resignBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
     paddingHorizontal: 10, paddingVertical: 6,

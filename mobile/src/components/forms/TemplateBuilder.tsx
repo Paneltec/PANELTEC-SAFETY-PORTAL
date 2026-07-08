@@ -377,7 +377,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
@@ -422,11 +422,11 @@ const s = StyleSheet.create({
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
   },
   addBtnText: { fontSize: 11, fontWeight: '600', color: Colors.ink },
   fieldCard: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 16, padding: 12, marginBottom: 10,
   },
   fieldTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
@@ -481,7 +481,7 @@ const s = StyleSheet.create({
   previewDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, lineHeight: 17 },
   previewFieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink, marginBottom: 4 },
   previewFieldBox: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: '#e2e8f0',
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 44, justifyContent: 'center',
   },
@@ -491,7 +491,7 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   pickerBox: {
-    backgroundColor: '#fff', borderRadius: 18, padding: 16,
+    backgroundColor: Colors.surface, borderRadius: 18, padding: 16,
     width: '100%', maxWidth: 340,
   },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 8 },

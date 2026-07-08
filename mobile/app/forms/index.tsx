@@ -167,7 +167,7 @@ function FormsListScreenInner() {
       {/* Header */}
       <View testID="forms-header" style={s.header}>
         <TouchableOpacity testID="forms-back" onPress={() => router.back()} style={{ padding: 4 }}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.ink} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={s.headerTitle}>Form Templates</Text>
@@ -309,7 +309,7 @@ function FormsListScreenInner() {
             <Text style={s.pickerTitle}>Filter by category</Text>
             {CATEGORIES.map((c) => (
               <TouchableOpacity key={c.key} testID={`filter-opt-${c.key}`}
-                style={[s.pickerItem, filter === c.key && { backgroundColor: '#f1f5f9' }]}
+                style={[s.pickerItem, filter === c.key && { backgroundColor: Colors.surfaceLight }]}
                 onPress={() => { setFilter(c.key); setFilterOpen(false); }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {c.key !== 'all' && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: c.bg }} />}
@@ -342,13 +342,16 @@ function FormsListScreenInner() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  // v160.0.5 — dark header. Was `#e6eff9` (light blue) with `Colors.ink`
+  // (near-white) text on top → ghosted/faded. Now: `Colors.surface`
+  // (slate-900) matches the rest of the shell; near-white text pops.
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: '#e6eff9', borderBottomWidth: 1, borderBottomColor: '#b9d2ec',
+    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: 22, fontWeight: '800', color: Colors.ink, letterSpacing: -0.3 },
-  headerSub: { fontSize: 11, color: '#1e4a8c', marginTop: 2, opacity: 0.8 },
+  headerSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   toolbarRow: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 16, paddingVertical: 10, gap: 8, alignItems: 'center' },
   toolBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -423,8 +426,9 @@ const s = StyleSheet.create({
   empty: { alignItems: 'center', paddingTop: 60, gap: 6 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary },
   emptyHint: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500' },
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  pickerBox: { backgroundColor: Colors.white, borderRadius: 20, padding: 16, width: '100%', maxWidth: 320 },
+  // v160.0.5 — heavier backdrop + slate-900 modal + slate-700 border.
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  pickerBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 16, width: '100%', maxWidth: 320, borderWidth: 1, borderColor: Colors.border },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 8 },
   pickerItem: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

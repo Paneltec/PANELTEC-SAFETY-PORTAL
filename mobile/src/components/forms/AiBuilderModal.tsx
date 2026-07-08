@@ -126,7 +126,7 @@ export default function AiBuilderModal({ onClose, onCreated }: {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
@@ -139,12 +139,12 @@ const s = StyleSheet.create({
   textarea: {
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
     padding: 12, fontSize: 14, color: Colors.text, minHeight: 140,
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
   },
   selectBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
-    paddingHorizontal: 12, paddingVertical: 12, backgroundColor: '#fff', minHeight: 48,
+    paddingHorizontal: 12, paddingVertical: 12, backgroundColor: Colors.surface, minHeight: 48,
   },
   selectBtnText: { fontSize: 14, color: Colors.text },
   footer: {
@@ -167,7 +167,7 @@ const s = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center', padding: 24,
   },
   pickerBox: {
-    backgroundColor: '#fff', borderRadius: 18, padding: 16,
+    backgroundColor: Colors.surface, borderRadius: 18, padding: 16,
     width: '100%', maxWidth: 320,
   },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 8 },

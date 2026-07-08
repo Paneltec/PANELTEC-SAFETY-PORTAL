@@ -2424,3 +2424,62 @@ Not touched (per user's "STOP after items 1-4" clause if pressured):
   endpoints touched: outbox detail + induction matrix. Certifications,
   incidents, hazards, inspections, pre_starts, site_diary, swms already
   covered by v159.2's `get_item` gate).
+
+## v160.0.5 — Mobile Theme Sweep (2026-07-08)
+
+**Problem:** Forms Library screen still had a light-blue header (`#e6eff9`) with
+near-white `Colors.ink` text on top → ghosted/faded title. Also a category-filter
+modal used `Colors.white` background — white-on-white category labels invisible.
+Plus ~60 other stale `Colors.white` and hardcoded `'#fff'` backgrounds across
+~18 mobile screens.
+
+**Fix (mechanical + surgical):**
+
+1. **`Colors.white` remapped in palette** — one-line change in
+   `/app/mobile/src/lib/colors.ts` from `#FFFFFF` → `#0F172A` (slate-900,
+   matches `Colors.surface`). Grep confirmed the token is only used as
+   `backgroundColor`, never as `color:` text. So a single edit flipped
+   ALL 105 remaining `Colors.white` references from white → dark.
+
+2. **Hardcoded `backgroundColor: '#fff'` sweep** — sed across 18 files
+   under `/app/mobile/app` and `/app/mobile/src`:
+   - app/(auth)/onboard.tsx, app/(auth)/pin-redeem.tsx
+   - app/forms/submission/[id].tsx, app/forms/fill/[id].tsx
+   - app/swms/index.tsx
+   - src/components/TripSummaryCard.tsx, LiveCountersCard.tsx, ModuleGate.tsx
+   - src/components/scan/{Worker,Site,Supplier}ScanResult.tsx
+   - src/components/auth/{ChangePassword,ForgotPassword}Modal.tsx
+   - src/components/forms/{AiBuilderModal,TemplateBuilder,PreviewModal}.tsx
+   - src/components/swms/{PasteSwmsModal,ScanSwmsModal}.tsx
+   → `backgroundColor: Colors.surface`
+
+3. **Forms Library header + filter modal fix (`app/forms/index.tsx`):**
+   - Header bg `#e6eff9` → `Colors.surface`
+   - Header border `#b9d2ec` → `Colors.border`
+   - Back arrow `#1e4a8c` → `Colors.ink`
+   - Filter overlay `rgba(0,0,0,0.3)` → `rgba(0,0,0,0.6)`
+   - Picker box `Colors.white` → `Colors.surface` + slate-700 border
+   - Active picker item bg `#f1f5f9` → `Colors.surfaceLight`
+
+4. **SWMS list buttons/cards (`app/swms/index.tsx`):**
+   - Paste-btn bg `#FFF7ED` → `Colors.orangeSoft`
+   - Paste/scan text `#EA580C` → `Colors.orangeLight`
+   - Selected card bg `#FFFBEB` → `Colors.orangeSoft`
+
+**Verification:**
+- Grep `backgroundColor: '#fff'/'white'` in `/app/mobile/{app,src}` → 0 matches
+- 105 `Colors.white` references now render slate-900 (dark)
+- pytest `test_worker_leaks.py` → 48/48 passing (no backend regression)
+- `/api/openapi.json` → 200
+- `/api/auth/login` → 200
+- Version bumped to `paneltec-v160.0.5` in `service-worker.js` + `lib/version.js`
+
+**Screenshots captured (7):**
+1. Login — dark navy + orange (already correct)
+2. Home dashboard — dark, orange tab bar
+3. Forms Library header — "Form Templates" white on slate-900 (FIXED)
+4. Filter modal OPEN — dark surface, coloured dots preserved, category labels
+   fully readable (FIXED — was white-on-white)
+5. SWMS list — dark, empty state readable
+6. Hazards list — dark, empty state readable
+7. Profile / Settings — dark cards, orange SIGN OUT CTA

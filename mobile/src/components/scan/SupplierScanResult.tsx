@@ -213,7 +213,7 @@ const s = StyleSheet.create({
   loadText: { marginTop: 12, fontSize: 14, color: Colors.textSecondary },
   scroll: { padding: 16, paddingBottom: 40 },
   // Error
-  errorCard: { backgroundColor: '#fff', borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
+  errorCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
   errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
@@ -227,7 +227,7 @@ const s = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   chipText: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '500' },
   // Section
-  section: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 12 },
+  section: { backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 12 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: Colors.textSecondary, textTransform: 'uppercase' },
   // Doc rows
@@ -245,7 +245,7 @@ const s = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
   backText: { fontSize: 13, color: Colors.blue, fontWeight: '500' },
   // Success
-  successCard: { backgroundColor: '#fff', borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: '#A7F3D0' },
+  successCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: '#A7F3D0' },
   successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   successTitle: { fontSize: 24, fontWeight: '700', color: Colors.ink },
   successSub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },

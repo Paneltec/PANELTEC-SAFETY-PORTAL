@@ -18,7 +18,12 @@ export const Colors = {
   text: '#F8FAFC',         // slate-50
   textSecondary: '#CBD5E1',// slate-300 (was 400 — lifted for readability)
   textTertiary: '#94A3B8', // slate-400 (was 500 — lifted for readability)
-  white: '#FFFFFF',
+  // v160.0.5: `Colors.white` remapped to dark surface. It's only used
+  // as backgroundColor in ~60 places (grep confirmed no text uses it),
+  // so this single line flips every stale white card/panel/input to
+  // the dark palette. Semantic name kept for git-diff clarity; if you
+  // need TRUE white (e.g. signature pad), hardcode '#FFFFFF' inline.
+  white: '#0F172A',
 
   // Orange accent
   orange: '#F97316',       // orange-500 — primary CTA

@@ -147,7 +147,7 @@ const s = StyleSheet.create({
   subHeading: { fontSize: 16, fontWeight: '600', color: '#F97316', marginTop: 4 },
   desc: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, marginBottom: 16 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  input: { backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
+  input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
   submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
   submitText: { fontSize: 15, fontWeight: '700', color: '#fff' },
   errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },

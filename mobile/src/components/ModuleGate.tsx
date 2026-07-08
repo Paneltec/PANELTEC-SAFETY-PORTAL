@@ -66,7 +66,7 @@ const s = StyleSheet.create({
     padding: 24,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.surface,
     borderRadius: 20,
     padding: 28,
     maxWidth: 420,

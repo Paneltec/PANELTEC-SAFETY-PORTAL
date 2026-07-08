@@ -124,7 +124,7 @@ const vs = StyleSheet.create({
   fieldType: { fontSize: 9, fontWeight: '600', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
   noVal: { fontSize: 13, color: Colors.textTertiary, fontStyle: 'italic' },
   valText: { fontSize: 14, color: Colors.text, lineHeight: 20 },
-  sigImage: { width: '100%', height: 120, backgroundColor: '#fff', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, marginTop: 4 },
+  sigImage: { width: '100%', height: 120, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, marginTop: 4 },
   gpsBox: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, marginTop: 4 },
   gpsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 12 },
   gpsCell: { flex: 1 },

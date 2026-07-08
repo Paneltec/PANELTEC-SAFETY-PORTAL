@@ -108,7 +108,7 @@ function TripTile({ label, value, unit, testID }: { label: string; value: string
 }
 
 const s = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: 1, borderColor: Colors.border, backgroundColor: '#fff', padding: 12, marginBottom: 10 },
+  card: { borderRadius: 16, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, padding: 12, marginBottom: 10 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
   tripTag: { backgroundColor: '#EA580C', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
   tripTagText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },

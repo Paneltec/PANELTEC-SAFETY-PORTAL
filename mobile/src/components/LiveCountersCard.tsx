@@ -183,14 +183,14 @@ const s = StyleSheet.create({
   liveTagText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
   headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: '#047857', textTransform: 'uppercase' },
 
-  tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#A7F3D0', padding: 2, marginBottom: 10, alignSelf: 'flex-start' },
+  tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: '#A7F3D0', padding: 2, marginBottom: 10, alignSelf: 'flex-start' },
   tab: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
   tabActive: { backgroundColor: '#F97316' },
   tabText: { fontSize: 11, fontWeight: '600', color: '#64748B' },
   tabTextActive: { color: '#fff' },
 
   grid: { flexDirection: 'row', gap: 8 },
-  counterBox: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 12, padding: 10 },
+  counterBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 12, padding: 10 },
   counterIconRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   counterIcon: { width: 24, height: 24, borderRadius: 6, backgroundColor: '#D1FAE5', alignItems: 'center', justifyContent: 'center' },
   counterLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, color: '#64748B' },
@@ -198,7 +198,7 @@ const s = StyleSheet.create({
   counterUnit: { fontSize: 12, fontWeight: '600', color: '#94A3B8' },
   counterSub: { fontSize: 9, color: '#94A3B8', marginTop: 2 },
 
-  deltaCard: { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 12, padding: 10 },
+  deltaCard: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: '#A7F3D0', borderRadius: 12, padding: 10 },
   deltaHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   deltaLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: '#64748B' },
   deltaValue: { fontSize: 22, fontWeight: '700', color: Colors.ink },

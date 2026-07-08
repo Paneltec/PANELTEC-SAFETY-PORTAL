@@ -102,7 +102,7 @@ export default function PreviewModal({ template, onClose, onFill }: {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: Colors.surface },
   header: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
@@ -133,7 +133,7 @@ const s = StyleSheet.create({
   roRadioText: { fontSize: 13, fontWeight: '600', color: '#94a3b8' },
   footer: {
     flexDirection: 'row', gap: 8, padding: 16,
-    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: '#fff',
+    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface,
   },
   secondaryBtn: {
     flex: 1, alignItems: 'center', justifyContent: 'center',

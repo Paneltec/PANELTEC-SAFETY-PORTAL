@@ -237,14 +237,14 @@ const s = StyleSheet.create({
   loadText: { marginTop: 12, fontSize: 14, color: Colors.textSecondary },
   scroll: { padding: 16, paddingBottom: 40 },
   // Error
-  errorCard: { backgroundColor: '#fff', borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
+  errorCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
   errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   retryBtn: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   retryText: { fontSize: 14, fontWeight: '600', color: Colors.blue },
   // Profile
-  profileCard: { backgroundColor: '#fff', borderRadius: 20, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 12 },
+  profileCard: { backgroundColor: Colors.surface, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 12 },
   profileRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
   avatar: { width: 64, height: 64, borderRadius: 18, backgroundColor: '#DBEAFE', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#BFDBFE' },
   avatarText: { fontSize: 22, fontWeight: '700', color: '#1D4ED8' },
@@ -254,7 +254,7 @@ const s = StyleSheet.create({
   activeSiteBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, backgroundColor: '#F0FDF4', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 },
   activeSiteText: { fontSize: 11, fontWeight: '700', color: '#15803D' },
   // Section
-  section: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 12 },
+  section: { backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 12 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   countBadge: { backgroundColor: '#F1F5F9', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
@@ -279,7 +279,7 @@ const s = StyleSheet.create({
   backText: { fontSize: 13, color: Colors.blue, fontWeight: '500' },
   // Modal
   modalOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  modal: { backgroundColor: '#fff', borderRadius: 20, width: '100%', maxWidth: 420, maxHeight: '80%', overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
+  modal: { backgroundColor: Colors.surface, borderRadius: 20, width: '100%', maxWidth: 420, maxHeight: '80%', overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
   modalTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
   searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, backgroundColor: '#F8FAFC' },
