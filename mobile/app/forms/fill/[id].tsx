@@ -429,6 +429,56 @@ function PastePanel({ busy, onSubmit, testId }: any) {
   );
 }
 
+/* ─── v160.0.12.6 · Worker picker with inline company toggle ───
+ * Self-contained: holds its OWN company state (defaults to Paneltec Civil).
+ * Not linked to the top-level `company_selector` field — the operator can
+ * belong to a different company than the form's submitting entity. */
+function InlineTogglePicker({ testId, companyOptions, value, onChange }: any) {
+  const opts: Array<{ label: string; simpro_id: string }> = companyOptions?.length
+    ? companyOptions
+    : [{ label: 'Paneltec Civil', simpro_id: '2' }, { label: 'Viatec', simpro_id: '3' }];
+  const [company, setCompany] = useState(opts[0]);
+
+  const flip = () => {
+    const other = opts.find((o) => o.simpro_id !== company.simpro_id) || opts[0];
+    setCompany(other);
+    // Clear the picker value so the user doesn't submit a worker from the
+    // previous company by accident.
+    if (value) onChange(null);
+  };
+
+  return (
+    <View testID={testId}>
+      <TouchableOpacity
+        testID={`${testId}-toggle`}
+        onPress={flip}
+        activeOpacity={0.7}
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 8,
+          backgroundColor: Colors.orange, borderRadius: 999,
+          paddingVertical: 8, paddingHorizontal: 14, alignSelf: 'flex-start',
+          borderWidth: 2, borderColor: Colors.orangeLight, marginBottom: 8,
+        }}
+      >
+        <Ionicons name="business" size={14} color="#0F172A" />
+        <Text testID={`${testId}-toggle-label`} style={{ color: '#0F172A', fontSize: 13, fontWeight: '800' }}>
+          {company.label}
+        </Text>
+        <View style={{ width: 1, height: 12, backgroundColor: '#0F172A', opacity: 0.4 }} />
+        <Ionicons name="swap-horizontal" size={14} color="#0F172A" />
+        <Text style={{ color: '#0F172A', opacity: 0.75, fontSize: 11, fontWeight: '600' }}>Tap to switch</Text>
+      </TouchableOpacity>
+      <WorkerPicker
+        label=""
+        mode="single"
+        value={value || null}
+        companyFilter={{ simpro_company_id: company.simpro_id, name: company.label }}
+        onChange={(wid: string | null) => onChange(wid)}
+      />
+    </View>
+  );
+}
+
 /* ─── Main fill-out screen ─── */
 export default function FillOutScreen() {
   const router = useRouter();
@@ -682,20 +732,29 @@ export default function FillOutScreen() {
                 />
               )}
               {f.type === 'worker_picker' && (() => {
-                // v160.0.12.2 — When the form has a company_selector field
-                // and a value is set, filter the picker to that company.
-                // v160.0.12.4 — Filter silently; hint text removed as
-                // redundant with the top-level toggle.
-                const companyId = values['co_v160012'];
-                const co = companies.find((c) => c.id === companyId);
-                const filter = co ? { simpro_company_id: co.simpro_company_id || null, name: co.name } : null;
+                // v160.0.12.6 — When the field carries an inline company
+                // toggle config, render a self-contained picker with its
+                // own local company filter (INDEPENDENT of the top-level
+                // company_selector). This is the "who is doing the form"
+                // pattern — the operator can be Paneltec even if the form
+                // is being submitted under Viatec, and vice-versa.
+                if (f.config?.inline_company_toggle) {
+                  return (
+                    <InlineTogglePicker
+                      testId={`field-${f.id}`}
+                      companyOptions={f.config.company_options || []}
+                      value={values[f.id] || null}
+                      onChange={(wid: string | null) => setVal(f.id, wid)}
+                    />
+                  );
+                }
+                // Legacy path — no inline toggle, no filter.
                 return (
                   <View testID={`field-${f.id}`}>
                     <WorkerPicker
                       label=""
                       mode="single"
                       value={values[f.id] || null}
-                      companyFilter={filter}
                       onChange={(wid: string | null) => setVal(f.id, wid)}
                     />
                   </View>

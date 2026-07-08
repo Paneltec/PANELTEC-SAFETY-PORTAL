@@ -110,17 +110,24 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
   const nameOf = (w?: Worker) =>
     w ? `${w.first_name || ''} ${w.last_name || ''}`.trim() || (w.email || 'Unknown') : '';
 
-  // Compute label text for the trigger button
+  // Compute label text for the trigger button. v160.0.12.6 — When a
+  // companyFilter is active, include the company name so users see WHICH
+  // company is filtered even if the count happens to match the other one.
+  const filterSuffix = (() => {
+    const nm = props.companyFilter?.name;
+    if (!nm) return '';
+    return ` · ${nm}`;
+  })();
   const triggerText = (() => {
     if (props.multi) {
       const ids = props.value || [];
-      if (ids.length === 0) return `Select workers · ${companyScoped.length}`;
+      if (ids.length === 0) return `Select workers · ${companyScoped.length}${filterSuffix}`;
       if (ids.length === 1) return nameOf(workers.find(w => w.id === ids[0])) || '1 worker';
       return `${ids.length} workers`;
     }
     const found = workers.find(w => w.id === props.value);
     if (found) return nameOf(found);
-    return `Select worker · ${companyScoped.length}`;
+    return `Select worker · ${companyScoped.length}${filterSuffix}`;
   })();
 
   const isSelected = (id: string) =>
