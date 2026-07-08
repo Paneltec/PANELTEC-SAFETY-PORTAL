@@ -565,6 +565,87 @@ def _draw_combo_label(c: canvas.Canvas, doc: dict, page_w: float, page_h: float)
     c.drawCentredString(qr_x + qr_size / 2, qr_y - 4 * mm, doc["scan_token"])
 
 
+def _draw_fleet_4up_sheet(c: canvas.Canvas, docs: list[dict]):
+    """v160.0.11.1 — 4-up per A4 page, ~9cm × 12cm each. Sized for fleet
+    vehicles: big enough to laminate and scan from a couple of metres, but
+    still cheap enough to sticker every truck/plant in one print run.
+
+    Layout: 2 cols × 2 rows on A4. Each tile carries the Paneltec Civil
+    orange wordmark strip, the vehicle rego (large), the asset name
+    (medium), a large QR block and the scan-token underneath. Cut guides
+    printed as slate hairlines between tiles."""
+    cols, rows = 2, 2
+    page_w, page_h = A4
+    # Outer margin around the full sheet — 8mm gives the sticker maker room
+    # to slice with a rotary cutter without eating into any content.
+    outer = 8 * mm
+    label_w = (page_w - 2 * outer) / cols
+    label_h = (page_h - 2 * outer) / rows
+
+    per_page = cols * rows
+    for i, doc in enumerate(docs):
+        if i and i % per_page == 0:
+            c.showPage()
+        idx = i % per_page
+        col = idx % cols
+        row = idx // cols
+        x = outer + col * label_w
+        # ReportLab origin is bottom-left; row 0 is the top tile.
+        y = page_h - outer - (row + 1) * label_h
+
+        # Slate hairline cut guide around the tile.
+        cut_guide(c, x, y, label_w, label_h)
+
+        pad = 6 * mm
+        inner_x = x + pad
+        inner_w = label_w - 2 * pad
+        inner_h = label_h - 2 * pad
+
+        # Orange header strip — Paneltec Civil wordmark + "PROPERTY OF".
+        header_h = 10 * mm
+        header_band(c, x, y + label_h - header_h, label_w, header_h,
+                    eyebrow='PROPERTY OF · SCAN TO IDENTIFY',
+                    eyebrow_align='right')
+
+        # QR — dominant element, top-right of the tile body.
+        qr_size = min(inner_h * 0.62, inner_w * 0.42)
+        qr_x = x + label_w - pad - qr_size
+        qr_y = y + label_h - header_h - qr_size - 4 * mm
+        c.drawImage(qr_image(_public_scan_url(doc["scan_token"]), box_size=10),
+                    qr_x, qr_y, width=qr_size, height=qr_size, mask="auto")
+
+        # Big rego on the left of the QR.
+        text_x = inner_x
+        text_top = y + label_h - header_h - 8 * mm
+        c.setFillColor(black)
+        c.setFont("Helvetica-Bold", 28)
+        rego = (doc.get("rego_serial") or "—")[:12]
+        c.drawString(text_x, text_top - 4 * mm, rego)
+
+        # Asset name — medium, below the rego.
+        c.setFont("Helvetica", 12)
+        c.setFillColor(SLATE)
+        c.drawString(text_x, text_top - 14 * mm, (doc.get("name") or "")[:26])
+
+        # Asset type · Kind — small caption.
+        c.setFont("Helvetica", 8)
+        c.setFillColor(SLATE_MUTED)
+        type_label = (doc.get("asset_type") or "—").replace("_", " ").title()
+        kind_label = (doc.get("kind") or "").title()
+        c.drawString(text_x, text_top - 21 * mm, f"{type_label} · {kind_label}")
+
+        # Scan token under the QR — orange anchor for eyeball verification.
+        c.setFillColor(ORANGE)
+        c.setFont("Courier-Bold", 10)
+        c.drawCentredString(qr_x + qr_size / 2, qr_y - 5 * mm, doc["scan_token"])
+
+        # Muted scan URL along the bottom of the tile.
+        c.setFont("Helvetica", 7)
+        c.setFillColor(SLATE_MUTED)
+        c.drawString(inner_x, y + pad, _public_scan_url(doc["scan_token"])[:60])
+        c.setFillColor(black)
+
+
 def _draw_avery_sheet(c: canvas.Canvas, docs: list[dict]):
     """Avery L7160 — 21 labels (3 cols × 7 rows) per A4."""
     cols, rows = 3, 7
@@ -614,13 +695,13 @@ def _png_image_reader(png_bytes: bytes):
 @router.get("/{asset_id}/label.pdf")
 async def asset_label_pdf(
     asset_id: str,
-    layout: Literal["a6", "avery_l7160", "on_metal", "combo"] = Query("a6"),
+    layout: Literal["a6", "avery_l7160", "on_metal", "combo", "fleet_4up"] = Query("a6"),
     ids: Optional[str] = Query(None),
     user: dict = Depends(require_permission("assets", "view")),
 ):
     org_id = user["org_id"]
     docs: list[dict]
-    if layout == "avery_l7160":
+    if layout in ("avery_l7160", "fleet_4up"):
         id_list = [s.strip() for s in (ids or asset_id).split(",") if s.strip()]
         # If asset_id is in the list as a single id, include it too.
         if asset_id and asset_id not in id_list:
@@ -642,6 +723,9 @@ async def asset_label_pdf(
     if layout == "avery_l7160":
         c = canvas.Canvas(buf, pagesize=A4)
         _draw_avery_sheet(c, docs)
+    elif layout == "fleet_4up":
+        c = canvas.Canvas(buf, pagesize=A4)
+        _draw_fleet_4up_sheet(c, docs)
     elif layout == "on_metal":
         c = canvas.Canvas(buf, pagesize=A6)
         page_w, page_h = A6
@@ -666,6 +750,52 @@ async def asset_label_pdf(
 
 
 # ────────────────────── NFC / UHF pairing ──────────────────────
+
+class BulkLabelsIn(BaseModel):
+    asset_ids: list[str] = Field(min_length=1, max_length=200)
+    layout: Literal["fleet_4up", "avery_l7160"] = "fleet_4up"
+
+
+@router.post("/labels/bulk")
+async def bulk_labels_pdf(
+    body: BulkLabelsIn,
+    user: dict = Depends(require_permission("assets", "view")),
+):
+    """v160.0.11.1 — Merged multi-asset label PDF for the web admin.
+
+    Body: `{"asset_ids": [...], "layout": "fleet_4up" | "avery_l7160"}`.
+    Returns application/pdf with one page per 4 tiles (`fleet_4up`) or per
+    21 mini labels (`avery_l7160`). Only assets the caller can `view` are
+    included; missing IDs are silently dropped. Empty result → 404 so the
+    UI can toast "No printable assets"."""
+    org_id = user["org_id"]
+    id_list = [s for s in (body.asset_ids or []) if isinstance(s, str) and s.strip()]
+    if not id_list:
+        raise HTTPException(422, "asset_ids is required")
+    cursor = db.assets.find(
+        {"org_id": org_id, "id": {"$in": id_list}, "deleted_at": None},
+        {"_id": 0},
+    )
+    docs = [d async for d in cursor]
+    if not docs:
+        raise HTTPException(404, "No printable assets found")
+
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    if body.layout == "avery_l7160":
+        _draw_avery_sheet(c, docs)
+    else:
+        _draw_fleet_4up_sheet(c, docs)
+    c.showPage()
+    c.save()
+    pdf = buf.getvalue()
+
+    fname = f"labels-{body.layout}-{len(docs)}assets.pdf"
+    return Response(content=pdf, media_type="application/pdf", headers={
+        "Cache-Control": "no-store",
+        "Content-Disposition": f'inline; filename="{fname}"',
+    })
+
 
 @router.post("/{asset_id}/nfc-pair")
 async def nfc_pair(asset_id: str, body: NfcPairIn, user: dict = Depends(require_permission("assets", "edit"))):

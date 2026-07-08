@@ -2761,3 +2761,38 @@ Screenshots after (via web preview):
 - Metro cache cleared + `mobile` restarted. Fresh bundle proven by home-screen version marker.
 
 **Version:** `paneltec-v160.0.10.1` on `version.js`, `service-worker.js`, and `mobile/src/lib/version.ts`.
+
+---
+
+## v160.0.11.1 — Scan Vehicle QR inside Pre-Start · Auto-default WorkerPicker · Bulk QR PDF · Success Toasts (2026-07-08)
+
+**What shipped:**
+1. **Live camera QR scanner inside Pre-Start form** (`mobile/app/pre-starts/new.tsx`) — prominent orange CTA "📷 Scan Vehicle QR to Auto-Fill" as the first interactive element when no asset is loaded. Opens a bottom-sheet modal with an in-modal `CameraView` (expo-camera v17) that streams a live preview with an orange viewfinder overlay and auto-detects QR codes (`onBarcodeScanned` with `barcodeTypes: ['qr']`). Once resolved, the CTA collapses into the existing orange "PRE-START FOR" banner with a "Change" reset link. Paste-URL fallback retained for web / permission-denied.
+2. **Auto-default WorkerPicker to logged-in user** — pre-start crew picker now auto-selects the caller's own worker row on mount (via `GET /api/workers` which returns just the caller for non-privileged users, or matches by email for admins) and pre-fills `crew_lead` with their full name. Hazards / incidents / inspections screens keep their existing auto-default behaviour.
+3. **Bulk QR PDF backend** — new `POST /api/assets/labels/bulk` accepts `{asset_ids: [...], layout: "fleet_4up" | "avery_l7160"}`. Returns a merged `application/pdf` with the `fleet_4up` layout laying out 4 large ~9×12cm laminatable stickers per A4 page (2 cols × 2 rows) — sized for scanning fleet vehicles from a couple of metres away. Uses the shared `pdf_card_template` (orange + slate) for consistent branding. Admin-only (behind `assets.view`, which workers don't have).
+4. **Web admin bulk PDF button** — `PrintLabelsModal` in `PlantVehicles.jsx` gains a new "Fleet 4-up sheet (bulk)" option that POSTs to `/assets/labels/bulk`, opens the PDF inline via `stashInlinePdf`. Existing single-asset layouts (a6, on_metal, combo, avery_l7160) still route through the `GET /assets/{id}/label.pdf` endpoint.
+5. **In-house animated Toast system** — `src/lib/toast.ts` (event-bus module) + `src/components/ToastHost.tsx` (Animated fade+slide, ~90 lines). Mounted once at root layout. Replaces `Alert.alert('Success', …)` in all 4 mobile capture forms (pre-starts / hazards / incidents / inspections). Zero dep bump — smaller than adding `react-native-toast-message`.
+6. **Backend tests** — 4 new pytest cases in `test_worker_leaks.py`:
+   - `test_v160_0_11_1_bulk_labels_admin_returns_pdf` (200, PDF magic bytes, size > 2KB)
+   - `test_v160_0_11_1_bulk_labels_worker_forbidden` (403)
+   - `test_v160_0_11_1_bulk_labels_empty_ids_422` (422)
+   - `test_v160_0_11_1_bulk_labels_unknown_ids_404` (404)
+   All 79 tests pass.
+7. **Hazards `useEffect` import bug fix** — the v160.0.11 patch added a `useEffect` for reported-by auto-default but forgot to import it. Fixed.
+
+**Regression sweep:**
+- Pytest: **79/79 passing** (75 pre-existing + 4 new).
+- Curl-verified all 4 statuses of the new endpoint.
+- Mobile bundle rebuilds clean at 6.7MB with no unresolved modules.
+- Web frontend compiles with 110 warnings (all pre-existing).
+
+**Version:** `paneltec-v160.0.11.1` on `version.js`, `service-worker.js`, and `mobile/src/lib/version.ts` (already bumped in v160.0.11 cycle — synchronous now).
+
+**Files touched:**
+- `backend/assets.py` — `_draw_fleet_4up_sheet`, `POST /assets/labels/bulk`, `fleet_4up` on GET.
+- `backend/tests/test_worker_leaks.py` — 4 new tests.
+- `frontend/src/pages/PlantVehicles.jsx` — new layout option + POST branch.
+- `mobile/src/lib/toast.ts` (new) · `mobile/src/components/ToastHost.tsx` (new).
+- `mobile/app/_layout.tsx` — mount `<ToastHost />`.
+- `mobile/app/pre-starts/new.tsx` — camera scanner + auto-default crew + toast + toast import.
+- `mobile/app/hazards/new.tsx` · `incidents/new.tsx` · `inspections/new.tsx` — toast imports + `Alert.alert('Success', …)` → `toast.success(…)`.

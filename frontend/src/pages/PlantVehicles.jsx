@@ -96,12 +96,25 @@ function PrintLabelsModal({ assetIds, onClose }) {
       // v148 — stashInlinePdf → same-origin URL so Chrome ad-blockers
       // stop silently rejecting the label preview tab (was: blob: URL
       // → about:blank / blank page).
-      const r = await api.get(`/assets/${assetIds[0]}/label.pdf`, {
-        responseType: 'blob',
-        params: { layout, ids: layout === 'avery_l7160' ? assetIds.join(',') : undefined },
-      });
+      // v160.0.11.1 — bulk 4-up fleet-sticker layout goes through the
+      // dedicated POST /assets/labels/bulk endpoint so we can push the
+      // full id list in a JSON body (query strings choke past ~80 IDs).
+      let blob;
       const filename = `labels-${layout}-${assetIds.length}assets.pdf`;
-      const { src } = await stashInlinePdf(r.data, filename);
+      if (layout === 'fleet_4up') {
+        const r = await api.post('/assets/labels/bulk',
+          { asset_ids: assetIds, layout: 'fleet_4up' },
+          { responseType: 'blob' },
+        );
+        blob = r.data;
+      } else {
+        const r = await api.get(`/assets/${assetIds[0]}/label.pdf`, {
+          responseType: 'blob',
+          params: { layout, ids: layout === 'avery_l7160' ? assetIds.join(',') : undefined },
+        });
+        blob = r.data;
+      }
+      const { src } = await stashInlinePdf(blob, filename);
       window.open(src, '_blank', 'noopener');
     } catch (e) {
       toast.error(apiError(e));
@@ -125,6 +138,7 @@ function PrintLabelsModal({ assetIds, onClose }) {
             { v: 'a6', label: 'A6 single label', sub: 'Full-page label with QR + name + rego' },
             { v: 'on_metal', label: 'On-metal label', sub: 'Big QR + big rego, no NFC zone' },
             { v: 'combo', label: 'QR + NFC pairing label', sub: 'QR with dotted NFC tag outline' },
+            { v: 'fleet_4up', label: 'Fleet 4-up sheet (bulk)', sub: 'A4 with 4 large ~9×12cm laminatable stickers per page' },
             { v: 'avery_l7160', label: 'Avery L7160 sheet', sub: 'A4 with 21 mini labels (3×7)' },
           ].map((opt) => (
             <label key={opt.v}

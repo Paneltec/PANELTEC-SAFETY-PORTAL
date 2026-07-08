@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity,
   Alert, KeyboardAvoidingView, Platform, ActivityIndicator, Image,
@@ -13,6 +13,7 @@ import GhostButton from '../../src/components/GhostButton';
 import WorkerPicker from '../../src/components/WorkerPicker';
 import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import { Colors } from '../../src/lib/colors';
+import { toast } from '../../src/lib/toast';
 
 export default function HazardNewScreen() {
   const router = useRouter();
@@ -22,6 +23,18 @@ export default function HazardNewScreen() {
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [reportedBy, setReportedBy] = useState<string | null>(null);
   const [gps, setGps] = useState<GpsFix | null>(null);
+  // v160.0.11.1 — auto-default "Reported by" to the logged-in worker's own
+  // linked worker record. `GET /api/workers` returns only own row for
+  // non-privileged callers (v160.0.8), so [0] is the caller.
+  useEffect(() => {
+    let live = true;
+    api.get('/workers').then(({ data }) => {
+      if (!live) return;
+      const own = (data || []).find((w: any) => w.active !== false) || data?.[0];
+      if (own?.id) setReportedBy((v) => v ?? own.id);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [form, setForm] = useState({
     title: '', description: '', location: '', severity: 'medium',
     controls: [] as string[], status: 'open',
@@ -110,7 +123,7 @@ export default function HazardNewScreen() {
         gps_street: gps?.street,
         gps_suburb: gps?.suburb,
       });
-      Alert.alert('Success', 'Hazard reported');
+      toast.success('Hazard reported');
       router.back();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
     finally { setBusy(false); }

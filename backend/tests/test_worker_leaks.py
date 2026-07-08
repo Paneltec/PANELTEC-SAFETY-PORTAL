@@ -959,3 +959,58 @@ def test_v160_0_9_user_agent_fallback_detected(worker_headers, modules_matrix_sn
     assert r.status_code == 403, (
         f"UA-based mobile detection failed — expected 403 for hazard=OFF, got {r.status_code}"
     )
+
+
+# ─── v160.0.11.1 · POST /assets/labels/bulk ────────────────────────────────
+
+def _first_asset_ids(admin_headers, n: int = 2) -> list[str]:
+    r = requests.get(f"{BASE}/api/assets?limit={n}", headers=admin_headers, timeout=15)
+    r.raise_for_status()
+    ids = [a["id"] for a in r.json().get("assets", [])[:n]]
+    assert ids, "No assets seeded — cannot run bulk-labels test"
+    return ids
+
+
+def test_v160_0_11_1_bulk_labels_admin_returns_pdf(admin_headers):
+    ids = _first_asset_ids(admin_headers, 2)
+    r = requests.post(
+        f"{BASE}/api/assets/labels/bulk",
+        headers=admin_headers,
+        json={"asset_ids": ids, "layout": "fleet_4up"},
+        timeout=20,
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers.get("content-type", "").startswith("application/pdf")
+    # PDF magic bytes.
+    assert r.content[:4] == b"%PDF", "Body is not a PDF"
+    assert len(r.content) > 2_000, "PDF suspiciously small"
+
+
+def test_v160_0_11_1_bulk_labels_worker_forbidden(worker_headers):
+    r = requests.post(
+        f"{BASE}/api/assets/labels/bulk",
+        headers=worker_headers,
+        json={"asset_ids": ["any-id"], "layout": "fleet_4up"},
+        timeout=10,
+    )
+    assert r.status_code == 403
+
+
+def test_v160_0_11_1_bulk_labels_empty_ids_422(admin_headers):
+    r = requests.post(
+        f"{BASE}/api/assets/labels/bulk",
+        headers=admin_headers,
+        json={"asset_ids": []},
+        timeout=10,
+    )
+    assert r.status_code == 422
+
+
+def test_v160_0_11_1_bulk_labels_unknown_ids_404(admin_headers):
+    r = requests.post(
+        f"{BASE}/api/assets/labels/bulk",
+        headers=admin_headers,
+        json={"asset_ids": ["not-a-real-id-9999"]},
+        timeout=10,
+    )
+    assert r.status_code == 404

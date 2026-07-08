@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import api, { apiError } from '../../src/lib/api';
@@ -7,6 +7,7 @@ import PrimaryButton from '../../src/components/PrimaryButton';
 import WorkerPicker from '../../src/components/WorkerPicker';
 import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import { Colors } from '../../src/lib/colors';
+import { toast } from '../../src/lib/toast';
 
 const CATS = [['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical', 'Medical'], ['ltc', 'Lost-time'], ['env', 'Environmental'], ['property', 'Property']];
 
@@ -15,6 +16,16 @@ export default function IncidentNewScreen() {
   const [busy, setBusy] = useState(false);
   const [personInvolved, setPersonInvolved] = useState<string | null>(null);
   const [gps, setGps] = useState<GpsFix | null>(null);
+  // v160.0.11.1 — auto-default "Person involved" to the caller.
+  useEffect(() => {
+    let live = true;
+    api.get('/workers').then(({ data }) => {
+      if (!live) return;
+      const own = (data || []).find((w: any) => w.active !== false) || data?.[0];
+      if (own?.id) setPersonInvolved((v) => v ?? own.id);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [form, setForm] = useState({ title: '', occurred_at: new Date().toISOString().slice(0, 16), location: '', category: 'near_miss', description: '', immediate_actions: '', follow_up_status: 'open' });
 
   const save = async () => {
@@ -35,7 +46,7 @@ export default function IncidentNewScreen() {
         gps_street: gps?.street,
         gps_suburb: gps?.suburb,
       });
-      Alert.alert('Success', 'Incident logged');
+      toast.success('Incident logged');
       router.back();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
     finally { setBusy(false); }

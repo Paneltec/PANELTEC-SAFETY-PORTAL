@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, Image } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,7 @@ import WorkerPicker from '../../src/components/WorkerPicker';
 import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import SignatureModal from '../../src/components/SignatureModal';
 import { Colors } from '../../src/lib/colors';
+import { toast } from '../../src/lib/toast';
 
 const TEMPLATES: Record<string, string[]> = {
   'Site walk': [
@@ -38,6 +39,16 @@ export default function InspectionNewScreen() {
   const [tpl, setTpl] = useState('');
   const [operator, setOperator] = useState<string | null>(null);
   const [gps, setGps] = useState<GpsFix | null>(null);
+  // v160.0.11.1 — auto-default "Operator" to the caller.
+  useEffect(() => {
+    let live = true;
+    api.get('/workers').then(({ data }) => {
+      if (!live) return;
+      const own = (data || []).find((w: any) => w.active !== false) || data?.[0];
+      if (own?.id) setOperator((v) => v ?? own.id);
+    }).catch(() => {});
+    return () => { live = false; };
+  }, []);
   const [signature, setSignature] = useState<string | null>(null);
   const [sigOpen, setSigOpen] = useState(false);
   const [form, setForm] = useState({ date: new Date().toISOString().slice(0, 10), checklist_items: [] as CheckItem[], notes: '' });
@@ -69,7 +80,7 @@ export default function InspectionNewScreen() {
         gps_street: gps?.street,
         gps_suburb: gps?.suburb,
       });
-      Alert.alert('Success', 'Inspection saved');
+      toast.success('Inspection saved');
       router.back();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
     finally { setBusy(false); }

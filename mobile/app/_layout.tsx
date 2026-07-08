@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from '../src/lib/AuthContext';
 import { isPreviewMode } from '../src/lib/preview';
 import ChangePasswordModal from '../src/components/auth/ChangePasswordModal';
 
+import ToastHost from '../src/components/ToastHost';
+
 function RootNav() {
   const [isReady, setIsReady] = useState(false);
   const { isAuth, setAuth, mustChangePassword, setMustChangePassword } = useAuth();
@@ -78,6 +80,7 @@ function RootNav() {
         <Stack.Screen name="certifications" />
         <Stack.Screen name="forms" />
       </Stack>
+      <ToastHost />
     </>
   );
 }
