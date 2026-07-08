@@ -2859,3 +2859,35 @@ Screenshots after (via web preview):
 **Files touched:**
 - `mobile/app/(tabs)/dashboard.tsx` — added `useCallback` + `toast` imports, `HEAVY_EQ_TPL_ID` constant, `openTile()` smart handler, route sentinel in `CAPTURE_TOOLS`, tile onPress wired to `openTile`.
 - `mobile/src/lib/version.ts` · `frontend/src/lib/version.js` · `frontend/public/service-worker.js` — bumped to v160.0.12.1.
+
+---
+
+## v160.0.12.2 — Heavy Equipment Pre-Op UX hotfix (2026-07-08)
+
+Five UX complaints from the user, all fixed:
+
+1. **Company toggle instead of dropdown** — `CompanySelectorField` now renders a segmented control (Paneltec Civil | Viatec) when the org has exactly 2 companies. Active pill = orange filled with checkmark; inactive = transparent + slate text. Falls back to dropdown for >2 companies.
+2. **Worker pickers filtered by company** — `WorkerPicker` gained a `companyFilter` prop that matches on `simpro_company_id` (exact) with a `company_label`/`company` name fallback. Trigger shows "Select worker · N" so operators can see how many workers match the current filter. Row meta shows `company_label` ("Paneltec" / "Viatec") next to each worker.
+3. **Auto-clear worker on company toggle** — parent watches `values['co_v160012']` and clears `op_v160012` + `rt_v160012` whenever the company id changes, firing a `toast.info('Company changed — please reselect worker')`. Prevents "Paneltec operator, Viatec reported-to" ghost combinations.
+4. **Auto-date field fully readable** — swapped `#F1F5F9` low-contrast background for `Colors.surfaceLight` dark slate, moved date text to `Colors.ink` (bright white), lock icon to `Colors.orangeLight`, and added "Auto-filled today" caption at `Colors.textSecondary` for WCAG AA compliance.
+5. **Scan Equipment QR CTA prominent** — big 18px vertical padding, dark navy circle badge (40px) with orange camera icon, dominant orange background with orange-light border, drop shadow (`shadowColor: Colors.orange, opacity: 0.4, radius 10`), chevron on the right. Impossible to miss now.
+
+**Backend:**
+- `_DEFAULT_COMPANIES` in `org_settings.py` now includes `simpro_company_id: "2"` (Paneltec) and `simpro_company_id: "3"` (Viatec).
+- Inline migration script patched the existing org doc to add `simpro_company_id` to already-seeded entries. Idempotent — safe to re-run.
+
+**Camera state on web preview:** As noted in the console, `expo-camera` requires a real device (HTTPS + user-gesture permission grant). On web it falls back to the paste-URL panel with the orange "Go" button. On a real Android/iOS build the `CameraView` renders a live preview with `onBarcodeScanned` auto-detection — same as the pre-start scanner from v160.0.11.1.
+
+**Version bump confirmed (all 3 files):**
+- `mobile/src/lib/version.ts` → `paneltec-v160.0.12.2` ✅
+- `frontend/src/lib/version.js` → `paneltec-v160.0.12.2` ✅
+- `frontend/public/service-worker.js` → `paneltec-v160.0.12.2` ✅
+
+**Regression sweep:** 86/86 pytest pass.
+
+**Files touched:**
+- `mobile/src/components/WorkerPicker.tsx` — companyFilter prop, hint prop, company-scoped filter + count, company_label display.
+- `mobile/app/forms/fill/[id].tsx` — CompanySelectorField toggle, AutoDateField contrast fix, AssetQrScanField prominent CTA, parent-level companies fetch + worker-clear-on-company-change effect + toast import.
+- `backend/org_settings.py` — added simpro_company_id to default seed.
+- Mongo `orgs` doc — inline patch to add simpro_company_id to existing companies.
+- 3 version files bumped.

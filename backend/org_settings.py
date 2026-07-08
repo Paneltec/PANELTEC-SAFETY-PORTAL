@@ -58,8 +58,12 @@ async def patch_org(body: OrgPatch, user: dict = Depends(get_current_user)):
 # ─── v160.0.12 — Companies (for form `company_selector` field type) ───
 
 _DEFAULT_COMPANIES = [
-    {"id": "paneltec-civil", "name": "Paneltec Civil"},
-    {"id": "viatec", "name": "Viatec"},
+    # `simpro_company_id` lets the mobile `company_selector` toggle filter
+    # `worker_picker` dropdowns to only crew belonging to the selected
+    # tradable-name entity. Values match what Simpro pushes onto
+    # `workers.simpro_company_id` at sync time.
+    {"id": "paneltec-civil", "name": "Paneltec Civil", "simpro_company_id": "2"},
+    {"id": "viatec", "name": "Viatec", "simpro_company_id": "3"},
 ]
 
 

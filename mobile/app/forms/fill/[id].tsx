@@ -15,6 +15,7 @@ import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 import WorkerPicker from '../../../src/components/WorkerPicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { toast } from '../../../src/lib/toast';
 
 /* ─── Colour helper for radio buttons ─── */
 function radioColor(opt: string, selected: boolean) {
@@ -173,9 +174,9 @@ function GpsField({ value, onChange, testId }: any) {
   );
 }
 
-/* ─── v160.0.12 · Company selector — loads /api/org/companies once ─── */
+/* ─── v160.0.12.2 · Company selector — segmented toggle for ≤2 companies, dropdown for more ─── */
 function CompanySelectorField({ value, onChange, testId, required }: any) {
-  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; simpro_company_id?: string }>>([]);
   const [modalOpen, setModalOpen] = useState(false);
   useEffect(() => {
     let alive = true;
@@ -184,6 +185,39 @@ function CompanySelectorField({ value, onChange, testId, required }: any) {
       .catch(() => { /* keep list empty — user still sees the field */ });
     return () => { alive = false; };
   }, []);
+
+  // Segmented control for exactly 2 companies — the common case
+  // (Paneltec Civil / Viatec) that users asked for a "toggle".
+  if (companies.length === 2) {
+    return (
+      <View testID={testId} style={{ flexDirection: 'row', backgroundColor: Colors.surfaceLight, borderRadius: 12, padding: 4, gap: 4 }}>
+        {companies.map((c) => {
+          const active = value === c.id;
+          return (
+            <TouchableOpacity
+              key={c.id}
+              testID={`${testId}-opt-${c.id}`}
+              onPress={() => onChange(c.id)}
+              activeOpacity={0.75}
+              style={{
+                flex: 1, paddingVertical: 12, borderRadius: 10,
+                backgroundColor: active ? Colors.orange : 'transparent',
+                alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6,
+              }}
+            >
+              {active && <Ionicons name="checkmark-circle" size={16} color="#0F172A" />}
+              <Text style={{
+                fontSize: 14, fontWeight: '700',
+                color: active ? '#0F172A' : Colors.textSecondary,
+              }}>{c.name}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
+
+  // Fallback: dropdown for >2 companies or 0/1 (still readable).
   const selected = companies.find((c) => c.id === value);
   return (
     <View testID={testId}>
@@ -213,17 +247,23 @@ function CompanySelectorField({ value, onChange, testId, required }: any) {
   );
 }
 
-/* ─── v160.0.12 · Auto-date — locked timestamp, filled once on mount ─── */
+/* ─── v160.0.12.2 · Auto-date — locked timestamp, HIGH-CONTRAST readable ─── */
 function AutoDateField({ value, onChange, testId }: any) {
   useEffect(() => {
     if (!value) onChange(new Date().toISOString().slice(0, 10));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return (
-    <View testID={testId} style={[fs.input, { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F5F9' }]}>
-      <Ionicons name="lock-closed" size={12} color={Colors.textTertiary} />
-      <Text style={{ color: Colors.textSecondary, fontWeight: '600' }}>{value || '—'}</Text>
-      <Text style={{ color: Colors.textTertiary, fontSize: 11 }}>· auto-filled</Text>
+    <View testID={testId} style={{
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      backgroundColor: Colors.surfaceLight,
+      borderWidth: 1, borderColor: Colors.border,
+      borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12,
+    }}>
+      <Ionicons name="lock-closed" size={14} color={Colors.orangeLight} />
+      <Text style={{ color: Colors.ink, fontWeight: '700', fontSize: 15 }}>{value || '—'}</Text>
+      <View style={{ flex: 1 }} />
+      <Text style={{ color: Colors.textSecondary, fontSize: 12, fontWeight: '500' }}>Auto-filled today</Text>
     </View>
   );
 }
@@ -289,14 +329,25 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
       ) : (
         <TouchableOpacity
           testID={`${testId}-open`}
-          style={{ backgroundColor: Colors.orange, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          style={{
+            backgroundColor: Colors.orange, borderRadius: 14,
+            paddingVertical: 18, paddingHorizontal: 16,
+            flexDirection: 'row', alignItems: 'center', gap: 14,
+            borderWidth: 2, borderColor: Colors.orangeLight,
+            shadowColor: Colors.orange, shadowOpacity: 0.4,
+            shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+            elevation: 6,
+          }}
           onPress={() => { setErr(null); scannedOnceRef.current = false; if (camPerm && !camPerm.granted) requestCamPerm(); setOpen(true); }}
         >
-          <Ionicons name="qr-code" size={22} color="#fff" />
-          <View style={{ flex: 1 }}>
-            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Scan Equipment QR to Auto-Fill</Text>
-            <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Point camera at the vehicle sticker</Text>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="camera" size={24} color={Colors.orangeLight} />
           </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#0F172A', fontWeight: '800', fontSize: 16 }}>Scan Equipment QR</Text>
+            <Text style={{ color: '#0F172A', opacity: 0.85, fontSize: 12, fontWeight: '600' }}>Point camera at the vehicle sticker to auto-fill</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="#0F172A" />
         </TouchableOpacity>
       )}
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
@@ -380,7 +431,40 @@ export default function FillOutScreen() {
   const [progress, setProgress] = useState('');
   const [sigModalField, setSigModalField] = useState<string | null>(null);
   const [selectModalField, setSelectModalField] = useState<string | null>(null);
+  // v160.0.12.2 — Company toggle drives per-picker worker filtering. Load
+  // the org's companies once at parent level so the WorkerPicker filter
+  // can dereference the selected `co_v160012` id → simpro_company_id.
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string; simpro_company_id?: string }>>([]);
+  useEffect(() => {
+    let alive = true;
+    api.get('/org/companies').then(({ data }) => {
+      if (alive) setCompanies(data?.companies || []);
+    }).catch(() => { /* keep empty */ });
+    return () => { alive = false; };
+  }, []);
   const draftKey = `form_draft_${id}`;
+
+  // v160.0.12.2 — When the operator changes company, clear any picked
+  // worker whose simpro_company_id no longer matches the new company.
+  // This prevents "operator from Paneltec, reported to Viatec worker"
+  // ghost combinations after a re-toggle.
+  const prevCompanyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const cid = values['co_v160012'] as string | undefined;
+    if (prevCompanyRef.current !== null && cid && cid !== prevCompanyRef.current) {
+      // Clear both worker pickers when company toggle flips.
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const key of ['op_v160012', 'rt_v160012']) {
+          if (next[key]) next[key] = null;
+        }
+        return next;
+      });
+      toast.info('Company changed — please reselect worker');
+    }
+    if (cid) prevCompanyRef.current = cid;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [values['co_v160012']]);
 
   useEffect(() => {
     api.get(`/forms/templates/${id}`)
@@ -587,15 +671,28 @@ export default function FillOutScreen() {
                   testId={`field-${f.id}`}
                 />
               )}
-              {f.type === 'worker_picker' && (
-                <View testID={`field-${f.id}`}>
-                  <WorkerPicker
-                    mode="single"
-                    value={values[f.id] || null}
-                    onChange={(wid: string | null) => setVal(f.id, wid)}
-                  />
-                </View>
-              )}
+              {f.type === 'worker_picker' && (() => {
+                // v160.0.12.2 — When the form has a company_selector field
+                // and a value is set, filter the picker to that company.
+                const companyId = values['co_v160012'];
+                const co = companies.find((c) => c.id === companyId);
+                const filter = co ? { simpro_company_id: co.simpro_company_id || null, name: co.name } : null;
+                const hint = !companyId
+                  ? 'Select a company above to filter workers'
+                  : `Filtered to ${co?.name || companyId}`;
+                return (
+                  <View testID={`field-${f.id}`}>
+                    <WorkerPicker
+                      label=""
+                      mode="single"
+                      value={values[f.id] || null}
+                      companyFilter={filter}
+                      hint={hint}
+                      onChange={(wid: string | null) => setVal(f.id, wid)}
+                    />
+                  </View>
+                );
+              })()}
               {f.type === 'asset_scan' && (
                 <AssetQrScanField
                   value={values[f.id]}

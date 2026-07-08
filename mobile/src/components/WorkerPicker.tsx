@@ -25,7 +25,18 @@ type Worker = {
   trade?: string;
   role?: string;
   company?: string;
+  company_label?: string;
+  simpro_company_id?: string | number;
   active?: boolean;
+};
+
+/** v160.0.12.2 — When set, only workers whose `simpro_company_id` (or
+ *  `company_label`) match the filter are shown. Used by the Heavy
+ *  Equipment Pre-Op form's Operator / Reported To pickers to scope the
+ *  crew list to the currently-selected trading company. */
+export type WorkerCompanyFilter = {
+  simpro_company_id?: string | null;
+  name?: string | null;
 };
 
 type SingleProps = {
@@ -35,6 +46,8 @@ type SingleProps = {
   onChange: (workerId: string | null, worker?: Worker) => void;
   testID?: string;
   multi?: false;
+  companyFilter?: WorkerCompanyFilter | null;
+  hint?: string | null;
 };
 type MultiProps = {
   label: string;
@@ -43,6 +56,8 @@ type MultiProps = {
   onChange: (workerIds: string[], workers?: Worker[]) => void;
   testID?: string;
   multi: true;
+  companyFilter?: WorkerCompanyFilter | null;
+  hint?: string | null;
 };
 
 export default function WorkerPicker(props: SingleProps | MultiProps) {
@@ -65,16 +80,32 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
     return () => { ok = false; };
   }, []);
 
+  // v160.0.12.2 — pre-filter by company (if provided) BEFORE applying the
+  // search term. Match by simpro_company_id first (exact), otherwise fall
+  // back to a case-insensitive `company_label` compare (Simpro name).
+  const companyScoped = useMemo(() => {
+    const cf = props.companyFilter;
+    if (!cf || (!cf.simpro_company_id && !cf.name)) return workers;
+    const cid = cf.simpro_company_id != null ? String(cf.simpro_company_id) : null;
+    const nm = (cf.name || '').trim().toLowerCase();
+    return workers.filter((w) => {
+      if (cid && String(w.simpro_company_id ?? '') === cid) return true;
+      const label = (w.company_label || w.company || '').toLowerCase();
+      if (nm && (label === nm || label.includes(nm) || nm.includes(label))) return true;
+      return false;
+    });
+  }, [workers, props.companyFilter]);
+
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase();
-    if (!term) return workers;
-    return workers.filter((w) => {
+    if (!term) return companyScoped;
+    return companyScoped.filter((w) => {
       const name = `${w.first_name || ''} ${w.last_name || ''}`.toLowerCase();
-      const company = (w.company || '').toLowerCase();
+      const company = (w.company_label || w.company || '').toLowerCase();
       const trade = (w.trade || w.role || '').toLowerCase();
       return name.includes(term) || company.includes(term) || trade.includes(term);
     });
-  }, [q, workers]);
+  }, [q, companyScoped]);
 
   const nameOf = (w?: Worker) =>
     w ? `${w.first_name || ''} ${w.last_name || ''}`.trim() || (w.email || 'Unknown') : '';
@@ -83,12 +114,13 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
   const triggerText = (() => {
     if (props.multi) {
       const ids = props.value || [];
-      if (ids.length === 0) return 'Select workers';
+      if (ids.length === 0) return `Select workers · ${companyScoped.length}`;
       if (ids.length === 1) return nameOf(workers.find(w => w.id === ids[0])) || '1 worker';
       return `${ids.length} workers`;
     }
     const found = workers.find(w => w.id === props.value);
-    return found ? nameOf(found) : 'Select worker';
+    if (found) return nameOf(found);
+    return `Select worker · ${companyScoped.length}`;
   })();
 
   const isSelected = (id: string) =>
@@ -119,6 +151,9 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
         <Text style={[s.triggerText, !props.value && s.triggerPlaceholder]}>{triggerText}</Text>
         <Ionicons name="chevron-down" size={16} color={Colors.textTertiary} />
       </TouchableOpacity>
+      {props.hint ? (
+        <Text testID={(props.testID || 'worker-picker') + '-hint'} style={s.hint}>{props.hint}</Text>
+      ) : null}
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <View style={s.modalBackdrop}>
@@ -160,7 +195,7 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
                     <Text style={s.rowName}>{nameOf(item)}</Text>
                     <Text style={s.rowMeta}>
                       {item.trade || item.role || '—'}
-                      {item.company ? ` · ${item.company}` : ''}
+                      {(item.company_label || item.company) ? ` · ${item.company_label || item.company}` : ''}
                     </Text>
                   </View>
                   {isSelected(item.id) && (
@@ -187,6 +222,7 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
 
 const s = StyleSheet.create({
   label: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary, marginBottom: 6, marginTop: 12 },
+  hint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, fontStyle: 'italic' },
   trigger: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
