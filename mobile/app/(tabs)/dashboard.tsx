@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -10,6 +10,7 @@ import { useAuth } from '../../src/lib/AuthContext';
 import { SAFE_FALLBACK } from '../../src/lib/modules';
 import AiBuilderModal from '../../src/components/forms/AiBuilderModal';
 import TemplateBuilder from '../../src/components/forms/TemplateBuilder';
+import { toast } from '../../src/lib/toast';
 import type { ModuleId } from '../../src/lib/modules';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
@@ -37,13 +38,19 @@ const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route
   { key: 'compliance',       title: 'Compliance Hub',   desc: 'Contractor register & audit exports',            icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: null, complianceHub: true },
 ];
 
+// v160.0.12.1 — "Inspections" tile shortcuts straight to the Heavy Equipment
+// Pre-Op Checklist form. Field crews recognise this as "New Plant Inspection".
+// Special route sentinel `plant_preop` triggers the smart handler that verifies
+// the template exists for the current org and falls back to /forms otherwise.
+const HEAVY_EQ_TPL_ID = '225cd097-2c2d-4963-9b92-1f8554894db8';
+
 const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId }[] = [
   { key: 'swms', title: 'AI SWMS', desc: 'Draft Safe Work Method Statements', icon: 'document-text', route: '/swms', moduleKey: 'swms' },
   { key: 'pre-starts', title: 'Daily Pre-Starts', desc: 'Crew pre-start checks and sign-ons', icon: 'clipboard', route: '/pre-starts', moduleKey: 'pre_start' },
   { key: 'site-diary', title: 'Site Diary AI', desc: 'Auto-summarise notes into daily diary', icon: 'book', route: '/site-diary', moduleKey: 'site_diary' },
   { key: 'hazards', title: 'Hazard Reports', desc: 'Snap a hazard — AI classifies risk', icon: 'warning', route: '/hazards', moduleKey: 'hazard' },
   { key: 'incidents', title: 'Incident Reports', desc: 'Structured incident capture', icon: 'alert-circle', route: '/incidents', moduleKey: 'incident' },
-  { key: 'inspections', title: 'Inspections', desc: 'Site walk, plant, height inspections', icon: 'checkmark-circle', route: '/inspections', moduleKey: 'inspection' },
+  { key: 'inspections', title: 'Inspections', desc: 'Site walk, plant, height inspections', icon: 'checkmark-circle', route: 'plant_preop', moduleKey: 'inspection' },
 ];
 
 export default function DashboardScreen() {
@@ -94,6 +101,24 @@ export default function DashboardScreen() {
 
   useEffect(() => { loadData(); }, []);
   const onRefresh = () => { setRefreshing(true); setBriefingLoading(true); loadData(); };
+
+  // v160.0.12.1 — Smart handler for tile route sentinels. Currently used
+  // by the "Inspections" capture tile which shortcuts to the Heavy
+  // Equipment Pre-Op Checklist form. If the template isn't in Mongo for
+  // this org (multi-org safety) we toast + fall back to the Forms Library.
+  const openTile = useCallback(async (route: string) => {
+    if (route === 'plant_preop') {
+      try {
+        await api.get(`/forms/templates/${HEAVY_EQ_TPL_ID}`);
+        router.push(`/forms/fill/${HEAVY_EQ_TPL_ID}` as any);
+      } catch {
+        toast.error('Plant Pre-Op form not configured — contact admin');
+        router.push('/forms' as any);
+      }
+      return;
+    }
+    router.push(route as any);
+  }, [router]);
 
   const score = metrics?.attention_score ?? 0;
   const band = metrics?.attention_band ?? 'Strong';
@@ -241,7 +266,7 @@ export default function DashboardScreen() {
         )}
         {visibleCapture.map((t) => (
           <TouchableOpacity key={t.key} testID={`capture-card-${t.key}`} style={d.captureCard}
-            onPress={() => router.push(t.route as any)} activeOpacity={0.7}>
+            onPress={() => openTile(t.route)} activeOpacity={0.7}>
             <View style={d.captureIcon}>
               <Ionicons name={t.icon as any} size={18} color={Colors.orange} />
             </View>

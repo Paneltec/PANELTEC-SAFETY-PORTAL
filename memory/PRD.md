@@ -2837,3 +2837,25 @@ Screenshots after (via web preview):
 - Mongo template `225cd097-…` — 5 new fields prepended + `f1` converted to `auto_date`
 
 **Migration safety:** Only the Heavy Equipment template mutated. All other templates and submissions untouched. `ALLOWED_FIELD_TYPES` is a superset — no legacy field type dropped.
+
+---
+
+## v160.0.12.1 — Home tile "Inspections" shortcuts to Heavy Equipment Pre-Op (2026-07-08)
+
+**Small change:** the Home dashboard's "Inspections" tile (in CREATE & CAPTURE) now shortcuts directly to the Heavy Equipment Pre-Op Checklist form instead of the inspections list. Field crews recognise this as "New Plant Inspection".
+
+**Implementation:**
+- `mobile/app/(tabs)/dashboard.tsx` — the `inspections` tile's route changed from `/inspections` to the sentinel `plant_preop`. New `openTile()` handler intercepts this sentinel, verifies the template exists via `GET /api/forms/templates/225cd097-...`, then routes to `/forms/fill/225cd097-...`. On 404/error it toasts "Plant Pre-Op form not configured — contact admin" and falls back to `/forms` (Forms Library).
+- All other tile routes still call `router.push` directly through the same handler — no regression.
+- Icon, label ("Inspections") and gradient unchanged per user default preference.
+- `/inspections/new.tsx` and `/inspections/index.tsx` untouched — direct deep links still open the legacy Inspections flow.
+
+**Verified:**
+- 86/86 pytest still passing (no backend changes).
+- Direct URL `/forms/fill/225cd097-...` renders the Heavy Equipment form with all v160.0.12 fields (Company/Operator/Reported To/GPS/auto-Date/QR scan).
+- Direct URL `/inspections/new` still renders the legacy "New Inspection" screen with template pickers (Site walk / Plant inspection / Working at height).
+- Home screen version marker reads **`paneltec-v160.0.12.1`** ✅
+
+**Files touched:**
+- `mobile/app/(tabs)/dashboard.tsx` — added `useCallback` + `toast` imports, `HEAVY_EQ_TPL_ID` constant, `openTile()` smart handler, route sentinel in `CAPTURE_TOOLS`, tile onPress wired to `openTile`.
+- `mobile/src/lib/version.ts` · `frontend/src/lib/version.js` · `frontend/public/service-worker.js` — bumped to v160.0.12.1.
