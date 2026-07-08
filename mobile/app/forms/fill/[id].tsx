@@ -13,6 +13,8 @@ import SignatureScreen from 'react-native-signature-canvas';
 import SignaturePadWeb from '../../../src/components/SignaturePadWeb';
 import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
+import WorkerPicker from '../../../src/components/WorkerPicker';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 /* ─── Colour helper for radio buttons ─── */
 function radioColor(opt: string, selected: boolean) {
@@ -167,6 +169,201 @@ function GpsField({ value, onChange, testId }: any) {
           </View>
         </View>
       )}
+    </View>
+  );
+}
+
+/* ─── v160.0.12 · Company selector — loads /api/org/companies once ─── */
+function CompanySelectorField({ value, onChange, testId, required }: any) {
+  const [companies, setCompanies] = useState<Array<{ id: string; name: string }>>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.get('/org/companies')
+      .then(({ data }) => { if (alive) setCompanies(data?.companies || []); })
+      .catch(() => { /* keep list empty — user still sees the field */ });
+    return () => { alive = false; };
+  }, []);
+  const selected = companies.find((c) => c.id === value);
+  return (
+    <View testID={testId}>
+      <TouchableOpacity testID={`${testId}-open`} style={fs.selectBtn} onPress={() => setModalOpen(true)}>
+        <Text style={[fs.selectBtnText, !selected && { color: Colors.textTertiary }]}>
+          {selected ? selected.name : (required ? '— Select a company —' : '— Optional —')}
+        </Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
+      <Modal visible={modalOpen} transparent animationType="fade" onRequestClose={() => setModalOpen(false)}>
+        <TouchableOpacity style={fs.overlay} activeOpacity={1} onPress={() => setModalOpen(false)}>
+          <View style={fs.pickerBox}>
+            <Text style={fs.pickerTitle}>Select company</Text>
+            {companies.length === 0 ? (
+              <Text style={{ padding: 12, color: Colors.textTertiary }}>No companies configured yet</Text>
+            ) : companies.map((c) => (
+              <TouchableOpacity key={c.id} testID={`${testId}-opt-${c.id}`} style={fs.pickerItem}
+                onPress={() => { onChange(c.id); setModalOpen(false); }}>
+                <Text style={[fs.pickerItemText, value === c.id && { color: Colors.orangeLight, fontWeight: '700' }]}>{c.name}</Text>
+                {value === c.id && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </View>
+  );
+}
+
+/* ─── v160.0.12 · Auto-date — locked timestamp, filled once on mount ─── */
+function AutoDateField({ value, onChange, testId }: any) {
+  useEffect(() => {
+    if (!value) onChange(new Date().toISOString().slice(0, 10));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View testID={testId} style={[fs.input, { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F5F9' }]}>
+      <Ionicons name="lock-closed" size={12} color={Colors.textTertiary} />
+      <Text style={{ color: Colors.textSecondary, fontWeight: '600' }}>{value || '—'}</Text>
+      <Text style={{ color: Colors.textTertiary, fontSize: 11 }}>· auto-filled</Text>
+    </View>
+  );
+}
+
+/* ─── v160.0.12 · Asset QR scanner — reuses pre-start scanner pattern ─── */
+function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }: any) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [camPerm, requestCamPerm] = useCameraPermissions();
+  const scannedOnceRef = useRef(false);
+
+  const resolve = useCallback(async (raw: string) => {
+    if (busy) return;
+    setErr(null); setBusy(true);
+    try {
+      const t = raw.trim();
+      const token = t.startsWith('http') ? (t.split('/').pop() || t) : t;
+      const { data: asset } = await api.get(`/assets/scan/${token}`);
+      // Optionally hydrate the linked vehicle_navixy / other siblings.
+      const snapshot: any = {
+        id: asset.id, name: asset.name, rego_serial: asset.rego_serial,
+        navixy_device_id: asset.navixy_device_id ?? null,
+        hours_meter: asset.hours_meter ?? null, odo_km: asset.odo_km ?? null,
+        last_lat: asset.last_known_lat ?? null, last_lng: asset.last_known_lng ?? null,
+        scanned_at: new Date().toISOString(),
+      };
+      onChange(snapshot);
+      // Auto-fill siblings — best-effort, silently skip missing target ids.
+      if (autofillMap && setSiblings) {
+        const patch: Record<string, any> = {};
+        if (autofillMap.vehicle_navixy) patch[autofillMap.vehicle_navixy] = asset.rego_serial || asset.name || asset.id;
+        if (autofillMap.plant_make_model && asset.name) patch[autofillMap.plant_make_model] = asset.name;
+        if (autofillMap.hour_meter && asset.hours_meter != null) patch[autofillMap.hour_meter] = asset.hours_meter;
+        setSiblings(patch);
+      }
+      setOpen(false);
+    } catch (e: any) {
+      setErr(apiError(e) || 'Could not resolve asset');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, onChange, autofillMap, setSiblings]);
+
+  return (
+    <View testID={testId}>
+      {value?.id ? (
+        <View style={{ backgroundColor: Colors.orangeSoft, borderRadius: 12, padding: 12, gap: 4 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Ionicons name="checkmark-circle" size={18} color={Colors.orange} />
+            <Text style={{ fontWeight: '700', color: Colors.textPrimary, flex: 1 }} numberOfLines={1}>
+              {value.name || value.rego_serial || value.id}
+            </Text>
+            <TouchableOpacity testID={`${testId}-reset`} onPress={() => onChange(null)}>
+              <Text style={{ color: Colors.orange, fontSize: 12, fontWeight: '600' }}>Change</Text>
+            </TouchableOpacity>
+          </View>
+          {value.rego_serial && <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Rego / Serial: {value.rego_serial}</Text>}
+          {value.hours_meter != null && <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Hours: {value.hours_meter}</Text>}
+          {value.odo_km != null && <Text style={{ fontSize: 11, color: Colors.textSecondary }}>Odo: {value.odo_km} km</Text>}
+          {value.navixy_device_id && <Text style={{ fontSize: 11, color: Colors.textTertiary }}>Navixy device #{value.navixy_device_id}</Text>}
+        </View>
+      ) : (
+        <TouchableOpacity
+          testID={`${testId}-open`}
+          style={{ backgroundColor: Colors.orange, borderRadius: 12, padding: 14, flexDirection: 'row', alignItems: 'center', gap: 10 }}
+          onPress={() => { setErr(null); scannedOnceRef.current = false; if (camPerm && !camPerm.granted) requestCamPerm(); setOpen(true); }}
+        >
+          <Ionicons name="qr-code" size={22} color="#fff" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Scan Equipment QR to Auto-Fill</Text>
+            <Text style={{ color: '#fff', opacity: 0.85, fontSize: 11 }}>Point camera at the vehicle sticker</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
+        <View style={fs.overlay}>
+          <View style={[fs.pickerBox, { padding: 16, gap: 10 }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={fs.pickerTitle}>Scan Equipment QR</Text>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity testID={`${testId}-close`} onPress={() => setOpen(false)}>
+                <Ionicons name="close" size={22} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            {camPerm?.granted && Platform.OS !== 'web' ? (
+              <View style={{ height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+                <CameraView
+                  style={{ flex: 1 }} facing="back"
+                  barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                  onBarcodeScanned={(r) => {
+                    if (scannedOnceRef.current || busy) return;
+                    if (!r?.data) return;
+                    scannedOnceRef.current = true;
+                    resolve(String(r.data));
+                  }}
+                />
+                <View pointerEvents="none" style={{ position: 'absolute', top: '50%', left: '50%', width: 140, height: 140, marginLeft: -70, marginTop: -70, borderWidth: 3, borderColor: Colors.orange, borderRadius: 14, opacity: 0.85 }} />
+              </View>
+            ) : Platform.OS === 'web' ? (
+              <View style={{ padding: 12, backgroundColor: '#F1F5F9', borderRadius: 10 }}>
+                <Text style={{ color: Colors.textSecondary, fontSize: 12 }}>Web preview — paste the QR URL below.</Text>
+              </View>
+            ) : (
+              <TouchableOpacity testID={`${testId}-cam-permission`} onPress={() => requestCamPerm()} style={{ backgroundColor: Colors.orangeSoft, padding: 12, borderRadius: 10, alignItems: 'center' }}>
+                <Ionicons name="camera" size={22} color={Colors.orange} />
+                <Text style={{ color: Colors.orange, fontWeight: '700', marginTop: 4 }}>Enable camera</Text>
+              </TouchableOpacity>
+            )}
+            <PastePanel busy={busy} onSubmit={resolve} testId={testId} />
+            {err && <Text style={{ color: '#b91c1c', fontSize: 12 }}>{err}</Text>}
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+/* ─── v160.0.12 · Paste-URL fallback panel (web + permission-denied) ─── */
+function PastePanel({ busy, onSubmit, testId }: any) {
+  const [url, setUrl] = useState('');
+  return (
+    <View style={{ flexDirection: 'row', gap: 8 }}>
+      <TextInput
+        testID={`${testId}-paste-input`}
+        placeholder="Or paste scan URL…"
+        placeholderTextColor={Colors.textTertiary}
+        style={[fs.input, { flex: 1 }]}
+        value={url}
+        onChangeText={setUrl}
+        autoCapitalize="none"
+      />
+      <TouchableOpacity
+        testID={`${testId}-paste-go`}
+        style={{ backgroundColor: Colors.orange, paddingHorizontal: 16, borderRadius: 10, justifyContent: 'center' }}
+        onPress={() => url.trim() && onSubmit(url)}
+        disabled={busy}
+      >
+        {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Go</Text>}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -372,6 +569,51 @@ export default function FillOutScreen() {
               )}
               {f.type === 'gps' && (
                 <GpsField value={values[f.id]} onChange={(v: any) => setVal(f.id, v)} testId={`field-${f.id}`} />
+              )}
+
+              {/* v160.0.12 — new field types for Heavy Equipment Pre-Op template */}
+              {f.type === 'company_selector' && (
+                <CompanySelectorField
+                  value={values[f.id]}
+                  onChange={(v: string) => setVal(f.id, v)}
+                  testId={`field-${f.id}`}
+                  required={f.required}
+                />
+              )}
+              {f.type === 'auto_date' && (
+                <AutoDateField
+                  value={values[f.id]}
+                  onChange={(v: string) => setVal(f.id, v)}
+                  testId={`field-${f.id}`}
+                />
+              )}
+              {f.type === 'worker_picker' && (
+                <View testID={`field-${f.id}`}>
+                  <WorkerPicker
+                    mode="single"
+                    value={values[f.id] || null}
+                    onChange={(wid: string | null) => setVal(f.id, wid)}
+                  />
+                </View>
+              )}
+              {f.type === 'asset_scan' && (
+                <AssetQrScanField
+                  value={values[f.id]}
+                  onChange={(v: any) => setVal(f.id, v)}
+                  testId={`field-${f.id}`}
+                  autofillMap={f.config?.autofill}
+                  setSiblings={(patch: Record<string, any>) => setValues((prev) => ({ ...prev, ...patch }))}
+                />
+              )}
+              {f.type === 'vehicle_navixy' && (
+                <TextInput
+                  testID={`field-${f.id}`}
+                  style={fs.input}
+                  value={values[f.id] || ''}
+                  onChangeText={(v) => setVal(f.id, v)}
+                  placeholder={f.placeholder || 'Plant ID / Fleet #'}
+                  placeholderTextColor={Colors.textTertiary}
+                />
               )}
             </View>
           ))}

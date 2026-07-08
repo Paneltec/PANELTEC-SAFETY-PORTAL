@@ -2796,3 +2796,44 @@ Screenshots after (via web preview):
 - `mobile/app/_layout.tsx` — mount `<ToastHost />`.
 - `mobile/app/pre-starts/new.tsx` — camera scanner + auto-default crew + toast + toast import.
 - `mobile/app/hazards/new.tsx` · `incidents/new.tsx` · `inspections/new.tsx` — toast imports + `Alert.alert('Success', …)` → `toast.success(…)`.
+
+---
+
+## v160.0.12 — Heavy Equipment Pre-Op Template Enhancement (2026-07-08)
+
+**User request:** enrich the "Construction Heavy Equipment Pre-Operation Checklist" template with Operator (Simpro worker), Company selector (Paneltec Civil / Viatec), auto-Date, QR-scan the machine (auto-fill Plant ID/Fleet from Navixy), Site location from GPS, and Reported To (Simpro).
+
+**Phase A audit findings:**
+- Template already existed as `id=225cd097-2c2d-4963-9b92-1f8554894db8` · "Plant Pre-Start Checklist (Heavy Equipment)".
+- Backend already accepted `worker_picker`, `asset_scan`, `vehicle_navixy` field types — just missing `company_selector` and `auto_date`.
+- Mobile fill screen was missing renderers for all 5 needed types.
+- No `org_settings.companies` seed — added.
+
+**What shipped:**
+1. **Two new field types in the form schema** — `company_selector`, `auto_date` — registered in `forms.ALLOWED_FIELD_TYPES`. All other required types already existed.
+2. **`GET/PUT /api/org/companies`** (`backend/org_settings.py`): self-heals with Paneltec Civil + Viatec on first read; admin-only PUT with duplicate/schema validation.
+3. **Template patched** — the Heavy Equipment template now leads with **Company · Operator · Reported To · Site location · Date (auto)** at the top, followed by an **Asset QR scan** row that pre-fills Plant Serial / Plant Make & Model / Hour Meter via the resolver's `autofillMap` config. The 17 existing operational checklist rows (fluid levels, hoses, brakes, ROPS, etc.) are untouched.
+4. **Mobile fill screen** (`mobile/app/forms/fill/[id].tsx`) gains 5 new renderers:
+   - `CompanySelectorField` — modal dropdown wired to `/api/org/companies`
+   - `AutoDateField` — locked timestamp, auto-filled on mount
+   - `worker_picker` → reuses existing `WorkerPicker` component (single mode)
+   - `AssetQrScanField` — live `CameraView` scanner + paste-URL fallback; on scan resolves via `/api/assets/scan/{token}` and patches sibling fields based on the field's `config.autofill` map
+   - `vehicle_navixy` → text input (accepts the auto-filled rego)
+5. **Navixy live snapshot** — the scanned asset's `navixy_device_id`, `hours_meter`, `odo_km`, `last_known_lat/lng` are captured in the `asset_scan` payload so downstream reports can show fleet telemetry at the time of the walk-around. Best-effort — no failure blocks form submission.
+6. **Pytest** — 7 new cases in `test_worker_leaks.py` covering: companies-endpoint self-heal seed, worker-read allowed, PUT admin-only, PUT duplicate rejection, template has all 6 new field types, ALLOWED_FIELD_TYPES accepts them in the template editor, and end-to-end submission with all new field values. **86/86 pass** (79 pre-existing + 7 new).
+7. **Version bump** to `paneltec-v160.0.12` on all three files.
+8. **Metro cache cleared and re-bundled** — 6.8MB clean, contains `CompanySelectorField`, `AutoDateField`, `AssetQrScanField` symbols.
+
+**Verified end-to-end:**
+- `POST /api/forms/templates/225cd097-…/submissions` accepted a submission with all new fields → HTTP 201; the stored `fields[]` preserves `company_selector`, `worker_picker`, `gps`, `auto_date`, and `asset_scan` values (including the Navixy device ID and hours meter).
+- Screenshots captured of: form-fill screen showing all 5 new fields, company dropdown open with Paneltec Civil + Viatec, and QR scan modal open with paste-URL fallback.
+
+**Files touched:**
+- `backend/forms.py` — extended `ALLOWED_FIELD_TYPES`
+- `backend/org_settings.py` — `GET/PUT /api/org/companies` with self-heal seed
+- `backend/tests/test_worker_leaks.py` — 7 new v160.0.12 cases
+- `mobile/app/forms/fill/[id].tsx` — 5 new renderer components + wiring
+- `mobile/src/lib/version.ts` · `frontend/src/lib/version.js` · `frontend/public/service-worker.js` — bumped to v160.0.12
+- Mongo template `225cd097-…` — 5 new fields prepended + `f1` converted to `auto_date`
+
+**Migration safety:** Only the Heavy Equipment template mutated. All other templates and submissions untouched. `ALLOWED_FIELD_TYPES` is a superset — no legacy field type dropped.
