@@ -3315,39 +3315,81 @@ Deferred from v160.2.5 split. See original brief for full detail.
 - **Fix 4**: Verify web-admin `WorkerViewModal` cert table renders
   (was verified in v160.2.2 for Rick Antrim — one-line confirm).
 
-### v160.2.6 addendum — Notch padding + sticky back button sweep
-User screenshot flagged the "Certifications · Compliance attention
-queue" screen with (a) title half-covered by the Android notch and
-(b) NO back arrow. Same class of bug as the Forms Library / Category
-screens fixed in v160.0.23. Fix BOTH issues in this addendum:
+### v160.2.6 addendum — Notch padding + sticky back button sweep +
+### submission-surface audit
 
-**Notch padding**
-- Locate: likely `mobile/app/certifications.tsx` or
+User screenshots flagged two categories of mobile-side gaps:
+(a) title bars getting notch-obscured on Android and (b) screens
+missing a back arrow — including a submission-results list showing
+`0 pass · 0 fail · 0 N/A` cards which per the v160.0.15 rule
+(workers fill; admins review) shouldn't be a mobile surface for
+workers at all.
+
+Fix all THREE items in this addendum:
+
+**Item 1 — Notch padding on the Certifications compliance queue**
+- Locate: `mobile/app/certifications.tsx` or
   `mobile/app/(tabs)/certifications.tsx`.
 - Wrap the header row in a sticky `stickyHeader` View using
-  `Colors.imConcrete` or `Colors.imSurface`.
+  `Colors.imConcrete` / `Colors.imSurface`.
 - Apply `headerTopPad = Math.max(insets.top, (StatusBar.currentHeight
-  or 0) + 16, 44)`.
+  or 0) + 16, 44)` (same pattern as Forms Library / Category from
+  v160.0.23).
 
-**Sticky back button**
-- Sibling `<TouchableOpacity>` OUTSIDE the ScrollView.
-- Chevron + "Back" label in `Colors.imBronze`.
-- Sticky at the top of the SafeAreaView.
-- `router.back()` on tap. Fallback to `router.replace()` to a sensible
-  parent if `!router.canGoBack()`.
+**Item 2 — Comprehensive back-button audit — every mobile screen**
+Before touching code, run:
+```
+find /app/mobile/app -name '*.tsx' -not -path '*/(tabs)/*'
+```
+For each result, grep for `router.back(` / `navigation.goBack(` and
+inspect whether the screen has a visible sticky back control.
 
-**Broader sweep — apply to EVERY top-level screen missing a back arrow**
-Before writing any code, `find /app/mobile/app -name '*.tsx' -not -path '*/(tabs)/*'`
-and grep each for `router.back(` / `navigation.goBack(`. Report the
-list of screens missing a back button in the final response. Fix them
-all in this same cycle using the identical sticky-back pattern.
+Standard sticky-back pattern (apply where missing):
+- Sibling `<TouchableOpacity>` OUTSIDE the ScrollView
+- Chevron + "Back" label in `Colors.imBronze`
+- Sticky at the top of the SafeAreaView
+- `router.back()` on tap
+- Fallback `router.replace('/<sensible-parent>')` when `!router.canGoBack()`
 
 Explicit exceptions (do NOT add a back button):
-- Tab-level screens under `mobile/app/(tabs)/*` (tabs are the root nav)
-- Modal screens whose `_layout.tsx` sets `presentation: "modal"` — those
-  already get a system-level dismiss control
+- Tab-level screens under `mobile/app/(tabs)/*` (tabs are root nav)
+- Modal screens whose `_layout.tsx` sets `presentation: "modal"` —
+  those already have a system dismiss control
 
-Version this alongside v160.2.6.
+Deliverable: audit table `screen path | had back button? | action taken`.
+
+**Item 3 — Submission-viewing surface audit on mobile**
+User screenshot showed submission-results cards (dates
+`2026-06-28`, `0 pass · 0 fail · 0 N/A`) on the phone. Per the
+v160.0.15 principle, workers fill; admins review. Submission
+review lists should not exist as a worker-facing mobile surface.
+
+For every mobile screen that lists / shows form submissions:
+1. Identify the exact file (grep for `submissions`, `pass · fail`,
+   `template_name_snapshot`, or the counter format `0 pass · 0 fail`).
+2. Classify:
+   - **A) Per-template submission history / global admin list** →
+     hide for workers behind a `role != 'worker'` guard, OR remove
+     the mobile affordance entirely. Add back arrow if kept for
+     admins.
+   - **B) Worker's own draft / outbox list** → keep as-is (workers
+     need to see their own pending submissions), just add the
+     standard sticky back arrow.
+   - **C) Read-only recent-submission confirmation after fill** →
+     keep, add back arrow.
+3. Report classification table:
+   `screen path | class (A/B/C) | current behaviour | change made`.
+
+**Version + cache**
+- Ship this alongside v160.2.6 (single version bump: `paneltec-v160.2.6`).
+- Metro cache clear after mobile edits.
+
+**Deliverables recap**
+- Audit table for back buttons.
+- Audit table for submission surfaces + classifications.
+- Screenshot proof: the previously-broken screens now show a sticky
+  back arrow and correct notch clearance.
+- Backend tests unchanged. Full existing suite must remain green.
 
 ### v160.2.7 — Grant workers ALL view-only perms for their enabled modules
 
