@@ -3900,3 +3900,132 @@ Not started in this session. Both cycles require substantial
 audit work that cannot be responsibly executed with the remaining
 context budget without risking half-work. Original briefs remain
 authoritative in the sections above.
+
+---
+
+## v160.2.6-cont — Completed (2026-07-10)
+
+### Shipped this session
+- `mobile/app/my-certifications.tsx` (NEW, ~230 LOC) — reuses
+  `GET /api/me/worker-profile` (v160.2.2). Search input, five status
+  pills (Valid / Expiring soon / Expired / No expiry / Missing file),
+  optional "View" file link, guided empty state.
+- `mobile/app/(tabs)/settings.tsx` — new "Certifications" row below
+  "My Profile" routing to `/my-certifications`.
+- `mobile/app/my-profile.tsx` — old in-ScrollView back button
+  replaced by `<StickyBackHeader title="My Profile" />` above the
+  ScrollView. No more scroll-away.
+- `mobile/app/certifications.tsx` — the inline `gst.backBtn`
+  removed and replaced with `<StickyBackHeader title="Certifications" />`
+  above the butter header banner. Notch clearance guaranteed via the
+  reusable component's brute-force pad.
+
+### Submission-viewing surface audit
+Only surface found rendering submission cards on mobile is
+`mobile/app/forms/submissions/[templateId].tsx`. Classification:
+**Class B** — worker's own per-template submission history (shows
+`submitted_by_name`, `photo_count`, `has_signature`, `has_gps`,
+draft/complete badge). Kept. Already has its own back button in
+header row (`s.header` at line ~55). No action.
+
+No Class-A admin-review lists surfaced. No hiding required.
+
+### DEFERRED (moved to v160.2.6-cat + next fork)
+- `swms/index.tsx` consistency pass with `StickyBackHeader` — not
+  blocking, already has a working back button.
+
+### Version bumps → `paneltec-v160.2.6-cont`
+
+---
+
+## v160.2.6-cat — Form-template categorization audit + correction (2026-07-10)
+
+### Audit result (25 non-test templates)
+| Bucket | Count |
+|---|---|
+| Already correct               | 19 |
+| Corrected this cycle          |  4 |
+| AMBIGUOUS (left unchanged)    |  2 |
+| Test / seed dupes skipped     | 18 |
+
+### Corrections applied
+| Template | Was | Now |
+|---|---|---|
+| Construction Heavy Equipment Pre-Operation Checklist | inspection | **pre_start** |
+| Daily Plant Inspection                                | inspection | **pre_start** |
+| Equipment Pre-Use Checklist                           | inspection | **pre_start** |
+| JSEA — Job Safety & Environmental Analysis            | inspection | **general**   |
+
+### AMBIGUOUS — awaiting user decision (unchanged, both currently `general`)
+- **Asbestos Awareness / Class B Removal** — could be `toolbox`
+  (induction-style briefing) OR `general`. Held at `general`.
+- **Crane Lift / Rigging Plan** — could be `general` (permit-adjacent)
+  OR `pre_start` (per-lift check). Held at `general`.
+
+### Category distribution now
+`general 27 · incident 3 · inspection 3 · near_miss 1 · pre_start 6 · toolbox 3`
+
+### Migration
+`backend/scripts/migrate_v160_2_6cat_categorize.py` — idempotent.
+First run: 4 changed. Rerun: 0 changes. Snapshot:
+`form_templates_backup_v160_2_6cat` (43 rows).
+
+### Downstream side-effect (positive)
+The v160.2.5a category-mirror routing now correctly surfaces
+phone-submitted `Daily Plant Inspection`, `Equipment Pre-Use` and
+`Construction Heavy Equipment Pre-Op` under `/api/pre-starts` (not
+`/api/inspections` as before).
+
+### Verification
+- Backend regression **61/61 green** across the sampled cycles
+  (v160.1.3 / 1.4 / 1.6 / 2.0 / 2.2 / 2.3 / 2.4 / 2.5a).
+- Role-preset endpoint (`/api/org/role-presets/worker/forms`)
+  returns the 6 category groups. Worker's group counts are all 0 —
+  because the Worker role preset hasn't been configured to include
+  ANY templates yet. That's the v160.2.7 problem, not this cycle.
+
+### Version bumps → `paneltec-v160.2.6-cat`
+
+### Queue ordering (revised)
+`v160.2.7` (permission grants) now unblocks the Worker-preset population.
+`v160.2.8` (worker-clarity copy pass) queued behind 2.7.
+
+### Addendum applied — Worker allowlist pre-lock
+
+Same idempotent script `migrate_v160_2_6cat_categorize.py` now also
+tightens `db.orgs.role_form_allowlist.worker` to explicitly EXCLUDE
+`Drug & Alcohol Test Record`. Storage confirmed: FastAPI `org_settings.py`
+routes read/write from `db.orgs.role_form_allowlist.{role}`.
+
+Logic:
+- If the worker allowlist is `None` (blanket-enabled) → seed with
+  all current template ids MINUS the excluded titles.
+- If the worker allowlist is already an explicit list → filter the
+  excluded ids out.
+- Never touches other roles.
+- Idempotent: rerun makes no further changes.
+
+Excluded list (extensible in one place — `WORKER_EXCLUDED_TITLES`):
+- Drug & Alcohol Test Record
+
+Verification via `GET /api/org/role-presets/worker/forms`:
+- Stephen's org (3116f250): Worker allowlist 24 → **23**
+  · general: enabled=10, disabled=1 (D&A Test)
+  · pre_start / inspection / near_miss / incident / toolbox: fully enabled
+  · D&A Test Record: `enabled=False` for Worker ✓
+- Other org (9a6e2c3d): has no D&A Test template, skipped as expected
+
+Rerun produced 0 changes → idempotent confirmed.
+
+User may add more admin-only titles to `WORKER_EXCLUDED_TITLES`
+(JSEA, permits, Incident Report). Placeholder kept in the script;
+do NOT act until they confirm.
+
+Backend regression 61/61 still green.
+
+### Queue (unchanged after this cycle)
+- **v160.2.7** — worker view-only permission grants + backfill
+- **v160.2.8** — worker-clarity UX copy pass
+
+Cycles in this run cost too much context to continue safely — stopping
+at cycle boundary per rule.

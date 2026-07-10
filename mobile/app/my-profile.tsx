@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import api, { apiError } from '../src/lib/api';
 import { Colors } from '../src/lib/colors';
+import StickyBackHeader from '../src/components/StickyBackHeader';
 
 const DAYS: { key: string; label: string }[] = [
   { key: 'mon', label: 'MON' }, { key: 'tue', label: 'TUE' },
@@ -76,7 +77,9 @@ export default function MyProfileScreen() {
   };
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView style={s.safe} edges={['left', 'right']}>
+      {/* v160.2.6-cont — Sticky back button (previously scrolled with content) */}
+      <StickyBackHeader title="My Profile" fallbackPath="/(tabs)/settings" />
       <ScrollView
         testID="my-profile-page"
         style={s.scroll}
@@ -90,11 +93,6 @@ export default function MyProfileScreen() {
           />
         }
       >
-        <TouchableOpacity testID="my-profile-back-btn" onPress={goBack} style={s.navBack}>
-          <Ionicons name="arrow-back" size={20} color={Colors.imBronze} />
-          <Text style={s.navBackText}>Back</Text>
-        </TouchableOpacity>
-
         <Text style={s.overline}>MY PROFILE · READ ONLY</Text>
         <Text style={s.heading}>{w ? `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Profile' : 'Loading…'}</Text>
         {w?.position ? <Text style={s.sub}>{w.position}</Text> : null}

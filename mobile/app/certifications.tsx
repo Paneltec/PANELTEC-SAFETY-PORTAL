@@ -10,6 +10,7 @@ import api, { apiError } from '../src/lib/api';
 import { getUser } from '../src/lib/auth';
 import { Colors } from '../src/lib/colors';
 import { previewRole, isPreviewMode } from '../src/lib/preview';
+import StickyBackHeader from '../src/components/StickyBackHeader';
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || '';
@@ -155,12 +156,12 @@ export default function CertificationsScreen() {
   };
 
   return (
-    <SafeAreaView style={gst.safe}>
+    <SafeAreaView style={gst.safe} edges={['left', 'right']}>
+      {/* v160.2.6-cont — Sticky back header replaces the inline header
+          back button so the title never gets notch-obscured. */}
+      <StickyBackHeader title="Certifications" fallbackPath="/(tabs)/settings" />
       {/* Butter header banner */}
       <View testID="certs-header" style={gst.headerBanner}>
-        <TouchableOpacity onPress={() => router.back()} style={gst.backBtn}>
-          <Ionicons name="arrow-back" size={20} color={Colors.ink} />
-        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={gst.overline}>SETTINGS</Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
