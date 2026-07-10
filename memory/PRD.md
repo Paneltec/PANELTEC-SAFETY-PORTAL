@@ -3483,3 +3483,39 @@ files were touched.
 - Standard Header pattern (Date → Operator → Location → Vehicle) is the
   base for all templates. `swms_picker` goes after the header + Company +
   Time block. See `backend/forms.py` docstring at the top.
+
+---
+
+## Metro-cache-clear rule — CORRECTED (2026-07-10)
+
+Previous rule (used since v160.0.23):
+```
+sudo supervisorctl restart mobile && rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache
+```
+
+**This rule is unsafe.** Deleting `/app/mobile/.expo` (specifically the
+`types/router.d.ts` file that expo-router writes) can crash Metro on
+next boot because `expo-router/src/typed-routes/index.ts` calls
+`writeFileSync` into that directory WITHOUT running `mkdir -p` first.
+Supervisor then exhausts retries → mobile goes FATAL.
+
+**Corrected rule — use this from now on:**
+```
+sudo supervisorctl stop mobile
+rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache
+mkdir -p /app/mobile/.expo/types
+touch    /app/mobile/.expo/types/router.d.ts
+sudo supervisorctl start mobile
+sleep 8
+curl -sS -o /dev/null -w "%{http_code}\n" http://localhost:3001/
+```
+
+Incident on 2026-07-10 confirmed the bug — see the diagnostic report
+in the session log immediately preceding this entry. Revive
+succeeded (200 OK, uptime 13s) after pre-seeding the file.
+
+Non-blocking noise still logged (do not fix reactively):
+- `@react-native-community/datetimepicker@9.1.0` vs expo-expected
+  `8.4.4` — warning only.
+- `"shadow*" style props are deprecated. Use "boxShadow"` — RN Web
+  cosmetic deprecation.
