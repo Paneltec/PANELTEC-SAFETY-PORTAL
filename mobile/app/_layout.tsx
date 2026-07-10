@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { View, Platform, StatusBar as RNStatusBar } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
@@ -9,11 +10,12 @@ import * as Linking from 'expo-linking';
 // header we've been trying to pad is quietly getting zero — which is
 // why the notch has repeatedly re-swallowed the back buttons after
 // each "fix" attempt.
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getToken } from '../src/lib/auth';
 import { AuthProvider, useAuth } from '../src/lib/AuthContext';
 import { isPreviewMode } from '../src/lib/preview';
 import ChangePasswordModal from '../src/components/auth/ChangePasswordModal';
+import { Colors } from '../src/lib/colors';
 
 import ToastHost from '../src/components/ToastHost';
 
@@ -65,6 +67,7 @@ function RootNav() {
   return (
     <>
       <StatusBar style="light" translucent backgroundColor="transparent" />
+      <NotchBackdrop />
       <ChangePasswordModal
         visible={isAuth && mustChangePassword}
         locked={true}
@@ -90,6 +93,32 @@ function RootNav() {
       </Stack>
       <ToastHost />
     </>
+  );
+}
+
+// v160.0.23 — Root-level absolute notch backdrop. Renders a solid
+// coloured bar over the physical status-bar / camera-hole zone so that
+// under a translucent StatusBar the notch never shows the app UI
+// bleeding underneath. Uses insets.top (with an Android-side floor of
+// StatusBar.currentHeight + 16 and a hard minimum of 44) so the
+// backdrop always fully covers whatever the OS reserves.
+function NotchBackdrop() {
+  const insets = useSafeAreaInsets();
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 16 : 24;
+  const height = Math.max(insets.top, androidExtra, 44);
+  return (
+    <View
+      pointerEvents="none"
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height,
+        backgroundColor: Colors.surface,
+        zIndex: 100,
+      }}
+    />
   );
 }
 

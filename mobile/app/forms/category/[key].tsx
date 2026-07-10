@@ -27,8 +27,9 @@ export default function CategoryFormsScreen() {
   const router = useRouter();
   const { key } = useLocalSearchParams<{ key: string }>();
   const insets = useSafeAreaInsets();
-  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
-  const headerTopPad = Math.max(insets.top, androidExtra, 24);
+  // v160.0.23 — BRUTE-FORCE notch pad, hard floor 44.
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 16 : 24;
+  const headerTopPad = Math.max(insets.top, androidExtra, 44);
   const catKey = (key || 'general').toLowerCase();
   const catLabel = CATEGORY_LABELS[catKey] || 'Forms';
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -52,10 +53,10 @@ export default function CategoryFormsScreen() {
 
   return (
     <View style={s.safe}>
-      {/* v160.0.21 — Sticky header sibling; back button never scrolls away.
-          v160.0.22 — paddingTop now honours useSafeAreaInsets() so the
-          Android status bar cannot re-cover the back chevron. */}
-      <View style={[s.stickyHeader, { paddingTop: headerTopPad }]}>
+      {/* v160.0.23 — Solid opaque sticky header. Explicit spacer above
+          the back button so the notch/punch-hole zone is fully covered. */}
+      <View style={s.stickyHeader}>
+        <View style={{ height: headerTopPad }} />
         <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={18} color={Colors.orange} />
           <Text style={s.backText}>Forms</Text>

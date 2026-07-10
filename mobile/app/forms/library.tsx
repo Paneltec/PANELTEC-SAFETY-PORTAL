@@ -27,11 +27,26 @@ const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }
 export default function FormsCategoriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
-  const headerTopPad = Math.max(insets.top, androidExtra, 24);
+  // v160.0.23 — BRUTE-FORCE notch pad. Hard floor of 44 so title cannot
+  // sit within 44px of physical top on any Android device.
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 16 : 24;
+  const headerTopPad = Math.max(insets.top, androidExtra, 44);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // v160.0.23 — Verification log per user brief. Prints real values so
+  // we can eyeball what insets.top / StatusBar.currentHeight actually
+  // are on the device the user is testing on.
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[v160.0.23 notch-debug]', {
+      platform: Platform.OS,
+      insets_top: insets.top,
+      statusBar_currentHeight: RNStatusBar.currentHeight,
+      headerTopPad,
+    });
+  }, [insets.top, headerTopPad]);
 
   const load = useCallback(async () => {
     try {
@@ -61,11 +76,13 @@ export default function FormsCategoriesScreen() {
 
   return (
     <View style={s.safe}>
-      {/* v160.0.19 — Back button lives OUTSIDE the ScrollView as a sticky
-          sibling so it stays visible while the grid scrolls.
-          v160.0.22 — paddingTop now reads useSafeAreaInsets() so the
-          Android status bar cannot re-cover the back chevron. */}
-      <View style={[s.stickyHeader, { paddingTop: headerTopPad }]}>
+      {/* v160.0.23 — Solid opaque header wrapper. `stickyHeader` already
+          uses an opaque bg — we split the padding out of the header row
+          and instead render an explicit spacer View ABOVE the back button
+          so the notch backdrop is a distinct visual element and the
+          content sits cleanly below it. */}
+      <View style={s.stickyHeader}>
+        <View style={{ height: headerTopPad }} />
         <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={18} color={Colors.orange} />
           <Text style={s.backText}>Back</Text>

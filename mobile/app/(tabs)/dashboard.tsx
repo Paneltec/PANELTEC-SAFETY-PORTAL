@@ -56,15 +56,14 @@ const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; rout
 export default function DashboardScreen() {
   const router = useRouter();
   const { modules } = useAuth();
-  // v160.0.22 — Manual notch pad. `SafeAreaView edges={['top']}` alone
-  // was NOT clearing the Android status bar for some devices — the
-  // header eyebrow ("PANELTEC CIVIL · ...") sat under the notch. Reading
-  // insets.top directly and applying it as explicit paddingTop on the
-  // ScrollView content gives us bulletproof clearance on Android while
-  // remaining benign on iOS (which will just return its own top inset).
+  // v160.0.23 — BRUTE-FORCE notch clearance. v160.0.22 (useSafeAreaInsets
+  // + Math.max(insets.top, StatusBar.currentHeight, 24)) still let text
+  // sit *under* the camera hole on the user's Android device. Bumped the
+  // hard floor to 44 so the title can never sit within 44px of the
+  // physical screen top — enough for any Android notch/punch-hole.
   const insets = useSafeAreaInsets();
-  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
-  const topPad = Math.max(insets.top, androidExtra, 24);
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 16 : 24;
+  const topPad = Math.max(insets.top, androidExtra, 44);
   const [metrics, setMetrics] = useState<any>(null);
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -154,8 +153,15 @@ export default function DashboardScreen() {
 
   return (
     <View style={d.safe}>
-      <ScrollView testID="dashboard-page" style={d.scroll} contentContainerStyle={[d.content, { paddingTop: topPad }]}
+      {/* v160.0.23 — Solid opaque notch backdrop. This absolute-positioned
+          bar guarantees the camera-hole zone has a solid background of the
+          same colour as the header/surface — no more transparent notch. */}
+      <View style={[d.notchBackdrop, { height: topPad }]} pointerEvents="none" />
+      <ScrollView testID="dashboard-page" style={d.scroll} contentContainerStyle={d.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}>
+
+        {/* v160.0.23 — Explicit spacer element ABOVE the title row. */}
+        <View style={{ height: topPad }} />
 
         <View style={d.header}>
           <View>
@@ -273,6 +279,13 @@ export default function DashboardScreen() {
 
 const d = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  // v160.0.23 — Absolute notch backdrop covering the physical top-of-screen
+  // zone with a solid colour so the punch-hole camera never shows through.
+  notchBackdrop: {
+    position: 'absolute', top: 0, left: 0, right: 0,
+    backgroundColor: Colors.bg,
+    zIndex: 50,
+  },
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
