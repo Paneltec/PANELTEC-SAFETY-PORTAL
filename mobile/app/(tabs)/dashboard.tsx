@@ -253,7 +253,7 @@ export default function DashboardScreen() {
         ))}
 
         {/* Capture */}
-        {visibleCapture.length > 0 && <Text style={d.sectionLabel}>CREATE & CAPTURE</Text>}
+        {visibleCapture.length > 0 && <Text style={d.sectionLabel}>FORMS</Text>}
         {canEdit && (
           <TouchableOpacity testID="dashboard-generate-form-ai" style={d.aiTile} onPress={() => setAiOpen(true)} activeOpacity={0.7}>
             <View style={d.aiIcon}><Ionicons name="sparkles" size={18} color={Colors.violet} /></View>
