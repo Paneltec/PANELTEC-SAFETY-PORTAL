@@ -3467,6 +3467,74 @@ approve — those stay admin-only.
 `paneltec-v160.2.7` in all 3 files. Metro cache clear if any mobile
 files were touched.
 
+### v160.2.8 — Worker-clarity UX pass (copy + micro-UX only)
+
+User feedback: mobile app assumes the worker already knows what each
+screen is for. Construction crews need plainer explanations so they
+can find + use features without training. Queue this behind v160.2.7.
+
+**This is NOT a redesign.** Screen-by-screen copy pass across every
+worker-facing mobile surface. No layout / colour / functional
+changes.
+
+#### Rules to apply per screen
+1. **Subtitle under every screen title** — one plain-English line
+   saying what the worker does here. Reference examples:
+     · Forms Library → "Pick a form to fill out."
+     · My Profile → "Your details, tickets and certificates."
+     · My Certifications → "The tickets and licences your company
+       has on file for you."
+     · Sign-on / Site Check-in → "Tell us which site you're on
+       today."
+     · Outbox → "Forms waiting to be sent when you get signal."
+     · QR Scan → "Scan a plant sticker to open its pre-start."
+2. **Empty states guide the next action** — not just "nothing here":
+     · No forms → "No forms enabled for your role yet — ask your
+       admin to turn some on."
+     · No certs → "Your admin hasn't uploaded any certificates for
+       you yet. Ask them to add them from the Workers screen."
+     · No outbox drafts → "Nothing waiting. Any form you fill
+       offline will show up here until it's sent."
+3. **Label every icon-only button** — add a short text label next
+   to camera / × / chevron icons where they stand alone.
+4. **Plain-English CTAs** — prefer "Send to office" over "Submit",
+   "Discard changes" over "Discard". Sanity-check every button.
+5. **Section headers on multi-section screens** — one-line hint
+   under each. Example under Certifications: "Amber = expiring
+   soon. Red = expired. Ask your admin to update."
+6. **Field placeholders** — every form-fill input should say what
+   to enter, not repeat the label.
+7. **Locked-module screens** — the current copy is fine, but add a
+   line telling the worker WHAT the feature would let them do so
+   they know if they need it. Example: "Workers directory is turned
+   off. Ask your admin if you need to look up other workers'
+   contact details on the phone."
+
+#### Do NOT
+- Change layout or colours.
+- Add new screens or onboarding flows.
+- Change functionality.
+- Refactor components beyond the subtitle Text + empty-state text.
+- Ask questions — draft plain English, report per-screen wording so
+  user can flag any changes.
+
+#### Priority order (in case of session cap)
+1. Forms Library subtitle + empty state
+2. My Profile + My Certifications subtitles + section hints
+3. Outbox + QR Scan subtitles
+4. Locked-module screens ("what this feature would let you do")
+5. Everything else worker-facing
+
+#### Deliverables
+- Audit table: `screen path | original title/copy | new subtitle |
+  new empty-state (if any) | icon-only buttons labelled?`
+- Full before/after list of every copy change.
+- Screenshots of 5 representative screens showing new subtitles + empty
+  states.
+- Existing test suite still green.
+- Version bump: `paneltec-v160.2.8` in all 3 files.
+- Metro cache clear using the corrected sequence.
+
 ### Handoff notes for next-fork agent
 - Baseline version: `paneltec-v160.2.5a` (this session shipped).
 - Recent test suites all green: 76/76 across v160.1.3 / 1.4 / 1.6 /
