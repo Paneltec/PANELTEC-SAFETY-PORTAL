@@ -34,6 +34,17 @@ export const Colors = {
   tileWarm: '#2E2419',      // warm dark tint so category tiles pop
   surfaceDark: '#020617',   // deeper than surface — used by bottom tab bar
   borderMuted: '#1E293B',   // subtle top border on the tab bar
+  // v160.0.22 — Light "paper" tile tokens used on the Forms Library and
+  // per-category screens. The dark tileWarm tone worked but the user
+  // reported the whole surface still read as too dark. Light cards on
+  // the darker libraryBg give the drill-down a clear "content pops"
+  // feel, matching the visual language of the web app's Forms page.
+  tileLight: '#F8FAFC',           // slate-50 — card body
+  tileLightBorder: '#CBD5E1',     // slate-300 — subtle 1px outline
+  tileLightInk: '#0F172A',        // slate-900 — title text on light card
+  tileLightMuted: '#475569',      // slate-600 — blurb / body text on light card
+  tileLightAccentBg: '#FFEDD5',   // orange-100 — icon plate bg on light card
+  tileLightAccentIcon: '#EA580C', // orange-600 — icon glyph & count accent
   /** Non-interactive muted panel (disabled inputs, ghost sections). */
   mutedBg: '#152033',
 

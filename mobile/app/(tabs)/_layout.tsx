@@ -10,13 +10,16 @@ import { getActiveSignOn, clearActiveSignOn, onSignOnChange, ActiveSignOn } from
 
 export default function TabLayout() {
   const { modules, isPreviewing, previewedRole } = useAuth();
-  const [queueCount, setQueueCount] = useState(0);
 
-  useEffect(() => {
-    api.get('/email/outbox', { params: { status: 'queued', mine: 'true' } })
-      .then(({ data }) => setQueueCount(data?.count ?? data?.items?.length ?? 0))
-      .catch(() => {});
-  }, []);
+  // v160.0.22 — REMOVED the "queueCount" badge from the Home tab.
+  // Previous behaviour: on mount we fetched `/email/outbox?status=queued&mine=true`
+  // and stamped that number as a red badge on the HOME tab icon. That was
+  // wrong for two reasons:
+  //   (1) The count represents queued OUTBOX items — not anything a worker
+  //       needs to action from Home. The Outbox tab is the correct surface.
+  //   (2) Workers reported the "2" as confusing: nothing on Home relates to it.
+  // Removing the badge entirely. If we need per-tab unread indicators in future,
+  // Outbox will get its own count-derived badge.
 
   const showCapture = hasAnyCaptureModule(modules);
 
@@ -89,8 +92,6 @@ export default function TabLayout() {
           options={{
             title: 'Home',
             tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
-            tabBarBadge: queueCount > 0 ? queueCount : undefined,
-            tabBarBadgeStyle: queueCount > 0 ? { backgroundColor: Colors.orange, fontSize: 10, minWidth: 18, height: 18, lineHeight: 18 } : undefined,
           }}
         />
         <Tabs.Screen

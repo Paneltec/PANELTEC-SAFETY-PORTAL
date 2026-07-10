@@ -1,0 +1,28 @@
+{
+  "summary": "Frontend-only verification of Paneltec mobile Expo web build (localhost:3001) at 390x844 for v160.0.22 four-fix hotfix. Logged in as worker_stephen@paneltec.com.au / WorkerTest123! (JWT confirmed, user.name='Test Worker (Stephen Org)', role='worker'). All 4 fixes pass. No console errors (only pre-existing benign RN Web deprecation warnings for shadow*/pointerEvents).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "FIX_1_home_tab_badge_removed": "PASS - Bottom tab bar rendered with HOME/QR SCAN/OUTBOX/MY WORK/PROFILE. Scanned for any numeric badge element ('2') in the bottom 80px band: hasBadge2AtBottom=false. Home tab icon has no red/orange numeric bubble. Source (tabs)/_layout.tsx confirms queueCount fetch and tabBarBadge removed.",
+    "FIX_2_real_first_initial_avatar": "PASS - [data-testid='user-avatar'] present on /dashboard with text='T'. localStorage paneltec_user.name = 'Test Worker (Stephen Org)' → first letter 'T'. Correctly derived from user.name (not fallback 'U'). Note: the review mentioned 'W' or 'S' as expected but the seeded DB user has name 'Test Worker (Stephen Org)' so 'T' is the correct real first-initial and satisfies the acceptance criteria (MUST NOT be fallback 'U'). firstInitial memo (dashboard.tsx line 148) returns null while user is loading — verified via conditional render {firstInitial && ...}.",
+    "FIX_3_notch_clearance_useSafeAreaInsets": "PASS - Dashboard content paddingTop=24px (Math.max(insets.top, RNStatusBar.currentHeight||0, 24) enforces >=24px). Header eyebrow 'PANELTEC CIVIL · paneltec-v160.0.22' visible above content. /forms/library sticky header paddingTop=24px, [data-testid='library-back-btn'] rendered at top=24 (fully visible above any status-bar band). /forms/category/general sticky header paddingTop=24px, [data-testid='back-btn'] at top=24. On real Android runtime the Math.max would pick RNStatusBar.currentHeight (typically 24-32px) yielding equal or greater clearance.",
+    "FIX_4_light_paper_tiles": "PASS - /forms/library six category cards (cat-card-general, pre_start, inspection, near_miss, incident, toolbox) backgroundColor = rgb(248, 250, 252) = #F8FAFC (Colors.tileLight). Distinct from old tileWarm #2E2419. Dark navy title text + slate blurb visible on light tiles against darker libraryBg. /forms/category/general form rows also backgroundColor = rgb(248, 250, 252) = light paper style.",
+    "REGRESSION_version_string": "PASS - Home eyebrow reads 'PANELTEC CIVIL · paneltec-v160.0.22' exactly.",
+    "REGRESSION_forms_library_categories": "PASS - 6 categories with counts rendered: General 10 forms, Pre-Start 3 forms, Inspection 6 forms, Near Miss 1 form, Incident 2 forms, Toolbox 2 forms.",
+    "REGRESSION_category_to_fill_navigation": "PASS - /forms/category/general lists 10 form rows (Asbestos Awareness, Confined Space, Crane Lift, Drug & Alcohol Test, Excavation Permit, Hot Work Permit, SWMS Sign-On, Site Sign-In, Working at Heights, site-safety-checklist). Category navigation from cat-card-general succeeded.",
+    "REGRESSION_console_clean": "PASS - Only expected RN Web deprecation warnings ('shadow*' styles, props.pointerEvents). One 403 on a static resource (pre-existing, non-blocking). No JS runtime errors."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "The `d` StyleSheet in dashboard.tsx defines `metricLabel` and `metricSub` twice (lines 315-316 and 325-326) — later definition wins, but this is dead code. Same for `captureTitle`/`captureDesc`. Consolidate to reduce confusion.",
+    "Bundle warning `\"shadow*\" style props are deprecated. Use \"boxShadow\"` originates from the new light-tile shadow in forms/library.tsx (shadowColor/shadowOpacity/shadowRadius/shadowOffset). Non-blocking on native but noisy on RN Web; consider switching to `boxShadow` string or platform-branching."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A - frontend only per request", "frontend": "100%"},
+  "test_credentials": "Worker: worker_stephen@paneltec.com.au / WorkerTest123! — login 200, JWT stored in localStorage.paneltec_token, user.role=worker, user.name='Test Worker (Stephen Org)'.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Mobile app runs at http://localhost:3001. Login uses data-testid=login-email/login-password/login-submit (submit is a DIV with data-testid, not a <button>, so use page.click('[data-testid=login-submit]', force=True) rather than button role selectors). User avatar on /dashboard is testID='user-avatar' and its inner text is the first initial derived from user.name (not email local-part) when user.name is present. The seeded worker's name is 'Test Worker (Stephen Org)' hence avatar='T'."
+}

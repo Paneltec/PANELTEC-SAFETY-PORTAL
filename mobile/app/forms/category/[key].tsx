@@ -1,8 +1,11 @@
 // v160.0.15 — Forms Level 2: templates in ONE category.
 // Reached by tapping a category card on the Forms tab. Tap a row → fill.
+// v160.0.22 — Rows switched to LIGHT paper cards on the darker library
+// background. Sticky header padTop now reads useSafeAreaInsets() so the
+// Android status bar can never re-cover the back chevron.
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../../src/lib/api';
@@ -23,6 +26,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 export default function CategoryFormsScreen() {
   const router = useRouter();
   const { key } = useLocalSearchParams<{ key: string }>();
+  const insets = useSafeAreaInsets();
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
+  const headerTopPad = Math.max(insets.top, androidExtra, 24);
   const catKey = (key || 'general').toLowerCase();
   const catLabel = CATEGORY_LABELS[catKey] || 'Forms';
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -45,9 +51,11 @@ export default function CategoryFormsScreen() {
   const onRefresh = () => { setRefreshing(true); load(); };
 
   return (
-    <SafeAreaView edges={['top']} style={s.safe}>
-      {/* v160.0.21 — Sticky header sibling; back button never scrolls away. */}
-      <View style={s.stickyHeader}>
+    <View style={s.safe}>
+      {/* v160.0.21 — Sticky header sibling; back button never scrolls away.
+          v160.0.22 — paddingTop now honours useSafeAreaInsets() so the
+          Android status bar cannot re-cover the back chevron. */}
+      <View style={[s.stickyHeader, { paddingTop: headerTopPad }]}>
         <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={18} color={Colors.orange} />
           <Text style={s.backText}>Forms</Text>
@@ -81,7 +89,7 @@ export default function CategoryFormsScreen() {
               activeOpacity={0.7}
             >
               <View style={s.rowIcon}>
-                <Ionicons name="document-text" size={18} color={Colors.orange} />
+                <Ionicons name="document-text" size={18} color={Colors.tileLightAccentIcon} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle} numberOfLines={1}>{t.name}</Text>
@@ -89,12 +97,12 @@ export default function CategoryFormsScreen() {
                   <Text style={s.rowDesc} numberOfLines={2}>{t.description}</Text>
                 ) : null}
               </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+              <Ionicons name="chevron-forward" size={16} color={Colors.tileLightMuted} />
             </TouchableOpacity>
           ))
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -116,14 +124,20 @@ const s = StyleSheet.create({
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.tileWarm, borderWidth: 1, borderColor: Colors.border,
+    // v160.0.22 — Light paper row on dark library bg.
+    backgroundColor: Colors.tileLight, borderWidth: 1, borderColor: Colors.tileLightBorder,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 44, marginBottom: 6,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+    elevation: 1,
   },
   rowIcon: {
-    width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.orangeSoft,
+    width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.tileLightAccentBg,
     alignItems: 'center', justifyContent: 'center',
   },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  rowDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2, lineHeight: 15 },
+  rowTitle: { fontSize: 14, fontWeight: '600', color: Colors.tileLightInk },
+  rowDesc: { fontSize: 11, color: Colors.tileLightMuted, marginTop: 2, lineHeight: 15 },
 });

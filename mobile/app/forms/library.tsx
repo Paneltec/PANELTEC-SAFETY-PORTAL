@@ -1,9 +1,13 @@
 // v160.0.15 — Forms Level 1: six category cards.
 // Tapping a category → /forms/category/[key] which lists only that
 // category's templates. Level 3 (fill-out) unchanged at /forms/fill/[id].
+// v160.0.22 — Tiles switched to LIGHT paper cards (Colors.tileLight)
+// on the dark library background, and the sticky header padTop now
+// reads `useSafeAreaInsets()` explicitly so the Android status bar
+// no longer covers the "Back" chevron.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
@@ -22,6 +26,9 @@ const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }
 
 export default function FormsCategoriesScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
+  const headerTopPad = Math.max(insets.top, androidExtra, 24);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -53,10 +60,12 @@ export default function FormsCategoriesScreen() {
   const totalEnabled = templates.length;
 
   return (
-    <SafeAreaView edges={['top']} style={s.safe}>
+    <View style={s.safe}>
       {/* v160.0.19 — Back button lives OUTSIDE the ScrollView as a sticky
-          sibling so it stays visible while the grid scrolls. */}
-      <View style={s.stickyHeader}>
+          sibling so it stays visible while the grid scrolls.
+          v160.0.22 — paddingTop now reads useSafeAreaInsets() so the
+          Android status bar cannot re-cover the back chevron. */}
+      <View style={[s.stickyHeader, { paddingTop: headerTopPad }]}>
         <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={18} color={Colors.orange} />
           <Text style={s.backText}>Back</Text>
@@ -93,7 +102,7 @@ export default function FormsCategoriesScreen() {
                   style={[s.card, dimmed && s.cardDim]}
                 >
                   <View style={[s.iconWrap, dimmed && s.iconWrapDim]}>
-                    <Ionicons name={cat.icon} size={22} color={dimmed ? Colors.textTertiary : Colors.orange} />
+                    <Ionicons name={cat.icon} size={22} color={dimmed ? Colors.textTertiary : Colors.tileLightAccentIcon} />
                   </View>
                   <Text style={[s.cardTitle, dimmed && s.dimText]}>{cat.label}</Text>
                   <Text style={[s.cardBlurb, dimmed && s.dimText]} numberOfLines={2}>{cat.blurb}</Text>
@@ -101,7 +110,7 @@ export default function FormsCategoriesScreen() {
                     <Text style={[s.cardCount, dimmed && s.dimText]}>
                       {n} {n === 1 ? 'form' : 'forms'}
                     </Text>
-                    {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />}
+                    {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.tileLightMuted} />}
                   </View>
                 </TouchableOpacity>
               );
@@ -109,7 +118,7 @@ export default function FormsCategoriesScreen() {
           </View>
         )}
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -141,20 +150,29 @@ const s = StyleSheet.create({
     width: '48%',
     minHeight: 120,
     marginBottom: 12,
-    backgroundColor: Colors.tileWarm,
-    borderWidth: 1, borderColor: Colors.border,
+    // v160.0.22 — LIGHT paper card on darker library background. High
+    // contrast on-device; matches user brief "lighter tiles please".
+    backgroundColor: Colors.tileLight,
+    borderWidth: 1, borderColor: Colors.tileLightBorder,
     borderRadius: 16, padding: 14, gap: 6,
+    // Soft lift shadow so the light tile visually detaches from the
+    // dark library background.
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
   },
   cardDim: { opacity: 0.4 },
   iconWrap: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.tileLightAccentBg, alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
   iconWrapDim: { backgroundColor: Colors.surfaceLight },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  cardBlurb: { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.tileLightInk },
+  cardBlurb: { fontSize: 11, color: Colors.tileLightMuted, lineHeight: 15 },
   cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8 },
-  cardCount: { fontSize: 11, fontWeight: '700', color: Colors.orange, letterSpacing: 0.5 },
+  cardCount: { fontSize: 11, fontWeight: '700', color: Colors.tileLightAccentIcon, letterSpacing: 0.5 },
   dimText: { color: Colors.textTertiary },
 });

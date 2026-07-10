@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
-import { getUser, initials } from '../../src/lib/auth';
+import { getUser } from '../../src/lib/auth';
 import { Colors } from '../../src/lib/colors';
 import { useAuth } from '../../src/lib/AuthContext';
 import { SAFE_FALLBACK } from '../../src/lib/modules';
@@ -56,6 +56,15 @@ const CAPTURE_TOOLS: { key: string; title: string; desc: string; icon: any; rout
 export default function DashboardScreen() {
   const router = useRouter();
   const { modules } = useAuth();
+  // v160.0.22 — Manual notch pad. `SafeAreaView edges={['top']}` alone
+  // was NOT clearing the Android status bar for some devices — the
+  // header eyebrow ("PANELTEC CIVIL · ...") sat under the notch. Reading
+  // insets.top directly and applying it as explicit paddingTop on the
+  // ScrollView content gives us bulletproof clearance on Android while
+  // remaining benign on iOS (which will just return its own top inset).
+  const insets = useSafeAreaInsets();
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) : 0;
+  const topPad = Math.max(insets.top, androidExtra, 24);
   const [metrics, setMetrics] = useState<any>(null);
   const [briefing, setBriefing] = useState<any>(null);
   const [briefingLoading, setBriefingLoading] = useState(true);
@@ -129,9 +138,23 @@ export default function DashboardScreen() {
     return Object.keys(sf).every(k => modules[k as ModuleId] === sf[k as ModuleId]) && !modules.pre_start;
   }, [modules]);
 
+  // v160.0.22 — Real first-initial only. `initials(u)` used to return
+  // "U" whenever `user` was null (pre-load), which is why workers saw an
+  // orange "U" circle on every fresh app launch. Now:
+  //   • Loaded user with a name → shows first letter of first name.
+  //   • Loaded user with an email but no name → first letter of email.
+  //   • Still loading → hide the avatar (returns null; caller must
+  //     conditionally render).
+  const firstInitial = useMemo(() => {
+    if (!user) return null;
+    const src: string = (user.name || user.email || '').toString().trim();
+    if (!src) return null;
+    return src.charAt(0).toUpperCase();
+  }, [user]);
+
   return (
-    <SafeAreaView style={d.safe}>
-      <ScrollView testID="dashboard-page" style={d.scroll} contentContainerStyle={d.content}
+    <View style={d.safe}>
+      <ScrollView testID="dashboard-page" style={d.scroll} contentContainerStyle={[d.content, { paddingTop: topPad }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}>
 
         <View style={d.header}>
@@ -139,9 +162,11 @@ export default function DashboardScreen() {
             <Text style={d.overline}>PANELTEC CIVIL · {require('../../src/lib/version').MOBILE_BUNDLE_VERSION}</Text>
             <Text style={d.heading}>HOME</Text>
           </View>
-          <View style={d.avatar}>
-            <Text style={d.avatarText}>{initials(user)}</Text>
-          </View>
+          {firstInitial && (
+            <View testID="user-avatar" style={d.avatar}>
+              <Text style={d.avatarText}>{firstInitial}</Text>
+            </View>
+          )}
         </View>
 
         {isSafeFallback && (
@@ -242,7 +267,7 @@ export default function DashboardScreen() {
 
       {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t: any) => setBuilderTemplate(t)} />}
       {builderTemplate !== null && <TemplateBuilder template={builderTemplate} onClose={() => setBuilderTemplate(null)} onSaved={() => setBuilderTemplate(null)} />}
-    </SafeAreaView>
+    </View>
   );
 }
 

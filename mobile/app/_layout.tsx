@@ -2,6 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
+// v160.0.22 — SafeAreaProvider MUST wrap the entire tree so that any
+// call to `useSafeAreaInsets()` / `<SafeAreaView edges={...}>` inside
+// tab screens returns real Android status-bar inset values. Without
+// this provider the hook returns { top: 0, ... } and every sticky
+// header we've been trying to pad is quietly getting zero — which is
+// why the notch has repeatedly re-swallowed the back buttons after
+// each "fix" attempt.
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { getToken } from '../src/lib/auth';
 import { AuthProvider, useAuth } from '../src/lib/AuthContext';
 import { isPreviewMode } from '../src/lib/preview';
@@ -87,8 +95,10 @@ function RootNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootNav />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <RootNav />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }
