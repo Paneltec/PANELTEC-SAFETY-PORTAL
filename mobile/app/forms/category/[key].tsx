@@ -58,7 +58,7 @@ export default function CategoryFormsScreen() {
       <View style={s.stickyHeader}>
         <View style={{ height: headerTopPad }} />
         <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={20} color={Colors.brandSurface} />
+          <Ionicons name="chevron-back" size={20} color={Colors.hvOrange} />
           <Text style={s.backText}>Forms</Text>
         </TouchableOpacity>
         <Text style={s.heading}>{catLabel}</Text>
@@ -117,7 +117,7 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 4 },
-  backText: { fontSize: 13, fontWeight: '700', color: Colors.brandSurface },
+  backText: { fontSize: 13, fontWeight: '700', color: Colors.hvOrange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
   heading: { fontSize: 20, fontWeight: '800', color: Colors.brandSurface, marginTop: 2 },
   sub: { fontSize: 13, color: Colors.brandInkMuted, marginTop: 4, marginBottom: 18 },

@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, Platform, KeyboardAvoidingView, Image, Modal,
+  BackHandler, StatusBar as RNStatusBar,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -552,7 +553,58 @@ export default function FillOutScreen() {
     return () => clearInterval(iv);
   }, [draftKey]);
 
-  const setVal = useCallback((fid: string, v: any) => setValues((p) => ({ ...p, [fid]: v })), []);
+  // v160.1.1 — dirtyRef declared FIRST so setVal + handleBackAttempt can
+  // close over it without TS "used before declaration" complaints.
+  // Tracks whether the user has entered ANY input since load. We can't
+  // rely on `Object.keys(values).length` because the auto-load hook
+  // above hydrates a saved draft, which we don't want to count as
+  // "dirty". `dirtyRef` only flips to true from `setVal`.
+  const dirtyRef = useRef(false);
+
+  const setVal = useCallback((fid: string, v: any) => {
+    dirtyRef.current = true;
+    setValues((p) => ({ ...p, [fid]: v }));
+  }, []);
+
+  // v160.1.1 — Escape-route support (sticky Cancel + discard confirm)
+  const insets = useSafeAreaInsets();
+  const androidExtra = Platform.OS === 'android' ? (RNStatusBar.currentHeight || 0) + 16 : 24;
+  const headerTopPad = Math.max(insets.top, androidExtra, 44);
+
+  const handleBackAttempt = useCallback(() => {
+    const hasPhotos = Object.keys(photos).some((k) => (photos[k] || []).length > 0);
+    if (!dirtyRef.current && !hasPhotos) {
+      router.back();
+      return true;
+    }
+    Alert.alert(
+      'Discard this form?',
+      "Any information you've entered will be lost.",
+      [
+        { text: 'Keep filling', style: 'cancel' },
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: async () => {
+            try { await AsyncStorage.removeItem(draftKey); } catch { /* ignore */ }
+            router.back();
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+    return true;
+  }, [photos, router, draftKey]);
+
+  // Android hardware back button routes through the same discard flow.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      handleBackAttempt();
+      return true;
+    });
+    return () => sub.remove();
+  }, [handleBackAttempt]);
   const setPhotoField = useCallback((fid: string, v: any[]) => setPhotos((p) => ({ ...p, [fid]: v })), []);
 
   // Aggregate captured GPS for banner
@@ -603,18 +655,32 @@ export default function FillOutScreen() {
   return (
     <SafeAreaView style={fs.safe} edges={['top']}>
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        {/* Header */}
+        {/* v160.1.1 — Sticky header with brute-force notch clearance.
+            Provides the ESCAPE ROUTE the user reported was missing:
+            "Cancel" button + form title. Tapping Cancel invokes
+            handleBackAttempt() which either exits immediately (clean
+            form) or prompts the discard-confirm dialog (dirty form). */}
         <View testID="fill-header" style={fs.header}>
-          <TouchableOpacity testID="fill-back" onPress={() => router.back()} style={{ padding: 4 }}>
-            <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <Text style={fs.headerOverline}>FILL OUT</Text>
-            <Text style={fs.headerTitle} numberOfLines={1}>{tpl.name}</Text>
-          </View>
-          <View style={fs.draftBadge}>
-            <Ionicons name="save" size={10} color="#8c6a1a" />
-            <Text style={fs.draftBadgeText}>auto-save</Text>
+          <View style={{ height: headerTopPad }} />
+          <View style={fs.headerRow}>
+            <TouchableOpacity
+              testID="fill-cancel-btn"
+              onPress={handleBackAttempt}
+              activeOpacity={0.7}
+              style={fs.cancelBtn}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="chevron-back" size={20} color={Colors.hvOrange} />
+              <Text style={fs.cancelText}>Cancel</Text>
+            </TouchableOpacity>
+            <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
+              <Text style={fs.headerOverline}>FILL OUT</Text>
+              <Text style={fs.headerTitle} numberOfLines={1}>{tpl.name}</Text>
+            </View>
+            <View style={fs.draftBadge}>
+              <Ionicons name="save" size={10} color={Colors.hvYellow} />
+              <Text style={fs.draftBadgeText}>auto-save</Text>
+            </View>
           </View>
         </View>
 
@@ -811,12 +877,23 @@ export default function FillOutScreen() {
 const fs = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    // v160.1.1 — Solid opaque sticky header. Same colour as safe bg
+    // so the notch backdrop reads as a continuous top bar with no seam.
+    backgroundColor: Colors.hvAsphalt,
+    paddingHorizontal: 16, paddingBottom: 12,
   },
-  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.orangeLight },
-  headerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+  },
+  cancelBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    paddingVertical: 4,
+  },
+  cancelText: {
+    fontSize: 14, fontWeight: '700', color: Colors.hvOrange,
+  },
+  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.hvYellow },
+  headerTitle: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' }, // linter-ok: HV header title — explicit white on hvAsphalt
   draftBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,

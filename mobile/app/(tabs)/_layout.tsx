@@ -77,7 +77,7 @@ export default function TabLayout() {
           tabBarInactiveTintColor: Colors.brandTabInactive,
           tabBarStyle: {
             backgroundColor: Colors.brandTabBar,
-            borderTopColor: '#12345F', // linter-ok: brand tab-bar top border — slightly darker navy
+            borderTopColor: '#0F172A', // linter-ok: HV theme tab-bar top border — one shade darker than hvAsphalt
             borderTopWidth: 1,
             height: 64,
             paddingBottom: 8,
