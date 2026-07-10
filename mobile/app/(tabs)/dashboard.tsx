@@ -281,9 +281,11 @@ const d = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   // v160.0.23 — Absolute notch backdrop covering the physical top-of-screen
   // zone with a solid colour so the punch-hole camera never shows through.
+  // v160.1.2 — Repointed at imSteel to match the sticky-header bg tokens
+  // across the rest of the app (bottom tab bar, forms library sticky, etc.).
   notchBackdrop: {
     position: 'absolute', top: 0, left: 0, right: 0,
-    backgroundColor: Colors.bg,
+    backgroundColor: Colors.imSteel,
     zIndex: 50,
   },
   scroll: { flex: 1 },
