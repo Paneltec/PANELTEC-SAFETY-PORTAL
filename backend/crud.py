@@ -33,11 +33,20 @@ def _strip(doc: dict) -> dict:
 
 
 def build_router(prefix: str, collection: str, model: Type[BaseModel], resource: str,
-                 module_id: Optional[str] = None) -> APIRouter:
+                 module_id: Optional[str] = None,
+                 mirror_categories: Optional[list[str]] = None) -> APIRouter:
     # v160.0.9 — router-level `require_module()` gate. When `module_id`
     # is set, every route on this router is subject to the mobile
     # module toggle for the caller's role. Web callers bypass (no
     # `x-client-platform: mobile` header).
+    #
+    # v160.2.5a — `mirror_categories` unions `form_submissions` rows
+    # tagged with any of the given template categories into the list
+    # response. Fixes the routing gap where phone-submitted forms
+    # (which land in `form_submissions`) never surfaced on the
+    # web-admin Capture sub-tabs (which read from their own legacy
+    # collections). Merged rows carry `source: "form_submission"` so
+    # the UI can render them alongside legacy entries.
     from fastapi import Depends as _Dep
     router_deps = [_Dep(require_module(module_id))] if module_id else []
     r = APIRouter(prefix=f"/{prefix}", tags=[prefix], dependencies=router_deps)
@@ -73,6 +82,48 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 rng["$lte"] = date_to
             q["date"] = rng
         docs = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+
+        # v160.2.5a — union in matching `form_submissions` (phone-filled
+        # forms). Non-destructive — legacy rows keep priority; merged
+        # rows carry `source: "form_submission"` and are ordered by
+        # created_at (newest first). Skipped when `mirror_categories`
+        # isn't set on this router, or when the caller narrowed with
+        # `status=` (we can't safely map arbitrary status strings across
+        # heterogeneous schemas).
+        if mirror_categories and not status:
+            mq: Dict[str, Any] = {
+                "org_id": user["org_id"], "deleted_at": None,
+                "template_category_snapshot": {"$in": mirror_categories},
+            }
+            if workspace_id:
+                mq["workspace_id"] = workspace_id
+            if own_only is not None:
+                # v160.2.5a — form_submissions uses `submitted_by`, not
+                # `created_by`. Match either key so worker-scope filters
+                # still apply to mirrored rows.
+                mq["$or"] = [{"created_by": own_only}, {"submitted_by": own_only}]
+            if date_from or date_to:
+                mq["submitted_at"] = {
+                    **({"$gte": date_from} if date_from else {}),
+                    **({"$lte": date_to} if date_to else {}),
+                }
+            mirrored = await db.form_submissions.find(mq, {"_id": 0}).sort(
+                "submitted_at", -1).to_list(limit)
+            for m in mirrored:
+                # Normalise the shape so the existing web-admin table
+                # renderers can pick it up without blowing up on missing
+                # keys. Original fields are left intact.
+                sub_at = m.get("submitted_at") or ""
+                m.setdefault("created_at", sub_at)
+                m.setdefault("created_by", m.get("submitted_by"))
+                m.setdefault("status", "submitted")
+                m.setdefault("date", sub_at[:10] if sub_at else "")
+                m.setdefault("title",
+                             m.get("template_name_snapshot") or "Form submission")
+                m["source"] = "form_submission"
+            docs = docs + mirrored
+            docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
+            docs = docs[:limit]
         return docs
 
     @r.get("/{item_id}")
@@ -175,12 +226,27 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
 # ---------- Build the six entity routers ----------
 # v160.0.9 — each router now carries the corresponding mobile module id
 # so the phone gets 403 when an admin turns the module OFF.
+# v160.2.5a — Capture sub-tabs mirror phone-filled submissions by
+# template category. Buckets:
+#   pre_starts  ← pre_start | plant_pre_start
+#   site_diary  ← (no live category yet; keeps empty until seeded)
+#   hazards     ← near_miss
+#   incidents   ← incident
+#   inspections ← inspection
+# `general` and `toolbox` are catch-all for the /forms tab (per-template
+# view via FormSubmissions.jsx) — deliberately NOT mirrored here so a
+# submission never double-lands in two Capture tabs.
 swms_router       = build_router("swms",         "swms",                SwmsIn,        "swms",         "swms")
-prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts",   "pre_start")
-diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary",   "site_diary")
-hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards",      "hazard")
-incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents",    "incident")
-inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection")
+prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStartIn,    "pre_starts",   "pre_start",
+                                 mirror_categories=["pre_start", "plant_pre_start"])
+diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary",   "site_diary",
+                                 mirror_categories=["site_diary"])
+hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards",      "hazard",
+                                 mirror_categories=["near_miss"])
+incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents",    "incident",
+                                 mirror_categories=["incident"])
+inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection",
+                                  mirror_categories=["inspection"])
 
 
 # ---------- SWMS review (extra endpoint) ----------

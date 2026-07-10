@@ -3199,3 +3199,85 @@ Cleared, mobile supervisor restarted.
   Forms Library search + form-QR scanner.
 - **v160.2.6** — Mobile My Profile back button + `/my-certifications`
   screen + Settings entry.
+
+---
+
+## v160.2.5a — Submission routing into Capture sub-tabs (2026-07-10)
+
+Scope split of v160.2.5 — this cycle ships the backend routing fix
+only (compliance-critical). Mobile Library search + Level 2 search
++ form-QR scanner deferred to v160.2.5b in the next fork.
+
+### The bug
+Web-admin Capture sub-tabs read from separate legacy collections
+(`pre_starts`, `site_diary_entries`, `hazards`, `incidents`,
+`inspections`), but the mobile app posts phone-filled forms to the
+unified `form_submissions` collection. Result: a `pre_start` form
+submitted from a worker's phone NEVER appeared in `/app/pre-starts`.
+That's a compliance visibility gap.
+
+### The fix
+`backend/crud.py` `build_router()` gains a `mirror_categories`
+parameter. When set, the list endpoint unions the legacy collection
+with `form_submissions` rows whose `template_category_snapshot` is
+in the list. Each mirrored row is normalised so the existing web
+table renderers don't blow up (adds `created_at`, `created_by`,
+`status: "submitted"`, `date`, `title` if missing; sets
+`source: "form_submission"`).
+
+Category buckets:
+    /api/pre-starts  ← [pre_start, plant_pre_start]
+    /api/site-diary  ← [site_diary]                (empty in prod)
+    /api/hazards     ← [near_miss]
+    /api/incidents   ← [incident]
+    /api/inspections ← [inspection]
+
+`toolbox` + `general` are deliberately NOT mirrored — they land in
+the /forms catch-all which reads per-template via
+`GET /api/forms/templates/{id}/submissions`.
+
+### Guarantees
+- **No cross-tab duplication**: each category maps to exactly one
+  bucket. Regression test enforces the invariant.
+- **Status-filter bypass**: when the caller narrows with `?status=X`
+  the mirror is skipped (legacy only) — heterogeneous status schemas
+  can't be safely projected. Documented + tested.
+- **Worker-scope preserved**: `own_only` filter still applies to
+  mirrored rows via `$or: [{created_by}, {submitted_by}]` (mobile
+  uses `submitted_by`, legacy collections use `created_by`).
+
+### End-to-end proof (curl)
+Submitted three forms fresh in this session:
+| Category  | Expected tab | Landed in tab | Cross-leak? |
+|----------|-------------|--------------|:-----------:|
+| pre_start | pre-starts  | pre-starts (5→6)  | none ✓ |
+| incident  | incidents   | incidents  (0→1)  | none ✓ |
+| toolbox   | Forms catch-all (no mirror) | not in any Capture tab | none ✓ |
+
+### Tests
+- `backend/tests/test_v160_2_5a_submission_routing.py` (NEW) — 7 cases:
+  category → correct tab (parametrized), toolbox does not leak,
+  mirrored rows carry source marker, status filter disables mirror,
+  no cross-tab duplication.
+- Regression across v160.1.3 / 1.4 / 1.6 / 2.0 / 2.2 / 2.3 / 2.4 / 2.5a:
+  **76/76 passing.**
+
+### Version bumps → `paneltec-v160.2.5a`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Deferred to next fork
+- **v160.2.5b** — Mobile Forms Library Level 1 search + camera-icon
+  QR scanner, Level 2 in-category search. Accepts template UUIDs
+  and asset scan tokens.
+- **v160.2.6** — Mobile My Profile back button + `/my-certifications`
+  screen + Settings entry.
+- **v160.2.7** — Grant workers `swms.view` (+ attach) org-wide,
+  backfill existing worker users, prove end-to-end.
+
+### Files touched
+- `backend/crud.py` — added `mirror_categories` param + union logic
+- `backend/tests/test_v160_2_5a_submission_routing.py` (new)
+- `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
+  `frontend/public/service-worker.js`

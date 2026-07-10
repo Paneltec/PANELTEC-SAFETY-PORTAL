@@ -1,4 +1,4 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
-export const RUNNING_VERSION = 'paneltec-v160.2.4';
+export const RUNNING_VERSION = 'paneltec-v160.2.5a';
