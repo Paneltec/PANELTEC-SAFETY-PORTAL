@@ -46,6 +46,13 @@ type Props = {
   placeholder?: string;
 };
 
+// v160.2.5c — Humanise Navixy's machine `vehicle_type` (e.g.
+// "vacuum_truck" → "Vacuum Truck"). Empty / null-safe.
+function humaniseType(vt?: string | null): string {
+  if (!vt) return '';
+  return vt.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
 export default function NavixyVehiclePicker(props: Props) {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [busy, setBusy] = useState(false);
@@ -83,19 +90,24 @@ export default function NavixyVehiclePicker(props: Props) {
     const term = q.trim().toLowerCase();
     if (!term) return vehicles;
     return vehicles.filter((v) => {
-      const rego = (v.registration || v.plate || '').toLowerCase();
+      // v160.2.5c — Search MUST match label + humanised vehicle_type
+      // ONLY. Never the IMEI-plate (`registration`/`plate` are the
+      // Navixy device IMEI per the v160.1.5 audit).
       const label = (v.label || '').toLowerCase();
-      const vt = (v.vehicle_type || '').toLowerCase();
-      return rego.includes(term) || label.includes(term) || vt.includes(term);
+      const vt = humaniseType(v.vehicle_type).toLowerCase();
+      return label.includes(term) || vt.includes(term);
     });
   }, [q, vehicles]);
 
   const displayOf = (v?: Vehicle) => {
+    // v160.2.5c — Primary text is Navixy `label` (already contains
+    // "make + rego" per Paneltec's Navixy naming convention). The
+    // humanised vehicle_type is a secondary hint. Never show the
+    // IMEI-plate to a worker.
     if (!v) return '';
-    const rego = v.registration || v.plate || '';
-    const lbl = v.label || '';
-    if (rego && lbl && lbl !== rego) return `${rego} · ${lbl}`;
-    return rego || lbl || String(v.id);
+    const lbl = v.label || String(v.id);
+    const vt = humaniseType(v.vehicle_type);
+    return vt ? `${lbl} · ${vt}` : lbl;
   };
 
   const selected = vehicles.find((v) => String(v.id) === String(props.value));
@@ -206,7 +218,7 @@ export default function NavixyVehiclePicker(props: Props) {
                 style={s.searchInput}
                 value={q}
                 onChangeText={setQ}
-                placeholder="Search by rego, label or type"
+                placeholder="Search by vehicle label or type"
                 placeholderTextColor={Colors.placeholder}
                 autoFocus
               />
@@ -221,8 +233,11 @@ export default function NavixyVehiclePicker(props: Props) {
               keyExtractor={(v) => String(v.id)}
               keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
-                const rego = item.registration || item.plate || '';
-                const lbl = item.label || '';
+                // v160.2.5c — Primary line = `label` (human-readable
+                // make+rego), secondary line = humanised vehicle_type.
+                // IMEI-plate never rendered.
+                const primary = item.label || String(item.id);
+                const secondary = humaniseType(item.vehicle_type);
                 return (
                   <TouchableOpacity
                     testID={`vehicle-option-${item.id}`}
@@ -230,12 +245,9 @@ export default function NavixyVehiclePicker(props: Props) {
                     onPress={() => pick(item)}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={s.rowName}>{rego || lbl || String(item.id)}</Text>
-                      {(lbl && lbl !== rego) || item.vehicle_type ? (
-                        <Text style={s.rowMeta}>
-                          {[lbl && lbl !== rego ? lbl : null, item.vehicle_type]
-                            .filter(Boolean).join(' · ')}
-                        </Text>
+                      <Text style={s.rowName}>{primary}</Text>
+                      {secondary ? (
+                        <Text style={s.rowMeta}>{secondary}</Text>
                       ) : null}
                     </View>
                     {isSelected(item.id) && (

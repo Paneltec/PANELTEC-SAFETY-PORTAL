@@ -3519,3 +3519,78 @@ Non-blocking noise still logged (do not fix reactively):
   `8.4.4` — warning only.
 - `"shadow*" style props are deprecated. Use "boxShadow"` — RN Web
   cosmetic deprecation.
+
+---
+
+## v160.2.5c — HOTFIX: NavixyVehiclePicker rendered IMEI instead of label (2026-07-10)
+
+### Bug
+On the mobile Vehicle-Navixy picker the row primary text and trigger
+label showed the 15-digit device IMEI (Navixy `plate` / `registration`
+per the v160.1.5 audit) instead of the human-readable `label`
+(e.g. `"Industrial - XT02AX"`, `"D-Max - H02FH"`). Workers were
+staring at rows like `882285109021036` and couldn't identify their
+own vehicle → form submissions blocked.
+
+### Root cause
+`displayOf()`, the row renderer and the search filter in
+`mobile/src/components/NavixyVehiclePicker.tsx` all treated
+`registration || plate` as the primary text with `label` as a fallback.
+The v160.1.5 audit already documented that `plate` = IMEI, but the
+render path hadn't been updated to match.
+
+### Fix (this cycle)
+`mobile/src/components/NavixyVehiclePicker.tsx`:
+- New `humaniseType(vt)` helper — snake_case → Title Case
+  (`vacuum_truck` → `Vacuum Truck`).
+- `displayOf()` now returns `${label} · ${humanised_type}`. Label is
+  primary, humanised type is secondary. IMEI never shown.
+- Row renderer: primary line = `label` (Colors.imInk-equivalent),
+  secondary line = `humaniseType(vehicle_type)` (Colors.textTertiary).
+- Search filter drops IMEI — matches `label` and humanised type only.
+- Search placeholder updated: "Search by vehicle label or type".
+- Scan-QR match logic UNCHANGED — still probes `plate` / `registration`
+  / `label` when resolving an asset scan token (per v160.1.5 that's
+  where the road rego lives in the label substring — asset-side
+  matching stays correct).
+
+### Proof (curl, `/api/forms/fleet/vehicles`)
+72 vehicles in Paneltec's Navixy fleet. Sample of 8:
+| vehicle_id | BEFORE (buggy)   | AFTER (fixed)                       |
+|-----------|------------------|-------------------------------------|
+| 10254823   | 882285109021036  | Industrial - XT02AX · Vacuum Truck  |
+| 10254824   | 882285109021037  | Cap Recycler - XT96AZ · Vacuum Truck|
+| 10270990   | 882285109021047  | HiAce CCTV Van - J46QW · Other      |
+| 10270991   | 882285109021048  | VTS - BT-50 - L07QF · Other         |
+| 10270992   | 882285109021049  | Daniel Butler - RANGER - K21KV · Ute|
+| 10270993   | 882285109021050  | Scott Campbell - RANGER - K59JU · Ute|
+| 10270994   | 882285109021051  | D-Max - H02FH · Ute                 |
+| 10270995   | 882285109021052  | VTS - BT-50 - L09QF · Other         |
+
+Search filter confirmed operating on label + humanised vehicle_type
+(case-insensitive substring, IMEI excluded).
+
+### Version bumps → `paneltec-v160.2.5c`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Metro cache
+Applied the CORRECTED clear sequence (from earlier this session):
+```
+sudo supervisorctl stop mobile
+rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache
+mkdir -p /app/mobile/.expo/types && touch /app/mobile/.expo/types/router.d.ts
+sudo supervisorctl start mobile
+```
+Mobile back to RUNNING, http_code=200.
+
+### Files touched
+- `mobile/src/components/NavixyVehiclePicker.tsx`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Regression check
+Backend suite unchanged — 76/76 still green (crud.py, forms.py, and
+all v160.2.x tests untouched this cycle).
