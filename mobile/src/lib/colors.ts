@@ -29,6 +29,11 @@ export const Colors = {
   surfaceLight: '#1E293B',
   /** Hover / press state. */
   surfaceHover: '#334155',
+  // v160.0.21 — Forms Library visual differentiation
+  libraryBg: '#243447',     // slightly lifted vs Colors.bg for drill-down context
+  tileWarm: '#2E2419',      // warm dark tint so category tiles pop
+  surfaceDark: '#020617',   // deeper than surface — used by bottom tab bar
+  borderMuted: '#1E293B',   // subtle top border on the tab bar
   /** Non-interactive muted panel (disabled inputs, ghost sections). */
   mutedBg: '#152033',
 

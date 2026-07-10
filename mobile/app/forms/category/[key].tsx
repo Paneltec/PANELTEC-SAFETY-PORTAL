@@ -45,19 +45,21 @@ export default function CategoryFormsScreen() {
   const onRefresh = () => { setRefreshing(true); load(); };
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView edges={['top']} style={s.safe}>
+      {/* v160.0.21 — Sticky header sibling; back button never scrolls away. */}
+      <View style={s.stickyHeader}>
+        <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
+          <Text style={s.backText}>Forms</Text>
+        </TouchableOpacity>
+        <Text style={s.heading}>{catLabel}</Text>
+      </View>
       <ScrollView
         testID={`category-page-${catKey}`}
         style={s.scroll}
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
       >
-        <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
-          <Text style={s.backText}>Forms</Text>
-        </TouchableOpacity>
-
-        <Text style={s.heading}>{catLabel}</Text>
 
         {loading ? (
           <View style={s.emptyBox}>
@@ -97,19 +99,24 @@ export default function CategoryFormsScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.libraryBg },
+  stickyHeader: {
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
   backText: { fontSize: 13, fontWeight: '700', color: Colors.orange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
-  heading: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginTop: 2, marginBottom: 14 },
+  heading: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginTop: 2 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.tileWarm, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 44, marginBottom: 6,
   },

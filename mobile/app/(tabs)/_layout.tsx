@@ -70,10 +70,12 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: Colors.orange,
-          tabBarInactiveTintColor: Colors.textTertiary,
+          tabBarInactiveTintColor: Colors.textSecondary,
           tabBarStyle: {
-            backgroundColor: Colors.surface,
-            borderTopColor: Colors.border,
+            // v160.0.21 — Distinct darker shade + subtle top border so tab
+            // icons pop against screen content.
+            backgroundColor: Colors.surfaceDark,
+            borderTopColor: Colors.borderMuted,
             borderTopWidth: 1,
             height: 64,
             paddingBottom: 8,

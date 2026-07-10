@@ -53,7 +53,7 @@ export default function FormsCategoriesScreen() {
   const totalEnabled = templates.length;
 
   return (
-    <SafeAreaView style={s.safe}>
+    <SafeAreaView edges={['top']} style={s.safe}>
       {/* v160.0.19 — Back button lives OUTSIDE the ScrollView as a sticky
           sibling so it stays visible while the grid scrolls. */}
       <View style={s.stickyHeader}>
@@ -114,7 +114,7 @@ export default function FormsCategoriesScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.bg },
+  safe: { flex: 1, backgroundColor: Colors.libraryBg },
   stickyHeader: {
     // v160.0.19 — Sibling above the ScrollView, so it never scrolls away.
     backgroundColor: Colors.surface,
@@ -141,7 +141,7 @@ const s = StyleSheet.create({
     width: '48%',
     minHeight: 120,
     marginBottom: 12,
-    backgroundColor: Colors.surface,
+    backgroundColor: Colors.tileWarm,
     borderWidth: 1, borderColor: Colors.border,
     borderRadius: 16, padding: 14, gap: 6,
   },
