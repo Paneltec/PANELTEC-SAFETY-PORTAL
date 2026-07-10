@@ -8,6 +8,35 @@ Adds on top of Phase 1:
 
 Submissions are workable by ANY authenticated org user (workers fill them out
 on their phone). Template CRUD and submission delete remain admin/hseq_lead.
+
+═════════════════════════════════════════════════════════════════════════════
+STANDARD HEADER convention (established v160.1.6)
+─────────────────────────────────────────────────────────────────────────────
+Every operational Paneltec form should begin with the same four fields, in
+this order, so operators build muscle memory across pre-starts, permits,
+inspections and reports:
+
+  1. `date`             — Label "Date".   `config.default_today: true`.
+                          Renders as an editable calendar picker (see
+                          `DatePickerField` in `mobile/app/forms/fill/[id].tsx`).
+  2. `worker_picker`    — Label "Operator (Name)".
+                          `config.inline_company_toggle: true` with
+                          `company_options: [{Paneltec Civil, simpro_id:'2'},
+                                             {Viatec,         simpro_id:'3'}]`.
+  3. `gps`              — Label "Location".  `config.reverse_geocode: true`.
+                          Renders the `GpsField` which populates a human-
+                          readable street address alongside lat/lng.
+  4. `vehicle_navixy`   — Label "Select Vehicle".  Only when the form is
+                          vehicle- or plant-attached. Delete any standalone
+                          `asset_scan` field — the NavixyVehiclePicker
+                          embeds the Scan-QR primary CTA above the
+                          searchable dropdown (v160.1.4/1.5).
+
+Templates already migrated (as of v160.1.6): Vehicle Pre-Use Inspection,
+Heavy Vehicle Daily Check. Do NOT bulk-migrate the remaining templates —
+user directs each one after reviewing the operator flow. New templates
+should be built onto this header by default.
+═════════════════════════════════════════════════════════════════════════════
 """
 from __future__ import annotations
 import io
