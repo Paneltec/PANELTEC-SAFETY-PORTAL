@@ -18,6 +18,7 @@ import WorkerPicker from '../../../src/components/WorkerPicker';
 import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
+import ConfirmModal from '../../../src/components/ConfirmModal';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 /* ─── Colour helper for radio buttons ─── */
@@ -579,7 +580,7 @@ function PastePanel({ busy, onSubmit, testId }: any) {
  * Self-contained: holds its OWN company state (defaults to Paneltec Civil).
  * Not linked to the top-level `company_selector` field — the operator can
  * belong to a different company than the form's submitting entity. */
-function InlineTogglePicker({ testId, companyOptions, value, onChange }: any) {
+function InlineTogglePicker({ testId, companyOptions, value, onChange, multi }: any) {
   const opts: Array<{ label: string; simpro_id: string }> = companyOptions?.length
     ? companyOptions
     : [{ label: 'Paneltec Civil', simpro_id: '2' }, { label: 'Viatec', simpro_id: '3' }];
@@ -590,7 +591,9 @@ function InlineTogglePicker({ testId, companyOptions, value, onChange }: any) {
     setCompany(other);
     // Clear the picker value so the user doesn't submit a worker from the
     // previous company by accident.
-    if (value) onChange(null);
+    if (multi ? (value && value.length > 0) : !!value) {
+      onChange(multi ? [] : null);
+    }
   };
 
   return (
@@ -614,13 +617,24 @@ function InlineTogglePicker({ testId, companyOptions, value, onChange }: any) {
         <Ionicons name="swap-horizontal" size={14} color={Colors.imInk} />
         <Text style={{ color: Colors.imInk, opacity: 0.75, fontSize: 11, fontWeight: '600' }}>Tap to switch</Text>
       </TouchableOpacity>
-      <WorkerPicker
-        label=""
-        mode="single"
-        value={value || null}
-        companyFilter={{ simpro_company_id: company.simpro_id, name: company.label }}
-        onChange={(wid: string | null) => onChange(wid)}
-      />
+      {multi ? (
+        // v160.2.0 — multi-select variant used by "Prepared By" /
+        // "Attendee(s)" fields. Storage: array of worker ids.
+        <WorkerPicker
+          label=""
+          multi={true}
+          value={Array.isArray(value) ? value : []}
+          companyFilter={{ simpro_company_id: company.simpro_id, name: company.label }}
+          onChange={(wids: string[]) => onChange(wids)}
+        />
+      ) : (
+        <WorkerPicker
+          label=""
+          value={value || null}
+          companyFilter={{ simpro_company_id: company.simpro_id, name: company.label }}
+          onChange={(wid: string | null) => onChange(wid)}
+        />
+      )}
     </View>
   );
 }
@@ -700,14 +714,21 @@ export default function FillOutScreen() {
 
   // v160.1.1 — dirtyRef declared FIRST so setVal + handleBackAttempt can
   // close over it without TS "used before declaration" complaints.
-  // Tracks whether the user has entered ANY input since load. We can't
-  // rely on `Object.keys(values).length` because the auto-load hook
-  // above hydrates a saved draft, which we don't want to count as
-  // "dirty". `dirtyRef` only flips to true from `setVal`.
+  // v160.2.1 — `settledRef` mount-window guard. `default_today` in
+  // DatePickerField and any AsyncStorage-hydrated draft both call
+  // `setVal` synchronously on mount, which USED to flip `dirtyRef` and
+  // pop the discard dialog on every "fresh" form open. We now ignore
+  // dirty flips for the first 500 ms after mount, giving auto-populated
+  // defaults time to settle before we start listening for real user input.
   const dirtyRef = useRef(false);
+  const settledRef = useRef(false);
+  useEffect(() => {
+    const tmr = setTimeout(() => { settledRef.current = true; }, 500);
+    return () => clearTimeout(tmr);
+  }, []);
 
   const setVal = useCallback((fid: string, v: any) => {
-    dirtyRef.current = true;
+    if (settledRef.current) dirtyRef.current = true;
     setValues((p) => ({ ...p, [fid]: v }));
   }, []);
 
@@ -722,24 +743,21 @@ export default function FillOutScreen() {
       router.back();
       return true;
     }
-    Alert.alert(
-      'Discard this form?',
-      "Any information you've entered will be lost.",
-      [
-        { text: 'Keep filling', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: async () => {
-            try { await AsyncStorage.removeItem(draftKey); } catch { /* ignore */ }
-            router.back();
-          },
-        },
-      ],
-      { cancelable: true },
-    );
+    // v160.2.1 — Use ConfirmModal (custom RN Modal) instead of
+    // Alert.alert. Alert.alert is a no-op on RN Web, so the discard
+    // dialog was invisible on the browser preview; the custom modal
+    // renders identically on iOS, Android and RN Web.
+    setShowDiscardConfirm(true);
     return true;
-  }, [photos, router, draftKey]);
+  }, [photos]);
+
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+
+  const performDiscard = useCallback(async () => {
+    setShowDiscardConfirm(false);
+    try { await AsyncStorage.removeItem(draftKey); } catch { /* ignore */ }
+    router.back();
+  }, [draftKey, router]);
 
   // Android hardware back button routes through the same discard flow.
   useEffect(() => {
@@ -841,6 +859,18 @@ export default function FillOutScreen() {
 
   return (
     <SafeAreaView style={fs.safe} edges={['top']}>
+      {/* v160.2.1 — Cross-platform discard-confirm dialog. */}
+      <ConfirmModal
+        visible={showDiscardConfirm}
+        title="Discard this form?"
+        body="Any information you've entered will be lost."
+        confirmLabel="Discard"
+        cancelLabel="Keep filling"
+        destructive
+        onConfirm={performDiscard}
+        onCancel={() => setShowDiscardConfirm(false)}
+        testID="discard-confirm"
+      />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         {/* v160.1.1 — Sticky header with brute-force notch clearance.
             Provides the ESCAPE ROUTE the user reported was missing:
@@ -1040,20 +1070,31 @@ export default function FillOutScreen() {
                     <InlineTogglePicker
                       testId={`field-${f.id}`}
                       companyOptions={f.config.company_options || []}
-                      value={values[f.id] || null}
-                      onChange={(wid: string | null) => setVal(f.id, wid)}
+                      multi={!!f.config?.multi}
+                      value={f.config?.multi
+                        ? (Array.isArray(values[f.id]) ? values[f.id] : [])
+                        : (values[f.id] || null)}
+                      onChange={(v: any) => setVal(f.id, v)}
                     />
                   );
                 }
-                // Legacy path — no inline toggle, no filter.
+                // Legacy path — no inline toggle. Supports multi via config.
                 return (
                   <View testID={`field-${f.id}`}>
-                    <WorkerPicker
-                      label=""
-                      mode="single"
-                      value={values[f.id] || null}
-                      onChange={(wid: string | null) => setVal(f.id, wid)}
-                    />
+                    {f.config?.multi ? (
+                      <WorkerPicker
+                        label=""
+                        multi={true}
+                        value={Array.isArray(values[f.id]) ? values[f.id] : []}
+                        onChange={(ids: string[]) => setVal(f.id, ids)}
+                      />
+                    ) : (
+                      <WorkerPicker
+                        label=""
+                        value={values[f.id] || null}
+                        onChange={(wid: string | null) => setVal(f.id, wid)}
+                      />
+                    )}
                   </View>
                 );
               })()}

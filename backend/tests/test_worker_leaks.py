@@ -1076,8 +1076,10 @@ def test_v160_0_12_heavy_eq_template_has_new_fields(admin_headers):
     field_types = {f["type"] for f in tpl.get("fields", [])}
     assert "company_selector" in field_types, f"Missing company_selector — {field_types}"
     assert "worker_picker" in field_types, f"Missing worker_picker — {field_types}"
-    assert "asset_scan" in field_types, f"Missing asset_scan — {field_types}"
-    assert "auto_date" in field_types, f"Missing auto_date — {field_types}"
+    # v160.2.0 — asset_scan replaced by vehicle_navixy (Scan-QR CTA now
+    # embedded in the NavixyVehiclePicker). auto_date normalised to date.
+    assert "vehicle_navixy" in field_types, f"Missing vehicle_navixy — {field_types}"
+    assert "date" in field_types, f"Missing date — {field_types}"
     assert "gps" in field_types, f"Missing gps — {field_types}"
     # Worker pickers should be Operator (Reported To was dropped in v160.0.12.6).
     wp_labels = [f["label"] for f in tpl["fields"] if f["type"] == "worker_picker"]
