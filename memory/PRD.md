@@ -3315,17 +3315,39 @@ Deferred from v160.2.5 split. See original brief for full detail.
 - **Fix 4**: Verify web-admin `WorkerViewModal` cert table renders
   (was verified in v160.2.2 for Rick Antrim — one-line confirm).
 
-### v160.2.6 addendum — Notch padding on Certifications compliance queue
+### v160.2.6 addendum — Notch padding + sticky back button sweep
 User screenshot flagged the "Certifications · Compliance attention
-queue" screen title half-covered by the Android notch — same class
-of bug as the Forms Library / Category screens fixed in v160.0.23.
+queue" screen with (a) title half-covered by the Android notch and
+(b) NO back arrow. Same class of bug as the Forms Library / Category
+screens fixed in v160.0.23. Fix BOTH issues in this addendum:
+
+**Notch padding**
 - Locate: likely `mobile/app/certifications.tsx` or
   `mobile/app/(tabs)/certifications.tsx`.
 - Wrap the header row in a sticky `stickyHeader` View using
   `Colors.imConcrete` or `Colors.imSurface`.
 - Apply `headerTopPad = Math.max(insets.top, (StatusBar.currentHeight
   or 0) + 16, 44)`.
-- Version this alongside v160.2.6.
+
+**Sticky back button**
+- Sibling `<TouchableOpacity>` OUTSIDE the ScrollView.
+- Chevron + "Back" label in `Colors.imBronze`.
+- Sticky at the top of the SafeAreaView.
+- `router.back()` on tap. Fallback to `router.replace()` to a sensible
+  parent if `!router.canGoBack()`.
+
+**Broader sweep — apply to EVERY top-level screen missing a back arrow**
+Before writing any code, `find /app/mobile/app -name '*.tsx' -not -path '*/(tabs)/*'`
+and grep each for `router.back(` / `navigation.goBack(`. Report the
+list of screens missing a back button in the final response. Fix them
+all in this same cycle using the identical sticky-back pattern.
+
+Explicit exceptions (do NOT add a back button):
+- Tab-level screens under `mobile/app/(tabs)/*` (tabs are the root nav)
+- Modal screens whose `_layout.tsx` sets `presentation: "modal"` — those
+  already get a system-level dismiss control
+
+Version this alongside v160.2.6.
 
 ### v160.2.7 — Grant workers ALL view-only perms for their enabled modules
 
