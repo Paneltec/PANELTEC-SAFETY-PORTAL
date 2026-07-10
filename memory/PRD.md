@@ -3327,24 +3327,81 @@ of bug as the Forms Library / Category screens fixed in v160.0.23.
   or 0) + 16, 44)`.
 - Version this alongside v160.2.6.
 
-### v160.2.7 — Grant workers `swms.view` (+ attach) org-wide
-- Audit + update the Worker role preset in `org_settings.role_presets`
-  to include `swms.view` (+ `swms.list` / `swms.attach` if separate).
-- Backfill script `backend/scripts/migrate_v160_2_7_worker_swms.py`
-  (idempotent) — grant SWMS view/attach to every existing user with
-  role=Worker in the current DB. Report counts.
-- Update the seed/default so NEW orgs have workers with SWMS view/attach
-  by default.
-- Do NOT grant `swms.create` / `swms.edit` / `swms.delete` /
-  `swms.approve` — those stay admin-only.
-- Proof: as `worker_stephen@paneltec.com.au`,
-  1. `GET /api/swms` returns non-empty (was 0 pre-migration).
-  2. Mobile SWMS list screen shows docs.
-  3. Filling a Hot Work permit → "Applicable SWMS" picker populated.
-  4. Submitting the permit with attached SWMS succeeds; submission
-     carries the SWMS ids in its `fields` payload.
-- Tests: worker can list + view SWMS; worker CANNOT
-  create/edit/delete/approve.
+### v160.2.7 — Grant workers ALL view-only perms for their enabled modules
+
+**Expanded scope (2026-07-10):** User confirmed via screenshot that
+every relevant mobile module toggle is ON for the Worker role
+(Certifications, SWMS, My Profile, Forms Library, Daily Pre-Starts,
+Hazard / Incident / Inspection Reports, Sign-on / Site Check-in).
+The problem is not module toggles — it's the permission matrix
+under those toggles. Modules can be ON but data endpoints still
+gate on `<resource>.view` and workers get 403 / empty lists.
+
+This cycle grants workers every VIEW-only permission needed to make
+each enabled module actually load data. No create / edit / delete /
+approve — those stay admin-only.
+
+#### Audit approach (mandatory before code)
+1. Enumerate every mobile module currently enabled for Worker per
+   the screenshot / `mobile_modules` config.
+2. For each module, trace the mobile screen(s) → the backend
+   endpoint(s) they call. Grep `mobile/app/**` and
+   `mobile/src/**` for `api.get`/`api.post`.
+3. For each endpoint, list the permission it requires (search
+   `require_permission("<resource>", "view")` and `require_module`
+   in `backend/`).
+4. Build the final grant list.
+
+#### Known permissions to grant (starter list — audit will extend)
+- `swms.view` (original v160.2.7 brief — SWMS list & picker)
+- `certifications.view` — `/my-certifications` screen +
+  Certifications compliance-queue screen
+- `workers.view_own` (if separate from `workers.view`) — needed by
+  Worker Profile flows; already partly covered by `/api/me/worker-profile`
+  which authorises by user_id/email match rather than a permission
+- `documents.view` — cert files / PDFs in Document Library
+- `forms.view` + `forms.submit` — Forms Library + fill screen
+  (workers need to see templates and post submissions)
+- `pre_starts.view` / `hazards.view` / `incidents.view` /
+  `inspections.view` — Capture-side screens (may already be
+  granted for creating own submissions; audit whether view is
+  scoped to `own_only` via `resolve_team_scope`)
+- `signon.view` / `check_in.view` — Sign-on and Site Check-in
+  flows
+- Any additional VIEW perms surfaced by the audit
+
+#### Guard rails (unchanged from original brief)
+- Do NOT grant `*.create` / `*.edit` / `*.delete` / `*.approve` to
+  workers.
+- Do NOT change existing admin / foreman / HSEQ presets.
+- Access still respects org / site scope — no cross-org leaks.
+
+#### Deliverables
+- Backfill script `backend/scripts/migrate_v160_2_7_worker_perms.py`
+  (idempotent). Grants each perm from the audit list to every
+  existing user with role=Worker. Report counts and per-perm
+  before / after state.
+- Update the default Worker role preset in
+  `org_settings.role_presets` (or wherever the seed lives) so
+  NEW orgs ship with these grants.
+- End-to-end proof for `worker_stephen@paneltec.com.au`:
+    · Screenshot per enabled module confirming data loads
+      (not empty state, not 403).
+    · curl proof for at least: `GET /api/swms`,
+      `GET /api/workers/{me}/certifications`, `GET /api/forms/templates`,
+      `GET /api/pre-starts?scope=me`, and any others the audit surfaces.
+    · Filling a Hot Work permit with `worker_stephen` → "Applicable
+      SWMS" picker populated → submission succeeds → submission
+      carries the SWMS ids in its `fields` payload.
+- Backend tests in `test_v160_2_7_worker_perms.py`:
+    · Worker can list + view each granted resource.
+    · Worker CANNOT create / edit / delete / approve for any of them.
+    · Worker still respects org scope (no cross-org leaks).
+- Full existing test suite must remain green (76/76 currently).
+
+#### Version bump
+`paneltec-v160.2.7` in all 3 files. Metro cache clear if any mobile
+files were touched.
 
 ### Handoff notes for next-fork agent
 - Baseline version: `paneltec-v160.2.5a` (this session shipped).
