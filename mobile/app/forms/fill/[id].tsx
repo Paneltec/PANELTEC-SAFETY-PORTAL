@@ -899,7 +899,7 @@ const fs = StyleSheet.create({
     backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
     borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
   },
-  draftBadgeText: { fontSize: 9, fontWeight: '600', color: '#FBBF24' },
+  draftBadgeText: { fontSize: 9, fontWeight: '600', color: Colors.hvYellow },
   gpsBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
