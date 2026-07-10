@@ -18,12 +18,12 @@ import TemplateBuilder from '../../src/components/forms/TemplateBuilder';
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 const CATEGORIES = [
-  { key: 'all',        label: 'All categories', bg: '#f1f5f9', ink: '#334155' },
-  { key: 'incident',   label: 'Incident',       bg: '#fde2e4', ink: '#9f1239' },
-  { key: 'inspection', label: 'Inspection',     bg: '#dbeafe', ink: '#1e40af' },
-  { key: 'toolbox',    label: 'Toolbox',        bg: '#fef3c7', ink: '#92400e' },
-  { key: 'near_miss',  label: 'Near Miss',      bg: '#fed7aa', ink: '#c2410c' },
-  { key: 'general',    label: 'General',        bg: '#e2e8f0', ink: '#475569' },
+  { key: 'all',        label: 'All categories', bg: Colors.imConcrete, ink: Colors.imInkMuted },
+  { key: 'incident',   label: 'Incident',       bg: Colors.imConcrete, ink: Colors.imError },
+  { key: 'inspection', label: 'Inspection',     bg: Colors.imConcrete, ink: Colors.paneltecBlue },
+  { key: 'toolbox',    label: 'Toolbox',        bg: Colors.imConcrete, ink: Colors.imInk },
+  { key: 'near_miss',  label: 'Near Miss',      bg: Colors.imConcrete, ink: Colors.imBronze },
+  { key: 'general',    label: 'General',        bg: Colors.imBorder, ink: Colors.imInkMuted },
 ];
 const CAT_MAP: Record<string, typeof CATEGORIES[0]> = {};
 CATEGORIES.forEach((c) => { CAT_MAP[c.key] = c; });
@@ -71,8 +71,8 @@ function ImportModal({ onClose, onImported }: { onClose: () => void; onImported:
           <TouchableOpacity testID="import-confirm" onPress={doImport}
             disabled={busy || !text.trim()}
             style={[imp.confirmBtn, (busy || !text.trim()) && { opacity: 0.5 }]}>
-            {busy ? <ActivityIndicator size="small" color="#fff" /> :
-              <Ionicons name="cloud-upload" size={14} color="#fff" />}
+            {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> :
+              <Ionicons name="cloud-upload" size={14} color={Colors.imSurface} />}
             <Text style={imp.confirmText}>Import</Text>
           </TouchableOpacity>
         </View>
@@ -88,8 +88,8 @@ const imp = StyleSheet.create({
   foot: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, padding: 16, borderTopWidth: 1, borderTopColor: Colors.border },
   cancelBtn: { paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   cancelText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, backgroundColor: '#1e293b' },
-  confirmText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  confirmBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.imInk },
+  confirmText: { fontSize: 14, fontWeight: '700', color: Colors.imSurface },
 });
 
 /* ─── Main screen ─── */
@@ -192,14 +192,14 @@ function FormsListScreenInner() {
         {canEdit && (
           <TouchableOpacity testID="toolbar-ai" style={s.aiBtn}
             onPress={() => setAiOpen(true)}>
-            <Ionicons name="sparkles" size={14} color="#fff" />
+            <Ionicons name="sparkles" size={14} color={Colors.imSurface} />
             <Text style={s.aiBtnText}>Build with AI</Text>
           </TouchableOpacity>
         )}
         {canEdit && (
           <TouchableOpacity testID="toolbar-new" style={s.newBtn}
             onPress={() => setBuilderTemplate({})}>
-            <Ionicons name="add" size={14} color="#78350f" />
+            <Ionicons name="add" size={14} color={Colors.imInk} />
             <Text style={s.newBtnText}>New Template</Text>
           </TouchableOpacity>
         )}
@@ -245,18 +245,18 @@ function FormsListScreenInner() {
                 <View style={{ flex: 1 }} />
                 <TouchableOpacity testID={`card-icon-preview-${t.id}`}
                   style={s.iconBtn} onPress={() => setPreviewT(t)}>
-                  <Ionicons name="phone-portrait-outline" size={14} color="#2563eb" />
+                  <Ionicons name="phone-portrait-outline" size={14} color={Colors.paneltecBlue} />
                 </TouchableOpacity>
                 {canEdit && (
                   <TouchableOpacity testID={`card-icon-edit-${t.id}`}
                     style={s.iconBtn} onPress={() => setBuilderTemplate(t)}>
-                    <Ionicons name="pencil" size={14} color="#475569" />
+                    <Ionicons name="pencil" size={14} color={Colors.imInkMuted} />
                   </TouchableOpacity>
                 )}
                 {canEdit && (
                   <TouchableOpacity testID={`card-icon-delete-${t.id}`}
                     style={s.iconBtn} onPress={() => removeTemplate(t)}>
-                    <Ionicons name="trash-outline" size={14} color="#dc2626" />
+                    <Ionicons name="trash-outline" size={14} color={Colors.imError} />
                   </TouchableOpacity>
                 )}
               </View>
@@ -271,7 +271,7 @@ function FormsListScreenInner() {
                     a web-admin function; the mobile app is fill-only. */}
                 {t.source === 'ai' && (
                   <View style={s.aiBadge}>
-                    <Ionicons name="sparkles" size={9} color="#7c3aed" />
+                    <Ionicons name="sparkles" size={9} color={Colors.paneltecViolet} />
                     <Text style={s.aiBadgeText}>AI draft</Text>
                   </View>
                 )}
@@ -281,13 +281,13 @@ function FormsListScreenInner() {
               <View style={s.cardBtns}>
                 <TouchableOpacity testID={`card-preview-${t.id}`}
                   style={s.previewBtn} onPress={() => setPreviewT(t)}>
-                  <Ionicons name="phone-portrait-outline" size={13} color="#2563eb" />
+                  <Ionicons name="phone-portrait-outline" size={13} color={Colors.paneltecBlue} />
                   <Text style={s.previewBtnText}>Preview</Text>
                 </TouchableOpacity>
                 <TouchableOpacity testID={`card-fill-${t.id}`}
                   style={s.fillBtn}
                   onPress={() => router.push(`/forms/fill/${t.id}`)}>
-                  <Ionicons name="pencil" size={13} color="#fff" />
+                  <Ionicons name="pencil" size={13} color={Colors.imSurface} />
                   <Text style={s.fillBtnText}>Fill This Form</Text>
                 </TouchableOpacity>
               </View>
@@ -357,14 +357,14 @@ const s = StyleSheet.create({
   toolBtnText: { fontSize: 12, fontWeight: '600', color: Colors.ink },
   aiBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, backgroundColor: '#9333ea',
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, backgroundColor: Colors.paneltecViolet,
   },
-  aiBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  aiBtnText: { fontSize: 12, fontWeight: '700', color: Colors.imSurface },
   newBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, backgroundColor: '#f59e0b',
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 16, backgroundColor: Colors.imWarning,
   },
-  newBtnText: { fontSize: 12, fontWeight: '700', color: '#78350f' },
+  newBtnText: { fontSize: 12, fontWeight: '700', color: Colors.imInk },
   filterRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 16, paddingBottom: 8,
@@ -387,7 +387,7 @@ const s = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 18, padding: 16, marginBottom: 12,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowColor: Colors.imInk, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25, shadowRadius: 12, elevation: 3,
   },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
@@ -402,7 +402,7 @@ const s = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 },
   metaText: { fontSize: 11, color: Colors.textTertiary, fontWeight: '600', letterSpacing: 0.3 },
   sentBadge: { backgroundColor: 'rgba(16,185,129,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  sentBadgeText: { fontSize: 10, fontWeight: '800', color: '#34D399', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sentBadgeText: { fontSize: 10, fontWeight: '800', color: Colors.imSuccess, textTransform: 'uppercase', letterSpacing: 0.5 },
   aiBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(167,139,250,0.18)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   aiBadgeText: { fontSize: 10, fontWeight: '800', color: Colors.violet, textTransform: 'uppercase', letterSpacing: 0.5 },
   cardBtns: { flexDirection: 'row', gap: 8, marginTop: 14 },
@@ -418,7 +418,7 @@ const s = StyleSheet.create({
     paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.orange, minHeight: 48,
     shadowColor: Colors.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
   },
-  fillBtnText: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
+  fillBtnText: { fontSize: 13, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.3 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 6 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: Colors.textSecondary },
   emptyHint: { fontSize: 13, color: Colors.textTertiary, fontWeight: '500' },

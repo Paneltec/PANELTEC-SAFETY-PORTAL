@@ -20,7 +20,7 @@ export default function PrimaryButton({ children, onPress, busy, disabled, testI
       disabled={busy || disabled}
       activeOpacity={0.7}
     >
-      {busy && <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />}
+      {busy && <ActivityIndicator size="small" color={Colors.imSurface} style={{ marginRight: 6 }} />}
       <Text style={styles.text}>{children}</Text>
     </TouchableOpacity>
   );
@@ -40,7 +40,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   text: {
-    color: '#fff',
+    color: Colors.imSurface,
     fontSize: 14,
     fontWeight: '600',
   },

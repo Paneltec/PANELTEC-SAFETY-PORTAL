@@ -78,11 +78,11 @@ export default function SignupScreen() {
 
             <TouchableOpacity testID="signup-submit" style={styles.btn} onPress={submit} disabled={busy} activeOpacity={0.7}>
               {busy ? (
-                <ActivityIndicator color="#fff" size="small" />
+                <ActivityIndicator color={Colors.imSurface} size="small" />
               ) : (
                 <>
                   <Text style={styles.btnText}>Create my workspace</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#fff" />
+                  <Ionicons name="arrow-forward" size={16} color={Colors.imSurface} />
                 </>
               )}
             </TouchableOpacity>
@@ -119,7 +119,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: Colors.blue, borderRadius: 10, paddingVertical: 14, marginTop: 20, minHeight: 50,
   },
-  btnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  btnText: { color: Colors.imSurface, fontSize: 15, fontWeight: '600' },
   footer: { flexDirection: 'row', marginTop: 24, justifyContent: 'center' },
   footerText: { fontSize: 14, color: Colors.textSecondary },
   link: { fontSize: 14, fontWeight: '600', color: Colors.blue },

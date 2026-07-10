@@ -15,9 +15,9 @@ const STATUSES = ['active', 'invited', 'disabled'];
 
 function StatusPill({ status }: { status: string }) {
   const map: Record<string, { bg: string; text: string }> = {
-    active: { bg: '#D1FAE5', text: '#047857' },
-    invited: { bg: '#FEF3C7', text: '#B45309' },
-    disabled: { bg: '#F1F5F9', text: '#475569' },
+    active: { bg: Colors.imConcrete, text: Colors.imSuccess },
+    invited: { bg: Colors.imConcrete, text: Colors.imBronze },
+    disabled: { bg: Colors.imConcrete, text: Colors.imInkMuted },
   };
   const c = map[status] || map.active;
   return (
@@ -96,7 +96,7 @@ export default function UsersScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}
       >
         <TouchableOpacity testID="users-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={us.navBack}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
           <Text style={us.navBackText}>Back</Text>
         </TouchableOpacity>
         <Text style={us.overline}>SETTINGS</Text>
@@ -109,7 +109,7 @@ export default function UsersScreen() {
             <TouchableOpacity testID="import-from-simpro-btn" style={[us.importBtn, !simproConnected && { opacity: 0.5 }]}
               onPress={() => simproConnected ? setImportOpen(true) : Alert.alert('Not connected', 'Connect Simpro first')}
               disabled={!simproConnected}>
-              <Ionicons name="download" size={14} color="#4f3a8c" />
+              <Ionicons name="download" size={14} color={Colors.paneltecViolet} />
               <Text style={us.importBtnText}>Import from Simpro</Text>
             </TouchableOpacity>
           </View>
@@ -274,7 +274,7 @@ function ImportFromSimproModal({ companies, onClose, onImported }: any) {
             </TouchableOpacity>
             <TouchableOpacity testID="import-users-btn" style={[us.primaryBtn, selected.size === 0 && { opacity: 0.5 }]}
               onPress={doImport} disabled={importing || selected.size === 0}>
-              {importing ? <ActivityIndicator color="#fff" size="small" /> :
+              {importing ? <ActivityIndicator color={Colors.imSurface} size="small" /> :
                 <Text style={us.primaryBtnText}>Import {selected.size} user{selected.size !== 1 ? 's' : ''}</Text>}
             </TouchableOpacity>
           </View>
@@ -307,18 +307,18 @@ const us = StyleSheet.create({
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
   toolbar: { flexDirection: 'row', gap: 8, marginTop: 14 },
   importBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
-  importBtnText: { fontSize: 12, fontWeight: '600', color: '#4f3a8c' },
+  importBtnText: { fontSize: 12, fontWeight: '600', color: Colors.paneltecViolet },
   filterScroll: { marginTop: 12, marginBottom: 12, flexGrow: 0 },
   chip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, marginRight: 6 },
   chipActive: { backgroundColor: Colors.blue, borderColor: Colors.blue },
   chipText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
-  chipTextActive: { color: '#fff' },
+  chipTextActive: { color: Colors.imSurface },
   emptyBox: { alignItems: 'center', paddingVertical: 40 },
   emptyText: { fontSize: 14, color: Colors.textTertiary },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
   cardTop: { flexDirection: 'row', alignItems: 'flex-start' },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.blue, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  avatarText: { color: Colors.imSurface, fontSize: 14, fontWeight: '700' },
   cardName: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   cardEmail: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   cardMeta: { flexDirection: 'row', gap: 6, marginTop: 6 },
@@ -343,11 +343,11 @@ const us = StyleSheet.create({
   importEmail: { fontSize: 12, color: Colors.textTertiary, marginTop: 1 },
   alreadyBadge: { fontSize: 10, fontWeight: '600', color: Colors.emeraldDark, backgroundColor: Colors.mint, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   missingBadge: { fontSize: 10, fontWeight: '600', color: Colors.amber, backgroundColor: Colors.amberSoft, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  importFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: '#F8FAFC' },
+  importFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.imConcrete },
   ghostBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, alignItems: 'center' },
   ghostBtnText: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
   primaryBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.blue, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  primaryBtnText: { fontSize: 14, fontWeight: '600', color: Colors.imSurface },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, width: '100%', maxWidth: 300 },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 12 },

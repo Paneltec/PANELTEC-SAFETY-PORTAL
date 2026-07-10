@@ -22,9 +22,9 @@ const DAYS = [
 ];
 const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'];
 const CLIENT_SOURCES = [
-  { value: 'paneltec', label: 'Paneltec', bg: '#e6eff9', text: '#1e4a8c' },
-  { value: 'viatec',   label: 'Viatec',   bg: '#ece6f4', text: '#4f3a8c' },
-  { value: 'both',     label: 'Both',     bg: '#d8ecdd', text: '#1f7a3f' },
+  { value: 'paneltec', label: 'Paneltec', bg: Colors.imConcrete, text: Colors.paneltecBlue },
+  { value: 'viatec',   label: 'Viatec',   bg: Colors.imConcrete, text: Colors.paneltecViolet },
+  { value: 'both',     label: 'Both',     bg: Colors.imConcrete, text: Colors.imSuccess },
 ];
 
 function emptyAvailability() {
@@ -73,7 +73,7 @@ function PickerModal({ visible, title, options, selected, onSelect, onClose }: a
               <Text style={[cs.pickerItemText, (selected === (o.value ?? o)) && { color: Colors.orangeLight, fontWeight: '700' }]}>
                 {o.label ?? o}
               </Text>
-              {selected === (o.value ?? o) && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
+              {selected === (o.value ?? o) && <Ionicons name="checkmark" size={14} color={Colors.paneltecBlue} />}
             </TouchableOpacity>
           ))}
         </View>
@@ -122,7 +122,7 @@ function TimeInput({ testID, value, onChange, disabled }: any) {
     <TouchableOpacity
       testID={testID}
       disabled={disabled}
-      style={[cs.timeInput, disabled && { backgroundColor: '#F1F5F9' }]}
+      style={[cs.timeInput, disabled && { backgroundColor: Colors.imConcrete }]}
       onPress={() => setEditing(true)}
     >
       <Text style={[cs.timeText, disabled && { color: Colors.textTertiary }]}>{value}</Text>
@@ -225,7 +225,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
 
           {isSimpro && (
             <View testID="simpro-banner" style={cs.simproBanner}>
-              <Ionicons name="extension-puzzle" size={12} color="#1e4a8c" />
+              <Ionicons name="extension-puzzle" size={12} color={Colors.paneltecBlue} />
               <Text style={cs.simproBannerText}>Synced from Simpro</Text>
             </View>
           )}
@@ -284,7 +284,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
                   <Switch testID="worker-active-toggle" value={f.active}
                     onValueChange={(v) => canEdit && setF({ ...f, active: v })}
-                    trackColor={{ true: '#10B981', false: '#CBD5E1' }}
+                    trackColor={{ true: Colors.imSuccess, false: Colors.imBorder }}
                     disabled={!canEdit} />
                   <Text style={{ fontSize: 13, color: Colors.text }}>Active</Text>
                 </View>
@@ -364,14 +364,14 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                   return (
                     <View key={d.key} testID={`availability-${d.key}`}
                       style={[cs.dayRow, row.enabled ? cs.dayRowEnabled : cs.dayRowDisabled,
-                        invalid && { borderColor: '#e69aa3', borderWidth: 1 }]}>
+                        invalid && { borderColor: Colors.imConcrete, borderWidth: 1 }]}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, width: 70 }}>
                         <Switch
                           testID={`availability-${d.key}-toggle`}
                           value={row.enabled}
                           onValueChange={(v) => canEdit && setRow({ enabled: v })}
                           style={{ transform: [{ scale: 0.7 }] }}
-                          trackColor={{ true: '#1e4a8c', false: '#CBD5E1' }}
+                          trackColor={{ true: Colors.paneltecBlue, false: Colors.imBorder }}
                           disabled={!canEdit}
                         />
                         <Text style={[cs.dayLabel, row.enabled && { color: Colors.orangeLight, fontWeight: '600' }]}>{d.label}</Text>
@@ -422,12 +422,12 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                         <Text style={cs.clientChipName}>{meta?.name || `#${id}`}</Text>
                         {meta?.company_label && (
                           <View style={[cs.clientChipLabel, {
-                            backgroundColor: meta.company_label === 'Paneltec' ? '#e6eff9'
-                              : meta.company_label === 'Viatec' ? '#ece6f4' : '#F1F5F9',
+                            backgroundColor: meta.company_label === 'Paneltec' ? Colors.imConcrete
+                              : meta.company_label === 'Viatec' ? Colors.imConcrete : Colors.imConcrete,
                           }]}>
                             <Text style={[cs.clientChipLabelText, {
-                              color: meta.company_label === 'Paneltec' ? '#1e4a8c'
-                                : meta.company_label === 'Viatec' ? '#4f3a8c' : '#475569',
+                              color: meta.company_label === 'Paneltec' ? Colors.paneltecBlue
+                                : meta.company_label === 'Viatec' ? Colors.paneltecViolet : Colors.imInkMuted,
                             }]}>{meta.company_label}</Text>
                           </View>
                         )}
@@ -462,7 +462,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                 </TouchableOpacity>
                 <TouchableOpacity testID="modal-save" style={[cs.saveBtn, (saving || !!availabilityError) && { opacity: 0.6 }]}
                   onPress={submit} disabled={saving || !!availabilityError}>
-                  {saving ? <ActivityIndicator size="small" color="#fff" /> : (
+                  {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
                     <Text style={cs.saveBtnText}>{isNew ? 'Create' : 'Update'}</Text>
                   )}
                 </TouchableOpacity>
@@ -516,11 +516,11 @@ const cs = StyleSheet.create({
   sectionWrap: { borderWidth: 1, borderColor: Colors.border, borderRadius: 12, overflow: 'hidden', marginBottom: 10 },
   sectionHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12, paddingVertical: 10, backgroundColor: Colors.imConcrete,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   sectionTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.ink },
-  sectionBadge: { backgroundColor: '#e6eff9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  sectionBadge: { backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   sectionBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.orangeLight, textTransform: 'uppercase', letterSpacing: 0.5 },
   sectionBody: { padding: 12, backgroundColor: Colors.white },
   // Form
@@ -538,10 +538,10 @@ const cs = StyleSheet.create({
   // Availability
   dayRow: { flexDirection: 'row', alignItems: 'center', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 6, gap: 4 },
   dayRowEnabled: { backgroundColor: Colors.surfaceLight },
-  dayRowDisabled: { backgroundColor: '#F8FAFC' },
+  dayRowDisabled: { backgroundColor: Colors.imConcrete },
   dayLabel: { fontSize: 12, color: Colors.textSecondary },
-  dayError: { fontSize: 10, color: '#7a1f33', fontWeight: '500', marginLeft: 4 },
-  availError: { fontSize: 11, color: '#7a1f33', fontWeight: '500', marginTop: 6 },
+  dayError: { fontSize: 10, color: Colors.imError, fontWeight: '500', marginLeft: 4 },
+  availError: { fontSize: 11, color: Colors.imError, fontWeight: '500', marginTop: 6 },
   timeInput: {
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 6,
     paddingHorizontal: 8, paddingVertical: 4, minWidth: 52, alignItems: 'center',
@@ -553,7 +553,7 @@ const cs = StyleSheet.create({
   srcPillText: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   clientChip: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 20, paddingHorizontal: 8, paddingVertical: 4,
   },
   clientChipName: { fontSize: 11, color: Colors.text },
@@ -562,18 +562,18 @@ const cs = StyleSheet.create({
   // Footer
   footer: {
     paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.imConcrete,
   },
-  footerError: { fontSize: 10, color: '#7a1f33', marginBottom: 6 },
+  footerError: { fontSize: 10, color: Colors.imError, marginBottom: 6 },
   cancelBtn: {
     paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white,
   },
   cancelBtnText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
   saveBtn: {
-    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: '#1e4a8c',
+    paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.paneltecBlue,
   },
-  saveBtnText: { fontSize: 13, fontWeight: '700', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
+  saveBtnText: { fontSize: 13, fontWeight: '700', color: Colors.imSurface, textTransform: 'uppercase', letterSpacing: 0.5 },
   // Picker modal
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, width: '100%', maxWidth: 280 },

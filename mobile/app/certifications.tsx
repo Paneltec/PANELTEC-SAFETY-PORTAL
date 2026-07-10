@@ -15,12 +15,12 @@ const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const BACKEND = process.env.EXPO_PUBLIC_BACKEND_URL || '';
 
 const FILTERS = [
-  { key: 'all',           label: 'All',           bg: '#F1F5F9', ink: '#475569' },
-  { key: 'expired',       label: 'Expired',        bg: '#FCE4EC', ink: '#7a1f33' },
-  { key: 'expiring_soon', label: 'Expiring Soon',  bg: '#FEF3C7', ink: '#92400E' },
-  { key: 'missing_file',  label: 'Missing File',   bg: '#FEF3C7', ink: '#92400E' },
-  { key: 'valid',         label: 'Valid',           bg: '#d8ecdd', ink: '#1f7a3f' },
-  { key: 'no_expiry',     label: 'No Expiry',      bg: '#e6eff9', ink: '#1e4a8c' },
+  { key: 'all',           label: 'All',           bg: Colors.imConcrete, ink: Colors.imInkMuted },
+  { key: 'expired',       label: 'Expired',        bg: Colors.imConcrete, ink: Colors.imError },
+  { key: 'expiring_soon', label: 'Expiring Soon',  bg: Colors.imConcrete, ink: Colors.imInk },
+  { key: 'missing_file',  label: 'Missing File',   bg: Colors.imConcrete, ink: Colors.imInk },
+  { key: 'valid',         label: 'Valid',           bg: Colors.imConcrete, ink: Colors.imSuccess },
+  { key: 'no_expiry',     label: 'No Expiry',      bg: Colors.imConcrete, ink: Colors.paneltecBlue },
 ];
 
 function fmtDate(s: string | null | undefined) { return s ? s.slice(0, 10) : '—'; }
@@ -36,18 +36,18 @@ function statusLabel(c: any): { key: string; label: string; bg: string; ink: str
   switch (key) {
     case 'expired': {
       const d = c.days_since_expiry ?? daysSince(c.expiry_date);
-      return { key, label: `EXPIRED${d ? ` ${d}d AGO` : ''}`, bg: '#FCE4EC', ink: '#7a1f33' };
+      return { key, label: `EXPIRED${d ? ` ${d}d AGO` : ''}`, bg: Colors.imConcrete, ink: Colors.imError };
     }
     case 'expiring_soon': {
       const d = c.days_until_expiry ?? daysUntil(c.expiry_date);
-      return { key, label: `EXPIRES IN ${d ?? '?'}d`, bg: '#FEF3C7', ink: '#92400E' };
+      return { key, label: `EXPIRES IN ${d ?? '?'}d`, bg: Colors.imConcrete, ink: Colors.imInk };
     }
     case 'missing_file':
-      return { key, label: 'MISSING FILE', bg: '#FEF3C7', ink: '#92400E', icon: 'warning' };
+      return { key, label: 'MISSING FILE', bg: Colors.imConcrete, ink: Colors.imInk, icon: 'warning' };
     case 'no_expiry':
-      return { key, label: 'NO EXPIRY', bg: '#e6eff9', ink: '#1e4a8c' };
+      return { key, label: 'NO EXPIRY', bg: Colors.imConcrete, ink: Colors.paneltecBlue };
     default:
-      return { key: 'valid', label: 'VALID', bg: '#d8ecdd', ink: '#1f7a3f' };
+      return { key: 'valid', label: 'VALID', bg: Colors.imConcrete, ink: Colors.imSuccess };
   }
 }
 
@@ -213,7 +213,7 @@ export default function CertificationsScreen() {
       {/* List */}
       {loading ? (
         <View style={gst.loadingWrap}>
-          <ActivityIndicator color="#92400E" />
+          <ActivityIndicator color={Colors.imInk} />
           <Text style={gst.loadingText}>Loading certifications…</Text>
         </View>
       ) : visible.length === 0 ? (
@@ -225,7 +225,7 @@ export default function CertificationsScreen() {
         </View>
       ) : (
         <ScrollView testID="certs-list" style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor="#92400E" />}>
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.imInk} />}>
           <Text style={gst.countLabel}>{visible.length} certification{visible.length === 1 ? '' : 's'}</Text>
           {visible.map((c) => (
             <View key={c.id} testID={`gcert-card-${c.id}`} style={gst.card}>
@@ -246,23 +246,23 @@ export default function CertificationsScreen() {
               <View style={gst.cardActions}>
                 {canEdit && (
                   <TouchableOpacity testID={`gcert-remind-${c.id}`}
-                    style={[gst.actionBtn, { backgroundColor: '#ece6f4' }]}
+                    style={[gst.actionBtn, { backgroundColor: Colors.imConcrete }]}
                     onPress={() => sendReminder(c)}>
-                    <Ionicons name="paper-plane" size={11} color="#4f3a8c" />
-                    <Text style={[gst.actionBtnText, { color: '#4f3a8c' }]}>Remind</Text>
+                    <Ionicons name="paper-plane" size={11} color={Colors.paneltecViolet} />
+                    <Text style={[gst.actionBtnText, { color: Colors.paneltecViolet }]}>Remind</Text>
                   </TouchableOpacity>
                 )}
                 {(c.file_url || c.file_id) && (
                   <TouchableOpacity testID={`gcert-file-${c.id}`}
-                    style={[gst.actionBtn, { backgroundColor: '#e6eff9' }]}>
-                    <Ionicons name="document" size={11} color="#1e4a8c" />
+                    style={[gst.actionBtn, { backgroundColor: Colors.imConcrete }]}>
+                    <Ionicons name="document" size={11} color={Colors.paneltecBlue} />
                     <Text style={[gst.actionBtnText, { color: Colors.orangeLight }]}>File</Text>
                   </TouchableOpacity>
                 )}
                 <TouchableOpacity testID={`gcert-open-${c.id}`}
-                  style={[gst.actionBtn, { backgroundColor: '#F1F5F9' }]}
+                  style={[gst.actionBtn, { backgroundColor: Colors.imConcrete }]}
                   onPress={() => router.push({ pathname: '/workers', params: { openWorkerId: c.worker_id } })}>
-                  <Ionicons name="open" size={11} color="#475569" />
+                  <Ionicons name="open" size={11} color={Colors.imInkMuted} />
                   <Text style={[gst.actionBtnText, { color: Colors.textSecondary }]}>Worker</Text>
                 </TouchableOpacity>
               </View>
@@ -310,7 +310,7 @@ const gst = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white,
   },
   chipText: { fontSize: 11, fontWeight: '500', color: Colors.textSecondary },
-  chipCount: { backgroundColor: '#F1F5F9', borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
+  chipCount: { backgroundColor: Colors.imConcrete, borderRadius: 8, paddingHorizontal: 5, paddingVertical: 1 },
   chipCountText: { fontSize: 9, fontWeight: '700', color: Colors.textTertiary },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8, padding: 32 },
   loadingText: { fontSize: 13, color: Colors.textTertiary, textAlign: 'center' },

@@ -23,7 +23,7 @@ export default function HazardsListScreen() {
       <View style={s.header}>
         <Text style={s.heading}>Hazard Reports</Text>
         {can('hazards', 'open') && <TouchableOpacity testID="hazard-create-btn" style={s.addBtn} onPress={() => router.push('/hazards/new')}>
-          <Ionicons name="add" size={18} color="#fff" /><Text style={s.addText}>Report</Text>
+          <Ionicons name="add" size={18} color={Colors.imSurface} /><Text style={s.addText}>Report</Text>
         </TouchableOpacity>}
       </View>
       {loading ? <ActivityIndicator style={{ marginTop: 40 }} color={Colors.blue} /> :
@@ -49,7 +49,7 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.blue, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  addText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addText: { color: Colors.imSurface, fontSize: 13, fontWeight: '600' },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink, flex: 1, marginRight: 8 },

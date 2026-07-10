@@ -12,20 +12,20 @@ import { Colors } from '../lib/colors';
 function certStatus(c: any): { key: string; label: string; bg: string; ink: string; icon?: string } {
   const hasFile = !!c.file_url || !!c.file_id;
   if (!hasFile && c.status !== 'no_expiry') {
-    return { key: 'missing_file', label: 'MISSING FILE', bg: '#FEF3C7', ink: '#92400E', icon: 'warning' };
+    return { key: 'missing_file', label: 'MISSING FILE', bg: Colors.imConcrete, ink: Colors.imInk, icon: 'warning' };
   }
   if (c.status === 'expired') {
     const days = c.days_since_expiry ?? daysSince(c.expiry_date);
-    return { key: 'expired', label: `EXPIRED${days ? ` ${days}d AGO` : ''}`, bg: '#FCE4EC', ink: '#7a1f33' };
+    return { key: 'expired', label: `EXPIRED${days ? ` ${days}d AGO` : ''}`, bg: Colors.imConcrete, ink: Colors.imError };
   }
   if (c.status === 'expiring_soon') {
     const days = c.days_until_expiry ?? daysUntil(c.expiry_date);
-    return { key: 'expiring_soon', label: `EXPIRES IN ${days ?? '?'}d`, bg: '#FEF3C7', ink: '#92400E' };
+    return { key: 'expiring_soon', label: `EXPIRES IN ${days ?? '?'}d`, bg: Colors.imConcrete, ink: Colors.imInk };
   }
   if (c.status === 'no_expiry') {
-    return { key: 'no_expiry', label: 'NO EXPIRY', bg: '#e6eff9', ink: '#1e4a8c' };
+    return { key: 'no_expiry', label: 'NO EXPIRY', bg: Colors.imConcrete, ink: Colors.paneltecBlue };
   }
-  return { key: 'valid', label: 'VALID', bg: '#d8ecdd', ink: '#1f7a3f' };
+  return { key: 'valid', label: 'VALID', bg: Colors.imConcrete, ink: Colors.imSuccess };
 }
 
 function daysSince(d: string | null) {
@@ -110,7 +110,7 @@ function CertForm({ initial, onSave, onCancel }: {
           <Text style={st.cancelBtnText}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity testID="cert-save" style={st.saveBtn} onPress={submit} disabled={saving}>
-          {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={st.saveBtnText}>Save</Text>}
+          {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Text style={st.saveBtnText}>Save</Text>}
         </TouchableOpacity>
       </View>
     </View>
@@ -192,7 +192,7 @@ export default function WorkerCertsSection({ workerId, canEdit }: {
   };
 
   if (loading) {
-    return <ActivityIndicator testID="certs-loading" style={{ marginTop: 12 }} color="#92400E" />;
+    return <ActivityIndicator testID="certs-loading" style={{ marginTop: 12 }} color={Colors.imInk} />;
   }
 
   return (
@@ -201,11 +201,11 @@ export default function WorkerCertsSection({ workerId, canEdit }: {
       {canEdit && (
         <View style={st.actionsBar}>
           <TouchableOpacity testID="cert-upload-btn" style={st.uploadBtn} onPress={pickAndUpload} disabled={uploading}>
-            {uploading ? <ActivityIndicator size="small" color="#92400E" /> : <Ionicons name="cloud-upload" size={13} color="#92400E" />}
+            {uploading ? <ActivityIndicator size="small" color={Colors.imInk} /> : <Ionicons name="cloud-upload" size={13} color={Colors.imInk} />}
             <Text style={st.uploadBtnText}>Upload cert</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="cert-add-manual-btn" style={st.manualBtn} onPress={() => setAddingManual(true)}>
-            <Ionicons name="add" size={13} color="#92400E" />
+            <Ionicons name="add" size={13} color={Colors.imInk} />
             <Text style={st.manualBtnText}>Add (no file)</Text>
           </TouchableOpacity>
         </View>
@@ -244,28 +244,28 @@ export default function WorkerCertsSection({ workerId, canEdit }: {
             {/* Actions */}
             <View style={st.certActions}>
               {(c.file_url || c.file_id) && (
-                <TouchableOpacity testID={`cert-view-${c.id}`} style={[st.actionChip, { backgroundColor: '#e6eff9' }]}>
-                  <Ionicons name="document" size={11} color="#1e4a8c" />
+                <TouchableOpacity testID={`cert-view-${c.id}`} style={[st.actionChip, { backgroundColor: Colors.imConcrete }]}>
+                  <Ionicons name="document" size={11} color={Colors.paneltecBlue} />
                   <Text style={[st.actionChipText, { color: Colors.orangeLight }]}>File</Text>
                 </TouchableOpacity>
               )}
               {canEdit && (
                 <>
                   <TouchableOpacity testID={`cert-edit-${c.id}`}
-                    style={[st.actionChip, { backgroundColor: '#FEF3C7' }]}
+                    style={[st.actionChip, { backgroundColor: Colors.imConcrete }]}
                     onPress={() => setEditingId(c.id)}>
-                    <Ionicons name="pencil" size={11} color="#92400E" />
-                    <Text style={[st.actionChipText, { color: '#92400E' }]}>Edit</Text>
+                    <Ionicons name="pencil" size={11} color={Colors.imInk} />
+                    <Text style={[st.actionChipText, { color: Colors.imInk }]}>Edit</Text>
                   </TouchableOpacity>
                   <TouchableOpacity testID={`cert-remind-${c.id}`}
-                    style={[st.actionChip, { backgroundColor: '#ece6f4' }]}
+                    style={[st.actionChip, { backgroundColor: Colors.imConcrete }]}
                     onPress={() => sendReminder(c)}>
-                    <Ionicons name="paper-plane" size={11} color="#4f3a8c" />
+                    <Ionicons name="paper-plane" size={11} color={Colors.paneltecViolet} />
                   </TouchableOpacity>
                   <TouchableOpacity testID={`cert-delete-${c.id}`}
-                    style={[st.actionChip, { backgroundColor: '#FCE4EC' }]}
+                    style={[st.actionChip, { backgroundColor: Colors.imConcrete }]}
                     onPress={() => deleteCert(c)}>
-                    <Ionicons name="trash" size={11} color="#7a1f33" />
+                    <Ionicons name="trash" size={11} color={Colors.imError} />
                   </TouchableOpacity>
                 </>
               )}
@@ -281,13 +281,13 @@ const st = StyleSheet.create({
   actionsBar: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   uploadBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: '#FEF3C7', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-    borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: Colors.imConcrete, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.imConcrete,
   },
-  uploadBtnText: { fontSize: 12, fontWeight: '600', color: '#92400E' },
+  uploadBtnText: { fontSize: 12, fontWeight: '600', color: Colors.imInk },
   manualBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#F8FAFC', paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.imConcrete, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border,
   },
   manualBtnText: { fontSize: 12, fontWeight: '500', color: Colors.textSecondary },
@@ -318,7 +318,7 @@ const st = StyleSheet.create({
   actionChipText: { fontSize: 10, fontWeight: '600' },
   // Form
   formBox: {
-    borderWidth: 1, borderColor: '#FDE68A', borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.imConcrete, borderRadius: 12,
     backgroundColor: '#FEF3C720', padding: 10, marginBottom: 8,
   },
   label: { fontSize: 10, fontWeight: '500', color: Colors.textSecondary, marginBottom: 3, marginTop: 4 },
@@ -333,7 +333,7 @@ const st = StyleSheet.create({
   cancelBtnText: { fontSize: 11, color: Colors.textSecondary },
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, backgroundColor: '#92400E',
+    paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8, backgroundColor: Colors.imInk,
   },
-  saveBtnText: { fontSize: 11, fontWeight: '600', color: '#fff' },
+  saveBtnText: { fontSize: 11, fontWeight: '600', color: Colors.imSurface },
 });

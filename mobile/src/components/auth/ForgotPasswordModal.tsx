@@ -33,7 +33,7 @@ export default function ForgotPasswordModal({ visible, onClose }: Props) {
         <View style={s.modal}>
           <View style={s.header}>
             <View style={s.headerIcon}>
-              <Ionicons name="key" size={16} color="#F97316" />
+              <Ionicons name="key" size={16} color={Colors.imBronze} />
             </View>
             <Text style={s.headerTitle}>Forgot your password?</Text>
             <TouchableOpacity testID="forgot-close" onPress={onClose} hitSlop={12}>
@@ -62,7 +62,7 @@ export default function ForgotPasswordModal({ visible, onClose }: Props) {
               onPress={submit}
               disabled={busy}
             >
-              {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+              {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
                 <Text style={s.submitText}>Send reset link</Text>
               )}
             </TouchableOpacity>
@@ -77,16 +77,16 @@ const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'flex-end' },
   modal: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 32, paddingTop: 16 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  headerIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center' },
+  headerIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: Colors.ink },
   desc: { fontSize: 13, color: Colors.textSecondary, lineHeight: 19, marginBottom: 12 },
   input: {
-    backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text,
   },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   cancelText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  submitBtn: { flex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderRadius: 12, paddingVertical: 14 },
-  submitText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  submitBtn: { flex: 2, alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.imBronze, borderRadius: 12, paddingVertical: 14 },
+  submitText: { fontSize: 14, fontWeight: '700', color: Colors.imSurface },
 });

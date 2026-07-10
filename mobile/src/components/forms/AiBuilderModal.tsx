@@ -50,7 +50,7 @@ export default function AiBuilderModal({ onClose, onCreated }: {
         <View style={s.header}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <Ionicons name="sparkles" size={12} color="#9333ea" />
+              <Ionicons name="sparkles" size={12} color={Colors.paneltecViolet} />
               <Text style={s.headerLabel}>AI FORM BUILDER</Text>
             </View>
             <Text style={s.headerTitle}>Build a form with AI</Text>
@@ -92,9 +92,9 @@ export default function AiBuilderModal({ onClose, onCreated }: {
             disabled={busy || !prompt.trim()}
             style={[s.genBtn, (busy || !prompt.trim()) && { opacity: 0.5 }]}>
             {busy ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={Colors.imSurface} />
             ) : (
-              <Ionicons name="sparkles" size={14} color="#fff" />
+              <Ionicons name="sparkles" size={14} color={Colors.imSurface} />
             )}
             <Text style={s.genBtnText}>Generate</Text>
           </TouchableOpacity>
@@ -109,11 +109,11 @@ export default function AiBuilderModal({ onClose, onCreated }: {
               <Text style={s.pickerTitle}>Select category</Text>
               {CATEGORIES.map((c) => (
                 <TouchableOpacity key={c.key}
-                  style={[s.pickerItem, category === c.key && { backgroundColor: '#f5f3ff' }]}
+                  style={[s.pickerItem, category === c.key && { backgroundColor: Colors.imConcrete }]}
                   onPress={() => { setCategory(c.key); setCatOpen(false); }}>
                   <Text style={s.pickerItemText}>{c.label}</Text>
                   {category === c.key && (
-                    <Ionicons name="checkmark" size={14} color="#9333ea" />
+                    <Ionicons name="checkmark" size={14} color={Colors.paneltecViolet} />
                   )}
                 </TouchableOpacity>
               ))}
@@ -130,9 +130,9 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
-    backgroundColor: '#faf5ff',
+    backgroundColor: Colors.imConcrete,
   },
-  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#9333ea' },
+  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.paneltecViolet },
   headerTitle: { fontSize: 20, fontWeight: '800', color: Colors.ink },
   headerDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 2, lineHeight: 17 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.ink, marginBottom: 6 },
@@ -159,9 +159,9 @@ const s = StyleSheet.create({
   genBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12,
-    backgroundColor: '#9333ea',
+    backgroundColor: Colors.paneltecViolet,
   },
-  genBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  genBtnText: { fontSize: 14, fontWeight: '700', color: Colors.imSurface },
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center', alignItems: 'center', padding: 24,

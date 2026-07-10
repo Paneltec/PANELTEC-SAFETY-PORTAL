@@ -9,9 +9,9 @@ import { Colors } from '../../lib/colors';
 
 const certTone = (status: string) => {
   const s = (status || '').toLowerCase();
-  if (s === 'expired') return { bg: '#FFF1F2', text: '#BE123C', border: '#FECDD3' };
-  if (s === 'expiring' || s === 'expiring_soon') return { bg: '#FFFBEB', text: '#B45309', border: '#FDE68A' };
-  return { bg: '#F0FDF4', text: '#15803D', border: '#BBF7D0' };
+  if (s === 'expired') return { bg: Colors.imConcrete, text: Colors.imError, border: Colors.imConcrete };
+  if (s === 'expiring' || s === 'expiring_soon') return { bg: Colors.imConcrete, text: Colors.imBronze, border: Colors.imConcrete };
+  return { bg: Colors.imConcrete, text: Colors.imSuccess, border: Colors.imConcrete };
 };
 
 interface Props { token: string; onReset: () => void; }
@@ -77,7 +77,7 @@ export default function WorkerScanResult({ token, onReset }: Props) {
     return (
       <View style={s.errorCard}>
         <View style={s.errorIcon}>
-          <Ionicons name="alert-triangle" size={28} color="#F59E0B" />
+          <Ionicons name="alert-triangle" size={28} color={Colors.imWarning} />
         </View>
         <Text style={s.errorTitle}>Scan Error</Text>
         <Text style={s.errorBody}>{error}</Text>
@@ -108,7 +108,7 @@ export default function WorkerScanResult({ token, onReset }: Props) {
             )}
             {profile.active_site_today && (
               <View style={s.activeSiteBadge}>
-                <Ionicons name="checkmark-circle" size={12} color="#15803D" />
+                <Ionicons name="checkmark-circle" size={12} color={Colors.imSuccess} />
                 <Text style={s.activeSiteText}>Signed in to {profile.active_site_today.name}</Text>
               </View>
             )}
@@ -171,7 +171,7 @@ export default function WorkerScanResult({ token, onReset }: Props) {
         onPress={() => setSignInOpen(true)}
         activeOpacity={0.7}
       >
-        <Ionicons name="log-in" size={16} color="#fff" />
+        <Ionicons name="log-in" size={16} color={Colors.imSurface} />
         <Text style={s.signInText}>Sign in to site</Text>
       </TouchableOpacity>
 
@@ -238,7 +238,7 @@ const s = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 40 },
   // Error
   errorCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
-  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   retryBtn: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
@@ -246,18 +246,18 @@ const s = StyleSheet.create({
   // Profile
   profileCard: { backgroundColor: Colors.surface, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, padding: 20, marginBottom: 12 },
   profileRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 14 },
-  avatar: { width: 64, height: 64, borderRadius: 18, backgroundColor: '#DBEAFE', alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#BFDBFE' },
-  avatarText: { fontSize: 22, fontWeight: '700', color: '#1D4ED8' },
+  avatar: { width: 64, height: 64, borderRadius: 18, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: Colors.imConcrete },
+  avatarText: { fontSize: 22, fontWeight: '700', color: Colors.paneltecBlue },
   workerOverline: { fontSize: 10, fontWeight: '600', letterSpacing: 1, color: Colors.textTertiary, textTransform: 'uppercase' },
   workerName: { fontSize: 22, fontWeight: '700', color: Colors.ink, marginTop: 2 },
   workerTrade: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
-  activeSiteBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, backgroundColor: '#F0FDF4', paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 },
-  activeSiteText: { fontSize: 11, fontWeight: '700', color: '#15803D' },
+  activeSiteBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, backgroundColor: Colors.imConcrete, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8 },
+  activeSiteText: { fontSize: 11, fontWeight: '700', color: Colors.imSuccess },
   // Section
   section: { backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 12 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  countBadge: { backgroundColor: '#F1F5F9', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
+  countBadge: { backgroundColor: Colors.imConcrete, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   countText: { fontSize: 10, fontWeight: '700', color: Colors.textTertiary },
   emptyText: { fontSize: 12, color: Colors.textTertiary },
   // Certs
@@ -269,11 +269,11 @@ const s = StyleSheet.create({
   swmsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, marginBottom: 4 },
   swmsTitle: { fontSize: 12, fontWeight: '600', color: Colors.ink, flex: 1, marginRight: 8 },
   swmsVer: { color: Colors.textTertiary },
-  ackBadge: { backgroundColor: '#FFFBEB', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  ackText: { fontSize: 9, fontWeight: '700', color: '#B45309' },
+  ackBadge: { backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
+  ackText: { fontSize: 9, fontWeight: '700', color: Colors.imBronze },
   // Sign-in
-  signInBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#2563EB', borderRadius: 16, paddingVertical: 16, marginBottom: 12 },
-  signInText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  signInBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.paneltecBlue, borderRadius: 16, paddingVertical: 16, marginBottom: 12 },
+  signInText: { color: Colors.imSurface, fontSize: 15, fontWeight: '700' },
   tokenLabel: { fontSize: 10, color: Colors.textTertiary, textAlign: 'center', letterSpacing: 1, marginBottom: 12 },
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
   backText: { fontSize: 13, color: Colors.orangeLight, fontWeight: '500' },
@@ -282,10 +282,10 @@ const s = StyleSheet.create({
   modal: { backgroundColor: Colors.surface, borderRadius: 20, width: '100%', maxWidth: 420, maxHeight: '80%', overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border },
   modalTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink },
-  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, backgroundColor: '#F8FAFC' },
+  searchBox: { flexDirection: 'row', alignItems: 'center', gap: 8, margin: 12, paddingHorizontal: 12, paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.imConcrete },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text },
   emptySites: { padding: 16, fontSize: 12, color: Colors.textTertiary, textAlign: 'center' },
-  siteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  siteRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: Colors.imConcrete },
   siteRowName: { fontSize: 13, fontWeight: '600', color: Colors.ink },
   siteRowAddr: { fontSize: 11, color: Colors.textTertiary },
 });

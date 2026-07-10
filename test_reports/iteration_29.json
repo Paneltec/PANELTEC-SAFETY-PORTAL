@@ -1,0 +1,45 @@
+{
+  "summary": "v160.1.2 'Industrial Materials' LIGHT palette + form-fill escape-route regression on Expo web :3001, viewport 412x915, worker_stephen@paneltec.com.au. Grep confirms 0 inline hex strings remain in /app/mobile/src + /app/mobile/app (excluding colors.ts). All target screens render without unreadable text or console JS errors. IM palette cascade verified across dashboard, forms library, category, form-fill, outbox, QR scan, my-work, and profile. Tab bar bg = imSteel rgb(178,178,178); inactive tab labels = imInkMuted rgb(75,75,75); active tab (PROFILE screenshot) shows imBronze rgb(192,128,64) tint. Screen bg = imConcrete rgb(234,234,234). Sticky headers (forms library, form fill) = imSteel rgb(178,178,178). Cancel button testID='fill-cancel-btn' present at top=44px (>=40 floor); chevron+text use Colors.hvOrange which maps to imBronze #C08040 in v160.1.2 (verified in source /app/mobile/app/forms/fill/[id].tsx L673+L893). Clean Cancel navigates immediately to /forms/category/general. Dirty Cancel (after typing into a text input) does NOT navigate — URL stays on /forms/fill/... confirming Alert.alert intercept fired (RN Web Alert does not surface as browser dialog, per KNOWN LIMITATION). Outbox filter chips: ALL active = imBronze bg rgb(192,128,64) + white text; inactive = white surface bg rgb(255,255,255) + imInkMuted text rgb(75,75,75); clicking QUEUED promoted it to imBronze bg + white text. Profile: avatar = imBronze circle rgb(192,128,64) with white 'TW'; SIGN OUT button = imBronze bg rgb(192,128,64) with white text. Only 4 outbox filter chips visible (ALL/QUEUED/SENT/FAILED — no SENDING). Version eyebrow reads 'PANELTEC CIVIL · paneltec-v160.1.2'.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/dashboard", "issues": ["Notch/SafeArea backdrop at y=1..20 samples as imConcrete rgb(234,234,234) rather than imSteel rgb(178,178,178). The bottom tab bar IS imSteel and other sticky headers (forms library, form-fill) ARE imSteel — but the dashboard top SafeArea appears to blend with the screen bg. If a distinct steel notch strip on the dashboard is required, verify the top-inset SafeAreaView bg override in /app/mobile/app/(tabs)/dashboard.tsx (or its layout). Not blocking — no readability regression."]},
+      {"screen": "/qr-signon", "issues": ["Screen bg samples as pure white rgb(255,255,255) instead of imConcrete rgb(234,234,234). Consistent behaviour with previous cycles (QR scanner surface is intentionally white). Flagging for awareness only."]}
+    ]
+  },
+  "test_results": {
+    "login": "PASS — worker_stephen@paneltec.com.au / WorkerTest123! → /dashboard.",
+    "dashboard": "PASS — screen bg imConcrete rgb(234,234,234); tab bar rgb(178,178,178) imSteel; inactive tabs rgb(75,75,75) imInkMuted; version 'PANELTEC CIVIL · paneltec-v160.1.2' visible; no unreadable text.",
+    "forms_library": "PASS — sticky header bg rgb(178,178,178) imSteel; screen bg imConcrete; Forms Library tile rendered on white card.",
+    "category_general": "PASS — 10 form-row-* testids present.",
+    "form_fill_header": "PASS — sticky header bg rgb(178,178,178) imSteel; Cancel button bbox {x:16,y:44,w:68,h:31}; chevron+text use Colors.hvOrange→imBronze #C08040 per source.",
+    "form_fill_cancel_visibility": "PASS — testID='fill-cancel-btn' present, top=44 (>=40 threshold clears notch).",
+    "clean_cancel": "PASS — clean Cancel navigated /forms/fill/... → /forms/category/general instantly.",
+    "dirty_cancel": "PASS — filled a visible text input, tapped Cancel: URL did NOT change (still /forms/fill/...). Alert.alert intercept confirmed via URL persistence; RN Web Alert did not surface as browser dialog (KNOWN LIMITATION acknowledged in review request).",
+    "outbox": "PASS — ALL active chip bg rgb(192,128,64) imBronze + white text; inactive chips white bg + rgb(75,75,75) text; clicking QUEUED promoted to imBronze bg + white text.",
+    "qr_scan": "PASS — /qr-signon renders (white bg — see design note).",
+    "my_work": "PASS — screen bg rgb(234,234,234) imConcrete.",
+    "profile": "PASS — avatar circle rgb(192,128,64) imBronze + white 'TW'; SIGN OUT button rgb(192,128,64) imBronze + white text; screen bg white for card area.",
+    "console_js_errors": "CLEAN — only pre-existing shadow*/pointerEvents deprecation warnings + worker-RBAC 403s (/api/ask/briefing, etc.) as pre-approved in review request. No new theme/JS errors."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "OPTIONAL: If a distinct imSteel notch strip is desired on the dashboard, ensure the top SafeArea uses Colors.imSteel (rgb 178,178,178) rather than falling through to screen bg imConcrete. Forms library and form-fill sticky headers correctly render imSteel; only the dashboard top-inset renders concrete.",
+    "FOLLOW-UP: Verify DIRTY-cancel Alert.alert renders as a native Android dialog on device (RN Web preview swallows Alert.alert; only URL-persistence check available on web)."
+  ],
+  "critical_code_review_comments": [
+    "Sweep is thorough — grep for inline hex under /app/mobile/{src,app} excluding colors.ts returns ZERO matches, matching the review-request claim.",
+    "colors.ts semantic remap is clean: hvOrange/brandOrange/imBronze all point at #C08040 so cascading references (like fs.cancelText → Colors.hvOrange) automatically pick up the IM palette without further edits.",
+    "Cancel button color assertion via getComputedStyle(btn).color returns rgb(0,0,0) because RN Pressable root has no color set; the Text/Ionicons children explicitly apply Colors.hvOrange (=imBronze). No fix needed — this is a measurement note for future testers: probe .cancelText child, not the Pressable root.",
+    "Escape-route wiring in /app/mobile/app/forms/fill/[id].tsx is preserved from v160.1.1 and functions correctly on web (URL-persistence proves handler fires)."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A - frontend only per request", "frontend": "100% (all 8 screens + escape route + palette cascade pass; 2 minor design notes non-blocking)"},
+  "test_credentials": "Worker: worker_stephen@paneltec.com.au / WorkerTest123! — login 200, redirected to /dashboard.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "IM palette values for probing: imSteel=rgb(178,178,178), imBronze=rgb(192,128,64), imConcrete=rgb(234,234,234), imInk=rgb(26,26,26), imInkMuted=rgb(75,75,75), imSurface=rgb(255,255,255), imBorder=rgb(200,200,200). To probe Cancel button chevron/text color, query the Text child (fs.cancelText) not the outer Pressable — the Pressable has no explicit color and returns rgb(0,0,0). RN Web Alert.alert still does not fire page.on('dialog'); verify dirty-form intercepts via URL persistence only. The mobile app is served at http://localhost:3001; login form needs SIGN IN div-role click (Enter key does not submit)."
+}

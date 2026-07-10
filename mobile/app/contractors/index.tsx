@@ -33,7 +33,7 @@ export default function ContractorsListScreen() {
           <Text style={s.sub}>Companies, ABNs, insurances and licences.</Text>
         </View>
         <TouchableOpacity testID="contractor-create-btn" style={s.addBtn} onPress={() => router.push('/contractors/new')}>
-          <Ionicons name="add" size={18} color="#fff" />
+          <Ionicons name="add" size={18} color={Colors.imSurface} />
           <Text style={s.addText}>Add</Text>
         </TouchableOpacity>
       </View>
@@ -91,7 +91,7 @@ const s = StyleSheet.create({
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.blue, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  addText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addText: { color: Colors.imSurface, fontSize: 13, fontWeight: '600' },
   filterRow: { marginBottom: 14, flexGrow: 0 },
   filterChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, marginRight: 8 },
   filterChipActive: { borderColor: Colors.blue, backgroundColor: Colors.blueSoft },

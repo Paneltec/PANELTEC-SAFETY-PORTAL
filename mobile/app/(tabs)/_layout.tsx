@@ -51,19 +51,19 @@ export default function TabLayout() {
     <View style={{ flex: 1, backgroundColor: Colors.bg }}>
       {isPreviewing && (
         <View testID="preview-ribbon" style={rs.ribbon}>
-          <Ionicons name="eye" size={12} color="#fff" />
+          <Ionicons name="eye" size={12} color={Colors.imSurface} />
           <Text style={rs.ribbonText}>PREVIEW MODE · {(previewedRole || 'unknown').toUpperCase()}</Text>
         </View>
       )}
 
       {activeSignOn && modules.sign_on && (
         <TouchableOpacity testID="signoff-banner" style={rs.signoffBanner} onPress={handleSignOff} activeOpacity={0.8}>
-          <Ionicons name="location" size={14} color="#fff" />
+          <Ionicons name="location" size={14} color={Colors.imSurface} />
           <Text style={rs.signoffText} numberOfLines={1}>
             ON-SITE: {activeSignOn.site_name.toUpperCase()}
           </Text>
           <View style={rs.signoffBtn}>
-            <Ionicons name="log-out" size={12} color="#fff" />
+            <Ionicons name="log-out" size={12} color={Colors.imSurface} />
             <Text style={rs.signoffBtnText}>SIGN OFF</Text>
           </View>
         </TouchableOpacity>
@@ -77,7 +77,7 @@ export default function TabLayout() {
           tabBarInactiveTintColor: Colors.brandTabInactive,
           tabBarStyle: {
             backgroundColor: Colors.brandTabBar,
-            borderTopColor: '#0F172A', // linter-ok: HV theme tab-bar top border — one shade darker than hvAsphalt
+            borderTopColor: Colors.imInk, // linter-ok: HV theme tab-bar top border — one shade darker than hvAsphalt
             borderTopWidth: 1,
             height: 64,
             paddingBottom: 8,
@@ -154,10 +154,10 @@ const rs = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.orange, paddingVertical: 10, paddingHorizontal: 16,
   },
-  signoffText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#fff', letterSpacing: 0.8 },
+  signoffText: { flex: 1, fontSize: 11, fontWeight: '700', color: Colors.imSurface, letterSpacing: 0.8 },
   signoffBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: 'rgba(0,0,0,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
-  signoffBtnText: { fontSize: 10, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
+  signoffBtnText: { fontSize: 10, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.5 },
 });

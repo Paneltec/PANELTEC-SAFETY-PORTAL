@@ -133,7 +133,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
     return (
       <View style={s.errorCard}>
         <View style={s.errorIcon}>
-          <Ionicons name="alert-circle" size={28} color="#E11D48" />
+          <Ionicons name="alert-circle" size={28} color={Colors.imError} />
         </View>
         <Text style={s.errorTitle}>QR Error</Text>
         <Text style={s.errorBody}>{error}</Text>
@@ -152,7 +152,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
       <ScrollView contentContainerStyle={s.scroll}>
         <View testID="site-signon-confirmation" style={s.successCard}>
           <View style={s.successCircle}>
-            <Ionicons name="checkmark" size={32} color="#fff" />
+            <Ionicons name="checkmark" size={32} color={Colors.imSurface} />
           </View>
           <Text style={s.successTitle}>You're signed on.</Text>
           <Text style={s.successSite}>{site.name}</Text>
@@ -161,7 +161,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
           </Text>
           {signed.gps_warning && (
             <View testID="signon-gps-warning" style={s.gpsWarning}>
-              <Ionicons name="warning" size={14} color="#92400E" />
+              <Ionicons name="warning" size={14} color={Colors.imInk} />
               <Text style={s.gpsWarningText}>
                 GPS was {signed.gps_distance_m}m from the registered site location — your supervisor has been notified.
               </Text>
@@ -181,8 +181,8 @@ export default function SiteScanResult({ token, onReset }: Props) {
             activeOpacity={0.7}
           >
             {signingOff
-              ? <ActivityIndicator size="small" color="#E11D48" />
-              : <Ionicons name="log-out" size={16} color="#E11D48" />}
+              ? <ActivityIndicator size="small" color={Colors.imError} />
+              : <Ionicons name="log-out" size={16} color={Colors.imError} />}
             <Text style={s.signOffBtnText}>Sign off</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="site-scan-done" style={s.doneBtn} onPress={onReset}>
@@ -217,9 +217,9 @@ export default function SiteScanResult({ token, onReset }: Props) {
         {gpsState === 'loading' ? (
           <ActivityIndicator size="small" color={Colors.textSecondary} />
         ) : (
-          <Ionicons name="navigate" size={13} color={gpsState === 'ok' ? '#047857' : gpsState === 'denied' ? '#92400E' : Colors.textSecondary} />
+          <Ionicons name="navigate" size={13} color={gpsState === 'ok' ? Colors.imSuccess : gpsState === 'denied' ? Colors.imInk : Colors.textSecondary} />
         )}
-        <Text style={[s.gpsText, gpsState === 'ok' && { color: '#047857' }, gpsState === 'denied' && { color: '#92400E' }]}>
+        <Text style={[s.gpsText, gpsState === 'ok' && { color: Colors.imSuccess }, gpsState === 'denied' && { color: Colors.imInk }]}>
           {gpsState === 'ok' && `Location captured (±${Math.round(gps?.accuracy || 0)}m)`}
           {gpsState === 'denied' && 'Location unavailable — proceed without'}
           {gpsState === 'loading' && 'Getting location…'}
@@ -240,7 +240,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
           {data.signon_questions.map((q: any) => (
             <View key={q.id} testID={`signon-q-${q.id}`} style={s.questionCard}>
               <Text style={s.questionLabel}>
-                {q.label}{q.required ? <Text style={{ color: '#E11D48' }}> *</Text> : null}
+                {q.label}{q.required ? <Text style={{ color: Colors.imError }}> *</Text> : null}
               </Text>
               {q.type === 'yesno' && (
                 <View style={s.yesnoRow}>
@@ -252,7 +252,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
                       onPress={() => updateAnswer(q.id, v)}
                       activeOpacity={0.7}
                     >
-                      <Text style={[s.yesBtnText, answers[q.id] === v && { color: '#fff' }]}>
+                      <Text style={[s.yesBtnText, answers[q.id] === v && { color: Colors.imSurface }]}>
                         {v === 'yes' ? 'Yes' : 'No'}
                       </Text>
                     </TouchableOpacity>
@@ -307,7 +307,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
               activeOpacity={0.7}
             >
               <View style={[s.checkbox, ackSwms.has(sw.id) && s.checkboxActive]}>
-                {ackSwms.has(sw.id) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                {ackSwms.has(sw.id) && <Ionicons name="checkmark" size={12} color={Colors.imSurface} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.swmsTitle} numberOfLines={1}>{sw.title}</Text>
@@ -320,7 +320,7 @@ export default function SiteScanResult({ token, onReset }: Props) {
 
       {error && (
         <View style={s.errorBanner}>
-          <Ionicons name="alert-circle" size={14} color="#E11D48" />
+          <Ionicons name="alert-circle" size={14} color={Colors.imError} />
           <Text style={s.errorBannerText}>{error}</Text>
         </View>
       )}
@@ -333,8 +333,8 @@ export default function SiteScanResult({ token, onReset }: Props) {
         activeOpacity={0.7}
       >
         {signing
-          ? <ActivityIndicator size="small" color="#fff" />
-          : <Ionicons name="checkmark-circle" size={18} color="#fff" />}
+          ? <ActivityIndicator size="small" color={Colors.imSurface} />
+          : <Ionicons name="checkmark-circle" size={18} color={Colors.imSurface} />}
         <Text style={s.signOnText}>Sign me on</Text>
       </TouchableOpacity>
 
@@ -355,14 +355,14 @@ const s = StyleSheet.create({
   loadText: { marginTop: 12, fontSize: 14, color: Colors.textSecondary },
   scroll: { padding: 16, paddingBottom: 40 },
   errorCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
-  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   retryBtn: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   retryText: { fontSize: 14, fontWeight: '600', color: Colors.blue },
-  siteHeader: { backgroundColor: '#0F172A', borderRadius: 20, padding: 20, marginBottom: 16 },
-  siteOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: '#FB923C' },
-  siteName: { fontSize: 24, fontWeight: '700', color: '#fff', marginTop: 4 },
+  siteHeader: { backgroundColor: Colors.imInk, borderRadius: 20, padding: 20, marginBottom: 16 },
+  siteOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.imBronze },
+  siteName: { fontSize: 24, fontWeight: '700', color: Colors.imSurface, marginTop: 4 },
   addrRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   siteAddr: { fontSize: 13, color: 'rgba(255,255,255,0.9)' },
   gpsChip: {
@@ -370,13 +370,13 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, marginBottom: 12,
   },
-  gpsOk: { borderColor: Colors.emerald, backgroundColor: '#ECFDF5' },
-  gpsDenied: { borderColor: '#FDE68A', backgroundColor: '#FFFBEB' },
+  gpsOk: { borderColor: Colors.emerald, backgroundColor: Colors.imConcrete },
+  gpsDenied: { borderColor: Colors.imConcrete, backgroundColor: Colors.imConcrete },
   gpsText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
   workerChip: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
-    backgroundColor: '#EFF6FF', marginBottom: 16,
+    backgroundColor: Colors.imConcrete, marginBottom: 16,
   },
   workerName: { fontSize: 13, fontWeight: '600', color: Colors.blue },
   section: { backgroundColor: Colors.surface, borderRadius: 16, borderWidth: 1, borderColor: Colors.border, padding: 16, marginBottom: 16 },
@@ -386,11 +386,11 @@ const s = StyleSheet.create({
   questionLabel: { fontSize: 14, fontWeight: '600', color: Colors.ink, marginBottom: 10 },
   yesnoRow: { flexDirection: 'row', borderRadius: 10, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden', alignSelf: 'flex-start' },
   yesnoBtn: { paddingHorizontal: 20, paddingVertical: 10, backgroundColor: Colors.surface },
-  yesBtnActive: { backgroundColor: '#EA580C' },
+  yesBtnActive: { backgroundColor: Colors.imBronze },
   yesBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary },
   questionInput: {
     borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.ink, backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.ink, backgroundColor: Colors.imConcrete,
   },
   choiceList: { gap: 6 },
   choiceRow: {
@@ -398,47 +398,47 @@ const s = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
   },
-  choiceActive: { borderColor: '#EA580C', backgroundColor: '#FFF7ED' },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
-  radioActive: { borderColor: '#EA580C' },
-  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#EA580C' },
+  choiceActive: { borderColor: Colors.imBronze, backgroundColor: Colors.imConcrete },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: Colors.imBorder, alignItems: 'center', justifyContent: 'center' },
+  radioActive: { borderColor: Colors.imBronze },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.imBronze },
   choiceText: { fontSize: 14, color: Colors.ink },
   swmsRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, marginBottom: 6 },
-  swmsRowActive: { borderColor: '#2563EB', backgroundColor: '#EFF6FF' },
-  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: '#2563EB', borderColor: '#2563EB' },
+  swmsRowActive: { borderColor: Colors.paneltecBlue, backgroundColor: Colors.imConcrete },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: Colors.imBorder, alignItems: 'center', justifyContent: 'center' },
+  checkboxActive: { backgroundColor: Colors.paneltecBlue, borderColor: Colors.paneltecBlue },
   swmsTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
   swmsSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
   errorBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
-    padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.red, backgroundColor: '#FFF1F2', marginBottom: 12,
+    padding: 12, borderRadius: 12, borderWidth: 1, borderColor: Colors.red, backgroundColor: Colors.imConcrete, marginBottom: 12,
   },
-  errorBannerText: { fontSize: 12, color: '#9F1239', flex: 1, lineHeight: 18 },
-  signOnBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#EA580C', borderRadius: 14, paddingVertical: 16, marginBottom: 12 },
-  signOnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  errorBannerText: { fontSize: 12, color: Colors.imError, flex: 1, lineHeight: 18 },
+  signOnBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.imBronze, borderRadius: 14, paddingVertical: 16, marginBottom: 12 },
+  signOnText: { color: Colors.imSurface, fontSize: 16, fontWeight: '700' },
   disclaimer: { fontSize: 11, color: Colors.textTertiary, textAlign: 'center', marginBottom: 16, lineHeight: 16 },
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
   backText: { fontSize: 13, color: Colors.orangeLight, fontWeight: '500' },
   successCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: Colors.emerald },
-  successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.imSuccess, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   successTitle: { fontSize: 24, fontWeight: '700', color: Colors.ink },
   successSite: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
   successTime: { fontSize: 13, color: Colors.textSecondary, marginTop: 2 },
   gpsWarning: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,
     marginTop: 16, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20,
-    backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A',
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imConcrete,
   },
-  gpsWarningText: { fontSize: 12, color: '#92400E', flex: 1, lineHeight: 18 },
+  gpsWarningText: { fontSize: 12, color: Colors.imInk, flex: 1, lineHeight: 18 },
   successExpiry: { fontSize: 12, color: Colors.textTertiary, marginTop: 16 },
   signOffHint: { fontSize: 12, color: Colors.textTertiary, marginTop: 12, textAlign: 'center', lineHeight: 18 },
   signOffBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     marginTop: 16, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12,
-    borderWidth: 1.5, borderColor: Colors.red, backgroundColor: '#FFF1F2',
+    borderWidth: 1.5, borderColor: Colors.red, backgroundColor: Colors.imConcrete,
   },
-  signOffBtnText: { fontSize: 14, fontWeight: '600', color: '#E11D48' },
+  signOffBtnText: { fontSize: 14, fontWeight: '600', color: Colors.imError },
   doneBtn: { marginTop: 12, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 12, backgroundColor: Colors.emerald },
-  doneBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  doneBtnText: { color: Colors.imSurface, fontSize: 15, fontWeight: '600' },
   successFooter: { fontSize: 11, color: Colors.textTertiary, marginTop: 8 },
 });

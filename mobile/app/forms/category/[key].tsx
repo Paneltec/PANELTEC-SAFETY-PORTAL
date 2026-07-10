@@ -126,10 +126,10 @@ const s = StyleSheet.create({
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: Colors.brandSurface,
-    borderWidth: 1, borderColor: '#CBD5E1',
+    borderWidth: 1, borderColor: Colors.imBorder,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 48, marginBottom: 8,
-    shadowColor: '#000',
+    shadowColor: Colors.imInk,
     shadowOpacity: 0.06,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },

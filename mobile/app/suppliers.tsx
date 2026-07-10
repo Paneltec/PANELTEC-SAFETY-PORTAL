@@ -102,7 +102,7 @@ function SuppliersScreenInner() {
       <SafeAreaView style={s.safe}>
         <ScrollView testID="suppliers-not-connected" contentContainerStyle={s.content}>
           <TouchableOpacity testID="suppliers-back-nc" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={s.navBack}>
-            <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+            <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
             <Text style={s.navBackText}>Back</Text>
           </TouchableOpacity>
           <Text style={s.overline}>COMPLIANCE</Text>
@@ -126,7 +126,7 @@ function SuppliersScreenInner() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}
       >
         <TouchableOpacity testID="suppliers-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={s.navBack}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
           <Text style={s.navBackText}>Back</Text>
         </TouchableOpacity>
         <Text style={s.overline}>COMPLIANCE</Text>
@@ -148,7 +148,7 @@ function SuppliersScreenInner() {
           </View>
           {canEdit && (
             <TouchableOpacity testID="sync-simpro" style={s.syncBtn} onPress={sync} disabled={syncing}>
-              {syncing ? <ActivityIndicator size="small" color="#4f3a8c" /> : <Ionicons name="refresh" size={14} color="#4f3a8c" />}
+              {syncing ? <ActivityIndicator size="small" color={Colors.paneltecViolet} /> : <Ionicons name="refresh" size={14} color={Colors.paneltecViolet} />}
               <Text style={s.syncText}>Sync</Text>
             </TouchableOpacity>
           )}
@@ -175,32 +175,32 @@ function SuppliersScreenInner() {
                   {sup.phone ? <Text style={s.cardPhone}>{sup.phone}</Text> : null}
                 </View>
                 <View style={[s.statusPill, sup.active_final ? s.activePill : s.inactivePill]}>
-                  <Text style={[s.statusText, { color: sup.active_final ? '#1f7a3f' : '#475569' }]}>
+                  <Text style={[s.statusText, { color: sup.active_final ? Colors.imSuccess : Colors.imInkMuted }]}>
                     {sup.active_final ? 'Active' : 'Inactive'}
                   </Text>
                 </View>
               </View>
               {/* Icon chips row — tapping opens the drawer on that panel */}
               <View style={s.chipRow}>
-                <TouchableOpacity testID={`tasks-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#fbf3df' }]}
+                <TouchableOpacity testID={`tasks-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: Colors.imConcrete }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('tasks'); }}>
-                  <Ionicons name="checkbox" size={12} color="#8c6a1a" />
-                  <Text style={[s.chipCount, { color: '#8c6a1a' }]}>Tasks</Text>
+                  <Ionicons name="checkbox" size={12} color={Colors.imInk} />
+                  <Text style={[s.chipCount, { color: Colors.imInk }]}>Tasks</Text>
                 </TouchableOpacity>
-                <TouchableOpacity testID={`notes-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#e6eff9' }]}
+                <TouchableOpacity testID={`notes-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: Colors.imConcrete }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('notes'); }}>
-                  <Ionicons name="document-text" size={12} color="#1e4a8c" />
+                  <Ionicons name="document-text" size={12} color={Colors.paneltecBlue} />
                   <Text style={[s.chipCount, { color: Colors.orangeLight }]}>Notes</Text>
                 </TouchableOpacity>
-                <TouchableOpacity testID={`folders-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#ece6f4' }]}
+                <TouchableOpacity testID={`folders-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: Colors.imConcrete }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('folders'); }}>
-                  <Ionicons name="folder" size={12} color="#4f3a8c" />
-                  <Text style={[s.chipCount, { color: '#4f3a8c' }]}>Folders</Text>
+                  <Ionicons name="folder" size={12} color={Colors.paneltecViolet} />
+                  <Text style={[s.chipCount, { color: Colors.paneltecViolet }]}>Folders</Text>
                 </TouchableOpacity>
-                <TouchableOpacity testID={`members-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: '#fbeadf' }]}
+                <TouchableOpacity testID={`members-${sup.simpro_supplier_id}`} style={[s.iconChip, { backgroundColor: Colors.imConcrete }]}
                   onPress={(e) => { e.stopPropagation?.(); setDrawerSupplier(sup); setDrawerPanel('members'); }}>
-                  <Ionicons name="people" size={12} color="#a8480f" />
-                  <Text style={[s.chipCount, { color: '#a8480f' }]}>Members</Text>
+                  <Ionicons name="people" size={12} color={Colors.imBronze} />
+                  <Text style={[s.chipCount, { color: Colors.imBronze }]}>Members</Text>
                 </TouchableOpacity>
               </View>
               {(sup.state || sup.address) ? (
@@ -297,7 +297,7 @@ function EditSupplierModal({ supplier, allSuppliers, canEdit, onClose, onSaved }
           </View>
 
           <View style={s.simproBanner}>
-            <Ionicons name="extension-puzzle" size={12} color="#8c6a1a" />
+            <Ionicons name="extension-puzzle" size={12} color={Colors.imInk} />
             <Text style={s.simproBannerText}>Name and Simpro ID are synced from Simpro. Fields below are org-local overrides.</Text>
           </View>
 
@@ -334,7 +334,7 @@ function EditSupplierModal({ supplier, allSuppliers, canEdit, onClose, onSaved }
               <Switch testID="supplier-active-checkbox"
                 value={form.active_override}
                 onValueChange={(v) => setForm({ ...form, active_override: v })}
-                trackColor={{ true: '#10B981', false: '#CBD5E1' }}
+                trackColor={{ true: Colors.imSuccess, false: Colors.imBorder }}
               />
             </View>
           </ScrollView>
@@ -345,7 +345,7 @@ function EditSupplierModal({ supplier, allSuppliers, canEdit, onClose, onSaved }
                 <Text style={s.ghostBtnText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity testID="modal-update" style={s.primaryBtn} onPress={submit} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={s.primaryBtnText}>Update</Text>}
+                {saving ? <ActivityIndicator color={Colors.imSurface} size="small" /> : <Text style={s.primaryBtnText}>Update</Text>}
               </TouchableOpacity>
             </View>
           )}
@@ -399,9 +399,9 @@ function RenewalEmailModal({ supplier, onClose, onSent }: any) {
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <SafeAreaView style={s.modalSafe}>
         <View testID="renewal-modal" style={s.modalContainer}>
-          <View style={[s.modalHeader, { backgroundColor: '#ece6f4' }]}>
+          <View style={[s.modalHeader, { backgroundColor: Colors.imConcrete }]}>
             <View style={{ flex: 1 }}>
-              <Text style={[s.modalOverline, { color: '#4f3a8c' }]}>SEND RENEWAL EMAIL</Text>
+              <Text style={[s.modalOverline, { color: Colors.paneltecViolet }]}>SEND RENEWAL EMAIL</Text>
               <Text style={s.modalTitle}>{supplier.name}</Text>
             </View>
             <TouchableOpacity onPress={onClose} style={s.closeBtn}>
@@ -426,9 +426,9 @@ function RenewalEmailModal({ supplier, onClose, onSent }: any) {
             <TouchableOpacity style={s.ghostBtn} onPress={onClose}>
               <Text style={s.ghostBtnText}>Cancel</Text>
             </TouchableOpacity>
-            <TouchableOpacity testID="renewal-send" style={[s.primaryBtn, { backgroundColor: '#4f3a8c' }]} onPress={send} disabled={sending}>
-              {sending ? <ActivityIndicator color="#fff" size="small" /> : (
-                <><Ionicons name="mail" size={14} color="#fff" /><Text style={s.primaryBtnText}>Send</Text></>
+            <TouchableOpacity testID="renewal-send" style={[s.primaryBtn, { backgroundColor: Colors.paneltecViolet }]} onPress={send} disabled={sending}>
+              {sending ? <ActivityIndicator color={Colors.imSurface} size="small" /> : (
+                <><Ionicons name="mail" size={14} color={Colors.imSurface} /><Text style={s.primaryBtnText}>Send</Text></>
               )}
             </TouchableOpacity>
           </View>
@@ -448,12 +448,12 @@ const s = StyleSheet.create({
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, marginBottom: 14 },
   searchRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
-  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: '#ece6f4' },
-  syncText: { fontSize: 12, fontWeight: '600', color: '#4f3a8c' },
+  syncBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10, backgroundColor: Colors.imConcrete },
+  syncText: { fontSize: 12, fontWeight: '600', color: Colors.paneltecViolet },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 48 },
   emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink, textAlign: 'center', marginTop: 10 },
   emptyBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 4, maxWidth: 280 },
-  errorCard: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, backgroundColor: '#F5EFE0', borderWidth: 1, borderColor: '#D8CFB8', borderRadius: 16, marginTop: 16 },
+  errorCard: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20, backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imBorder, borderRadius: 16, marginTop: 16 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, textAlign: 'center', marginTop: 12 },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, maxWidth: 300 },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
@@ -461,8 +461,8 @@ const s = StyleSheet.create({
   cardName: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   cardPhone: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   statusPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, borderWidth: 1 },
-  activePill: { backgroundColor: '#d8ecdd', borderColor: '#b6dcbf' },
-  inactivePill: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  activePill: { backgroundColor: Colors.imConcrete, borderColor: Colors.imConcrete },
+  inactivePill: { backgroundColor: Colors.imConcrete, borderColor: Colors.imBorder },
   statusText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   chipRow: { flexDirection: 'row', gap: 6, marginTop: 10 },
   iconChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
@@ -472,21 +472,21 @@ const s = StyleSheet.create({
   // Modal styles
   modalSafe: { flex: 1, backgroundColor: Colors.bg },
   modalContainer: { flex: 1 },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: '#e8efe2' },
-  modalOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#2e5e2e' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.imConcrete },
+  modalOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.imSuccess },
   modalTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink, marginTop: 2 },
   closeBtn: { padding: 6 },
-  simproBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#fbf3df', borderBottomWidth: 1, borderBottomColor: '#e6d99c' },
-  simproBannerText: { fontSize: 11, color: '#8c6a1a', flex: 1, lineHeight: 16 },
+  simproBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: Colors.imConcrete, borderBottomWidth: 1, borderBottomColor: Colors.imWarning },
+  simproBannerText: { fontSize: 11, color: Colors.imInk, flex: 1, lineHeight: 16 },
   modalBody: { flex: 1, padding: 16 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12 },
   fieldInput: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingVertical: 8 },
-  modalFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: '#F8FAFC' },
+  modalFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.imConcrete },
   ghostBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white, alignItems: 'center' },
   ghostBtnText: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
   primaryBtn: { flex: 1, flexDirection: 'row', gap: 6, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.blue, alignItems: 'center', justifyContent: 'center' },
-  primaryBtnText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  primaryBtnText: { fontSize: 14, fontWeight: '600', color: Colors.imSurface },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, width: '100%', maxWidth: 300, maxHeight: 400 },
   pickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.ink, marginBottom: 12 },

@@ -14,12 +14,12 @@ const AUTO_DISMISS_MS = 2600;
 
 function palette(variant: ToastVariant) {
   if (variant === 'success') {
-    return { bg: '#0F2A1F', border: Colors.emerald, icon: 'checkmark-circle' as const, tint: Colors.emerald };
+    return { bg: Colors.imSuccess, border: Colors.emerald, icon: 'checkmark-circle' as const, tint: Colors.emerald };
   }
   if (variant === 'error') {
-    return { bg: '#2A0F14', border: Colors.red, icon: 'alert-circle' as const, tint: Colors.red };
+    return { bg: Colors.imError, border: Colors.red, icon: 'alert-circle' as const, tint: Colors.red };
   }
-  return { bg: '#0F1A2A', border: Colors.orange, icon: 'information-circle' as const, tint: Colors.orange };
+  return { bg: Colors.imInk, border: Colors.orange, icon: 'information-circle' as const, tint: Colors.orange };
 }
 
 export default function ToastHost() {
@@ -89,14 +89,14 @@ const s = StyleSheet.create({
     borderWidth: 1,
     maxWidth: 520,
     minWidth: 220,
-    shadowColor: '#000',
+    shadowColor: Colors.imInk,
     shadowOpacity: 0.35,
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
     elevation: 8,
   },
   text: {
-    color: '#F8FAFC',
+    color: Colors.imConcrete,
     fontSize: 14,
     fontWeight: '600',
     flexShrink: 1,

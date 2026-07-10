@@ -83,7 +83,7 @@ function NavixyCounters({ asset }: { asset: any }) {
             sub={`${srcLabel(asset.hours_meter_source)}${hoursAgo ? ' · ' + hoursAgo : ''}`} />
           {asset.lifetime_unreliable ? (
             <View style={s.unreliableCard}>
-              <Ionicons name="speedometer" size={16} color="#B45309" />
+              <Ionicons name="speedometer" size={16} color={Colors.imBronze} />
               <Text style={s.unreliableTitle}>Odometer</Text>
               <Text style={s.unreliableText}>Lifetime not available — Add a historical reading</Text>
             </View>
@@ -121,21 +121,21 @@ function DeltaView({ trends, slot }: { trends: any; slot: string }) {
       <View style={s.grid}>
         <View style={s.deltaCard}>
           <View style={s.deltaHeader}>
-            <Ionicons name="pulse" size={12} color="#64748B" />
+            <Ionicons name="pulse" size={12} color={Colors.imInkMuted} />
             <Text style={s.deltaLabel}>ENGINE HOURS</Text>
           </View>
           <Text style={s.deltaValue}>{fmtSigned(d.engine_hours_delta, 1)} <Text style={s.deltaUnit}>hrs</Text></Text>
           <Text style={s.deltaAvg}>Daily avg: {d.daily_avg_hours} hrs · {d.daily_avg_km} km</Text>
-          <MiniSparkline data={sparkHours} color="#10B981" />
+          <MiniSparkline data={sparkHours} color={Colors.imSuccess} />
         </View>
         <View style={s.deltaCard}>
           <View style={s.deltaHeader}>
-            <Ionicons name="speedometer" size={12} color="#64748B" />
+            <Ionicons name="speedometer" size={12} color={Colors.imInkMuted} />
             <Text style={s.deltaLabel}>ODOMETER</Text>
           </View>
           <Text style={s.deltaValue}>{fmtSigned(d.odometer_km_delta, 0)} <Text style={s.deltaUnit}>km</Text></Text>
           <Text style={s.deltaAvg}>Daily avg: {d.daily_avg_hours} hrs · {d.daily_avg_km} km</Text>
-          <MiniSparkline data={sparkKm} color="#F97316" />
+          <MiniSparkline data={sparkKm} color={Colors.imBronze} />
         </View>
       </View>
       {collecting && (
@@ -151,7 +151,7 @@ function ManualCounters({ asset }: { asset: any }) {
   const hoursAgo = relTime(asset.hours_meter_updated_at);
   const kmAgo = relTime(asset.odo_km_updated_at);
   return (
-    <View testID="live-counters-manual" style={[s.card, { borderColor: Colors.border, backgroundColor: '#F8FAFC' }]}>
+    <View testID="live-counters-manual" style={[s.card, { borderColor: Colors.border, backgroundColor: Colors.imConcrete }]}>
       <Text style={[s.headerLabel, { color: Colors.textSecondary }]}>Live counters · Manual</Text>
       <View style={s.grid}>
         <CounterCard icon="pulse" label="Engine hours" value={fmtHours(asset.hours_meter)} unit="hrs"
@@ -167,7 +167,7 @@ function CounterCard({ icon, label, value, unit, sub }: { icon: string; label: s
   return (
     <View style={s.counterBox}>
       <View style={s.counterIconRow}>
-        <View style={s.counterIcon}><Ionicons name={icon as any} size={14} color="#047857" /></View>
+        <View style={s.counterIcon}><Ionicons name={icon as any} size={14} color={Colors.imSuccess} /></View>
         <Text style={s.counterLabel}>{label.toUpperCase()}</Text>
       </View>
       <Text style={s.counterValue}>{value} <Text style={s.counterUnit}>{unit}</Text></Text>
@@ -177,39 +177,39 @@ function CounterCard({ icon, label, value, unit, sub }: { icon: string; label: s
 }
 
 const s = StyleSheet.create({
-  card: { borderRadius: 16, borderWidth: 1, borderColor: Colors.emerald, backgroundColor: '#ECFDF5', padding: 12, marginBottom: 10 },
+  card: { borderRadius: 16, borderWidth: 1, borderColor: Colors.emerald, backgroundColor: Colors.imConcrete, padding: 12, marginBottom: 10 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
-  liveTag: { backgroundColor: '#059669', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-  liveTagText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: '#047857', textTransform: 'uppercase' },
+  liveTag: { backgroundColor: Colors.imSuccess, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  liveTagText: { fontSize: 8, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.5 },
+  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.imSuccess, textTransform: 'uppercase' },
 
   tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1, borderColor: Colors.emerald, padding: 2, marginBottom: 10, alignSelf: 'flex-start' },
   tab: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-  tabActive: { backgroundColor: '#F97316' },
+  tabActive: { backgroundColor: Colors.imBronze },
   tabText: { fontSize: 11, fontWeight: '600', color: Colors.textTertiary },
-  tabTextActive: { color: '#fff' },
+  tabTextActive: { color: Colors.imSurface },
 
   grid: { flexDirection: 'row', gap: 8 },
   counterBox: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.emerald, borderRadius: 12, padding: 10 },
   counterIconRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
-  counterIcon: { width: 24, height: 24, borderRadius: 6, backgroundColor: '#D1FAE5', alignItems: 'center', justifyContent: 'center' },
+  counterIcon: { width: 24, height: 24, borderRadius: 6, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
   counterLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.6, color: Colors.textTertiary },
   counterValue: { fontSize: 22, fontWeight: '700', color: Colors.ink },
-  counterUnit: { fontSize: 12, fontWeight: '600', color: '#94A3B8' },
-  counterSub: { fontSize: 9, color: '#94A3B8', marginTop: 2 },
+  counterUnit: { fontSize: 12, fontWeight: '600', color: Colors.imInkSubtle },
+  counterSub: { fontSize: 9, color: Colors.imInkSubtle, marginTop: 2 },
 
   deltaCard: { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.emerald, borderRadius: 12, padding: 10 },
   deltaHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 },
   deltaLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: Colors.textTertiary },
   deltaValue: { fontSize: 22, fontWeight: '700', color: Colors.ink },
-  deltaUnit: { fontSize: 12, fontWeight: '600', color: '#94A3B8' },
+  deltaUnit: { fontSize: 12, fontWeight: '600', color: Colors.imInkSubtle },
   deltaAvg: { fontSize: 10, color: Colors.textTertiary, marginTop: 2, marginBottom: 4 },
 
   emptyHint: { fontSize: 12, color: Colors.textTertiary, textAlign: 'center', paddingVertical: 20 },
-  collectingHint: { fontSize: 10, color: '#92400E', marginTop: 6 },
-  footerNote: { fontSize: 9, color: '#94A3B8', marginTop: 8, lineHeight: 13 },
+  collectingHint: { fontSize: 10, color: Colors.imInk, marginTop: 6 },
+  footerNote: { fontSize: 9, color: Colors.imInkSubtle, marginTop: 8, lineHeight: 13 },
 
-  unreliableCard: { flex: 1, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A', borderRadius: 12, padding: 10 },
-  unreliableTitle: { fontSize: 10, fontWeight: '700', color: '#92400E', marginTop: 4 },
-  unreliableText: { fontSize: 10, color: '#B45309', marginTop: 2 },
+  unreliableCard: { flex: 1, backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imConcrete, borderRadius: 12, padding: 10 },
+  unreliableTitle: { fontSize: 10, fontWeight: '700', color: Colors.imInk, marginTop: 4 },
+  unreliableText: { fontSize: 10, color: Colors.imBronze, marginTop: 2 },
 });

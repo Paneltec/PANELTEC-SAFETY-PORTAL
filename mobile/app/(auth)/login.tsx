@@ -142,8 +142,8 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity testID="login-submit" style={s.btn} onPress={submit} disabled={busy} activeOpacity={0.7}>
-              {busy ? <ActivityIndicator color="#fff" size="small" /> : (
-                <><Text style={s.btnText}>SIGN IN</Text><Ionicons name="arrow-forward" size={16} color="#fff" /></>
+              {busy ? <ActivityIndicator color={Colors.imSurface} size="small" /> : (
+                <><Text style={s.btnText}>SIGN IN</Text><Ionicons name="arrow-forward" size={16} color={Colors.imSurface} /></>
               )}
             </TouchableOpacity>
           </View>
@@ -206,7 +206,7 @@ const s = StyleSheet.create({
   input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: Colors.text },
   error: { color: Colors.red, fontSize: 12, marginTop: 8 },
   btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.orange, borderRadius: 12, paddingVertical: 15, marginTop: 20, minHeight: 52 },
-  btnText: { color: '#fff', fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  btnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '800', letterSpacing: 1 },
   footer: { flexDirection: 'row', marginTop: 24, justifyContent: 'center' },
   footerText: { fontSize: 14, color: Colors.textSecondary },
   link: { fontSize: 14, fontWeight: '600', color: Colors.orange },

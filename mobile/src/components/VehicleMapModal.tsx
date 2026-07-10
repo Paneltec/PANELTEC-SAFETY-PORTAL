@@ -48,7 +48,7 @@ export default function VehicleMapModal({ vehicle, visible, onClose }: Props) {
               <Text testID="vmm-label" style={s.headerTitle} numberOfLines={1}>{vehicle.label || 'Vehicle'}</Text>
               <View style={s.headerMeta}>
                 <View style={[s.dot, { backgroundColor: isLive ? Colors.emerald : Colors.textTertiary }]} />
-                <Text style={[s.headerStatus, { color: isLive ? '#047857' : Colors.textTertiary }]}>
+                <Text style={[s.headerStatus, { color: isLive ? Colors.imSuccess : Colors.textTertiary }]}>
                   GPS {isLive ? 'Live' : 'Offline'}
                 </Text>
                 <Text style={s.headerDivider}>·</Text>
@@ -140,7 +140,7 @@ const s = StyleSheet.create({
   headerDivider: { fontSize: 11, color: Colors.textTertiary },
   headerTracker: { fontSize: 11, color: Colors.textTertiary },
   closeBtn: { padding: 6 },
-  body: { height: 280, backgroundColor: '#F1F5F9' },
+  body: { height: 280, backgroundColor: Colors.imConcrete },
   cardsSection: { flex: 1, backgroundColor: Colors.bg },
   cardsContent: { padding: 12 },
   noGps: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 24 },

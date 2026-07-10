@@ -1,169 +1,178 @@
 /**
  * Paneltec Civil — Mobile Design System palette
  *
- * v160.1.1 — "High Vis Safety" theme swap. Dark asphalt-navy screen bg
- * + white cards + safety orange CTAs + high-vis yellow / green / red
- * for status. Text on the dark screen bg is WHITE; text on white cards
- * uses `hvInk` (dark asphalt).
+ * v160.1.2 — "Industrial Materials" palette. LIGHT theme.
+ *   Concrete-white screen bg + white cards + bronze accents + soft-steel
+ *   sticky headers and tab bar.
  *
- * NOTE (semantic-token deviation, intentional): the user's spec had
- * `Colors.ink → hvInk`. Applied literally that would render every
- * on-screen heading (dashboard "HOME", outbox "EMAIL OUTBOX", profile
- * name etc.) as #1E293B on the #1E293B screen bg — invisible. The
- * spec ALSO says "on dark bg use hvSurface directly", so we keep
- * `Colors.ink` = `#FFFFFF` (the traditional on-dark ink) and expose
- * `Colors.hvInk` + `Colors.brandInk` for card text. Forms Library +
- * Category screens already import Colors.brandInk, so the light-card
- * cascade still works cleanly.
+ * User directive for this cycle: "NO EXCLUSIONS". Every hardcoded hex
+ * that used to live inline across the mobile codebase has been swept
+ * onto these tokens. If you're adding a new colour, add it here first,
+ * then reference `Colors.<token>` from your screen — never inline
+ * `#RRGGBB` strings in JSX/style-sheets.
  *
- * PALETTE LINT: hardcoded `#RRGGBB` string literals used as
- * `backgroundColor` / `color` / `borderColor` outside this file are
- * flagged by `scripts/palette_lint.py`. Add `// linter-ok: <reason>` on
- * the same line if you MUST hardcode.
+ * Status shades (imSuccess/imWarning/imError) are DERIVED — the raw IM
+ * palette shipped by the user gave no green/amber/red, so we chose
+ * muted olive-green, bronze-as-warning, and brick-red so status pills
+ * stay legible without stepping outside the industrial vocabulary.
  */
 export const Colors = {
-  // ─── v160.1.1 "High Vis Safety" palette (SOURCE OF TRUTH) ─────────
-  hvAsphalt:     '#1E293B',   // primary — screen bg, header, tab bar, notch backdrop
-  hvOrange:      '#FF6B00',   // safety orange — CTAs, active tab, focus, back-chevron
-  hvYellow:      '#FACC15',   // high-vis yellow — warning, alert, in-progress
-  hvSurface:     '#FFFFFF',   // card / row / tile bg
-  hvGreen:       '#15803D',   // success / completed
-  hvRed:         '#B91C1C',   // error / urgent / destructive
-  hvInk:         '#1E293B',   // primary text on WHITE cards
-  hvInkMuted:    '#64748B',   // secondary text on WHITE cards
-  hvInkSubtle:   '#94A3B8',   // tertiary / placeholders
-  hvBorder:      '#E2E8F0',   // subtle card borders (on white cards)
-  hvTabInactive: '#94A3B8',   // inactive tab icon+label — greyish on dark bg
+  // ─── v160.1.2 Industrial Materials palette (SOURCE OF TRUTH) ───────
+  imSteel:      '#B2B2B2',   // light metallic grey — top bar, notch backdrop, sticky header
+  imBronze:     '#C08040',   // bronze — CTAs, active tab, focus, pill accent
+  imStone:      '#A0A0A0',   // medium grey — secondary buttons, muted accents
+  imConcrete:   '#EAEAEA',   // very light warm grey — screen background
+  imInk:        '#1A1A1A',   // near-black — primary text on light surfaces
+  imInkMuted:   '#4B4B4B',   // secondary text
+  imInkSubtle:  '#8A8A8A',   // tertiary text / placeholders
+  imBorder:     '#C8C8C8',   // card borders
+  imSurface:    '#FFFFFF',   // card / row / tile bg — pure white pops against concrete
+
+  // DERIVED status shades — see note at top of file.
+  imSuccess:    '#6B7F5C',   // muted olive-green
+  imWarning:    '#C08040',   // bronze doubles as warning
+  imError:      '#8B3A3A',   // deep muted brick red
+
+  // ─── Paneltec brand accents kept as named tokens (not swept away) ─
+  paneltecBlue:   '#1E4A8C',   // legacy Paneltec blue — used sparingly on info banners
+  paneltecViolet: '#4F3A8C',   // legacy Paneltec violet — AI/Ask badges
+  paneltecGold:   '#F4C430',
 
   // ─── Semantic tokens — REMAPPED to cascade through the app ────────
-  bg:              '#1E293B',   // hvAsphalt — screen bg is DARK
-  surface:         '#FFFFFF',   // hvSurface — cards
-  surfaceLight:    '#1E293B',   // hvAsphalt — no lifted surface in this palette
-  surfaceHover:    '#334155',   // slightly lighter asphalt for press states
-  surfaceDark:     '#1E293B',   // hvAsphalt — tab bar bg
-  libraryBg:       '#1E293B',   // hvAsphalt — Forms Library screen bg
-  tileWarm:        '#FFFFFF',   // hvSurface (deprecated dark warm tile)
-  mutedBg:         '#0F172A',   // even-darker panel
+  bg:              '#EAEAEA',   // imConcrete — screen bg is LIGHT
+  surface:         '#FFFFFF',   // imSurface — cards
+  surfaceLight:    '#EAEAEA',   // imConcrete
+  surfaceHover:    '#F5F5F5',   // slightly warmer press state
+  surfaceDark:     '#B2B2B2',   // imSteel — tab bar bg (LIGHT steel, not dark)
+  libraryBg:       '#EAEAEA',   // imConcrete
+  tileWarm:        '#FFFFFF',   // imSurface (deprecated warm tile)
+  mutedBg:         '#EAEAEA',
 
-  // Brand aliases kept from v160.1.0 (repointed at HV)
-  brandNavy:       '#1E293B',   // now the same as hvAsphalt (unified)
-  brandOrange:     '#FF6B00',   // hvOrange
-  brandBgLight:    '#1E293B',   // hvAsphalt override — screens are dark
-  brandSurface:    '#FFFFFF',   // hvSurface
-  brandTeal:       '#009688',
-  brandGrey:       '#64748B',
-  brandGreen:      '#15803D',
-  brandAmber:      '#FACC15',
-  brandRed:        '#B91C1C',
-  brandTabBar:     '#1E293B',   // hvAsphalt
-  brandTabActive:  '#FF6B00',   // hvOrange
-  brandTabInactive:'#94A3B8',   // hvTabInactive
+  // v160.1.1 HV aliases repointed at IM so any lingering HV usages cascade
+  hvAsphalt:     '#B2B2B2',   // OVERRIDE — the dark HV bg becomes light steel
+  hvOrange:      '#C08040',   // → imBronze
+  hvYellow:      '#C08040',   // no yellow in palette; map warning to bronze
+  hvSurface:     '#FFFFFF',
+  hvGreen:       '#6B7F5C',
+  hvRed:         '#8B3A3A',
+  hvInk:         '#1A1A1A',
+  hvInkMuted:    '#4B4B4B',
+  hvInkSubtle:   '#8A8A8A',
+  hvBorder:      '#C8C8C8',
+  hvTabInactive: '#4B4B4B',   // dark-enough grey to read on light steel bg
 
-  // Text-on-white-card tokens (for Forms Library / white cards)
-  brandInk:        '#1E293B',   // hvInk — card title
-  brandInkMuted:   '#64748B',   // hvInkMuted — card body
-  brandInkSubtle:  '#94A3B8',   // hvInkSubtle
-  brandBorder:     '#E2E8F0',   // hvBorder
+  // Brand aliases kept from v160.1.0 (repointed at IM)
+  brandNavy:       '#B2B2B2',   // → imSteel (unified with header)
+  brandOrange:     '#C08040',
+  brandBgLight:    '#EAEAEA',
+  brandSurface:    '#FFFFFF',
+  brandTeal:       '#6B7F5C',
+  brandGrey:       '#4B4B4B',
+  brandGreen:      '#6B7F5C',
+  brandAmber:      '#C08040',
+  brandRed:        '#8B3A3A',
+  brandTabBar:     '#B2B2B2',
+  brandTabActive:  '#C08040',
+  brandTabInactive:'#4B4B4B',
+  brandInk:        '#1A1A1A',
+  brandInkMuted:   '#4B4B4B',
+  brandInkSubtle:  '#8A8A8A',
+  brandBorder:     '#C8C8C8',
 
-  // v160.0.22 light-paper aliases — kept, repointed at HV
+  // v160.0.22 light-paper aliases — kept, repointed at IM
   tileLight:            '#FFFFFF',
-  tileLightBorder:      '#E2E8F0',
-  tileLightInk:         '#1E293B',
-  tileLightMuted:       '#64748B',
-  tileLightAccentBg:    '#FF6B00',
+  tileLightBorder:      '#C8C8C8',
+  tileLightInk:         '#1A1A1A',
+  tileLightMuted:       '#4B4B4B',
+  tileLightAccentBg:    '#C08040',
   tileLightAccentIcon:  '#FFFFFF',
 
   // ─── Borders ─────────────────────────────────────────────────────
-  border:      '#E2E8F0',   // hvBorder — used inside white cards
-  borderLight: '#334155',   // slate-700 — subtle divider on dark bg
-  borderMuted: '#E2E8F0',   // hvBorder
-  borderFocus: '#FF6B00',   // hvOrange — focused input outline
+  border:      '#C8C8C8',   // imBorder
+  borderLight: '#EAEAEA',   // imConcrete-adjacent, very soft divider
+  borderMuted: '#C8C8C8',
+  borderFocus: '#C08040',   // imBronze — focused input outline
 
   // ─── Text ────────────────────────────────────────────────────────
-  // On-dark-bg text (headings, subtitles on screen bg). Kept as WHITE
-  // by design — see NOTE at top of file.
-  ink:            '#FFFFFF',
-  text:           '#FFFFFF',
-  textPrimary:    '#FFFFFF',
-  textSecondary:  '#CBD5E1',   // slate-300 — readable on both dark bg AND on white cards (CR 3.7:1 on white — large-text OK)
-  textTertiary:   '#94A3B8',   // hvInkSubtle — same on both surfaces
-  placeholder:    '#94A3B8',
-  textDisabled:   '#64748B',
-
-  // ─── Legacy `white` alias — genuinely white in this theme.
-  white: '#FFFFFF',
+  ink:            '#1A1A1A',   // FLIP BACK to dark ink for the light theme
+  text:           '#1A1A1A',
+  textPrimary:    '#1A1A1A',
+  textSecondary:  '#4B4B4B',
+  textTertiary:   '#8A8A8A',
+  placeholder:    '#8A8A8A',
+  textDisabled:   '#A0A0A0',
+  white:          '#FFFFFF',
 
   // ─── Orange accent (brand) ───────────────────────────────────────
-  orange:      '#FF6B00',                    // hvOrange
-  orangeLight: '#FACC15',                    // hvYellow highlight
-  orangeDark:  '#CC5500',                    // pressed variant
-  orangeSoft:  'rgba(255,107,0,0.15)',
+  orange:      '#C08040',   // imBronze
+  orangeLight: '#D89A6A',
+  orangeDark:  '#8F5A28',
+  orangeSoft:  'rgba(192,128,64,0.15)',
 
-  // ─── Legacy blue alias (remapped to orange for accent unity) ─────
-  blue:     '#FF6B00',
-  blueSoft: 'rgba(255,107,0,0.15)',
+  // ─── Legacy blue alias (kept as Paneltec blue) ───────────────────
+  blue:     '#1E4A8C',
+  blueSoft: 'rgba(30,74,140,0.15)',
 
-  // ─── Brand — Paneltec gold (sparingly used on admin surfaces) ────
+  // ─── Brand — Paneltec gold ──────────────────────────────────────
   gold:         '#EAB308',
   goldSoft:     'rgba(234,179,8,0.15)',
-  paneltecGold: '#F4C430',
 
   // ─── Semantic ────────────────────────────────────────────────────
-  emerald:      '#15803D',   // hvGreen
-  emeraldDark:  '#14532D',
-  mint:         'rgba(21,128,61,0.15)',
-  red:          '#B91C1C',   // hvRed
-  redSoft:      'rgba(185,28,28,0.15)',
-  amber:        '#FACC15',   // hvYellow
-  amberSoft:    'rgba(250,204,21,0.18)',
-  violet:       '#7C3AED',
-  violetSoft:   'rgba(124,58,237,0.18)',
+  emerald:      '#6B7F5C',   // imSuccess
+  emeraldDark:  '#4F5F44',
+  mint:         'rgba(107,127,92,0.18)',
+  red:          '#8B3A3A',   // imError
+  redSoft:      'rgba(139,58,58,0.18)',
+  amber:        '#C08040',   // imWarning (bronze)
+  amberSoft:    'rgba(192,128,64,0.18)',
+  violet:       '#4F3A8C',   // paneltecViolet
+  violetSoft:   'rgba(79,58,140,0.18)',
 
   // ─── Aliases for readable code ───────────────────────────────────
-  success: '#15803D',
-  error:   '#B91C1C',
-  warning: '#FACC15',
-  info:    '#FF6B00',
+  success: '#6B7F5C',
+  error:   '#8B3A3A',
+  warning: '#C08040',
+  info:    '#1E4A8C',
 } as const;
 
 /**
  * Status chip palette — used by badges across the app.
  *
- * v160.1.1 — reworked for the High Vis Safety theme. Yellow pills use
- * DARK text (yellow needs dark text to hit AA). Green/red pills use
- * white text. Draft/muted uses a mid-slate on white.
+ * v160.1.2 — reworked for the Industrial Materials theme. All pills
+ * use white text on a saturated status colour so they read cleanly on
+ * either the concrete screen bg or the white card bg.
  */
 export const StatusColors: Record<string, { bg: string; text: string; border: string }> = {
-  // Draft / muted — grey pill
-  draft:             { bg: '#64748B', text: '#FFFFFF', border: '#475569' },
-  low:               { bg: '#64748B', text: '#FFFFFF', border: '#475569' },
-  inactive:          { bg: '#64748B', text: '#FFFFFF', border: '#475569' },
-  cancelled:         { bg: '#64748B', text: '#FFFFFF', border: '#475569' },
+  // Draft / muted — stone grey pill
+  draft:             { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
+  low:               { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
+  inactive:          { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
+  cancelled:         { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
 
-  // In progress / pending — high-vis YELLOW pill with DARK ink
-  submitted:         { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  changes_requested: { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  open:              { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  in_progress:       { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  medium:            { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  high:              { bg: '#FF6B00', text: '#FFFFFF', border: '#CC5500' },
-  pending:           { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  queued:            { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
-  expiring_soon:     { bg: '#FACC15', text: '#1E293B', border: '#EAB308' },
+  // In progress / warning — bronze pill
+  submitted:         { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  changes_requested: { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  open:              { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  in_progress:       { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  medium:            { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  high:              { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  pending:           { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  queued:            { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  expiring_soon:     { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
 
-  // Success — GREEN pill with white text
-  approved:          { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
-  closed:            { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
-  active:            { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
-  completed:         { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
-  valid:             { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
-  sent:              { bg: '#15803D', text: '#FFFFFF', border: '#14532D' },
+  // Success — muted olive pill
+  approved:          { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  closed:            { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  active:            { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  completed:         { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  valid:             { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  sent:              { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
 
-  // Error / danger — RED pill with white text
-  rejected:          { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
-  critical:          { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
-  suspended:         { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
-  revoked:           { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
-  expired:           { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
-  failed:            { bg: '#B91C1C', text: '#FFFFFF', border: '#7F1D1D' },
+  // Error / danger — brick red pill
+  rejected:          { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  critical:          { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  suspended:         { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  revoked:           { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  expired:           { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  failed:            { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
 };

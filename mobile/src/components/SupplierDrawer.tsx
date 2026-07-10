@@ -13,10 +13,10 @@ import { Colors } from '../lib/colors';
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 const PANELS = [
-  { key: 'tasks', name: 'Tasks', icon: 'checkbox' as const, bg: '#fbf3df', ink: '#8c6a1a' },
-  { key: 'notes', name: 'Notes', icon: 'document-text' as const, bg: '#e6eff9', ink: '#1e4a8c' },
-  { key: 'folders', name: 'Folders', icon: 'folder' as const, bg: '#ece6f4', ink: '#4f3a8c' },
-  { key: 'members', name: 'Members', icon: 'people' as const, bg: '#fbeadf', ink: '#a8480f' },
+  { key: 'tasks', name: 'Tasks', icon: 'checkbox' as const, bg: Colors.imConcrete, ink: Colors.imInk },
+  { key: 'notes', name: 'Notes', icon: 'document-text' as const, bg: Colors.imConcrete, ink: Colors.paneltecBlue },
+  { key: 'folders', name: 'Folders', icon: 'folder' as const, bg: Colors.imConcrete, ink: Colors.paneltecViolet },
+  { key: 'members', name: 'Members', icon: 'people' as const, bg: Colors.imConcrete, ink: Colors.imBronze },
 ];
 
 function fmtDate(s: string | null | undefined) { return s ? s.slice(0, 10) : ''; }
@@ -83,16 +83,16 @@ function TasksPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
     <View testID="tasks-panel">
       <View style={ds.panelToolbar}>
         {canEdit && (
-          <TouchableOpacity testID="task-add" style={[ds.panelAddBtn, { backgroundColor: '#8c6a1a' }]} onPress={() => setEditing('new')}>
-            <Ionicons name="add" size={12} color="#fff" />
+          <TouchableOpacity testID="task-add" style={[ds.panelAddBtn, { backgroundColor: Colors.imInk }]} onPress={() => setEditing('new')}>
+            <Ionicons name="add" size={12} color={Colors.imSurface} />
             <Text style={ds.panelAddText}>Add task</Text>
           </TouchableOpacity>
         )}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flexGrow: 0, marginLeft: 'auto' }}>
           {FILTERS.map((f) => (
-            <TouchableOpacity key={f} testID={`task-filter-${f}`} style={[ds.filterChip, filter === f && { backgroundColor: '#fbf3df' }]}
+            <TouchableOpacity key={f} testID={`task-filter-${f}`} style={[ds.filterChip, filter === f && { backgroundColor: Colors.imConcrete }]}
               onPress={() => setFilter(f)}>
-              <Text style={[ds.filterText, filter === f && { color: '#8c6a1a', fontWeight: '700' }]}>{f.replace('_', ' ')}</Text>
+              <Text style={[ds.filterText, filter === f && { color: Colors.imInk, fontWeight: '700' }]}>{f.replace('_', ' ')}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -100,7 +100,7 @@ function TasksPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
 
       {editing === 'new' && <TaskForm onSave={saveTask} onCancel={() => setEditing(null)} />}
 
-      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color="#8c6a1a" /> :
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color={Colors.imInk} /> :
        filtered.length === 0 ? (
         <View style={ds.emptyPanel}><Text style={ds.emptyPanelText}>No tasks{filter !== 'all' ? ' in this status' : ''}.</Text></View>
       ) : filtered.map((t) => (
@@ -111,15 +111,15 @@ function TasksPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
             <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
               <TouchableOpacity testID={`task-toggle-${t.id}`} disabled={!canEdit}
                 onPress={() => toggleDone(t)}
-                style={[ds.checkbox, t.status === 'done' && { backgroundColor: '#10B981', borderColor: '#10B981' }]}>
-                {t.status === 'done' && <Ionicons name="checkmark" size={11} color="#fff" />}
+                style={[ds.checkbox, t.status === 'done' && { backgroundColor: Colors.imSuccess, borderColor: Colors.imSuccess }]}>
+                {t.status === 'done' && <Ionicons name="checkmark" size={11} color={Colors.imSurface} />}
               </TouchableOpacity>
               <View style={{ flex: 1 }}>
                 <Text style={[ds.itemTitle, t.status === 'done' && { textDecorationLine: 'line-through', color: Colors.textTertiary }]}>{t.title}</Text>
                 <View style={{ flexDirection: 'row', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
                   <PriorityBadge value={t.priority} />
                   {t.due_date ? (
-                    <Text style={[ds.dueDateText, isOverdue(t.due_date, t.status) && { color: '#7a1f33', fontWeight: '700' }]}>
+                    <Text style={[ds.dueDateText, isOverdue(t.due_date, t.status) && { color: Colors.imError, fontWeight: '700' }]}>
                       {fmtDate(t.due_date)}{isOverdue(t.due_date, t.status) ? ' · overdue' : ''}
                     </Text>
                   ) : null}
@@ -147,9 +147,9 @@ function TasksPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
 
 function PriorityBadge({ value }: { value: string }) {
   const map: Record<string, { bg: string; text: string }> = {
-    low: { bg: '#F1F5F9', text: '#475569' },
-    med: { bg: '#fbf3df', text: '#8c6a1a' },
-    high: { bg: '#fbeadf', text: '#a8480f' },
+    low: { bg: Colors.imConcrete, text: Colors.imInkMuted },
+    med: { bg: Colors.imConcrete, text: Colors.imInk },
+    high: { bg: Colors.imConcrete, text: Colors.imBronze },
   };
   const c = map[value] || map.med;
   return <View style={[ds.priorityBadge, { backgroundColor: c.bg }]}><Text style={[ds.priorityText, { color: c.text }]}>{value}</Text></View>;
@@ -173,7 +173,7 @@ function TaskForm({ initial, onSave, onCancel }: any) {
   };
 
   return (
-    <View testID="task-form" style={[ds.formBox, { borderColor: '#e6d99c', backgroundColor: '#fbf3df40' }]}>
+    <View testID="task-form" style={[ds.formBox, { borderColor: Colors.imWarning, backgroundColor: '#fbf3df40' }]}>
       <TextInput testID="task-title" style={ds.formInput} placeholder="Task title" value={f.title}
         onChangeText={(v) => setF({ ...f, title: v })} placeholderTextColor={Colors.textTertiary} />
       <TextInput testID="task-description" style={[ds.formInput, { minHeight: 50 }]} multiline placeholder="Description (optional)"
@@ -190,8 +190,8 @@ function TaskForm({ initial, onSave, onCancel }: any) {
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
         <TouchableOpacity style={ds.formCancel} onPress={onCancel}><Text style={ds.formCancelText}>Cancel</Text></TouchableOpacity>
-        <TouchableOpacity testID="task-save" style={[ds.formSave, { backgroundColor: '#8c6a1a' }]} onPress={submit} disabled={saving}>
-          {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={ds.formSaveText}>Save</Text>}
+        <TouchableOpacity testID="task-save" style={[ds.formSave, { backgroundColor: Colors.imInk }]} onPress={submit} disabled={saving}>
+          {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Text style={ds.formSaveText}>Save</Text>}
         </TouchableOpacity>
       </View>
       <PickerModal visible={prioOpen} title="Priority" options={['low', 'med', 'high']}
@@ -250,16 +250,16 @@ function NotesPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
             placeholder="Write a note..." placeholderTextColor={Colors.textTertiary}
             value={draft} onChangeText={setDraft} />
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginTop: 6 }}>
-            <TouchableOpacity testID="note-add" style={[ds.formSave, { backgroundColor: '#1e4a8c' }]}
+            <TouchableOpacity testID="note-add" style={[ds.formSave, { backgroundColor: Colors.paneltecBlue }]}
               onPress={add} disabled={saving || !draft.trim()}>
-              {saving ? <ActivityIndicator size="small" color="#fff" /> : (
-                <><Ionicons name="add" size={11} color="#fff" /><Text style={ds.formSaveText}>Add note</Text></>
+              {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
+                <><Ionicons name="add" size={11} color={Colors.imSurface} /><Text style={ds.formSaveText}>Add note</Text></>
               )}
             </TouchableOpacity>
           </View>
         </View>
       )}
-      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color="#1e4a8c" /> :
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color={Colors.paneltecBlue} /> :
        items.length === 0 ? (
         <View style={ds.emptyPanel}><Text style={ds.emptyPanelText}>No notes yet.</Text></View>
       ) : items.map((n) => (
@@ -273,7 +273,7 @@ function NotesPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bool
                   <TextInput style={[ds.formInput, { minHeight: 50 }]} multiline value={editValue} onChangeText={setEditValue} />
                   <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 4 }}>
                     <TouchableOpacity style={ds.formCancel} onPress={() => setEditingId(null)}><Text style={ds.formCancelText}>Cancel</Text></TouchableOpacity>
-                    <TouchableOpacity style={[ds.formSave, { backgroundColor: '#1e4a8c' }]} onPress={() => saveEdit(n.id)}><Text style={ds.formSaveText}>Save</Text></TouchableOpacity>
+                    <TouchableOpacity style={[ds.formSave, { backgroundColor: Colors.paneltecBlue }]} onPress={() => saveEdit(n.id)}><Text style={ds.formSaveText}>Save</Text></TouchableOpacity>
                   </View>
                 </View>
               ) : (
@@ -333,12 +333,12 @@ function MembersPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bo
   return (
     <View testID="members-panel">
       {canEdit && editing !== 'new' && (
-        <TouchableOpacity testID="member-add" style={[ds.panelAddBtn, { backgroundColor: '#a8480f' }]} onPress={() => setEditing('new')}>
-          <Ionicons name="add" size={12} color="#fff" /><Text style={ds.panelAddText}>Add member</Text>
+        <TouchableOpacity testID="member-add" style={[ds.panelAddBtn, { backgroundColor: Colors.imBronze }]} onPress={() => setEditing('new')}>
+          <Ionicons name="add" size={12} color={Colors.imSurface} /><Text style={ds.panelAddText}>Add member</Text>
         </TouchableOpacity>
       )}
       {editing === 'new' && <MemberForm onSave={save} onCancel={() => setEditing(null)} />}
-      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color="#a8480f" /> :
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color={Colors.imBronze} /> :
        items.length === 0 ? (
         <View style={ds.emptyPanel}><Text style={ds.emptyPanelText}>No members linked.</Text></View>
       ) : items.map((m) => (
@@ -392,7 +392,7 @@ function MemberForm({ initial, onSave, onCancel }: any) {
   };
 
   return (
-    <View testID="member-form" style={[ds.formBox, { borderColor: '#e9c0a5', backgroundColor: '#fbeadf40' }]}>
+    <View testID="member-form" style={[ds.formBox, { borderColor: Colors.imConcrete, backgroundColor: '#fbeadf40' }]}>
       <TextInput testID="member-name" style={ds.formInput} placeholder="Full name" value={f.name}
         onChangeText={(v) => setF({ ...f, name: v })} placeholderTextColor={Colors.textTertiary} />
       <TextInput testID="member-role" style={ds.formInput} placeholder="Role / title (optional)" value={f.role}
@@ -408,13 +408,13 @@ function MemberForm({ initial, onSave, onCancel }: any) {
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
         <Switch testID="member-primary" value={f.is_primary_contact}
           onValueChange={(v) => setF({ ...f, is_primary_contact: v })}
-          trackColor={{ true: '#10B981', false: '#CBD5E1' }} />
+          trackColor={{ true: Colors.imSuccess, false: Colors.imBorder }} />
         <Text style={{ fontSize: 12, color: Colors.text }}>Primary contact</Text>
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 6, marginTop: 6 }}>
         <TouchableOpacity style={ds.formCancel} onPress={onCancel}><Text style={ds.formCancelText}>Cancel</Text></TouchableOpacity>
-        <TouchableOpacity testID="member-save" style={[ds.formSave, { backgroundColor: '#a8480f' }]} onPress={submit} disabled={saving}>
-          {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={ds.formSaveText}>Save</Text>}
+        <TouchableOpacity testID="member-save" style={[ds.formSave, { backgroundColor: Colors.imBronze }]} onPress={submit} disabled={saving}>
+          {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Text style={ds.formSaveText}>Save</Text>}
         </TouchableOpacity>
       </View>
     </View>
@@ -455,24 +455,24 @@ function FoldersPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bo
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
         <Text style={{ fontSize: 12, color: Colors.textTertiary }}>{folders.length} folder{folders.length === 1 ? '' : 's'}</Text>
         {canEdit && !creating && (
-          <TouchableOpacity testID="folder-add" style={[ds.panelAddBtn, { backgroundColor: '#4f3a8c' }]} onPress={() => setCreating(true)}>
-            <Ionicons name="add" size={12} color="#fff" /><Text style={ds.panelAddText}>New folder</Text>
+          <TouchableOpacity testID="folder-add" style={[ds.panelAddBtn, { backgroundColor: Colors.paneltecViolet }]} onPress={() => setCreating(true)}>
+            <Ionicons name="add" size={12} color={Colors.imSurface} /><Text style={ds.panelAddText}>New folder</Text>
           </TouchableOpacity>
         )}
       </View>
       {creating && (
-        <View style={[ds.formBox, { borderColor: '#e2dcef', backgroundColor: '#ece6f440', flexDirection: 'row', gap: 8 }]}>
+        <View style={[ds.formBox, { borderColor: Colors.imConcrete, backgroundColor: '#ece6f440', flexDirection: 'row', gap: 8 }]}>
           <TextInput testID="folder-create-input" style={[ds.formInput, { flex: 1 }]} placeholder="Folder name"
             value={name} onChangeText={setName} autoFocus placeholderTextColor={Colors.textTertiary} />
-          <TouchableOpacity testID="folder-create-save" style={[ds.formSave, { backgroundColor: '#4f3a8c' }]} onPress={createFolder} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={ds.formSaveText}>Create</Text>}
+          <TouchableOpacity testID="folder-create-save" style={[ds.formSave, { backgroundColor: Colors.paneltecViolet }]} onPress={createFolder} disabled={saving}>
+            {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Text style={ds.formSaveText}>Create</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={ds.formCancel} onPress={() => { setCreating(false); setName(''); }}>
             <Text style={ds.formCancelText}>Cancel</Text>
           </TouchableOpacity>
         </View>
       )}
-      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color="#4f3a8c" /> :
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color={Colors.paneltecViolet} /> :
        folders.length === 0 ? (
         <View style={ds.emptyPanel}><Text style={ds.emptyPanelText}>No folders linked to this supplier yet.</Text></View>
       ) : (
@@ -480,7 +480,7 @@ function FoldersPanel({ supplierId, canEdit }: { supplierId: string; canEdit: bo
           {folders.map((f) => (
             <TouchableOpacity key={f.id} testID={`supplier-folder-${f.id}`}
               style={ds.folderTile} onPress={() => setOpenFolder(f)}>
-              <Ionicons name="folder-open" size={20} color="#4f3a8c" />
+              <Ionicons name="folder-open" size={20} color={Colors.paneltecViolet} />
               <Text style={ds.folderTileName} numberOfLines={2}>{f.name}</Text>
               <Text style={ds.folderTileCount}>{f.file_count} file{f.file_count === 1 ? '' : 's'}</Text>
             </TouchableOpacity>
@@ -540,14 +540,14 @@ function FolderFiles({ folder, canEdit, onBack }: any) {
           <Text style={{ fontSize: 12, color: Colors.orangeLight, fontWeight: '600' }}>Back to folders</Text>
         </TouchableOpacity>
         {canEdit && (
-          <TouchableOpacity testID="folder-upload" style={[ds.panelAddBtn, { backgroundColor: '#4f3a8c' }]} onPress={pickAndUpload} disabled={uploading}>
-            {uploading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="add" size={11} color="#fff" />}
+          <TouchableOpacity testID="folder-upload" style={[ds.panelAddBtn, { backgroundColor: Colors.paneltecViolet }]} onPress={pickAndUpload} disabled={uploading}>
+            {uploading ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="add" size={11} color={Colors.imSurface} />}
             <Text style={ds.panelAddText}>Upload</Text>
           </TouchableOpacity>
         )}
       </View>
       <Text style={{ fontSize: 14, fontWeight: '600', color: Colors.ink, marginBottom: 10 }}>{folder.name}</Text>
-      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color="#4f3a8c" /> :
+      {loading ? <ActivityIndicator style={{ marginTop: 20 }} color={Colors.paneltecViolet} /> :
        files.length === 0 ? (
         <View style={ds.emptyPanel}><Text style={ds.emptyPanelText}>No files yet.</Text></View>
       ) : files.map((f) => (
@@ -655,8 +655,8 @@ const ds = StyleSheet.create({
   tabText: { fontSize: 11, fontWeight: '500', color: Colors.textTertiary },
   panelToolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   panelAddBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
-  panelAddText: { fontSize: 11, fontWeight: '600', color: '#fff' },
-  emptyPanel: { alignItems: 'center', paddingVertical: 32, backgroundColor: '#F8FAFC', borderRadius: 10 },
+  panelAddText: { fontSize: 11, fontWeight: '600', color: Colors.imSurface },
+  emptyPanel: { alignItems: 'center', paddingVertical: 32, backgroundColor: Colors.imConcrete, borderRadius: 10 },
   emptyPanelText: { fontSize: 12, color: Colors.textTertiary },
   itemCard: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, padding: 10, marginBottom: 6 },
   itemTitle: { fontSize: 13, fontWeight: '600', color: Colors.ink },
@@ -668,17 +668,17 @@ const ds = StyleSheet.create({
   priorityBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   priorityText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   // Notes
-  noteAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: '#F1F5F9', alignItems: 'center', justifyContent: 'center' },
+  noteAvatar: { width: 24, height: 24, borderRadius: 12, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
   noteAvatarText: { fontSize: 9, fontWeight: '700', color: Colors.textSecondary },
   noteMeta: { fontSize: 11, color: Colors.textTertiary },
   noteBody: { fontSize: 13, color: Colors.text, marginTop: 2, lineHeight: 18 },
   // Members
-  memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fbeadf', alignItems: 'center', justifyContent: 'center' },
-  memberAvatarText: { fontSize: 11, fontWeight: '700', color: '#a8480f' },
+  memberAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
+  memberAvatarText: { fontSize: 11, fontWeight: '700', color: Colors.imBronze },
   memberRole: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
   memberContact: { fontSize: 11, color: Colors.textTertiary },
-  primaryBadge: { backgroundColor: '#d8ecdd', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
-  primaryBadgeText: { fontSize: 9, fontWeight: '700', color: '#1f7a3f', textTransform: 'uppercase', letterSpacing: 0.5 },
+  primaryBadge: { backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 8 },
+  primaryBadgeText: { fontSize: 9, fontWeight: '700', color: Colors.imSuccess, textTransform: 'uppercase', letterSpacing: 0.5 },
   // Folders
   folderTile: { width: '30%', borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: '#ece6f440', padding: 10 },
   folderTileName: { fontSize: 11, fontWeight: '600', color: Colors.ink, marginTop: 4, lineHeight: 15, minHeight: 30 },
@@ -690,7 +690,7 @@ const ds = StyleSheet.create({
   formCancel: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white },
   formCancelText: { fontSize: 11, color: Colors.textSecondary },
   formSave: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  formSaveText: { fontSize: 11, fontWeight: '600', color: '#fff' },
+  formSaveText: { fontSize: 11, fontWeight: '600', color: Colors.imSurface },
   pickerBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, backgroundColor: Colors.white },
   pickerBtnText: { fontSize: 11, color: Colors.text, textTransform: 'capitalize' },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },

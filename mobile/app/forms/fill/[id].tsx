@@ -23,19 +23,19 @@ function radioColor(opt: string, selected: boolean) {
   const norm = opt.toLowerCase();
   if (norm === 'yes')
     return selected
-      ? { bg: '#ecfdf5', border: '#10b981', text: '#047857' }
-      : { bg: '#fff', border: '#6ee7b7', text: '#047857' };
+      ? { bg: Colors.imConcrete, border: Colors.imSuccess, text: Colors.imSuccess }
+      : { bg: Colors.imSurface, border: Colors.imSuccess, text: Colors.imSuccess };
   if (norm === 'no' || norm === 'defective' || norm.startsWith('fail'))
     return selected
-      ? { bg: '#fef2f2', border: '#ef4444', text: '#b91c1c' }
-      : { bg: '#fff', border: '#fca5a5', text: '#b91c1c' };
+      ? { bg: Colors.imConcrete, border: Colors.imError, text: Colors.imError }
+      : { bg: Colors.imSurface, border: Colors.imError, text: Colors.imError };
   if (norm === 'n/a' || norm === 'na' || norm === 'not applicable')
     return selected
-      ? { bg: '#f1f5f9', border: '#64748b', text: '#334155' }
-      : { bg: '#fff', border: '#cbd5e1', text: '#475569' };
+      ? { bg: Colors.imConcrete, border: Colors.imInkMuted, text: Colors.imInkMuted }
+      : { bg: Colors.imSurface, border: Colors.imBorder, text: Colors.imInkMuted };
   return selected
-    ? { bg: '#f1f5f9', border: '#64748b', text: '#1e293b' }
-    : { bg: '#fff', border: '#cbd5e1', text: '#475569' };
+    ? { bg: Colors.imConcrete, border: Colors.imInkMuted, text: Colors.imInk }
+    : { bg: Colors.imSurface, border: Colors.imBorder, text: Colors.imInkMuted };
 }
 
 /* ─── Select picker modal ─── */
@@ -51,7 +51,7 @@ function SelectModal({ visible, options, selected, onSelect, onClose }: any) {
           {(options || []).map((o: string) => (
             <TouchableOpacity key={o} style={fs.pickerItem} onPress={() => onSelect(o)}>
               <Text style={[fs.pickerItemText, selected === o && { color: Colors.orangeLight, fontWeight: '700' }]}>{o}</Text>
-              {selected === o && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
+              {selected === o && <Ionicons name="checkmark" size={14} color={Colors.paneltecBlue} />}
             </TouchableOpacity>
           ))}
         </View>
@@ -117,11 +117,11 @@ function PhotoField({ photos, onChange, testId }: any) {
     <View testID={testId}>
       <View style={{ flexDirection: 'row', gap: 8 }}>
         <TouchableOpacity testID={`${testId}-camera`} style={fs.photoBtn} onPress={() => pick(true)}>
-          <Ionicons name="camera" size={16} color="#1e4a8c" />
+          <Ionicons name="camera" size={16} color={Colors.paneltecBlue} />
           <Text style={fs.photoBtnText}>Camera</Text>
         </TouchableOpacity>
         <TouchableOpacity testID={`${testId}-library`} style={fs.photoBtn} onPress={() => pick(false)}>
-          <Ionicons name="images" size={16} color="#1e4a8c" />
+          <Ionicons name="images" size={16} color={Colors.paneltecBlue} />
           <Text style={fs.photoBtnText}>Library</Text>
         </TouchableOpacity>
       </View>
@@ -132,7 +132,7 @@ function PhotoField({ photos, onChange, testId }: any) {
               <Image source={{ uri: p.uri }} style={fs.photoImg} />
               <TouchableOpacity testID={`${testId}-remove-${i}`} style={fs.photoRemove}
                 onPress={() => { const n = [...photos]; n.splice(i, 1); onChange(n); }}>
-                <Ionicons name="close-circle" size={18} color="#a8324c" />
+                <Ionicons name="close-circle" size={18} color={Colors.imError} />
               </TouchableOpacity>
             </View>
           ))}
@@ -159,7 +159,7 @@ function GpsField({ value, onChange, testId }: any) {
   return (
     <View testID={testId}>
       <TouchableOpacity testID={`${testId}-capture`} style={fs.gpsBtn} onPress={capture} disabled={busy}>
-        {busy ? <ActivityIndicator size="small" color="#1e4a8c" /> : <Ionicons name={hasFix ? 'refresh' : 'location'} size={16} color="#1e4a8c" />}
+        {busy ? <ActivityIndicator size="small" color={Colors.paneltecBlue} /> : <Ionicons name={hasFix ? 'refresh' : 'location'} size={16} color={Colors.paneltecBlue} />}
         <Text style={fs.gpsBtnText}>{busy ? 'Capturing…' : hasFix ? 'Re-capture GPS' : 'Capture GPS'}</Text>
       </TouchableOpacity>
       {hasFix && (
@@ -212,13 +212,13 @@ function CompanySelectorField({ value, onChange, testId, required }: any) {
           borderWidth: 2, borderColor: Colors.orangeLight,
         }}
       >
-        <Ionicons name="checkmark-circle" size={16} color="#0F172A" />
-        <Text testID={`${testId}-label`} style={{ color: '#0F172A', fontSize: 15, fontWeight: '800' }}>
+        <Ionicons name="checkmark-circle" size={16} color={Colors.imInk} />
+        <Text testID={`${testId}-label`} style={{ color: Colors.imInk, fontSize: 15, fontWeight: '800' }}>
           {current.name}
         </Text>
-        <View style={{ width: 1, height: 14, backgroundColor: '#0F172A', opacity: 0.4 }} />
-        <Ionicons name="swap-horizontal" size={16} color="#0F172A" />
-        <Text style={{ color: '#0F172A', opacity: 0.75, fontSize: 12, fontWeight: '600' }}>
+        <View style={{ width: 1, height: 14, backgroundColor: Colors.imInk, opacity: 0.4 }} />
+        <Ionicons name="swap-horizontal" size={16} color={Colors.imInk} />
+        <Text style={{ color: Colors.imInk, opacity: 0.75, fontSize: 12, fontWeight: '600' }}>
           Tap to switch
         </Text>
       </TouchableOpacity>
@@ -245,7 +245,7 @@ function CompanySelectorField({ value, onChange, testId, required }: any) {
               <TouchableOpacity key={c.id} testID={`${testId}-opt-${c.id}`} style={fs.pickerItem}
                 onPress={() => { onChange(c.id); setModalOpen(false); }}>
                 <Text style={[fs.pickerItemText, value === c.id && { color: Colors.orangeLight, fontWeight: '700' }]}>{c.name}</Text>
-                {value === c.id && <Ionicons name="checkmark" size={14} color="#1e4a8c" />}
+                {value === c.id && <Ionicons name="checkmark" size={14} color={Colors.paneltecBlue} />}
               </TouchableOpacity>
             ))}
           </View>
@@ -348,14 +348,14 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
           }}
           onPress={() => { setErr(null); scannedOnceRef.current = false; if (camPerm && !camPerm.granted) requestCamPerm(); setOpen(true); }}
         >
-          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#0F172A', alignItems: 'center', justifyContent: 'center' }}>
+          <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.imInk, alignItems: 'center', justifyContent: 'center' }}>
             <Ionicons name="camera" size={24} color={Colors.orangeLight} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ color: '#0F172A', fontWeight: '800', fontSize: 16 }}>Scan Equipment QR</Text>
-            <Text style={{ color: '#0F172A', opacity: 0.85, fontSize: 12, fontWeight: '600' }}>Point camera at the vehicle sticker to auto-fill</Text>
+            <Text style={{ color: Colors.imInk, fontWeight: '800', fontSize: 16 }}>Scan Equipment QR</Text>
+            <Text style={{ color: Colors.imInk, opacity: 0.85, fontSize: 12, fontWeight: '600' }}>Point camera at the vehicle sticker to auto-fill</Text>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#0F172A" />
+          <Ionicons name="chevron-forward" size={20} color={Colors.imInk} />
         </TouchableOpacity>
       )}
       <Modal visible={open} transparent animationType="slide" onRequestClose={() => setOpen(false)}>
@@ -369,7 +369,7 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
               </TouchableOpacity>
             </View>
             {camPerm?.granted && Platform.OS !== 'web' ? (
-              <View style={{ height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000' }}>
+              <View style={{ height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: Colors.imInk }}>
                 <CameraView
                   style={{ flex: 1 }} facing="back"
                   barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
@@ -396,7 +396,7 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
               </TouchableOpacity>
             )}
             <PastePanel busy={busy} onSubmit={resolve} testId={testId} />
-            {err && <Text style={{ color: '#b91c1c', fontSize: 12 }}>{err}</Text>}
+            {err && <Text style={{ color: Colors.imError, fontSize: 12 }}>{err}</Text>}
           </View>
         </View>
       </Modal>
@@ -424,7 +424,7 @@ function PastePanel({ busy, onSubmit, testId }: any) {
         onPress={() => url.trim() && onSubmit(url)}
         disabled={busy}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '700' }}>Go</Text>}
+        {busy ? <ActivityIndicator color={Colors.imSurface} /> : <Text style={{ color: Colors.imSurface, fontWeight: '700' }}>Go</Text>}
       </TouchableOpacity>
     </View>
   );
@@ -461,13 +461,13 @@ function InlineTogglePicker({ testId, companyOptions, value, onChange }: any) {
           borderWidth: 2, borderColor: Colors.orangeLight, marginBottom: 8,
         }}
       >
-        <Ionicons name="business" size={14} color="#0F172A" />
-        <Text testID={`${testId}-toggle-label`} style={{ color: '#0F172A', fontSize: 13, fontWeight: '800' }}>
+        <Ionicons name="business" size={14} color={Colors.imInk} />
+        <Text testID={`${testId}-toggle-label`} style={{ color: Colors.imInk, fontSize: 13, fontWeight: '800' }}>
           {company.label}
         </Text>
-        <View style={{ width: 1, height: 12, backgroundColor: '#0F172A', opacity: 0.4 }} />
-        <Ionicons name="swap-horizontal" size={14} color="#0F172A" />
-        <Text style={{ color: '#0F172A', opacity: 0.75, fontSize: 11, fontWeight: '600' }}>Tap to switch</Text>
+        <View style={{ width: 1, height: 12, backgroundColor: Colors.imInk, opacity: 0.4 }} />
+        <Ionicons name="swap-horizontal" size={14} color={Colors.imInk} />
+        <Text style={{ color: Colors.imInk, opacity: 0.75, fontSize: 11, fontWeight: '600' }}>Tap to switch</Text>
       </TouchableOpacity>
       <WorkerPicker
         label=""
@@ -687,7 +687,7 @@ export default function FillOutScreen() {
         {/* GPS captured banner */}
         {capturedGps && (
           <View testID="gps-captured-indicator" style={fs.gpsBanner}>
-            <Ionicons name="location" size={14} color="#047857" />
+            <Ionicons name="location" size={14} color={Colors.imSuccess} />
             <Text style={fs.gpsBannerText}>
               GPS captured: {capturedGps.lat.toFixed(5)}, {capturedGps.lng.toFixed(5)}
             </Text>
@@ -764,14 +764,14 @@ export default function FillOutScreen() {
                       <Image source={{ uri: values[f.id] }} style={fs.sigPreview} resizeMode="contain" />
                       <TouchableOpacity testID={`sig-resign-${f.id}`} style={fs.resignBtn}
                         onPress={() => setSigModalField(f.id)}>
-                        <Ionicons name="pencil" size={12} color="#1e4a8c" />
+                        <Ionicons name="pencil" size={12} color={Colors.paneltecBlue} />
                         <Text style={fs.resignBtnText}>Re-sign</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <TouchableOpacity testID={`sig-open-${f.id}`} style={fs.sigOpenBtn}
                       onPress={() => setSigModalField(f.id)}>
-                      <Ionicons name="pencil" size={16} color="#1e4a8c" />
+                      <Ionicons name="pencil" size={16} color={Colors.paneltecBlue} />
                       <Text style={fs.sigOpenBtnText}>Tap to sign</Text>
                     </TouchableOpacity>
                   )}
@@ -854,7 +854,7 @@ export default function FillOutScreen() {
           {progress ? <Text style={fs.progressText}>{progress}</Text> : null}
           <TouchableOpacity testID="form-submit-btn" style={[fs.submitBtn, saving && { opacity: 0.6 }]}
             onPress={submit} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark-circle" size={16} color="#fff" />}
+            {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="checkmark-circle" size={16} color={Colors.imSurface} />}
             <Text style={fs.submitBtnText}>Submit Form</Text>
           </TouchableOpacity>
         </View>
@@ -893,7 +893,7 @@ const fs = StyleSheet.create({
     fontSize: 14, fontWeight: '700', color: Colors.hvOrange,
   },
   headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.hvYellow },
-  headerTitle: { fontSize: 15, fontWeight: '700', color: '#FFFFFF' }, // linter-ok: HV header title — explicit white on hvAsphalt
+  headerTitle: { fontSize: 15, fontWeight: '700', color: Colors.imSurface }, // linter-ok: HV header title — explicit white on hvAsphalt
   draftBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
@@ -903,13 +903,13 @@ const fs = StyleSheet.create({
   gpsBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: '#ecfdf5', borderBottomWidth: 1, borderBottomColor: '#a7f3d0',
+    backgroundColor: Colors.imConcrete, borderBottomWidth: 1, borderBottomColor: Colors.imSuccess,
   },
-  gpsBannerText: { fontSize: 12, fontWeight: '600', color: '#047857' },
+  gpsBannerText: { fontSize: 12, fontWeight: '600', color: Colors.imSuccess },
   fieldWrap: { marginBottom: 20 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink },
   fieldType: { fontSize: 9, fontWeight: '600', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  reqStar: { fontSize: 14, color: '#dc2626', fontWeight: '700' },
+  reqStar: { fontSize: 14, color: Colors.imError, fontWeight: '700' },
   input: {
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
     paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, color: Colors.text, minHeight: 48,
@@ -942,7 +942,7 @@ const fs = StyleSheet.create({
     borderRadius: 10, paddingVertical: 20, minHeight: 48,
   },
   sigOpenBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
-  sigPreview: { width: '100%', height: 120, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
+  sigPreview: { width: '100%', height: 120, backgroundColor: Colors.imSurface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10 },
   resignBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-end',
     paddingHorizontal: 10, paddingVertical: 6,
@@ -971,7 +971,7 @@ const fs = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: Colors.brandOrange, borderRadius: 12, paddingVertical: 14, minHeight: 50,
   },
-  submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  submitBtnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, width: '100%', maxWidth: 320 },
   pickerTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink, marginBottom: 8 },

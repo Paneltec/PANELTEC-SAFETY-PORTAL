@@ -76,7 +76,7 @@ export default function SubmissionViewScreen() {
     <SafeAreaView style={vs.safe} edges={['top']}>
       <View testID="subview-header" style={vs.header}>
         <TouchableOpacity testID="subview-back" onPress={() => router.back()} style={{ padding: 4 }}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={vs.headerOverline}>SUBMISSION</Text>
@@ -101,7 +101,7 @@ export default function SubmissionViewScreen() {
 
       <View style={vs.footer}>
         <TouchableOpacity testID="subview-pdf" style={vs.pdfBtn} onPress={openPdf} disabled={pdfBusy}>
-          {pdfBusy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="document" size={14} color="#fff" />}
+          {pdfBusy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="document" size={14} color={Colors.imSurface} />}
           <Text style={vs.pdfBtnText}>Download PDF</Text>
         </TouchableOpacity>
       </View>
@@ -136,7 +136,7 @@ const vs = StyleSheet.create({
   },
   pdfBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#1e4a8c', borderRadius: 12, paddingVertical: 14, minHeight: 50,
+    backgroundColor: Colors.paneltecBlue, borderRadius: 12, paddingVertical: 14, minHeight: 50,
   },
-  pdfBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  pdfBtnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '700' },
 });

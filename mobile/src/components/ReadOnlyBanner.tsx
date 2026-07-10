@@ -7,7 +7,7 @@ import { Colors } from '../lib/colors';
 export default function ReadOnlyBanner() {
   return (
     <View testID="read-only-banner" style={s.banner}>
-      <Ionicons name="lock-closed" size={14} color="#B45309" />
+      <Ionicons name="lock-closed" size={14} color={Colors.imBronze} />
       <Text style={s.text}>Read-only — contact your admin for edit access.</Text>
     </View>
   );
@@ -17,7 +17,7 @@ const s = StyleSheet.create({
   banner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     padding: 12, borderRadius: 12, backgroundColor: Colors.amberSoft,
-    borderWidth: 1, borderColor: '#FDE68A', marginBottom: 12,
+    borderWidth: 1, borderColor: Colors.imConcrete, marginBottom: 12,
   },
-  text: { fontSize: 13, color: '#B45309', flex: 1 },
+  text: { fontSize: 13, color: Colors.imBronze, flex: 1 },
 });

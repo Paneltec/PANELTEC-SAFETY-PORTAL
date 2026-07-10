@@ -89,7 +89,7 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
           {/* Header */}
           <View style={s.header}>
             <View style={s.headerIcon}>
-              <Ionicons name="scan" size={16} color="#2563EB" />
+              <Ionicons name="scan" size={16} color={Colors.paneltecBlue} />
             </View>
             <Text style={s.headerTitle}>{step === 'choose' ? 'Scan SWMS' : 'Confirm & Parse'}</Text>
             <TouchableOpacity testID="scan-modal-close" onPress={() => { reset(); onClose(); }} hitSlop={12}>
@@ -103,8 +103,8 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
               <Text style={s.choiceHint}>Upload a photo or PDF of a signed SWMS to extract tasks, hazards and controls with AI.</Text>
 
               <TouchableOpacity testID="scan-camera" style={s.choiceBtn} onPress={pickCamera} activeOpacity={0.7}>
-                <View style={[s.choiceIcon, { backgroundColor: '#EFF6FF' }]}>
-                  <Ionicons name="camera" size={20} color="#2563EB" />
+                <View style={[s.choiceIcon, { backgroundColor: Colors.imConcrete }]}>
+                  <Ionicons name="camera" size={20} color={Colors.paneltecBlue} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.choiceTitle}>Take Photo</Text>
@@ -114,8 +114,8 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity testID="scan-library" style={s.choiceBtn} onPress={pickLibrary} activeOpacity={0.7}>
-                <View style={[s.choiceIcon, { backgroundColor: '#F0FDF4' }]}>
-                  <Ionicons name="images" size={20} color="#15803D" />
+                <View style={[s.choiceIcon, { backgroundColor: Colors.imConcrete }]}>
+                  <Ionicons name="images" size={20} color={Colors.imSuccess} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.choiceTitle}>Choose from Library</Text>
@@ -125,8 +125,8 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
               </TouchableOpacity>
 
               <TouchableOpacity testID="scan-pdf" style={s.choiceBtn} onPress={pickDocument} activeOpacity={0.7}>
-                <View style={[s.choiceIcon, { backgroundColor: '#FFF1F2' }]}>
-                  <Ionicons name="document" size={20} color="#E11D48" />
+                <View style={[s.choiceIcon, { backgroundColor: Colors.imConcrete }]}>
+                  <Ionicons name="document" size={20} color={Colors.imError} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.choiceTitle}>Pick PDF</Text>
@@ -144,7 +144,7 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
                   <Image source={{ uri: file.uri }} style={s.previewImage} resizeMode="cover" />
                 ) : (
                   <View style={s.previewPdf}>
-                    <Ionicons name="document" size={32} color="#E11D48" />
+                    <Ionicons name="document" size={32} color={Colors.imError} />
                     <Text style={s.previewPdfText}>PDF</Text>
                   </View>
                 )}
@@ -180,13 +180,13 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
                 >
                   {busy ? (
                     <View style={s.busyCol}>
-                      <ActivityIndicator size="small" color="#fff" />
+                      <ActivityIndicator size="small" color={Colors.imSurface} />
                       <Text style={s.busyText}>Reading your document… (~20-40s)</Text>
                       <Text style={s.busySub}>OCR + AI parse running</Text>
                     </View>
                   ) : (
                     <>
-                      <Ionicons name="sparkles" size={14} color="#fff" />
+                      <Ionicons name="sparkles" size={14} color={Colors.imSurface} />
                       <Text style={s.submitText}>Read & Parse with AI</Text>
                     </>
                   )}
@@ -204,7 +204,7 @@ const s = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.5)', justifyContent: 'flex-end' },
   modal: { backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingBottom: 32, paddingTop: 16, maxHeight: '90%' },
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  headerIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center' },
+  headerIcon: { width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: '700', color: Colors.ink },
   // Choice sheet
   choices: { gap: 8 },
@@ -215,21 +215,21 @@ const s = StyleSheet.create({
   choiceSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 1 },
   // Confirm
   confirmArea: {},
-  previewCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 12 },
+  previewCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 12, marginBottom: 12 },
   previewImage: { width: 56, height: 56, borderRadius: 8 },
-  previewPdf: { width: 56, height: 56, borderRadius: 8, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center' },
-  previewPdfText: { fontSize: 9, fontWeight: '700', color: '#E11D48', marginTop: 2 },
+  previewPdf: { width: 56, height: 56, borderRadius: 8, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center' },
+  previewPdfText: { fontSize: 9, fontWeight: '700', color: Colors.imError, marginTop: 2 },
   fileInfo: { flex: 1 },
   fileName: { fontSize: 13, fontWeight: '600', color: Colors.ink },
   fileSize: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-  titleInput: { backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
+  titleInput: { backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: Colors.text },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 14, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   backText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
-  submitBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#2563EB', borderRadius: 12, paddingVertical: 14, minHeight: 50 },
-  submitText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  submitBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: Colors.paneltecBlue, borderRadius: 12, paddingVertical: 14, minHeight: 50 },
+  submitText: { fontSize: 14, fontWeight: '700', color: Colors.imSurface },
   busyCol: { alignItems: 'center', gap: 4 },
-  busyText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  busyText: { fontSize: 12, fontWeight: '600', color: Colors.imSurface },
   busySub: { fontSize: 10, color: 'rgba(255,255,255,0.7)' },
 });

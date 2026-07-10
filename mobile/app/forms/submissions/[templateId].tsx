@@ -10,11 +10,11 @@ import api, { apiError } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 
 const CAT_COLORS: Record<string, { bg: string; ink: string }> = {
-  incident:   { bg: '#fbe4e7', ink: '#7a1f33' },
-  inspection: { bg: '#ece6f4', ink: '#4f3a8c' },
-  toolbox:    { bg: '#f7eed1', ink: '#8c6a1a' },
-  near_miss:  { bg: '#f8d7c3', ink: '#9c4f1a' },
-  general:    { bg: '#f1f5f9', ink: '#334155' },
+  incident:   { bg: Colors.imConcrete, ink: Colors.imError },
+  inspection: { bg: Colors.imConcrete, ink: Colors.paneltecViolet },
+  toolbox:    { bg: Colors.imConcrete, ink: Colors.imInk },
+  near_miss:  { bg: Colors.imConcrete, ink: Colors.imBronze },
+  general:    { bg: Colors.imConcrete, ink: Colors.imInkMuted },
 };
 
 function timeAgo(d: string) {
@@ -80,8 +80,8 @@ export default function SubmissionsListScreen() {
             <View style={s.cardTop}>
               <View style={[s.statusBadge, r.status === 'complete' ? s.statusComplete : s.statusDraft]}>
                 <Ionicons name={r.status === 'complete' ? 'checkmark-circle' : 'ellipse-outline'} size={10}
-                  color={r.status === 'complete' ? '#1f7a3f' : '#8c6a1a'} />
-                <Text style={[s.statusText, { color: r.status === 'complete' ? '#1f7a3f' : '#8c6a1a' }]}>
+                  color={r.status === 'complete' ? Colors.imSuccess : Colors.imInk} />
+                <Text style={[s.statusText, { color: r.status === 'complete' ? Colors.imSuccess : Colors.imInk }]}>
                   {r.status === 'complete' ? 'Complete' : 'Draft'}
                 </Text>
               </View>
@@ -90,8 +90,8 @@ export default function SubmissionsListScreen() {
             <Text style={s.cardName}>{r.submitted_by_name || '—'}</Text>
             <View style={s.cardMeta}>
               <View style={s.metaChip}><Ionicons name="image" size={11} color={Colors.textTertiary} /><Text style={s.metaText}>{r.photo_count || 0}</Text></View>
-              <View style={s.metaChip}><Ionicons name="pencil" size={11} color={r.has_signature ? '#1f7a3f' : Colors.textTertiary} /><Text style={s.metaText}>{r.has_signature ? 'Signed' : 'Unsigned'}</Text></View>
-              <View style={s.metaChip}><Ionicons name="location" size={11} color={r.has_gps ? '#1f7a3f' : Colors.textTertiary} /><Text style={s.metaText}>{r.has_gps ? 'Geo' : 'No geo'}</Text></View>
+              <View style={s.metaChip}><Ionicons name="pencil" size={11} color={r.has_signature ? Colors.imSuccess : Colors.textTertiary} /><Text style={s.metaText}>{r.has_signature ? 'Signed' : 'Unsigned'}</Text></View>
+              <View style={s.metaChip}><Ionicons name="location" size={11} color={r.has_gps ? Colors.imSuccess : Colors.textTertiary} /><Text style={s.metaText}>{r.has_gps ? 'Geo' : 'No geo'}</Text></View>
             </View>
           </TouchableOpacity>
         ))}
@@ -100,7 +100,7 @@ export default function SubmissionsListScreen() {
       {/* Floating add button */}
       <TouchableOpacity testID="subs-fillout" style={s.fab}
         onPress={() => router.push(`/forms/fill/${templateId}`)}>
-        <Ionicons name="add" size={22} color="#fff" />
+        <Ionicons name="add" size={22} color={Colors.imSurface} />
         <Text style={s.fabText}>Fill out new</Text>
       </TouchableOpacity>
     </SafeAreaView>
@@ -129,8 +129,8 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 12,
   },
-  statusComplete: { backgroundColor: '#d8ecdd' },
-  statusDraft: { backgroundColor: '#f7eed1' },
+  statusComplete: { backgroundColor: Colors.imConcrete },
+  statusDraft: { backgroundColor: Colors.imConcrete },
   statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   cardTime: { fontSize: 11, color: Colors.textTertiary },
   cardName: { fontSize: 14, fontWeight: '600', color: Colors.ink },
@@ -143,8 +143,8 @@ const s = StyleSheet.create({
   fab: {
     position: 'absolute', bottom: 24, right: 16,
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#1e4a8c', borderRadius: 28, paddingHorizontal: 20, paddingVertical: 14,
+    backgroundColor: Colors.paneltecBlue, borderRadius: 28, paddingHorizontal: 20, paddingVertical: 14,
     boxShadow: '0px 2px 6px rgba(0,0,0,0.15)', elevation: 4,
   },
-  fabText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  fabText: { color: Colors.imSurface, fontSize: 13, fontWeight: '700' },
 });

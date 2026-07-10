@@ -217,7 +217,7 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity testID="sign-out-btn" style={st.signOutBtn} onPress={handleSignOut} activeOpacity={0.7}>
-          <Ionicons name="log-out" size={18} color="#fff" />
+          <Ionicons name="log-out" size={18} color={Colors.imSurface} />
           <Text style={st.signOutText}>SIGN OUT</Text>
         </TouchableOpacity>
 
@@ -233,7 +233,7 @@ const st = StyleSheet.create({
   content: { padding: 16, paddingBottom: 40 },
   profileHeader: { alignItems: 'center', paddingVertical: 28, marginBottom: 24 },
   avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  avatarText: { color: '#fff', fontSize: 24, fontWeight: '800' },
+  avatarText: { color: Colors.imSurface, fontSize: 24, fontWeight: '800' },
   profileName: { fontSize: 20, fontWeight: '800', color: Colors.ink, letterSpacing: 1.5 },
   profileEmail: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
   rolePill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20, borderWidth: 1, marginTop: 10 },
@@ -245,7 +245,7 @@ const st = StyleSheet.create({
   segBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', justifyContent: 'center' },
   segBtnActive: { backgroundColor: Colors.orange },
   segText: { fontSize: 10, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 0.5 },
-  segTextActive: { color: '#fff' },
+  segTextActive: { color: Colors.imSurface },
   card: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 4 },
   cardText: { flex: 1, fontSize: 12, fontWeight: '700', color: Colors.ink, letterSpacing: 0.8 },
   sessionInfo: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 14, marginBottom: 16, marginTop: 4 },
@@ -256,5 +256,5 @@ const st = StyleSheet.create({
   actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, marginBottom: 12 },
   actionText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.8 },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 12, backgroundColor: Colors.orange },
-  signOutText: { fontSize: 13, fontWeight: '800', color: '#fff', letterSpacing: 1 },
+  signOutText: { fontSize: 13, fontWeight: '800', color: Colors.imSurface, letterSpacing: 1 },
 });

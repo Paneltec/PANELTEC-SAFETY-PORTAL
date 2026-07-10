@@ -177,7 +177,7 @@ export default function EmailSendSheet({
               </View>
             ) : (
               <View testID="m365-status" style={s.m365Warn}>
-                <Ionicons name="alert-circle" size={14} color="#B45309" />
+                <Ionicons name="alert-circle" size={14} color={Colors.imBronze} />
                 <Text style={s.m365WarnText}>Will queue — Microsoft 365 not connected.</Text>
               </View>
             )}
@@ -188,7 +188,7 @@ export default function EmailSendSheet({
               <Text style={s.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity testID="email-send-submit" style={[s.sendBtn, (busy || to.length === 0) && { opacity: 0.5 }]} onPress={send} disabled={busy || to.length === 0} activeOpacity={0.7}>
-              {busy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="send" size={14} color="#fff" />}
+              {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="send" size={14} color={Colors.imSurface} />}
               <Text style={s.sendText}>Send</Text>
             </TouchableOpacity>
           </View>
@@ -231,8 +231,8 @@ const s = StyleSheet.create({
   attachText: { fontSize: 12, color: Colors.text },
   m365Good: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.mint, borderWidth: 1, borderColor: Colors.emerald },
   m365GoodText: { fontSize: 12, color: Colors.emeraldDark },
-  m365Warn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.amberSoft, borderWidth: 1, borderColor: '#FDE68A' },
-  m365WarnText: { fontSize: 12, color: '#B45309' },
+  m365Warn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16, padding: 10, borderRadius: 10, backgroundColor: Colors.amberSoft, borderWidth: 1, borderColor: Colors.imConcrete },
+  m365WarnText: { fontSize: 12, color: Colors.imBronze },
   footer: {
     flexDirection: 'row', justifyContent: 'flex-end', gap: 8,
     paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.white,
@@ -240,5 +240,5 @@ const s = StyleSheet.create({
   cancelBtn: { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
   cancelText: { fontSize: 14, fontWeight: '500', color: Colors.textSecondary },
   sendBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.blue, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  sendText: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  sendText: { fontSize: 14, fontWeight: '600', color: Colors.imSurface },
 });

@@ -23,7 +23,7 @@ export default function InspectionsListScreen() {
       <View style={s.header}>
         <Text style={s.heading}>Inspection Reports</Text>
         {can('inspections', 'open') && <TouchableOpacity testID="inspection-create-btn" style={s.addBtn} onPress={() => router.push('/inspections/new')}>
-          <Ionicons name="add" size={18} color="#fff" />
+          <Ionicons name="add" size={18} color={Colors.imSurface} />
           <Text style={s.addText}>New</Text>
         </TouchableOpacity>}
       </View>
@@ -63,7 +63,7 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
   heading: { fontSize: 22, fontWeight: '700', color: Colors.ink },
   addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.blue, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  addText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addText: { color: Colors.imSurface, fontSize: 13, fontWeight: '600' },
   card: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },
   cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   cardDate: { fontSize: 12, color: Colors.textTertiary, marginTop: 4 },

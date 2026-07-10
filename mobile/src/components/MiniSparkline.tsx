@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import Svg, { Polyline } from 'react-native-svg';
+import { Colors } from '../lib/colors';
 
 interface Props {
   data: number[];
@@ -9,7 +10,7 @@ interface Props {
   height?: number;
 }
 
-export default function MiniSparkline({ data, color = '#10B981', width = 120, height = 24 }: Props) {
+export default function MiniSparkline({ data, color = Colors.imSuccess, width = 120, height = 24 }: Props) {
   if (!data || data.length < 2) return null;
   const min = Math.min(...data);
   const max = Math.max(...data);

@@ -69,7 +69,7 @@ export default function AssetScanResult({ token, onReset }: Props) {
       )}
 
       <TouchableOpacity testID="asset-start-prestart" style={s.primaryBtn} onPress={startPreStart}>
-        <Ionicons name="clipboard" size={16} color="#FFFFFF" />
+        <Ionicons name="clipboard" size={16} color={Colors.imSurface} />
         <Text style={s.primaryBtnText}>Start Pre-Start for this asset</Text>
       </TouchableOpacity>
       <TouchableOpacity testID="asset-scan-reset" style={s.ghostBtn} onPress={onReset}>
@@ -92,7 +92,7 @@ const s = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.orange, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 12, marginTop: 12,
   },
-  primaryBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 }, // linter-ok: on-brand button text
+  primaryBtnText: { color: Colors.imSurface, fontWeight: '700', fontSize: 15 }, // linter-ok: on-brand button text
   ghostBtn: { paddingVertical: 10, paddingHorizontal: 18 },
   ghostBtnText: { color: Colors.textSecondary, fontWeight: '600' },
 });

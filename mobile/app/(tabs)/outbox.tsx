@@ -127,7 +127,7 @@ const s = StyleSheet.create({
   filterChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, marginRight: 8 },
   filterActive: { backgroundColor: Colors.orange, borderColor: Colors.orange },
   filterText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.5 },
-  filterActiveText: { color: '#fff' },
+  filterActiveText: { color: Colors.imSurface },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, marginTop: 8 },
   card: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 8 },

@@ -10,11 +10,11 @@ import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 
 const CAT_COLORS: Record<string, { bg: string; ink: string }> = {
-  incident:   { bg: '#fbe4e7', ink: '#7a1f33' },
-  inspection: { bg: '#ece6f4', ink: '#4f3a8c' },
-  toolbox:    { bg: '#f7eed1', ink: '#8c6a1a' },
-  near_miss:  { bg: '#f8d7c3', ink: '#9c4f1a' },
-  general:    { bg: '#f1f5f9', ink: '#334155' },
+  incident:   { bg: Colors.imConcrete, ink: Colors.imError },
+  inspection: { bg: Colors.imConcrete, ink: Colors.paneltecViolet },
+  toolbox:    { bg: Colors.imConcrete, ink: Colors.imInk },
+  near_miss:  { bg: Colors.imConcrete, ink: Colors.imBronze },
+  general:    { bg: Colors.imConcrete, ink: Colors.imInkMuted },
 };
 
 const TYPE_ICONS: Record<string, string> = {
@@ -104,7 +104,7 @@ export default function TemplateDetailScreen() {
       <View style={s.ctaWrap}>
         <TouchableOpacity testID="open-fillout-btn" style={s.ctaBtn}
           onPress={() => router.push(`/forms/fill/${id}`)}>
-          <Ionicons name="add-circle" size={16} color="#fff" />
+          <Ionicons name="add-circle" size={16} color={Colors.imSurface} />
           <Text style={s.ctaBtnText}>Fill out this form</Text>
         </TouchableOpacity>
         {/* v160.0.15 — "View submissions" removed. Submission review is a
@@ -132,14 +132,14 @@ const s = StyleSheet.create({
   fieldTop: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   typeBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#f1f5f9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
   typeBadgeText: { fontSize: 9, fontWeight: '600', color: Colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   fieldLabel: { fontSize: 13, fontWeight: '600', color: Colors.ink, flex: 1 },
-  requiredDot: { fontSize: 14, color: '#a8324c', fontWeight: '700' },
+  requiredDot: { fontSize: 14, color: Colors.imError, fontWeight: '700' },
   fieldPlaceholder: { fontSize: 11, color: Colors.textTertiary, marginTop: 4 },
   optionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
-  optionChip: { backgroundColor: '#f1f5f9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: Colors.border },
+  optionChip: { backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: Colors.border },
   optionChipText: { fontSize: 10, color: Colors.textSecondary },
   ctaWrap: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -148,9 +148,9 @@ const s = StyleSheet.create({
   },
   ctaBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#1e4a8c', borderRadius: 12, paddingVertical: 14, minHeight: 50,
+    backgroundColor: Colors.paneltecBlue, borderRadius: 12, paddingVertical: 14, minHeight: 50,
   },
-  ctaBtnText: { color: '#fff', fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  ctaBtnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   secondaryBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 12,

@@ -16,10 +16,10 @@ const API = (process.env.EXPO_PUBLIC_BACKEND_URL || '') + '/api';
 
 function StrengthMeter({ value }: { value: string }) {
   const { score, label } = passwordStrength(value);
-  const color = STRENGTH_COLORS[score] || '#CBD5E1';
+  const color = STRENGTH_COLORS[score] || Colors.imBorder;
   return (
     <View style={{ marginTop: 4 }}>
-      <View style={{ height: 5, borderRadius: 3, backgroundColor: '#F1F5F9', overflow: 'hidden' }}>
+      <View style={{ height: 5, borderRadius: 3, backgroundColor: Colors.imConcrete, overflow: 'hidden' }}>
         <View style={{ height: 5, borderRadius: 3, backgroundColor: color, width: `${(score + 1) * 20}%` as any }} />
       </View>
       <Text style={{ fontSize: 10, color: Colors.textTertiary, marginTop: 3 }}>
@@ -75,7 +75,7 @@ export default function PinRedeemScreen() {
           </TouchableOpacity>
 
           <View style={s.logoWrap}>
-            <Ionicons name="keypad" size={18} color="#F97316" />
+            <Ionicons name="keypad" size={18} color={Colors.imBronze} />
             <Text style={s.logoText}>Paneltec Civil</Text>
           </View>
 
@@ -103,7 +103,7 @@ export default function PinRedeemScreen() {
             placeholder="••••••••" placeholderTextColor={Colors.textTertiary} secureTextEntry />
 
           <TouchableOpacity testID="pin-submit" style={[s.submitBtn, busy && { opacity: 0.6 }]} onPress={submit} disabled={busy}>
-            {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+            {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
               <Text style={s.submitText}>Activate account</Text>
             )}
           </TouchableOpacity>
@@ -119,12 +119,12 @@ const s = StyleSheet.create({
   backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 24 },
   backText: { fontSize: 13, fontWeight: '600', color: Colors.blue },
   logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 16 },
-  logoText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: '#F97316', textTransform: 'uppercase' },
+  logoText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: Colors.imBronze, textTransform: 'uppercase' },
   heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
   desc: { fontSize: 13, color: Colors.textSecondary, marginTop: 6, lineHeight: 19, marginBottom: 8 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
-  pinInput: { fontSize: 28, fontWeight: '700', letterSpacing: 8, textAlign: 'center', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: '#F97316' },
-  submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
-  submitText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+  pinInput: { fontSize: 28, fontWeight: '700', letterSpacing: 8, textAlign: 'center', fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', color: Colors.imBronze },
+  submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.imBronze, borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
+  submitText: { fontSize: 15, fontWeight: '700', color: Colors.imSurface },
 });

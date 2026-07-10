@@ -1,3 +1,4 @@
+import { Colors } from './colors';
 // Phase 4.7 — password validation helpers (mirrors backend validate_password_rule)
 const SPECIAL = /[^A-Za-z0-9]/;
 
@@ -20,4 +21,4 @@ export function passwordStrength(pwd: string): { score: number; label: string } 
   return { score: Math.min(s, 4), label };
 }
 
-export const STRENGTH_COLORS = ['#F43F5E', '#F97316', '#F59E0B', '#10B981', '#059669'];
+export const STRENGTH_COLORS = [Colors.imError, Colors.imBronze, Colors.imWarning, Colors.imSuccess, Colors.imSuccess];

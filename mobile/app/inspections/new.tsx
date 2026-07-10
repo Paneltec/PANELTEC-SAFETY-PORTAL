@@ -150,7 +150,7 @@ export default function InspectionNewScreen() {
           <Text style={s.label}>Operator signature *</Text>
           {signature ? (
             <View>
-              <Image source={{ uri: signature }} style={{ width: '100%', height: 120, backgroundColor: '#FFFFFF', borderRadius: 10, borderWidth: 1, borderColor: Colors.border }} />
+              <Image source={{ uri: signature }} style={{ width: '100%', height: 120, backgroundColor: Colors.imSurface, borderRadius: 10, borderWidth: 1, borderColor: Colors.border }} />
               <TouchableOpacity testID="insp-resign" style={{ alignSelf: 'flex-end', marginTop: 6 }} onPress={() => setSigOpen(true)}>
                 <Text style={{ color: Colors.orangeLight, fontWeight: '600', fontSize: 12 }}>Re-sign</Text>
               </TouchableOpacity>

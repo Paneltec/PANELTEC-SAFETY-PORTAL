@@ -35,11 +35,11 @@ export default function SignaturePadWeb({ onSave, onClose }: Props) {
     ctx.lineWidth = 2.2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.strokeStyle = '#F8FAFC';
+    ctx.strokeStyle = Colors.imConcrete;
     // Prime an off-white bg so the PNG has proper background.
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = Colors.imSurface;
     ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.strokeStyle = '#0F172A';
+    ctx.strokeStyle = Colors.imInk;
   }, []);
 
   const pointerFrom = (e: any) => {
@@ -84,9 +84,9 @@ export default function SignaturePadWeb({ onSave, onClose }: Props) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
-    ctx.fillStyle = '#FFFFFF';
+    ctx.fillStyle = Colors.imSurface;
     ctx.fillRect(0, 0, rect.width, rect.height);
-    ctx.strokeStyle = '#0F172A';
+    ctx.strokeStyle = Colors.imInk;
     hasStrokeRef.current = false;
     setEmpty(true);
   };
@@ -104,7 +104,7 @@ export default function SignaturePadWeb({ onSave, onClose }: Props) {
       width: '100%',
       height: '100%',
       display: 'block',
-      backgroundColor: '#FFFFFF',
+      backgroundColor: Colors.imSurface,
       borderRadius: 12,
       touchAction: 'none',
       cursor: 'crosshair',
@@ -150,7 +150,7 @@ const sp = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: Colors.border,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Colors.imSurface,
     overflow: 'hidden',
   },
   actions: { flexDirection: 'row', gap: 10 },
@@ -168,6 +168,6 @@ const sp = StyleSheet.create({
   },
   btnGhostText: { color: Colors.textSecondary, fontWeight: '600', fontSize: 14 },
   btnPrimary: { backgroundColor: Colors.orange },
-  btnPrimaryText: { color: '#FFFFFF', fontWeight: '700', fontSize: 14 },
+  btnPrimaryText: { color: Colors.imSurface, fontWeight: '700', fontSize: 14 },
   btnDisabled: { opacity: 0.4 },
 });

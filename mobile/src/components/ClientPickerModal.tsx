@@ -16,10 +16,10 @@ const CLIENT_SRC_LABELS: Record<string, string> = {
 
 function CompanyChip({ label }: { label: string }) {
   const tints: Record<string, { bg: string; text: string }> = {
-    Paneltec: { bg: '#e6eff9', text: '#1e4a8c' },
-    Viatec:   { bg: '#ece6f4', text: '#4f3a8c' },
+    Paneltec: { bg: Colors.imConcrete, text: Colors.paneltecBlue },
+    Viatec:   { bg: Colors.imConcrete, text: Colors.paneltecViolet },
   };
-  const c = tints[label] || { bg: '#F1F5F9', text: '#475569' };
+  const c = tints[label] || { bg: Colors.imConcrete, text: Colors.imInkMuted };
   return (
     <View style={[st.chip, { backgroundColor: c.bg }]}>
       <Text style={[st.chipText, { color: c.text }]}>{label}</Text>
@@ -100,10 +100,10 @@ export default function ClientPickerModal({ company, selectedIds, onClose, onApp
           </Text>
         </View>
         <View style={st.actionRow}>
-          <TouchableOpacity testID="client-picker-select-all" style={[st.actionBtn, { backgroundColor: '#e6eff9' }]} onPress={selectAll}>
+          <TouchableOpacity testID="client-picker-select-all" style={[st.actionBtn, { backgroundColor: Colors.imConcrete }]} onPress={selectAll}>
             <Text style={[st.actionBtnText, { color: Colors.orangeLight }]}>Select filtered</Text>
           </TouchableOpacity>
-          <TouchableOpacity testID="client-picker-clear-all" style={[st.actionBtn, { backgroundColor: '#F1F5F9' }]} onPress={clearAll}>
+          <TouchableOpacity testID="client-picker-clear-all" style={[st.actionBtn, { backgroundColor: Colors.imConcrete }]} onPress={clearAll}>
             <Text style={[st.actionBtnText, { color: Colors.textSecondary }]}>Clear all</Text>
           </TouchableOpacity>
         </View>
@@ -111,7 +111,7 @@ export default function ClientPickerModal({ company, selectedIds, onClose, onApp
         {/* List */}
         {loading ? (
           <View style={st.loadingWrap}>
-            <ActivityIndicator color="#1e4a8c" />
+            <ActivityIndicator color={Colors.paneltecBlue} />
             <Text style={st.loadingText}>Loading customers from Simpro…</Text>
           </View>
         ) : filtered.length === 0 ? (
@@ -126,12 +126,12 @@ export default function ClientPickerModal({ company, selectedIds, onClose, onApp
                 <TouchableOpacity
                   key={`${c.simpro_company_id}-${c.simpro_customer_id}`}
                   testID={`client-row-${c.simpro_customer_id}`}
-                  style={[st.row, checked && { backgroundColor: '#e6eff9' }]}
+                  style={[st.row, checked && { backgroundColor: Colors.imConcrete }]}
                   onPress={() => toggle(c.simpro_customer_id)}
                   activeOpacity={0.7}
                 >
                   <Ionicons name={checked ? 'checkbox' : 'square-outline'} size={18}
-                    color={checked ? '#1e4a8c' : Colors.textTertiary} />
+                    color={checked ? Colors.paneltecBlue : Colors.textTertiary} />
                   <Text style={st.rowName} numberOfLines={1}>{c.name}</Text>
                   <CompanyChip label={c.company_label} />
                 </TouchableOpacity>
@@ -163,7 +163,7 @@ export default function ClientPickerModal({ company, selectedIds, onClose, onApp
 const st = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#F8FAFC',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: Colors.imConcrete,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary },
@@ -197,13 +197,13 @@ const st = StyleSheet.create({
   footer: {
     flexDirection: 'row', justifyContent: 'flex-end', gap: 8,
     paddingHorizontal: 16, paddingVertical: 12,
-    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: '#F8FAFC',
+    borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.imConcrete,
   },
   cancelBtn: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.white,
   },
   cancelBtnText: { fontSize: 13, fontWeight: '500', color: Colors.textSecondary },
-  applyBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: '#1e4a8c' },
-  applyBtnText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  applyBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: Colors.paneltecBlue },
+  applyBtnText: { fontSize: 13, fontWeight: '700', color: Colors.imSurface },
 });

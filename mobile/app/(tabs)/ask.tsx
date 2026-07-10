@@ -133,7 +133,7 @@ export default function AskScreen() {
                       <Text style={styles.deleteConfirmText}>Delete?</Text>
                       <TouchableOpacity testID={`suggestion-delete-confirm-${s.id}`}
                         onPress={() => handleDelete(s, true)} style={styles.deleteConfirmYes}>
-                        <Ionicons name="checkmark" size={14} color="#7a1f33" />
+                        <Ionicons name="checkmark" size={14} color={Colors.imError} />
                       </TouchableOpacity>
                       <TouchableOpacity testID={`suggestion-delete-cancel-${s.id}`}
                         onPress={() => handleDelete(s, false, true)} style={styles.deleteConfirmNo}>
@@ -185,9 +185,9 @@ export default function AskScreen() {
               onPress={() => submit()}
               disabled={busy}
             >
-              {busy ? <ActivityIndicator color="#fff" size="small" /> : (
+              {busy ? <ActivityIndicator color={Colors.imSurface} size="small" /> : (
                 <>
-                  <Ionicons name="sparkles" size={14} color="#fff" />
+                  <Ionicons name="sparkles" size={14} color={Colors.imSurface} />
                   <Text style={styles.submitText}>Ask</Text>
                 </>
               )}
@@ -262,7 +262,7 @@ function SuggestionForm({ initial, busy, onSave, onCancel }: any) {
       </TouchableOpacity>
       <TouchableOpacity testID="suggestion-save" style={[styles.sugSaveBtn, !canSave && { opacity: 0.4 }]}
         onPress={() => canSave && onSave({ question: question.trim(), category: category.trim() || null })} disabled={!canSave}>
-        {busy ? <ActivityIndicator size="small" color="#10B981" /> : <Ionicons name="checkmark" size={14} color="#10B981" />}
+        {busy ? <ActivityIndicator size="small" color={Colors.imSuccess} /> : <Ionicons name="checkmark" size={14} color={Colors.imSuccess} />}
       </TouchableOpacity>
       <TouchableOpacity testID="suggestion-cancel" style={styles.sugCancelBtn} onPress={onCancel}>
         <Ionicons name="close" size={14} color={Colors.textTertiary} />
@@ -352,7 +352,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: Colors.violet, borderRadius: 10, paddingVertical: 12, marginTop: 12, minHeight: 48,
   },
-  submitText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  submitText: { color: Colors.imSurface, fontSize: 14, fontWeight: '600' },
   // Answer
   answerCard: {
     borderWidth: 1, borderColor: 'rgba(167,139,250,0.3)', borderRadius: 16, padding: 16,

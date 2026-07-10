@@ -57,7 +57,7 @@ export default function TripSummaryCard({ asset }: { asset: any }) {
       </View>
 
       {loading[range] && !d && (
-        <View style={s.loadingWrap}><ActivityIndicator color="#F97316" /><Text style={s.loadingText}>Loading trip data…</Text></View>
+        <View style={s.loadingWrap}><ActivityIndicator color={Colors.imBronze} /><Text style={s.loadingText}>Loading trip data…</Text></View>
       )}
 
       {d && d.error && (
@@ -83,7 +83,7 @@ export default function TripSummaryCard({ asset }: { asset: any }) {
           )}
           {sparkData.length > 1 && (
             <View style={s.sparkWrap}>
-              <MiniSparkline data={sparkData} color="#F97316" width={200} height={20} />
+              <MiniSparkline data={sparkData} color={Colors.imBronze} width={200} height={20} />
               <Text style={s.sparkLabel}>Daily km · last {sparkData.length} days</Text>
             </View>
           )}
@@ -110,31 +110,31 @@ function TripTile({ label, value, unit, testID }: { label: string; value: string
 const s = StyleSheet.create({
   card: { borderRadius: 16, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, padding: 12, marginBottom: 10 },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap' },
-  tripTag: { backgroundColor: '#EA580C', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
-  tripTagText: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.5 },
-  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: '#C2410C', textTransform: 'uppercase' },
+  tripTag: { backgroundColor: Colors.imBronze, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4 },
+  tripTagText: { fontSize: 8, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.5 },
+  headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.imBronze, textTransform: 'uppercase' },
 
-  tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: '#F8FAFC', borderRadius: 8, borderWidth: 1, borderColor: Colors.border, padding: 2 },
+  tabStrip: { flexDirection: 'row', gap: 2, backgroundColor: Colors.imConcrete, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, padding: 2 },
   tab: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  tabActive: { backgroundColor: '#F97316' },
+  tabActive: { backgroundColor: Colors.imBronze },
   tabText: { fontSize: 10, fontWeight: '600', color: Colors.textTertiary },
-  tabTextActive: { color: '#fff' },
+  tabTextActive: { color: Colors.imSurface },
 
   tilesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tile: { width: '48%' as any, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
+  tile: { width: '48%' as any, backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   tileLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 0.5, color: Colors.textTertiary },
   tileValue: { fontSize: 20, fontWeight: '700', color: Colors.ink, marginTop: 2 },
-  tileUnit: { fontSize: 10, fontWeight: '500', color: '#94A3B8' },
+  tileUnit: { fontSize: 10, fontWeight: '500', color: Colors.imInkSubtle },
 
   metaRow: { marginTop: 8 },
   metaText: { fontSize: 10, color: Colors.textTertiary },
-  collectingText: { fontSize: 10, color: '#92400E', marginTop: 4 },
+  collectingText: { fontSize: 10, color: Colors.imInk, marginTop: 4 },
 
   sparkWrap: { marginTop: 6 },
-  sparkLabel: { fontSize: 8, color: '#94A3B8', marginTop: 2 },
+  sparkLabel: { fontSize: 8, color: Colors.imInkSubtle, marginTop: 2 },
 
-  footerNote: { fontSize: 9, color: '#94A3B8', marginTop: 8, lineHeight: 13 },
+  footerNote: { fontSize: 9, color: Colors.imInkSubtle, marginTop: 8, lineHeight: 13 },
   loadingWrap: { alignItems: 'center', paddingVertical: 20 },
   loadingText: { fontSize: 12, color: Colors.textTertiary, marginTop: 4 },
-  errorText: { fontSize: 12, color: '#E11D48', textAlign: 'center', paddingVertical: 20 },
+  errorText: { fontSize: 12, color: Colors.imError, textAlign: 'center', paddingVertical: 20 },
 });

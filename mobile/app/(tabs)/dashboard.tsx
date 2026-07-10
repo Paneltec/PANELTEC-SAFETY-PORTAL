@@ -292,7 +292,7 @@ const d = StyleSheet.create({
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4, letterSpacing: 1 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  avatarText: { color: Colors.imSurface, fontSize: 14, fontWeight: '800' },
   fallbackBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: Colors.amberSoft, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)', borderRadius: 12, padding: 12, marginBottom: 16 },
   fallbackText: { fontSize: 12, color: Colors.amber, flex: 1, lineHeight: 18 },
   scoreCard: { borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 16, backgroundColor: Colors.surface },
@@ -325,7 +325,7 @@ const d = StyleSheet.create({
   // clearly organise the surface without shouting.
   sectionLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.4, color: Colors.textSecondary, marginBottom: 10, marginTop: 8 },
   metricNum: { fontSize: 24, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5 },
-  metricLabel: { fontSize: 11, fontWeight: '700', color: '#1e293b', marginTop: 2 },
+  metricLabel: { fontSize: 11, fontWeight: '700', color: Colors.imInk, marginTop: 2 },
   metricSub: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 0.8 },
   captureTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
   // v160.0.3 — Manage/Capture tile descriptions were `textSecondary`

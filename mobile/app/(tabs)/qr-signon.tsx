@@ -79,7 +79,7 @@ export default function QRSignOnScreen() {
                 autoCapitalize="none" autoCorrect={false} returnKeyType="go" onSubmitEditing={handleResolve} />
               <TouchableOpacity testID="qr-resolve-btn" style={[s.goBtn, !manualUrl.trim() && { opacity: 0.4 }]}
                 onPress={handleResolve} disabled={!manualUrl.trim()} activeOpacity={0.7}>
-                <Ionicons name="arrow-forward" size={18} color="#fff" />
+                <Ionicons name="arrow-forward" size={18} color={Colors.imSurface} />
               </TouchableOpacity>
             </View>
           </View>

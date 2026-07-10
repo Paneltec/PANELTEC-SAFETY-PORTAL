@@ -137,12 +137,12 @@ export default function PreStartNewScreen() {
             }}
             activeOpacity={0.85}
           >
-            <Ionicons name="qr-code" size={26} color="#FFFFFF" />
+            <Ionicons name="qr-code" size={26} color={Colors.imSurface} />
             <View style={{ flex: 1 }}>
-              <Text style={{ color: '#FFFFFF', fontWeight: '800', fontSize: 15 }}>Scan Vehicle QR to Auto-Fill</Text>
+              <Text style={{ color: Colors.imSurface, fontWeight: '800', fontSize: 15 }}>Scan Vehicle QR to Auto-Fill</Text>
               <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 }}>Fastest way to start — points camera at the sticker</Text>
             </View>
-            <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
+            <Ionicons name="chevron-forward" size={20} color={Colors.imSurface} />
           </TouchableOpacity>
         )}
         {!(asset || params.asset_id) && (
@@ -218,7 +218,7 @@ export default function PreStartNewScreen() {
                 Point camera at the sticker on the vehicle, or paste the URL from the sticker below.
               </Text>
               {camPerm?.granted && Platform.OS !== 'web' ? (
-                <View testID="ps-scan-camera" style={{ height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: '#000', marginBottom: 12 }}>
+                <View testID="ps-scan-camera" style={{ height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: Colors.imInk, marginBottom: 12 }}>
                   <CameraView
                     style={{ flex: 1 }}
                     facing="back"
@@ -260,7 +260,7 @@ export default function PreStartNewScreen() {
                   onPress={() => resolveScanned(scanInput)}
                   disabled={scanBusy}
                 >
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>{scanBusy ? '…' : 'Go'}</Text>
+                  <Text style={{ color: Colors.imSurface, fontWeight: '700' }}>{scanBusy ? '…' : 'Go'}</Text>
                 </TouchableOpacity>
               </View>
               {scanErr && <Text style={{ color: Colors.red, fontSize: 12, marginTop: 8 }}>{scanErr}</Text>}

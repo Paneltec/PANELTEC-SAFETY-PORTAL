@@ -84,7 +84,7 @@ export default function SwmsDetailScreen() {
           activeOpacity={0.7}
         >
           <View style={s.signedIcon}>
-            <Ionicons name="document-attach" size={16} color="#2563EB" />
+            <Ionicons name="document-attach" size={16} color={Colors.paneltecBlue} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={s.signedTitle}>View signed copy</Text>
@@ -136,15 +136,15 @@ const s = StyleSheet.create({
   // Signed evidence button
   signedBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: '#EFF6FF', borderWidth: 1, borderColor: '#BFDBFE',
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imConcrete,
     borderRadius: 14, padding: 14, marginBottom: 16,
   },
   signedIcon: {
     width: 36, height: 36, borderRadius: 10,
-    backgroundColor: '#DBEAFE', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center',
   },
-  signedTitle: { fontSize: 14, fontWeight: '600', color: '#1E40AF' },
-  signedSub: { fontSize: 11, color: '#3B82F6', marginTop: 1 },
+  signedTitle: { fontSize: 14, fontWeight: '600', color: Colors.paneltecBlue },
+  signedSub: { fontSize: 11, color: Colors.paneltecBlue, marginTop: 1 },
 
   section: { backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 16, marginBottom: 10 },
   sectionTitle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, color: Colors.textTertiary, textTransform: 'uppercase', marginBottom: 8 },

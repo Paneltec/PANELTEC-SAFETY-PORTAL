@@ -55,7 +55,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
   if (loading) {
     return (
       <View style={s.center}>
-        <ActivityIndicator size="large" color="#7C3AED" />
+        <ActivityIndicator size="large" color={Colors.paneltecViolet} />
         <Text style={s.loadText}>Resolving supplier...</Text>
       </View>
     );
@@ -65,7 +65,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
     return (
       <View style={s.errorCard}>
         <View style={s.errorIcon}>
-          <Ionicons name="alert-circle" size={28} color="#E11D48" />
+          <Ionicons name="alert-circle" size={28} color={Colors.imError} />
         </View>
         <Text style={s.errorTitle}>QR Error</Text>
         <Text style={s.errorBody}>{error}</Text>
@@ -84,7 +84,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
       <ScrollView contentContainerStyle={s.scroll}>
         <View testID="supplier-induction-confirmation" style={s.successCard}>
           <View style={s.successCircle}>
-            <Ionicons name="checkmark" size={32} color="#fff" />
+            <Ionicons name="checkmark" size={32} color={Colors.imSurface} />
           </View>
           <Text style={s.successTitle}>Induction complete.</Text>
           <Text style={s.successSub}>{c.name}</Text>
@@ -125,7 +125,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
       {data.documents?.length > 0 && (
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Ionicons name="shield-checkmark" size={14} color="#7C3AED" />
+            <Ionicons name="shield-checkmark" size={14} color={Colors.paneltecViolet} />
             <Text style={s.sectionTitle}>Required documents</Text>
           </View>
           {data.documents.map((d: any, i: number) => {
@@ -139,7 +139,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
                 activeOpacity={0.7}
               >
                 <View style={[s.checkbox, ackDocs.has(key) && s.checkboxActive]}>
-                  {ackDocs.has(key) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                  {ackDocs.has(key) && <Ionicons name="checkmark" size={12} color={Colors.imSurface} />}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.docTitle}>{(d.type || 'document').replace(/_/g, ' ')}</Text>
@@ -158,7 +158,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
       {data.active_swms?.length > 0 && (
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Ionicons name="document-text" size={14} color="#7C3AED" />
+            <Ionicons name="document-text" size={14} color={Colors.paneltecViolet} />
             <Text style={s.sectionTitle}>Acknowledge SWMS</Text>
           </View>
           {data.active_swms.map((sw: any) => (
@@ -170,7 +170,7 @@ export default function SupplierScanResult({ token, onReset }: Props) {
               activeOpacity={0.7}
             >
               <View style={[s.checkbox, ackSwms.has(sw.id) && s.checkboxActive]}>
-                {ackSwms.has(sw.id) && <Ionicons name="checkmark" size={12} color="#fff" />}
+                {ackSwms.has(sw.id) && <Ionicons name="checkmark" size={12} color={Colors.imSurface} />}
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.docTitle} numberOfLines={1}>{sw.title}</Text>
@@ -190,8 +190,8 @@ export default function SupplierScanResult({ token, onReset }: Props) {
         activeOpacity={0.7}
       >
         {signing
-          ? <ActivityIndicator size="small" color="#fff" />
-          : <Ionicons name="checkmark-circle" size={18} color="#fff" />}
+          ? <ActivityIndicator size="small" color={Colors.imSurface} />
+          : <Ionicons name="checkmark-circle" size={18} color={Colors.imSurface} />}
         <Text style={s.completeBtnText}>Complete induction</Text>
       </TouchableOpacity>
 
@@ -214,15 +214,15 @@ const s = StyleSheet.create({
   scroll: { padding: 16, paddingBottom: 40 },
   // Error
   errorCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 1, borderColor: Colors.border, margin: 16 },
-  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 18, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center', marginTop: 8, lineHeight: 20 },
   retryBtn: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   retryText: { fontSize: 14, fontWeight: '600', color: Colors.blue },
   // Header
-  supplierHeader: { backgroundColor: '#7C3AED', borderRadius: 20, padding: 20, marginBottom: 16 },
+  supplierHeader: { backgroundColor: Colors.paneltecViolet, borderRadius: 20, padding: 20, marginBottom: 16 },
   headerOverline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: 'rgba(255,255,255,0.7)' },
-  headerName: { fontSize: 24, fontWeight: '700', color: '#fff', marginTop: 4 },
+  headerName: { fontSize: 24, fontWeight: '700', color: Colors.imSurface, marginTop: 4 },
   chipRow: { flexDirection: 'row', gap: 8, marginTop: 8, flexWrap: 'wrap' },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   chipText: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '500' },
@@ -232,25 +232,25 @@ const s = StyleSheet.create({
   sectionTitle: { fontSize: 11, fontWeight: '700', letterSpacing: 0.5, color: Colors.textSecondary, textTransform: 'uppercase' },
   // Doc rows
   docRow: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, marginBottom: 6 },
-  docRowActive: { borderColor: '#7C3AED', backgroundColor: '#FAF5FF' },
-  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: '#CBD5E1', alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: '#7C3AED', borderColor: '#7C3AED' },
+  docRowActive: { borderColor: Colors.paneltecViolet, backgroundColor: Colors.imConcrete },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: Colors.imBorder, alignItems: 'center', justifyContent: 'center' },
+  checkboxActive: { backgroundColor: Colors.paneltecViolet, borderColor: Colors.paneltecViolet },
   docTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink, textTransform: 'capitalize' },
   docSub: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
   // Complete
-  completeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED', borderRadius: 14, paddingVertical: 16, marginBottom: 12 },
-  completeBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  completeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.paneltecViolet, borderRadius: 14, paddingVertical: 16, marginBottom: 12 },
+  completeBtnText: { color: Colors.imSurface, fontSize: 16, fontWeight: '700' },
   disclaimer: { fontSize: 11, color: Colors.textTertiary, textAlign: 'center', marginBottom: 4, lineHeight: 16 },
   tokenLabel: { fontSize: 10, color: Colors.textTertiary, textAlign: 'center', letterSpacing: 1, marginBottom: 16 },
   backBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12 },
   backText: { fontSize: 13, color: Colors.orangeLight, fontWeight: '500' },
   // Success
   successCard: { backgroundColor: Colors.surface, borderRadius: 20, padding: 32, alignItems: 'center', borderWidth: 2, borderColor: Colors.emerald },
-  successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
+  successCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.imSuccess, alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
   successTitle: { fontSize: 24, fontWeight: '700', color: Colors.ink },
   successSub: { fontSize: 14, color: Colors.textSecondary, marginTop: 4 },
   successExpiry: { fontSize: 12, color: Colors.textTertiary, marginTop: 16 },
   successFooter: { fontSize: 11, color: Colors.textTertiary, marginTop: 4 },
   doneBtn: { marginTop: 20, paddingVertical: 12, paddingHorizontal: 32, borderRadius: 12, backgroundColor: Colors.emerald },
-  doneBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
+  doneBtnText: { color: Colors.imSurface, fontSize: 15, fontWeight: '600' },
 });

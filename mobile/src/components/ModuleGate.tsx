@@ -39,7 +39,7 @@ export function ModuleDisabledScreen({ featureName }: { featureName: string }) {
     <SafeAreaView style={s.root} testID="module-disabled">
       <View style={s.card}>
         <View style={s.iconWrap}>
-          <Ionicons name="lock-closed" size={32} color={Colors.orange || '#F97316'} />
+          <Ionicons name="lock-closed" size={32} color={Colors.orange || Colors.imBronze} />
         </View>
         <Text style={s.title}>{featureName} is turned off</Text>
         <Text style={s.body}>
@@ -60,7 +60,7 @@ export function ModuleDisabledScreen({ featureName }: { featureName: string }) {
 const s = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.imConcrete,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -73,24 +73,24 @@ const s = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: Colors.imBorder,
     boxShadow: '0 4px 16px rgba(11,18,32,0.08)',
   },
   iconWrap: {
     width: 56,
     height: 56,
     borderRadius: 16,
-    backgroundColor: '#FFF7ED',
+    backgroundColor: Colors.imConcrete,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#FDBA74',
+    borderColor: Colors.imBronze,
   },
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#0B1220',
+    color: Colors.imInk,
     marginBottom: 8,
     textAlign: 'center',
   },
@@ -102,12 +102,12 @@ const s = StyleSheet.create({
     marginBottom: 20,
   },
   btn: {
-    backgroundColor: '#F97316',
+    backgroundColor: Colors.imBronze,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
   },
-  btnText: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  btnText: { color: Colors.imSurface, fontWeight: '600', fontSize: 14 },
 });
 
 export default ModuleGate;

@@ -29,9 +29,9 @@ function initials(w: any) {
 
 function CompanyChip({ label }: { label: string }) {
   const tints: Record<string, { bg: string; text: string }> = {
-    Paneltec: { bg: '#e6eff9', text: '#1e4a8c' },
-    Viatec:   { bg: '#ece6f4', text: '#4f3a8c' },
-    Manual:   { bg: '#F1F5F9', text: '#475569' },
+    Paneltec: { bg: Colors.imConcrete, text: Colors.paneltecBlue },
+    Viatec:   { bg: Colors.imConcrete, text: Colors.paneltecViolet },
+    Manual:   { bg: Colors.imConcrete, text: Colors.imInkMuted },
   };
   const c = tints[label] || tints.Manual;
   return (
@@ -104,7 +104,7 @@ function WorkersScreenInner() {
       {/* Sky pastel header banner */}
       <View testID="workers-header" style={s.headerBanner}>
         <TouchableOpacity onPress={() => router.back()} style={s.backBtn}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={s.overline}>SETTINGS</Text>
@@ -141,8 +141,8 @@ function WorkersScreenInner() {
               disabled={syncing}
             >
               {syncing
-                ? <ActivityIndicator size="small" color="#1e4a8c" />
-                : <Ionicons name="sync" size={14} color="#1e4a8c" />
+                ? <ActivityIndicator size="small" color={Colors.paneltecBlue} />
+                : <Ionicons name="sync" size={14} color={Colors.paneltecBlue} />
               }
               <Text style={s.syncBtnText}>Sync</Text>
             </TouchableOpacity>
@@ -153,7 +153,7 @@ function WorkersScreenInner() {
               style={s.addBtn}
               onPress={() => setEditing({})}
             >
-              <Ionicons name="add" size={14} color="#fff" />
+              <Ionicons name="add" size={14} color={Colors.imSurface} />
               <Text style={s.addBtnText}>Add</Text>
             </TouchableOpacity>
           )}
@@ -163,7 +163,7 @@ function WorkersScreenInner() {
       {/* List */}
       {loading ? (
         <View style={s.loadingWrap}>
-          <ActivityIndicator color="#1e4a8c" />
+          <ActivityIndicator color={Colors.paneltecBlue} />
           <Text style={s.loadingText}>Loading workers…</Text>
         </View>
       ) : filtered.length === 0 ? (
@@ -175,7 +175,7 @@ function WorkersScreenInner() {
           </Text>
           {canEdit && !search && (
             <TouchableOpacity testID="empty-add-worker" style={[s.addBtn, { marginTop: 12 }]} onPress={() => setEditing({})}>
-              <Ionicons name="add" size={14} color="#fff" />
+              <Ionicons name="add" size={14} color={Colors.imSurface} />
               <Text style={s.addBtnText}>Add worker</Text>
             </TouchableOpacity>
           )}
@@ -185,7 +185,7 @@ function WorkersScreenInner() {
           testID="workers-list"
           style={{ flex: 1 }}
           contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1e4a8c" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.paneltecBlue} />}
         >
           <Text style={s.countLabel}>{filtered.length} worker{filtered.length === 1 ? '' : 's'}</Text>
           {filtered.map((w) => (
@@ -197,8 +197,8 @@ function WorkersScreenInner() {
               onLongPress={() => canEdit ? remove(w) : undefined}
               activeOpacity={0.7}
             >
-              <View style={[s.avatar, { backgroundColor: w.active ? '#d8ecdd' : '#F1F5F9' }]}>
-                <Text style={[s.avatarText, { color: w.active ? '#1f7a3f' : '#475569' }]}>{initials(w)}</Text>
+              <View style={[s.avatar, { backgroundColor: w.active ? Colors.imConcrete : Colors.imConcrete }]}>
+                <Text style={[s.avatarText, { color: w.active ? Colors.imSuccess : Colors.imInkMuted }]}>{initials(w)}</Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.workerName}>{fullName(w)}</Text>
@@ -220,7 +220,7 @@ function WorkersScreenInner() {
               </View>
               <View style={s.rightCol}>
                 <View style={[s.statusBadge, w.active ? s.activeBadge : s.inactiveBadge]}>
-                  <Text style={[s.statusText, { color: w.active ? '#1f7a3f' : '#475569' }]}>
+                  <Text style={[s.statusText, { color: w.active ? Colors.imSuccess : Colors.imInkMuted }]}>
                     {w.active ? 'Active' : 'Inactive'}
                   </Text>
                 </View>
@@ -245,7 +245,7 @@ function WorkersScreenInner() {
                 style={s.syncOption}
                 onPress={() => sync(o.value)}
               >
-                <Ionicons name="sync" size={14} color="#1e4a8c" />
+                <Ionicons name="sync" size={14} color={Colors.paneltecBlue} />
                 <Text style={s.syncOptionText}>{o.label}</Text>
               </TouchableOpacity>
             ))}
@@ -295,9 +295,9 @@ const s = StyleSheet.create({
   syncBtnText: { fontSize: 12, fontWeight: '600', color: Colors.orangeLight },
   addBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#1e4a8c', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
+    backgroundColor: Colors.paneltecBlue, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
   },
-  addBtnText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  addBtnText: { fontSize: 12, fontWeight: '600', color: Colors.imSurface },
   loadingWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 8 },
   loadingText: { fontSize: 13, color: Colors.textTertiary },
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
@@ -318,8 +318,8 @@ const s = StyleSheet.create({
   metaText: { fontSize: 11, color: Colors.textTertiary },
   rightCol: { alignItems: 'flex-end', gap: 4 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
-  activeBadge: { backgroundColor: '#d8ecdd', borderColor: '#b6dcbf' },
-  inactiveBadge: { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0' },
+  activeBadge: { backgroundColor: Colors.imConcrete, borderColor: Colors.imConcrete },
+  inactiveBadge: { backgroundColor: Colors.imConcrete, borderColor: Colors.imBorder },
   statusText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   companyChip: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
   companyChipText: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },

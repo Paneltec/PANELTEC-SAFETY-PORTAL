@@ -147,7 +147,7 @@ export default function SwmsListScreen() {
               onPress={() => setPasteOpen(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="clipboard" size={15} color="#EA580C" />
+              <Ionicons name="clipboard" size={15} color={Colors.imBronze} />
               <Text style={s.pasteBtnText}>Paste</Text>
             </TouchableOpacity>
 
@@ -157,7 +157,7 @@ export default function SwmsListScreen() {
               onPress={() => setScanOpen(true)}
               activeOpacity={0.7}
             >
-              <Ionicons name="scan" size={15} color="#EA580C" />
+              <Ionicons name="scan" size={15} color={Colors.imBronze} />
               <Text style={s.scanBtnText}>Scan</Text>
             </TouchableOpacity>
 
@@ -166,7 +166,7 @@ export default function SwmsListScreen() {
               style={s.addBtn}
               onPress={() => router.push('/swms/new')}
             >
-              <Ionicons name="add" size={16} color="#fff" />
+              <Ionicons name="add" size={16} color={Colors.imSurface} />
               <Text style={s.addText}>Create</Text>
             </TouchableOpacity>
           </View>
@@ -192,7 +192,7 @@ export default function SwmsListScreen() {
               >
                 {selectMode && (
                   <View style={[s.checkbox, isSelected && s.checkboxChecked]}>
-                    {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                    {isSelected && <Ionicons name="checkmark" size={14} color={Colors.imSurface} />}
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
@@ -221,7 +221,7 @@ export default function SwmsListScreen() {
           </View>
           <View style={s.bulkRight}>
             <TouchableOpacity testID="swms-bulk-clear" style={s.bulkClearBtn} onPress={clearSelection}>
-              <Ionicons name="close" size={14} color="#CBD5E1" />
+              <Ionicons name="close" size={14} color={Colors.imBorder} />
               <Text style={s.bulkClearText}>Clear</Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -231,10 +231,10 @@ export default function SwmsListScreen() {
               disabled={bulkBusy || selected.size === 0}
             >
               {bulkBusy ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={Colors.imSurface} />
               ) : (
                 <>
-                  <Ionicons name="trash" size={14} color="#fff" />
+                  <Ionicons name="trash" size={14} color={Colors.imSurface} />
                   <Text style={s.bulkDeleteText}>Delete</Text>
                 </>
               )}
@@ -271,14 +271,14 @@ const s = StyleSheet.create({
   pasteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 9,
-    borderRadius: 10, borderWidth: 1, borderColor: '#F97316',
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.imBronze,
     backgroundColor: Colors.orangeSoft,
   },
   pasteBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
   scanBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 12, paddingVertical: 9,
-    borderRadius: 10, borderWidth: 1, borderColor: '#F97316',
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.imBronze,
     backgroundColor: Colors.surface,
   },
   scanBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
@@ -288,7 +288,7 @@ const s = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 10,
     marginLeft: 'auto',
   },
-  addText: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  addText: { color: Colors.imSurface, fontSize: 13, fontWeight: '600' },
 
   // Cards
   card: {
@@ -296,7 +296,7 @@ const s = StyleSheet.create({
     backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 14, padding: 14, marginBottom: 8,
   },
-  cardSelected: { borderColor: '#F97316', backgroundColor: Colors.orangeSoft },
+  cardSelected: { borderColor: Colors.imBronze, backgroundColor: Colors.orangeSoft },
   cardTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },
   cardSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   cardRight: { alignItems: 'flex-end', gap: 4 },
@@ -305,33 +305,33 @@ const s = StyleSheet.create({
   // Checkbox
   checkbox: {
     width: 22, height: 22, borderRadius: 6,
-    borderWidth: 2, borderColor: '#CBD5E1',
+    borderWidth: 2, borderColor: Colors.imBorder,
     alignItems: 'center', justifyContent: 'center',
   },
-  checkboxChecked: { backgroundColor: '#F97316', borderColor: '#F97316' },
+  checkboxChecked: { backgroundColor: Colors.imBronze, borderColor: Colors.imBronze },
 
   // Bulk action bar
   bulkBar: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#0F172A', paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: Colors.imInk, paddingHorizontal: 16, paddingVertical: 12,
     borderTopLeftRadius: 16, borderTopRightRadius: 16,
     boxShadow: '0px -4px 8px rgba(0,0,0,0.15)',
     elevation: 12,
   },
   bulkLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  bulkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#F97316' },
-  bulkCount: { fontSize: 14, fontWeight: '600', color: '#fff' },
+  bulkDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.imBronze },
+  bulkCount: { fontSize: 14, fontWeight: '600', color: Colors.imSurface },
   bulkRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   bulkClearBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
   },
-  bulkClearText: { fontSize: 12, fontWeight: '600', color: '#CBD5E1' },
+  bulkClearText: { fontSize: 12, fontWeight: '600', color: Colors.imBorder },
   bulkDeleteBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
-    backgroundColor: '#F97316',
+    backgroundColor: Colors.imBronze,
   },
-  bulkDeleteText: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  bulkDeleteText: { fontSize: 13, fontWeight: '700', color: Colors.imSurface },
 });

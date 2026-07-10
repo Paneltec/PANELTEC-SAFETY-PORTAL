@@ -265,5 +265,5 @@ const s = StyleSheet.create({
     backgroundColor: Colors.orange, paddingVertical: 12, borderRadius: 10,
     alignItems: 'center', marginTop: 10,
   },
-  doneBtnText: { color: '#FFFFFF', fontWeight: '700', fontSize: 15 }, // linter-ok: pure white on brand orange
+  doneBtnText: { color: Colors.imSurface, fontWeight: '700', fontSize: 15 }, // linter-ok: pure white on brand orange
 });

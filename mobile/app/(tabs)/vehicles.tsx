@@ -98,8 +98,8 @@ export default function VehiclesScreen() {
               <TouchableOpacity key={t.id} testID={`tag-toggle-${t.id}`}
                 style={[vs.tagChip, isActive ? { backgroundColor: c, borderColor: c } : { borderColor: c + '55' }]}
                 onPress={() => toggleTag(t.id)}>
-                <View style={[vs.tagDot, { backgroundColor: isActive ? '#fff' : c }]} />
-                <Text style={[vs.tagText, { color: isActive ? '#fff' : c }]}>{t.name}{tagCounts[t.id] ? ` (${tagCounts[t.id]})` : ''}</Text>
+                <View style={[vs.tagDot, { backgroundColor: isActive ? Colors.imSurface : c }]} />
+                <Text style={[vs.tagText, { color: isActive ? Colors.imSurface : c }]}>{t.name}{tagCounts[t.id] ? ` (${tagCounts[t.id]})` : ''}</Text>
               </TouchableOpacity>
             );
           })}

@@ -7,11 +7,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../lib/colors';
 
 const CAT: Record<string, { bg: string; ink: string }> = {
-  incident:   { bg: '#fde2e4', ink: '#9f1239' },
-  inspection: { bg: '#dbeafe', ink: '#1e40af' },
-  toolbox:    { bg: '#fef3c7', ink: '#92400e' },
-  near_miss:  { bg: '#fed7aa', ink: '#c2410c' },
-  general:    { bg: '#e2e8f0', ink: '#475569' },
+  incident:   { bg: Colors.imConcrete, ink: Colors.imError },
+  inspection: { bg: Colors.imConcrete, ink: Colors.paneltecBlue },
+  toolbox:    { bg: Colors.imConcrete, ink: Colors.imInk },
+  near_miss:  { bg: Colors.imConcrete, ink: Colors.imBronze },
+  general:    { bg: Colors.imBorder, ink: Colors.imInkMuted },
 };
 
 function ReadOnlyField({ field }: { field: any }) {
@@ -58,9 +58,9 @@ export default function PreviewModal({ template, onClose, onFill }: {
                   {(template.category || 'general').replace('_', ' ').toUpperCase()}
                 </Text>
               </View>
-              <View style={[s.pill, { backgroundColor: '#dbeafe' }]}>
-                <Ionicons name="phone-portrait-outline" size={10} color="#1e40af" />
-                <Text style={[s.pillText, { color: '#1e40af', marginLeft: 3 }]}>PREVIEW</Text>
+              <View style={[s.pill, { backgroundColor: Colors.imConcrete }]}>
+                <Ionicons name="phone-portrait-outline" size={10} color={Colors.paneltecBlue} />
+                <Text style={[s.pillText, { color: Colors.paneltecBlue, marginLeft: 3 }]}>PREVIEW</Text>
               </View>
             </View>
             <Text style={s.title}>Preview · {template.name}</Text>
@@ -72,7 +72,7 @@ export default function PreviewModal({ template, onClose, onFill }: {
         </View>
 
         {/* Fields */}
-        <ScrollView style={{ flex: 1, backgroundColor: '#f8fafc' }}
+        <ScrollView style={{ flex: 1, backgroundColor: Colors.imConcrete }}
           contentContainerStyle={{ padding: 16, gap: 20, paddingBottom: 100 }}>
           {(template.fields || []).map((f: any) => (
             <View key={f.id} testID={`preview-field-${f.id}`}>
@@ -92,7 +92,7 @@ export default function PreviewModal({ template, onClose, onFill }: {
             <Text style={s.secondaryBtnText}>Close</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="preview-fill-cta" onPress={onFill} style={s.fillBtn}>
-            <Ionicons name="pencil" size={14} color="#fff" />
+            <Ionicons name="pencil" size={14} color={Colors.imSurface} />
             <Text style={s.fillBtnText}>Fill out this form</Text>
           </TouchableOpacity>
         </View>
@@ -116,21 +116,21 @@ const s = StyleSheet.create({
   desc: { fontSize: 12, color: Colors.textSecondary, lineHeight: 17 },
   closeBtn: { padding: 8, borderRadius: 12 },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink },
-  required: { fontSize: 14, color: '#dc2626', fontWeight: '700' },
+  required: { fontSize: 14, color: Colors.imError, fontWeight: '700' },
   fieldType: { fontSize: 9, fontWeight: '600', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
   disabledInput: {
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imBorder,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 12, minHeight: 48,
     justifyContent: 'center',
   },
-  disabledText: { fontSize: 13, color: '#94a3b8' },
-  roHint: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', paddingVertical: 8 },
+  disabledText: { fontSize: 13, color: Colors.imInkSubtle },
+  roHint: { fontSize: 12, color: Colors.imInkSubtle, fontStyle: 'italic', paddingVertical: 8 },
   roRadio: {
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
-    borderWidth: 2, borderColor: '#e2e8f0', backgroundColor: '#f8fafc', minHeight: 44,
+    borderWidth: 2, borderColor: Colors.imBorder, backgroundColor: Colors.imConcrete, minHeight: 44,
     alignItems: 'center', justifyContent: 'center',
   },
-  roRadioText: { fontSize: 13, fontWeight: '600', color: '#94a3b8' },
+  roRadioText: { fontSize: 13, fontWeight: '600', color: Colors.imInkSubtle },
   footer: {
     flexDirection: 'row', gap: 8, padding: 16,
     borderTopWidth: 1, borderTopColor: Colors.border, backgroundColor: Colors.surface,
@@ -143,7 +143,7 @@ const s = StyleSheet.create({
   secondaryBtnText: { fontSize: 14, fontWeight: '600', color: Colors.textSecondary },
   fillBtn: {
     flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: 14, borderRadius: 12, backgroundColor: '#1e293b', minHeight: 50,
+    paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.imInk, minHeight: 50,
   },
-  fillBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  fillBtnText: { fontSize: 14, fontWeight: '700', color: Colors.imSurface },
 });

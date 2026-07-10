@@ -16,10 +16,10 @@ const API = (process.env.EXPO_PUBLIC_BACKEND_URL || '') + '/api';
 
 function StrengthMeter({ value }: { value: string }) {
   const { score, label } = passwordStrength(value);
-  const color = STRENGTH_COLORS[score] || '#CBD5E1';
+  const color = STRENGTH_COLORS[score] || Colors.imBorder;
   return (
     <View style={{ marginTop: 4 }}>
-      <View style={{ height: 5, borderRadius: 3, backgroundColor: '#F1F5F9', overflow: 'hidden' }}>
+      <View style={{ height: 5, borderRadius: 3, backgroundColor: Colors.imConcrete, overflow: 'hidden' }}>
         <View style={{ height: 5, borderRadius: 3, backgroundColor: color, width: `${(score + 1) * 20}%` as any }} />
       </View>
       <Text style={{ fontSize: 10, color: Colors.textTertiary, marginTop: 3 }}>
@@ -77,7 +77,7 @@ export default function OnboardScreen() {
     return (
       <SafeAreaView style={s.safe}>
         <View style={s.center}>
-          <View style={s.errorIcon}><Ionicons name="alert-circle" size={32} color="#E11D48" /></View>
+          <View style={s.errorIcon}><Ionicons name="alert-circle" size={32} color={Colors.imError} /></View>
           <Text style={s.errorTitle}>Link can't be used</Text>
           <Text style={s.errorBody}>{error}</Text>
           <TouchableOpacity testID="onboard-back-login" style={s.backBtn} onPress={() => router.replace('/(auth)/login')}>
@@ -109,7 +109,7 @@ export default function OnboardScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <View style={s.logoWrap}>
-            <Ionicons name="shield-checkmark" size={18} color="#F97316" />
+            <Ionicons name="shield-checkmark" size={18} color={Colors.imBronze} />
             <Text style={s.logoText}>Paneltec Civil</Text>
           </View>
 
@@ -127,7 +127,7 @@ export default function OnboardScreen() {
             placeholder="••••••••" placeholderTextColor={Colors.textTertiary} secureTextEntry />
 
           <TouchableOpacity testID="onboard-submit" style={[s.submitBtn, busy && { opacity: 0.6 }]} onPress={submit} disabled={busy}>
-            {busy ? <ActivityIndicator size="small" color="#fff" /> : (
+            {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
               <Text style={s.submitText}>{flavour === 'invite' ? 'Activate my account' : 'Reset password'}</Text>
             )}
           </TouchableOpacity>
@@ -142,18 +142,18 @@ const s = StyleSheet.create({
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 48, paddingBottom: 32 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   logoWrap: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 24 },
-  logoText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: '#F97316', textTransform: 'uppercase' },
+  logoText: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, color: Colors.imBronze, textTransform: 'uppercase' },
   heading: { fontSize: 28, fontWeight: '700', color: Colors.ink, letterSpacing: -0.5 },
-  subHeading: { fontSize: 16, fontWeight: '600', color: '#F97316', marginTop: 4 },
+  subHeading: { fontSize: 16, fontWeight: '600', color: Colors.imBronze, marginTop: 4 },
   desc: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, marginBottom: 16 },
   label: { fontSize: 12, fontWeight: '600', color: Colors.textSecondary, marginBottom: 4, marginTop: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
   input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: Colors.text },
-  submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#F97316', borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
-  submitText: { fontSize: 15, fontWeight: '700', color: '#fff' },
-  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FFF1F2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  submitBtn: { alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.imBronze, borderRadius: 12, paddingVertical: 14, marginTop: 24, minHeight: 50 },
+  submitText: { fontSize: 15, fontWeight: '700', color: Colors.imSurface },
+  errorIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: Colors.imConcrete, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   errorTitle: { fontSize: 22, fontWeight: '700', color: Colors.ink },
   errorBody: { fontSize: 13, color: Colors.textSecondary, marginTop: 6, textAlign: 'center', maxWidth: 280 },
   backBtn: { marginTop: 16 },
-  backBtnText: { fontSize: 14, fontWeight: '600', color: '#F97316' },
+  backBtnText: { fontSize: 14, fontWeight: '600', color: Colors.imBronze },
   helpText: { fontSize: 11, color: Colors.textTertiary, marginTop: 20, textAlign: 'center', maxWidth: 280, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
 });

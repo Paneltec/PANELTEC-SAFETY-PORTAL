@@ -16,14 +16,14 @@ const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const DELETE_FOLDER_ROLES = new Set(['admin']);
 
 const PASTEL_BG: Record<string, string> = {
-  mint: '#e8f3eb', sky: '#e6eff9', peach: '#fbeadf', blush: '#fbe4e7',
-  lavender: '#ece6f4', butter: '#fbf3df', sage: '#e8efe2', coral: '#fbe4dc',
-  lilac: '#efe7f7', slate: '#F1F5F9',
+  mint: Colors.imConcrete, sky: Colors.imConcrete, peach: Colors.imConcrete, blush: Colors.imConcrete,
+  lavender: Colors.imConcrete, butter: Colors.imConcrete, sage: Colors.imConcrete, coral: Colors.imConcrete,
+  lilac: Colors.imConcrete, slate: Colors.imConcrete,
 };
 const PASTEL_ICON: Record<string, string> = {
-  mint: '#1f7a3f', sky: '#1e4a8c', peach: '#a8480f', blush: '#a8324c',
-  lavender: '#4f3a8c', butter: '#8c6a1a', sage: '#2e5e2e', coral: '#a83a2e',
-  lilac: '#6e3aa6', slate: '#475569',
+  mint: Colors.imSuccess, sky: Colors.paneltecBlue, peach: Colors.imBronze, blush: Colors.imError,
+  lavender: Colors.paneltecViolet, butter: Colors.imInk, sage: Colors.imSuccess, coral: Colors.imError,
+  lilac: Colors.paneltecViolet, slate: Colors.imInkMuted,
 };
 
 function humanSize(n: number | undefined) {
@@ -113,7 +113,7 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
     <SafeAreaView style={ds.safe}>
       <ScrollView testID="document-library-page" style={ds.scroll} contentContainerStyle={ds.content}>
         <TouchableOpacity testID="doclib-back-btn" onPress={() => router.canGoBack() ? router.back() : router.replace('/(tabs)/settings')} style={ds.navBack}>
-          <Ionicons name="arrow-back" size={20} color="#1e4a8c" />
+          <Ionicons name="arrow-back" size={20} color={Colors.paneltecBlue} />
           <Text style={ds.navBackText}>Back</Text>
         </TouchableOpacity>
         <Text style={ds.overline}>COMPLIANCE</Text>
@@ -123,7 +123,7 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
         {/* AI Search */}
         <View testID="smart-search-panel" style={ds.searchPanel}>
           <View style={ds.searchPanelHeader}>
-            <Ionicons name="sparkles" size={12} color="#8c6a1a" />
+            <Ionicons name="sparkles" size={12} color={Colors.imInk} />
             <Text style={ds.searchPanelLabel}>AI SMART SEARCH</Text>
           </View>
           <View style={ds.searchPanelRow}>
@@ -131,7 +131,7 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
               placeholder="e.g. 'PPE requirements'" placeholderTextColor={Colors.textTertiary}
               value={searchQ} onChangeText={setSearchQ} onSubmitEditing={runSearch} />
             <TouchableOpacity testID="smart-search-submit" style={ds.searchPanelBtn} onPress={runSearch} disabled={searchBusy}>
-              {searchBusy ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="search" size={14} color="#fff" />}
+              {searchBusy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="search" size={14} color={Colors.imSurface} />}
             </TouchableOpacity>
           </View>
           {searchResults && (
@@ -161,7 +161,7 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
           </View>
           {canEdit && (
             <TouchableOpacity testID="folder-create-btn" style={ds.createBtn} onPress={() => setCreating(true)}>
-              <Ionicons name="add" size={16} color="#fff" />
+              <Ionicons name="add" size={16} color={Colors.imSurface} />
               <Text style={ds.createBtnText}>New folder</Text>
             </TouchableOpacity>
           )}
@@ -173,7 +173,7 @@ function FolderGrid({ user, canEdit, canDeleteFolder }: any) {
               placeholder="Folder name" value={newName} onChangeText={setNewName}
               onSubmitEditing={saveCreate} />
             <TouchableOpacity testID="folder-create-save" style={ds.smallPrimaryBtn} onPress={saveCreate} disabled={busy}>
-              {busy ? <ActivityIndicator size="small" color="#fff" /> : <Text style={ds.smallBtnText}>Create</Text>}
+              {busy ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Text style={ds.smallBtnText}>Create</Text>}
             </TouchableOpacity>
             <TouchableOpacity style={ds.smallGhostBtn} onPress={() => { setCreating(false); setNewName(''); }}>
               <Text style={ds.smallGhostText}>Cancel</Text>
@@ -299,7 +299,7 @@ function FolderDetail({ folderId, user, canEdit }: any) {
           </View>
           {canEdit && (
             <TouchableOpacity testID="folder-upload-btn" style={ds.uploadBtn} onPress={pickAndUpload} disabled={uploading}>
-              {uploading ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="cloud-upload" size={14} color="#fff" />}
+              {uploading ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="cloud-upload" size={14} color={Colors.imSurface} />}
               <Text style={ds.uploadBtnText}>Upload</Text>
             </TouchableOpacity>
           )}
@@ -348,30 +348,30 @@ const ds = StyleSheet.create({
   overline: { fontSize: 10, fontWeight: '700', letterSpacing: 1.5, color: Colors.blue },
   heading: { fontSize: 26, fontWeight: '700', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
-  searchPanel: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: '#e6d99c', backgroundColor: '#fbf3df', padding: 12, marginBottom: 14 },
+  searchPanel: { marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: Colors.imWarning, backgroundColor: Colors.imConcrete, padding: 12, marginBottom: 14 },
   searchPanelHeader: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 8 },
-  searchPanelLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: '#8c6a1a' },
+  searchPanelLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.imInk },
   searchPanelRow: { flexDirection: 'row', gap: 8 },
-  searchPanelInput: { flex: 1, backgroundColor: Colors.white, borderWidth: 1, borderColor: '#e6d99c', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: Colors.text },
-  searchPanelBtn: { width: 40, borderRadius: 10, backgroundColor: '#8c6a1a', alignItems: 'center', justifyContent: 'center' },
+  searchPanelInput: { flex: 1, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.imWarning, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: Colors.text },
+  searchPanelBtn: { width: 40, borderRadius: 10, backgroundColor: Colors.imInk, alignItems: 'center', justifyContent: 'center' },
   searchResults: { marginTop: 10 },
-  searchResultCount: { fontSize: 11, color: '#8c6a1a', marginBottom: 6 },
-  searchResultRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderWidth: 1, borderColor: '#f0e6c6', borderRadius: 10, padding: 8, marginBottom: 4 },
+  searchResultCount: { fontSize: 11, color: Colors.imInk, marginBottom: 6 },
+  searchResultRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.imConcrete, borderRadius: 10, padding: 8, marginBottom: 4 },
   searchResultFile: { fontSize: 13, fontWeight: '500', color: Colors.ink },
   searchResultFolder: { fontSize: 11, color: Colors.textTertiary },
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   filterRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8 },
   filterInput: { flex: 1, fontSize: 14, color: Colors.text, padding: 0 },
   createBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.blue, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10 },
-  createBtnText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  createBtnText: { fontSize: 12, fontWeight: '600', color: Colors.imSurface },
   createForm: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.blue, borderRadius: 12, padding: 10 },
   createInput: { flex: 1, fontSize: 14, color: Colors.text, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
   smallPrimaryBtn: { backgroundColor: Colors.blue, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
-  smallBtnText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  smallBtnText: { fontSize: 12, fontWeight: '600', color: Colors.imSurface },
   smallGhostBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 },
   smallGhostText: { fontSize: 12, color: Colors.textSecondary },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  folderCard: { width: '47%', borderRadius: 14, borderWidth: 1, borderColor: '#E2E8F0', padding: 14, minHeight: 100 },
+  folderCard: { width: '47%', borderRadius: 14, borderWidth: 1, borderColor: Colors.imBorder, padding: 14, minHeight: 100 },
   folderName: { fontSize: 13, fontWeight: '600', color: Colors.ink, marginTop: 6, lineHeight: 18, minHeight: 36 },
   folderCount: { fontSize: 11, color: Colors.textTertiary, marginTop: 4 },
   systemBadge: { position: 'absolute', top: 6, right: 6, fontSize: 8, fontWeight: '700', color: Colors.textTertiary, backgroundColor: 'rgba(255,255,255,0.8)', paddingHorizontal: 4, paddingVertical: 1, borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -383,13 +383,13 @@ const ds = StyleSheet.create({
   backText: { fontSize: 13, fontWeight: '600', color: Colors.blue },
   folderHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
   uploadBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.blue, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 },
-  uploadBtnText: { fontSize: 12, fontWeight: '600', color: '#fff' },
+  uploadBtnText: { fontSize: 12, fontWeight: '600', color: Colors.imSurface },
   fileRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, padding: 12, marginBottom: 6 },
   fileName: { fontSize: 14, fontWeight: '500', color: Colors.ink },
   fileMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 2 },
   tagRow: { flexDirection: 'row', gap: 4, marginTop: 4 },
-  aiTag: { backgroundColor: '#ece6f4', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  aiTagText: { fontSize: 9, fontWeight: '700', color: '#4f3a8c', textTransform: 'uppercase', letterSpacing: 0.5 },
+  aiTag: { backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  aiTagText: { fontSize: 9, fontWeight: '700', color: Colors.paneltecViolet, textTransform: 'uppercase', letterSpacing: 0.5 },
   fileAction: { padding: 8 },
   navBack: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, paddingVertical: 4 },
   navBackText: { fontSize: 14, fontWeight: '600', color: Colors.orangeLight },

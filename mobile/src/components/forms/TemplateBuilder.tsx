@@ -29,11 +29,11 @@ const CATEGORIES = [
 ];
 
 const CAT_COLORS: Record<string, { bg: string; ink: string }> = {
-  incident: { bg: '#fde2e4', ink: '#9f1239' },
-  inspection: { bg: '#dbeafe', ink: '#1e40af' },
-  toolbox: { bg: '#fef3c7', ink: '#92400e' },
-  near_miss: { bg: '#fed7aa', ink: '#c2410c' },
-  general: { bg: '#e2e8f0', ink: '#475569' },
+  incident: { bg: Colors.imConcrete, ink: Colors.imError },
+  inspection: { bg: Colors.imConcrete, ink: Colors.paneltecBlue },
+  toolbox: { bg: Colors.imConcrete, ink: Colors.imInk },
+  near_miss: { bg: Colors.imConcrete, ink: Colors.imBronze },
+  general: { bg: Colors.imBorder, ink: Colors.imInkMuted },
 };
 
 const newFieldId = () =>
@@ -124,7 +124,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
               <Text style={s.headerLabel}>{isEdit ? 'EDIT TEMPLATE' : 'NEW TEMPLATE'}</Text>
               {template?.source === 'ai' && (
                 <View style={s.aiTag}>
-                  <Ionicons name="sparkles" size={9} color="#7c3aed" />
+                  <Ionicons name="sparkles" size={9} color={Colors.paneltecViolet} />
                   <Text style={s.aiTagText}>AI DRAFT</Text>
                 </View>
               )}
@@ -151,7 +151,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
           </TouchableOpacity>
           <TouchableOpacity style={s.previewToggle}
             onPress={() => setShowPreview(!showPreview)}>
-            <Ionicons name={showPreview ? 'create' : 'eye'} size={14} color="#2563eb" />
+            <Ionicons name={showPreview ? 'create' : 'eye'} size={14} color={Colors.paneltecBlue} />
             <Text style={s.previewToggleText}>
               {showPreview ? 'Editor' : 'Preview'}
             </Text>
@@ -180,10 +180,10 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
                   <View key={f.id}>
                     <Text style={s.previewFieldLabel}>
                       {f.label}
-                      {f.required ? <Text style={{ color: '#dc2626' }}> *</Text> : null}
+                      {f.required ? <Text style={{ color: Colors.imError }}> *</Text> : null}
                     </Text>
                     <View style={s.previewFieldBox}>
-                      <Text style={{ fontSize: 12, color: '#94a3b8' }}>
+                      <Text style={{ fontSize: 12, color: Colors.imInkSubtle }}>
                         {f.type === 'select'
                           ? '— Select —'
                           : f.type === 'radio'
@@ -219,18 +219,18 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
                   <TouchableOpacity style={s.moveBtn}
                     onPress={() => moveField(i, -1)} disabled={i === 0}>
                     <Ionicons name="chevron-up" size={14}
-                      color={i === 0 ? '#d1d5db' : Colors.textSecondary} />
+                      color={i === 0 ? Colors.imBorder : Colors.textSecondary} />
                   </TouchableOpacity>
                   <TouchableOpacity style={s.moveBtn}
                     onPress={() => moveField(i, 1)}
                     disabled={i === fields.length - 1}>
                     <Ionicons name="chevron-down" size={14}
-                      color={i === fields.length - 1 ? '#d1d5db' : Colors.textSecondary} />
+                      color={i === fields.length - 1 ? Colors.imBorder : Colors.textSecondary} />
                   </TouchableOpacity>
                   <View style={s.fieldTypeBadge}>
                     <Ionicons
                       name={(FIELD_TYPES.find((t) => t.key === f.type)?.icon || 'help') as any}
-                      size={10} color="#6366f1" />
+                      size={10} color={Colors.paneltecViolet} />
                     <Text style={s.fieldTypeBadgeText}>
                       {FIELD_TYPES.find((t) => t.key === f.type)?.label || f.type}
                     </Text>
@@ -238,7 +238,7 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity testID={`builder-remove-${f.id}`}
                     style={{ padding: 4 }} onPress={() => removeField(i)}>
-                    <Ionicons name="trash-outline" size={14} color="#dc2626" />
+                    <Ionicons name="trash-outline" size={14} color={Colors.imError} />
                   </TouchableOpacity>
                 </View>
 
@@ -264,8 +264,8 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
                     <Switch testID={`builder-required-${f.id}`}
                       value={!!f.required}
                       onValueChange={(v) => updateField(i, { required: v })}
-                      trackColor={{ false: '#e2e8f0', true: '#bfdbfe' }}
-                      thumbColor={f.required ? '#2563eb' : '#94a3b8'} />
+                      trackColor={{ false: Colors.imBorder, true: Colors.imConcrete }}
+                      thumbColor={f.required ? Colors.paneltecBlue : Colors.imInkSubtle} />
                   </View>
                 </View>
 
@@ -314,9 +314,9 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
           <TouchableOpacity testID="builder-save" onPress={save}
             disabled={saving} style={[s.saveBtn, saving && { opacity: 0.5 }]}>
             {saving ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={Colors.imSurface} />
             ) : (
-              <Ionicons name="save" size={14} color="#fff" />
+              <Ionicons name="save" size={14} color={Colors.imSurface} />
             )}
             <Text style={s.saveBtnText}>Save</Text>
           </TouchableOpacity>
@@ -331,13 +331,13 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
               <Text style={s.pickerTitle}>Select category</Text>
               {CATEGORIES.map((c) => (
                 <TouchableOpacity key={c.key}
-                  style={[s.pickerItem, category === c.key && { backgroundColor: '#f1f5f9' }]}
+                  style={[s.pickerItem, category === c.key && { backgroundColor: Colors.imConcrete }]}
                   onPress={() => { setCategory(c.key); setCatOpen(false); }}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                     <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: (CAT_COLORS[c.key] || CAT_COLORS.general).bg }} />
                     <Text style={s.pickerItemText}>{c.label}</Text>
                   </View>
-                  {category === c.key && <Ionicons name="checkmark" size={14} color="#2563eb" />}
+                  {category === c.key && <Ionicons name="checkmark" size={14} color={Colors.paneltecBlue} />}
                 </TouchableOpacity>
               ))}
             </View>
@@ -355,16 +355,16 @@ export default function TemplateBuilder({ template, onClose, onSaved }: {
                 const sel = typePickerIdx !== null && fields[typePickerIdx]?.type === t.key;
                 return (
                   <TouchableOpacity key={t.key}
-                    style={[s.pickerItem, sel && { backgroundColor: '#f0f9ff' }]}
+                    style={[s.pickerItem, sel && { backgroundColor: Colors.imConcrete }]}
                     onPress={() => {
                       if (typePickerIdx !== null) updateField(typePickerIdx, { type: t.key });
                       setTypePickerIdx(null);
                     }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                      <Ionicons name={t.icon as any} size={14} color="#6366f1" />
+                      <Ionicons name={t.icon as any} size={14} color={Colors.paneltecViolet} />
                       <Text style={s.pickerItemText}>{t.label}</Text>
                     </View>
-                    {sel && <Ionicons name="checkmark" size={14} color="#6366f1" />}
+                    {sel && <Ionicons name="checkmark" size={14} color={Colors.paneltecViolet} />}
                   </TouchableOpacity>
                 );
               })}
@@ -385,9 +385,9 @@ const s = StyleSheet.create({
   headerLabel: { fontSize: 10, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary },
   aiTag: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#f5f3ff', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
+    backgroundColor: Colors.imConcrete, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8,
   },
-  aiTagText: { fontSize: 9, fontWeight: '700', color: '#7c3aed', letterSpacing: 0.5 },
+  aiTagText: { fontSize: 9, fontWeight: '700', color: Colors.paneltecViolet, letterSpacing: 0.5 },
   nameInput: {
     fontSize: 20, fontWeight: '800', color: Colors.ink,
     borderWidth: 1, borderColor: Colors.border, borderRadius: 12,
@@ -407,9 +407,9 @@ const s = StyleSheet.create({
   previewToggle: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10,
-    backgroundColor: '#eff6ff',
+    backgroundColor: Colors.imConcrete,
   },
-  previewToggleText: { fontSize: 12, fontWeight: '600', color: '#2563eb' },
+  previewToggleText: { fontSize: 12, fontWeight: '600', color: Colors.paneltecBlue },
   descInput: {
     fontSize: 13, color: Colors.text, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
@@ -431,15 +431,15 @@ const s = StyleSheet.create({
   },
   fieldTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
   moveBtn: {
-    width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: '#e2e8f0',
+    width: 28, height: 28, borderRadius: 8, borderWidth: 1, borderColor: Colors.imBorder,
     alignItems: 'center', justifyContent: 'center',
   },
   fieldTypeBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#eef2ff', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+    backgroundColor: Colors.imConcrete, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
   },
   fieldTypeBadgeText: {
-    fontSize: 9, fontWeight: '600', color: '#6366f1',
+    fontSize: 9, fontWeight: '600', color: Colors.paneltecViolet,
     textTransform: 'uppercase', letterSpacing: 0.3,
   },
   fieldInput: {
@@ -449,7 +449,7 @@ const s = StyleSheet.create({
   addAnotherBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     paddingVertical: 16, borderRadius: 16, borderWidth: 2, borderStyle: 'dashed',
-    borderColor: '#d1d5db', marginTop: 4,
+    borderColor: Colors.imBorder, marginTop: 4,
   },
   addAnotherText: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary },
   footer: {
@@ -465,11 +465,11 @@ const s = StyleSheet.create({
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 18, paddingVertical: 12, borderRadius: 12,
-    backgroundColor: '#d97706',
+    backgroundColor: Colors.imBronze,
   },
-  saveBtnText: { fontSize: 13, fontWeight: '700', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
+  saveBtnText: { fontSize: 13, fontWeight: '700', color: Colors.imSurface, textTransform: 'uppercase', letterSpacing: 0.5 },
   previewBox: {
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.imConcrete, borderWidth: 1, borderColor: Colors.imBorder,
     borderRadius: 16, padding: 16,
   },
   previewCatPill: {
@@ -481,11 +481,11 @@ const s = StyleSheet.create({
   previewDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 4, lineHeight: 17 },
   previewFieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink, marginBottom: 4 },
   previewFieldBox: {
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.imBorder,
     borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 44, justifyContent: 'center',
   },
-  emptyPreview: { fontSize: 12, color: '#94a3b8', fontStyle: 'italic', marginTop: 12 },
+  emptyPreview: { fontSize: 12, color: Colors.imInkSubtle, fontStyle: 'italic', marginTop: 12 },
   overlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'center', alignItems: 'center', padding: 24,
