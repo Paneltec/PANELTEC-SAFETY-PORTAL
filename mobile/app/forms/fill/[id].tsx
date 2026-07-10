@@ -892,7 +892,7 @@ const fs = StyleSheet.create({
   progressText: { fontSize: 11, color: Colors.textTertiary, marginBottom: 6 },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#d97706', borderRadius: 12, paddingVertical: 14, minHeight: 50,
+    backgroundColor: Colors.brandOrange, borderRadius: 12, paddingVertical: 14, minHeight: 50,
   },
   submitBtnText: { color: '#fff', fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
