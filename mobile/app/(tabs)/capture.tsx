@@ -1,8 +1,6 @@
-// v160.0.14 — Categorised forms list.
-// Renamed from "Create & Capture" tile grid → "Forms" category list.
-// Workers pick a template, tap, fill. Server-side (`/api/forms/templates`)
-// already intersects with the caller's role's `role_form_allowlist`
-// (v160.0.13), so this screen never shows a form the worker can't submit.
+// v160.0.15 — Forms Level 1: six category cards.
+// Tapping a category → /forms/category/[key] which lists only that
+// category's templates. Level 3 (fill-out) unchanged at /forms/fill/[id].
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -12,23 +10,18 @@ import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { toast } from '../../src/lib/toast';
 
-type Template = {
-  id: string;
-  name: string;
-  category?: string;
-  description?: string;
-};
+type Template = { id: string; name: string; category?: string; description?: string };
 
-const CATEGORY_ORDER: Array<{ key: string; label: string }> = [
-  { key: 'general',    label: 'General'     },
-  { key: 'pre_start',  label: 'Pre-Start'   },
-  { key: 'inspection', label: 'Inspection'  },
-  { key: 'near_miss',  label: 'Near Miss'   },
-  { key: 'incident',   label: 'Incident'    },
-  { key: 'toolbox',    label: 'Toolbox'     },
+const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }> = [
+  { key: 'general',    label: 'General',    icon: 'clipboard',            blurb: 'Permits · sign-on · site safety' },
+  { key: 'pre_start',  label: 'Pre-Start',  icon: 'construct',            blurb: 'Plant & crew pre-op checks' },
+  { key: 'inspection', label: 'Inspection', icon: 'checkmark-circle',     blurb: 'Site walks · plant · scaffold' },
+  { key: 'near_miss',  label: 'Near Miss',  icon: 'warning',              blurb: 'Log a near-miss observation' },
+  { key: 'incident',   label: 'Incident',   icon: 'alert-circle',         blurb: 'Reportable incidents & injuries' },
+  { key: 'toolbox',    label: 'Toolbox',    icon: 'chatbubbles',          blurb: 'Toolbox talks · pre-shift briefings' },
 ];
 
-export default function FormsCaptureScreen() {
+export default function FormsCategoriesScreen() {
   const router = useRouter();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,78 +40,70 @@ export default function FormsCaptureScreen() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
   const onRefresh = () => { setRefreshing(true); load(); };
 
-  const grouped = useMemo(() => {
-    const buckets: Record<string, Template[]> = {};
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
     for (const t of templates) {
       const c = (t.category || 'general').toLowerCase();
-      const bucket = CATEGORY_ORDER.find((x) => x.key === c) ? c : 'general';
-      (buckets[bucket] ||= []).push(t);
+      map[c] = (map[c] || 0) + 1;
     }
-    for (const arr of Object.values(buckets)) arr.sort((a, b) => a.name.localeCompare(b.name));
-    return buckets;
+    return map;
   }, [templates]);
 
-  const hasAny = templates.length > 0;
+  const totalEnabled = templates.length;
 
   return (
     <SafeAreaView style={s.safe}>
       <ScrollView
-        testID="forms-capture-page"
+        testID="forms-categories-page"
         style={s.scroll}
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
       >
         <Text style={s.overline}>CAPTURE</Text>
         <Text style={s.heading}>Forms</Text>
-        <Text style={s.sub}>Tap a form to fill it in. Enabled forms are curated by your admin per role.</Text>
+        <Text style={s.sub}>Pick a category to see the forms you can fill.</Text>
 
         {loading ? (
           <View style={s.emptyBox}>
             <ActivityIndicator color={Colors.orange} />
             <Text style={s.emptyText}>Loading…</Text>
           </View>
-        ) : !hasAny ? (
+        ) : totalEnabled === 0 ? (
           <View style={s.emptyBox}>
             <Ionicons name="document-outline" size={28} color={Colors.textTertiary} />
             <Text style={s.emptyText}>No forms enabled for your role — contact your admin.</Text>
           </View>
         ) : (
-          CATEGORY_ORDER.map(({ key, label }) => {
-            const rows = grouped[key];
-            if (!rows?.length) return null;
-            return (
-              <View key={key} testID={`cat-${key}`} style={s.catBlock}>
-                <View style={s.catHeader}>
-                  <View style={s.catDot} />
-                  <Text style={s.catLabel}>{label.toUpperCase()}</Text>
-                  <Text style={s.catCount}>· {rows.length}</Text>
-                </View>
-                {rows.map((t) => (
-                  <TouchableOpacity
-                    key={t.id}
-                    testID={`form-row-${t.id}`}
-                    style={s.row}
-                    onPress={() => router.push(`/forms/fill/${t.id}` as any)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={s.rowIcon}>
-                      <Ionicons name="document-text" size={18} color={Colors.orange} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={s.rowTitle} numberOfLines={1}>{t.name}</Text>
-                      {t.description ? (
-                        <Text style={s.rowDesc} numberOfLines={2}>{t.description}</Text>
-                      ) : null}
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            );
-          })
+          <View style={s.grid}>
+            {CATEGORIES.map((cat) => {
+              const n = counts[cat.key] || 0;
+              const dimmed = n === 0;
+              return (
+                <TouchableOpacity
+                  key={cat.key}
+                  testID={`cat-card-${cat.key}`}
+                  disabled={dimmed}
+                  onPress={() => router.push(`/forms/category/${cat.key}` as any)}
+                  activeOpacity={0.75}
+                  style={[s.card, dimmed && s.cardDim]}
+                >
+                  <View style={[s.iconWrap, dimmed && s.iconWrapDim]}>
+                    <Ionicons name={cat.icon} size={22} color={dimmed ? Colors.textTertiary : Colors.orange} />
+                  </View>
+                  <Text style={[s.cardTitle, dimmed && s.dimText]}>{cat.label}</Text>
+                  <Text style={[s.cardBlurb, dimmed && s.dimText]} numberOfLines={2}>{cat.blurb}</Text>
+                  <View style={s.cardFoot}>
+                    <Text style={[s.cardCount, dimmed && s.dimText]}>
+                      {n} {n === 1 ? 'form' : 'forms'}
+                    </Text>
+                    {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.textTertiary} />}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -130,25 +115,28 @@ const s = StyleSheet.create({
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
-  heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4, letterSpacing: 0.5 },
+  heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
-  catBlock: { marginBottom: 18 },
-  catHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, marginBottom: 6 },
-  catDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.orange },
-  catLabel: { fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: Colors.orange },
-  catCount: { fontSize: 11, fontWeight: '600', color: Colors.textTertiary },
-  row: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-    minHeight: 44, marginBottom: 6,
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  card: {
+    width: '48%',
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 16, padding: 14, gap: 6,
+    minHeight: 140,
   },
-  rowIcon: {
-    width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.orangeSoft,
-    alignItems: 'center', justifyContent: 'center',
+  cardDim: { opacity: 0.4 },
+  iconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center',
+    marginBottom: 4,
   },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: Colors.ink },
-  rowDesc: { fontSize: 11, color: Colors.textSecondary, marginTop: 2, lineHeight: 15 },
+  iconWrapDim: { backgroundColor: Colors.surfaceLight },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
+  cardBlurb: { fontSize: 11, color: Colors.textSecondary, lineHeight: 15 },
+  cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8 },
+  cardCount: { fontSize: 11, fontWeight: '700', color: Colors.orange, letterSpacing: 0.5 },
+  dimText: { color: Colors.textTertiary },
 });

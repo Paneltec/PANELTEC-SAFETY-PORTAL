@@ -267,12 +267,8 @@ function FormsListScreenInner() {
               {/* Meta */}
               <View style={s.metaRow}>
                 <Text style={s.metaText}>{(t.fields || []).length} fields</Text>
-                {(t.submission_count ?? 0) > 0 && (
-                  <TouchableOpacity style={s.sentBadge}
-                    onPress={() => router.push(`/forms/submissions/${t.id}`)}>
-                    <Text style={s.sentBadgeText}>{t.submission_count} sent</Text>
-                  </TouchableOpacity>
-                )}
+                {/* v160.0.15 — "N sent" badge removed. Submission review is
+                    a web-admin function; the mobile app is fill-only. */}
                 {t.source === 'ai' && (
                   <View style={s.aiBadge}>
                     <Ionicons name="sparkles" size={9} color="#7c3aed" />

@@ -107,13 +107,8 @@ export default function TemplateDetailScreen() {
           <Ionicons name="add-circle" size={16} color="#fff" />
           <Text style={s.ctaBtnText}>Fill out this form</Text>
         </TouchableOpacity>
-        <TouchableOpacity testID="view-submissions-btn" style={s.secondaryBtn}
-          onPress={() => router.push(`/forms/submissions/${id}`)}>
-          <Ionicons name="list" size={14} color={Colors.textSecondary} />
-          <Text style={s.secondaryBtnText}>
-            View submissions{tpl.submission_count ? ` (${tpl.submission_count})` : ''}
-          </Text>
-        </TouchableOpacity>
+        {/* v160.0.15 — "View submissions" removed. Submission review is a
+            web-admin function; the mobile app is fill-only. */}
       </View>
     </SafeAreaView>
   );
