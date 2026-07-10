@@ -9,7 +9,6 @@ import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { toast } from '../../src/lib/toast';
-
 type Template = { id: string; name: string; category?: string; description?: string };
 
 const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }> = [
@@ -61,6 +60,10 @@ export default function FormsCategoriesScreen() {
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
       >
+        <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
+          <Text style={s.backText}>Back</Text>
+        </TouchableOpacity>
         {loading ? (
           <View style={s.emptyBox}>
             <ActivityIndicator color={Colors.orange} />
@@ -110,14 +113,20 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
+  backText: { fontSize: 13, fontWeight: '700', color: Colors.orange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between' },
   card: {
-    width: '48%',
+    // v160.0.18 — card takes ~half the row minus half the gap so two cards
+    // always fit side-by-side, filling the screen width edge-to-edge.
+    flexBasis: '48.5%',
+    flexGrow: 0,
+    flexShrink: 0,
     backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border,
     borderRadius: 16, padding: 14, gap: 6,

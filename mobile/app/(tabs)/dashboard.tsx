@@ -236,8 +236,8 @@ export default function DashboardScreen() {
           </>
         )}
 
-        {/* Manage */}
-        {visibleManage.length > 0 && <Text style={d.sectionLabel}>MANAGE & COMPLY</Text>}
+        {/* Manage & Forms — routes to Forms Library + admin surfaces */}
+        {visibleManage.length > 0 && <Text style={d.sectionLabel}>FORMS & COMPLIANCE</Text>}
         {visibleManage.map((t) => (
           <TouchableOpacity key={t.key} testID={`manage-card-${t.key}`} style={d.captureCard}
             onPress={() => router.push(t.route as any)} activeOpacity={0.7}>
@@ -252,31 +252,9 @@ export default function DashboardScreen() {
           </TouchableOpacity>
         ))}
 
-        {/* Capture */}
-        {visibleCapture.length > 0 && <Text style={d.sectionLabel}>FORMS</Text>}
-        {canEdit && (
-          <TouchableOpacity testID="dashboard-generate-form-ai" style={d.aiTile} onPress={() => setAiOpen(true)} activeOpacity={0.7}>
-            <View style={d.aiIcon}><Ionicons name="sparkles" size={18} color={Colors.violet} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={d.aiTitle}>Generate Form (AI)</Text>
-              <Text style={d.aiDesc}>Describe what you need — AI builds a draft template</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.violet} />
-          </TouchableOpacity>
-        )}
-        {visibleCapture.map((t) => (
-          <TouchableOpacity key={t.key} testID={`capture-card-${t.key}`} style={d.captureCard}
-            onPress={() => openTile(t.route)} activeOpacity={0.7}>
-            <View style={d.captureIcon}>
-              <Ionicons name={t.icon as any} size={18} color={Colors.orange} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={d.captureTitle}>{t.title}</Text>
-              <Text style={d.captureDesc}>{t.desc}</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
-          </TouchableOpacity>
-        ))}
+        {/* v160.0.18 — Duplicate FORMS section (CAPTURE_TOOLS + Generate Form AI)
+            removed. The Forms Library tile above is now the single canonical
+            entry point for filling forms. */}
       </ScrollView>
 
       {aiOpen && <AiBuilderModal onClose={() => setAiOpen(false)} onCreated={(t: any) => setBuilderTemplate(t)} />}

@@ -1,0 +1,31 @@
+{
+  "summary": "Frontend-only verification of Paneltec mobile v160.0.18 hotfix: (BUG-1) duplicate FORMS section removed from Home, (BUG-2) 'MANAGE & COMPLY' replaced by 'FORMS & COMPLIANCE', (BUG-3) /forms/library back button + 2-column grid. All three bugs verified fixed. Regression on category navigation also confirmed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "BUG-1_no_duplicate_FORMS_section": "PASS - No standalone 'FORMS' section header on /(tabs)/dashboard. captureIds array empty (no capture-card-* testids rendered). CAPTURE_TOOLS array is defined in code but no longer rendered — confirmed by inline v160.0.18 comment marker on dashboard.tsx lines 255-257.",
+    "BUG-2_header_renamed": "PASS by code review - dashboard.tsx line 240 renders literal 'FORMS & COMPLIANCE'; string 'MANAGE & COMPLY' does not appear anywhere in dashboard.tsx. Live UI showed safe-fallback banner (expected per request note); with visibleManage.length===0 in safe fallback the header + tiles are hidden altogether — matches the gated behaviour.",
+    "BUG-3a_back_button": "PASS - [data-testid='library-back-btn'] present, contains chevron-back icon + text 'Back', positioned top-left. onPress calls router.back() correctly (direct-URL nav shows expected 'GO_BACK not handled' when there is no history, which is per-design).",
+    "BUG-3b_2_column_grid": "PASS - 6 category cards rendered in exactly 2 columns (x=16, x=200) x 3 rows (y=48, 205, 362) on 390px viewport. Card width 174px each with ~10px gap — fills screen width edge-to-edge. Testids cat-card-general, cat-card-pre_start, cat-card-inspection, cat-card-near_miss, cat-card-incident, cat-card-toolbox all present. Each card shows icon badge, title, blurb, count.",
+    "Regression_form_fill_flow": "PASS - Tapping cat-card-general navigates to /forms/category/general; template rows (form-row-<id>) render correctly (10+ General category templates listed).",
+    "Regression_bottom_tab_bar": "PASS - Tab bar contains only: Home, QR Scan, Outbox, My Work, Profile. No 'Forms' or 'Capture' tab present.",
+    "Version_marker": "PASS - Home shows 'paneltec-v160.0.18' in overline."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dashboard.tsx still defines CAPTURE_TOOLS array (lines 47-54) and its visibleCapture memo (line 70) even though they are no longer rendered after v160.0.18. Consider removing dead code to avoid confusion and keep bundle lean.",
+    "dashboard.tsx StyleSheet has duplicate keys: 'metricLabel' declared twice (lines 307 & 317), 'metricSub' declared twice (lines 308 & 318), 'captureTitle' twice (309 & 322), 'captureDesc' twice (313 & 323). The latter wins at runtime — should dedupe."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A - skipped per request", "frontend": "100%"},
+  "test_credentials": "Used admin: stephen@paneltec.com.au / Mcgstephen50# (login via /api/auth/login returned 200, role=admin).",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web preview at https://whs-compliance.expo.preview.emergentagent.com is React-Native-Web; login by POST /api/auth/login then set localStorage keys paneltec_token + paneltec_user (JSON.stringified user). Safe-fallback banner appears when modules matrix fails — expected on this preview; can still verify structural changes via testids."
+}
