@@ -761,8 +761,50 @@ export default function FillOutScreen() {
     return null;
   }, [tpl, values]);
 
+  // v160.1.5 — Client-side required-field validation. Backend accepts
+  // any payload silently, so if the operator missed a required field
+  // they used to get zero feedback. Now: submit is blocked, first
+  // missing field is scrolled into view + gets a red border + inline
+  // "This field is required" text, and a top banner enumerates every
+  // missing field by label.
+  const isAnswerValid = (f: any, val: any, phs: any[] | undefined): boolean => {
+    if (f.type === 'photo') return (phs || []).length > 0;
+    if (f.type === 'gps') return val && typeof val.lat === 'number';
+    if (f.type === 'signature') return typeof val === 'string' && val.length > 100;
+    if (f.type === 'multi_select') return Array.isArray(val) && val.length > 0;
+    if (val === null || val === undefined) return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (typeof val === 'number') return !Number.isNaN(val);
+    return true;
+  };
+  const missingFields = useMemo(() => (tpl?.fields || []).filter((f: any) => {
+    if (!f.required) return false;
+    return !isAnswerValid(f, values[f.id], photos[f.id]);
+  }), [tpl, values, photos]);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const missingIds = useMemo(
+    () => new Set(missingFields.map((f: any) => f.id)),
+    [missingFields],
+  );
+  // Field-row layout offsets so we can scroll to the first missing field.
+  const fieldOffsetsRef = useRef<Record<string, number>>({});
+  const scrollRef = useRef<ScrollView | null>(null);
+
   const submit = async () => {
     if (!tpl) return;
+    // v160.1.5 — validation gate.
+    if (missingFields.length > 0) {
+      setSubmitAttempted(true);
+      const first = missingFields[0] as any;
+      const y = fieldOffsetsRef.current[first.id];
+      if (typeof y === 'number' && scrollRef.current) {
+        scrollRef.current.scrollTo({ y: Math.max(0, y - 40), animated: true });
+      }
+      toast.error(
+        `Please complete: ${missingFields.slice(0, 3).map((f: any) => f.label).join(', ')}${missingFields.length > 3 ? ` +${missingFields.length - 3} more` : ''}`,
+      );
+      return;
+    }
     setSaving(true);
     try {
       setProgress('Saving submission…');
@@ -839,12 +881,44 @@ export default function FillOutScreen() {
           </View>
         )}
 
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        <ScrollView ref={scrollRef} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
           keyboardShouldPersistTaps="handled">
+          {/* v160.1.5 — Persistent missing-fields banner. Appears after
+              the first failed submit; lists every required field that
+              still needs a value. Tap a chip to jump to that field. */}
+          {submitAttempted && missingFields.length > 0 && (
+            <View testID="missing-fields-banner" style={fs.missingBanner}>
+              <Text style={fs.missingBannerTitle}>PLEASE COMPLETE</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {missingFields.map((mf: any) => (
+                  <TouchableOpacity
+                    key={mf.id}
+                    testID={`missing-chip-${mf.id}`}
+                    onPress={() => {
+                      const y = fieldOffsetsRef.current[mf.id];
+                      if (typeof y === 'number' && scrollRef.current) {
+                        scrollRef.current.scrollTo({ y: Math.max(0, y - 40), animated: true });
+                      }
+                    }}
+                    style={fs.missingChip}
+                  >
+                    <Text style={fs.missingChipText}>{mf.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
           {(tpl.fields || []).length === 0 ? (
             <Text style={{ fontSize: 13, color: Colors.textTertiary, fontStyle: 'italic' }}>No fields in this template.</Text>
-          ) : (tpl.fields || []).map((f: any) => (
-            <View key={f.id} testID={`field-row-${f.id}`} style={fs.fieldWrap}>
+          ) : (tpl.fields || []).map((f: any) => {
+            const hasErr = submitAttempted && missingIds.has(f.id);
+            return (
+            <View
+              key={f.id}
+              testID={`field-row-${f.id}`}
+              onLayout={(e) => { fieldOffsetsRef.current[f.id] = e.nativeEvent.layout.y; }}
+              style={[fs.fieldWrap, hasErr && fs.fieldWrapError]}
+            >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
                 <Text style={fs.fieldLabel}>{f.label}</Text>
                 {f.required && <Text style={fs.reqStar}>*</Text>}
@@ -1007,8 +1081,14 @@ export default function FillOutScreen() {
                   placeholder={f.placeholder || 'Select vehicle'}
                 />
               )}
+              {hasErr && (
+                <View testID={`field-error-${f.id}`} style={fs.fieldErrorRow}>
+                  <Ionicons name="alert-circle" size={13} color={Colors.imError} />
+                  <Text style={fs.fieldErrorText}>This field is required</Text>
+                </View>
+              )}
             </View>
-          ))}
+          );})}
         </ScrollView>
 
         {/* Submit bar — orange-amber */}
@@ -1017,7 +1097,13 @@ export default function FillOutScreen() {
           <TouchableOpacity testID="form-submit-btn" style={[fs.submitBtn, saving && { opacity: 0.6 }]}
             onPress={submit} disabled={saving}>
             {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="checkmark-circle" size={16} color={Colors.imSurface} />}
-            <Text style={fs.submitBtnText}>Submit Form</Text>
+            {/* v160.1.5 — Submit label enumerates missing fields inline
+                so the operator sees exactly what's blocking a submit. */}
+            <Text style={fs.submitBtnText}>
+              {submitAttempted && missingFields.length > 0
+                ? `Complete: ${missingFields.slice(0, 2).map((f: any) => f.label).join(', ')}${missingFields.length > 2 ? ` +${missingFields.length - 2}` : ''}`
+                : 'Submit Form'}
+            </Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -1069,6 +1155,32 @@ const fs = StyleSheet.create({
   },
   gpsBannerText: { fontSize: 12, fontWeight: '600', color: Colors.imSuccess },
   fieldWrap: { marginBottom: 20 },
+  // v160.1.5 — validation-error styling on missing required fields.
+  fieldWrapError: {
+    borderWidth: 2, borderColor: Colors.imError, borderRadius: 12,
+    padding: 12, marginHorizontal: -12,
+    backgroundColor: 'rgba(139,58,58,0.05)',
+  },
+  fieldErrorRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8,
+  },
+  fieldErrorText: {
+    fontSize: 12, fontWeight: '600', color: Colors.imError,
+  },
+  // Persistent top banner listing every missing required field.
+  missingBanner: {
+    backgroundColor: 'rgba(139,58,58,0.1)',
+    borderWidth: 1, borderColor: Colors.imError,
+    borderRadius: 12, padding: 12, marginBottom: 14, gap: 8,
+  },
+  missingBannerTitle: {
+    fontSize: 11, fontWeight: '800', letterSpacing: 1.2, color: Colors.imError,
+  },
+  missingChip: {
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999,
+    borderWidth: 1, borderColor: Colors.imError, backgroundColor: Colors.imSurface,
+  },
+  missingChipText: { fontSize: 12, fontWeight: '700', color: Colors.imError },
   fieldLabel: { fontSize: 12, fontWeight: '600', color: Colors.ink },
   fieldType: { fontSize: 9, fontWeight: '600', color: Colors.textTertiary, textTransform: 'uppercase', letterSpacing: 0.5 },
   reqStar: { fontSize: 14, color: Colors.imError, fontWeight: '700' },

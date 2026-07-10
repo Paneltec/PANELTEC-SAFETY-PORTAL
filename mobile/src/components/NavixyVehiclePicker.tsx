@@ -112,19 +112,25 @@ export default function NavixyVehiclePicker(props: Props) {
   };
 
   // v160.1.4 — Scan a Vehicle QR sticker → resolve to a fleet vehicle.
+  // v160.1.5 audit finding: the Navixy `plate` field is a device IMEI
+  // (e.g. "882285109021036"), NOT the road rego. The real rego lives
+  // as a SUBSTRING of the `label` field (e.g. "200 Tipper - H41DH").
+  // We now match on all three surfaces:
+  //   1. exact plate / registration (future-proof if Navixy data changes)
+  //   2. substring match of the asset rego inside the vehicle label
   const resolveScanned = async (input: string) => {
     const token = parseAssetToken(input);
     if (!token) { setScanErr('Not a valid QR URL or token'); return; }
     setScanBusy(true); setScanErr(null);
     try {
       const { data: asset } = await api.get(`/assets/scan/${token}`);
-      // Match the scanned asset to a Navixy vehicle by rego / plate.
-      const rego = (asset?.rego_serial || asset?.name || '').toString().trim().toLowerCase();
+      const rego = (asset?.rego_serial || asset?.name || '').toString().trim().toUpperCase();
       if (!rego) { setScanErr('Scan resolved but has no rego to match'); return; }
       const match = vehicles.find((v) => {
-        const p = (v.plate || '').toString().trim().toLowerCase();
-        const r = (v.registration || '').toString().trim().toLowerCase();
-        return p === rego || r === rego;
+        const p = (v.plate || '').toString().trim().toUpperCase();
+        const r = (v.registration || '').toString().trim().toUpperCase();
+        const lbl = (v.label || '').toString().trim().toUpperCase();
+        return p === rego || r === rego || (lbl && lbl.includes(rego));
       });
       if (!match) {
         setScanErr(`No Navixy vehicle matches rego "${asset?.rego_serial || rego}"`);

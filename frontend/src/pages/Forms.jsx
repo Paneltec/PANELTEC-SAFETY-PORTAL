@@ -576,8 +576,19 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
   }), [template.fields, values, photoFiles]);
   const requiredOk = missingFields.length === 0;
 
+  // v160.1.5 — Show inline red-border + "This field is required" text only
+  // AFTER the user has attempted to submit. Editing any field that was
+  // previously missing removes it from `missingFields` (derived above),
+  // which automatically clears the visual error without extra state.
+  const [submitAttempted, setSubmitAttempted] = useState(false);
+  const missingIds = useMemo(
+    () => new Set(missingFields.map((f) => f.id)),
+    [missingFields],
+  );
+
   const onSubmitClick = () => {
     if (!requiredOk) {
+      setSubmitAttempted(true);
       const first = missingFields[0];
       const node = document.querySelector(`[data-testid="field-row-${first.id}"]`);
       if (node) {
@@ -585,7 +596,11 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         node.classList.add('paneltec-field-missing-pulse');
         setTimeout(() => node.classList.remove('paneltec-field-missing-pulse'), 1500);
       }
-      toast.error(`Missing: ${missingFields.slice(0, 3).map((f) => f.label).join(', ')}${missingFields.length > 3 ? '…' : ''}`);
+      // Enumerate up to three missing labels in the toast for a quick
+      // hint; the persistent banner above the form covers the full list.
+      toast.error(
+        `Please complete: ${missingFields.slice(0, 3).map((f) => f.label).join(', ')}${missingFields.length > 3 ? ` +${missingFields.length - 3} more` : ''}`
+      );
       return;
     }
     submit();
@@ -700,13 +715,52 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
             </span>
           </div>
         )}
+        {/* v160.1.5 — Persistent missing-fields banner. Appears after
+            the first failed submit and lists every required field that
+            still needs a value. Clicking the pill scrolls to that
+            field. Auto-hides when the last missing field is filled. */}
+        {submitAttempted && missingFields.length > 0 && (
+          <div
+            data-testid="missing-fields-banner"
+            className="px-4 sm:px-6 py-3 border-b border-rose-200 bg-rose-50 flex flex-wrap items-center gap-2"
+          >
+            <span className="text-xs font-bold text-rose-800 uppercase tracking-wider">
+              Please complete
+            </span>
+            {missingFields.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                data-testid={`missing-chip-${f.id}`}
+                onClick={() => {
+                  const n = document.querySelector(`[data-testid="field-row-${f.id}"]`);
+                  if (n) {
+                    n.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    n.classList.add('paneltec-field-missing-pulse');
+                    setTimeout(() => n.classList.remove('paneltec-field-missing-pulse'), 1500);
+                  }
+                }}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-rose-300 bg-white text-xs font-semibold text-rose-700 hover:bg-rose-100"
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
           {(template.fields || []).length === 0 ? (
             <div className="text-sm text-slate-500 italic">This template has no fields yet.</div>
           ) : (template.fields || []).map((f) => {
             const isLocked = !!lockedFields[f.id];
+            // v160.1.5 — Persistent per-field error state after a failed
+            // submit. Adds a red 2px border + inline "This field is
+            // required" line below the field. Auto-clears the moment
+            // the user enters a valid value because `missingFields` is
+            // reactively derived from `values`/`photoFiles`.
+            const hasErr = submitAttempted && missingIds.has(f.id);
             return (
-            <div key={f.id} data-testid={`field-row-${f.id}`}>
+            <div key={f.id} data-testid={`field-row-${f.id}`}
+              className={hasErr ? 'rounded-xl border-2 border-rose-500 bg-rose-50/40 p-3 -mx-1' : ''}>
               <label className="flex items-center gap-2 text-sm font-semibold text-slate-800 mb-1.5">
                 <span>{f.label}{f.required && <span className="text-rose-600 ml-1">*</span>}</span>
                 <span className="text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
@@ -724,6 +778,13 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
                 allFields={template.fields || []}
                 allValues={values}
                 readOnly={isLocked} />
+              {hasErr && (
+                <div data-testid={`field-error-${f.id}`}
+                  className="mt-2 flex items-center gap-1.5 text-xs font-semibold text-rose-600">
+                  <span aria-hidden>⚠</span>
+                  <span>This field is required</span>
+                </div>
+              )}
             </div>
           );})}
         </div>
@@ -738,8 +799,10 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
             title={!requiredOk ? `Missing: ${missingFields.map((f) => f.label).join(', ')}` : ''}
             className={`inline-flex items-center gap-2 px-5 py-2.5 min-h-[44px] rounded-xl text-white text-sm font-bold uppercase tracking-wide shadow-md hover:shadow-lg disabled:shadow-none ${requiredOk ? 'bg-gradient-to-r from-orange-500 to-amber-500' : 'bg-slate-300 cursor-not-allowed'}`}>
             {saving ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+            {/* v160.1.5 — Submit-button text enumerates the missing fields
+                so the operator knows what to fix without hunting. */}
             {!requiredOk
-              ? `${missingFields.length} required field${missingFields.length === 1 ? '' : 's'} missing`
+              ? `Complete: ${missingFields.slice(0, 2).map((f) => f.label).join(', ')}${missingFields.length > 2 ? ` +${missingFields.length - 2}` : ''}`
               : 'Submit Form'}
           </button>
         </div>
