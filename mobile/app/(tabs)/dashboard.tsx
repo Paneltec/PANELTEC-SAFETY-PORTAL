@@ -30,7 +30,7 @@ const METRIC_ROWS: { key: string; label: string; field: string; icon: any; modul
 // container (gated indirectly by its child module toggles) and the users
 // tile (kept always-on to match `profile` semantics).
 const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null }[] = [
-  { key: 'forms',            title: 'Forms Library',    desc: 'Fillable templates with signature, photo & GPS', icon: 'clipboard',        route: '/forms',            moduleKey: 'forms' },
+  { key: 'forms',            title: 'Forms Library',    desc: 'Fillable templates with signature, photo & GPS', icon: 'clipboard',        route: '/forms/library',    moduleKey: 'forms' },
   { key: 'workers',          title: 'Workers',          desc: 'Field crew synced from Simpro',                  icon: 'people',           route: '/workers',          moduleKey: 'workers' },
   { key: 'suppliers',        title: 'Suppliers',        desc: 'Simpro suppliers, tasks, notes & folders',       icon: 'business',         route: '/suppliers',        moduleKey: 'suppliers' },
   { key: 'document-library', title: 'Document Library', desc: 'Risk & compliance documents',                    icon: 'folder-open',      route: '/document-library', moduleKey: 'document_library' },
@@ -113,7 +113,7 @@ export default function DashboardScreen() {
         router.push(`/forms/fill/${HEAVY_EQ_TPL_ID}` as any);
       } catch {
         toast.error('Plant Pre-Op form not configured — contact admin');
-        router.push('/forms' as any);
+        router.push('/forms/library' as any);
       }
       return;
     }

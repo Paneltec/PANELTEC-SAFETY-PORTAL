@@ -92,14 +92,6 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="capture"
-          options={{
-            title: 'Forms',
-            tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} />,
-            href: showCapture ? undefined : null,
-          }}
-        />
-        <Tabs.Screen
           name="qr-signon"
           options={{
             title: 'QR Scan',

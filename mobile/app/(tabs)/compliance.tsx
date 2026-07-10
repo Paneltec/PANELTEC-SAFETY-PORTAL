@@ -12,7 +12,7 @@ import type { ModuleId } from '../../src/lib/modules';
 // `renewals` and `audit_exports` don't have their own module toggle
 // (web-only workflows) and are shown to everyone who can reach the tab.
 const ITEMS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null }[] = [
-  { key: 'forms',             title: 'Forms Library',      desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const,   route: '/forms',            moduleKey: 'forms' },
+  { key: 'forms',             title: 'Forms Library',      desc: 'Fillable templates — incident, toolbox, inspection & permit forms.', icon: 'clipboard' as const,   route: '/forms/library',    moduleKey: 'forms' },
   { key: 'suppliers',         title: 'Suppliers',          desc: 'Live from Simpro — org-local notes, tasks, folders and members.',    icon: 'business' as const,    route: '/suppliers',        moduleKey: 'suppliers' },
   { key: 'document-library',  title: 'Document Library',   desc: 'All risk & compliance documents, organised and AI-tagged.',           icon: 'folder-open' as const, route: '/document-library', moduleKey: 'document_library' },
   { key: 'contractors-legacy', title: 'Contractors (Legacy)', desc: 'Companies, ABNs, insurances and licences.',                        icon: 'people' as const,      route: '/contractors',      moduleKey: 'contractors' },
