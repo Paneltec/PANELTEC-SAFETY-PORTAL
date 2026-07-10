@@ -3003,3 +3003,93 @@ form-fill screen, and `ConfirmModal.tsx` exists in `mobile/src/components/`.
 - P1 — Bulk-select QR generation in Web Admin (unstarted).
 - P2 — Document Library folder-level ACLs, Navixy signals expansion,
   Suspicious-login detection, Selfie sign-on.
+
+---
+
+## v160.2.3 — Field-gap fill (2026-07-10)
+
+### Backend
+- `forms.py` — registered new `time` field type in `ALLOWED_FIELD_TYPES`
+  (`company_selector` was already registered from v160.0.12).
+- `scripts/migrate_v160_2_3_field_gaps.py` (NEW, idempotent). One-shot
+  snapshot into `form_templates_backup_v160_2_2` (43 templates copied).
+  Applied to 43 live templates (18 test/seed skipped). Cumulative
+  changes across two runs:
+    · 5 worker_pickers added (Equipment Pre-Use, Incident Report,
+      Incident Report Form, Near Miss Report — single Reporter/Operator;
+      Toolbox Talk — multi Attendees)
+    · 1 vehicle_navixy added (Excavation / Trench Permit)
+    · 11 company_selectors added (10 fresh + 1 text-to-type conversion
+      on Site Sign-In)
+    · 10 time fields added (Toolbox Talk × 2, Toolbox Talk Attendance
+      × 2, Site Induction × 2, Excavation Permit × 2, Working at
+      Heights Permit × 2)
+    · 4 text-to-time conversions (Hot Work Permit "Permit Valid From/To",
+      Confined Space "Permit Valid From/To", Site Sign-In "Time In/Out")
+
+### Audit table — templates touched
+| Template                                    | wrk | veh | cmp | time | total |
+|--------------------------------------------|:---:|:---:|:---:|:----:|:-----:|
+| Toolbox Talk                                | 1   | 0   | 0   | 2    | 10    |
+| Toolbox Talk Attendance                     | 2   | 0   | 0   | 2    | 14    |
+| Site Sign-In / Visitor Register             | 2   | 1   | 1   | 2    | 13    |
+| Site Induction Checklist                    | 1   | 0   | 0   | 2    | 11    |
+| Hot Work Permit                             | 3   | 0   | 1   | 2    | 17    |
+| Confined Space Entry Permit                 | 3   | 0   | 1   | 2    | 21    |
+| Excavation / Trench Permit                  | 1   | 1   | 1   | 2    | 22    |
+| Working at Heights Permit                   | 1   | 0   | 1   | 2    | 19    |
+| JSEA                                        | 2   | 0   | 1   | 0    | 17    |
+| SWMS Sign-On                                | 2   | 0   | 1   | 0    | 13    |
+| Incident Report                             | 1   | 0   | 1   | 0    | 12    |
+| Incident Report Form                        | 1   | 0   | 1   | 0    | 9     |
+| Near Miss Report                            | 1   | 0   | 1   | 0    | 10    |
+| Equipment Pre-Use Checklist                 | 1   | 1   | 1   | 0    | 9     |
+
+### Judgement calls
+- **SWMS Sign-On**: kept both worker_pickers single (Worker + Supervisor).
+  One row per signatory is the actual workflow — multi would change the
+  domain model. Not changed.
+- **Vehicle field**: only added to Excavation / Trench Permit. Hot Work,
+  Confined Space, Working at Heights: not Navixy-tracked plant so no
+  vehicle_navixy needed.
+- **Test/seed templates skipped**: `BuilderTest renamed`, `Test AssetScan
+  Template`, `Test Hot Work Permit`, all `v160.0.12 test template`
+  dupes (13), `site-safety-checklist`.
+- **Site Sign-In** already had `Company / Organisation` + `Time In` +
+  `Time Out` as plain text pre-migration. Converted in place (typed
+  upgrade — same labels, same field ids).
+
+### Mobile
+- `mobile/app/forms/fill/[id].tsx` — new `TimePickerField` component
+  (native `DateTimePicker mode="time"` on iOS/Android, `<input type="time">`
+  on web). Renderer branch `f.type === 'time'` mounted alongside the
+  existing `date`, `company_selector`, `worker_picker`, `vehicle_navixy`
+  handlers. HH:MM values stored as strings.
+
+### Version bumps → `paneltec-v160.2.3`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Tests
+- `backend/tests/test_v160_2_3_field_gaps.py` (NEW) — 28 pytest cases:
+  registry sanity (2), worker_picker on 5 templates, vehicle_navixy on
+  Excavation, company_selector on 10 templates, Time In/Out on 6
+  templates × 2 labels, text→time conversion on Hot Work + Confined
+  Space × 2 labels, snapshot collection sanity. **28/28 passing.**
+- Existing suites still green: v160.1.3, v160.1.4, v160.1.6, v160.2.0,
+  v160.2.2. Combined: **57/57 passing.**
+
+### Metro cache
+Cleared, mobile supervisor restarted.
+
+### Files touched
+- `backend/forms.py`, `backend/scripts/migrate_v160_2_3_field_gaps.py`,
+  `backend/tests/test_v160_2_3_field_gaps.py`
+- `mobile/app/forms/fill/[id].tsx`, `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`
+
+### Next in queue
+- **v160.2.4** — SWMS picker field type + wire into permits + JSEA.
+- **v160.2.5** — Submission routing by category into Capture sub-tabs
+  + Mobile Forms Library search + form-QR scanner.

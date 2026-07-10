@@ -144,6 +144,77 @@ function DatePickerField({ value, onChange, defaultToday, testId }: {
   );
 }
 
+/* ─── v160.2.3 Time picker field ─── */
+function TimePickerField({ value, onChange, testId }: {
+  value: string | null | undefined;
+  onChange: (hhmm: string) => void;
+  testId: string;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  // Parse an existing "HH:MM" back to a Date on today for the picker.
+  const asDate = (() => {
+    const d = new Date();
+    if (value && /^\d{2}:\d{2}$/.test(value)) {
+      const [hh, mm] = value.split(':').map((n) => parseInt(n, 10));
+      d.setHours(hh || 0, mm || 0, 0, 0);
+    }
+    return d;
+  })();
+  const display = value || 'HH:MM';
+
+  if (Platform.OS === 'web') {
+    return (
+      <View testID={testId} style={fs.datePickerWrap}>
+        <Ionicons name="time" size={16} color={Colors.imBronze} />
+        {/* @ts-expect-error web-only DOM element for RN Web */}
+        <input
+          type="time"
+          value={value || ''}
+          onChange={(e: any) => onChange(e.target.value)}
+          style={{
+            flex: 1, fontSize: 15, fontWeight: '600',
+            color: Colors.imInk, border: 'none', background: 'transparent',
+            outline: 'none', padding: '4px 0',
+          }}
+          data-testid={`${testId}-input`}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View testID={testId}>
+      <TouchableOpacity
+        testID={`${testId}-open`}
+        style={fs.datePickerWrap}
+        onPress={() => setPickerOpen(true)}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="time" size={16} color={Colors.imBronze} />
+        <Text style={[fs.datePickerText, !value && { color: Colors.textTertiary }]}>{display}</Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
+      {pickerOpen && (
+        <DateTimePicker
+          testID={`${testId}-native`}
+          value={asDate}
+          mode="time"
+          is24Hour={true}
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          onChange={(_e: any, d?: Date) => {
+            setPickerOpen(false);
+            if (d) {
+              const hh = String(d.getHours()).padStart(2, '0');
+              const mm = String(d.getMinutes()).padStart(2, '0');
+              onChange(`${hh}:${mm}`);
+            }
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
 /* ─── Signature modal ─── */
 function SignatureModal({ visible, onSave, onClose }: any) {
   const sigRef = useRef<any>(null);
@@ -1053,6 +1124,15 @@ export default function FillOutScreen() {
               )}
               {f.type === 'auto_date' && (
                 <AutoDateField
+                  value={values[f.id]}
+                  onChange={(v: string) => setVal(f.id, v)}
+                  testId={`field-${f.id}`}
+                />
+              )}
+              {/* v160.2.3 — HH:MM time picker for permit issue/expiry
+                  and Time In/Out on toolbox / sign-in / induction. */}
+              {f.type === 'time' && (
+                <TimePickerField
                   value={values[f.id]}
                   onChange={(v: string) => setVal(f.id, v)}
                   testId={`field-${f.id}`}
