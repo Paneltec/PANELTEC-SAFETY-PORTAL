@@ -61,10 +61,6 @@ export default function FormsCategoriesScreen() {
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
       >
-        <Text style={s.overline}>CAPTURE</Text>
-        <Text style={s.heading}>Forms</Text>
-        <Text style={s.sub}>Pick a category to see the forms you can fill.</Text>
-
         {loading ? (
           <View style={s.emptyBox}>
             <ActivityIndicator color={Colors.orange} />

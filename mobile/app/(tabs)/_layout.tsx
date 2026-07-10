@@ -94,7 +94,7 @@ export default function TabLayout() {
         <Tabs.Screen
           name="capture"
           options={{
-            title: 'Capture',
+            title: 'Forms',
             tabBarIcon: ({ color, size }) => <Ionicons name="add-circle" size={size} color={color} />,
             href: showCapture ? undefined : null,
           }}

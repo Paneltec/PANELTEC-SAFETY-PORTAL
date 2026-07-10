@@ -57,9 +57,7 @@ export default function CategoryFormsScreen() {
           <Text style={s.backText}>Forms</Text>
         </TouchableOpacity>
 
-        <Text style={s.overline}>CATEGORY</Text>
         <Text style={s.heading}>{catLabel}</Text>
-        <Text style={s.sub}>{templates.length} {templates.length === 1 ? 'form' : 'forms'} available. Tap one to fill.</Text>
 
         {loading ? (
           <View style={s.emptyBox}>
@@ -105,7 +103,7 @@ const s = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
   backText: { fontSize: 13, fontWeight: '700', color: Colors.orange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
-  heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4 },
+  heading: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginTop: 2, marginBottom: 14 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
