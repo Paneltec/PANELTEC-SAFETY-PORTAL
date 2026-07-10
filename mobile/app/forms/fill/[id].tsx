@@ -15,6 +15,7 @@ import SignaturePadWeb from '../../../src/components/SignaturePadWeb';
 import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 import WorkerPicker from '../../../src/components/WorkerPicker';
+import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
 
@@ -836,13 +837,18 @@ export default function FillOutScreen() {
                 />
               )}
               {f.type === 'vehicle_navixy' && (
-                <TextInput
+                // v160.1.3 — swapped the bare TextInput for the new
+                // searchable NavixyVehiclePicker. Vehicle-QR autofill
+                // (see autofillMap on the Asset QR field) writes the
+                // vehicle id into this same field state, so scanning
+                // a sticker still auto-selects the correct vehicle.
+                <NavixyVehiclePicker
+                  label=""
+                  required={!!f.required}
+                  value={values[f.id] || null}
+                  onChange={(id) => setVal(f.id, id)}
                   testID={`field-${f.id}`}
-                  style={fs.input}
-                  value={values[f.id] || ''}
-                  onChangeText={(v) => setVal(f.id, v)}
-                  placeholder={f.placeholder || 'Plant ID / Fleet #'}
-                  placeholderTextColor={Colors.textTertiary}
+                  placeholder={f.placeholder || 'Select vehicle'}
                 />
               )}
             </View>
