@@ -26,7 +26,10 @@ export const CATEGORIES = [
   { key: 'inspection', label: 'Inspection',     pill: 'bg-[#dbeafe] text-blue-700' },
   { key: 'toolbox',    label: 'Toolbox',        pill: 'bg-[#fef3c7] text-amber-800' },
   { key: 'near_miss',  label: 'Near Miss',      pill: 'bg-[#fed7aa] text-orange-700' },
+  { key: 'pre_start',  label: 'Pre-Start',      pill: 'bg-[#e0f2fe] text-sky-800' },
   { key: 'general',    label: 'General',        pill: 'bg-[#e2e8f0] text-slate-700' },
+  // v160.2.6-cat addendum #2 — 7th category, workers never see it.
+  { key: 'admin',      label: 'Admin only',     pill: 'bg-slate-200 text-slate-600' },
 ];
 export const CAT_PILL = Object.fromEntries(CATEGORIES.map((c) => [c.key, c.pill]));
 export const categoryLabel = (key) => (CATEGORIES.find((c) => c.key === key)?.label || 'General').replace('All categories', 'General');

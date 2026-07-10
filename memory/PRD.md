@@ -4029,3 +4029,165 @@ Backend regression 61/61 still green.
 
 Cycles in this run cost too much context to continue safely — stopping
 at cycle boundary per rule.
+
+### v160.2.6-cat addendum #2 — 7th category `admin`
+
+Extended the cycle to introduce a 7th form category slot for
+admin-only forms. Workers never see it, ever, on the phone.
+
+**Backend**
+- `backend/forms.py` — `ALLOWED_CATEGORIES` extended with `"admin"`.
+  Standard Header docstring updated to document the 7th slot and its
+  worker-hidden semantics.
+- `backend/org_settings.py` — `_FORM_CATEGORIES` list extended with
+  `"admin"` (7th position, after `toolbox`). The
+  `/api/org/role-presets/{role}/forms` endpoint now returns 7 groups
+  (verified: `general 10/10 · pre_start 5/5 · inspection 3/3 ·
+  near_miss 1/1 · incident 2/2 · toolbox 2/2 · admin 0/1` for Worker).
+
+**Migration** (same idempotent script)
+- Added `("Drug & Alcohol Test Record", "admin")` to `CORRECTIONS`.
+  First run of the extended script: D&A Test moved `general → admin`.
+  Rerun: 0 changes.
+- Worker-allowlist pass extended to exclude EVERY admin-category
+  template automatically (not just the manually-listed titles).
+  Structural rule + `WORKER_EXCLUDED_TITLES` acts as belt + braces.
+
+**Web admin**
+- `frontend/src/components/settings/RoleFormsSection.jsx` —
+  `CATEGORY_ORDER` extended. Admin group header renders a subtle
+  grey "Admin only" pill (`data-testid="cat-admin-pill"`) with a
+  tooltip explaining workers can't see these on mobile.
+- `frontend/src/pages/Forms.jsx` — `CATEGORIES` list extended with
+  `{key: 'admin', label: 'Admin only', pill: 'bg-slate-200 text-slate-600'}`
+  so the template editor dropdown surfaces the new slot.
+
+**Mobile**
+- `mobile/app/forms/library.tsx` — `CATEGORIES` array extended with
+  the `admin` tile flagged `adminOnly: true`. New `isAdmin` gate
+  reads `getUser()` on mount and filters admin-only tiles out for
+  non-admin roles. Workers see the 6 legacy tiles only; admins /
+  hseq_lead see all 7.
+
+**Verification**
+- Endpoint returns 7 groups with correct counts. D&A Test lives
+  in `admin`, `enabled=False` for Worker.
+- Backend regression **61/61 green**.
+- Mobile RUNNING on `:3001` with `http_code=200`.
+- Idempotent: rerun produced 0 changes across the entire script.
+
+**Extensibility**
+- User can move more admin-only forms into the `admin` category via
+  either (a) adding `("<Title>", "admin")` to `CORRECTIONS`, or (b)
+  the Web-admin template editor category dropdown. In either case
+  the Worker allowlist rule automatically excludes them on next run.
+
+---
+
+## v160.2.6-dedupe — Removed duplicate Certifications entry (2026-07-10)
+
+### Diagnosis
+Two "Certifications" rows in `mobile/app/(tabs)/settings.tsx`:
+- **Entry A** (line 194): → `/my-certifications` (personal read-only, v160.2.6-cont)
+- **Entry B** (line 196): → `/certifications` (admin compliance queue, legacy)
+
+Per user guidance ("keep the first, remove the second") and the
+architecture rule (workers see personal-only; admins review), Entry
+A retained, Entry B renamed + gated to admin.
+
+### Fix
+1. **Settings row rename** — legacy "Certifications" row renamed to
+   **"Compliance queue"**, icon changed to `clipboard-outline`,
+   marked `adminOnly: true`. Workers no longer see it at all.
+2. **Screen-level gate** — `mobile/app/certifications.tsx` now bounces
+   any non-privileged caller (worker/foreman-below) to a locked
+   panel with a CTA to open `/my-certifications`. Admin / HSEQ lead /
+   supervisor see the queue unchanged.
+3. **Header title** updated to "Compliance queue" for consistency.
+
+### Verification
+- Only one "Certifications" row in Worker settings (linking to
+  `/my-certifications`).
+- Deep-link `/certifications` as Worker → locked panel + CTA to
+  My Certifications.
+- Admin still sees the compliance queue as before.
+- Mobile RUNNING on `:3001`, http_code=200. Backend regression 61/61.
+
+Version bumps → `paneltec-v160.2.6-dedupe`.
+
+---
+
+## v160.3.0 — Qualification-gated forms (queued for next fork)
+
+Permit-style forms open only for workers who hold the required
+certifications. Belt-and-braces alongside role permissions.
+
+### Backend
+- Template config: add `config.required_certifications: string[]`
+  (slugs like `asbestos_class_b`, `crane_rigger`, `hot_work_permit`,
+  `confined_space_entry`, `working_at_heights`, `excavation_permit`,
+  `heavy_equipment_operator`).
+- Cert registry: audit `worker_certifications` schema. Add `kind`
+  slug field where missing. Idempotent backfill + helper name→slug
+  map. Do NOT rename existing free-text names.
+- `GET /api/forms/templates/{id}/access-check` → `{allowed, required,
+  held, missing, expired}` for the caller.
+- Existing fill endpoint (`GET /api/forms/templates/{id}` on mount)
+  includes the access-check payload inline for the mobile fill screen.
+- Admin override: admin roles bypass with an audit-log entry noting
+  the bypass (form id + template + admin user id).
+
+### Mobile
+- Forms Library tap → call access-check BEFORE navigating.
+- `allowed: false` → blocker modal: "You can't fill this form yet"
+  + list of missing/expired certs with labels + expiry dates for
+  expired ones + "Ask your admin" dismiss CTA.
+- `allowed: true` → navigate to `/forms/fill/{id}`.
+- Any cert `expiring_soon` (<30d) → open but show amber warning banner
+  at the top of the form: "Your {cert name} expires on {date}. Please
+  renew before it lapses."
+
+### Web admin
+- Template editor: new "Required Certifications" multi-select bound
+  to the cert-kind registry.
+- Worker edit modal: surface each cert's `kind` slug so admins can
+  see the mapping. Read-only for now.
+
+### v1 gating proposal (needs user approval BEFORE applying)
+| Template | Proposed required cert kind |
+|---|---|
+| Asbestos Awareness / Class B Removal          | `asbestos_class_b` |
+| Crane Lift / Rigging Plan                     | `crane_rigger` OR `dogman` |
+| Hot Work Permit                               | `hot_work_permit` |
+| Confined Space Entry Permit                   | `confined_space_entry` |
+| Working at Heights Permit                     | `working_at_heights` |
+| Excavation / Trench Permit                    | `excavation_permit` |
+| Construction Heavy Equipment Pre-Operation Checklist | `heavy_equipment_operator` |
+
+Surface this table in the migration script output for user approval;
+do NOT auto-apply.
+
+### Deliverables
+- Cert-kind slug registry + idempotent backfill script.
+- `access-check` endpoint + regression tests (worker holds all →
+  allowed; missing → structured 403 body; expired → 403; admin
+  bypass → allowed + audit log).
+- Mobile blocker modal + expiring-soon banner.
+- Admin UI multi-select in template editor.
+- Mapping proposal draft (do NOT apply until user confirms).
+- Full existing test suite green.
+
+### Guardrails
+- Idempotent migrations with pre-write snapshot.
+- Admin bypass logged (audit trail table entry).
+- No breaking changes — templates without `required_certifications`
+  behave as today.
+- Do NOT auto-apply the proposed mapping — user confirmation required.
+
+### Version
+`paneltec-v160.3.0` in all 3 files. Metro cache clear.
+
+### Queue ordering (final for handoff)
+1. **v160.2.7** — worker view-only permission grants + backfill
+2. **v160.2.8** — worker-clarity UX copy pass
+3. **v160.3.0** — qualification-gated forms (this brief)

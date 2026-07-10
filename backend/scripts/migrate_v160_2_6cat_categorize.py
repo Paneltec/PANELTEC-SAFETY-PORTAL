@@ -42,6 +42,10 @@ CORRECTIONS: list[tuple[str, str]] = [
     ("Daily Plant Inspection",                                "pre_start"),
     ("Equipment Pre-Use Checklist",                           "pre_start"),
     ("JSEA — Job Safety & Environmental Analysis",            "general"),
+    # v160.2.6-cat addendum #2 — 7th category `admin` for admin-only
+    # forms. Workers never see the admin category tile on mobile and
+    # admin templates are auto-excluded from the Worker allowlist.
+    ("Drug & Alcohol Test Record",                            "admin"),
 ]
 
 AMBIGUOUS = [
@@ -67,35 +71,40 @@ WORKER_EXCLUDED_TITLES = [
 
 
 async def _worker_allowlist_pass(db) -> dict:
-    """Ensure every org's Worker allowlist excludes the D&A Test.
+    """Ensure every org's Worker allowlist excludes:
+      · every template in the `admin` category (structural rule)
+      · every template whose title is in `WORKER_EXCLUDED_TITLES`
+        (belt-and-braces for anything the admin misfiles)
 
     Returns stats: {orgs_touched, seeded, filtered, before, after, diff}.
     """
     stats = {"orgs_touched": 0, "seeded_from_blanket": 0,
              "filtered_existing": 0, "before": 0, "after": 0, "diff": 0}
 
-    # Group templates by org_id so multi-org DBs are handled correctly.
     all_tpls = await db.form_templates.find(
-        {"deleted_at": None}, {"_id": 0, "id": 1, "name": 1, "org_id": 1},
+        {"deleted_at": None}, {"_id": 0, "id": 1, "name": 1, "org_id": 1, "category": 1},
     ).to_list(5000)
     by_org: dict[str, list[dict]] = {}
     for t in all_tpls:
         by_org.setdefault(t.get("org_id"), []).append(t)
 
     for org_id, tpls in by_org.items():
-        excluded_ids = {t["id"] for t in tpls if t.get("name") in WORKER_EXCLUDED_TITLES}
+        # Excluded = admin-category OR title on the manual exclusion list.
+        excluded_ids = {
+            t["id"] for t in tpls
+            if (t.get("category") == "admin") or (t.get("name") in WORKER_EXCLUDED_TITLES)
+        }
         all_ids = [t["id"] for t in tpls]
         if not excluded_ids:
-            print(f"  · {org_id[:8]}… no excluded titles present, skip")
+            print(f"  · {org_id[:8]}… nothing to exclude, skip")
             continue
 
         org = await db.orgs.find_one({"id": org_id}, {"_id": 0, "role_form_allowlist": 1}) or {}
         current = (org.get("role_form_allowlist") or {}).get("worker")
 
         if current is None or not isinstance(current, list):
-            # Blanket-enabled → seed with all - excluded.
             new_list = [x for x in all_ids if x not in excluded_ids]
-            before_count = len(all_ids)  # effective
+            before_count = len(all_ids)
             after_count = len(new_list)
             stats["seeded_from_blanket"] += 1
         else:
@@ -115,8 +124,9 @@ async def _worker_allowlist_pass(db) -> dict:
         stats["before"] += before_count
         stats["after"] += after_count
         stats["diff"] += (before_count - after_count)
+        removed_titles = sorted(t["name"] for t in tpls if t["id"] in excluded_ids)
         print(f"  ✓ {org_id[:8]}… worker allowlist: {before_count} → {after_count} "
-              f"(-{before_count - after_count}: {sorted(t['name'] for t in tpls if t['id'] in excluded_ids)})")
+              f"(-{before_count - after_count}: {removed_titles})")
     return stats
 
 

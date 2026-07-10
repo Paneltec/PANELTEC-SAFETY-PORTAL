@@ -114,7 +114,7 @@ async def replace_org_companies(body: CompaniesPatch, user: dict = Depends(get_c
 
 # ─── v160.0.13 · Per-role Form allowlist (Permissions Matrix) ───
 
-_FORM_CATEGORIES = ["general", "pre_start", "inspection", "near_miss", "incident", "toolbox"]
+_FORM_CATEGORIES = ["general", "pre_start", "inspection", "near_miss", "incident", "toolbox", "admin"]
 
 
 def _norm_role(r: str) -> str:

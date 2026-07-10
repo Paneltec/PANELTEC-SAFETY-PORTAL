@@ -13,16 +13,21 @@ import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { toast } from '../../src/lib/toast';
+import { getUser } from '../../src/lib/auth';
 import FormsScanModal from '../../src/components/FormsScanModal';
 type Template = { id: string; name: string; category?: string; description?: string };
 
-const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }> = [
+const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string; adminOnly?: boolean }> = [
   { key: 'general',    label: 'General',    icon: 'clipboard',            blurb: 'Permits · sign-on · site safety' },
   { key: 'pre_start',  label: 'Pre-Start',  icon: 'construct',            blurb: 'Plant & crew pre-op checks' },
   { key: 'inspection', label: 'Inspection', icon: 'checkmark-circle',     blurb: 'Site walks · plant · scaffold' },
   { key: 'near_miss',  label: 'Near Miss',  icon: 'warning',              blurb: 'Log a near-miss observation' },
   { key: 'incident',   label: 'Incident',   icon: 'alert-circle',         blurb: 'Reportable incidents & injuries' },
   { key: 'toolbox',    label: 'Toolbox',    icon: 'chatbubbles',          blurb: 'Toolbox talks · pre-shift briefings' },
+  // v160.2.6-cat addendum #2 — 7th category. Filtered out on this
+  // screen for non-admin roles (see `isAdmin` gate below). Belt +
+  // braces on top of the Worker allowlist exclusion.
+  { key: 'admin',      label: 'Admin only', icon: 'lock-closed',          blurb: 'Admin-only forms — audit and compliance records', adminOnly: true },
 ];
 
 export default function FormsCategoriesScreen() {
@@ -38,6 +43,21 @@ export default function FormsCategoriesScreen() {
   // v160.2.5b — Library-wide search + camera-icon QR scanner.
   const [q, setQ] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  // v160.2.6-cat addendum #2 — role gate for the `admin` category tile.
+  // Non-admin users never see the tile even if a template gets
+  // miscategorized. Belt + braces alongside the Worker allowlist.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const u = await getUser();
+      const role = (u?.role || '').toLowerCase();
+      setIsAdmin(role === 'admin' || role === 'hseq_lead');
+    })();
+  }, []);
+  const visibleCategories = useMemo(
+    () => CATEGORIES.filter((c) => !c.adminOnly || isAdmin),
+    [isAdmin]
+  );
 
   // v160.0.23 — Verification log per user brief. Prints real values so
   // we can eyeball what insets.top / StatusBar.currentHeight actually
@@ -196,7 +216,7 @@ export default function FormsCategoriesScreen() {
           )
         ) : (
           <View style={s.grid}>
-            {CATEGORIES.map((cat) => {
+            {visibleCategories.map((cat) => {
               const n = counts[cat.key] || 0;
               const dimmed = n === 0;
               return (

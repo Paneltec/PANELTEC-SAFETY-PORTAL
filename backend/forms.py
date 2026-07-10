@@ -40,6 +40,13 @@ v160.2.0 — Bulk migration executed via
 were passed through the Standard-Header rules and snapshotted to
 `form_templates_backup_v160_1_6` before the write. New templates
 should continue to be built onto this header by default.
+
+v160.2.6-cat — Seven categories now recognised: `general | pre_start
+| inspection | near_miss | incident | toolbox | admin`. The 7th
+(`admin`) is reserved for admin-only forms (e.g. Drug & Alcohol Test).
+Workers NEVER see the `admin` category tile on the mobile Forms
+Library and every admin-category template is auto-excluded from the
+Worker allowlist by `migrate_v160_2_6cat_categorize.py`.
 ═════════════════════════════════════════════════════════════════════════════
 """
 from __future__ import annotations
@@ -68,7 +75,7 @@ router = APIRouter(
 )
 
 WRITE_ROLES = {"admin", "hseq_lead"}
-ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general", "pre_start"}
+ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general", "pre_start", "admin"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
                        "worker_picker", "job_picker", "site_picker", "customer_picker",

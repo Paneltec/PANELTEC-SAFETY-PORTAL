@@ -193,7 +193,12 @@ export default function ProfileScreen() {
               { label: 'My Profile', icon: 'person-circle', route: '/my-profile', moduleKey: undefined, adminOnly: false },
               { label: 'Certifications', icon: 'ribbon', route: '/my-certifications', moduleKey: undefined, adminOnly: false },
               { label: 'Workers', icon: 'people', route: '/workers', moduleKey: 'inductions', adminOnly: false },
-              { label: 'Certifications', icon: 'ribbon', route: '/certifications', moduleKey: 'certifications', adminOnly: false },
+              // v160.2.6-dedupe — legacy "Certifications" row that pointed
+              // to the admin compliance-queue at `/certifications` removed.
+              // Workers only ever see the personal "/my-certifications"
+              // above. The admin compliance-queue is now reachable from
+              // the Compliance Hub for privileged roles only.
+              { label: 'Compliance queue', icon: 'clipboard-outline', route: '/certifications', moduleKey: 'certifications', adminOnly: true },
               { label: 'Organisation', icon: 'business', route: undefined, moduleKey: undefined, adminOnly: true },
               { label: 'Users', icon: 'people-circle', route: '/users', moduleKey: 'users_directory', adminOnly: true },
               { label: 'Compliance Hub', icon: 'shield-checkmark', route: '/(tabs)/compliance', moduleKey: undefined, adminOnly: true },

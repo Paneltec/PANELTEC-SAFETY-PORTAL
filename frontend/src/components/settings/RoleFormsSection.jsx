@@ -19,7 +19,11 @@ const ROLES = [
   { key: 'hseq',       label: 'HSEQ'       },
 ];
 
-const CATEGORY_ORDER = ['general', 'pre_start', 'inspection', 'near_miss', 'incident', 'toolbox'];
+// v160.2.6-cat addendum #2 — 7th category `admin` for admin-only forms
+// (e.g. Drug & Alcohol Test Record). Workers never see this bucket on
+// the mobile forms library, and the Worker allowlist auto-excludes
+// every admin-category template.
+const CATEGORY_ORDER = ['general', 'pre_start', 'inspection', 'near_miss', 'incident', 'toolbox', 'admin'];
 
 export default function RoleFormsSection({ canEdit }) {
   const [role, setRole] = useState('worker');

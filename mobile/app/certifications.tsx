@@ -159,7 +159,48 @@ export default function CertificationsScreen() {
     <SafeAreaView style={gst.safe} edges={['left', 'right']}>
       {/* v160.2.6-cont — Sticky back header replaces the inline header
           back button so the title never gets notch-obscured. */}
-      <StickyBackHeader title="Certifications" fallbackPath="/(tabs)/settings" />
+      <StickyBackHeader title="Compliance queue" fallbackPath="/(tabs)/settings" />
+      {/* v160.2.6-dedupe — Admin compliance queue. Workers who deep-link
+          here (or hit a stale link) get bounced to their personal
+          `/my-certifications` view. Workers should NEVER see other
+          workers' cert data on this screen. */}
+      {(() => {
+        const effectiveRole = (isPreviewMode && previewRole
+          ? previewRole
+          : (user?.role || '')
+        ).toLowerCase();
+        const isPrivileged = ['admin', 'hseq_lead', 'supervisor'].includes(effectiveRole);
+        if (!isPrivileged) {
+          return (
+            <View testID="certs-worker-gate" style={{ padding: 24, gap: 12, alignItems: 'center' }}>
+              <Ionicons name="lock-closed" size={28} color={Colors.textTertiary} />
+              <Text style={{ fontSize: 15, fontWeight: '800', color: Colors.ink, textAlign: 'center' }}>
+                Compliance queue is admin-only
+              </Text>
+              <Text style={{ fontSize: 13, color: Colors.textSecondary, textAlign: 'center', lineHeight: 18 }}>
+                This screen shows every worker&apos;s certification status for HSEQ leads and
+                supervisors. Your own tickets and licences live under My Certifications instead.
+              </Text>
+              <TouchableOpacity
+                testID="certs-worker-gate-cta"
+                onPress={() => router.replace('/my-certifications' as any)}
+                style={{ marginTop: 8, backgroundColor: Colors.imBronze, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10 }}
+                activeOpacity={0.8}
+              >
+                <Text style={{ color: Colors.imSurface, fontWeight: '800', fontSize: 13 }}>Open My Certifications</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+        return null;
+      })()}
+      {(() => {
+        const effectiveRole = (isPreviewMode && previewRole
+          ? previewRole
+          : (user?.role || '')
+        ).toLowerCase();
+        if (!['admin', 'hseq_lead', 'supervisor'].includes(effectiveRole)) return null;
+        return (<>
       {/* Butter header banner */}
       <View testID="certs-header" style={gst.headerBanner}>
         <View style={{ flex: 1 }}>
@@ -271,6 +312,8 @@ export default function CertificationsScreen() {
           ))}
         </ScrollView>
       )}
+      </>);
+      })()}
     </SafeAreaView>
   );
 }
