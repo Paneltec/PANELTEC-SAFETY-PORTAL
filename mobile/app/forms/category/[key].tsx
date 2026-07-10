@@ -3,8 +3,8 @@
 // v160.0.22 — Rows switched to LIGHT paper cards on the darker library
 // background. Sticky header padTop now reads useSafeAreaInsets() so the
 // Android status bar can never re-cover the back chevron.
-import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +35,8 @@ export default function CategoryFormsScreen() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // v160.2.5b — In-category search input.
+  const [q, setQ] = useState('');
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +53,16 @@ export default function CategoryFormsScreen() {
   useEffect(() => { load(); }, [load]);
   const onRefresh = () => { setRefreshing(true); load(); };
 
+  // v160.2.5b — Filter the current category's templates by search term.
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return templates;
+    return templates.filter((t) =>
+      (t.name || '').toLowerCase().includes(needle) ||
+      (t.description || '').toLowerCase().includes(needle)
+    );
+  }, [q, templates]);
+
   return (
     <View style={s.safe}>
       {/* v160.0.23 — Solid opaque sticky header. Explicit spacer above
@@ -62,6 +74,26 @@ export default function CategoryFormsScreen() {
           <Text style={s.backText}>Forms</Text>
         </TouchableOpacity>
         <Text style={s.heading}>{catLabel}</Text>
+        {/* v160.2.5b — In-category search. */}
+        <View style={s.searchRow}>
+          <Ionicons name="search" size={16} color={Colors.brandInkMuted} />
+          <TextInput
+            testID="category-search-input"
+            style={s.searchInput}
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search in this category…"
+            placeholderTextColor={Colors.brandInkMuted}
+            underlineColorAndroid="transparent"
+            selectionColor={Colors.hvOrange}
+          />
+          {q.length > 0 && (
+            <TouchableOpacity testID="category-search-clear" onPress={() => setQ('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color={Colors.brandInkMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
       <ScrollView
         testID={`category-page-${catKey}`}
@@ -80,8 +112,13 @@ export default function CategoryFormsScreen() {
             <Ionicons name="document-outline" size={28} color={Colors.brandInkMuted} />
             <Text style={s.emptyText}>No forms in this category for your role.</Text>
           </View>
+        ) : filtered.length === 0 ? (
+          <View style={s.emptyBox}>
+            <Ionicons name="search" size={28} color={Colors.brandInkMuted} />
+            <Text style={s.emptyText}>No forms match “{q.trim()}”.</Text>
+          </View>
         ) : (
-          templates.map((t) => (
+          filtered.map((t) => (
             <TouchableOpacity
               key={t.id}
               testID={`form-row-${t.id}`}
@@ -141,4 +178,17 @@ const s = StyleSheet.create({
   },
   rowTitle: { fontSize: 14, fontWeight: '700', color: Colors.brandInk },
   rowDesc: { fontSize: 11, color: Colors.brandInkMuted, marginTop: 2, lineHeight: 15 },
+  // v160.2.5b — In-category search input styling (dark header context).
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10, paddingHorizontal: 10,
+    marginTop: 10,
+  },
+  searchInput: {
+    flex: 1, paddingVertical: 8, fontSize: 14,
+    color: Colors.brandSurface,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } as any : {}),
+  },
 });

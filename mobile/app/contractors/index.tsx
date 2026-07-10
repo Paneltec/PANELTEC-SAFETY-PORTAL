@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import StatusBadge from '../../src/components/StatusBadge';
 import EmptyState from '../../src/components/EmptyState';
+import StickyBackHeader from '../../src/components/StickyBackHeader';
 import { Colors } from '../../src/lib/colors';
 
 export default function ContractorsListScreen() {
@@ -25,8 +26,10 @@ export default function ContractorsListScreen() {
   const STATUS_OPTIONS = ['active', 'inactive', 'suspended'];
 
   return (
-    <ScrollView testID="contractors-list" style={s.scroll} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <StickyBackHeader title="Contractor Register" />
+      <ScrollView testID="contractors-list" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <View style={{ flex: 1 }}>
           <Text style={s.heading}>Contractor Register</Text>
@@ -81,6 +84,7 @@ export default function ContractorsListScreen() {
          );
        })}
     </ScrollView>
+    </View>
   );
 }
 

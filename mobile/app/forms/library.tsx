@@ -6,13 +6,14 @@
 // reads `useSafeAreaInsets()` explicitly so the Android status bar
 // no longer covers the "Back" chevron.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, StatusBar as RNStatusBar, Platform, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { toast } from '../../src/lib/toast';
+import FormsScanModal from '../../src/components/FormsScanModal';
 type Template = { id: string; name: string; category?: string; description?: string };
 
 const CATEGORIES: Array<{ key: string; label: string; icon: any; blurb: string }> = [
@@ -34,6 +35,9 @@ export default function FormsCategoriesScreen() {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // v160.2.5b — Library-wide search + camera-icon QR scanner.
+  const [q, setQ] = useState('');
+  const [scanOpen, setScanOpen] = useState(false);
 
   // v160.0.23 — Verification log per user brief. Prints real values so
   // we can eyeball what insets.top / StatusBar.currentHeight actually
@@ -74,6 +78,28 @@ export default function FormsCategoriesScreen() {
 
   const totalEnabled = templates.length;
 
+  // v160.2.5b — When the user types, we hide the six category tiles and
+  // render a flat list of matches across every category. Clearing the
+  // search restores the tile grid.
+  const searchActive = q.trim().length > 0;
+  const matches = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [] as Template[];
+    return templates.filter((t) => {
+      return (t.name || '').toLowerCase().includes(needle) ||
+             (t.description || '').toLowerCase().includes(needle) ||
+             (t.category || '').toLowerCase().includes(needle);
+    });
+  }, [q, templates]);
+
+  const openTemplate = (templateId: string) => {
+    // Confirm the template is visible to this caller before we push. If
+    // an admin scans a template from another org / role the router will
+    // still open the fill screen and the fill screen will 404 — that's
+    // fine, the fill screen handles its own error state.
+    router.push(`/forms/fill/${templateId}` as any);
+  };
+
   return (
     <View style={s.safe}>
       {/* v160.0.23 — Solid opaque header wrapper. `stickyHeader` already
@@ -90,6 +116,35 @@ export default function FormsCategoriesScreen() {
           </TouchableOpacity>
           <Text style={s.headerTitle}>Forms Library</Text>
           <View style={{ width: 56 }} />
+        </View>
+        {/* v160.2.5b — Search + camera-icon QR scan, docked in the sticky
+            header so they don't scroll away. */}
+        <View style={s.searchRow}>
+          <Ionicons name="search" size={16} color={Colors.brandInkMuted} />
+          <TextInput
+            testID="library-search-input"
+            style={s.searchInput}
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search forms…"
+            placeholderTextColor={Colors.brandInkMuted}
+            underlineColorAndroid="transparent"
+            selectionColor={Colors.hvOrange}
+          />
+          {q.length > 0 && (
+            <TouchableOpacity testID="library-search-clear" onPress={() => setQ('')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="close-circle" size={16} color={Colors.brandInkMuted} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            testID="library-scan-btn"
+            style={s.scanIconBtn}
+            onPress={() => setScanOpen(true)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="qr-code" size={18} color={Colors.brandSurface} />
+          </TouchableOpacity>
         </View>
       </View>
       <ScrollView
@@ -108,6 +163,37 @@ export default function FormsCategoriesScreen() {
             <Ionicons name="document-outline" size={28} color={Colors.brandInkMuted} />
             <Text style={s.emptyText}>No forms enabled for your role — contact your admin.</Text>
           </View>
+        ) : searchActive ? (
+          /* v160.2.5b — Flat search results across every category */
+          matches.length === 0 ? (
+            <View style={s.emptyBox}>
+              <Ionicons name="search" size={28} color={Colors.brandInkMuted} />
+              <Text style={s.emptyText}>No forms match “{q.trim()}”.</Text>
+            </View>
+          ) : (
+            <View style={{ paddingHorizontal: 16 }}>
+              {matches.map((t) => (
+                <TouchableOpacity
+                  key={t.id}
+                  testID={`library-match-${t.id}`}
+                  style={s.searchRowCard}
+                  onPress={() => openTemplate(t.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={s.searchRowIcon}>
+                    <Ionicons name="document-text" size={16} color={Colors.brandSurface} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.searchRowTitle} numberOfLines={1}>{t.name}</Text>
+                    <Text style={s.searchRowCat} numberOfLines={1}>
+                      {(t.category || 'general').replace('_', ' ')}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={Colors.brandInkMuted} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )
         ) : (
           <View style={s.grid}>
             {CATEGORIES.map((cat) => {
@@ -139,6 +225,12 @@ export default function FormsCategoriesScreen() {
           </View>
         )}
       </ScrollView>
+      {/* v160.2.5b — QR scan modal */}
+      <FormsScanModal
+        visible={scanOpen}
+        onClose={() => setScanOpen(false)}
+        onResolved={(tid) => openTemplate(tid)}
+      />
     </View>
   );
 }
@@ -198,4 +290,38 @@ const s = StyleSheet.create({
   cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8 },
   cardCount: { fontSize: 11, fontWeight: '700', color: Colors.brandOrange, letterSpacing: 0.5 },
   dimText: { color: Colors.textTertiary },
+  // v160.2.5b — Search + scan row styles.
+  searchRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10, paddingHorizontal: 10,
+    marginTop: 10,
+  },
+  searchInput: {
+    flex: 1, paddingVertical: 8, fontSize: 14,
+    color: Colors.brandSurface,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } as any : {}),
+  },
+  scanIconBtn: {
+    backgroundColor: Colors.hvOrange, borderRadius: 8,
+    width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+  },
+  searchRowCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.brandSurface,
+    borderWidth: 1, borderColor: Colors.imBorder,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    minHeight: 48, marginBottom: 8,
+  },
+  searchRowIcon: {
+    width: 32, height: 32, borderRadius: 8,
+    backgroundColor: Colors.brandOrange,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  searchRowTitle: { fontSize: 14, fontWeight: '700', color: Colors.brandInk },
+  searchRowCat: {
+    fontSize: 10, fontWeight: '800', letterSpacing: 0.8,
+    color: Colors.brandOrange, marginTop: 2, textTransform: 'uppercase',
+  },
 });

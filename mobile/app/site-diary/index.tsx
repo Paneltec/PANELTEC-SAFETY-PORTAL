@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
+import StickyBackHeader from '../../src/components/StickyBackHeader';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 
@@ -17,8 +18,10 @@ export default function SiteDiaryListScreen() {
   useEffect(() => { load(); }, []);
 
   return (
-    <ScrollView testID="sitediary-list" style={s.scroll} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <StickyBackHeader title="Site Diary" />
+      <ScrollView testID="sitediary-list" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Site Diary</Text>
         {can('site_diary', 'open') && <TouchableOpacity testID="diary-create-btn" style={s.addBtn} onPress={() => router.push('/site-diary/new')}>
@@ -37,6 +40,7 @@ export default function SiteDiaryListScreen() {
         </TouchableOpacity>
        ))}
     </ScrollView>
+    </View>
   );
 }
 const s = StyleSheet.create({

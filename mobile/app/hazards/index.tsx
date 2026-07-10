@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import StatusBadge from '../../src/components/StatusBadge';
 import EmptyState from '../../src/components/EmptyState';
+import StickyBackHeader from '../../src/components/StickyBackHeader';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 
@@ -18,8 +19,10 @@ export default function HazardsListScreen() {
   useEffect(() => { load(); }, []);
 
   return (
-    <ScrollView testID="hazards-list" style={s.scroll} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <StickyBackHeader title="Hazard Reports" />
+      <ScrollView testID="hazards-list" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Hazard Reports</Text>
         {can('hazards', 'open') && <TouchableOpacity testID="hazard-create-btn" style={s.addBtn} onPress={() => router.push('/hazards/new')}>
@@ -42,6 +45,7 @@ export default function HazardsListScreen() {
         </TouchableOpacity>
        ))}
     </ScrollView>
+    </View>
   );
 }
 const s = StyleSheet.create({

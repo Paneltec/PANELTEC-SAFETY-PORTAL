@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
+import StickyBackHeader from '../../src/components/StickyBackHeader';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 
@@ -18,8 +19,10 @@ export default function InspectionsListScreen() {
   useEffect(() => { load(); }, []);
 
   return (
-    <ScrollView testID="inspections-list" style={s.scroll} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <StickyBackHeader title="Inspection Reports" />
+      <ScrollView testID="inspections-list" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Inspection Reports</Text>
         {can('inspections', 'open') && <TouchableOpacity testID="inspection-create-btn" style={s.addBtn} onPress={() => router.push('/inspections/new')}>
@@ -54,6 +57,7 @@ export default function InspectionsListScreen() {
          );
        })}
     </ScrollView>
+    </View>
   );
 }
 

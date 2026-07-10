@@ -3802,3 +3802,101 @@ the OS window background. Native repro on the user's Expo build:
 - Tap the search field
 - Expected (after this fix): sheet stays fully painted, search
   input receives focus, no black frame.
+
+---
+
+## v160.2.5b — Mobile Forms Library search + QR scanner (2026-07-10)
+
+### What shipped
+- **Level 1** (`mobile/app/forms/library.tsx`): sticky-header search
+  input + camera icon. Typing hides the six category tiles and shows
+  a flat cross-category match list (name/description/category
+  substring match). Clearing restores the tile grid. Camera icon
+  opens the new FormsScanModal.
+- **Level 2** (`mobile/app/forms/category/[key].tsx`): in-category
+  search input. Filters the current category's list by name /
+  description. Empty-state guidance updated.
+- **FormsScanModal** (`mobile/src/components/FormsScanModal.tsx`,
+  NEW ~180 LOC). Reuses the NavixyVehiclePicker scan pattern —
+  transparent Modal with all compositor hardening, camera surface
+  only mounted when visible, neutral concrete camera-box background,
+  text-input fallback for pasting URL / token / template id.
+- **`mobile/src/lib/scan.ts`**: new `parseFormToken()` recognises
+    · bare UUID → `{kind:'form', templateId}`
+    · `paneltec://form/<id>` deep link → `{kind:'form', templateId}`
+    · any URL containing `/forms/fill/<id>` → `{kind:'form'}`
+    · else falls back to `parseAssetToken()` → `{kind:'asset', token}`
+      → resolved via `/api/assets/scan/{token}`; if the asset has
+      a `default_form_id` / `default_template_id` the picker opens
+      that form; else toasts "This QR doesn't have a form attached."
+- Unrecognised QR: inline error "Not a form or asset QR code",
+  modal stays open for the user to try again.
+
+### Version bumps → `paneltec-v160.2.5b`
+### Metro cache cleared with the corrected sequence.
+### Backend suite still green (61/61 across the sampled cycles).
+
+### Deferred (P2 per brief)
+- Admin-side QR generation for form templates — out of scope this cycle.
+
+---
+
+## v160.2.6 — Partial ship (2026-07-10)
+
+Shipped inside this session: back-button audit + fix on 6 stranded
+list screens + reusable `StickyBackHeader` component. Deferred to
+next fork at a clean session boundary per the "stop clean" rule.
+
+### Audit table
+| Screen | had back button? | action |
+|---|---|---|
+| `hazards/index.tsx`           | No  | Wrapped in `<View>` + StickyBackHeader "Hazard Reports" |
+| `incidents/index.tsx`         | No  | Wrapped + StickyBackHeader "Incident Reports"          |
+| `inspections/index.tsx`       | No  | Wrapped + StickyBackHeader "Inspection Reports"        |
+| `pre-starts/index.tsx`        | No  | Wrapped + StickyBackHeader "Daily Pre-Starts"          |
+| `site-diary/index.tsx`        | No  | Wrapped + StickyBackHeader "Site Diary"                |
+| `contractors/index.tsx`       | No  | Wrapped + StickyBackHeader "Contractor Register"       |
+| `certifications.tsx`          | Yes | Existing back button kept; notch padding DEFERRED       |
+| `swms/index.tsx`              | Yes (partial) | Left as-is; DEFERRED for stickified version    |
+| `my-profile.tsx`              | Yes (in ScrollView) | Left as-is; sticky migration DEFERRED     |
+| `document-library.tsx`, `suppliers.tsx`, `users.tsx`, `workers.tsx` | Yes | No change needed |
+| `forms/library.tsx`, `forms/category/*`, `forms/fill/*`, `forms/submission/*`, `forms/submissions/*` | Yes | No change |
+| All `[id]` + `new` under `/hazards`, `/incidents`, `/inspections`, `/pre-starts`, `/site-diary`, `/swms`, `/contractors` | Yes | No change |
+
+### New reusable component
+- `mobile/src/components/StickyBackHeader.tsx` (~70 LOC). Prop
+  `{title?, fallbackPath?}`. Applies the brute-force notch pad
+  (`Math.max(insets.top, StatusBar.currentHeight+16, 44)`), routes
+  `router.back()` with `router.replace(fallbackPath || '/(tabs)/settings')`
+  fallback when the router has no stack. Reuse for every new
+  stranded screen.
+
+### DEFERRED to next fork (v160.2.6-cont)
+1. **Sticky migration of `my-profile.tsx` back button** — currently
+   inside ScrollView (scrolls away). Move outside using
+   `StickyBackHeader`.
+2. **`/my-certifications` new screen** — reuse
+   `GET /api/me/worker-profile` cert data. Read-only card list with
+   status pills.
+3. **Settings entry** — add "Certifications" row to `(tabs)/settings.tsx`
+   directly below existing "My Profile".
+4. **Certifications compliance-queue notch padding** — the
+   `gst.headerBanner` in `certifications.tsx` doesn't pad for
+   insets. Swap the existing header for `StickyBackHeader` or apply
+   the brute-force pad.
+5. **`swms/index.tsx`** — replace inline header with StickyBackHeader
+   for consistency.
+6. **Submission-viewing surface audit** — grep for `pass · fail`,
+   `template_name_snapshot` on mobile; classify each hit
+   (A/B/C per brief); hide-for-workers where the "workers fill /
+   admins review" rule applies.
+
+### Version bumps → `paneltec-v160.2.6`
+### Metro cache cleared with the corrected sequence.
+### Backend suite untouched — still green.
+
+## v160.2.7, v160.2.8 — Deferred to next fork
+Not started in this session. Both cycles require substantial
+audit work that cannot be responsibly executed with the remaining
+context budget without risking half-work. Original briefs remain
+authoritative in the sections above.

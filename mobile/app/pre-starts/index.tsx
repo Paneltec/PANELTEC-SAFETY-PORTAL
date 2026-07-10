@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api from '../../src/lib/api';
 import EmptyState from '../../src/components/EmptyState';
+import StickyBackHeader from '../../src/components/StickyBackHeader';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 
@@ -17,8 +18,10 @@ export default function PreStartsListScreen() {
   useEffect(() => { load(); }, []);
 
   return (
-    <ScrollView testID="prestarts-list" style={s.scroll} contentContainerStyle={s.content}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
+    <View style={{ flex: 1, backgroundColor: Colors.bg }}>
+      <StickyBackHeader title="Daily Pre-Starts" />
+      <ScrollView testID="prestarts-list" style={s.scroll} contentContainerStyle={s.content}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={Colors.blue} />}>
       <View style={s.header}>
         <Text style={s.heading}>Daily Pre-Starts</Text>
         {can('pre_starts', 'open') && <TouchableOpacity testID="prestart-create-btn" style={s.addBtn} onPress={() => router.push('/pre-starts/new')}>
@@ -36,6 +39,7 @@ export default function PreStartsListScreen() {
         </TouchableOpacity>
        ))}
     </ScrollView>
+    </View>
   );
 }
 const s = StyleSheet.create({
