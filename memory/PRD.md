@@ -2891,3 +2891,28 @@ Five UX complaints from the user, all fixed:
 - `backend/org_settings.py` — added simpro_company_id to default seed.
 - Mongo `orgs` doc — inline patch to add simpro_company_id to existing companies.
 - 3 version files bumped.
+
+---
+
+## v160.0.13 — Per-role Form allowlist in Permissions Matrix (2026-07-10)
+
+**Backend:**
+- `forms.py` — added `pre_start` to `ALLOWED_CATEGORIES` (6 total). `list_templates` now intersects with the caller's role's allowlist in `orgs.role_form_allowlist[role]`. Admin/Owner bypass. Missing entry = "all enabled" (backwards-compat).
+- Legacy category aliases (`pre_use`, `plant_pre_start`, `daily_check`) normalised to `pre_start` in DB via inline migration.
+- `org_settings.py` — 2 new admin endpoints:
+  - `GET /api/org/role-presets/{role}/forms` — returns all templates grouped by 6 categories with per-form `enabled` flag
+  - `PUT /api/org/role-presets/{role}/forms` — replaces allowlist (unknown ids silently dropped)
+
+**Web admin UI:**
+- `PermissionPresetsAdmin.jsx` — added third tab "Forms per role" beside "Permission Presets" and "Mobile App Modules".
+- `components/settings/RoleFormsSection.jsx` (new, ~180 LOC) — role picker + 6 collapsible categories + per-form switches + 300ms debounced save → toast on success/failure.
+
+**Tests:** 5 new pytest cases in `test_worker_leaks.py`. Full suite **91/91 green**.
+
+**Files touched:**
+- `backend/forms.py`, `backend/org_settings.py`
+- `backend/tests/test_worker_leaks.py`
+- `frontend/src/pages/PermissionPresetsAdmin.jsx`
+- `frontend/src/components/settings/RoleFormsSection.jsx` (new)
+- Mongo `form_templates.category` normalised for 3 legacy values
+- All 3 version files → `paneltec-v160.0.13`

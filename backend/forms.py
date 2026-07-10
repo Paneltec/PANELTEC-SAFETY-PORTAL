@@ -35,7 +35,7 @@ router = APIRouter(
 )
 
 WRITE_ROLES = {"admin", "hseq_lead"}
-ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general"}
+ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general", "pre_start"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
                        "worker_picker", "job_picker", "site_picker", "customer_picker",
@@ -319,6 +319,20 @@ async def list_templates(category: Optional[str] = None,
     rows = await db.form_templates.find(q, {"_id": 0}).sort("name", 1).to_list(2000)
     if not rows:
         return []
+    # v160.0.13 — Per-role form allowlist. Workers/foremen only see the
+    # templates enabled for their role in `org_settings.role_form_allowlist`.
+    # Admins bypass entirely so they can curate for other roles. Missing
+    # entry = backwards-compat "all enabled".
+    caller_role = (user.get("role") or "").lower()
+    if caller_role not in ("admin", "owner") and not show_all:
+        org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0, "role_form_allowlist": 1}) or {}
+        allowlist = ((org.get("role_form_allowlist") or {}).get(caller_role))
+        # Explicit `None` = no config yet = show all. Explicit list =
+        # intersect. Empty list = the admin has hidden everything for
+        # this role → nothing to show.
+        if isinstance(allowlist, list):
+            allowed = set(allowlist)
+            rows = [r for r in rows if r["id"] in allowed]
     ids = [r["id"] for r in rows]
     counts: dict = {}
     pipeline = [

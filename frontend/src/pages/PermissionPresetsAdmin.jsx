@@ -16,6 +16,7 @@ import api, { apiError } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { PageHeader } from '@/components/capture/Ui';
 import MobileModulesSection from '@/components/settings/MobileModulesSection';
+import RoleFormsSection from '@/components/settings/RoleFormsSection';
 import {
   LockClosed20Regular as Lock20Regular,
   Sparkle20Filled,
@@ -139,10 +140,14 @@ export default function PermissionPresetsAdmin() {
           icon={<ShieldCheckmark20Regular />} label="Permission Presets" testid="tab-presets" />
         <TabBtn active={tab === 'mobile'} onClick={() => setTab('mobile')}
           icon={<Phone20Regular />} label="Mobile App Modules" testid="tab-mobile" />
+        <TabBtn active={tab === 'forms'} onClick={() => setTab('forms')}
+          icon={<Phone20Regular />} label="Forms per role" testid="tab-forms" />
       </div>
 
       {tab === 'mobile' ? (
         <MobileModulesSection canEdit={canEdit} />
+      ) : tab === 'forms' ? (
+        <RoleFormsSection canEdit={canEdit} />
       ) : loading ? (
         <div className="text-sm text-slate-500">Loading…</div>
       ) : (

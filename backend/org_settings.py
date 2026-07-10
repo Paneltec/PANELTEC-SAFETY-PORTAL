@@ -110,3 +110,81 @@ async def replace_org_companies(body: CompaniesPatch, user: dict = Depends(get_c
         {"$set": {"companies": clean, "updated_at": now_iso()}},
     )
     return {"companies": clean}
+
+
+# ─── v160.0.13 · Per-role Form allowlist (Permissions Matrix) ───
+
+_FORM_CATEGORIES = ["general", "pre_start", "inspection", "near_miss", "incident", "toolbox"]
+
+
+def _norm_role(r: str) -> str:
+    r = (r or "").lower().strip()
+    if r not in {"worker", "supervisor", "contractor", "foreman", "admin", "owner", "hseq"}:
+        raise HTTPException(400, f"Unknown role: {r}")
+    return r
+
+
+@router.get("/role-presets/{role}/forms")
+async def get_role_forms(role: str, user: dict = Depends(get_current_user)):
+    """Returns full template list with `enabled` per template based on the
+    role's allowlist. Admin-only. Includes empty-category placeholders so
+    the UI can render all 6 category sections.
+
+    Response: `{ role, categories: [{key, label, forms: [{id, name, enabled}]}] }`."""
+    if user.get("role") not in ("admin", "owner"):
+        raise HTTPException(403, "Admin role required")
+    role = _norm_role(role)
+    org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0, "role_form_allowlist": 1}) or {}
+    allowlist = (org.get("role_form_allowlist") or {}).get(role)
+    # None = all enabled by default. Empty list = all disabled.
+    explicit = isinstance(allowlist, list)
+    allowed = set(allowlist) if explicit else set()
+
+    cursor = db.form_templates.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "category": 1},
+    ).sort("name", 1)
+    by_cat: dict[str, list] = {c: [] for c in _FORM_CATEGORIES}
+    async for t in cursor:
+        cat = (t.get("category") or "general").lower()
+        if cat not in by_cat:
+            cat = "general"
+        enabled = (t["id"] in allowed) if explicit else True
+        by_cat[cat].append({"id": t["id"], "name": t.get("name") or "Untitled", "enabled": enabled})
+
+    return {
+        "role": role,
+        "explicit": explicit,
+        "categories": [
+            {"key": c, "label": c.replace("_", " ").title(), "forms": by_cat[c]}
+            for c in _FORM_CATEGORIES
+        ],
+    }
+
+
+class RoleFormsPatch(BaseModel):
+    allowed_form_ids: list[str]
+
+
+@router.put("/role-presets/{role}/forms")
+async def put_role_forms(role: str, body: RoleFormsPatch, user: dict = Depends(get_current_user)):
+    """Admin-only: replace the allowlist for `role`. IDs not present in
+    `form_templates` are silently dropped."""
+    if user.get("role") not in ("admin", "owner"):
+        raise HTTPException(403, "Admin role required")
+    role = _norm_role(role)
+    # Validate ids belong to this org — reject unknown/foreign ids.
+    ids = list({str(x) for x in (body.allowed_form_ids or []) if x})
+    if ids:
+        valid_ids = set()
+        async for t in db.form_templates.find(
+            {"org_id": user["org_id"], "id": {"$in": ids}, "deleted_at": None},
+            {"_id": 0, "id": 1},
+        ):
+            valid_ids.add(t["id"])
+        ids = [x for x in ids if x in valid_ids]
+    await db.orgs.update_one(
+        {"id": user["org_id"]},
+        {"$set": {f"role_form_allowlist.{role}": ids, "updated_at": now_iso()}},
+    )
+    return {"role": role, "allowed_form_ids": ids}

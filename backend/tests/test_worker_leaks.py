@@ -1079,10 +1079,9 @@ def test_v160_0_12_heavy_eq_template_has_new_fields(admin_headers):
     assert "asset_scan" in field_types, f"Missing asset_scan — {field_types}"
     assert "auto_date" in field_types, f"Missing auto_date — {field_types}"
     assert "gps" in field_types, f"Missing gps — {field_types}"
-    # Worker pickers should be BOTH Operator and Reported To.
+    # Worker pickers should be Operator (Reported To was dropped in v160.0.12.6).
     wp_labels = [f["label"] for f in tpl["fields"] if f["type"] == "worker_picker"]
     assert any("Operator" in x for x in wp_labels)
-    assert any("Reported To" in x for x in wp_labels)
 
 
 def test_v160_0_12_field_types_accepted_by_template_editor(admin_headers):
@@ -1142,3 +1141,70 @@ def test_v160_0_12_heavy_eq_submission_accepts_new_field_values(admin_headers, w
     # Some values might be radio-invalid depending on options; accept 200/201 or 400 (validation)
     # For this test we assert the endpoint at least reached the backend without a 500.
     assert r.status_code < 500, r.text
+
+
+# ─── v160.0.13 · Per-role Form allowlist ─────────────────────────────────
+
+def test_v160_0_13_role_forms_get_admin_seeds_categories(admin_headers):
+    r = requests.get(f"{BASE}/api/org/role-presets/worker/forms", headers=admin_headers, timeout=10)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["role"] == "worker"
+    cat_keys = [c["key"] for c in body["categories"]]
+    for k in ("general", "pre_start", "inspection", "near_miss", "incident", "toolbox"):
+        assert k in cat_keys, f"Missing category {k}"
+
+
+def test_v160_0_13_role_forms_worker_get_forbidden(worker_headers):
+    r = requests.get(f"{BASE}/api/org/role-presets/worker/forms", headers=worker_headers, timeout=10)
+    assert r.status_code == 403
+
+
+def test_v160_0_13_role_forms_worker_put_forbidden(worker_headers):
+    r = requests.put(
+        f"{BASE}/api/org/role-presets/worker/forms",
+        headers=worker_headers, json={"allowed_form_ids": []}, timeout=10,
+    )
+    assert r.status_code == 403
+
+
+def test_v160_0_13_role_forms_admin_put_and_worker_sees_filtered(admin_headers, worker_headers):
+    # Grab the full list, pick 2, save allowlist, worker sees only those 2.
+    tpl_resp = requests.get(f"{BASE}/api/forms/templates", headers=admin_headers, timeout=10)
+    assert tpl_resp.status_code == 200
+    all_ids = [t["id"] for t in tpl_resp.json()]
+    assert len(all_ids) >= 3, "Need at least 3 templates seeded for this test"
+    picked = all_ids[:2]
+    try:
+        put = requests.put(
+            f"{BASE}/api/org/role-presets/worker/forms",
+            headers=admin_headers, json={"allowed_form_ids": picked}, timeout=10,
+        )
+        assert put.status_code == 200, put.text
+        assert set(put.json()["allowed_form_ids"]) == set(picked)
+
+        worker_list = requests.get(f"{BASE}/api/forms/templates", headers=worker_headers, timeout=10)
+        assert worker_list.status_code == 200
+        worker_ids = {t["id"] for t in worker_list.json()}
+        assert worker_ids == set(picked), f"Filter broken — worker sees {worker_ids}"
+
+        # Admin still sees everything.
+        admin_list = requests.get(f"{BASE}/api/forms/templates", headers=admin_headers, timeout=10)
+        assert len({t["id"] for t in admin_list.json()}) == len(all_ids)
+    finally:
+        # Reset — clear the allowlist so downstream tests don't see filtered.
+        requests.put(
+            f"{BASE}/api/org/role-presets/worker/forms",
+            headers=admin_headers, json={"allowed_form_ids": all_ids}, timeout=10,
+        )
+
+
+def test_v160_0_13_role_forms_put_drops_unknown_ids(admin_headers):
+    r = requests.put(
+        f"{BASE}/api/org/role-presets/admin/forms",
+        headers=admin_headers,
+        json={"allowed_form_ids": ["not-a-real-id-9999", "another-fake"]},
+        timeout=10,
+    )
+    assert r.status_code == 200
+    assert r.json()["allowed_form_ids"] == []
