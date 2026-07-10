@@ -3281,3 +3281,84 @@ Submitted three forms fresh in this session:
 - `backend/tests/test_v160_2_5a_submission_routing.py` (new)
 - `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
   `frontend/public/service-worker.js`
+
+---
+
+## Next-fork queue (captured 2026-07-10 for handoff)
+
+Ordered pending cycles — the next-fork agent should execute them in
+this order after re-verifying the prior state.
+
+### v160.2.5b — Mobile Forms Library search + form-QR scanner
+Deferred from v160.2.5 split. See original brief for full detail.
+- Level 1 (`mobile/app/forms/library.tsx`): sticky search input +
+  camera icon on the right of the field.
+- Level 2 (`mobile/app/forms/category/[key].tsx`): in-category search.
+- QR scanner (from Level 1 camera icon): accepts template UUIDs,
+  asset scan tokens (`GET /api/assets/scan/{token}`), or
+  `paneltec://form/{id}` deep links. On unrecognised → toast
+  "Not a form or asset QR code" and stay on picker.
+- Admin-side QR generation for form templates is P2, out of scope.
+
+### v160.2.6 — Mobile My Profile back button + `/my-certifications`
+- **Fix 1**: Sticky back arrow on `mobile/app/my-profile.tsx`. Match
+  the Forms Library / Category sticky-header pattern (`useSafeAreaInsets` +
+  `Math.max(insets.top, StatusBar.currentHeight+16, 44)`).
+- **Fix 2**: New `mobile/app/my-certifications.tsx` — reuses
+  `GET /api/me/worker-profile` (already shipped in v160.2.2). One card
+  per cert with status pill (Valid / Expiring soon <30d amber /
+  Expired red / No expiry grey / Missing file amber outline). "View"
+  button opens PDF via existing viewer if file attached.
+- **Fix 3**: Add "Certifications" row to `mobile/app/(tabs)/settings.tsx`
+  directly below the existing "My Profile" row. Ribbon icon,
+  chevron-forward, tap → `/my-certifications`.
+- **Fix 4**: Verify web-admin `WorkerViewModal` cert table renders
+  (was verified in v160.2.2 for Rick Antrim — one-line confirm).
+
+### v160.2.6 addendum — Notch padding on Certifications compliance queue
+User screenshot flagged the "Certifications · Compliance attention
+queue" screen title half-covered by the Android notch — same class
+of bug as the Forms Library / Category screens fixed in v160.0.23.
+- Locate: likely `mobile/app/certifications.tsx` or
+  `mobile/app/(tabs)/certifications.tsx`.
+- Wrap the header row in a sticky `stickyHeader` View using
+  `Colors.imConcrete` or `Colors.imSurface`.
+- Apply `headerTopPad = Math.max(insets.top, (StatusBar.currentHeight
+  or 0) + 16, 44)`.
+- Version this alongside v160.2.6.
+
+### v160.2.7 — Grant workers `swms.view` (+ attach) org-wide
+- Audit + update the Worker role preset in `org_settings.role_presets`
+  to include `swms.view` (+ `swms.list` / `swms.attach` if separate).
+- Backfill script `backend/scripts/migrate_v160_2_7_worker_swms.py`
+  (idempotent) — grant SWMS view/attach to every existing user with
+  role=Worker in the current DB. Report counts.
+- Update the seed/default so NEW orgs have workers with SWMS view/attach
+  by default.
+- Do NOT grant `swms.create` / `swms.edit` / `swms.delete` /
+  `swms.approve` — those stay admin-only.
+- Proof: as `worker_stephen@paneltec.com.au`,
+  1. `GET /api/swms` returns non-empty (was 0 pre-migration).
+  2. Mobile SWMS list screen shows docs.
+  3. Filling a Hot Work permit → "Applicable SWMS" picker populated.
+  4. Submitting the permit with attached SWMS succeeds; submission
+     carries the SWMS ids in its `fields` payload.
+- Tests: worker can list + view SWMS; worker CANNOT
+  create/edit/delete/approve.
+
+### Handoff notes for next-fork agent
+- Baseline version: `paneltec-v160.2.5a` (this session shipped).
+- Recent test suites all green: 76/76 across v160.1.3 / 1.4 / 1.6 /
+  2.0 / 2.2 / 2.3 / 2.4 / 2.5a.
+- Snapshot collections in DB: `form_templates_backup_v160_1_6` (27),
+  `form_templates_backup_v160_2_2` (43),
+  `form_templates_backup_v160_2_3` (43).
+- Test accounts (`/app/memory/test_credentials.md`):
+    · Admin: stephen@paneltec.com.au / Mcgstephen50#  (HAS linked worker)
+    · Worker: worker_stephen@paneltec.com.au / WorkerTest123!  (NO linked worker)
+- Metro cache rule still enforced — run
+  `sudo supervisorctl restart mobile && rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache`
+  after any mobile edit.
+- Standard Header pattern (Date → Operator → Location → Vehicle) is the
+  base for all templates. `swms_picker` goes after the header + Company +
+  Time block. See `backend/forms.py` docstring at the top.
