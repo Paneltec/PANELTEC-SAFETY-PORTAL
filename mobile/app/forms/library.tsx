@@ -83,25 +83,29 @@ export default function FormsCategoriesScreen() {
           content sits cleanly below it. */}
       <View style={s.stickyHeader}>
         <View style={{ height: headerTopPad }} />
-        <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
-          <Text style={s.backText}>Back</Text>
-        </TouchableOpacity>
+        <View style={s.headerRow}>
+          <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={20} color={Colors.brandSurface} />
+            <Text style={s.backText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={s.headerTitle}>Forms Library</Text>
+          <View style={{ width: 56 }} />
+        </View>
       </View>
       <ScrollView
         testID="forms-categories-page"
         style={s.scroll}
         contentContainerStyle={s.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brandOrange} />}
       >
         {loading ? (
           <View style={s.emptyBox}>
-            <ActivityIndicator color={Colors.orange} />
+            <ActivityIndicator color={Colors.brandOrange} />
             <Text style={s.emptyText}>Loading…</Text>
           </View>
         ) : totalEnabled === 0 ? (
           <View style={s.emptyBox}>
-            <Ionicons name="document-outline" size={28} color={Colors.textTertiary} />
+            <Ionicons name="document-outline" size={28} color={Colors.brandInkMuted} />
             <Text style={s.emptyText}>No forms enabled for your role — contact your admin.</Text>
           </View>
         ) : (
@@ -119,7 +123,7 @@ export default function FormsCategoriesScreen() {
                   style={[s.card, dimmed && s.cardDim]}
                 >
                   <View style={[s.iconWrap, dimmed && s.iconWrapDim]}>
-                    <Ionicons name={cat.icon} size={22} color={dimmed ? Colors.textTertiary : Colors.tileLightAccentIcon} />
+                    <Ionicons name={cat.icon} size={22} color={dimmed ? Colors.textTertiary : Colors.brandSurface} />
                   </View>
                   <Text style={[s.cardTitle, dimmed && s.dimText]}>{cat.label}</Text>
                   <Text style={[s.cardBlurb, dimmed && s.dimText]} numberOfLines={2}>{cat.blurb}</Text>
@@ -127,7 +131,7 @@ export default function FormsCategoriesScreen() {
                     <Text style={[s.cardCount, dimmed && s.dimText]}>
                       {n} {n === 1 ? 'form' : 'forms'}
                     </Text>
-                    {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.tileLightMuted} />}
+                    {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.brandInkMuted} />}
                   </View>
                 </TouchableOpacity>
               );
@@ -140,42 +144,44 @@ export default function FormsCategoriesScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.libraryBg },
+  // v160.0.24 — Brand palette applied to Forms Library ONLY.
+  safe: { flex: 1, backgroundColor: Colors.brandBgLight },
   stickyHeader: {
-    // v160.0.19 — Sibling above the ScrollView, so it never scrolls away.
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-    paddingHorizontal: 16, paddingVertical: 12,
+    // Sibling above the ScrollView, so it never scrolls away.
+    backgroundColor: Colors.brandNavy,
+    paddingHorizontal: 16, paddingBottom: 14,
+  },
+  headerRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    minHeight: 32,
   },
   scroll: { flex: 1 },
   content: { paddingTop: 12, paddingBottom: 32 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  backText: { fontSize: 14, fontWeight: '700', color: Colors.orange },
-  overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
-  heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4 },
-  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 56 },
+  backText: { fontSize: 14, fontWeight: '700', color: Colors.brandSurface },
+  headerTitle: {
+    fontSize: 16, fontWeight: '700', color: Colors.brandSurface,
+    letterSpacing: 0.2,
+  },
+  overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
+  heading: { fontSize: 26, fontWeight: '800', color: Colors.brandInk, marginTop: 4 },
+  sub: { fontSize: 13, color: Colors.brandInkMuted, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
+  emptyText: { fontSize: 14, color: Colors.brandInkMuted, textAlign: 'center', paddingHorizontal: 24 },
   grid: {
-    // v160.0.19 — exact spec from user brief. `space-between` + width 48%
-    // guarantees a 2-column layout regardless of viewport.
     flexDirection: 'row', flexWrap: 'wrap',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
   card: {
     width: '48%',
-    minHeight: 120,
+    minHeight: 128,
     marginBottom: 12,
-    // v160.0.22 — LIGHT paper card on darker library background. High
-    // contrast on-device; matches user brief "lighter tiles please".
-    backgroundColor: Colors.tileLight,
-    borderWidth: 1, borderColor: Colors.tileLightBorder,
+    backgroundColor: Colors.brandSurface,
+    borderWidth: 1, borderColor: '#CBD5E1',
     borderRadius: 16, padding: 14, gap: 6,
-    // Soft lift shadow so the light tile visually detaches from the
-    // dark library background.
     shadowColor: '#000',
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.08,
     shadowRadius: 6,
     shadowOffset: { width: 0, height: 2 },
     elevation: 2,
@@ -183,13 +189,13 @@ const s = StyleSheet.create({
   cardDim: { opacity: 0.4 },
   iconWrap: {
     width: 40, height: 40, borderRadius: 12,
-    backgroundColor: Colors.tileLightAccentBg, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.brandOrange, alignItems: 'center', justifyContent: 'center',
     marginBottom: 4,
   },
   iconWrapDim: { backgroundColor: Colors.surfaceLight },
-  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.tileLightInk },
-  cardBlurb: { fontSize: 11, color: Colors.tileLightMuted, lineHeight: 15 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: Colors.brandInk },
+  cardBlurb: { fontSize: 11, color: Colors.brandInkMuted, lineHeight: 15 },
   cardFoot: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8 },
-  cardCount: { fontSize: 11, fontWeight: '700', color: Colors.tileLightAccentIcon, letterSpacing: 0.5 },
+  cardCount: { fontSize: 11, fontWeight: '700', color: Colors.brandOrange, letterSpacing: 0.5 },
   dimText: { color: Colors.textTertiary },
 });

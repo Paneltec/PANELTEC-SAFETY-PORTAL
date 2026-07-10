@@ -115,7 +115,7 @@ function NotchBackdrop() {
         left: 0,
         right: 0,
         height,
-        backgroundColor: Colors.surface,
+        backgroundColor: Colors.brandNavy,
         zIndex: 100,
       }}
     />

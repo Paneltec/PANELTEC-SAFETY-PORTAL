@@ -58,7 +58,7 @@ export default function CategoryFormsScreen() {
       <View style={s.stickyHeader}>
         <View style={{ height: headerTopPad }} />
         <TouchableOpacity testID="back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
+          <Ionicons name="chevron-back" size={20} color={Colors.brandSurface} />
           <Text style={s.backText}>Forms</Text>
         </TouchableOpacity>
         <Text style={s.heading}>{catLabel}</Text>
@@ -67,17 +67,17 @@ export default function CategoryFormsScreen() {
         testID={`category-page-${catKey}`}
         style={s.scroll}
         contentContainerStyle={s.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.brandOrange} />}
       >
 
         {loading ? (
           <View style={s.emptyBox}>
-            <ActivityIndicator color={Colors.orange} />
+            <ActivityIndicator color={Colors.brandOrange} />
             <Text style={s.emptyText}>Loading…</Text>
           </View>
         ) : templates.length === 0 ? (
           <View style={s.emptyBox}>
-            <Ionicons name="document-outline" size={28} color={Colors.textTertiary} />
+            <Ionicons name="document-outline" size={28} color={Colors.brandInkMuted} />
             <Text style={s.emptyText}>No forms in this category for your role.</Text>
           </View>
         ) : (
@@ -90,7 +90,7 @@ export default function CategoryFormsScreen() {
               activeOpacity={0.7}
             >
               <View style={s.rowIcon}>
-                <Ionicons name="document-text" size={18} color={Colors.tileLightAccentIcon} />
+                <Ionicons name="document-text" size={18} color={Colors.brandSurface} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={s.rowTitle} numberOfLines={1}>{t.name}</Text>
@@ -98,7 +98,7 @@ export default function CategoryFormsScreen() {
                   <Text style={s.rowDesc} numberOfLines={2}>{t.description}</Text>
                 ) : null}
               </View>
-              <Ionicons name="chevron-forward" size={16} color={Colors.tileLightMuted} />
+              <Ionicons name="chevron-forward" size={16} color={Colors.brandInkMuted} />
             </TouchableOpacity>
           ))
         )}
@@ -108,37 +108,37 @@ export default function CategoryFormsScreen() {
 }
 
 const s = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: Colors.libraryBg },
+  // v160.0.24 — Brand palette applied to Forms/Category ONLY.
+  safe: { flex: 1, backgroundColor: Colors.brandBgLight },
   stickyHeader: {
-    backgroundColor: Colors.surface,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-    paddingHorizontal: 16, paddingVertical: 12,
+    backgroundColor: Colors.brandNavy,
+    paddingHorizontal: 16, paddingBottom: 14,
   },
   scroll: { flex: 1 },
   content: { padding: 16, paddingBottom: 32 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  backText: { fontSize: 13, fontWeight: '700', color: Colors.orange },
-  overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
-  heading: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginTop: 2 },
-  sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 4 },
+  backText: { fontSize: 13, fontWeight: '700', color: Colors.brandSurface },
+  overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
+  heading: { fontSize: 20, fontWeight: '800', color: Colors.brandSurface, marginTop: 2 },
+  sub: { fontSize: 13, color: Colors.brandInkMuted, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
-  emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
+  emptyText: { fontSize: 14, color: Colors.brandInkMuted, textAlign: 'center', paddingHorizontal: 24 },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    // v160.0.22 — Light paper row on dark library bg.
-    backgroundColor: Colors.tileLight, borderWidth: 1, borderColor: Colors.tileLightBorder,
+    backgroundColor: Colors.brandSurface,
+    borderWidth: 1, borderColor: '#CBD5E1',
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
-    minHeight: 44, marginBottom: 6,
+    minHeight: 48, marginBottom: 8,
     shadowColor: '#000',
-    shadowOpacity: 0.12,
+    shadowOpacity: 0.06,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 1 },
     elevation: 1,
   },
   rowIcon: {
-    width: 32, height: 32, borderRadius: 8, backgroundColor: Colors.tileLightAccentBg,
+    width: 34, height: 34, borderRadius: 8, backgroundColor: Colors.brandOrange,
     alignItems: 'center', justifyContent: 'center',
   },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: Colors.tileLightInk },
-  rowDesc: { fontSize: 11, color: Colors.tileLightMuted, marginTop: 2, lineHeight: 15 },
+  rowTitle: { fontSize: 14, fontWeight: '700', color: Colors.brandInk },
+  rowDesc: { fontSize: 11, color: Colors.brandInkMuted, marginTop: 2, lineHeight: 15 },
 });

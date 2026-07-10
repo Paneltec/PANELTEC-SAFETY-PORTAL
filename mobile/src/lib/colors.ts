@@ -45,6 +45,18 @@ export const Colors = {
   tileLightMuted: '#475569',      // slate-600 — blurb / body text on light card
   tileLightAccentBg: '#FFEDD5',   // orange-100 — icon plate bg on light card
   tileLightAccentIcon: '#EA580C', // orange-600 — icon glyph & count accent
+
+  // v160.0.24 — Fresh brand palette. In-scope for the Forms Library +
+  // Category screens ONLY. Do not migrate the rest of the app yet.
+  // Coexists with the legacy Colors.orange token so the wider app is
+  // untouched until we decide on a global re-theme.
+  brandNavy:       '#163A63',     // primary — sticky header + notch backdrop
+  brandOrange:     '#F58220',     // secondary — icon badge on tiles/rows
+  brandTeal:       '#009688',     // accent — reserved for hover/active dot
+  brandBgLight:    '#EEF2F5',     // screen background (Forms Library + Category)
+  brandSurface:    '#FFFFFF',     // tile / card background
+  brandInk:        '#263238',     // primary text on light surface
+  brandInkMuted:   '#546E7A',     // secondary text on light surface
   /** Non-interactive muted panel (disabled inputs, ghost sections). */
   mutedBg: '#152033',
 
