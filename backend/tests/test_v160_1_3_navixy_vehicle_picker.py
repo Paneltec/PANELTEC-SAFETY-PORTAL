@@ -107,7 +107,11 @@ def test_vehicle_pre_use_inspection_template_has_v160_1_3_layout(worker_headers)
     fields = tpl.get("fields") or []
     assert len(fields) >= 3, fields
 
-    assert fields[0]["type"] == "auto_date", fields[0]
+    # v160.1.4 — Accept either `auto_date` (v160.1.3) or `date` with
+    # `config.default_today=True` (v160.1.4). Both are "date at slot 0";
+    # the v160.1.4 polish specifically requires a specific type — see
+    # test_v160_1_4_form_polish.py for that assertion.
+    assert fields[0]["type"] in ("auto_date", "date"), fields[0]
     assert fields[0]["label"].lower() == "date"
 
     assert fields[1]["type"] == "worker_picker", fields[1]

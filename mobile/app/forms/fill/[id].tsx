@@ -18,25 +18,35 @@ import WorkerPicker from '../../../src/components/WorkerPicker';
 import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 /* ─── Colour helper for radio buttons ─── */
 function radioColor(opt: string, selected: boolean) {
+  // v160.1.4 — Higher-contrast SELECTED state per user brief. Selected
+  // options fill with a saturated brand colour + white text; unselected
+  // options stay light with a coloured outline as a subtle affordance.
+  //
+  // Yes / No / N-A / Fail keep their semantic tint (green / red / grey)
+  // because it's genuinely useful for pre-use safety checks — a bright
+  // green "Yes" and a bright red "No" read faster than a uniform bronze
+  // pair. Any other option falls back to bronze (imBronze).
   const norm = opt.toLowerCase();
   if (norm === 'yes')
     return selected
-      ? { bg: Colors.imConcrete, border: Colors.imSuccess, text: Colors.imSuccess }
+      ? { bg: Colors.imSuccess, border: Colors.imSuccess, text: Colors.imSurface }
       : { bg: Colors.imSurface, border: Colors.imSuccess, text: Colors.imSuccess };
   if (norm === 'no' || norm === 'defective' || norm.startsWith('fail'))
     return selected
-      ? { bg: Colors.imConcrete, border: Colors.imError, text: Colors.imError }
+      ? { bg: Colors.imError, border: Colors.imError, text: Colors.imSurface }
       : { bg: Colors.imSurface, border: Colors.imError, text: Colors.imError };
   if (norm === 'n/a' || norm === 'na' || norm === 'not applicable')
     return selected
-      ? { bg: Colors.imConcrete, border: Colors.imInkMuted, text: Colors.imInkMuted }
+      ? { bg: Colors.imInkMuted, border: Colors.imInkMuted, text: Colors.imSurface }
       : { bg: Colors.imSurface, border: Colors.imBorder, text: Colors.imInkMuted };
+  // Neutral options — bronze fill when selected per user brief.
   return selected
-    ? { bg: Colors.imConcrete, border: Colors.imInkMuted, text: Colors.imInk }
-    : { bg: Colors.imSurface, border: Colors.imBorder, text: Colors.imInkMuted };
+    ? { bg: Colors.imBronze, border: Colors.imBronze, text: Colors.imSurface }
+    : { bg: Colors.imSurface, border: Colors.imBorder, text: Colors.imInk };
 }
 
 /* ─── Select picker modal ─── */
@@ -58,6 +68,78 @@ function SelectModal({ visible, options, selected, onSelect, onClose }: any) {
         </View>
       </TouchableOpacity>
     </Modal>
+  );
+}
+
+/* ─── v160.1.4 · Editable date field with a calendar picker ─── */
+function DatePickerField({ value, onChange, defaultToday, testId }: {
+  value: string | null | undefined;
+  onChange: (iso: string) => void;
+  defaultToday?: boolean;
+  testId: string;
+}) {
+  // Pre-fill with today's date when `defaultToday` is set and the field
+  // is currently empty. Uses a mount-time effect so it doesn't clobber a
+  // hydrated draft value.
+  useEffect(() => {
+    if (defaultToday && !value) {
+      onChange(new Date().toISOString().slice(0, 10));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const asDate = value ? new Date(value) : new Date();
+  const display = value || 'YYYY-MM-DD';
+
+  // Web: <input type="date"> already ships a native calendar picker, so
+  // let the browser render its own control — cleaner than mounting the
+  // native picker.
+  if (Platform.OS === 'web') {
+    return (
+      <View testID={testId} style={fs.datePickerWrap}>
+        <Ionicons name="calendar" size={16} color={Colors.imBronze} />
+        {/* @ts-expect-error web-only DOM element for RN Web */}
+        <input
+          type="date"
+          value={value || ''}
+          onChange={(e: any) => onChange(e.target.value)}
+          style={{
+            flex: 1, fontSize: 15, fontWeight: '600',
+            color: Colors.imInk, border: 'none', background: 'transparent',
+            outline: 'none', padding: '4px 0',
+          }}
+          data-testid={`${testId}-input`}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View testID={testId}>
+      <TouchableOpacity
+        testID={`${testId}-open`}
+        style={fs.datePickerWrap}
+        onPress={() => setPickerOpen(true)}
+        activeOpacity={0.75}
+      >
+        <Ionicons name="calendar" size={16} color={Colors.imBronze} />
+        <Text style={[fs.datePickerText, !value && { color: Colors.textTertiary }]}>{display}</Text>
+        <Ionicons name="chevron-down" size={14} color={Colors.textTertiary} />
+      </TouchableOpacity>
+      {pickerOpen && (
+        <DateTimePicker
+          testID={`${testId}-native`}
+          value={asDate}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={(_e: any, d?: Date) => {
+            setPickerOpen(false);
+            if (d) onChange(d.toISOString().slice(0, 10));
+          }}
+        />
+      )}
+    </View>
   );
 }
 
@@ -114,26 +196,52 @@ function PhotoField({ photos, onChange, testId }: any) {
     }));
     onChange([...(photos || []), ...newPhotos]);
   };
+  const count = (photos || []).length;
   return (
     <View testID={testId}>
-      <View style={{ flexDirection: 'row', gap: 8 }}>
-        <TouchableOpacity testID={`${testId}-camera`} style={fs.photoBtn} onPress={() => pick(true)}>
-          <Ionicons name="camera" size={16} color={Colors.paneltecBlue} />
-          <Text style={fs.photoBtnText}>Camera</Text>
-        </TouchableOpacity>
-        <TouchableOpacity testID={`${testId}-library`} style={fs.photoBtn} onPress={() => pick(false)}>
-          <Ionicons name="images" size={16} color={Colors.paneltecBlue} />
-          <Text style={fs.photoBtnText}>Library</Text>
-        </TouchableOpacity>
-      </View>
-      {(photos || []).length > 0 && (
+      {count === 0 ? (
+        // First-capture affordance — the standard Camera / Library pair.
+        <View style={{ flexDirection: 'row', gap: 8 }}>
+          <TouchableOpacity testID={`${testId}-camera`} style={fs.photoBtn} onPress={() => pick(true)}>
+            <Ionicons name="camera" size={16} color={Colors.paneltecBlue} />
+            <Text style={fs.photoBtnText}>Camera</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID={`${testId}-library`} style={fs.photoBtn} onPress={() => pick(false)}>
+            <Ionicons name="images" size={16} color={Colors.paneltecBlue} />
+            <Text style={fs.photoBtnText}>Library</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        // v160.1.4 — Explicit "Add another photo" pill after ≥1 capture
+        // so the multi-photo affordance is obvious. Small counter reads
+        // "N photos captured".
+        <View style={{ gap: 8 }}>
+          <View style={fs.photoCountRow}>
+            <Ionicons name="checkmark-circle" size={14} color={Colors.imSuccess} />
+            <Text style={fs.photoCountText}>
+              {count} {count === 1 ? 'photo' : 'photos'} captured
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity testID={`${testId}-camera`} style={fs.photoAddBtn} onPress={() => pick(true)}>
+              <Ionicons name="add-circle" size={16} color={Colors.imSurface} />
+              <Text style={fs.photoAddBtnText}>Add another photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity testID={`${testId}-library`} style={fs.photoBtn} onPress={() => pick(false)}>
+              <Ionicons name="images" size={16} color={Colors.paneltecBlue} />
+              <Text style={fs.photoBtnText}>Library</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      {count > 0 && (
         <View style={fs.photoGrid}>
           {photos.map((p: any, i: number) => (
             <View key={i} style={fs.photoThumb}>
               <Image source={{ uri: p.uri }} style={fs.photoImg} />
               <TouchableOpacity testID={`${testId}-remove-${i}`} style={fs.photoRemove}
                 onPress={() => { const n = [...photos]; n.splice(i, 1); onChange(n); }}>
-                <Ionicons name="close-circle" size={18} color={Colors.imError} />
+                <Ionicons name="close-circle" size={22} color={Colors.imError} />
               </TouchableOpacity>
             </View>
           ))}
@@ -152,7 +260,37 @@ function GpsField({ value, onChange, testId }: any) {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') { Alert.alert('Permission denied', 'Location access needed.'); setBusy(false); return; }
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      onChange({ lat: loc.coords.latitude, lng: loc.coords.longitude, accuracy: loc.coords.accuracy, captured_at: new Date().toISOString() });
+      // v160.1.4 — Reverse-geocode the coordinates into a human-readable
+      // street address and stash it on the field value. Renderer shows
+      // the address prominently; submissions carry BOTH the coords and
+      // the address so audits can locate the site precisely and
+      // stakeholders reading the report don't need to plug lat/lng into
+      // a map. reverseGeocodeAsync failures are silent — the form still
+      // saves valid coords.
+      let address: string | null = null;
+      try {
+        const places = await Location.reverseGeocodeAsync({
+          latitude: loc.coords.latitude,
+          longitude: loc.coords.longitude,
+        });
+        if (places && places.length > 0) {
+          const p = places[0];
+          const parts = [
+            [p.streetNumber, p.street].filter(Boolean).join(' '),
+            p.district || p.subregion || p.city,
+            p.region,
+            p.postalCode,
+          ].filter(Boolean);
+          address = parts.join(', ');
+        }
+      } catch { /* best-effort — coords always saved */ }
+      onChange({
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+        accuracy: loc.coords.accuracy,
+        address,
+        captured_at: new Date().toISOString(),
+      });
     } catch (e: any) { Alert.alert('GPS Error', e.message); }
     finally { setBusy(false); }
   };
@@ -165,6 +303,12 @@ function GpsField({ value, onChange, testId }: any) {
       </TouchableOpacity>
       {hasFix && (
         <View style={fs.gpsInfo}>
+          {value.address ? (
+            <View testID={`${testId}-address`} style={fs.gpsAddress}>
+              <Ionicons name="location" size={14} color={Colors.imBronze} />
+              <Text style={fs.gpsAddressText} numberOfLines={2}>{value.address}</Text>
+            </View>
+          ) : null}
           <View style={fs.gpsRow}>
             <View style={fs.gpsCell}><Text style={fs.gpsCellLabel}>LAT</Text><Text style={fs.gpsCellVal}>{value.lat.toFixed(5)}</Text></View>
             <View style={fs.gpsCell}><Text style={fs.gpsCellLabel}>LNG</Text><Text style={fs.gpsCellVal}>{value.lng.toFixed(5)}</Text></View>
@@ -724,9 +868,15 @@ export default function FillOutScreen() {
                   placeholder={f.placeholder || ''} placeholderTextColor={Colors.textTertiary} />
               )}
               {f.type === 'date' && (
-                <TextInput testID={`field-${f.id}`} style={fs.input} value={values[f.id] || ''}
-                  onChangeText={(v) => setVal(f.id, v)} placeholder="YYYY-MM-DD"
-                  placeholderTextColor={Colors.textTertiary} />
+                // v160.1.4 — Editable date input with a native calendar
+                // picker. `config.default_today: true` pre-fills today's
+                // date on mount (see DatePickerField above).
+                <DatePickerField
+                  value={values[f.id]}
+                  onChange={(v) => setVal(f.id, v)}
+                  defaultToday={!!(f.config?.default_today)}
+                  testId={`field-${f.id}`}
+                />
               )}
               {f.type === 'select' && (
                 <TouchableOpacity testID={`field-${f.id}`} style={fs.selectBtn}
@@ -738,7 +888,10 @@ export default function FillOutScreen() {
                 </TouchableOpacity>
               )}
 
-              {/* Coloured radio buttons */}
+              {/* v160.1.4 — Higher-contrast radio buttons. Selected state
+                  fills with a saturated colour + white text and shows a
+                  small check icon on the left. Rows keep the 44px min
+                  tap target via the shared `fs.colorRadio` style. */}
               {f.type === 'radio' && (
                 <View testID={`field-${f.id}`} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
                   {(f.options || []).map((o: string) => {
@@ -748,6 +901,9 @@ export default function FillOutScreen() {
                       <TouchableOpacity key={o} testID={`radio-${f.id}-${o}`}
                         style={[fs.colorRadio, { borderColor: c.border, backgroundColor: c.bg }]}
                         onPress={() => setVal(f.id, o)}>
+                        {sel && (
+                          <Ionicons name="checkmark" size={14} color={c.text} style={{ marginRight: 4 }} />
+                        )}
                         <Text style={[fs.colorRadioText, { color: c.text, fontWeight: sel ? '700' : '600' }]}>{o}</Text>
                       </TouchableOpacity>
                     );
@@ -927,8 +1083,9 @@ const fs = StyleSheet.create({
   },
   selectBtnText: { fontSize: 14, color: Colors.text },
   colorRadio: {
-    paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12,
-    borderWidth: 2, minHeight: 48, minWidth: 80,
+    flexDirection: 'row',
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 12,
+    borderWidth: 2, minHeight: 44, minWidth: 74,
     alignItems: 'center', justifyContent: 'center',
   },
   colorRadioText: { fontSize: 14 },
@@ -938,10 +1095,34 @@ const fs = StyleSheet.create({
     borderRadius: 10, paddingVertical: 12, minHeight: 48,
   },
   photoBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orangeLight },
+  // v160.1.4 — Date picker trigger — matches the existing input aesthetic.
+  datePickerWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    backgroundColor: Colors.surfaceLight,
+    paddingHorizontal: 12, paddingVertical: 12, minHeight: 44,
+  },
+  datePickerText: { flex: 1, fontSize: 15, fontWeight: '600', color: Colors.imInk },
+  // v160.1.4 — Multi-photo affordance.
+  photoAddBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, flex: 1,
+    backgroundColor: Colors.imBronze, borderWidth: 2, borderColor: Colors.imBronze,
+    borderRadius: 10, paddingVertical: 12, minHeight: 44,
+  },
+  photoAddBtnText: { fontSize: 13, fontWeight: '700', color: Colors.imSurface },
+  photoCountRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 4, paddingVertical: 2,
+  },
+  photoCountText: { fontSize: 12, fontWeight: '600', color: Colors.imInkMuted },
   photoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  photoThumb: { width: 80, height: 80, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
+  photoThumb: { width: 88, height: 88, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
   photoImg: { width: '100%', height: '100%' },
-  photoRemove: { position: 'absolute', top: 2, right: 2 },
+  photoRemove: {
+    position: 'absolute', top: 2, right: 2,
+    backgroundColor: Colors.imSurface, borderRadius: 12,
+    width: 26, height: 26, alignItems: 'center', justifyContent: 'center',
+  },
   sigOpenBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: Colors.surfaceLight, borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.border,
@@ -964,6 +1145,14 @@ const fs = StyleSheet.create({
     marginTop: 8, backgroundColor: Colors.white, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 10, overflow: 'hidden',
   },
+  // v160.1.4 — Reverse-geocoded street address banner on the GPS card.
+  gpsAddress: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: Colors.imConcrete,
+    borderBottomWidth: 1, borderBottomColor: Colors.imBorder,
+  },
+  gpsAddressText: { flex: 1, fontSize: 13, fontWeight: '600', color: Colors.imInk, lineHeight: 18 },
   gpsRow: { flexDirection: 'row', paddingHorizontal: 12, paddingVertical: 8, gap: 12 },
   gpsCell: { flex: 1 },
   gpsCellLabel: { fontSize: 9, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 1, textTransform: 'uppercase' },

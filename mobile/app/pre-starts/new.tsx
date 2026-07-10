@@ -11,15 +11,9 @@ import GpsLocationChip, { GpsFix } from '../../src/components/GpsLocationChip';
 import { Colors } from '../../src/lib/colors';
 import { toast } from '../../src/lib/toast';
 
-function parseAssetToken(raw: string): string | null {
-  const t = (raw || '').trim();
-  if (!t) return null;
-  const m = t.match(/\/scan\/([^/?#]+)$/);
-  if (m) return m[1];
-  // Also accept bare token if user typed just the token
-  if (/^[A-Za-z0-9_-]{6,32}$/.test(t)) return t;
-  return null;
-}
+// v160.1.4 — parseAssetToken moved to `src/lib/scan.ts` so the
+// NavixyVehiclePicker Scan-QR flow can reuse the same parser.
+import { parseAssetToken } from '../../src/lib/scan';
 
 export default function PreStartNewScreen() {
   const router = useRouter();
