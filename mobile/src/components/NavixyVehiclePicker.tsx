@@ -202,7 +202,15 @@ export default function NavixyVehiclePicker(props: Props) {
       </TouchableOpacity>
 
       {/* Searchable dropdown modal */}
-      <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
+      <Modal
+        visible={open}
+        animationType="slide"
+        transparent={true}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={true}
+        hardwareAccelerated={false}
+        onRequestClose={() => setOpen(false)}
+      >
         <View style={s.modalBackdrop}>
           <View style={s.modalSheet}>
             <View style={s.modalHeader}>
@@ -220,7 +228,13 @@ export default function NavixyVehiclePicker(props: Props) {
                 onChangeText={setQ}
                 placeholder="Search by vehicle label or type"
                 placeholderTextColor={Colors.placeholder}
-                autoFocus
+                // v160.2.5d amendment — kill Android's default dark
+                // underline + kill the browser focus ring on RN Web
+                // (see s.searchInput). `autoFocus` removed so the
+                // soft keyboard doesn't rise during the modal-open
+                // animation and paint a black area under the sheet.
+                underlineColorAndroid="transparent"
+                selectionColor={Colors.imBronze}
               />
             </View>
             {busy && <ActivityIndicator style={{ margin: 24 }} color={Colors.orange} />}
@@ -262,7 +276,15 @@ export default function NavixyVehiclePicker(props: Props) {
       </Modal>
 
       {/* Scan Vehicle QR modal */}
-      <Modal visible={scanOpen} animationType="slide" transparent onRequestClose={() => setScanOpen(false)}>
+      <Modal
+        visible={scanOpen}
+        animationType="slide"
+        transparent={true}
+        presentationStyle="overFullScreen"
+        statusBarTranslucent={true}
+        hardwareAccelerated={false}
+        onRequestClose={() => setScanOpen(false)}
+      >
         <View style={s.modalBackdrop}>
           <View style={s.modalSheet}>
             <View style={s.modalHeader}>
@@ -273,7 +295,14 @@ export default function NavixyVehiclePicker(props: Props) {
             </View>
             <Text style={s.scanHelp}>Point the camera at the sticker on the vehicle — or paste the URL/token from the sticker below.</Text>
 
-            {camPerm?.granted && Platform.OS !== 'web' ? (
+            {/* v160.2.5d — Double-gate CameraView with an explicit
+                `scanOpen &&` on top of the Modal's own visibility. On
+                Android the Modal briefly holds the camera surface
+                during teardown, which flashes as a black rectangle
+                because the container uses a dark background. The
+                explicit gate guarantees the surface is unmounted
+                the moment the user dismisses. */}
+            {scanOpen && camPerm?.granted && Platform.OS !== 'web' ? (
               <View testID="vehicle-scan-camera" style={s.cameraBox}>
                 <CameraView
                   style={{ flex: 1 }}
@@ -312,6 +341,8 @@ export default function NavixyVehiclePicker(props: Props) {
                 placeholderTextColor={Colors.placeholder}
                 autoCapitalize="none"
                 autoCorrect={false}
+                underlineColorAndroid="transparent"
+                selectionColor={Colors.imBronze}
               />
               <TouchableOpacity
                 testID="vehicle-scan-submit"
@@ -357,7 +388,10 @@ const s = StyleSheet.create({
   },
   triggerText: { flex: 1, fontSize: 14, color: Colors.ink, fontWeight: '500' },
   triggerPlaceholder: { color: Colors.placeholder, fontWeight: '400' },
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.72)', justifyContent: 'flex-end' },
+  // v160.2.5d amendment — reduced backdrop opacity so any bad
+  // compositor frame during Modal transitions never reads as fully
+  // black. 0.72 → 0.5.
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(2,6,23,0.5)', justifyContent: 'flex-end' },
   modalSheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 18, borderTopRightRadius: 18,
     padding: 16, maxHeight: '85%',
@@ -369,7 +403,14 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
     backgroundColor: Colors.surfaceLight, paddingHorizontal: 12, marginBottom: 8,
   },
-  searchInput: { flex: 1, paddingVertical: 10, fontSize: 14, color: Colors.ink },
+  // v160.2.5d amendment — searchInput now forces the web focus outline
+  // OFF (browsers otherwise paint a heavy dark outline that reads as a
+  // black frame around the field on some Android WebViews / desktop
+  // RN Web previews) while keeping the wrap's rounded border.
+  searchInput: {
+    flex: 1, paddingVertical: 10, fontSize: 14, color: Colors.ink,
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } as any : {}),
+  },
   err: { color: Colors.red, padding: 12, fontSize: 13 },
   empty: { color: Colors.textTertiary, padding: 20, textAlign: 'center', fontSize: 13 },
   row: {
@@ -382,7 +423,11 @@ const s = StyleSheet.create({
 
   // Scan modal extras
   scanHelp: { fontSize: 12, color: Colors.textSecondary, marginBottom: 10 },
-  cameraBox: { height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: Colors.imInk, marginBottom: 12 },
+  // v160.2.5d — Camera box no longer paints near-black while the
+  // Modal tears the CameraView down. Uses the neutral concrete tone
+  // so any teardown frame reads as a soft placeholder, not a hard
+  // black rectangle overlaying the form.
+  cameraBox: { height: 220, borderRadius: 12, overflow: 'hidden', backgroundColor: Colors.imConcrete, marginBottom: 12 },
   cameraReticle: {
     position: 'absolute', top: '50%', left: '50%',
     width: 160, height: 160, marginLeft: -80, marginTop: -80,

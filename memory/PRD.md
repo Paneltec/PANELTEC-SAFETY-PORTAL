@@ -3594,3 +3594,143 @@ Mobile back to RUNNING, http_code=200.
 ### Regression check
 Backend suite unchanged — 76/76 still green (crud.py, forms.py, and
 all v160.2.x tests untouched this cycle).
+
+---
+
+## v160.2.5d — HOTFIX: Black frame on Navixy picker selection (2026-07-10)
+
+### Bug
+Tapping a vehicle row on the mobile Navixy picker triggered a solid
+black frame overlay during modal dismissal. Same class of frame
+appeared when closing the Scan Vehicle QR sub-modal without a scan.
+Both flows made workers hesitate mid form-fill.
+
+### Diagnosis
+Two overlapping causes rolled up in one hotfix:
+
+**1. CameraView tear-down flash (primary)** — the Scan QR sub-modal
+kept `<CameraView>` mounted inside `<Modal visible={scanOpen}>`. On
+Android, when the Modal dismisses, the compositor holds the camera
+surface for one frame while it tears down. The container
+`s.cameraBox` uses `backgroundColor: Colors.imInk` (#1A1A1A —
+near-black), so the tear-down frame reads as a solid black rectangle.
+
+**2. Android Modal slide-transition backdrop flash (secondary)** —
+even the search-list modal (no camera) can flash black on Android
+because `<Modal transparent animationType="slide">` without
+`statusBarTranslucent` paints the OS window background solid black
+behind the status bar during the slide-down transition.
+
+Suspect 2 (backdrop transparent) and Suspect 3 (modal card bg) were
+ruled out — both modals already have `transparent`, and the sheet's
+own `backgroundColor: Colors.surface` (#FFFFFF) is white.
+
+### Fix (4-part defensive in one edit to `NavixyVehiclePicker.tsx`)
+1. **Double-gate CameraView** — added an explicit `scanOpen &&` check
+   in addition to the outer Modal's own visibility. Guarantees the
+   camera surface is React-unmounted the moment the user dismisses,
+   not just when the animation finishes.
+2. **Neutralised cameraBox background** — `Colors.imInk` → `Colors.imConcrete`
+   (#EAEAEA). Any residual tear-down frame now reads as a soft
+   placeholder grey, not black.
+3. **Explicit Modal props on both modals**:
+    · `transparent={true}` (was implicit boolean shorthand)
+    · `presentationStyle="overFullScreen"` (iOS: kills opaque OS bg
+      during transition)
+    · `statusBarTranslucent={true}` (Android: kills status-bar area
+      opaque black during slide)
+    · `hardwareAccelerated={false}` (Android: safer compositor path
+      for transparent modals)
+4. **Row-tap render path unchanged** — the v160.2.5c label + humanised
+   type render kept intact.
+
+### Deliverables
+- **Diagnosis line**: Suspect 1 (CameraView bleeding via dark
+  container bg) was the primary cause; Suspect 4-style Android
+  Modal quirk was the secondary compounder.
+- **Regression check**: mobile RUNNING, http_code=200 on port 3001.
+  Backend suite still 76/76.
+- **v160.2.5c row rendering intact**: primary = label, secondary =
+  humanised vehicle_type. IMEI never rendered.
+
+### Version bumps → `paneltec-v160.2.5d`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Metro cache cleared
+Corrected sequence: stop → rm caches → mkdir `.expo/types` + touch
+`router.d.ts` → start. Mobile healthy.
+
+### Note on live screenshot
+RN Web on the browser preview doesn't reproduce the Android Modal
+compositor bug (browser modals don't have a status-bar overlay
+issue). The fix targets the native Android render path — verifiable
+on a physical Android device or via the Expo Go build.
+
+---
+
+## v160.2.5d — AMENDMENT: Black frame is a SEARCH TextInput focus bug
+### (not a row-tap / scan-dismiss compositor bug)
+
+User clarified the repro after the initial v160.2.5d ship: the black
+frame appears the moment they **tap the search TextInput INSIDE the
+picker modal** — not on row selection, not on Scan QR dismiss. Two
+distinct native issues rolled together on focus:
+
+**Cause A — Android's default `underlineColorAndroid`**
+On Android, `<TextInput>` draws a default bottom underline that on
+some device/OS combos renders as a thick dark bar during the focus
+transition. Fix: `underlineColorAndroid="transparent"`.
+
+**Cause B — `autoFocus` racing the Modal-open animation**
+`<TextInput autoFocus>` fires focus during the Modal's slide-in
+animation. On Android this triggers the soft keyboard to rise while
+the sheet is still animating in — the compositor briefly paints the
+below-sheet region (which normally sits behind the transparent
+backdrop) as its default window background: black. Fix: remove
+`autoFocus`. Users still get a first-tap focus with no delay.
+
+**Cause C — RN Web focus ring on desktop preview**
+On RN Web the browser paints its default focus ring (usually a
+heavy dark outline) around the input on click. Fix: extend
+`s.searchInput` with `{ outlineStyle: 'none', outlineWidth: 0 }`
+scoped via `Platform.OS === 'web'`.
+
+**Cause D (belt-and-braces) — Dark backdrop tint**
+`s.modalBackdrop` used `rgba(2,6,23,0.72)` — very dark. Any bad
+compositor frame during Modal transitions can appear "black". Fix:
+lightened to `rgba(2,6,23,0.5)` — still creates sheet depth, no
+longer reads as fully black even in the worst-case unpainted frame.
+
+### Fix set applied (all in `NavixyVehiclePicker.tsx`)
+- Both TextInputs (picker search + scan URL paste): add
+  `underlineColorAndroid="transparent"` + `selectionColor={Colors.imBronze}`.
+- Removed `autoFocus` from the picker search TextInput.
+- Extended `s.searchInput` with web-only `outlineStyle: 'none'`.
+- Lightened `s.modalBackdrop` from `rgba(2,6,23,0.72)` →
+  `rgba(2,6,23,0.5)`.
+- All v160.2.5d compositor hardening from the earlier commit kept
+  (Modal `presentationStyle="overFullScreen"` +
+  `statusBarTranslucent={true}` + `hardwareAccelerated={false}` +
+  double-gated CameraView + neutralised `cameraBox` background).
+
+### Regression state
+- Mobile RUNNING, http_code=200 on port 3001.
+- Backend suite still 76/76 (no backend changes).
+- Row rendering (v160.2.5c label + humanised type) intact.
+
+### Version state (unchanged from earlier v160.2.5d bump)
+`paneltec-v160.2.5d` in all 3 files. Metro cache cleared using the
+corrected sequence.
+
+### Screenshot deliverable — limitation
+Browser preview (Playwright + RN Web) cannot reproduce the native
+Android Modal + soft-keyboard + TextInput focus compositor path,
+because RN Web renders `<Modal>` as a plain `<div>` overlay without
+the OS window background. Native repro on the user's Expo build:
+- Open Vehicle Pre-Use Inspection
+- Tap "Select vehicle · N"
+- Tap the search field
+- Expected (after this fix): sheet stays fully painted, search
+  input receives focus, no black frame.
