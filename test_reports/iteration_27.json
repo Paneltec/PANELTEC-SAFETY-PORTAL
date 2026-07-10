@@ -1,0 +1,38 @@
+{
+  "summary": "v160.1.0 THEME cascade regression sweep on Expo web (http://localhost:3001, viewport 412x915) as worker_stephen@paneltec.com.au. All 7 target screens rendered without unreadable text or console errors. Brand palette cascade verified: notch navy, tab bar navy, active tab orange, inactive tabs light-grey, Forms Library header navy + white tiles, outbox filter chips legible. Version eyebrow reads 'PANELTEC CIVIL \u00b7 paneltec-v160.1.0'. One minor palette drift: form-fill Submit button uses #D97706 (amber-600) instead of brandOrange #F47C20.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/forms/fill/[id]", "issues": ["Submit button backgroundColor is rgb(217,119,6) = #D97706 (amber-600), not brandOrange rgb(244,124,32) = #F47C20. Palette drift outside the 3 files touched this iteration."]}
+    ]
+  },
+  "test_results": {
+    "screen_1_dashboard": "PASS - Notch top 44px rgb(13,59,102). Tab bar bottom bg rgb(13,59,102). Version eyebrow 'PANELTEC CIVIL \u00b7 paneltec-v160.1.0' visible. Screen bg rgb(245,245,243) brandBgLight. No contrast clashes.",
+    "screen_2_forms_library": "PASS - Sticky header bg rgb(13,59,102). All 6 tile testIDs (cat-card-general/pre_start/inspection/near_miss/incident/toolbox) bg rgb(255,255,255). Titles dark navy readable on white. Navigated via manage-card-forms tile.",
+    "screen_3_category_general": "PASS - /forms/category/general rendered, 10 form rows visible with white row bg on light screen bg. Back button visible above notch.",
+    "screen_4_form_fill": "PASS (with minor) - Form fill screen renders (form-row-6846ec0f...). Field labels readable, inputs functional. Submit button visible at bottom labelled 'Submit Form' but its bg is rgb(217,119,6) = #D97706 (amber-600), NOT the spec's #F47C20 brandOrange. Minor drift.",
+    "screen_5_qr_scan": "PASS - /qr-signon renders, tab-switch works. No unreadable text, no console errors.",
+    "screen_6_outbox": "PASS - /outbox renders. Filter chips: ALL active = white-on-orange rgb(244,124,32); QUEUED/SENT/FAILED/CANCELLED inactive = rgb(91,103,112) brandInkMuted on rgb(255,255,255) surface \u2014 all legible. 'No outbox messages' empty state visible with muted grey text on light bg (readable).",
+    "screen_7_profile": "PASS - /settings renders. Avatar TW on orange circle, name 'TEST WORKER (STEPHEN ORG)' in navy on light bg, session-timeout chips and Sign Out orange button all legible. No contrast issues.",
+    "tab_bar": "PASS - Verified via document.elementFromPoint at (window.innerWidth/2, innerHeight-20): bg rgb(13,59,102) brandNavy. Inactive labels rgb(148,163,184) light-slate; active label/icon orange visually. All 5 tabs (HOME/QR SCAN/OUTBOX/MY WORK/PROFILE) visible and labelled.",
+    "notch_backdrop": "PASS - Top 44px band rgb(13,59,102) navy on every screen.",
+    "console": "CLEAN - Only expected warnings ('shadow*' style deprecated, props.pointerEvents from Expo Router internals) and pre-existing 403 on /api/ask/briefing (permission for worker, not theme-related)."
+  },
+  "test_report_links": [],
+  "action_items": [
+    "MINOR (out of scope this iteration but noted per user's ask): form-fill screen Submit button uses #D97706 instead of Colors.brandOrange #F47C20 \u2014 update /app/mobile/app/forms/fill/[id].tsx (or the submit-button component) to use Colors.brandOrange/Colors.orange semantic token."
+  ],
+  "critical_code_review_comments": [
+    "Palette cascade works because semantic tokens (Colors.bg/surface/ink/orange/border) point at brand* values, but the form-fill Submit button appears to bypass those tokens and hardcodes an amber shade. Sweep for any remaining hardcoded #D97706 / amber references in mobile/app/forms/fill/*.tsx and swap to Colors.orange.",
+    "Bundle warning `shadow* style props are deprecated. Use boxShadow` still appears \u2014 originates from Expo Router or forms/library.tsx tile shadow. Non-blocking but noisy; consider platform.select boxShadow for web."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A - frontend only per request", "frontend": "100% (all 7 screens pass; 1 minor palette drift noted, non-blocking)"},
+  "test_credentials": "Worker: worker_stephen@paneltec.com.au / WorkerTest123! \u2014 login 200, JWT stored, user.name='Test Worker (Stephen Org)', role=worker.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Mobile Expo web at :3001, viewport 412x915. Tab bar's actual bg is on the PARENT of the deepest common-label ancestor \u2014 use document.elementFromPoint(w/2, h-20) to sample the true pixel color (rgb(13,59,102) navy). Beware of matching the H1 'HOME' heading on dashboard when probing tab label colors \u2014 filter by parent role='tab' or geometry (bottom-anchored). All theme sanity checks for v160.1.0 pass; only remaining issue is the form-fill Submit button color #D97706 vs spec #F47C20."
+}

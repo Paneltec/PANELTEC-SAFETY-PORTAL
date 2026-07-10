@@ -108,7 +108,6 @@ function NotchBackdrop() {
   const height = Math.max(insets.top, androidExtra, 44);
   return (
     <View
-      pointerEvents="none"
       style={{
         position: 'absolute',
         top: 0,
@@ -117,6 +116,7 @@ function NotchBackdrop() {
         height,
         backgroundColor: Colors.brandNavy,
         zIndex: 100,
+        pointerEvents: 'none',
       }}
     />
   );

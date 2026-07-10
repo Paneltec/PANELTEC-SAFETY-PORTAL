@@ -156,7 +156,7 @@ export default function DashboardScreen() {
       {/* v160.0.23 — Solid opaque notch backdrop. This absolute-positioned
           bar guarantees the camera-hole zone has a solid background of the
           same colour as the header/surface — no more transparent notch. */}
-      <View style={[d.notchBackdrop, { height: topPad }]} pointerEvents="none" />
+      <View style={[d.notchBackdrop, { height: topPad, pointerEvents: 'none' as const }]} />
       <ScrollView testID="dashboard-page" style={d.scroll} contentContainerStyle={d.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}>
 

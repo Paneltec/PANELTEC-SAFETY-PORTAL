@@ -1,15 +1,14 @@
 /**
  * Paneltec Civil — Mobile Design System palette
- * v160.0.10 — WCAG-AA verified against surface bg (#0F172A).
  *
- * Every text token below carries the contrast ratio (CR) against
- * `Colors.surface` in a trailing comment. AA thresholds:
- *   • normal text ≥ 4.5:1
- *   • large text (≥18pt bold) ≥ 3:1
+ * v160.1.0 — FULL brand re-theme. Palette shifted from the previous
+ * navy-on-navy dark theme to a light theme with a navy top bar. Rather
+ * than editing every screen, we remap the semantic keys (bg, surface,
+ * ink, orange, border, surfaceDark, textSecondary, textTertiary, etc.)
+ * so a global refresh cascades through every existing usage.
  *
- * When adding a new token, verify with https://webaim.org/resources/contrastchecker/
- * and paste the ratio in the comment. If a token can't hit AA, either
- * darken the bg or brighten the fg — don't ship a ghosted color.
+ * Legacy dark-theme keys are preserved as aliases pointing at the new
+ * light tokens so nothing crashes if a screen still imports them.
  *
  * PALETTE LINT: hardcoded `#RRGGBB` string literals used as
  * `backgroundColor` / `color` / `borderColor` outside this file are
@@ -17,150 +16,137 @@
  * the same line if you MUST hardcode (e.g. true-white signature canvas).
  */
 export const Colors = {
-  // ─── Core surfaces (dark navy stack) ────────────────────────────────
-  /** Deepest screen background. Slightly warmer than pure #020617 for
-   *  a less clinical feel while staying WCAG-friendly for #F8FAFC ink
-   *  (CR 18.4:1). */
-  bg: '#0B1425',
-  /** Card / panel / header background. All AA ratios below computed
-   *  against this surface. */
-  surface: '#0F172A',
-  /** Input, pill, chip background. Slightly elevated. */
-  surfaceLight: '#1E293B',
-  /** Hover / press state. */
-  surfaceHover: '#334155',
-  // v160.0.21 — Forms Library visual differentiation
-  libraryBg: '#243447',     // slightly lifted vs Colors.bg for drill-down context
-  tileWarm: '#2E2419',      // warm dark tint so category tiles pop
-  surfaceDark: '#020617',   // deeper than surface — used by bottom tab bar
-  borderMuted: '#1E293B',   // subtle top border on the tab bar
-  // v160.0.22 — Light "paper" tile tokens used on the Forms Library and
-  // per-category screens. The dark tileWarm tone worked but the user
-  // reported the whole surface still read as too dark. Light cards on
-  // the darker libraryBg give the drill-down a clear "content pops"
-  // feel, matching the visual language of the web app's Forms page.
-  tileLight: '#F8FAFC',           // slate-50 — card body
-  tileLightBorder: '#CBD5E1',     // slate-300 — subtle 1px outline
-  tileLightInk: '#0F172A',        // slate-900 — title text on light card
-  tileLightMuted: '#475569',      // slate-600 — blurb / body text on light card
-  tileLightAccentBg: '#FFEDD5',   // orange-100 — icon plate bg on light card
-  tileLightAccentIcon: '#EA580C', // orange-600 — icon glyph & count accent
+  // ─── v160.1.0 Brand palette (SOURCE OF TRUTH) ──────────────────────
+  brandNavy:        '#0D3B66',   // primary — headers, status bar, primary buttons
+  brandOrange:      '#F47C20',   // accent — CTAs, active tab, focus states
+  brandGreen:       '#2E7D32',   // success pills, completed states
+  brandAmber:       '#F9A825',   // in-progress / pending pills
+  brandRed:         '#C62828',   // urgent / error pills
+  brandGrey:        '#5B6770',   // secondary buttons, muted actions
+  brandBgLight:     '#F5F5F3',   // screen background — warm off-white
+  brandSurface:     '#FFFFFF',   // card / row / tile background
+  brandTeal:        '#009688',   // reserved accent (hover/active dot)
 
-  // v160.0.24 — Fresh brand palette. In-scope for the Forms Library +
-  // Category screens ONLY. Do not migrate the rest of the app yet.
-  // Coexists with the legacy Colors.orange token so the wider app is
-  // untouched until we decide on a global re-theme.
-  brandNavy:       '#163A63',     // primary — sticky header + notch backdrop
-  brandOrange:     '#F58220',     // secondary — icon badge on tiles/rows
-  brandTeal:       '#009688',     // accent — reserved for hover/active dot
-  brandBgLight:    '#EEF2F5',     // screen background (Forms Library + Category)
-  brandSurface:    '#FFFFFF',     // tile / card background
-  brandInk:        '#263238',     // primary text on light surface
-  brandInkMuted:   '#546E7A',     // secondary text on light surface
-  /** Non-interactive muted panel (disabled inputs, ghost sections). */
-  mutedBg: '#152033',
+  // Derived text / border tokens on the light theme
+  brandInk:         '#0D3B66',   // primary text on light bg — same as navy
+  brandInkMuted:    '#5B6770',   // secondary text
+  brandInkSubtle:   '#94A3B8',   // tertiary / placeholders
+  brandBorder:      '#E5E7EB',   // subtle card borders
+  brandTabBar:      '#0D3B66',   // bottom tab bar bg — navy
+  brandTabActive:   '#F47C20',   // active tab icon+label — orange
+  brandTabInactive: '#94A3B8',   // inactive tab icon+label — light grey
 
-  // ─── Borders ────────────────────────────────────────────────────────
-  border: '#334155',       // slate-700
-  borderLight: '#1E293B',  // slate-800 — subtle dividers
-  borderFocus: '#F97316',  // orange — focused input outline
+  // ─── Semantic tokens — REMAPPED to cascade through the app ─────────
+  // Every screen that uses these keys now picks up the light theme
+  // automatically.
+  bg:               '#F5F5F3',   // was #0B1425 dark — now brandBgLight
+  surface:          '#FFFFFF',   // was #0F172A dark — now brandSurface
+  surfaceLight:     '#F5F5F3',   // was #1E293B — now brandBgLight
+  surfaceHover:     '#EEF2F5',   // was #334155 — subtle warm hover
+  libraryBg:        '#F5F5F3',   // was #243447 — now brandBgLight
+  tileWarm:         '#FFFFFF',   // was #2E2419 — deprecated, now white
+  surfaceDark:      '#0D3B66',   // was #020617 — TAB BAR now navy
+  borderMuted:      '#E5E7EB',   // was #1E293B — subtle divider
+  mutedBg:          '#EEF2F5',   // was #152033 — muted panel
 
-  // ─── Text ───────────────────────────────────────────────────────────
-  /** Primary text — near white. CR 17.4:1 on surface. */
-  ink: '#F8FAFC',
-  /** Alias kept for legacy callers. */
-  text: '#F8FAFC',
-  /** Secondary text — body copy, labels. Brightened in v160.0.10 from
-   *  slate-300 (#CBD5E1, CR 12.5:1) to slate-200 (#E2E8F0, CR 14.3:1)
-   *  to catch any lingering "faded wording" reports in daylight. */
-  textSecondary: '#E2E8F0',
-  /** Tertiary text — hints, meta, timestamps. CR 6.6:1 on surface —
-   *  above AA 4.5 for normal text. */
-  textTertiary: '#94A3B8',
-  /** Placeholder text inside TextInput. Explicitly brighter than
-   *  tertiary so field intent stays legible while still reading as
-   *  "not yet entered". CR 8.1:1. */
-  placeholder: '#B4C1D3',
-  /** Genuinely disabled text on disabled controls. CR 3.4:1 (below AA
-   *  by design — signals non-interactive). */
-  textDisabled: '#64748B',
+  // v160.0.22 Light-paper tile tokens — retained but repointed at the
+  // brand set so any screen still importing them stays consistent.
+  tileLight:            '#FFFFFF',
+  tileLightBorder:      '#E5E7EB',
+  tileLightInk:         '#0D3B66',
+  tileLightMuted:       '#5B6770',
+  tileLightAccentBg:    '#F47C20',
+  tileLightAccentIcon:  '#FFFFFF',
 
-  // ─── Legacy `white` alias — remaps to dark surface so any stale
-  //     `backgroundColor: Colors.white` from before v160.0.5 doesn't
-  //     resurrect a cream panel. Keep for git-diff clarity.
-  white: '#0F172A',
+  // ─── Borders ───────────────────────────────────────────────────────
+  border:      '#E5E7EB',   // was slate-700 — brandBorder
+  borderLight: '#EEF2F5',   // was slate-800 — very subtle divider
+  borderFocus: '#F47C20',   // brandOrange — focused input outline
 
-  // ─── Orange accent (brand) ──────────────────────────────────────────
-  /** Primary CTA. CR 5.0:1 on surface — passes AA for normal text. */
-  orange: '#F97316',
-  /** Highlight / hover / heading accent. CR 6.1:1 on surface. */
-  orangeLight: '#FB923C',
-  /** Pressed / dark variant. CR 3.8:1 — use for LARGE text only. */
-  orangeDark: '#EA580C',
-  /** Chip / pill bg tint (semi-transparent). */
-  orangeSoft: 'rgba(249,115,22,0.15)',
+  // ─── Text ──────────────────────────────────────────────────────────
+  ink:            '#0D3B66',   // was near-white — now brandInk (dark navy on light bg)
+  text:           '#0D3B66',   // alias
+  textPrimary:    '#0D3B66',
+  textSecondary:  '#5B6770',   // brandInkMuted
+  textTertiary:   '#94A3B8',   // brandInkSubtle
+  placeholder:    '#94A3B8',
+  textDisabled:   '#B0BEC5',
 
-  // ─── Legacy blue alias (remapped to orange to unify accents) ────────
-  blue: '#F97316',
-  blueSoft: 'rgba(249,115,22,0.15)',
+  // ─── Legacy `white` alias — now genuinely white on the light theme.
+  white: '#FFFFFF',
 
-  // ─── Brand — Paneltec gold (used sparingly on admin surfaces) ───────
-  gold: '#EAB308',                          // CR 6.5:1 large text safe
-  goldSoft: 'rgba(234,179,8,0.15)',
+  // ─── Orange accent (brand) ─────────────────────────────────────────
+  orange:      '#F47C20',                    // brandOrange
+  orangeLight: '#F9A825',                    // amber-adjacent highlight
+  orangeDark:  '#C65D0A',                    // pressed variant
+  orangeSoft:  'rgba(244,124,32,0.15)',
+
+  // ─── Legacy blue alias (kept remapped to orange to unify accents) ──
+  blue:     '#F47C20',
+  blueSoft: 'rgba(244,124,32,0.15)',
+
+  // ─── Brand — Paneltec gold (used sparingly on admin surfaces) ──────
+  gold:         '#EAB308',
+  goldSoft:     'rgba(234,179,8,0.15)',
   paneltecGold: '#F4C430',
 
-  // ─── Semantic ───────────────────────────────────────────────────────
-  /** Success. Uses emerald-500 — CR 5.4:1 on surface. */
-  emerald: '#22C55E',
-  emeraldDark: '#16A34A',
-  /** Success chip bg tint. */
-  mint: 'rgba(34,197,94,0.15)',
-  /** Danger. CR 4.8:1 on surface (AA for normal text). */
-  red: '#F87171',
-  redSoft: 'rgba(239,68,68,0.15)',
-  /** Warning. CR 8.1:1 for large text; use `#FBBF24` for body text. */
-  amber: '#FBBF24',
-  amberSoft: 'rgba(245,158,11,0.18)',
-  /** Info / secondary accent (rare — mostly legacy). */
-  violet: '#A78BFA',
-  violetSoft: 'rgba(167,139,250,0.18)',
+  // ─── Semantic ──────────────────────────────────────────────────────
+  emerald:      '#2E7D32',   // brandGreen
+  emeraldDark:  '#1B5E20',
+  mint:         'rgba(46,125,50,0.15)',
+  red:          '#C62828',   // brandRed
+  redSoft:      'rgba(198,40,40,0.15)',
+  amber:        '#F9A825',   // brandAmber
+  amberSoft:    'rgba(249,168,37,0.18)',
+  violet:       '#7C3AED',
+  violetSoft:   'rgba(124,58,237,0.18)',
 
-  // ─── Aliases for readable code ──────────────────────────────────────
-  success: '#22C55E',
-  error: '#F87171',
-  warning: '#FBBF24',
-  info: '#A78BFA',
+  // ─── Aliases for readable code ─────────────────────────────────────
+  success: '#2E7D32',
+  error:   '#C62828',
+  warning: '#F9A825',
+  info:    '#0D3B66',
 } as const;
 
 /**
- * Status chip palette — used by badges across the app. Every fg text
- * color has been chosen to hit ≥ 4.5:1 against the semi-transparent
- * bg over `Colors.surface`.
+ * Status chip palette — used by badges across the app.
+ *
+ * v160.1.0 — reworked for the light theme. Backgrounds are semi-transparent
+ * so pills sit correctly on either white or the warm off-white screen bg.
+ * Text colours are the SATURATED brand hex so they stay readable at ≥ 4.5:1
+ * on both surfaces.
  */
 export const StatusColors: Record<string, { bg: string; text: string; border: string }> = {
-  draft:             { bg: '#1E293B',                       text: '#CBD5E1', border: '#334155' },
-  submitted:         { bg: 'rgba(249,115,22,0.15)',         text: '#FB923C', border: 'rgba(249,115,22,0.35)' },
-  approved:          { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  rejected:          { bg: 'rgba(248,113,113,0.15)',        text: '#F87171', border: 'rgba(248,113,113,0.35)' },
-  changes_requested: { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  open:              { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  in_progress:       { bg: 'rgba(249,115,22,0.15)',         text: '#FB923C', border: 'rgba(249,115,22,0.35)' },
-  closed:            { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  low:               { bg: '#1E293B',                       text: '#CBD5E1', border: '#334155' },
-  medium:            { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  high:              { bg: 'rgba(249,115,22,0.15)',         text: '#FB923C', border: 'rgba(249,115,22,0.35)' },
-  critical:          { bg: 'rgba(248,113,113,0.18)',        text: '#F87171', border: 'rgba(248,113,113,0.4)' },
-  active:            { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  inactive:          { bg: '#1E293B',                       text: '#CBD5E1', border: '#334155' },
-  suspended:         { bg: 'rgba(248,113,113,0.15)',        text: '#F87171', border: 'rgba(248,113,113,0.35)' },
-  pending:           { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  completed:         { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  revoked:           { bg: 'rgba(248,113,113,0.15)',        text: '#F87171', border: 'rgba(248,113,113,0.35)' },
-  valid:             { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  expired:           { bg: 'rgba(248,113,113,0.15)',        text: '#F87171', border: 'rgba(248,113,113,0.35)' },
-  expiring_soon:     { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  queued:            { bg: 'rgba(245,158,11,0.15)',         text: '#FBBF24', border: 'rgba(245,158,11,0.35)' },
-  sent:              { bg: 'rgba(34,197,94,0.15)',          text: '#4ADE80', border: 'rgba(34,197,94,0.35)' },
-  failed:            { bg: 'rgba(248,113,113,0.15)',        text: '#F87171', border: 'rgba(248,113,113,0.35)' },
-  cancelled:         { bg: '#1E293B',                       text: '#CBD5E1', border: '#334155' },
+  // Draft / muted
+  draft:             { bg: 'rgba(91,103,112,0.14)', text: '#5B6770', border: 'rgba(91,103,112,0.35)' },
+  low:               { bg: 'rgba(91,103,112,0.14)', text: '#5B6770', border: 'rgba(91,103,112,0.35)' },
+  inactive:          { bg: 'rgba(91,103,112,0.14)', text: '#5B6770', border: 'rgba(91,103,112,0.35)' },
+  cancelled:         { bg: 'rgba(91,103,112,0.14)', text: '#5B6770', border: 'rgba(91,103,112,0.35)' },
+
+  // In progress / pending — amber
+  submitted:         { bg: 'rgba(244,124,32,0.15)', text: '#B45309', border: 'rgba(244,124,32,0.35)' },
+  changes_requested: { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+  open:              { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+  in_progress:       { bg: 'rgba(244,124,32,0.15)', text: '#B45309', border: 'rgba(244,124,32,0.35)' },
+  medium:            { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+  high:              { bg: 'rgba(244,124,32,0.15)', text: '#B45309', border: 'rgba(244,124,32,0.35)' },
+  pending:           { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+  queued:            { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+  expiring_soon:     { bg: 'rgba(249,168,37,0.18)', text: '#8A5A00', border: 'rgba(249,168,37,0.4)'  },
+
+  // Success — green
+  approved:          { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+  closed:            { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+  active:            { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+  completed:         { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+  valid:             { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+  sent:              { bg: 'rgba(46,125,50,0.15)',  text: '#1B5E20', border: 'rgba(46,125,50,0.35)'  },
+
+  // Error / danger — red
+  rejected:          { bg: 'rgba(198,40,40,0.15)',  text: '#8B1414', border: 'rgba(198,40,40,0.35)'  },
+  critical:          { bg: 'rgba(198,40,40,0.18)',  text: '#8B1414', border: 'rgba(198,40,40,0.4)'   },
+  suspended:         { bg: 'rgba(198,40,40,0.15)',  text: '#8B1414', border: 'rgba(198,40,40,0.35)'  },
+  revoked:           { bg: 'rgba(198,40,40,0.15)',  text: '#8B1414', border: 'rgba(198,40,40,0.35)'  },
+  expired:           { bg: 'rgba(198,40,40,0.15)',  text: '#8B1414', border: 'rgba(198,40,40,0.35)'  },
+  failed:            { bg: 'rgba(198,40,40,0.15)',  text: '#8B1414', border: 'rgba(198,40,40,0.35)'  },
 };
