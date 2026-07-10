@@ -151,28 +151,11 @@ export default function DashboardScreen() {
           </View>
         )}
 
-        {/* Attention score — v160.0: hidden for non-privileged callers.
-            Backend returns `band === 'hidden'` for workers/contractors so
-            the UI can safely skip the aggregate WATCH card without a
-            second permissions round-trip. */}
-        {band !== 'hidden' && (
-        <View testID="attention-score-card" style={d.scoreCard}>
-          <View style={d.scoreRow}>
-            <View style={[d.scoreCircle, { borderColor: bandColor }]}>
-              <Text style={[d.scoreNum, { color: bandColor }]}>{score}</Text>
-              <Text style={[d.scoreLbl, { color: bandColor }]}>{band.toUpperCase()}</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={d.scoreTitle}>{band.toUpperCase()} · {score}/100</Text>
-              <Text style={d.scoreDesc}>
-                {band === 'Strong' ? 'Compliance signal strong across all workspaces.' :
-                 band === 'Watch' ? 'A few items need attention.' : 'Multiple items need immediate review.'}
-              </Text>
-              <Text style={d.scoreExtra}>{metrics?.records_needing_attention ?? 0} records pending</Text>
-            </View>
-          </View>
-        </View>
-        )}
+        {/* v160.0.20 — WATCH / compliance-score tile removed from mobile.
+            This is a web-admin/dashboard metric. Workers on mobile don't
+            need to see aggregate compliance scoring. The underlying
+            /api/metrics endpoint is untouched (still consumed by web
+            admin); we just drop the tile render here. */}
 
         {/* AI Briefing */}
         {modules.ask_intel && briefingLoading ? (

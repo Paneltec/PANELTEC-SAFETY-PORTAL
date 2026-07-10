@@ -54,16 +54,20 @@ export default function FormsCategoriesScreen() {
 
   return (
     <SafeAreaView style={s.safe}>
+      {/* v160.0.19 — Back button lives OUTSIDE the ScrollView as a sticky
+          sibling so it stays visible while the grid scrolls. */}
+      <View style={s.stickyHeader}>
+        <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
+          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
+          <Text style={s.backText}>Back</Text>
+        </TouchableOpacity>
+      </View>
       <ScrollView
         testID="forms-categories-page"
         style={s.scroll}
         contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.orange} />}
       >
-        <TouchableOpacity testID="library-back-btn" style={s.backBtn} onPress={() => router.back()} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={18} color={Colors.orange} />
-          <Text style={s.backText}>Back</Text>
-        </TouchableOpacity>
         {loading ? (
           <View style={s.emptyBox}>
             <ActivityIndicator color={Colors.orange} />
@@ -111,26 +115,35 @@ export default function FormsCategoriesScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
+  stickyHeader: {
+    // v160.0.19 — Sibling above the ScrollView, so it never scrolls away.
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: 16, paddingVertical: 12,
+  },
   scroll: { flex: 1 },
-  content: { padding: 16, paddingBottom: 32 },
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 12 },
-  backText: { fontSize: 13, fontWeight: '700', color: Colors.orange },
+  content: { paddingTop: 12, paddingBottom: 32 },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  backText: { fontSize: 14, fontWeight: '700', color: Colors.orange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.orange },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.ink, marginTop: 4 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.textTertiary, textAlign: 'center', paddingHorizontal: 24 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between' },
+  grid: {
+    // v160.0.19 — exact spec from user brief. `space-between` + width 48%
+    // guarantees a 2-column layout regardless of viewport.
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+  },
   card: {
-    // v160.0.18 — card takes ~half the row minus half the gap so two cards
-    // always fit side-by-side, filling the screen width edge-to-edge.
-    flexBasis: '48.5%',
-    flexGrow: 0,
-    flexShrink: 0,
+    width: '48%',
+    minHeight: 120,
+    marginBottom: 12,
     backgroundColor: Colors.surface,
     borderWidth: 1, borderColor: Colors.border,
     borderRadius: 16, padding: 14, gap: 6,
-    minHeight: 140,
   },
   cardDim: { opacity: 0.4 },
   iconWrap: {

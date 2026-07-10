@@ -1,0 +1,26 @@
+{
+  "summary": "Frontend-only verification of Paneltec mobile v160.0.19 (sticky back + 2-col grid) and v160.0.20 (WATCH tile removed). All bugs verified fixed via live Playwright test at 390x844 mobile viewport as ADMIN. All regressions pass.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_results": {
+    "BUG-v160.0.19-A_sticky_back_button": "PASS - [data-testid='library-back-btn'] renders at y=12 before scroll and REMAINS at y=12 after scrolling ScrollView to bottom. Confirmed sibling-of-ScrollView pattern (not inside). Contains chevron + 'Back' text.",
+    "BUG-v160.0.19-B_2_column_grid": "PASS - Exactly 2 columns × 3 rows on 390px viewport. Unique X positions: [16, 202]. Unique Y positions: [57, 216, 375]. Card width 172px (~44% of 390). All 6 testids present: cat-card-general, cat-card-pre_start, cat-card-inspection, cat-card-near_miss, cat-card-incident, cat-card-toolbox. Screenshot confirms 2x3 layout.",
+    "BUG-v160.0.20_WATCH_tile_removed": "PASS - Logged in as ADMIN (role=admin confirmed via /api/auth/login response). [data-testid='attention-score-card'] does NOT exist in DOM. No compliance-score circular tile rendered. Below-tile layout has no awkward gap; briefing/metrics/manage sections flow naturally. Note: safe-fallback banner also appears on this preview (expected per request note), but DOM inspection confirms genuine tile removal (not just fallback hiding).",
+    "Regression_category_navigation": "PASS - Tapping cat-card-general navigates to /forms/category/general.",
+    "Regression_bottom_tabs": "PASS - Tab bar has exactly: HOME, QR SCAN, OUTBOX, MY WORK, PROFILE (5 tabs, no Forms/Capture).",
+    "Version_marker": "PASS - Home overline reads 'PANELTEC CIVIL · paneltec-v160.0.20'."
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "dashboard.tsx still has duplicate StyleSheet keys carried over from prior iteration (metricLabel/metricSub declared twice, captureTitle/captureDesc twice at lines 290-306). Latter wins at runtime but should be deduped.",
+    "dashboard.tsx CAPTURE_TOOLS array + visibleCapture memo remain defined but unused after v160.0.18 removal — dead code."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A - skipped per request", "frontend": "100%"},
+  "test_credentials": "Admin stephen@paneltec.com.au / Mcgstephen50# — login 200, role=admin.",
+  "seed_data_creation": "None",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Web preview shows safe-fallback banner on dashboard (expected). For WATCH-tile removal check, always verify DOM absence of [data-testid='attention-score-card'] rather than relying on visual state. /forms/library ScrollView uses [data-testid='forms-categories-page']; scroll via element.scrollTop, not page.mouse.wheel(), for sticky-header verification."
+}
