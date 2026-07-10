@@ -3093,3 +3093,109 @@ Cleared, mobile supervisor restarted.
 - **v160.2.4** — SWMS picker field type + wire into permits + JSEA.
 - **v160.2.5** — Submission routing by category into Capture sub-tabs
   + Mobile Forms Library search + form-QR scanner.
+
+---
+
+## v160.2.4 — SWMS picker field type (2026-07-10)
+
+### Audit (existing SWMS feature)
+- **Backend**: `swms` router is the standard CRUD (`crud.py` `build_router`)
+  at `/api/swms`. Existing extras at `/api/swms/{id}/history` and
+  `/api/swms/{id}/diff/{previous}` (swms_extras.py). Phase 4.5 paste-to-
+  create + Phase 4.6 scan-to-parse endpoints under swms_phase45.py.
+- **SWMS doc shape**: `{id, org_id, workspace_id, title, version,
+  status ∈ {draft, submitted, approved, superseded, rejected}, scope,
+  hazards, controls, ppe, tasks, activity_analysis, attachments,
+  legislation_and_codes, high_risk_construction_work, ...}`.
+- **Access control**: `require_permission("swms","view")` gates the list.
+  Admin (Stephen) sees ~9 approved rows; worker_stephen currently sees
+  0 (his role isn't granted swms.view). Existing behaviour — the SWMS
+  picker inherits it. Report to admins: grant workers `swms.view` for
+  their role via Permission Presets → Workers if they need to attach
+  SWMS on the phone.
+- **Web admin UI**: `frontend/src/pages/Swms.jsx` + `SwmsAssignmentsAdmin.jsx`.
+- **Mobile UI**: `mobile/app/swms/{index,new,[id]}.tsx` + PasteSwmsModal /
+  ScanSwmsModal in `mobile/src/components/swms/`.
+
+### Backend
+- `forms.py` — new `swms_picker` in `ALLOWED_FIELD_TYPES`.
+- `scripts/migrate_v160_2_4_swms_picker.py` (NEW, idempotent). Snapshot
+  → `form_templates_backup_v160_2_3` (43 rows). 7/7 target templates
+  received a `swms_picker` field. Re-run: 0 changes.
+
+### Migration table
+| Template                                              | Fields | multi | required | pos |
+|------------------------------------------------------|:------:|:-----:|:--------:|:---:|
+| Hot Work Permit                                       | 18     | Yes   | Yes      | 16  |
+| Confined Space Entry Permit                           | 22     | Yes   | Yes      | 20  |
+| Excavation / Trench Permit                            | 23     | Yes   | Yes      | 20  |
+| Working at Heights Permit                             | 20     | Yes   | Yes      | 18  |
+| Crane Lift / Rigging Plan                             | 20     | Yes   | Yes      | 17  |
+| JSEA — Job Safety & Environmental Analysis            | 18     | Yes   | No       | 15  |
+| Construction Heavy Equipment Pre-Op Checklist         | 37     | No    | No       | 35  |
+
+Placement: field inserted at the last-header-slot + 1, which for these
+templates means AFTER the Company/Organisation selector and Permit
+Time In/Out block, BEFORE the domain body — matches the v160.2.4 brief.
+
+### Mobile
+- `mobile/src/components/SwmsPicker.tsx` (NEW, ~290 LOC). Same UX
+  pattern as `WorkerPicker`. Fetches from `GET /api/swms`, filters
+  `superseded` / `deleted` client-side. Single closes on tap;
+  multi keeps modal open + chips above the trigger with × remove.
+  Status pill on each row (Approved olive · Submitted bronze ·
+  Draft grey · Rejected red). Empty state degrades cleanly for
+  workers whose role has no swms.view permission.
+- `mobile/app/forms/fill/[id].tsx` — new renderer branch for
+  `f.type === 'swms_picker'` with the single/multi fork. Import added.
+
+### Web admin
+- Not touched. `frontend/src/pages/Forms.jsx` template editor already
+  accepts arbitrary field types (round-trips through `_clean_field`),
+  and workers don't fill forms on the web — mobile is the only fill
+  surface for this app. Field will render in the editor's field list
+  as `swms_picker`.
+
+### Version bumps → `paneltec-v160.2.4`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Tests
+- `backend/tests/test_v160_2_4_swms_picker.py` (NEW) — 12 pytest cases:
+  registry, per-template presence + multi/required config, position
+  guarantee, snapshot sanity, admin list works, worker list is
+  either 200-empty or clean 403.
+- Regression across v160.1.3 / 1.4 / 1.6 / 2.0 / 2.2 / 2.3 / 2.4:
+  **69/69 passing.**
+
+### Ambiguities / judgement calls
+- **Worker access**: workers currently see 0 SWMS because their role
+  doesn't have `swms.view`. This is EXISTING behaviour, not a bug in
+  this cycle. Admins should grant it via Permission Presets → Workers
+  if field-crews are expected to attach SWMS to their permits. The
+  picker degrades to "No SWMS documents accessible to your account."
+- **Admin QR generation for form templates**: DEFERRED as a P2 per the
+  brief. Scanner side is v160.2.5.
+- **Preview of a SWMS from the picker**: NOT wired in this cycle. The
+  brief marks it as optional / nice-to-have and says not to block
+  form-filling on it. Chip tap on a picked SWMS keeps modal open.
+
+### Metro cache
+Cleared, mobile supervisor restarted.
+
+### Files touched
+- `backend/forms.py`
+- `backend/scripts/migrate_v160_2_4_swms_picker.py` (new)
+- `backend/tests/test_v160_2_4_swms_picker.py` (new)
+- `mobile/src/components/SwmsPicker.tsx` (new)
+- `mobile/app/forms/fill/[id].tsx`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+### Next in queue
+- **v160.2.5** — Submission routing into Capture sub-tabs + Mobile
+  Forms Library search + form-QR scanner.
+- **v160.2.6** — Mobile My Profile back button + `/my-certifications`
+  screen + Settings entry.

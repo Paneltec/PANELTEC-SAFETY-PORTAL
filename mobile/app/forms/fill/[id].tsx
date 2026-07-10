@@ -15,6 +15,7 @@ import SignaturePadWeb from '../../../src/components/SignaturePadWeb';
 import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 import WorkerPicker from '../../../src/components/WorkerPicker';
+import SwmsPicker from '../../../src/components/SwmsPicker';
 import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
@@ -1137,6 +1138,27 @@ export default function FillOutScreen() {
                   onChange={(v: string) => setVal(f.id, v)}
                   testId={`field-${f.id}`}
                 />
+              )}
+              {/* v160.2.4 — SWMS attachment picker. Supports single or
+                  multi via config.multi. Value stored as id string or
+                  array of id strings. */}
+              {f.type === 'swms_picker' && (
+                <View testID={`field-${f.id}`}>
+                  {f.config?.multi ? (
+                    <SwmsPicker
+                      testID={`swms-picker-${f.id}`}
+                      multi={true}
+                      value={Array.isArray(values[f.id]) ? values[f.id] : []}
+                      onChange={(ids: string[]) => setVal(f.id, ids)}
+                    />
+                  ) : (
+                    <SwmsPicker
+                      testID={`swms-picker-${f.id}`}
+                      value={values[f.id] || null}
+                      onChange={(id: string | null) => setVal(f.id, id)}
+                    />
+                  )}
+                </View>
               )}
               {f.type === 'worker_picker' && (() => {
                 // v160.0.12.6 — When the field carries an inline company

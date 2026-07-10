@@ -76,7 +76,9 @@ ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "company_selector", "auto_date",
                        # v160.2.3 — Time picker for permit issue/expiry and
                        # start/end times on toolbox / sign-in / induction.
-                       "time"}
+                       "time",
+                       # v160.2.4 — SWMS attachment picker for permits + JSEA.
+                       "swms_picker"}
 PHOTO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 
