@@ -107,6 +107,14 @@ export default function ProfileScreen() {
 
   const rp = rolePill();
 
+  // v160.2.6-cleanup — Hide org-wide security config panels
+  // (Session timeout / Suspicious login alerts / Active sessions) from
+  // workers & contractors. These are admin-tier org configuration, not
+  // per-user knobs a field user should see. Privileged tier =
+  // admin / owner / foreman / hseq / hseq_lead / supervisor.
+  const role = (user?.role || '').toLowerCase();
+  const isAdminTier = ['admin', 'owner', 'foreman', 'hseq', 'hseq_lead', 'supervisor'].includes(role);
+
   return (
     <SafeAreaView style={st.safe}>
       <ScrollView testID="profile-page" style={st.scroll} contentContainerStyle={st.content}
@@ -128,40 +136,44 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* Session timeout */}
-        <Text style={st.sectionLabel}>SESSION TIMEOUT</Text>
-        <View style={st.segmentedRow}>
-          {TIMEOUT_OPTIONS.map(opt => (
-            <TouchableOpacity key={opt.value} testID={`timeout-${opt.value}`}
-              style={[st.segBtn, sessionTimeout === opt.value && st.segBtnActive]}
-              onPress={() => setTimeoutVal(opt.value)} activeOpacity={0.7}>
-              <Text style={[st.segText, sessionTimeout === opt.value && st.segTextActive]}>{opt.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        {/* Session timeout — v160.2.6-cleanup: admin-tier only. */}
+        {isAdminTier && (
+          <>
+            <Text style={st.sectionLabel}>SESSION TIMEOUT</Text>
+            <View style={st.segmentedRow}>
+              {TIMEOUT_OPTIONS.map(opt => (
+                <TouchableOpacity key={opt.value} testID={`timeout-${opt.value}`}
+                  style={[st.segBtn, sessionTimeout === opt.value && st.segBtnActive]}
+                  onPress={() => setTimeoutVal(opt.value)} activeOpacity={0.7}>
+                  <Text style={[st.segText, sessionTimeout === opt.value && st.segTextActive]}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {/* Suspicious login alerts */}
-        <Text style={st.sectionLabel}>SUSPICIOUS LOGIN ALERTS</Text>
-        <View style={st.segmentedRow}>
-          {ALERT_OPTIONS.map(opt => (
-            <TouchableOpacity key={opt} testID={`susp-alert-${opt}`}
-              style={[st.segBtn, suspAlert === opt && st.segBtnActive]}
-              onPress={() => setSuspAlertVal(opt)} activeOpacity={0.7}>
-              <Text style={[st.segText, suspAlert === opt && st.segTextActive]}>{opt.toUpperCase()}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+            {/* Suspicious login alerts */}
+            <Text style={st.sectionLabel}>SUSPICIOUS LOGIN ALERTS</Text>
+            <View style={st.segmentedRow}>
+              {ALERT_OPTIONS.map(opt => (
+                <TouchableOpacity key={opt} testID={`susp-alert-${opt}`}
+                  style={[st.segBtn, suspAlert === opt && st.segBtnActive]}
+                  onPress={() => setSuspAlertVal(opt)} activeOpacity={0.7}>
+                  <Text style={[st.segText, suspAlert === opt && st.segTextActive]}>{opt.toUpperCase()}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
-        {/* Active sessions */}
-        <TouchableOpacity testID="sessions-toggle" style={st.card} onPress={() => setSessionsOpen(!sessionsOpen)} activeOpacity={0.7}>
-          <Ionicons name="layers" size={18} color={Colors.orange} />
-          <Text style={st.cardText}>ACTIVE SESSIONS</Text>
-          <Ionicons name={sessionsOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textTertiary} />
-        </TouchableOpacity>
-        {sessionsOpen && (
-          <View style={st.sessionInfo}>
-            <Text style={st.sessionText}>Current session active. Additional session management available on the web dashboard.</Text>
-          </View>
+            {/* Active sessions */}
+            <TouchableOpacity testID="sessions-toggle" style={st.card} onPress={() => setSessionsOpen(!sessionsOpen)} activeOpacity={0.7}>
+              <Ionicons name="layers" size={18} color={Colors.orange} />
+              <Text style={st.cardText}>ACTIVE SESSIONS</Text>
+              <Ionicons name={sessionsOpen ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.textTertiary} />
+            </TouchableOpacity>
+            {sessionsOpen && (
+              <View style={st.sessionInfo}>
+                <Text style={st.sessionText}>Current session active. Additional session management available on the web dashboard.</Text>
+              </View>
+            )}
+          </>
         )}
 
         {/* Security */}

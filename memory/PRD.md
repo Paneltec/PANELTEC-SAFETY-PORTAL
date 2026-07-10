@@ -4191,3 +4191,55 @@ do NOT auto-apply.
 1. **v160.2.7** — worker view-only permission grants + backfill
 2. **v160.2.8** — worker-clarity UX copy pass
 3. **v160.3.0** — qualification-gated forms (this brief)
+
+
+# 2026-07-10 — v160.2.6-cleanup — Hide admin panels from workers + cert dedupe
+
+## Scope
+1. **Mobile Settings screen** (`mobile/app/(tabs)/settings.tsx`): hide
+   the three org-wide security-config panels from Worker /
+   Contractor: **SESSION TIMEOUT**, **SUSPICIOUS LOGIN ALERTS**,
+   **ACTIVE SESSIONS**. Kept for `admin | owner | foreman | hseq |
+   hseq_lead | supervisor` via a single `isAdminTier` gate.
+2. **Duplicate cert card**: user reported "duplicate CPR" — investigation
+   showed the actual duplicate on the demo worker was a **"First Aid"**
+   cert (not CPR). Two live rows for `(worker_id=f80a2fb0…,
+   name="First Aid")` in `worker_certifications`. This is a data-layer
+   bug — the mobile UI just renders what `/api/me/worker-profile` gives it.
+
+## Fix
+- `mobile/app/(tabs)/settings.tsx` — wrap the three panels in
+  `{isAdminTier && (…)}`. No layout / colour changes.
+- `backend/scripts/migrate_v160_2_6_cleanup_cert_dedupe.py` — idempotent
+  script:
+    1. Snapshot `worker_certifications` →
+       `worker_certifications_backup_v160_2_6cleanup` (212 rows written
+       on first run; 0 on subsequent runs).
+    2. Group live rows by `(org_id, worker_id, name)`; for any group
+       with >1 doc, keep the row with the newest `updated_at` and
+       soft-delete the older siblings.
+- **1 duplicate group resolved**: kept `c61b826c…` (XLSX-imported,
+  updated 2026-06-29), soft-deleted `efe34296…` (manual, updated
+  2026-06-27). Re-running the script is a no-op.
+- Regression test `backend/tests/test_v160_2_6_cleanup_cert_dedupe.py`
+  (2 tests, both PASS) guarantees zero live duplicates + script
+  idempotency.
+
+## Classification
+- `mobile/app/(tabs)/settings.tsx` is a **tab root** (labelled
+  "Profile" in the bottom tab bar). No back button needed — bottom
+  tab bar handles navigation.
+
+## Versions bumped
+- `mobile/src/lib/version.ts` → `paneltec-v160.2.6-cleanup`
+- `frontend/src/lib/version.js` → `paneltec-v160.2.6-cleanup`
+- `frontend/public/service-worker.js` `CACHE_VERSION` →
+  `paneltec-v160.2.6-cleanup`
+
+## Metro cache clear protocol
+`sudo supervisorctl restart mobile && rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache && mkdir -p /app/mobile/.expo/types && touch /app/mobile/.expo/types/router.d.ts`
+Mobile back at `http_code=200`. Full regression: my 2 new tests pass.
+The 5 pre-existing failures (v114 hard-coded version, phase_38,
+auth_persistence real-role edge, paneltec_backend login token) are
+unrelated to touched files.
+
