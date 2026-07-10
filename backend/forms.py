@@ -33,9 +33,13 @@ inspections and reports:
                           searchable dropdown (v160.1.4/1.5).
 
 Templates already migrated (as of v160.1.6): Vehicle Pre-Use Inspection,
-Heavy Vehicle Daily Check. Do NOT bulk-migrate the remaining templates —
-user directs each one after reviewing the operator flow. New templates
-should be built onto this header by default.
+Heavy Vehicle Daily Check.
+
+v160.2.0 — Bulk migration executed via
+`backend/scripts/migrate_v160_2_0_bulk.py`. All 26 remaining templates
+were passed through the Standard-Header rules and snapshotted to
+`form_templates_backup_v160_1_6` before the write. New templates
+should continue to be built onto this header by default.
 ═════════════════════════════════════════════════════════════════════════════
 """
 from __future__ import annotations

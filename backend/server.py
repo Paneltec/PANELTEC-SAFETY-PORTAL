@@ -40,7 +40,7 @@ from document_library import (  # noqa: E402
 )
 from suppliers import router as suppliers_router  # noqa: E402
 from supplier_panels import router as supplier_panels_router  # noqa: E402
-from workers import router as workers_router  # noqa: E402
+from workers import router as workers_router, me_router as workers_me_router  # noqa: E402
 from workers_qr import router as workers_qr_router, scan_router as worker_scan_router, backfill_scan_tokens  # noqa: E402
 from worker_certifications import router as worker_certifications_router  # noqa: E402
 from forms import router as forms_router  # noqa: E402
@@ -193,6 +193,7 @@ api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)
 api.include_router(worker_certifications_router)
 api.include_router(workers_router)
+api.include_router(workers_me_router)  # v160.2.2 — /me/worker-profile
 api.include_router(workers_qr_router)
 api.include_router(worker_scan_router)
 api.include_router(forms_router)

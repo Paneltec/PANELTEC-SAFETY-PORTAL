@@ -2916,3 +2916,90 @@ Five UX complaints from the user, all fixed:
 - `frontend/src/components/settings/RoleFormsSection.jsx` (new)
 - Mongo `form_templates.category` normalised for 3 legacy values
 - All 3 version files → `paneltec-v160.0.13`
+
+---
+
+## v160.2.2 — Workers eye icon + Mobile My Profile (2026-07-10)
+
+Cycle 3 of the queued v160.2.x work. Cycles 1 (v160.2.0 bulk template
+migration) and 2 (v160.2.1 Cancel button + ConfirmModal) were verified
+as already shipped — DB has `form_templates_backup_v160_1_6` (27 rows),
+migration script + tests present, mobile version tag already at
+`paneltec-v160.2.1`, `settledRef` mount-window guard present in the
+form-fill screen, and `ConfirmModal.tsx` exists in `mobile/src/components/`.
+
+### Backend
+- `workers.py` — added `GET /workers/{worker_id}` for the read-only Web
+  admin drawer. admin/hseq_lead/supervisor may fetch any row;
+  non-privileged callers get 403 unless they own the row (matched by
+  `user_id` or `email`).
+- `workers.py` — new `me_router` mounted at `/api/me` with
+  `GET /me/worker-profile` returning `{worker, certifications, clients}`.
+  Best-effort client-name hydration from Simpro's cached customer list.
+  Returns `{worker: null}` gracefully when the caller has no linked
+  worker record (never 404s).
+- `server.py` — includes the new `workers_me_router`.
+- `forms.py` — updated the Standard Header docstring: the "Do NOT
+  bulk-migrate" line has been removed (v160.2.0 executed the bulk
+  migration via `backend/scripts/migrate_v160_2_0_bulk.py`).
+
+### Web admin
+- `frontend/src/pages/Workers.jsx` — new grey eye button on each row
+  (data-testid `view-{workerId}`) between Print and Edit. Opens the
+  new `WorkerViewModal`.
+- `frontend/src/components/workers/WorkerViewModal.jsx` (NEW,
+  ~230 LOC) — read-only drawer showing Identity & contact, Personal,
+  Availability (day chips with time ranges), Clients (chips with
+  company labels), Certifications table with `valid` / `expiring_soon`
+  / `expired` / `no_expiry` / `missing_file` status pills.
+
+### Mobile
+- `mobile/app/my-profile.tsx` (NEW, ~260 LOC) — new read-only screen
+  reading `/api/me/worker-profile`. Renders Identity, Personal,
+  Availability, Clients and Certifications sections using the
+  `Colors.im*` Industrial Materials tokens. Expiring (<30 days)
+  certs render in amber (`Colors.imWarning`); expired render in
+  brick red (`Colors.imError`).
+- `mobile/app/(tabs)/settings.tsx` — added a new "My Profile" row
+  at the top of the SETTINGS list, routing to `/my-profile`.
+
+### Version bumps → `paneltec-v160.2.2`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js` (`CACHE_VERSION`)
+
+### Tests
+- `backend/tests/test_v160_2_2_worker_profile.py` (NEW) — 6 test cases
+  using the live-backend `requests` pattern (matches existing project
+  convention): admin can fetch any worker, missing id → 404, non-owner
+  → 403, /me returns linked worker for admin, /me returns
+  `{worker: null}` for a caller with no linked record, every cert
+  carries a `status.key` in the known set. **6/6 passing.**
+
+### Route inventory
+- `GET /api/workers/{id}` — v160.2.2 NEW
+- `GET /api/me/worker-profile` — v160.2.2 NEW
+- `GET /api/workers` (unchanged)
+- `PATCH /api/workers/{id}` (unchanged)
+- `DELETE /api/workers/{id}` (unchanged)
+
+### Files touched
+- `backend/workers.py`, `backend/server.py`, `backend/forms.py`
+- `backend/tests/test_v160_2_2_worker_profile.py` (new)
+- `frontend/src/pages/Workers.jsx`
+- `frontend/src/components/workers/WorkerViewModal.jsx` (new)
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+- `mobile/app/my-profile.tsx` (new)
+- `mobile/app/(tabs)/settings.tsx`
+- `mobile/src/lib/version.ts`
+
+### Backlog after v160.2.2 (next up)
+- P0 — **v160.2.3** field-gap fill: audit templates missing Worker/Vehicle
+  fields, new `company_selector` and `time` field types, Time In/Out
+  added to Toolbox Talk / Site Sign-In / Site Induction / permits.
+- P1 — **v160.2.4** SWMS picker field type + wire into permits and JSEA.
+- P1 — Navixy-to-assets sync job (unstarted).
+- P1 — Bulk-select QR generation in Web Admin (unstarted).
+- P2 — Document Library folder-level ACLs, Navixy signals expansion,
+  Suspicious-login detection, Selfie sign-on.

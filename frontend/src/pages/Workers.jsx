@@ -13,6 +13,8 @@ import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
 // Phase 4.7.1 — surface password/access controls on the Workers list.
 import AccessKebab from '../components/auth/AccessKebab';
+// v160.2.2 — Read-only worker profile drawer (eye icon).
+import WorkerViewModal from '../components/workers/WorkerViewModal';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -24,6 +26,7 @@ import {
   ArrowUpload20Regular as Upload,
   Delete20Regular as Trash2,
   Edit20Regular as Edit3,
+  Eye20Regular as EyeIcon,
   Mail20Regular as Mail,
   Print20Regular as Printer,
   QrCode20Regular as QrCode,
@@ -952,6 +955,7 @@ export default function Workers() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
+  const [viewingId, setViewingId] = useState(null); // v160.2.2 — read-only drawer
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [search, setSearch] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
@@ -1265,6 +1269,8 @@ export default function Workers() {
                           })()}
                           <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
                             className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
+                          <button onClick={() => setViewingId(w.id)} title="View profile" data-testid={`view-${w.id}`}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><EyeIcon /></button>
                           <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
                             className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
                           <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
@@ -1295,6 +1301,10 @@ export default function Workers() {
       {editing && (
         <EditModal worker={editing} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />
+      )}
+      {/* v160.2.2 — Read-only worker profile drawer (eye icon). */}
+      {viewingId && (
+        <WorkerViewModal workerId={viewingId} onClose={() => setViewingId(null)} />
       )}
     </div>
   );

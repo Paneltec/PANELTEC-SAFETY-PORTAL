@@ -190,6 +190,7 @@ export default function ProfileScreen() {
             const role = (user?.role || '').toLowerCase();
             const isPrivileged = role === 'admin' || role === 'hseq_lead' || role === 'supervisor';
             const items: any[] = [
+              { label: 'My Profile', icon: 'person-circle', route: '/my-profile', moduleKey: undefined, adminOnly: false },
               { label: 'Workers', icon: 'people', route: '/workers', moduleKey: 'inductions', adminOnly: false },
               { label: 'Certifications', icon: 'ribbon', route: '/certifications', moduleKey: 'certifications', adminOnly: false },
               { label: 'Organisation', icon: 'business', route: undefined, moduleKey: undefined, adminOnly: true },

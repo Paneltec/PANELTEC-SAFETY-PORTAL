@@ -207,6 +207,30 @@ async def list_workers(
     return [_serialise_thin(r) for r in rows]
 
 
+@router.get("/{worker_id}")
+async def get_worker(worker_id: str, user: dict = Depends(get_current_user)):
+    # v160.2.2 — Single-worker read for the Web admin's eye-icon
+    # `WorkerViewModal`. admin/hseq_lead/supervisor may fetch any row;
+    # non-privileged callers only see their OWN row (matched by
+    # `user_id` or `email`).
+    role_key = (user.get("role") or "").lower()
+    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    doc = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(404, "Worker not found")
+    if not privileged:
+        owns = (doc.get("user_id") == user["id"]) or (
+            (doc.get("email") or "").lower() == (user.get("email") or "").lower()
+            and bool(user.get("email"))
+        )
+        if not owns:
+            raise HTTPException(403, "Permission denied: workers.view")
+    return _serialise(doc)
+
+
 @router.post("", status_code=201)
 async def create_worker(body: WorkerIn, user: dict = Depends(get_current_user)):
     _require_write(user)
@@ -340,3 +364,68 @@ async def sync_from_simpro(body: SyncRequest, user: dict = Depends(get_current_u
     return {"ok": True, "created": created, "updated": updated, "skipped": skipped,
             "total": len(employees), "company": body.company,
             "synced_at": now_iso()}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# v160.2.2 — /me/worker-profile (mounted at /api/me by server.py)
+#
+# Returns the caller's OWN worker row + certifications for the mobile
+# "My Profile" screen. Strictly read-only. If no worker record is
+# linked to the caller's user we return `{worker: null, certifications: []}`
+# with a 200 so the mobile screen can render a friendly empty state
+# instead of a hard error banner.
+# ─────────────────────────────────────────────────────────────────────
+me_router = APIRouter(prefix="/me", tags=["me"])
+
+
+@me_router.get("/worker-profile")
+async def get_my_worker_profile(user: dict = Depends(get_current_user)):
+    # Deferred imports so worker_certifications (which itself imports
+    # from `workers`) doesn't create an import cycle at module load.
+    from datetime import date as _date
+    from worker_certifications import _serialise_cert
+
+    org_id = user["org_id"]
+    email = (user.get("email") or "").lower()
+    query = {
+        "org_id": org_id, "deleted_at": None,
+        "$or": [{"user_id": user["id"]}] + ([{"email": email}] if email else []),
+    }
+    worker = await db.workers.find_one(query, {"_id": 0})
+    if not worker:
+        return {"worker": None, "certifications": [], "clients": []}
+
+    # Certifications for this worker.
+    today = _date.today()
+    cert_cursor = db.worker_certifications.find(
+        {"org_id": org_id, "worker_id": worker["id"], "deleted_at": None},
+        {"_id": 0},
+    ).sort([("expiry_date", 1), ("name", 1)])
+    certs = await cert_cursor.to_list(500)
+
+    # Best-effort client name resolution from Simpro's cached customer list.
+    client_ids = worker.get("client_ids") or []
+    clients: list[dict] = []
+    if client_ids:
+        cfg_doc = await db.integration_configs.find_one(
+            {"org_id": org_id, "kind": "simpro"}, {"_id": 0, "customers_cache": 1},
+        ) or {}
+        by_id = {
+            str(c.get("simpro_customer_id")): c
+            for c in (cfg_doc.get("customers_cache") or [])
+        }
+        for cid in client_ids:
+            row = by_id.get(str(cid))
+            if row:
+                clients.append({
+                    "id": cid, "name": row.get("name") or f"Customer #{cid}",
+                    "company_label": row.get("company_label"),
+                })
+            else:
+                clients.append({"id": cid, "name": f"Customer #{cid}", "company_label": None})
+
+    return {
+        "worker": _serialise(worker),
+        "certifications": [_serialise_cert(c, today) for c in certs],
+        "clients": clients,
+    }
