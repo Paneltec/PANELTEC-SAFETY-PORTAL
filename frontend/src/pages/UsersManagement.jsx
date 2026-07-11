@@ -184,6 +184,7 @@ export default function UsersManagement() {
   return (
     <div className="max-w-6xl mx-auto" data-testid="users-page">
       <PageHeader crumb="Settings / Users" title="Users &amp; permissions"
+        theme="emerald"
         subtitle={`${users.length} users in your org`}
         action={can('users', 'edit') ? (
           <div className="flex items-center gap-2">
@@ -192,17 +193,17 @@ export default function UsersManagement() {
               disabled={!simproStatus.connected}
               data-testid="import-from-simpro-btn"
               title={simproStatus.connected ? 'Import employees from Simpro' : 'Connect Simpro in Settings → Integrations first'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
             >
               <Download size={14} /> Import from Simpro
             </button>
             <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
               title="Paste multiple email addresses at once"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 shadow-sm">
               <FlPersonAdd /> Bulk invite
             </button>
             <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm">
               <FlPersonAdd /> Invite user
             </button>
           </div>) : null} />

@@ -136,6 +136,7 @@ export default function Certifications() {
   return (
     <div className="max-w-7xl mx-auto" data-testid="certifications-page">
       <PageHeader crumb="Settings / Certifications" title="Certifications"
+        theme="emerald"
         subtitle="Every certification across your crew, ranked by what needs attention." />
 
       {/* Butter banner */}

@@ -68,9 +68,13 @@ export default function InspectionsList() {
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
        : (<>
         <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="inspections" />
+        {/* v160.3.0-adjust-20c — A1 sticky header. Table body scrolls in
+            its own container so the thead stays anchored during long
+            lists. Same pattern as Pre-Starts / Risk Assessments. */}
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div className="max-h-[70vh] overflow-y-auto" data-testid="inspections-scroll">
           <table className="zebra-list w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Template</th><th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Results</th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]"><tr><th className="text-left px-4 py-3">Template</th><th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Results</th></tr></thead>
             <tbody>
               {filtered.map((it) => {
                 const total = it.checklist_items?.length || 0;
@@ -106,6 +110,7 @@ export default function InspectionsList() {
               })}
             </tbody>
           </table>
+          </div>
         </div></>
        )}
         </TabsContent>

@@ -467,9 +467,26 @@ export default function Dashboard() {
     } finally { setPdfBusy(false); }
   };
 
-  const score = m?.attention_score ?? 0;
-  const band = m?.attention_band ?? 'Strong';
-  const bandColor = band === 'Strong' ? 'emerald' : band === 'Watch' ? 'amber' : 'red';
+  // v160.3.0-adjust-20c — A4 dashboard cleanup. Remove hardcoded
+  // fallbacks (`?? 26`, `?? 'Strong'`, `?? 'Organisation wide'`) so
+  // the dashboard never invents data.
+  //   • `band` is derived directly from the API. When the metrics
+  //     endpoint hasn't returned yet (`!m`) we render loading skeletons
+  //     rather than pretending the org score is "Strong".
+  //   • `attention_band === 'hidden'` (worker view) renders a compact
+  //     "Personal view" card in place of the score gauge.
+  //   • Removed the zombie "Registers connected" (was hardcoded 26 via
+  //     the Pydantic default) and "Workspaces" tiles (endpoint never
+  //     populated the field).
+  //     TODO(v160.4.x): wire a real /api/registers/count endpoint before
+  //     re-introducing the "Registers connected" tile.
+  const dataReady = !loading && !!m;
+  const band = m?.attention_band || null;
+  const score = Number.isFinite(m?.attention_score) ? m.attention_score : null;
+  const bandColor = band === 'Strong' ? 'emerald'
+    : band === 'Watch' ? 'amber'
+    : band === 'Action needed' ? 'red'
+    : 'slate';
 
   return (
     <div className="max-w-[1400px] mx-auto" data-testid="dashboard-page">
@@ -498,7 +515,9 @@ export default function Dashboard() {
               {' · '}
               {loading
                 ? 'Loading today\u2019s compliance pulse\u2026'
-                : ((m?.records_needing_attention ?? 0) === 0
+                : !m
+                  ? 'Compliance pulse unavailable — retry in a moment.'
+                  : ((m.records_needing_attention ?? 0) === 0
                     ? 'Compliance is running clean org-wide.'
                     : `${m.records_needing_attention} record${m.records_needing_attention === 1 ? '' : 's'} need attention — quick review recommended.`)}
             </p>
@@ -586,7 +605,42 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <div className={`rounded-2xl border-2 border-${bandColor}-200 bg-${bandColor === 'emerald' ? 'brand-green-mint' : bandColor + '-50'}/40 p-5`} data-testid="attention-score-card">
+          <div className={`rounded-2xl border-2 border-${bandColor}-200 bg-${bandColor === 'emerald' ? 'brand-green-mint' : bandColor === 'slate' ? 'slate-50' : bandColor + '-50'}/40 p-5`} data-testid="attention-score-card">
+            {!dataReady ? (
+              // v160.3.0-adjust-20c — Skeleton while metrics load. Never
+              // pretend the org is "Strong 100/100" before the API responds.
+              <div className="animate-pulse" data-testid="attention-score-skeleton">
+                <div className="h-3 w-40 bg-slate-200 rounded mb-3" />
+                <div className="flex items-center gap-4">
+                  <div className="w-24 h-24 rounded-full bg-slate-200" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-5 w-48 bg-slate-200 rounded" />
+                    <div className="h-3 w-full bg-slate-100 rounded" />
+                    <div className="h-3 w-5/6 bg-slate-100 rounded" />
+                  </div>
+                </div>
+              </div>
+            ) : band === 'hidden' ? (
+              // v160.3.0-adjust-20c — Worker/personal view: no org-wide
+              // score is exposed. Show a clear "Personal view" card so
+              // workers understand why the gauge is absent.
+              <div data-testid="attention-score-personal">
+                <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-slate-500 mb-2">Compliance Attention Score</div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-500 flex items-center justify-center shrink-0">
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-display text-base font-semibold text-slate-900">Personal view</div>
+                    <p className="mt-1 text-sm text-slate-600 leading-relaxed">
+                      Organisation-wide scoring is restricted to leadership roles.
+                      Your dashboard only counts the records you personally created.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="flex items-center justify-between mb-3">
               <div className={`text-[10px] uppercase tracking-[0.18em] font-semibold text-${bandColor}-700`}>Compliance Attention Score</div>
               <span className={`text-[10px] px-2 py-0.5 rounded-full bg-white border border-${bandColor}-200 text-${bandColor}-700 font-semibold`}>Org-wide</span>
@@ -595,7 +649,7 @@ export default function Dashboard() {
               <div className="relative w-24 h-24 shrink-0">
                 <svg viewBox="0 0 36 36" className="w-24 h-24 -rotate-90">
                   <circle cx="18" cy="18" r="15.9" fill="none" stroke={bandColor === 'emerald' ? '#A7F3D0' : bandColor === 'amber' ? '#FDE68A' : '#FECACA'} strokeWidth="3" />
-                  <circle cx="18" cy="18" r="15.9" fill="none" stroke={bandColor === 'emerald' ? '#10B981' : bandColor === 'amber' ? '#F59E0B' : '#EF4444'} strokeWidth="3" strokeDasharray={`${score} 100`} strokeLinecap="round" />
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke={bandColor === 'emerald' ? '#10B981' : bandColor === 'amber' ? '#F59E0B' : '#EF4444'} strokeWidth="3" strokeDasharray={`${score ?? 0} 100`} strokeLinecap="round" />
                 </svg>
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <div className={`font-display text-lg font-bold text-${bandColor}-700`}>{score}/100</div>
@@ -609,31 +663,38 @@ export default function Dashboard() {
                   {band === 'Watch' && 'A handful of records need attention — review the hazards and submitted SWMS this week.'}
                   {band === 'Action needed' && 'Multiple open hazards or incidents — escalate review immediately.'}
                 </p>
-                <p className="mt-1 text-sm text-slate-600">{m?.records_needing_attention ?? 0} records pending sign-off.</p>
+                <p className="mt-1 text-sm text-slate-600">{m.records_needing_attention ?? 0} record{(m.records_needing_attention ?? 0) === 1 ? '' : 's'} pending sign-off.</p>
               </div>
             </div>
+            </>)}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* v160.3.0-adjust-20c — Trimmed K/V grid. Removed:
+               · "Registers connected" — was hardcoded 26 (Pydantic default)
+               · "Workspaces" — endpoint never populated the field
+              Kept only the two tiles the backend actually fills. */}
+          {dataReady && band !== 'hidden' && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="dashboard-kv-grid">
             {[
-              ['Monitoring scope', m?.monitoring_scope ?? 'Organisation wide'],
-              ['Workspaces', m?.workspaces_scope ?? 'All allowed workspaces'],
-              ['Registers connected', m?.registers_connected ?? 26],
-              ['Records needing attention', m?.records_needing_attention ?? 0],
+              ['Monitoring scope', m.monitoring_scope || 'No data yet'],
+              ['Records needing attention', Number.isFinite(m.records_needing_attention) ? m.records_needing_attention : 'No data yet'],
             ].map(([k, v]) => (
-              <div key={k} className="rounded-xl border border-slate-200 bg-white p-3.5">
+              <div key={k} className="rounded-xl border border-slate-200 bg-white p-3.5" data-testid={`kv-${String(k).toLowerCase().replace(/\s/g,'-')}`}>
                 <div className="text-[10px] uppercase tracking-[0.14em] font-semibold text-slate-400">{k}</div>
                 <div className="mt-1 text-sm font-medium text-slate-800 break-words">{v}</div>
               </div>
             ))}
           </div>
+          )}
 
-          <div className={`rounded-xl bg-${bandColor === 'emerald' ? 'brand-green-mint' : bandColor + '-50'} border border-${bandColor}-200 px-4 py-3 text-sm text-${bandColor}-800 flex items-center gap-2`} data-testid="strong-banner">
+          {dataReady && band && band !== 'hidden' && (
+          <div className={`rounded-xl bg-${bandColor === 'emerald' ? 'brand-green-mint' : bandColor === 'slate' ? 'slate-50' : bandColor + '-50'} border border-${bandColor}-200 px-4 py-3 text-sm text-${bandColor}-800 flex items-center gap-2`} data-testid="strong-banner">
             <ShieldCheck size={16} className={`text-${bandColor}-600 shrink-0`} />
             {band === 'Strong' && 'Strong organisation-wide compliance monitoring signal.'}
             {band === 'Watch' && 'A few items need a look — see open hazards and submitted SWMS.'}
             {band === 'Action needed' && 'Compliance signal is below threshold — review action items.'}
           </div>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button data-testid="live-dashboard-btn"

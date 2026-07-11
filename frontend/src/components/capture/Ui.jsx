@@ -27,7 +27,40 @@ function pastelFromCrumb(crumb) {
   return MODULE_PASTEL[parts[1]] || null;
 }
 
-export function PageHeader({ crumb, title, subtitle, action, pastel: pastelOverride }) {
+// v160.3.0-adjust-20c — Task B "Emerald admin" theme. Renders the
+// PageHeader banner in an emerald-50 background with an emerald-700
+// eyebrow, plus exports matching EmeraldButton / AmberButton helpers
+// used as `action=` on Sites, Plant & Vehicles, Audit Exports,
+// Users & Workers and Certifications.
+const EMERALD_THEME = {
+  key: 'emerald',
+  bg: '#ECFDF5',       // emerald-50
+  border: '#A7F3D0',   // emerald-200
+  eyebrow: 'text-emerald-700',
+};
+
+export function PageHeader({ crumb, title, subtitle, action, pastel: pastelOverride, theme }) {
+  // Emerald theme takes precedence over the pastel-from-crumb resolver.
+  if (theme === 'emerald') {
+    return (
+      <div
+        className="mb-6 rounded-2xl px-6 sm:px-8 py-7 sm:py-8 border shadow-sm"
+        style={{ backgroundColor: EMERALD_THEME.bg, borderColor: EMERALD_THEME.border }}
+        data-testid="page-banner"
+        data-theme="emerald"
+      >
+        <div className="flex items-start justify-between flex-wrap gap-3">
+          <div className="min-w-0">
+            {crumb && <div className={`text-[11px] font-semibold tracking-[0.16em] uppercase mb-2 ${EMERALD_THEME.eyebrow}`}>{crumb}</div>}
+            <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">{title}</h1>
+            {subtitle && <p className="mt-1.5 text-sm text-slate-700 max-w-2xl">{subtitle}</p>}
+          </div>
+          {action}
+        </div>
+      </div>
+    );
+  }
+
   const pastel = pastelOverride === false ? null : (pastelOverride || pastelFromCrumb(crumb));
 
   if (pastel) {
@@ -91,6 +124,29 @@ function renderCrumb(crumb, fallbackCls) {
       </div>
       {action}
     </div>
+  );
+}
+
+// v160.3.0-adjust-20c — Emerald primary + amber secondary buttons used by
+// the admin pages (Sites, Plant & Vehicles, Audit Exports, Users, Certs).
+// Kept as plain <button> so callers control onClick / type / disabled.
+export function EmeraldButton({ children, onClick, type = 'button', disabled, busy, testid, title }) {
+  return (
+    <button type={type} onClick={onClick} disabled={busy || disabled} title={title} data-testid={testid}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 transition-colors disabled:opacity-60 shadow-sm">
+      {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+      {children}
+    </button>
+  );
+}
+
+export function AmberButton({ children, onClick, type = 'button', disabled, busy, testid, title }) {
+  return (
+    <button type={type} onClick={onClick} disabled={busy || disabled} title={title} data-testid={testid}
+      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 transition-colors disabled:opacity-60 shadow-sm">
+      {busy ? <Loader2 size={14} className="animate-spin" /> : null}
+      {children}
+    </button>
   );
 }
 

@@ -75,9 +75,12 @@ export default function IncidentsList() {
        : preFiltered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
        : (<>
         <CaptureListToolbar items={preFiltered} onFiltered={setSearchFiltered} testidPrefix="incidents" />
+        {/* v160.3.0-adjust-20c — A1 sticky header. Body scrolls; thead
+            stays pinned. */}
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          <div className="max-h-[70vh] overflow-y-auto" data-testid="incidents-scroll">
           <table className="zebra-list w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Title</th><th className="text-left px-4 py-3">Category</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Occurred</th></tr></thead>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]"><tr><th className="text-left px-4 py-3">Title</th><th className="text-left px-4 py-3">Category</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Occurred</th></tr></thead>
             <tbody>
               {searchFiltered.map((i) => (
                 <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`incident-row-${i.id}`}>
@@ -99,6 +102,7 @@ export default function IncidentsList() {
               ))}
             </tbody>
           </table>
+          </div>
         </div></>
        )}
         </TabsContent>
