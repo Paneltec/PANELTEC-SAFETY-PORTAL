@@ -53,10 +53,24 @@ export default function HazardsList() {
               </div>
               <div className="p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-display font-semibold text-sm truncate">{h.title}</h3>
+                  <h3 className="font-display font-semibold text-sm truncate">
+                    {h.title || h.template_name_snapshot || 'Hazard'}
+                  </h3>
                   <StatusBadge value={h.severity} />
                 </div>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.description}</p>
+                {/* v160.3.0-adjust-15 — LEGACY pill for imported SSRA rows. */}
+                {h.imported && (
+                  <div className="mt-1">
+                    <span
+                      className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-300"
+                      title="Imported from legacy Simpro record"
+                      data-testid={`hazard-legacy-badge-${h.id}`}
+                    >
+                      Legacy
+                    </span>
+                  </div>
+                )}
+                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.description || h.submitted_by_name || ''}</p>
                 <div className="mt-3 flex items-center justify-between"><StatusBadge value={h.status} /><span className="text-[10px] text-slate-400">{(h.created_at || '').slice(0, 10)}</span></div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                   <PdfActions resourceKind="hazards" recordId={h.id} source={h.source} title={h.title} size="sm" />

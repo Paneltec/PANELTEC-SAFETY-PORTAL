@@ -25,10 +25,31 @@ export default function PreStartsList() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((p) => (
             <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4" data-testid={`prestart-card-${p.id}`}>
-              <div className="text-xs text-slate-500">{p.date}</div>
-              <div className="font-display font-semibold mt-1">{p.crew_lead}</div>
-              <p className="text-sm text-slate-600 mt-1 line-clamp-2">{p.work_summary}</p>
-              <div className="mt-3 text-xs text-slate-500">{p.sign_ons?.length || 0} signed on</div>
+              {/* v160.3.0-adjust-15 — LEGACY pill + template name so
+               *  imported records are distinguishable from live captures
+               *  and 82 pre-starts stop looking identical.
+               */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-xs text-slate-500">{p.date}</div>
+                {p.imported && (
+                  <span
+                    className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-300"
+                    title="Imported from legacy Simpro record"
+                    data-testid={`prestart-legacy-badge-${p.id}`}
+                  >
+                    Legacy
+                  </span>
+                )}
+              </div>
+              <div className="font-display font-semibold mt-1">
+                {p.template_name_snapshot || p.crew_lead || 'Pre-Start'}
+              </div>
+              <p className="text-sm text-slate-600 mt-1 line-clamp-2">
+                {p.submitted_by_name || p.crew_lead || p.work_summary || ''}
+              </p>
+              <div className="mt-3 text-xs text-slate-500">
+                {p.imported ? 'Legacy import — open PDF for source detail' : `${p.sign_ons?.length || 0} signed on`}
+              </div>
               <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
                 <PdfActions resourceKind="pre_starts" recordId={p.id} source={p.source} title={`Pre-Start ${p.date}`} size="sm" />
                 <EmailButton resourceKind="pre_starts" recordId={p.id} source={p.source}
