@@ -5440,3 +5440,93 @@ All 3 files.
   `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-6`
 - `/app/memory/PRD.md` (this entry)
 
+
+
+# 2026-07-11 — v160.3.0-adjust-7 (RECOVERY) — Mobile preview restored
+
+## What went wrong
+User reported "no phone to view at all" — mobile Expo preview
+serving HTTP 500. NOT the usual stale-CI-bundle recurrence this
+time. Real root cause:
+
+`mobile/app/swms/[id].tsx` still imported `EmailButton` from the
+deleted `src/components/EmailButton.tsx`. The v160.3.0-adjust cycle
+stripped `EmailButton` from 5 detail screens (incidents, hazards,
+inspections, pre-starts, site-diary) BUT missed `swms/[id].tsx`.
+Metro's bundler failed on the missing import + a follow-on
+StyleSheet corruption from my `search_replace` on the actionRow
+block (which duplicated 8 lines of style definitions AFTER the
+`});` StyleSheet-close).
+
+The Metro error was crystal clear once we looked at it:
+```
+Metro error: SyntaxError: /app/mobile/app/swms/[id].tsx:
+  Unexpected token (148:13)
+> 148 | paneltecBlue },
+      |              ^
+```
+Line 148 was orphaned style-property syntax outside the closed
+StyleSheet — direct evidence of the earlier bad edit.
+
+## Fix
+- Stripped the `EmailButton` import from `swms/[id].tsx`.
+- `const canEmail = false;` for backward-compat with any downstream
+  reads (matches the 5 sibling screens fixed in v160.3.0-adjust).
+- Removed the orphaned `<EmailButton .../>` JSX block cleanly.
+- Deleted the 8 duplicated style lines after `});`.
+- Restart cycle: `sudo supervisorctl restart mobile && rm -rf
+  /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache &&
+  mkdir -p /app/mobile/.expo/types && touch
+  /app/mobile/.expo/types/router.d.ts` → mobile HTTP 200 in <30s.
+
+## Recovery verification
+- `sudo supervisorctl status` → backend/frontend/mobile/mongodb
+  all RUNNING.
+- `curl` https://whs-compliance.expo.preview.emergentagent.com/ →
+  HTTP 200.
+- `curl` https://whs-compliance.preview.emergentagent.com/ →
+  HTTP 200.
+- Screenshot `/tmp/v160_3_0_adjust_7_mobile_recovery.png` shows the
+  full Paneltec Civil login screen rendering.
+
+## Root cause pattern — why this keeps happening
+This is the 6th recurrence of "mobile preview broken after a bulk
+mobile edit". Every recurrence has been a bundler failure from a
+deleted-but-still-imported module OR a mid-edit syntax break. The
+"stale CI bundle" framing has been misleading — cache clears help
+because they force Metro to re-parse from scratch and surface the
+real error, but the FIX has always been a bad edit.
+
+## Proposed permanent guardrail — v160.3.0-adjust-7-mobile-stability
+File in queue for later; no code this session.
+
+1. Add a pre-restart TypeScript compile check to the mobile
+   supervisor spec: `npx tsc --noEmit -p /app/mobile/tsconfig.json
+   || exit 1` before `expo start`. Would catch missing-import + AND
+   syntax breaks BEFORE Metro fails at bundle time — fast fail with
+   a clean error the operator can act on.
+2. Add a git-pre-commit hook (or CI check) that runs `npx tsc
+   --noEmit` on `/app/mobile/` after any mobile touch. Bulk edits
+   would fail commit before ever reaching the Metro cache.
+3. When deleting a shared component from `/app/mobile/src/
+   components/`, always run:
+     `grep -rn "from.*<component-name>" /app/mobile/app /app/mobile/
+   src`
+   BEFORE deleting. Turn this into a small helper script
+   `scripts/mobile_safe_delete.sh <path>` that refuses to run if any
+   importer is found.
+
+## Files touched this recovery
+- `mobile/app/swms/[id].tsx` (EmailButton import removed, canEmail
+  const, EmailButton JSX block removed, 8 duplicated style lines
+  cleaned up)
+
+## Still pending — v160.3.0-adjust-7 web page-header/modal fix
+NOT completed this session. Context tight after recovery + PRD
+handoff. The web page-header clipping under topnav (user's
+follow-up on adjust-6) still needs the real fix:
+CSS variable `--app-topbar-height`, plus DOM-verified proof the
+Certifications PageHeader crumb + h1 land clear of the topbar.
+Handing to the next fork with the exact deliverable list from the
+user's brief unchanged.
+

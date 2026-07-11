@@ -8,7 +8,9 @@ import StatusBadge from '../../src/components/StatusBadge';
 import PrimaryButton from '../../src/components/PrimaryButton';
 import GhostButton from '../../src/components/GhostButton';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+// v160.3.0-adjust-7 — EmailButton removed. Missed in v160.3.0-adjust cycle
+// which stripped 5 other detail screens but overlooked this one, causing
+// Metro to fail bundling and the mobile preview to serve the error page.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
@@ -39,7 +41,7 @@ export default function SwmsDetailScreen() {
   const isReviewer = ['hseq_lead', 'admin'].includes(user?.role);
   const canEdit = can('swms', 'edit');
   const canView = can('swms', 'view');
-  const canEmail = can('swms', 'email');
+  const canEmail = false; // v160.3.0-adjust-7 — email affordance removed on mobile
 
   // Phase 4.6: detect signed evidence attachment
   const signedEvidence = (doc.attachments || []).find((a: any) => a.kind === 'signed_evidence');
@@ -65,14 +67,6 @@ export default function SwmsDetailScreen() {
 
       <View testID="swms-actions" style={s.actionRow}>
         {canView && <PdfActions resourceKind="swms" recordId={id!} title={doc.title} />}
-        {canEmail && (
-          <EmailButton
-            resourceKind="swms"
-            recordId={id!}
-            subject={`SWMS for Review: ${doc.title} v${doc.version || 1}`}
-            body={`Please review the attached SWMS.\n\nTitle: ${doc.title}\nStatus: ${doc.status}`}
-          />
-        )}
       </View>
 
       {/* Phase 4.6: View signed copy button */}
