@@ -1037,6 +1037,21 @@ function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenS
             <Sparkles size={9} /> AI draft
           </span>
         )}
+        {/* v160.3.0-adjust-10 — Paneltec maker's mark. Renders only when
+         *   the template was seeded by us (`source === "paneltec"`).
+         *   Uses the existing `/brand/mark.png` asset + brand orange
+         *   accent. Subtle pill, right-aligned with the other meta
+         *   pills so the card layout stays uniform. */}
+        {t.source === 'paneltec' && (
+          <span
+            data-testid={`card-paneltec-badge-${t.id}`}
+            title="Seeded by Paneltec"
+            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+          >
+            <img src="/brand/mark.png" alt="" aria-hidden="true" className="h-3 w-3 object-contain" />
+            Paneltec
+          </span>
+        )}
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <button onClick={onPreview} data-testid={`card-preview-${t.id}`}
