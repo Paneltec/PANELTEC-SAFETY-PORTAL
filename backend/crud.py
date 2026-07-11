@@ -269,7 +269,17 @@ prestarts_router  = build_router("pre-starts",   "pre_starts",          PreStart
 diary_router      = build_router("site-diary",   "site_diary_entries",  SiteDiaryIn,   "site_diary",   "site_diary",
                                  mirror_categories=["site_diary"])
 hazards_router    = build_router("hazards",      "hazards",             HazardIn,      "hazards",      "hazard",
-                                 mirror_categories=["near_miss"])
+                                 # v160.3.0-adjust-14 — union both `hazard` and
+                                 # `near_miss` mirror categories. Pre-adjust-13
+                                 # this only pulled `near_miss` because `hazard`
+                                 # was normalised down to `general` on write.
+                                 # Since adjust-13, `hazard` is a first-class
+                                 # ALLOWED_CATEGORY (used by the Construction &
+                                 # Excavation SSRA and Viatec Traffic Solutions
+                                 # SSRA templates), so imported / mobile
+                                 # submissions with `category: hazard` need to
+                                 # surface on the Hazard Reports capture tab.
+                                 mirror_categories=["hazard", "near_miss"])
 incidents_router  = build_router("incidents",    "incidents",           IncidentIn,    "incidents",    "incident",
                                  mirror_categories=["incident"])
 inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection",
