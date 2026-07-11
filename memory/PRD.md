@@ -5025,3 +5025,74 @@ copy).
 ## Order in the queue
 `v160.3.1 → v160.3.2 → [v160.3.3 if promoted] → v160.3.4`.
 
+
+
+# 2026-07-11 — v160.3.0-adjust-2 SHIPPED — Audit Exports: View + Delete
+
+## Bugs fixed
+
+### 1. "View" action missing on Audit Export rows
+User's screenshot showed each row with only Email + trash + Download.
+The PDF/JSON format chips were clickable but visually understated,
+so the "just show me the report" affordance wasn't obvious.
+
+**Fix**: Explicit `View` button added LEFT of Email in the action
+column. Opens the primary artefact (`byFormat.pdf` when present,
+else the row's own `file_url`) in a new tab via `target="_blank"`.
+Uses the `Eye20Regular` icon to match the existing FluentUI icon
+family. Test id: `export-view-{recordId}`.
+
+### 2. Delete button 404'd — endpoint didn't exist
+`DELETE /api/audit-exports/{id}` was never wired. `DeleteRecordButton`
+was hitting a route that returned FastAPI's default 404. No client
+side dialog — just silent failure per the reported UX.
+
+**Fix**: Added `DELETE /api/audit-exports/{eid}` in `exports.py`:
+- Admin-only RBAC (matches the `render-pdf` sibling endpoint's
+  precedent).
+- **Soft-delete** — sets `deleted_at` + `deleted_by`. Audit
+  artefacts are compliance evidence; auditors may want to trace
+  removals. Physical PDF/JSON blobs on disk left in place (a
+  separate housekeeping task if storage becomes tight).
+- Backwards-compat: `list_exports` + `get_export` +
+  `render_pdf_sibling` now filter `{"deleted_at": None}`, which in
+  MongoDB matches BOTH explicit-null AND missing-field rows. So
+  every pre-existing audit_export row (none had the field) still
+  appears in the list without a data migration.
+- Returns 204 on success, 404 on unknown id / already-deleted,
+  403 on non-admin.
+
+## Deliverables
+- **Regression tests** — `backend/tests/test_v160_3_0_audit_exports.py`,
+  **5/5 PASS**:
+  * `test_admin_can_soft_delete_export` — 204 + list drop + GET 404 +
+    `deleted_at` + `deleted_by` set.
+  * `test_worker_cannot_delete_export` — 403; row unchanged.
+  * `test_second_delete_returns_404` — idempotent-safe UI.
+  * `test_delete_unknown_id_returns_404`.
+  * `test_list_hides_soft_deleted_rows` — active row visible,
+    explicitly-deleted row filtered; missing-field rows kept.
+- Full v160.2/3 suite: **38/38 green**.
+- **Screenshot** `/tmp/v160_3_0_adjust_2_audit_exports.png` — every
+  row shows the new 4-button action column: **View · Email ·
+  Delete · Download**.
+
+## Version bump → `paneltec-v160.3.0-adjust-2`
+All 3 files. No mobile source changed → Metro cache clear not
+required.
+
+## Files touched
+- `backend/exports.py` (soft-delete endpoint + soft-delete filter
+  on list/get/render-pdf-sibling; `Response` import added)
+- `backend/tests/test_v160_3_0_audit_exports.py` (new, 5 tests)
+- `frontend/src/pages/AuditExports.jsx` (View button + Eye icon
+  import)
+- `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
+  `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-2`
+- `/app/memory/PRD.md` (this entry)
+
+## What's next (unchanged from prior finish)
+`v160.3.1` (Crane Lift crew group) → `v160.3.2` (drag-to-reorder)
+→ `[v160.3.3 if promoted]` (SWMS Edit UI) → `v160.3.4` (Documents
+per role — brief captured earlier this session).
+

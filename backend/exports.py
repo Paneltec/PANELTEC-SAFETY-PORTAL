@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
@@ -271,16 +271,54 @@ async def create_export(body: ExportIn, user: dict = Depends(get_current_user)):
 
 @router.get("")
 async def list_exports(user: dict = Depends(get_current_user)):
-    docs = await db.audit_exports.find({"org_id": user["org_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    # v160.3.0-adjust-2 — soft-delete filter. `{"deleted_at": None}`
+    # matches BOTH explicit-null AND missing-field rows in MongoDB,
+    # so pre-existing audit_exports documents (which never had the
+    # field) still show up in the list.
+    docs = await db.audit_exports.find(
+        {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+    ).sort("created_at", -1).to_list(200)
     return docs
 
 
 @router.get("/{eid}")
 async def get_export(eid: str, user: dict = Depends(get_current_user)):
-    doc = await db.audit_exports.find_one({"id": eid, "org_id": user["org_id"]}, {"_id": 0})
+    doc = await db.audit_exports.find_one(
+        {"id": eid, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+    )
     if not doc:
         raise HTTPException(404, "Not found")
     return doc
+
+
+@router.delete("/{eid}", status_code=204)
+async def delete_export(eid: str, user: dict = Depends(get_current_user)):
+    """v160.3.0-adjust-2 — Soft-delete an audit export.
+
+    Audit-trail concerns: audit_exports are compliance artefacts that
+    auditors may want to trace even after removal from the active
+    list. So we soft-delete (set `deleted_at`) rather than dropping
+    the row. The stored PDF/JSON blob on disk is left in place —
+    hard removal is a separate admin housekeeping task that can be
+    scripted later if storage pressure demands it.
+
+    RBAC: admin only. HSEQ leads and other write-roles can create
+    exports but not remove them — matches existing render-pdf
+    endpoint pattern above.
+    """
+    if user.get("role") != "admin":
+        raise HTTPException(403, "Admin only")
+    doc = await db.audit_exports.find_one(
+        {"id": eid, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1},
+    )
+    if not doc:
+        raise HTTPException(404, "Not found")
+    await db.audit_exports.update_one(
+        {"id": eid, "org_id": user["org_id"]},
+        {"$set": {"deleted_at": now_iso(), "deleted_by": user["id"]}},
+    )
+    return Response(status_code=204)
 
 
 @router.post("/{eid}/render-pdf", status_code=201)
@@ -294,7 +332,9 @@ async def render_pdf_sibling(eid: str, user: dict = Depends(get_current_user)):
     if user.get("role") != "admin":
         raise HTTPException(403, "Admin only")
 
-    row = await db.audit_exports.find_one({"id": eid, "org_id": user["org_id"]}, {"_id": 0})
+    row = await db.audit_exports.find_one(
+        {"id": eid, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+    )
     if not row:
         raise HTTPException(404, "Not found")
     if row.get("format") == "pdf":

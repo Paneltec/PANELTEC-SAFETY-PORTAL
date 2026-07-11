@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 // hint chip for any row missing its PDF or JSON sibling.
 import {
   ArrowDownload20Regular as Download,
+  Eye20Regular as Eye,
   Warning20Filled as WarnFill,
 } from '@fluentui/react-icons';
 
@@ -249,6 +250,24 @@ export default function AuditExports() {
                     <td className="px-4 py-3 text-slate-400 text-[10px] font-mono">{(g.primary.sha256 || '').slice(0, 12)}…</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1 items-center">
+                        {/* v160.3.0-adjust-2 — Explicit View button.
+                            Opens the primary artefact (PDF when
+                            present; otherwise the JSON/CSV row) in
+                            a new tab. FormatLink chips above still
+                            offer per-format access; this button is
+                            the "just show me the report" affordance
+                            the user asked for. Placed LEFT of Email
+                            per brief. */}
+                        <a
+                          href={`${BACKEND}${(g.byFormat.pdf || g.primary).file_url}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          data-testid={`export-view-${anchor.id}`}
+                          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-100 text-slate-700"
+                          title="View report"
+                        >
+                          <Eye className="w-3 h-3" /> View
+                        </a>
                         <EmailButton
                           resourceKind="audit_exports"
                           recordId={anchor.id}
