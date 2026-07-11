@@ -5096,3 +5096,183 @@ required.
 → `[v160.3.3 if promoted]` (SWMS Edit UI) → `v160.3.4` (Documents
 per role — brief captured earlier this session).
 
+
+
+# QUEUE — v160.4.0 — Simpro Sync + Rules UI (parked, no code this session)
+
+## Task 1 — Simpro usage audit (do FIRST when the cycle starts)
+
+Before any UI/schema work, produce an audit doc at
+`/app/memory/v160_4_0_simpro_usage_audit.md`:
+
+1. Which Simpro API endpoints does Paneltec call today? (Workers,
+   Companies, per v160.0.11.1 — grep `simpro` in
+   `backend/*.py`, check `simpro_client.py` if it exists,
+   `integrations.py`).
+2. Which local collections receive Simpro data?
+3. Where does the Simpro token live? (`org_settings.simpro.token`?
+   Env? Encrypted at rest?)  How is it exchanged / rotated?
+4. Enumerate Simpro endpoints NOT currently used that would help
+   Paneltec:
+   - Jobs (site-level work packets — ties to Pre-Starts & Site Diary)
+   - Sites (physical addresses — dedupe against our `sites`
+     collection)
+   - Customers (client-side companies — link to contractor register)
+   - Contractors / Subs (already in our `contractors` — see if
+     Simpro has a matching object)
+   - Cost centres (for allocating hours/materials)
+   - Timesheets (worker time tracking — feed the Intelligence
+     Centre)
+   - Assets / Plant items (fold into our `plant` register)
+5. **Recommend** which additional endpoints are worth adding and
+   why. One paragraph per recommendation. Present to user for
+   approval BEFORE writing any pull/mapping code.
+
+## Task 2 — Data model
+
+New collection `simpro_sync_configs` (one per org) — keeps rule
+graph OUT of the busy `org_settings` doc:
+
+```
+{
+  id, org_id,
+  enabled: bool,
+  conflict_policy: "simpro_wins" | "local_wins" | "newest_wins",
+  entities: [
+    {
+      kind: "workers"|"companies"|"jobs"|"sites"|"customers"|
+            "contractors"|"cost_centres"|"timesheets"|"plant",
+      enabled: bool,
+      frequency: "manual"|"hourly"|"4hr"|"daily"|"weekly",
+      filter: { active_only?, company_ids?, date_from? },
+      field_mappings: [
+        { simpro_field, local_field, default_value?, transform? }
+      ],
+    }
+  ],
+  last_run_at, last_run_status, last_run_summary,
+  next_scheduled_at,
+  created_at, updated_at, deleted_at
+}
+```
+
+Also new `simpro_sync_runs` collection for history/audit:
+```
+{
+  id, org_id, config_snapshot_id,
+  entities: [str], trigger: "manual"|"scheduled",
+  triggered_by: user_id | "scheduler",
+  started_at, finished_at, duration_ms,
+  status: "queued"|"running"|"success"|"partial"|"failed",
+  counts: { <kind>: {fetched, created, updated, skipped, errors} },
+  errors: [{kind, simpro_id, message, retry_count}],
+}
+```
+
+Snapshot `org_settings` + any Simpro-touched collections to
+`{col}_backup_v160_4_0` BEFORE the cycle's first migration write.
+
+## Task 3 — Backend endpoints
+
+- `GET  /api/simpro/sync/config` — return current config (admin
+  bypass to hseq_lead for read; admin only for write).
+- `PUT  /api/simpro/sync/config` — update rules; admin only;
+  validates entity kinds against the audit-approved list; rejects
+  unknown `local_field` targets.
+- `POST /api/simpro/sync/run` — trigger manual sync. Body: `{entities:
+  ["workers", "jobs"]}` or `{entities: "all"}`. Returns
+  `{run_id}` immediately; sync runs async via APScheduler
+  in-process worker.
+- `GET  /api/simpro/sync/runs` — paginated history; filterable by
+  status, entity kind, date range.
+- `GET  /api/simpro/sync/runs/{id}` — full run detail with
+  per-record error rows.
+
+Robustness contracts (write into `simpro_sync_runner.py`):
+- Retries with exponential backoff on 429/5xx (max 3, base 500ms).
+- Per-record failure logging — one bad record does NOT abort the
+  entity's batch.
+- Rate-limit awareness — read `X-RateLimit-Remaining` header,
+  sleep proactively when < 10.
+- Idempotent upserts keyed on `simpro_id`; latest-updated wins on
+  same-key conflict when policy=`simpro_wins`.
+- Do NOT delete local records absent from Simpro. Mark them
+  `stale_since_simpro_absence: <ISO date>` after 30 days of
+  consecutive absence; admin decides purge later.
+
+APScheduler integration: single cron-style poll every 15 min
+that inspects each org's `simpro_sync_configs.entities[].frequency`
+and triggers due syncs. Runs stored in `simpro_sync_runs`.
+
+## Task 4 — Web Admin UI
+
+New page — mount under `Settings → Integrations → Simpro Sync`
+(sits next to the existing Simpro connection panel).
+
+Three tabs:
+1. **Dashboard** — hero card with last-run status, next scheduled,
+   6-bar per-entity chart showing counts, error banner if
+   partial/failed.
+2. **Rules** — one collapsible section per entity kind.
+   - Enabled toggle
+   - Frequency dropdown
+   - Filter builder (active_only checkbox, company multiselect,
+     date_from picker)
+   - Field mapping editor: table `simpro_field → local_field |
+     default | transform`. `transform` supports `identity`,
+     `uppercase`, `lowercase`, `phone_e164`, `date_iso`, `json_ptr`.
+   - Conflict policy selector at page top.
+   - Debounced auto-save (matches Permission Presets pattern).
+3. **History** — DataTable of past runs (Emerald icon for success,
+   amber partial, red failed). Drill-through modal with per-record
+   error stack.
+
+Manual Sync button — floating on Dashboard, prominent orange, opens
+a checkbox modal to select which entities before firing.
+
+## Task 5 — Guardrails + tests
+
+- `test_v160_4_0_simpro_sync.py`:
+  * config GET/PUT round-trips
+  * `PUT` rejects unknown entity kinds + unknown local_field targets
+  * POST /run enqueues + returns run_id + writes running-status row
+  * Scheduled runs fire on APScheduler tick for each frequency
+    bucket (mock the clock)
+  * RBAC: worker/hseq_lead cannot PUT config
+  * Idempotency: two `POST /run` calls back-to-back result in
+    identical counts on the 2nd (no dupes)
+  * Rate-limit backoff: simulated 429 causes retry with exponential
+    sleep; capped at 3
+  * No auto-purge: local record absent from Simpro for < 30 days
+    stays `stale_since_simpro_absence=None`; ≥ 30 days flips it on
+    but does NOT delete
+- Backend regression suite green.
+- Do NOT auto-enable any entity syncs. Every entity ships
+  `enabled: false` until the admin explicitly toggles.
+
+## Version
+`paneltec-v160.4.0` in all 3 files. Metro cache clear only if
+mobile source ends up touched (likely no — this is a Web Admin +
+backend cycle).
+
+## Deliverables checklist
+- [ ] Audit report at `/app/memory/v160_4_0_simpro_usage_audit.md`
+- [ ] Screenshots: Dashboard, Rules tab, History tab
+- [ ] Curl demo of manual sync end-to-end + sample counts
+- [ ] Full test suite green
+- [ ] APScheduler entry visible in `sudo supervisorctl status backend`
+      startup logs on next run
+- [ ] Recommendation memo written to user for review BEFORE any
+      new-endpoint pull code is written
+
+
+# Final queue order (post this session)
+
+1. **v160.3.1** — Crane Lift grouped-crew pattern (starts next fork)
+2. **v160.3.2** — Drag-to-reorder multi-worker roster
+3. **v160.3.4** — Documents per role permissions matrix
+4. **v160.4.0** — Simpro Sync + Rules UI ← this brief
+5. **v160.3.3** — SWMS Edit UI (still parked; user has not promoted)
+6. **v160.3.5** (proposed at v160.3.0-adjust-2 finish) — Audit
+   Exports blob purge housekeeping (90-day grace).
+
