@@ -22,10 +22,10 @@ Baseline rule: safety-critical categories (`pre_start`, `inspection`, `near_miss
 | Excavation / Trench Permit | `general` | _(none)_ | keyword |
 | Heavy Vehicle Daily Check | `pre_start` | `white_card` | category_baseline |
 | Hot Work Permit | `general` | _(none)_ | keyword |
-| Incident Report | `incident` | `white_card` | category_baseline |
-| Incident Report Form | `incident` | `white_card` | category_baseline |
+| Incident Report | `incident` | _(none)_ | ungated_v160.3.0-adjust |
+| Incident Report Form | `incident` | _(none)_ | ungated_v160.3.0-adjust |
 | JSEA — Job Safety & Environmental Analysis | `general` | _(none)_ | keyword |
-| Near Miss Report | `near_miss` | `white_card` | category_baseline |
+| Near Miss Report | `near_miss` | _(none)_ | ungated_v160.3.0-adjust |
 | Plant Pre-Start Checklist (Heavy Equipment) | `pre_start` | `white_card` | category_baseline |
 | SWMS Sign-On | `general` | _(none)_ | keyword |
 | Site Induction Checklist | `toolbox` | `white_card` | keyword |

@@ -30,8 +30,8 @@ export default function PreStartsList() {
               <p className="text-sm text-slate-600 mt-1 line-clamp-2">{p.work_summary}</p>
               <div className="mt-3 text-xs text-slate-500">{p.sign_ons?.length || 0} signed on</div>
               <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                <PdfActions resourceKind="pre_starts" recordId={p.id} title={`Pre-Start ${p.date}`} size="sm" />
-                <EmailButton resourceKind="pre_starts" recordId={p.id}
+                <PdfActions resourceKind="pre_starts" recordId={p.id} source={p.source} title={`Pre-Start ${p.date}`} size="sm" />
+                <EmailButton resourceKind="pre_starts" recordId={p.id} source={p.source}
                   subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
                   body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
                   variant="row" size="sm" label="Email" />

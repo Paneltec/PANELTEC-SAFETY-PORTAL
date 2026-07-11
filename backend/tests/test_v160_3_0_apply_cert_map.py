@@ -127,3 +127,50 @@ def test_apply_is_idempotent():
     summary = asyncio.run(main())
     assert summary["applied_count"] == 0, summary
     assert summary["not_found_count"] == 0, summary
+
+
+# ─────────────────────────── v160.3.0-adjust ──────────────────────────
+
+# v160.3.0-adjust — Incident + near-miss templates are intentionally
+# ungated so witnesses without a white_card can still report. Any
+# future re-apply of the proposal must NOT re-gate them.
+UNGATED_SAFETY_CRITICAL = (
+    "Incident Report",
+    "Incident Report Form",
+    "Near Miss Report",
+)
+
+
+def test_incident_and_near_miss_templates_remain_ungated():
+    """Committed contract: these three template names must always have
+    `required_certifications == []`. Guards against a future
+    proposal-refresh silently re-gating them via category_baseline."""
+    db = _db()
+    for name in UNGATED_SAFETY_CRITICAL:
+        for row in db.form_templates.find(
+            {"name": name, "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1, "required_certifications": 1},
+        ):
+            assert (row.get("required_certifications") or []) == [], (
+                f"{name} ({row['id']}) must stay ungated — "
+                f"got {row.get('required_certifications')}. "
+                f"Update `UNGATED_SAFETY_CRITICAL` and run the ungate "
+                f"migration if this is intentional."
+            )
+
+
+def test_ungate_migration_is_idempotent():
+    from scripts.migrate_v160_3_0_ungate_incidents import main
+    summary = asyncio.run(main())
+    assert summary["ungated_count"] == 0, summary
+    # Every UNGATED_SAFETY_CRITICAL template that exists must be in the
+    # touched list (as `unchanged`).
+    touched_names = {t["name"] for t in summary["touched"]}
+    for n in UNGATED_SAFETY_CRITICAL:
+        # Migration only records rows that exist in the DB, so missing
+        # templates just don't appear — treat as satisfied.
+        if n in touched_names:
+            assert all(
+                t["action"] == "unchanged" for t in summary["touched"]
+                if t["name"] == n
+            ), summary

@@ -5,7 +5,7 @@ import api from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+// v160.3.0-adjust — EmailButton removed. Mobile email affordances stripped.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 
 export default function InspectionDetailScreen() {
@@ -22,7 +22,7 @@ export default function InspectionDetailScreen() {
 
   const canEdit = can('inspections', 'edit');
   const canView = can('inspections', 'view');
-  const canEmail = can('inspections', 'email');
+  const canEmail = false; // v160.3.0-adjust — email affordance removed on mobile
   const items = doc.checklist_items || [];
   const passed = items.filter((c: any) => c.response === 'pass').length;
   const failed = items.filter((c: any) => c.response === 'fail').length;

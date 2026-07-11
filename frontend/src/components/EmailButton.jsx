@@ -17,6 +17,14 @@ const CONVENIENCE = {
 
 // Drop-in button that opens an EmailSendModal pre-wired for a given resource.
 // Use `variant="primary" | "ghost" | "row"` to match the host page.
+//
+// v160.3.0-adjust — Mirrored `form_submissions` rows (source ==
+// "form_submission") don't have a dedicated email-convenience
+// endpoint yet — `/forms/submissions/{id}/email` doesn't exist. To
+// avoid emitting a broken button that 404s on click, we render
+// nothing for mirrored rows. Admins can still email mirrored
+// submissions from the future dedicated FormSubmissions detail
+// view — queued as a follow-up feature, not a hotfix scope.
 export default function EmailButton({
   resourceKind, recordId,
   subject, body, recipients = [], attachments = [],
@@ -24,9 +32,14 @@ export default function EmailButton({
   size = 'md',
   className = '',
   testid,
+  source,
 }) {
   const [open, setOpen] = useState(false);
   const stop = (e) => { e.stopPropagation(); e.preventDefault(); };
+
+  // v160.3.0-adjust — hide on mirrored submissions until a proper
+  // submissions-email endpoint exists.
+  if (source === 'form_submission') return null;
 
   const cls = variant === 'primary'
     ? 'inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-semibold hover:bg-blue-600'

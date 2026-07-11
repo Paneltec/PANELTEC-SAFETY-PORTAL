@@ -6,7 +6,8 @@ import StatusBadge from '../../src/components/StatusBadge';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+import EmptyState from '../../src/components/EmptyState';
+// v160.3.0-adjust — EmailButton removed. Mobile email affordances stripped.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 
 export default function HazardDetailScreen() {
@@ -23,7 +24,7 @@ export default function HazardDetailScreen() {
 
   const canEdit = can('hazards', 'edit');
   const canView = can('hazards', 'view');
-  const canEmail = can('hazards', 'email');
+  const canEmail = false; // v160.3.0-adjust — email affordance removed on mobile
 
   return (
     <ScrollView testID="hazard-detail" style={s.scroll} contentContainerStyle={s.content}>

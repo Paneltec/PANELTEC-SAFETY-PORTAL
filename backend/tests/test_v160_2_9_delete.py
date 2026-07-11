@@ -196,6 +196,66 @@ def test_second_delete_returns_404(admin, admin_token):
         _db().form_submissions.delete_one({"id": sid})
 
 
+# ─────────────────────── v160.3.0-adjust — Open report ────────────────────────
+
+def test_mirrored_pdf_token_via_submissions_endpoint(admin, admin_token):
+    """v160.3.0-adjust — "Open report" was broken on mirrored rows because
+    `POST /api/pdf-token` searches only the legacy per-entity
+    collection. Fix: PdfActions routes mirrored rows to
+    `POST /api/forms/submissions/pdf-token`. This test asserts:
+      1. Legacy path 404s for a mirror id (proving the bug).
+      2. Submissions path returns a signed URL for the same id.
+      3. The signed URL's `/pdf` endpoint returns a real PDF byte
+         stream (application/pdf, non-empty).
+    """
+    sid = _seed_mirror(admin, category="inspection",
+                       template_name_snapshot="Daily Site Inspection")
+    try:
+        h = {"Authorization": f"Bearer {admin_token}"}
+        # 1) The original broken call — legacy pdf-token search doesn't find it.
+        legacy = requests.post(
+            f"{BASE}/api/pdf-token", headers=h,
+            json={"resource": "inspections", "record_id": sid, "action": "view"},
+            timeout=10,
+        )
+        assert legacy.status_code == 404, legacy.text
+        # 2) The fixed call — submissions endpoint mints a token.
+        ok = requests.post(
+            f"{BASE}/api/forms/submissions/pdf-token", headers=h,
+            json={"submission_id": sid, "action": "view"},
+            timeout=10,
+        )
+        assert ok.status_code == 200, ok.text
+        body = ok.json()
+        assert body.get("url") and "/pdf" in body["url"], body
+        # 3) Fetching the signed URL returns application/pdf bytes.
+        pdf_resp = requests.get(body["url"], timeout=10)
+        assert pdf_resp.status_code == 200, pdf_resp.text[:200]
+        assert pdf_resp.headers.get("content-type", "").startswith("application/pdf"), (
+            pdf_resp.headers
+        )
+        assert len(pdf_resp.content) > 100, "PDF body suspiciously small"
+    finally:
+        _db().form_submissions.delete_one({"id": sid})
+
+
+def test_legacy_pdf_token_still_works_for_real_prestart(admin, admin_token):
+    """Belt-and-braces: legacy path continues to work for a genuine
+    per-entity row (i.e. non-mirrored)."""
+    pid = _seed_legacy_prestart(admin)
+    try:
+        h = {"Authorization": f"Bearer {admin_token}"}
+        r = requests.post(
+            f"{BASE}/api/pdf-token", headers=h,
+            json={"resource": "pre_starts", "record_id": pid, "action": "view"},
+            timeout=10,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json().get("url"), r.text
+    finally:
+        _db().pre_starts.delete_one({"id": pid})
+
+
 def test_mirrored_row_carries_template_name_alias(admin, admin_token):
     """v160.2.9-delete — Inspections list reads `template_name`. The mirror
     projection must populate that alias so the TEMPLATE column never

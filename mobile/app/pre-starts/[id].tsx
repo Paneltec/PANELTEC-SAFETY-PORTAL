@@ -6,7 +6,7 @@ import api, { apiError } from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+// v160.3.0-adjust — EmailButton removed. Mobile email affordances stripped.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 
 export default function PreStartDetailScreen() {
@@ -23,7 +23,7 @@ export default function PreStartDetailScreen() {
 
   const canEdit = can('pre_starts', 'edit');
   const canView = can('pre_starts', 'view');
-  const canEmail = can('pre_starts', 'email');
+  const canEmail = false; // v160.3.0-adjust — email affordance removed on mobile
 
   return (
     <ScrollView testID="prestart-detail" style={s.scroll} contentContainerStyle={s.content}>

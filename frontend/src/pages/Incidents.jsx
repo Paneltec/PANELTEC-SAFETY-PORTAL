@@ -73,8 +73,8 @@ export default function IncidentsList() {
                   <td className="px-4 py-3 text-slate-500">{(i.occurred_at || '').slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1 items-center">
-                      <PdfActions resourceKind="incidents" recordId={i.id} title={i.title} size="sm" />
-                      <EmailButton resourceKind="incidents" recordId={i.id}
+                      <PdfActions resourceKind="incidents" recordId={i.id} source={i.source} title={i.title} size="sm" />
+                      <EmailButton resourceKind="incidents" recordId={i.id} source={i.source}
                         subject={`Incident Summary: ${i.title}`}
                         body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
                         variant="row" size="sm" label="Email" />

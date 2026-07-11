@@ -59,8 +59,8 @@ export default function HazardsList() {
                 <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.description}</p>
                 <div className="mt-3 flex items-center justify-between"><StatusBadge value={h.status} /><span className="text-[10px] text-slate-400">{(h.created_at || '').slice(0, 10)}</span></div>
                 <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                  <PdfActions resourceKind="hazards" recordId={h.id} title={h.title} size="sm" />
-                  <EmailButton resourceKind="hazards" recordId={h.id}
+                  <PdfActions resourceKind="hazards" recordId={h.id} source={h.source} title={h.title} size="sm" />
+                  <EmailButton resourceKind="hazards" recordId={h.id} source={h.source}
                     subject={`Hazard Report: ${h.title} (severity: ${h.severity})`}
                     body={`A hazard has been reported.\n\nTitle: ${h.title}\nSeverity: ${h.severity}\nDescription: ${h.description || ''}`}
                     attachments={h.photo_url ? [{ file_url: h.photo_url, label: 'hazard-photo.jpg' }] : []}

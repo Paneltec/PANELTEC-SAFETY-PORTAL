@@ -11,15 +11,20 @@ import { getActiveSignOn, clearActiveSignOn, onSignOnChange, ActiveSignOn } from
 export default function TabLayout() {
   const { modules, isPreviewing, previewedRole } = useAuth();
 
-  // v160.0.22 — REMOVED the "queueCount" badge from the Home tab.
-  // Previous behaviour: on mount we fetched `/email/outbox?status=queued&mine=true`
-  // and stamped that number as a red badge on the HOME tab icon. That was
-  // wrong for two reasons:
-  //   (1) The count represents queued OUTBOX items — not anything a worker
-  //       needs to action from Home. The Outbox tab is the correct surface.
-  //   (2) Workers reported the "2" as confusing: nothing on Home relates to it.
-  // Removing the badge entirely. If we need per-tab unread indicators in future,
-  // Outbox will get its own count-derived badge.
+  // v160.3.0-adjust — REMOVED the Outbox tab entirely. It surfaced
+  // admin email-comms records (cert expiry reminders, licence
+  // warnings, worker-certification blockers) which is admin/comms
+  // territory and violates the "workers fill / admins review"
+  // architectural rule. All email affordances have been stripped
+  // from mobile in the same cycle (see EmailButton removals across
+  // incident/hazard/inspection/pre-start/site-diary detail
+  // screens). Backend `/email/*` endpoints are unchanged — the web
+  // admin still owns email review.
+  //
+  // v160.0.22 — (superseded) REMOVED the "queueCount" badge from the
+  // Home tab which fetched `/email/outbox?status=queued&mine=true`.
+  // Kept the comment for historical context; the removal above
+  // makes the outbox concept irrelevant on mobile.
 
   const showCapture = hasAnyCaptureModule(modules);
 
@@ -101,13 +106,10 @@ export default function TabLayout() {
             href: modules.sign_on ? undefined : null,
           }}
         />
-        <Tabs.Screen
-          name="outbox"
-          options={{
-            title: 'Outbox',
-            tabBarIcon: ({ color, size }) => <Ionicons name="mail" size={size} color={color} />,
-          }}
-        />
+        {/* v160.3.0-adjust — Outbox tab removed. `(tabs)/outbox.tsx`
+            deleted in the same cycle. Any future accidental deep-link
+            to `/outbox` will hit the expo-router 404 which is the
+            desired behaviour. */}
         <Tabs.Screen
           name="vehicles"
           options={{
@@ -116,13 +118,12 @@ export default function TabLayout() {
             href: modules.plant_vehicles ? undefined : null,
           }}
         />
-        <Tabs.Screen
-          name="my-work"
-          options={{
-            title: 'My Work',
-            tabBarIcon: ({ color, size }) => <Ionicons name="briefcase" size={size} color={color} />,
-          }}
-        />
+        {/* v160.3.0-adjust — "My Work" tab removed. It exposed lists
+            of SUBMITTED incidents/inspections which is admin-review
+            territory (web admin), violating the "workers fill /
+            admins review" architectural rule. Drafts already live in
+            Outbox — nothing needed migrating. Referenced screen
+            (`(tabs)/my-work.tsx`) deleted in the same cycle. */}
         <Tabs.Screen
           name="settings"
           options={{

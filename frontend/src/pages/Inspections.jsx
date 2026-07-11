@@ -86,9 +86,9 @@ export default function InspectionsList() {
                             renderer would emit an empty report — hide
                             it to avoid confusion. */}
                         {it.template_name && (
-                          <PdfActions resourceKind="inspections" recordId={it.id} title={it.template_name || 'Inspection'} size="sm" />
+                          <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
                         )}
-                        <EmailButton resourceKind="inspections" recordId={it.id}
+                        <EmailButton resourceKind="inspections" recordId={it.id} source={it.source}
                           subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
                           body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
                           variant="row" size="sm" label="Email" />

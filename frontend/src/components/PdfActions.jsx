@@ -8,18 +8,25 @@ import api, { apiError } from '../lib/api';
 // reuses the same window (named 'paneltec-pdf') so we never spawn a wall of
 // tabs. The PDF URL itself is a signed `/api/files/pdf/{token}.pdf` route
 // served by the browser's native PDF viewer.
+//
+// v160.3.0-adjust — Same mirror-routing fix as `DeleteRecordButton`.
+// Capture list rows for mirrored `form_submissions` (source ==
+// "form_submission") were 404'ing on `POST /api/pdf-token` because
+// that endpoint only searches the legacy per-entity collection.
+// When mirrored, route to the submissions-specific token endpoint
+// (`POST /api/forms/submissions/pdf-token`) which resolves against
+// `form_submissions` and mints a JWT bound to the submission id.
+// Legacy rows continue on the original path.
 const POPUP_NAME = 'paneltec-pdf';
 const POPUP_FEATURES = 'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes,toolbar=no,location=no,menubar=no,status=no';
 
-export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm' }) {
+export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm', source }) {
   const [busy, setBusy] = useState(false);
+  const isMirrored = source === 'form_submission';
 
   const open = async (e) => {
     e?.stopPropagation();
     setBusy(true);
-    // Open the popup synchronously inside the user gesture, then redirect it
-    // once the signed URL is back. Popup blockers won't fire when triggered
-    // by a real click.
     const win = window.open('about:blank', POPUP_NAME, POPUP_FEATURES);
     if (!win || win.closed) {
       setBusy(false);
@@ -27,14 +34,25 @@ export default function PdfActions({ resourceKind, recordId, title = '', size = 
       return;
     }
     try {
-      const { data } = await api.post('/pdf-token', {
-        resource: resourceKind, record_id: recordId, action: 'view',
-      });
-      win.location.replace(data.url);
+      let signedUrl;
+      if (isMirrored) {
+        const { data } = await api.post('/forms/submissions/pdf-token', {
+          submission_id: recordId, action: 'view',
+        });
+        signedUrl = data.url;
+      } else {
+        const { data } = await api.post('/pdf-token', {
+          resource: resourceKind, record_id: recordId, action: 'view',
+        });
+        signedUrl = data.url;
+      }
+      win.location.replace(signedUrl);
       win.focus();
     } catch (err) {
       try { win.close(); } catch { /* ignore */ }
-      toast.error(apiError(err) || 'Failed to open PDF');
+      const status = err?.response?.status;
+      if (status === 404) toast.error('This report has been deleted or moved.');
+      else toast.error(apiError(err) || 'Failed to open PDF');
     } finally {
       setBusy(false);
     }

@@ -378,6 +378,26 @@ def invalidate_modules_cache(org_id: Optional[str] = None) -> None:
         _MODULES_CACHE.pop(k, None)
 
 
+def _bypass_via_pdf_token(request: Request) -> bool:
+    """v160.3.0-adjust — Signed pdf-tokens carried in `?token=` bypass
+    the module gate. Router-level `require_module(...)` dependencies
+    would otherwise 401 the `/api/forms/submissions/{id}/pdf` route
+    because the request has no Bearer header — the JWT lives in the
+    query. We accept the request if the token is a well-formed
+    `pdf-token` JWT; the actual record ownership check runs inside
+    the endpoint (`_resolve_user_for_pdf`)."""
+    token = request.query_params.get("token")
+    if not token:
+        return False
+    try:
+        import jwt as _jwt
+        from auth import JWT_ALGORITHM, _secret
+        payload = _jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
+    except Exception:
+        return False
+    return payload.get("type") == "pdf-token"
+
+
 def require_module(module_id: str, allow_privileged: bool = True):
     """FastAPI dependency factory. Verifies the caller's role has the
     given mobile module enabled. Web callers (no mobile platform
@@ -385,10 +405,18 @@ def require_module(module_id: str, allow_privileged: bool = True):
 
     Raises 403 with `{"detail": f"Module '{module_id}' disabled for your role"}`.
     """
-    async def dep(
-        request: Request,
-        user: dict = Depends(get_current_user),
-    ) -> dict:
+    async def dep(request: Request) -> dict:
+        # v160.3.0-adjust — Signed pdf-token in `?token=` skips the
+        # module gate; endpoint-level `_resolve_user_for_pdf` still
+        # validates the token binding to the record. Returns a
+        # sentinel dict so downstream deps that consume the result
+        # don't break — but no endpoint on a require_module router
+        # actually reads it in the pdf-token path (the endpoint
+        # ignores the dep's return value and calls
+        # `_resolve_user_for_pdf` itself).
+        if _bypass_via_pdf_token(request):
+            return {"__pdf_token_bypass__": True}
+        user = await get_current_user(request, creds=None)
         # Web caller? Skip — the module gate is a phone-UX construct.
         if not is_mobile_client(request):
             return user
@@ -396,10 +424,6 @@ def require_module(module_id: str, allow_privileged: bool = True):
         if allow_privileged and role in _MODULE_PRIVILEGED_ROLES:
             return user
         row = await _load_role_modules(user["org_id"], role)
-        # Defensive default: if the module key is missing from the stored
-        # doc (e.g. a new module added mid-cycle), fall back to the
-        # DEFAULTS table so we never block a legitimate call because of
-        # a schema drift. If STILL missing, default False (deny).
         if module_id in row:
             enabled = bool(row[module_id])
         else:

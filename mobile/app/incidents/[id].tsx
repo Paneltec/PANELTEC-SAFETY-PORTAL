@@ -6,7 +6,8 @@ import StatusBadge from '../../src/components/StatusBadge';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+// v160.3.0-adjust — EmailButton removed. All mobile email affordances
+// stripped in this cycle; email review lives on web admin only.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 
 const CATS: Record<string, string> = {
@@ -28,7 +29,6 @@ export default function IncidentDetailScreen() {
 
   const canEdit = can('incidents', 'edit');
   const canView = can('incidents', 'view');
-  const canEmail = can('incidents', 'email');
 
   return (
     <ScrollView testID="incident-detail" style={s.scroll} contentContainerStyle={s.content}>
@@ -42,14 +42,6 @@ export default function IncidentDetailScreen() {
 
       <View testID="incident-actions" style={s.actionRow}>
         {canView && <PdfActions resourceKind="incidents" recordId={id!} title={doc.title} />}
-        {canEmail && (
-          <EmailButton
-            resourceKind="incidents"
-            recordId={id!}
-            subject={`Incident Summary: ${doc.title}`}
-            body={`Incident report.\n\nCategory: ${doc.category}\nDescription: ${doc.description || ''}\nOccurred at: ${doc.occurred_at || ''}`}
-          />
-        )}
       </View>
 
       <Section title="Description">

@@ -30,8 +30,8 @@ export default function SiteDiaryList() {
               </div>
               <p className="text-sm text-slate-700 line-clamp-2">{d.raw_notes}</p>
               <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                <PdfActions resourceKind="site_diary" recordId={d.id} title={`Site Diary ${d.date}`} size="sm" />
-                <EmailButton resourceKind="site_diary" recordId={d.id}
+                <PdfActions resourceKind="site_diary" recordId={d.id} source={d.source} title={`Site Diary ${d.date}`} size="sm" />
+                <EmailButton resourceKind="site_diary" recordId={d.id} source={d.source}
                   subject={`Site Diary — ${d.date}`}
                   body={`Site diary entry for ${d.date}.\n\n${d.raw_notes || ''}`}
                   variant="row" size="sm" label="Email" />

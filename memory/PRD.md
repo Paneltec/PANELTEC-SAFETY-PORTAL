@@ -4845,3 +4845,183 @@ required (no bundle content moved).
 Both briefs remain in this PRD from the earlier cycle. No mobile
 source touched this cycle so v160.3.1 can start from a clean tree.
 
+
+
+# 2026-07-11 — v160.3.0-adjust SHIPPED — Un-gate incidents + kill MY WORK + kill OUTBOX + fix Open Report on mirrored rows
+
+## Bundle contents (single version → `paneltec-v160.3.0-adjust`)
+
+### 1. Un-gate incident + near-miss templates
+Witnesses without a valid `white_card` must still be able to report
+incidents / near-misses. Category-baseline gating was too aggressive
+for these three templates.
+
+- `backend/scripts/migrate_v160_3_0_ungate_incidents.py` —
+  idempotent. Snapshot to
+  `form_templates_backup_v160_3_0_ungate_incidents` (45 rows),
+  then `$set: {required_certifications: []}` on:
+  * `Incident Report`  (was `['white_card']`)
+  * `Incident Report Form`  (was `['white_card']`)
+  * `Near Miss Report`  (was `['white_card']`)
+- `test_v160_3_0_apply_cert_map.py` extended with 2 committed
+  contracts:
+  * `test_incident_and_near_miss_templates_remain_ungated` — hard
+    assertion these three template names always resolve to `[]`.
+  * `test_ungate_migration_is_idempotent` — second run is 0-op.
+- Proposal MD updated (rows for these 3 read `_(none)_ ·
+  ungated_v160.3.0-adjust`) so any future re-apply of the mapping
+  cannot silently re-gate them.
+
+### 2. Remove MY WORK tab from mobile
+- Removed `Tabs.Screen name="my-work"` from
+  `mobile/app/(tabs)/_layout.tsx`.
+- Deleted `mobile/app/(tabs)/my-work.tsx`.
+- No other references to `/my-work` in the tree — nothing to
+  migrate. Drafts already live in Outbox (previously — see next
+  item for Outbox removal).
+
+### 3. Remove OUTBOX tab + all mobile email affordances
+- Removed `Tabs.Screen name="outbox"` from tab layout.
+- Deleted `mobile/app/(tabs)/outbox.tsx`.
+- Deleted `mobile/src/components/EmailButton.tsx` +
+  `mobile/src/components/EmailSendSheet.tsx` (dead after step 4).
+- Stripped `<EmailButton .../>` + import from 5 detail screens:
+  `incidents/[id].tsx`, `hazards/[id].tsx`,
+  `inspections/[id].tsx`, `pre-starts/[id].tsx`,
+  `site-diary/[id].tsx`. Each screen now has
+  `const canEmail = false;` for backward compatibility with
+  any downstream logic; the `<EmailButton>` JSX is gone.
+- **Backend email endpoints unchanged** — web admin still owns
+  email review. Only mobile UI stripped.
+- No offline-queued form submissions were living in Outbox — it
+  was 100% admin email-comms records. Nothing to migrate. Confirmed
+  by inspection of the (now-deleted) `(tabs)/outbox.tsx` which only
+  called `/email/outbox` (not any submission-draft endpoint).
+- **Final mobile bottom tab bar** (visible in
+  `/tmp/v160_3_0_adjust_tabs.png`, worker session):
+  **HOME · QR SCAN · PROFILE** — 3 tabs, no email icon.
+
+Note: `mobile/app/suppliers.tsx` still has a "send renewal email"
+supplier-specific action (POST /suppliers/{id}/send-renewal). That
+is a specific business function, not general email comms — left in
+place. Admin/foreman/HSEQ workflow. Flag for later review if the
+user wants it stripped too.
+
+### 4. Fix Open Report on mirrored Capture rows (was v160.2.9-open)
+**Root cause**: Same mirror-routing bug as delete.
+`POST /api/pdf-token` searches only the legacy per-entity
+collection. Mirrored `form_submissions` rows shared the source id
+and 404'd. Additionally the router-level
+`Depends(require_module("forms"))` dep on `/api/forms/*` blocked
+the query-token flow on `/submissions/{id}/pdf` because it forced
+Bearer auth before the endpoint could see the `?token=` param.
+
+**Fixes**:
+- `frontend/src/components/PdfActions.jsx` — accept `source` prop.
+  When `source === "form_submission"` route to
+  `POST /api/forms/submissions/pdf-token` (returns a signed URL
+  bound to the submission id) instead of the legacy
+  `POST /api/pdf-token`. Legacy rows unchanged.
+- `frontend/src/components/EmailButton.jsx` — accept `source`.
+  Renders `null` on mirrored rows (no `/forms/submissions/{id}/email`
+  convenience endpoint exists yet). Kept as a follow-up feature.
+- All 5 Capture pages pass `source={row.source}` to both
+  PdfActions and EmailButton.
+- `backend/permissions.py::require_module` — added
+  `_bypass_via_pdf_token(request)` guard: when a valid `pdf-token`
+  JWT is present as `?token=`, the module gate no-ops so the
+  signed-URL PDF viewer flow can reach the endpoint. Ownership +
+  record binding still validated by `_resolve_user_for_pdf`.
+
+## Regression tests
+- `test_v160_2_9_delete.py` extended with 2 new tests:
+  * `test_mirrored_pdf_token_via_submissions_endpoint` — proves
+    legacy 404 + submissions-endpoint 200 + signed URL returns
+    `application/pdf` bytes.
+  * `test_legacy_pdf_token_still_works_for_real_prestart` — legacy
+    path preserved for non-mirrored rows.
+- Full v160.2/3 suite: **33/33 green**.
+
+## Per-tab audit (post-fix)
+| Tab | Open report on legacy? | Open report on mirrored? |
+|-----|------------------------|--------------------------|
+| Pre-Starts | ✅ | ✅ (routes to submissions endpoint) |
+| Site Diary | ✅ | ✅ |
+| Hazards | ✅ | ✅ |
+| Incidents | ✅ | ✅ |
+| Inspections | ✅ | ✅ (also hidden entirely when `template_name` is empty) |
+
+## Version bump → `paneltec-v160.3.0-adjust`
+All 3 files. Metro cache cleared with corrected sequence. Mobile
+HTTP 200.
+
+## What's queued next
+- **v160.3.1** — Crane Lift grouped-crew pattern (brief in PRD).
+- **v160.3.2** — Drag-to-reorder multi-worker roster (brief).
+- **v160.3.3** — SWMS Edit UI (parked; user has NOT promoted).
+- **v160.3.4 (NEW)** — Documents per role: permissions matrix for
+  Document Library. Full brief captured below.
+
+
+# QUEUE — v160.3.4 — Documents per role (parked, no code this session)
+
+## Concept
+Per-document access control per role, mirroring the "Forms per
+role" matrix shipped in v160.0.13. Admin picks which documents
+each role can view + open on the phone.
+
+## Backend
+- Reuse the v160.0.13 pattern. Add `role_document_allowlist` to
+  `org_settings` (parallel to `role_form_allowlist`).
+- Extend documents list endpoint to intersect with the caller's
+  role allowlist. Admin/HSEQ Lead bypass. Missing config = "all
+  enabled" (backwards-compat default).
+- New endpoints:
+  * `GET /api/org/role-presets/{role}/documents` — full document
+    list with `enabled: bool` per row.
+  * `PUT /api/org/role-presets/{role}/documents` — body
+    `{allowed_document_ids: [...]}`, admin only.
+- Optional: document categories/tags for grouping (Safety / HR /
+  Site-specific / Training / SDS / Policies) — audit existing
+  `documents.category` first before adding. Report BEFORE writing.
+
+## Web Admin
+- New tab "Documents per role" in Permission Presets page,
+  alongside "Forms per role" and "Mobile App Modules".
+- Reuse collapsible-category-groups + per-row switch +
+  debounced auto-save UX from Forms per role.
+- If documents have no categories today, group by file type OR
+  render a single searchable list.
+
+## Mobile
+- No new screens. Existing Document Library list respects the
+  server-side allowlist filter automatically.
+- Empty-state guidance: *"No documents enabled for your role. Ask
+  your admin to grant access via Web Admin → Permission Presets →
+  Documents per role."*
+
+## Guardrails
+- Snapshot `org_settings` → `org_settings_backup_v160_3_4` before
+  writes.
+- Idempotent migration to initialise
+  `role_document_allowlist: None` on every org missing the field.
+- Regression tests in `test_v160_3_4_documents_per_role.py`
+  covering: six-role filter + admin bypass + PUT auth + backwards-
+  compat "all enabled" path.
+- Do NOT auto-apply a Worker allowlist — leave everything enabled
+  by default. Ship the tab + endpoint; user configures.
+
+## Version bump
+`paneltec-v160.3.4`. Metro cache clear (mobile touch: empty-state
+copy).
+
+## Deliverables (for the next fork that ships this)
+- Screenshot of the new "Documents per role" tab
+- Screenshot of mobile Document Library with allowlist applied
+- Full test suite green
+- Audit table of existing docs + proposed default Worker allowlist
+  (proposal-only, not applied)
+
+## Order in the queue
+`v160.3.1 → v160.3.2 → [v160.3.3 if promoted] → v160.3.4`.
+

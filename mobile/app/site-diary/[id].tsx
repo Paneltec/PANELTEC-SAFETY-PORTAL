@@ -5,7 +5,7 @@ import api from '../../src/lib/api';
 import { Colors } from '../../src/lib/colors';
 import { useCan } from '../../src/lib/AuthContext';
 import PdfActions from '../../src/components/PdfActions';
-import EmailButton from '../../src/components/EmailButton';
+// v160.3.0-adjust — EmailButton removed. Mobile email affordances stripped.
 import ReadOnlyBanner from '../../src/components/ReadOnlyBanner';
 
 export default function SiteDiaryDetailScreen() {
@@ -22,7 +22,7 @@ export default function SiteDiaryDetailScreen() {
 
   const canEdit = can('site_diary', 'edit');
   const canView = can('site_diary', 'view');
-  const canEmail = can('site_diary', 'email');
+  const canEmail = false; // v160.3.0-adjust — email affordance removed on mobile
   const sl = doc.structured_log;
 
   return (
