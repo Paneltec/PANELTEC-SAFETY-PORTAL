@@ -1,8 +1,11 @@
-// Risk Assessments — Capture sub-tab. v160.3.0-adjust-13.
-// Modelled on Inspections.jsx (same shape, same PdfActions/EmailButton
-// row, same zebra table). Reads from /risk-assessments which unions
-// native rows (empty for now) with form_submissions where
-// template_category_snapshot === "risk_assessment".
+// Risk Assessments — Capture sub-tab. v160.3.0-adjust-16a.
+// Card layout matching Hazards / Pre-Starts patterns:
+//   • Template name in bold
+//   • LEGACY pill for imported rows (adjust-15 pattern)
+//   • Operator name (`submitted_by_name`)
+//   • SUBMITTED status + date pill row
+//   • Open report + trash-icon delete
+//   • No photo placeholder when no photo attached (adjust-16a pattern)
 import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import EmailButton from '../components/EmailButton';
@@ -36,63 +39,70 @@ export default function RiskAssessments() {
             body="Workers submit a Risk Assessment from the mobile Forms Library (TTM Register, Construction & Excavation SSRA, Viatec Traffic Solutions SSRA). They land here."
           />
         ) : (
-          <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-            <table className="zebra-list w-full text-sm">
-              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
-                <tr>
-                  <th className="text-left px-4 py-3">Template</th>
-                  <th className="text-left px-4 py-3">Date</th>
-                  <th className="text-left px-4 py-3">Operator</th>
-                  <th className="text-right px-4 py-3"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((it) => {
-                  const title = it.template_name || it.template_name_snapshot || 'Risk assessment';
-                  return (
-                    <tr
-                      key={it.id}
-                      className="border-t border-slate-100 hover:bg-slate-50"
-                      data-testid={`risk-assessment-row-${it.id}`}
-                    >
-                      <td className="px-4 py-3 font-medium">{title}</td>
-                      <td className="px-4 py-3 text-slate-500">{it.date}</td>
-                      <td className="px-4 py-3 text-slate-500">{it.operator || it.created_by_name || ''}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="inline-flex gap-1 items-center">
-                          <PdfActions
-                            resourceKind="risk-assessments"
-                            recordId={it.id}
-                            source={it.source}
-                            title={title}
-                            size="sm"
-                          />
-                          <EmailButton
-                            resourceKind="risk-assessments"
-                            recordId={it.id}
-                            source={it.source}
-                            subject={`Risk Assessment: ${title} — ${it.date}`}
-                            body={`Risk assessment.\n\nTemplate: ${title}\nDate: ${it.date}`}
-                            variant="row"
-                            size="sm"
-                            label="Email"
-                          />
-                          <DeleteRecordButton
-                            resourceKind="risk-assessments"
-                            apiPath="risk-assessments"
-                            recordId={it.id}
-                            source={it.source}
-                            label="Risk assessment"
-                            recordTitle={`${title} · ${it.date}`}
-                            onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {items.map((r) => {
+              const title = r.template_name_snapshot || r.template_name || 'Risk assessment';
+              const operator = r.submitted_by_name || r.operator || r.created_by_name || '';
+              return (
+                <div
+                  key={r.id}
+                  className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
+                  data-testid={`risk-assessment-card-${r.id}`}
+                >
+                  <div className="p-4">
+                    <h3 className="font-display font-semibold text-sm truncate">{title}</h3>
+                    {r.imported && (
+                      <div className="mt-1">
+                        <span
+                          className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-300"
+                          title="Imported from legacy Simpro record"
+                          data-testid={`risk-assessment-legacy-badge-${r.id}`}
+                        >
+                          Legacy
+                        </span>
+                      </div>
+                    )}
+                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">{operator || '—'}</p>
+                    <div className="mt-3 flex items-center justify-between text-xs">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200 font-semibold uppercase tracking-wider text-[10px]">
+                        Submitted
+                      </span>
+                      <span className="text-slate-500">{r.date || (r.submitted_at || '').substring(0, 10)}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+                      <div className="inline-flex gap-1 items-center">
+                        <PdfActions
+                          resourceKind="risk-assessments"
+                          recordId={r.id}
+                          source={r.source}
+                          title={title}
+                          size="sm"
+                        />
+                        <EmailButton
+                          resourceKind="risk-assessments"
+                          recordId={r.id}
+                          source={r.source}
+                          subject={`Risk Assessment: ${title} — ${r.date || ''}`}
+                          body={`Risk assessment.\n\nTemplate: ${title}\nDate: ${r.date || ''}`}
+                          variant="row"
+                          size="sm"
+                          label="Email"
+                        />
+                      </div>
+                      <DeleteRecordButton
+                        resourceKind="risk-assessments"
+                        apiPath="risk-assessments"
+                        recordId={r.id}
+                        source={r.source}
+                        label="Risk assessment"
+                        recordTitle={`${title} · ${r.date || ''}`}
+                        onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
