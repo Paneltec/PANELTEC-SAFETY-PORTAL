@@ -65,7 +65,7 @@ export default function HazardsList() {
                     body={`A hazard has been reported.\n\nTitle: ${h.title}\nSeverity: ${h.severity}\nDescription: ${h.description || ''}`}
                     attachments={h.photo_url ? [{ file_url: h.photo_url, label: 'hazard-photo.jpg' }] : []}
                     variant="row" size="sm" label="Email" />
-                  <DeleteRecordButton resourceKind="hazards" apiPath="hazards" recordId={h.id} label="Hazard" recordTitle={h.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                  <DeleteRecordButton resourceKind="hazards" apiPath="hazards" recordId={h.id} source={h.source} label="Hazard" recordTitle={h.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                 </div>
               </div>
             </div>

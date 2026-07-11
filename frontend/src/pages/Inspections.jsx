@@ -70,17 +70,29 @@ export default function InspectionsList() {
                 const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
                 return (
                   <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`inspection-row-${it.id}`}>
-                    <td className="px-4 py-3 font-medium">{it.template_name}</td>
+                    <td className="px-4 py-3 font-medium">
+                      {it.template_name
+                        ? it.template_name
+                        : <span className="text-slate-400 italic">Deleted template</span>}
+                    </td>
                     <td className="px-4 py-3 text-slate-500">{it.date}</td>
                     <td className="px-4 py-3 text-slate-500"><span className="text-emerald-700 font-medium">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-medium' : ''}>{failed}</span> fail · {total - passed - failed} N/A</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1 items-center">
-                        <PdfActions resourceKind="inspections" recordId={it.id} title={it.template_name || it.template || 'Inspection'} size="sm" />
+                        {/* v160.2.9-delete — Only offer "Open report"
+                            when the row has a real template. A mirrored
+                            submission whose template row was deleted
+                            renders as "Deleted template" and the PDF
+                            renderer would emit an empty report — hide
+                            it to avoid confusion. */}
+                        {it.template_name && (
+                          <PdfActions resourceKind="inspections" recordId={it.id} title={it.template_name || 'Inspection'} size="sm" />
+                        )}
                         <EmailButton resourceKind="inspections" recordId={it.id}
-                          subject={`Inspection Report: ${it.template_name} — ${it.date}`}
-                          body={`Inspection report.\n\nTemplate: ${it.template_name}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
+                          subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
+                          body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
                           variant="row" size="sm" label="Email" />
-                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} label="Inspection" recordTitle={`${it.template_name} · ${it.date}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                       </div>
                     </td>
                   </tr>

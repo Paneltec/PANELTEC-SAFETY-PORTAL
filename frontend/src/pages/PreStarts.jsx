@@ -35,7 +35,7 @@ export default function PreStartsList() {
                   subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
                   body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
                   variant="row" size="sm" label="Email" />
-                <DeleteRecordButton resourceKind="pre_starts" apiPath="pre-starts" recordId={p.id} label="Pre-Start" recordTitle={`${p.date}${p.crew_lead ? ` · ${p.crew_lead}` : ''}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                <DeleteRecordButton resourceKind="pre_starts" apiPath="pre-starts" recordId={p.id} source={p.source} label="Pre-Start" recordTitle={`${p.date}${p.crew_lead ? ` · ${p.crew_lead}` : ''}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
               </div>
             </div>
           ))}

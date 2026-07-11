@@ -109,6 +109,26 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 }
             mirrored = await db.form_submissions.find(mq, {"_id": 0}).sort(
                 "submitted_at", -1).to_list(limit)
+            # v160.2.9-delete — Fill in `template_name_snapshot` from the
+            # live `form_templates` row for any legacy submission that
+            # missed the snapshot capture. Falls back to "Deleted
+            # template" when the template row itself has vanished. One
+            # `find({$in: [...]})` batch — O(1) queries.
+            missing_ids = {
+                m.get("template_id") for m in mirrored
+                if not m.get("template_name_snapshot") and m.get("template_id")
+            }
+            if missing_ids:
+                lookup = {}
+                async for t in db.form_templates.find(
+                    {"id": {"$in": list(missing_ids)}}, {"_id": 0, "id": 1, "name": 1},
+                ):
+                    lookup[t["id"]] = t.get("name")
+                for m in mirrored:
+                    if not m.get("template_name_snapshot"):
+                        m["template_name_snapshot"] = (
+                            lookup.get(m.get("template_id")) or "Deleted template"
+                        )
             for m in mirrored:
                 # Normalise the shape so the existing web-admin table
                 # renderers can pick it up without blowing up on missing
@@ -118,8 +138,15 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 m.setdefault("created_by", m.get("submitted_by"))
                 m.setdefault("status", "submitted")
                 m.setdefault("date", sub_at[:10] if sub_at else "")
-                m.setdefault("title",
-                             m.get("template_name_snapshot") or "Form submission")
+                tpl_name = m.get("template_name_snapshot") or "Form submission"
+                m.setdefault("title", tpl_name)
+                # v160.2.9-delete — Inspections.jsx reads `template_name`
+                # as the primary column. Mirror the snapshot under that
+                # alias so it never renders blank. Same alias is safe
+                # for the other Capture tabs (they read their own field
+                # names — `crew_lead`, `raw_notes`, `title` — none of
+                # which conflict with `template_name`).
+                m.setdefault("template_name", tpl_name)
                 m["source"] = "form_submission"
             docs = docs + mirrored
             docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)

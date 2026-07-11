@@ -78,7 +78,7 @@ export default function IncidentsList() {
                         subject={`Incident Summary: ${i.title}`}
                         body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
                         variant="row" size="sm" label="Email" />
-                      <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} label="Incident" recordTitle={i.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                      <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} source={i.source} label="Incident" recordTitle={i.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
                     </div>
                   </td>
                 </tr>

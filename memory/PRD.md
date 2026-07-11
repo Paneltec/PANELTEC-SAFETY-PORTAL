@@ -4458,3 +4458,192 @@ Mobile back at HTTP 200 within 25s. Home screen version banner reads
 - **v160.3.0 — Qualification-gated forms** — next in queue.
 - **Admin QR generator** for form-template QR codes — P3 parking lot.
 
+
+
+# 2026-07-11 — v160.2.9-delete HOTFIX SHIPPED — Capture delete + mirrored-row TEMPLATE alias
+
+## Root cause
+`v160.2.5a` mirrored `form_submissions` rows into the Capture list
+endpoints (pre-starts / site-diary / hazards / incidents / inspections)
+by `template_category_snapshot`. Mirrored rows kept the source
+`form_submissions` id in their `id` field — a shape that the shared
+`DeleteRecordButton` was never taught about. Result:
+`DELETE /api/pre-starts/{id}` (etc.) hit the legacy per-entity
+collection, missed, and 404'd silently. Because the demo dataset is
+~95% mirrored, effectively every trash click on the web admin
+appeared to do nothing.
+
+A second, orthogonal bug on **Inspections**: the list renders
+`it.template_name`, but the mirror projection only populated `title`
+(from `template_name_snapshot`). The TEMPLATE column read blank for
+every mirrored row.
+
+## Fixes shipped
+
+### Backend — `crud.py` mirror projection
+- New mirror row now carries a `template_name` alias — same value as
+  `title` / `template_name_snapshot`. Every Capture tab that reads the
+  legacy-collection field name (`template_name` on Inspections) now
+  works uniformly across both sources.
+- **Live-lookup fallback**: when a legacy submission never captured
+  `template_name_snapshot` at submit time, the mirror does a single
+  batched `find({"id": {"$in": [template_ids]}})` on `form_templates`
+  and fills the name from the live template row. Templates that were
+  hard-deleted since submission fall through to the string
+  `"Deleted template"`.
+- No new indexes. One extra query per list call, bounded to the set
+  of distinct missing template ids in the mirrored slice.
+
+### Frontend — `components/DeleteRecordButton.jsx`
+- New `source` prop. When `source === "form_submission"` the delete
+  routes to `DELETE /api/forms/submissions/{id}` (backend already
+  exposed this at `forms.py::delete_submission` with the correct
+  RBAC — submitter or admin/hseq_lead).
+- Legacy rows continue to hit `/api/{apiPath}/{id}` as before —
+  100% backward compatible.
+- Confirm dialog gains a mirror-aware hint: *"Submitted from the
+  mobile app — this deletes the original submission."*
+- Error toasts made explicit: 404 → *"This record has already been
+  deleted or moved."* 403 → *"You don't have permission..."*
+  (already existed, kept).
+
+### Frontend — Capture pages pass `source`
+- `pages/PreStarts.jsx` ← `source={p.source}`
+- `pages/SiteDiary.jsx` ← `source={d.source}`
+- `pages/Hazards.jsx` ← `source={h.source}`
+- `pages/Incidents.jsx` ← `source={i.source}`
+- `pages/Inspections.jsx` ← `source={it.source}`
+
+### Frontend — `pages/Inspections.jsx` TEMPLATE column & Open report
+- Renders `it.template_name`; falls back to muted italic
+  *"Deleted template"* when truly empty.
+- **"Open report"** is now conditional on `it.template_name` being
+  truthy — a mirrored row whose template row was hard-deleted no
+  longer offers a button that would render an empty PDF.
+- Email + Delete buttons remain unconditional (deleting a
+  templateless submission is a legitimate cleanup path).
+
+## Per-tab audit (via live curl, admin token)
+
+| Tab              | Total | Mirrored | Legacy | TEMPLATE populated? | Delete works? | Open report? |
+|------------------|-------|----------|--------|---------------------|---------------|--------------|
+| Daily Pre-Starts | 23    | 22       | 1      | N/A (uses crew_lead)| ✅ both paths | ✅ (unchanged) |
+| Site Diary       | 1     | 0        | 1      | N/A (uses date)     | ✅ legacy path| ✅            |
+| Hazard Reports   | 1     | 0        | 1      | N/A (uses title)    | ✅ legacy path| ✅            |
+| Incident Reports | 10    | 9        | 1      | ✅ (was blank → "Incident Report") | ✅ both paths | ✅ |
+| Inspection Reports | 19  | 18       | 1      | ✅ (was blank → "Daily Site Inspection", "Plant inspection", "Vehicle Pre-Use Inspection") | ✅ both paths | ✅ (hidden for orphaned mirrors) |
+| Forms            | n/a   | n/a      | n/a    | (uses submissions endpoint directly, not mirrored) | ✅ already worked (inline `api.delete`) | ✅ |
+
+## Regression tests — `backend/tests/test_v160_2_9_delete.py`
+6/6 PASS:
+1. `test_mirrored_submission_delete_removes_from_capture_list` —
+   legacy path 404s, submission-path 204s, mirror row disappears.
+2. `test_legacy_prestart_delete_still_works` — the fix is
+   backward-compatible.
+3. `test_worker_cannot_delete_other_workers_submission` — RBAC
+   preserved: non-writer worker gets 403.
+4. `test_second_delete_returns_404` — idempotency-safe for the UI.
+5. `test_mirrored_row_carries_template_name_alias` — Inspections
+   `template_name` populated on mirrored rows.
+6. `test_mirrored_row_missing_snapshot_falls_back` — live
+   template-lookup succeeds; hard-deleted template → *"Deleted
+   template"* string.
+
+Full v160.2 suite: **12/12 green** (v160.2.6-cleanup dedupe · v160.2.7
+worker perms · v160.2.9-delete).
+
+## Visual receipts (web admin, admin session)
+- `/tmp/v160_2_9_delete_inspections_list.png` — TEMPLATE column
+  populated for all 20 rows (Daily Site Inspection ×8, Plant
+  inspection, Vehicle Pre-Use Inspection ×4+, etc.). Zero blanks.
+- `/tmp/v160_2_9_delete_confirm_dialog.png` — Delete dialog with
+  "Delete Inspection?" title, record subtitle, mirror-aware
+  submission hint, red confirm button.
+- `/tmp/v160_2_9_delete_after_success.png` — green "Record deleted"
+  toast, row count 20 → 19.
+
+## Version bumps → `paneltec-v160.2.9-delete`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js` (`CACHE_VERSION`)
+
+## Task 2 — SWMS edit-after-paste AUDIT (report only, no code)
+
+**User's question**: after pasting a new SWMS, can you edit it?
+
+**Findings**
+- **Backend**: `PATCH /api/swms/{id}` exists (generic CRUD in
+  `crud.py::update_item`, gated on `swms.edit`). No status gate —
+  a `draft` (which is what `/from-paste` produces) is editable via
+  the API. Even `approved` would be editable via API (governance
+  concern, not user's question).
+- **Paste flow** (`swms_phase45.py::swms_from_paste`) lands the
+  parsed doc in `db.swms` with `status="draft"`,
+  `created_via="paste"`. Standard SWMS shape from that point on.
+- **Web UI** (`pages/Swms.jsx::SwmsDetail`, L692-785): renders
+  every field **read-only** — `<p>` tags for `job_description`,
+  `<DetailList>` for tasks/hazards/controls/PPE, etc. No `<input>`
+  / `<textarea>` bound to `doc`. No Save/Edit button. No PATCH
+  call anywhere in this component.
+- **Mobile UI** (`app/swms/[id].tsx`): same — read-only display +
+  `ReadOnlyBanner` when caller lacks `swms.edit`, plus review
+  actions (approve/reject/request-changes) for reviewers on
+  `status === 'submitted'`.
+- **The "Open in editor" toast** (`Swms.jsx` L109-128, from Phase
+  4.6) navigates to `/app/swms/{id}?highlight=ai_filled` — but the
+  target page consumes neither `?highlight` nor exposes an editor.
+  Leftover from the "AI-filled diff pills" TODO.
+
+**Bottom line for the user**
+The pasted SWMS is technically editable via the API but there is
+**no UI to edit it** on either surface. Practical workarounds
+today:
+  1. Delete the pasted SWMS from the list (Recycle Bin has 30 days
+     of undo), re-paste with corrected text.
+  2. Or export → PDF → mark up → re-paste.
+
+If the user wants a real Edit path, this is a queueable feature —
+proposed briefly as **v160.3.3** in the queue update below.
+
+## Queue additions (per user, do NOT build this session)
+
+### v160.3.1 — Crane Lift grouped-crew pattern (P2)
+Template config: `config.group: "crew"` on each `worker_picker`.
+Two-or-more adjacent single-select worker pickers with the same
+group id render as a single "Crew" section:
+  - Shared inline company toggle at the top of the group (default
+    "Paneltec Civil").
+  - Each role label + compact picker below (no per-field toggle).
+  - Per-worker override: tap the picker to switch just that
+    worker's company.
+- Applies to Crane Lift (Dogger + Operator + Supervisor),
+  Excavation Permit, Confined Space, any multi-role permit
+  template that opts in.
+- Backend: extend template model with `config.group` (str | null).
+- Migration: idempotent scan of stock templates; opt in for the
+  known crew forms.
+- Tests: snapshot the rendered field graph + confirm per-worker
+  override writes only that field.
+
+### v160.3.2 — Drag-to-reorder multi-worker roster (P2)
+- Use `react-native-draggable-flatlist`.
+- Long-press to grab, drag to reorder.
+- Order stored in the form value array (positional; not a new
+  field).
+- Applies to any `worker_picker` with `config.multi: true`.
+- No visual drift at rest; drag handle appears on long-press only.
+
+### v160.3.3 — SWMS Edit UI (NEW — proposed after Task 2 audit) (P2)
+- Add an "Edit" action on `SwmsDetail` (web + mobile) that flips
+  the read-only body into editable inputs bound to `doc`.
+- PATCH on save. Concurrency: 409 if the row's `updated_at` moved
+  while editing (backend already stores `updated_at`; add a
+  `If-Match: <updated_at>` header check).
+- Guardrail: approved SWMS require an admin confirm dialog to
+  edit — silently editing an approved SWMS is a governance risk.
+- Not urgent; queue behind v160.3.0 unless the user promotes it.
+
+## Order for next fork
+`v160.3.0` (qualification-gated forms) → `v160.3.1` (crew group) →
+`v160.3.2` (drag-reorder) → `v160.3.3` (SWMS edit — if promoted).
+

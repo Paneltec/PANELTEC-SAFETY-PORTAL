@@ -35,7 +35,7 @@ export default function SiteDiaryList() {
                   subject={`Site Diary — ${d.date}`}
                   body={`Site diary entry for ${d.date}.\n\n${d.raw_notes || ''}`}
                   variant="row" size="sm" label="Email" />
-                <DeleteRecordButton resourceKind="site_diary" apiPath="site-diary" recordId={d.id} label="Site Diary entry" recordTitle={d.date} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                <DeleteRecordButton resourceKind="site_diary" apiPath="site-diary" recordId={d.id} source={d.source} label="Site Diary entry" recordTitle={d.date} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
               </div>
             </div>
           ))}
