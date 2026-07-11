@@ -19,6 +19,18 @@ code {
 
 @layer base {
     :root {
+        /* v160.3.0-adjust-7 — Single source of truth for app-shell chrome
+         * dimensions. Consumed by:
+         *   - AppShell `<main>` padding-top (guarantees the first line of
+         *     page content clears the sticky topbar without hand-picked
+         *     pt-6 / pt-8 / pt-10 breakpoints).
+         *   - Any future modal / drawer that needs to offset from the
+         *     topbar or reserve sidebar clearance.
+         * Bump the values here and every consumer picks it up. */
+        --app-topbar-height: 4rem;   /* 64px — matches `h-16` on <header> */
+        --app-sidebar-width: 16rem;  /* 256px — matches `w-64` on <aside> */
+        --app-sidebar-width-collapsed: 4.5rem; /* 72px — matches `w-[72px]` */
+
         --background: 0 0% 100%;
         --foreground: 222 47% 11%;
         --card: 0 0% 100%;
@@ -561,37 +573,27 @@ ol.zebra-list > li:hover {
     .hover-lift:active { transform: none !important; }
 }
 
-/* v160.3.0-adjust-4 — Reserve topnav clearance on every full-viewport
- * modal-style overlay. Every custom modal in the app uses the same
- * pattern: `<div class="fixed inset-0 z-50 flex items-center ..." >`
- * (or `place-items-center` / `grid`). Historically these centred the
- * modal panel in the FULL viewport, so on typical 900px screens the
- * panel top edge landed near the topnav (`sticky top-0 h-16`, z-30).
- * Even though the modal container itself has a higher z-index, some
- * Chromium builds paint the sticky topnav's border/shadow OVER the
- * modal header at the shared row-1 region — the user-reported
- * "modal header clipped behind top nav" symptom on WorkerViewModal /
- * Edit Worker modal.
+/* v160.3.0-adjust-7 — Superseded diagnosis for modal / topnav clipping.
+ * The v160.3.0-adjust-4 rule below RESERVED 4rem padding-top on every
+ * full-viewport modal wrapper. Diagnosis proved that was fixing a
+ * different symptom — the true user complaint (left-edge of the modal
+ * clipped by the sidebar) is a FLEX STACKING CONTEXT bug, not a
+ * padding bug: `.aside` is a flex item with `sticky top-0 z-20`
+ * (creates a stacking context), while the sibling content-column is
+ * a flex item with `z-index: auto` (does NOT create one). Per CSS
+ * flex painting rules, z-auto flex items paint UNDER z-indexed
+ * siblings, and `position: fixed` descendants of the z-auto item
+ * inherit that stacking rank. Fix is applied in `AppShell.jsx` by
+ * giving the content-column its own stacking context (`relative z-40`).
  *
- * Fix: reserve `padding-top: 4rem` (matches the 64px topnav height)
- * on every element matching this overlay pattern. Effective centring
- * shifts down by 64px, guaranteeing the modal header sits clear of
- * the topnav baseline regardless of stacking order.
- *
- * Shadcn Sheet/Dialog primitives (in `/components/ui/sheet.jsx` and
- * `/components/ui/dialog.jsx`) render inside a Radix Portal with
- * `bg-background` (opaque) and their own layout — not affected by
- * this rule (they don't have `flex items-center` on the fixed
- * inset-0 wrapper).
- *
- * Drawer-style overlays (right-side panels via `flex justify-end`
- * WITHOUT `items-center`) are also unaffected — the selector only
- * matches modals that center vertically.
+ * The topbar-clearance padding is retained (harmless — modal cards
+ * are centred at max-h-[92vh] anyway) so any older cached page that
+ * predates the AppShell fix still gets a graceful degradation.
  */
 .fixed.inset-0.flex.items-center,
 .fixed.inset-0.grid.place-items-center,
 .fixed.inset-0.grid.place-items-end,
 .fixed.inset-0.flex.items-end {
-    padding-top: 4rem;
+    padding-top: var(--app-topbar-height, 4rem);
 }
 

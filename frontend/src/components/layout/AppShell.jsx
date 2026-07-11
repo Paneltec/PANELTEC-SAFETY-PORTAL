@@ -397,24 +397,42 @@ export default function AppShell() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex-1 flex flex-col min-w-0">
+      {/* v160.3.0-adjust-7 — Content-column MUST be a stacking context that
+       * sits ABOVE the sidebar's z-20. Without this, every page-level
+       * modal (`fixed inset-0 z-50 flex items-center …`) is contained
+       * in the z-auto flex item's paint layer and paints UNDER the
+       * z-20 sidebar. Symptom: left edge of every modal (Worker Edit,
+       * Suppliers Edit, Vehicle Edit, PDF preview, Session Warning,
+       * Change Password, Confirmations, etc.) clipped by the sidebar.
+       * Diagnosis proof: with the modal in-place, `elementsFromPoint(100, 400)`
+       * (inside the sidebar area) returned the sidebar's <a> as the
+       * topmost element; the modal (z-50) was BELOW it in the paint
+       * order. Bumping the modal's z-index to 100 / 9999 did NOT help
+       * (stacking context escape). Portaling the modal to `document.body`
+       * DID fix it. Giving the content-column its own stacking context
+       * via `relative z-40` also fixes it AND does not require
+       * refactoring every modal to use React portals.
+       *
+       * z-40 chosen because:
+       *   - Sidebar is z-20 (must beat).
+       *   - Radix Portal overlays (Dropdown, Popover, Toast, Dialog)
+       *     render OUTSIDE this div via `document.body`, so they still
+       *     compete only in the root stacking context.
+       *   - Modal at z-50 lives INSIDE this div, painting above the
+       *     topbar (z-30 sibling inside this same context) and above
+       *     the sidebar (z-20 sibling outside this context).
+       */}
+      <div className="flex-1 flex flex-col min-w-0 relative z-40">
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
         <RebrandNudge />
+        {/* v160.3.0-adjust-7 — Kept `pt-6 / sm:pt-8 / lg:pt-10` from
+         *   adjust-6 (visual breathing room below the topbar). Side +
+         *   bottom padding unchanged. Modal clipping was NOT a padding
+         *   bug — see the flex-stacking-context fix on the parent div. */}
         <main className="flex-1 p-4 pt-6 sm:p-6 sm:pt-8 lg:p-8 lg:pt-10" data-testid="app-main">
           {/* v156.1 — Opacity-only route transition. `animate-route-fade` has
               NO `transform` keyframe, so this wrapper never becomes a
-              containing block for `position: fixed` modal descendants (which
-              is what broke the Suppliers Edit modal in v156).
-              v160.3.0-adjust-6 — Bumped `<main>` top padding at every
-              breakpoint (pt-6 / pt-8 / pt-10). The topbar is `sticky
-              top-0 h-16` (64px). With the old symmetric `p-4/6/8`,
-              first page content landed at y=80-96px — visually
-              crowding the topbar's bottom border, especially on
-              pages that lead with a PageHeader pastel banner (Certifications,
-              Workers, Sites, Compliance Hub). Extra top padding
-              (24/32/40px depending on viewport) gives the crumb + title
-              a comfortable buffer below the topbar without changing
-              side/bottom rhythm. */}
+              containing block for `position: fixed` modal descendants. */}
           <div key={location.pathname} className="animate-route-fade">
             <Outlet />
           </div>

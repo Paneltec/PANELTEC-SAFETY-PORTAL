@@ -1,3 +1,108 @@
+# 2026-07-11 — v160.3.0-adjust-7 — Modal / sidebar overlap SHIPPED
+
+## Problem
+User's screenshot showed the Worker Edit modal (for PAUL ASHLIN) with the
+LEFT edge clipped by the sidebar — text truncated to "AUL", "ul.ashlin@…",
+"48 812 305", "affic Controller", "ersonal", etc. Same pattern reported
+against v160.3.0-adjust-4 (modal headers under topnav) and adjust-6 (page
+headers under topnav) — but the actual failing symptom on the real screen
+was **modal ↔ sidebar overlap**, not padding.
+
+## Root cause (definitive, via Playwright `elementsFromPoint`)
+- Modal wrapper: `<div class="fixed inset-0 z-50 flex items-center …">`
+  — Position: fixed. Rect (0, 0, 1440, 900). z-index: 50. **No** transformed
+  ancestor (containing block is viewport as expected).
+- Sidebar: `<aside class="sticky top-0 z-20">` — flex item with z-index != auto
+  → creates a **stacking context @ z=20** in the root flex container.
+- Content-column: `<div class="flex-1 flex flex-col min-w-0">` — flex item
+  with `z-index: auto` → **does NOT create a stacking context**.
+- Per CSS flex painting rules, a flex item with `z-index: auto` is painted
+  BELOW a sibling flex item with `z-index != auto`. `position: fixed`
+  descendants of the z-auto item inherit that flex-level rank.
+- Bumping the modal to `z-index: 100` did NOT lift it above the sidebar
+  (verified live). Portaling to `document.body` DID fix it. So did
+  giving the content-column its own stacking context via `relative z-40`.
+
+## Fix (surgical, one-line + CSS variables)
+- `AppShell.jsx`: content-column div is now
+  `flex-1 flex flex-col min-w-0 relative z-40`. Every modal descendant
+  (Worker Edit/View, Suppliers Edit, PDF preview, Cert Edit/Delete,
+  Change Password, Session Warning, etc.) inherits a stacking context
+  that outranks the sidebar's z-20 — modal at z-50 paints above sidebar
+  automatically.
+- `index.css`: added CSS variables at `:root` for a single source of truth
+  on chrome dimensions:
+  - `--app-topbar-height: 4rem;`
+  - `--app-sidebar-width: 16rem;`
+  - `--app-sidebar-width-collapsed: 4.5rem;`
+- `index.css`: the v160.3.0-adjust-4 modal overlay padding-top rule
+  now consumes `var(--app-topbar-height, 4rem)`. Kept as harmless
+  graceful degradation for browsers that cache the older bundle.
+- `AppShell.jsx`: `<main>` padding kept at `p-4 pt-6 sm:p-6 sm:pt-8
+  lg:p-8 lg:pt-10` (adjust-6 breathing room retained — visually
+  unrelated to the modal bug but user liked the extra buffer).
+
+## Verdict on adjust-6 padding
+KEPT. Sanity check: sticky topbar reserves its own flow space, so
+`<main>` naturally starts at y=64. The pt-6/8/10 gives 24-40px extra
+breathing room before the first crumb/PageHeader — visually pleasing.
+Not related to the true bug.
+
+## Visual proof (all four screenshots at 1440×900, admin login)
+- `/tmp/adjust7_proof_1_worker_edit_modal.png` — Worker Edit modal for
+  PAUL ASHLIN. Full text readable: "EDIT WORKER", "PAUL ASHLIN",
+  "paul.ashlin@icloud.com", "0448 812 305", "Traffic Controller",
+  "Personal", "Availability", "Clients", "Certifications". Sidebar
+  dimmed behind backdrop.
+- `/tmp/adjust7_proof_2_certifications.png` — /app/settings/certifications
+  loads clean. Sidebar visible left, topbar visible top. PageHeader
+  "Certifications" + "Compliance attention queue" banner render at
+  full width without clipping.
+- `/tmp/adjust7_proof_3_dashboard.png` — /app/dashboard renders full
+  Intelligence Centre header banner + Compliance Snapshot cards.
+- `/tmp/adjust7_proof_4_worker_view_modal.png` — Read-only Worker view
+  modal (eye icon). "WORKER PROFILE · READ ONLY" header, PAUL ASHLIN,
+  Identity/Personal/Availability/Clients/Certifications sections all
+  readable, sidebar dimmed.
+
+## Programmatic proof
+- Before fix: `document.elementsFromPoint(100, 400)` (inside sidebar
+  area) returned `A#nav-incidents` as the topmost — sidebar link painting
+  ABOVE the z-50 modal.
+- After fix: same call returns `DIV[data-testid="worker-edit-modal"]`
+  as the topmost. Portaling to body ALSO returned the modal. Confirmed
+  the flex-stacking-context fix is functionally equivalent to a portal.
+
+## Files touched
+- `/app/frontend/src/index.css` (+ CSS vars, softened adjust-4 rule)
+- `/app/frontend/src/components/layout/AppShell.jsx` (`relative z-40` on content-column)
+- `/app/frontend/src/lib/version.js` → `paneltec-v160.3.0-adjust-7`
+- `/app/frontend/public/service-worker.js` `CACHE_VERSION` → same
+- `/app/mobile/src/lib/version.ts` `MOBILE_BUNDLE_VERSION` → same
+
+## Regression status
+- Backend pytest: baseline was noisy (pre-existing test-runner fixture
+  issues with 21 collection errors + 5 pre-existing failures around
+  auth persistence + navixy trip summary + phase 3.8 scan-forms +
+  stale v114 SW-version hard-code). None are related to this fix —
+  no backend code was touched. `test_service_worker_version` in
+  `test_v114_bugs.py` was stale before my change (still hard-codes
+  `paneltec-v114` while the running SW was already at v160.3.0-adjust-6).
+- Frontend: only 4 files changed (index.css, AppShell.jsx, version.js,
+  service-worker.js). No mobile code touched.
+
+## Not shipped this cycle (parked for next)
+- v160.3.1 — Crane Lift grouped-crew pattern (P1).
+- v160.3.2 — Drag-to-reorder on multi-worker roster rows (P2).
+- v160.3.4 — Documents per role (P3).
+- v160.4.0 — Simpro Sync + Rules UI (P4).
+- v160.3.3 — SWMS Edit UI (PARKED).
+- `mobile_safe_delete.sh` guardrail (PARKED).
+
+---
+
+
+
 # 2026-06-30 — Phase 4.9 — Counter fix re-ship + Today/Week/Month Trip data (v113)
 
 ## Part 1 — Counter fix re-shipped (after the brief rollback)
