@@ -20,7 +20,7 @@ import api, { apiError } from '../lib/api';
 const POPUP_NAME = 'paneltec-pdf';
 const POPUP_FEATURES = 'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes,toolbar=no,location=no,menubar=no,status=no';
 
-export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm', source }) {
+export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm', source, iconOnly = false }) {
   const [busy, setBusy] = useState(false);
   const isMirrored = source === 'form_submission';
 
@@ -59,6 +59,8 @@ export default function PdfActions({ resourceKind, recordId, title = '', size = 
   };
 
   const ico = size === 'sm' ? 12 : 14;
+  const iconOnlyCls =
+    'inline-flex items-center justify-center h-6 w-6 rounded hover:bg-slate-100 text-slate-500 hover:text-slate-900';
   const cls = size === 'sm'
     ? 'inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-100 text-slate-700'
     : 'inline-flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50';
@@ -66,9 +68,11 @@ export default function PdfActions({ resourceKind, recordId, title = '', size = 
   return (
     <Can resource={resourceKind} action="view">
       <div className="inline-flex gap-1" data-testid={`pdf-actions-${resourceKind}-${recordId}`}>
-        <button onClick={open} disabled={busy} className={cls}
-          title={title || 'Open report'} data-testid={`pdf-open-${recordId}`}>
-          {busy ? <Loader2 size={ico} className="animate-spin" /> : <FileText size={ico} />} Open report
+        <button onClick={open} disabled={busy} className={iconOnly ? iconOnlyCls : cls}
+          title={title || 'Open report'} data-testid={`pdf-open-${recordId}`}
+          aria-label="Open report">
+          {busy ? <Loader2 size={ico} className="animate-spin" /> : <FileText size={ico} />}
+          {!iconOnly && ' Open report'}
         </button>
       </div>
     </Can>

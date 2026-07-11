@@ -1,3 +1,6 @@
+// Site Diary — Capture sub-tab. v160.3.0-adjust-17b.
+// Compact colour-coded CaptureCards for form-submission entries;
+// legacy AI-structured notes render inline with a raw-notes preview.
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -5,41 +8,95 @@ import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
+import CaptureCard, { CaptureCardGrid } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, AiButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
+function siteAddress(d) {
+  if (d.source !== 'form_submission' || !Array.isArray(d.fields)) return null;
+  const f = d.fields.find(
+    (x) => x && x.value && typeof x.label === 'string' && /site\s*address/i.test(x.label)
+  );
+  return f && typeof f.value === 'string' ? f.value : null;
+}
+
 export default function SiteDiaryList() {
   const [items, setItems] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/site-diary').then((r) => setItems(r.data)).finally(() => setLoading(false)); }, []);
+
+  useEffect(() => {
+    api.get('/site-diary')
+      .then((r) => { setItems(r.data); setFiltered(r.data); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const evict = (id) => {
+    setItems((prev) => prev.filter((x) => x.id !== id));
+    setFiltered((prev) => prev.filter((x) => x.id !== id));
+  };
 
   return (
-    <div className="max-w-6xl mx-auto" data-testid="sitediary-list">
+    <div className="max-w-7xl mx-auto" data-testid="sitediary-list">
       <PageHeader crumb="Capture / Site Diary" title="Site Diary"
-        subtitle="Capture raw notes — AI structures them into activities, delays, deliveries and weather."
+        subtitle="Daily site diaries — imported audits from mobile Forms and free-form notes structured by AI."
         action={<NewButton to="/app/site-diary/new" label="New diary entry" testid="diary-create-btn" />} />
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No diary entries yet" body="Capture your first daily diary entry." action={<NewButton to="/app/site-diary/new" label="New entry" testid="diary-empty-create" />} />
-       : (
-        <div className="space-y-3">
-          {items.map((d) => (
-            <div key={d.id} className="rounded-2xl border border-slate-200 bg-white p-4" data-testid={`diary-row-${d.id}`}>
-              <div className="flex items-center justify-between mb-1">
-                <div className="text-xs text-slate-500">{d.date}</div>
-                {d.structured_log && <span className="text-[10px] px-2 py-0.5 rounded-full bg-brand-violet-soft text-brand-violet font-semibold uppercase tracking-wider">AI structured</span>}
+       : (<>
+        <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="site-diary" />
+        <CaptureCardGrid testid="site-diary-grid">
+          {filtered.map((d) => {
+            const isSub = d.source === 'form_submission';
+            if (isSub) {
+              return (
+                <CaptureCard
+                  key={d.id}
+                  record={d}
+                  resourceKind="site_diary"
+                  apiPath="site-diary"
+                  subject={`Site Diary — ${d.template_name_snapshot || 'entry'} — ${d.date || ''}`}
+                  body={`Site diary from ${d.submitted_by_name || 'the field'} on ${d.date || ''}.`}
+                  subtitle={siteAddress(d)}
+                  onDeleted={evict}
+                />
+              );
+            }
+            // Legacy AI-structured diary note — dedicated compact tile.
+            const dateStr = d.date || '';
+            const preview = (d.raw_notes || '').split('\n')[0].slice(0, 80);
+            return (
+              <div key={d.id} className="group relative rounded-xl bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow" data-testid={`diary-card-legacy-${d.id}`}>
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-violet-500" aria-hidden />
+                <div className="pl-3 pr-2.5 py-2.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-violet-50 text-violet-700">
+                        Diary
+                      </span>
+                      {d.structured_log && (
+                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-violet-50 text-violet-700 ring-1 ring-violet-200">
+                          AI
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-0.5 opacity-70 group-hover:opacity-100">
+                      <PdfActions resourceKind="site_diary" recordId={d.id} source={d.source} title={`Site Diary ${dateStr}`} size="sm" iconOnly />
+                      <DeleteRecordButton resourceKind="site_diary" apiPath="site-diary" recordId={d.id} source={d.source} label="Site Diary entry" recordTitle={dateStr} onDeleted={evict} iconOnly />
+                    </div>
+                  </div>
+                  <div className="mt-1.5 font-semibold text-[13px] text-slate-900 leading-tight truncate">
+                    {preview || 'Site diary note'}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-slate-500 truncate">
+                    {d.submitted_by_name || d.created_by_name || '—'} <span className="text-slate-300">·</span> {dateStr || '—'}
+                  </div>
+                </div>
               </div>
-              <p className="text-sm text-slate-700 line-clamp-2">{d.raw_notes}</p>
-              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                <PdfActions resourceKind="site_diary" recordId={d.id} source={d.source} title={`Site Diary ${d.date}`} size="sm" />
-                <EmailButton resourceKind="site_diary" recordId={d.id} source={d.source}
-                  subject={`Site Diary — ${d.date}`}
-                  body={`Site diary entry for ${d.date}.\n\n${d.raw_notes || ''}`}
-                  variant="row" size="sm" label="Email" />
-                <DeleteRecordButton resourceKind="site_diary" apiPath="site-diary" recordId={d.id} source={d.source} label="Site Diary entry" recordTitle={d.date} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-              </div>
-            </div>
-          ))}
-        </div>
+            );
+          })}
+        </CaptureCardGrid></>
        )}
     </div>
   );

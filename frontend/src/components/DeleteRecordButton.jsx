@@ -39,6 +39,8 @@ import api, { apiError } from '../lib/api';
  */
 export default function DeleteRecordButton({
   resourceKind, apiPath, recordId, label, recordTitle, source, onDeleted,
+  // eslint-disable-next-line no-unused-vars
+  iconOnly,
 }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,7 +77,7 @@ export default function DeleteRecordButton({
             title="Delete"
             aria-label={`Delete ${label}`}
             data-testid={`delete-${resourceKind}-${recordId}`}
-            className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-rose-200 bg-white text-rose-500 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors"
+            className="inline-flex items-center justify-center w-6 h-6 rounded border border-rose-200 bg-white text-rose-500 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors"
           >
             <Trash2 size={13} />
           </button>

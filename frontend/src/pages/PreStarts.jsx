@@ -3,10 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import EmailButton from '../components/EmailButton';
-import PdfActions from '../components/PdfActions';
-import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -16,55 +14,41 @@ export default function PreStartsList() {
   const [loading, setLoading] = useState(true);
   useEffect(() => { api.get('/pre-starts').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
 
+  const evict = (id) => {
+    setItems((prev) => prev.filter((x) => x.id !== id));
+    setFiltered((prev) => prev.filter((x) => x.id !== id));
+  };
+
   return (
-    <div className="max-w-6xl mx-auto" data-testid="prestarts-list">
-      <PageHeader crumb="Capture / Daily Pre-Starts" title="Daily Pre-Starts" subtitle="Crew sign-on and toolbox talk records, by date."
-        action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />} />
+    <div className="max-w-7xl mx-auto" data-testid="prestarts-list">
+      <CaptureSticky testid="prestarts-sticky">
+        <PageHeader crumb="Capture / Daily Pre-Starts" title="Daily Pre-Starts" subtitle="Crew sign-on and toolbox talk records, by date."
+          action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />} />
+        {items.length > 0 && (
+          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="prestarts" />
+        )}
+      </CaptureSticky>
+      <div className="mt-3">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No pre-starts yet" body="Capture your first daily pre-start with crew sign-ons."
             action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-empty-create" />} />
-       : (<>
-        <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="prestarts" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+       : (
+        <CaptureCardGrid testid="prestarts-grid">
           {filtered.map((p) => (
-            <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4" data-testid={`prestart-card-${p.id}`}>
-              {/* v160.3.0-adjust-15 — LEGACY pill + template name so
-               *  imported records are distinguishable from live captures
-               *  and 82 pre-starts stop looking identical.
-               */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="text-xs text-slate-500">{p.date}</div>
-                {p.imported && (
-                  <span
-                    className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-300"
-                    title="Imported from legacy Simpro record"
-                    data-testid={`prestart-legacy-badge-${p.id}`}
-                  >
-                    Legacy
-                  </span>
-                )}
-              </div>
-              <div className="font-display font-semibold mt-1">
-                {p.template_name_snapshot || p.crew_lead || 'Pre-Start'}
-              </div>
-              <p className="text-sm text-slate-600 mt-1 line-clamp-2">
-                {p.submitted_by_name || p.crew_lead || p.work_summary || ''}
-              </p>
-              <div className="mt-3 text-xs text-slate-500">
-                {p.imported ? 'Legacy import — open PDF for source detail' : `${p.sign_ons?.length || 0} signed on`}
-              </div>
-              <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                <PdfActions resourceKind="pre_starts" recordId={p.id} source={p.source} title={`Pre-Start ${p.date}`} size="sm" />
-                <EmailButton resourceKind="pre_starts" recordId={p.id} source={p.source}
-                  subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
-                  body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
-                  variant="row" size="sm" label="Email" />
-                <DeleteRecordButton resourceKind="pre_starts" apiPath="pre-starts" recordId={p.id} source={p.source} label="Pre-Start" recordTitle={`${p.date}${p.crew_lead ? ` · ${p.crew_lead}` : ''}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-              </div>
-            </div>
+            <CaptureCard
+              key={p.id}
+              record={p}
+              resourceKind="pre_starts"
+              apiPath="pre-starts"
+              subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
+              body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
+              subtitle={p.imported ? null : (p.work_summary || (p.sign_ons?.length ? `${p.sign_ons.length} signed on` : null))}
+              onDeleted={evict}
+            />
           ))}
-        </div>
-       </>)}
+        </CaptureCardGrid>
+       )}
+      </div>
     </div>
   );
 }

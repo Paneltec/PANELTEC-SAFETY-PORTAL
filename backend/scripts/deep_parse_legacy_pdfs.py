@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-v160.3.0-adjust-15 — Deep-parse the 162 legacy-imported PDFs and
-populate `form_submissions.fields[]` with extracted values.
+v160.3.0-adjust-15 → adjust-16f — Deep-parse the 162 legacy-imported
+PDFs and populate `form_submissions.fields[]` with extracted values.
 
 Universal parser — every PDF in the batch follows the same layout:
   * "Details" block at top of page 1 with Created/Completed/Respondent
@@ -10,22 +10,28 @@ Universal parser — every PDF in the batch follows the same layout:
 
 Approach:
   1. `pdftotext -layout` full document.
-  2. Regex-scan for numbered items `^\s*(\d+)\.\s+(.+?)\s{2,}(.+)$`.
+  2. Regex-scan for numbered items `^\\s*(\\d+)\\.\\s+(.+?)\\s{2,}(.+)$`.
   3. Normalise the raw value against a shared dictionary.
   4. Fuzzy-match the numbered label against the template's field labels
-     (case-insensitive, first 20 chars, punctuation stripped).
+     (word-overlap on discriminative tokens).
   5. Also extract: date, respondent, GPS `(-lat, lng)`.
-  6. Update the corresponding `form_submissions` doc's `fields` array —
+  6. Layer per-family alias tables (adjust-16f) —
+     `parsers/ssra_aliases.py` maps template field ids to the various
+     ways the same information is phrased in Simpro PDF exports.
+  7. Update the corresponding `form_submissions` doc's `fields` array —
      keyed by the template field's `id`. Idempotent.
 
-Photo/signature extraction is deferred (needs per-family layout
-heuristics — best attempted in a follow-up).
-
 Run:
-    cd /app && set -a && source backend/.env && set +a && \
+    cd /app && set -a && source backend/.env && set +a && \\
         python3 backend/scripts/deep_parse_legacy_pdfs.py
 """
 from __future__ import annotations
+import os
+import sys
+# Make `parsers` package importable regardless of how this script is
+# invoked (`python3 backend/scripts/deep_parse_legacy_pdfs.py` from /app
+# vs `python3 deep_parse_legacy_pdfs.py` from the scripts dir).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import asyncio
 import os
@@ -345,12 +351,232 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
         return 0, len(template_fields)
 
     parsed = parse_pdf(pdf_abs)
+    fields_out, populated = extract_fields_from_parsed(
+        parsed, template_fields, sub.get("template_id")
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+    await db.form_submissions.update_one(
+        {"id": sub["id"]},
+        {"$set": {"fields": fields_out,
+                  "submitted_by_name": parsed["meta"].get("respondent") or sub.get("submitted_by_name"),
+                  "deep_parsed": True,
+                  "deep_parsed_at": now,
+                  "deep_parse_stats": {"populated": populated, "total": len(template_fields),
+                                      "method": "adjust-16f"}}},
+    )
+    return populated, len(template_fields)
+
+
+def extract_fields_from_parsed(parsed: dict, template_fields: list, tpl_id: str | None) -> tuple[list, int]:
+    """v160.3.0-adjust-19 — Pure-function extractor callable from the
+    drag-drop `POST /api/imports/pdf` endpoint. Given the output of
+    `parse_pdf()` + a template's field list, returns (fields_out,
+    populated_count) with the same rules as the batch orchestrator.
+
+    Idempotent, no DB writes; caller decides where to persist.
+    """
+    meta_resp = parsed["meta"].get("respondent")
+    all_bullets = [b for arr in parsed.get("bullets", {}).values() for b in arr]
+    fields_out: list = []
+    populated = 0
+    worker_picker_prefilled = False
+
+    try:
+        from parsers.ssra_aliases import get_aliases as _get_aliases
+    except Exception:
+        def _get_aliases(_tid, _fid):
+            return []
+
+    def _meta_date_from_header() -> str | None:
+        for ln in parsed.get("raw_lines", [])[:40]:
+            m = re.search(r"(Created at|Completed at|Last modified)\s+(\d{2}/\d{2}/\d{4})", ln)
+            if m:
+                try:
+                    d = datetime.strptime(m.group(2), "%d/%m/%Y")
+                    return d.strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+        return None
+
+    def _looks_like_garbage(s) -> bool:
+        if not isinstance(s, str):
+            return False
+        low = s.lower().strip()
+        if low.startswith("signature:") or low.startswith("date:"):
+            return True
+        if re.match(r"^\d+\s*of\s*\d+$", low):
+            return True
+        return False
+
+    def _multiline_after(label_text: str) -> str | None:
+        needle = _norm(label_text)
+        if len(needle) < 6:
+            return None
+        lines = parsed.get("raw_lines", [])
+        n = len(lines)
+        for i, s in enumerate(lines):
+            if not s.strip():
+                continue
+            parts = BLANK_MULTIPLE_SPACES_RE.split(s.strip(), maxsplit=1)
+            if len(parts) != 2:
+                continue
+            lbl_norm = _norm(parts[0])
+            if not (needle in lbl_norm or (len(needle) >= 16 and lbl_norm[:16] in needle)):
+                continue
+            m = re.search(r"\S {2,}(\S)", s)
+            if not m:
+                continue
+            right_col = s.index(m.group(1), m.start())
+            acc = [parts[1].strip()]
+            for j in range(i + 1, min(i + 8, n)):
+                nx = lines[j]
+                if not nx.strip():
+                    break
+                nleft = nx[:right_col] if len(nx) >= right_col else nx
+                if nleft.strip():
+                    break
+                cont = nx[right_col:].strip() if len(nx) >= right_col else nx.strip()
+                if not cont:
+                    break
+                acc.append(cont)
+            value = " ".join(x for x in acc if x)
+            return value or None
+        return None
+
+    for f in template_fields:
+        ftype = f.get("type")
+        flabel = (f.get("label") or "").lower()
+        raw_flabel = f.get("label") or ""
+        v = None
+
+        if ftype == "date" and (parsed["meta"].get("date") or _meta_date_from_header()):
+            v = parsed["meta"].get("date") or _meta_date_from_header()
+        elif ftype == "worker_picker" and meta_resp and not worker_picker_prefilled and any(
+            k in flabel for k in ("operator", "auditor", "assessor", "team leader")
+        ):
+            v = [{"worker_id": None, "name": meta_resp, "company_label": None}]
+            worker_picker_prefilled = True
+        elif ftype == "gps" and parsed["meta"].get("gps"):
+            v = {**parsed["meta"]["gps"], "address": None, "accuracy": None}
+
+        if v is None and ftype in ("radio", "number", "text"):
+            for _, item_label, item_val in parsed["items"]:
+                if fuzzy_match_field(item_label, [f]):
+                    v = normalise_value(item_val, item_label)
+                    if ftype == "number" and isinstance(v, str):
+                        m = re.search(r"[\d,]+", v)
+                        if m:
+                            try: v = int(m.group().replace(",", ""))
+                            except: pass
+                    break
+
+        if v is None and ftype in ("text", "textarea", "select", "number", "radio"):
+            candidates = [_core_label(raw_flabel), *_get_aliases(tpl_id, f["id"])]
+            for cand in candidates:
+                grabbed = _multiline_after(cand)
+                if grabbed:
+                    v = normalise_value(grabbed, raw_flabel)
+                    if ftype == "number" and isinstance(v, str):
+                        m = re.search(r"[\d,]+", v)
+                        if m:
+                            try: v = int(m.group().replace(",", ""))
+                            except: pass
+                    break
+
+        if v is None and ftype in ("radio", "select") and "—" in raw_flabel:
+            before, _, after = raw_flabel.partition("—")
+            section_prefix = before.strip().upper()
+            item = _core_label(raw_flabel)
+            item_key = _norm(item)
+            if item_key and len(item_key) >= 8:
+                candidate_lists = []
+                for sec, arr in parsed.get("bullets", {}).items():
+                    if section_prefix and section_prefix.split()[0] in sec:
+                        candidate_lists.append(arr)
+                if not candidate_lists:
+                    candidate_lists = [all_bullets]
+                found = False
+                for arr in candidate_lists:
+                    for b in arr:
+                        bkey = _norm(b)
+                        if item_key in bkey or bkey in item_key:
+                            found = True
+                            break
+                    if found:
+                        break
+                if found:
+                    opts = f.get("options") or []
+                    v = opts[0] if opts else "I confirm"
+
+        if v is None and ftype in ("radio", "text", "textarea", "select", "number"):
+            alias_probes = [f] + [
+                {"id": f["id"], "label": a, "type": ftype, "options": f.get("options")}
+                for a in _get_aliases(tpl_id, f["id"])
+            ]
+            for lbl_pdf, val_pdf in parsed.get("pairs", []):
+                matched = False
+                for probe in alias_probes:
+                    if fuzzy_match_field(lbl_pdf, [probe]):
+                        matched = True
+                        break
+                if matched:
+                    v = normalise_value(val_pdf, lbl_pdf)
+                    if ftype == "number" and isinstance(v, str):
+                        m = re.search(r"[\d,]+", v)
+                        if m:
+                            try: v = int(m.group().replace(",", ""))
+                            except: pass
+                    break
+
+        entry = {"field_id": f["id"], "value": v, "label": f.get("label"), "type": ftype}
+        if _looks_like_garbage(v):
+            entry["value"] = None
+            v = None
+        if v is not None and v != "" and v != []:
+            populated += 1
+        fields_out.append(entry)
+
+    return fields_out, populated
+
+
+# --- LEGACY inline extract path (kept temporarily for backward-compat) ---
+async def _process_submission_LEGACY_INLINE(db, sub, tpl_by_id: dict) -> tuple[int, int]:
+    """Deprecated: kept only if an external script pins this exact name.
+    New code should call `extract_fields_from_parsed` directly."""
+    return await process_submission(db, sub, tpl_by_id)
     meta_resp = parsed["meta"].get("respondent")
     all_bullets = [b for arr in parsed.get("bullets", {}).values() for b in arr]
     all_text = parsed.get("text", "")
     fields_out = []
     populated = 0
     worker_picker_prefilled = False  # v160.3.0-adjust-16b — only the first picker gets meta_resp
+
+    # v160.3.0-adjust-16f — Per-family alias table lookup. When the
+    # canonical template label fails to match, we retry each of the
+    # aliases configured for this (template_id, field_id) pair.
+    try:
+        from parsers.ssra_aliases import get_aliases as _get_aliases
+    except Exception:
+        def _get_aliases(_tid, _fid):
+            return []
+    tpl_id = sub.get("template_id")
+
+    # v160.3.0-adjust-16f — Meta date fallback: read the Simpro `Created
+    # at` / `Completed at` timestamps from the header table when the
+    # inline `Date` label wasn't caught by the standard regex. SSRA PDFs
+    # use a two-column layout that skips the standard `Date DD/MM/YYYY`
+    # anchor.
+    def _meta_date_from_header() -> str | None:
+        for ln in parsed.get("raw_lines", [])[:40]:
+            m = re.search(r"(Created at|Completed at|Last modified)\s+(\d{2}/\d{2}/\d{4})", ln)
+            if m:
+                try:
+                    d = datetime.strptime(m.group(2), "%d/%m/%Y")
+                    return d.strftime("%Y-%m-%d")
+                except Exception:
+                    pass
+        return None
 
     def _looks_like_garbage(s) -> bool:
         """Reject obviously-wrong values captured from PDF footers /
@@ -415,8 +641,8 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
         raw_flabel = f.get("label") or ""
         v = None
 
-        if ftype == "date" and parsed["meta"].get("date"):
-            v = parsed["meta"]["date"]
+        if ftype == "date" and (parsed["meta"].get("date") or _meta_date_from_header()):
+            v = parsed["meta"].get("date") or _meta_date_from_header()
         elif ftype == "worker_picker" and meta_resp and not worker_picker_prefilled and any(
             k in flabel for k in ("operator", "auditor", "assessor", "team leader")
         ):
@@ -440,19 +666,21 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
         # ── 3. Template-driven multi-line grab (SSRA text / textarea / select) ──
         # v160.3.0-adjust-16b — Use the template field's own label
         # (its `_core_label`) to locate the value column, and accumulate
-        # continuation lines. This is the fix for truncated values like
-        # "Viatec have the TGS and are undertaking Tra…" — we now capture
-        # multi-line free-text and long addresses in full.
+        # continuation lines.
+        # v160.3.0-adjust-16f — After the canonical label fails, retry
+        # each per-family alias (from `parsers.ssra_aliases`).
         if v is None and ftype in ("text", "textarea", "select", "number", "radio"):
-            core = _core_label(raw_flabel)
-            grabbed = _multiline_after(core)
-            if grabbed:
-                v = normalise_value(grabbed, raw_flabel)
-                if ftype == "number" and isinstance(v, str):
-                    m = re.search(r"[\d,]+", v)
-                    if m:
-                        try: v = int(m.group().replace(",", ""))
-                        except: pass
+            candidates = [_core_label(raw_flabel), *_get_aliases(tpl_id, f["id"])]
+            for cand in candidates:
+                grabbed = _multiline_after(cand)
+                if grabbed:
+                    v = normalise_value(grabbed, raw_flabel)
+                    if ftype == "number" and isinstance(v, str):
+                        m = re.search(r"[\d,]+", v)
+                        if m:
+                            try: v = int(m.group().replace(",", ""))
+                            except: pass
+                    break
 
         # ── 4. TAILGATE / multi-select bullet lookup ──
         # v160.3.0-adjust-16b — For section-prefixed template fields
@@ -488,9 +716,20 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
                     v = opts[0] if opts else "I confirm"
 
         # ── 5. Legacy SSRA-style pair fallback ──
+        # v160.3.0-adjust-16f — Attempt to match against the canonical
+        # field, then each configured alias as a virtual template field.
         if v is None and ftype in ("radio", "text", "textarea", "select", "number"):
+            alias_probes = [f] + [
+                {"id": f["id"], "label": a, "type": ftype, "options": f.get("options")}
+                for a in _get_aliases(tpl_id, f["id"])
+            ]
             for lbl_pdf, val_pdf in parsed.get("pairs", []):
-                if fuzzy_match_field(lbl_pdf, [f]):
+                matched = False
+                for probe in alias_probes:
+                    if fuzzy_match_field(lbl_pdf, [probe]):
+                        matched = True
+                        break
+                if matched:
                     v = normalise_value(val_pdf, lbl_pdf)
                     if ftype == "number" and isinstance(v, str):
                         m = re.search(r"[\d,]+", v)
@@ -520,7 +759,7 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
                   "deep_parsed": True,
                   "deep_parsed_at": now,
                   "deep_parse_stats": {"populated": populated, "total": len(template_fields),
-                                      "method": "adjust-16b"}}},
+                                      "method": "adjust-16f"}}},
     )
     return populated, len(template_fields)
 

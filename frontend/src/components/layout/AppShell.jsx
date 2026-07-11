@@ -4,7 +4,7 @@ import RebrandNudge from '@/components/RebrandNudge';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
-  KeyRound as KeyRoundIcon, Zap,
+  KeyRound as KeyRoundIcon, Zap, Upload,
 } from 'lucide-react';
 // Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
 // Each NAV entry now carries `icon` (Regular outline) for the resting
@@ -44,6 +44,7 @@ import { fetchMe, getToken, getUser, initials, signOut, refreshToken } from '../
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
+import PdfImportModal from '../imports/PdfImportModal';
 import useSessionTimeout from '../../hooks/useSessionTimeout';
 import SessionWarningModal from '../SessionWarningModal';
 import {
@@ -163,6 +164,9 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
 };
 
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
+  // v160.3.0-adjust-19 — Drag-drop PDF import.
+  const [importOpen, setImportOpen] = useState(false);
+  const canImport = ['admin', 'hseq_lead'].includes((user?.role || '').toLowerCase());
   const navigate = useNavigate();
   const location = useLocation();
   const { workspaceId, setWorkspaceId } = useWorkspace();
@@ -273,6 +277,19 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       </button>
       <OutboxBell />
 
+      {/* v160.3.0-adjust-19 — Drag-drop PDF import (admin only). */}
+      {canImport && (
+        <button
+          onClick={() => setImportOpen(true)}
+          title="Import legacy PDFs"
+          data-testid="topbar-import-pdfs"
+          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold uppercase tracking-wider hover:bg-blue-100 transition-colors"
+        >
+          <Upload size={12} />
+          Import PDFs
+        </button>
+      )}
+
       {/* Phase 4.16 (v133) — tech-aesthetic pills */}
       <ApiHealthPill />
       <BackupPill />
@@ -311,6 +328,8 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         </DropdownMenuContent>
       </DropdownMenu>
       <ChangePasswordModal open={changePwOpen} onClose={() => setChangePwOpen(false)} />
+      {/* v160.3.0-adjust-19 — Drag-drop PDF import modal. */}
+      <PdfImportModal open={importOpen} onClose={() => setImportOpen(false)} />
     </header>
   );
 }

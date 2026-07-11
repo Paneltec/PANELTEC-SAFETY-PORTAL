@@ -171,6 +171,9 @@ async def gps_map_proxy(lat: float, lng: float,
 
 
 api.include_router(auth_router)
+# v160.3.0-adjust-19 — Drag-drop PDF import endpoint.
+from imports import router as imports_router  # noqa: E402
+api.include_router(imports_router)
 api.include_router(ai_router)
 api.include_router(dashboard_router)
 api.include_router(files_router)

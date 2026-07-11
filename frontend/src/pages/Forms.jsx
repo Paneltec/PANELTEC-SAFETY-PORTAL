@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { categoryColor } from '../lib/templateColors';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
 import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
 import { WorkerPicker, JobPicker, SitePicker, CustomerPicker } from '../components/forms/PickerFields';
@@ -997,11 +998,16 @@ function AiBuilderModal({ onClose, onCreated }) {
 // ─────────────── Template card ───────────────
 
 function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenSubmissions }) {
+  // v160.3.0-adjust-17e — colored left stripe + category badge sourced
+  // from the shared templateColors palette. `chipBg/chipText` overrides
+  // the flat grey CAT_PILL when the category has a colour mapping.
+  const colour = categoryColor(t.category);
   return (
-    <div className="group rounded-3xl border border-slate-200 bg-white p-5 hover:border-slate-300 hover:shadow-card transition-all flex flex-col"
+    <div className="group relative rounded-3xl border border-slate-200 bg-white p-5 hover:border-slate-300 hover:shadow-card transition-all flex flex-col overflow-hidden"
       data-testid={`template-card-${t.id}`}>
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`} aria-hidden />
       <div className="flex items-start gap-2 mb-3">
-        <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${CAT_PILL[t.category] || CAT_PILL.general}`}>
+        <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${colour.chipBg} ${colour.chipText}`}>
           {categoryLabel(t.category)}
         </span>
         <div className="flex-1" />

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -6,6 +6,7 @@ import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -21,11 +22,23 @@ export default function IncidentsList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState({ status: '', category: '' });
-  useEffect(() => { api.get('/incidents').then((r) => setItems(r.data)).finally(() => setLoading(false)); }, []);
+  // v160.3.0-adjust-16g — Client-side search from shared toolbar layers
+  // on top of the existing status/category selects. The pre-filtered
+  // subset feeds into the toolbar; the toolbar then applies text search
+  // + sort.
+  const [searchFiltered, setSearchFiltered] = useState([]);
+  useEffect(() => {
+    api.get('/incidents')
+      .then((r) => setItems(r.data))
+      .finally(() => setLoading(false));
+  }, []);
 
-  const filtered = items.filter((i) =>
-    (!filter.status || i.follow_up_status === filter.status) &&
-    (!filter.category || i.category === filter.category));
+  const preFiltered = useMemo(
+    () => items.filter((i) =>
+      (!filter.status || i.follow_up_status === filter.status) &&
+      (!filter.category || i.category === filter.category)),
+    [items, filter.status, filter.category]
+  );
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="incidents-list">
@@ -59,13 +72,14 @@ export default function IncidentsList() {
       </div>
 
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
-       : filtered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
-       : (
+       : preFiltered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
+       : (<>
+        <CaptureListToolbar items={preFiltered} onFiltered={setSearchFiltered} testidPrefix="incidents" />
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Title</th><th className="text-left px-4 py-3">Category</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Occurred</th></tr></thead>
             <tbody>
-              {filtered.map((i) => (
+              {searchFiltered.map((i) => (
                 <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`incident-row-${i.id}`}>
                   <td className="px-4 py-3"><div className="font-medium">{i.title}</div><div className="text-xs text-slate-500 line-clamp-1">{i.description}</div></td>
                   <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{(CATS.find(([k]) => k === i.category) || [])[1] || i.category}</span></td>
@@ -85,7 +99,7 @@ export default function IncidentsList() {
               ))}
             </tbody>
           </table>
-        </div>
+        </div></>
        )}
         </TabsContent>
       </Tabs>

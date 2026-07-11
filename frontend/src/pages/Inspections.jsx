@@ -6,6 +6,7 @@ import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -33,8 +34,13 @@ const TEMPLATES = {
 
 export default function InspectionsList() {
   const [items, setItems] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/inspections').then((r) => setItems(r.data)).finally(() => setLoading(false)); }, []);
+  useEffect(() => {
+    api.get('/inspections')
+      .then((r) => { setItems(r.data); setFiltered(r.data); })
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="inspections-list">
@@ -59,12 +65,13 @@ export default function InspectionsList() {
         <TabsContent value="list" className="mt-4">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
-       : (
+       : (<>
+        <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="inspections" />
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
           <table className="zebra-list w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Template</th><th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Results</th></tr></thead>
             <tbody>
-              {items.map((it) => {
+              {filtered.map((it) => {
                 const total = it.checklist_items?.length || 0;
                 const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
                 const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
@@ -79,12 +86,6 @@ export default function InspectionsList() {
                     <td className="px-4 py-3 text-slate-500"><span className="text-emerald-700 font-medium">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-medium' : ''}>{failed}</span> fail · {total - passed - failed} N/A</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1 items-center">
-                        {/* v160.2.9-delete — Only offer "Open report"
-                            when the row has a real template. A mirrored
-                            submission whose template row was deleted
-                            renders as "Deleted template" and the PDF
-                            renderer would emit an empty report — hide
-                            it to avoid confusion. */}
                         {it.template_name && (
                           <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
                         )}
@@ -92,7 +93,11 @@ export default function InspectionsList() {
                           subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
                           body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
                           variant="row" size="sm" label="Email" />
-                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`}
+                          onDeleted={(id) => {
+                            setItems((prev) => prev.filter((x) => x.id !== id));
+                            setFiltered((prev) => prev.filter((x) => x.id !== id));
+                          }} />
                       </div>
                     </td>
                   </tr>
@@ -100,7 +105,7 @@ export default function InspectionsList() {
               })}
             </tbody>
           </table>
-        </div>
+        </div></>
        )}
         </TabsContent>
       </Tabs>

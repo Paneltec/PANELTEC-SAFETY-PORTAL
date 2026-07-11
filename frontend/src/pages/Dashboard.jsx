@@ -176,9 +176,9 @@ function RecentActivityCard() {
   useEffect(() => {
     let alive = true;
     Promise.all([
-      api.get('/swms').then((r) => (r.data || []).slice(0, 3).map((x) => ({ ...x, _module: 'swms' }))).catch(() => []),
-      api.get('/hazards').then((r) => (r.data || []).slice(0, 3).map((x) => ({ ...x, _module: 'hazards' }))).catch(() => []),
-      api.get('/incidents').then((r) => (r.data || []).slice(0, 2).map((x) => ({ ...x, _module: 'incidents' }))).catch(() => []),
+      api.get('/swms').then((r) => (r.data || []).filter((x) => !x.imported).slice(0, 3).map((x) => ({ ...x, _module: 'swms' }))).catch(() => []),
+      api.get('/hazards').then((r) => (r.data || []).filter((x) => !x.imported).slice(0, 3).map((x) => ({ ...x, _module: 'hazards' }))).catch(() => []),
+      api.get('/incidents').then((r) => (r.data || []).filter((x) => !x.imported).slice(0, 2).map((x) => ({ ...x, _module: 'incidents' }))).catch(() => []),
     ]).then((batches) => {
       if (!alive) return;
       const merged = batches.flat()

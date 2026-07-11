@@ -7,6 +7,7 @@ import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import CaptureCard, { CaptureCardGrid } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -21,9 +22,13 @@ export default function HazardsList() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => { api.get('/hazards').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
+  const evict = (id) => {
+    setItems((prev) => prev.filter((x) => x.id !== id));
+    setFiltered((prev) => prev.filter((x) => x.id !== id));
+  };
 
   return (
-    <div className="max-w-6xl mx-auto" data-testid="hazards-list">
+    <div className="max-w-7xl mx-auto" data-testid="hazards-list">
       <PageHeader crumb="Capture / Hazard Reports" title="Hazard Reports"
         subtitle="Snap a hazard — AI classifies severity and drafts the report."
         action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
@@ -47,58 +52,48 @@ export default function HazardsList() {
        : items.length === 0 ? <EmptyState title="No hazards reported" body="Report your first hazard with a photo and AI classification." action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-empty-create" />} />
        : (<>
           <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((h) => (
-            <div key={h.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid={`hazard-card-${h.id}`}>
-              {/* v160.3.0-adjust-16a — Only render the photo header when
-               *   the card actually has one. Legacy SSRA imports have
-               *   no attached image and the previous unconditional
-               *   `aspect-video` placeholder gave us a giant grey
-               *   camera-icon block on every card, dominating the grid.
-               */}
-              {h.photo_url && (
-                <div className="aspect-video bg-slate-100 flex items-center justify-center text-slate-300">
-                  <img
-                    src={h.photo_url.startsWith('http') ? h.photo_url : `${BACKEND}${h.photo_url}`}
-                    alt={h.title}
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
-              <div className="p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <h3 className="font-display font-semibold text-sm truncate">
-                    {h.title || h.template_name_snapshot || 'Hazard'}
-                  </h3>
-                  <StatusBadge value={h.severity} />
-                </div>
-                {/* v160.3.0-adjust-15 — LEGACY pill for imported SSRA rows. */}
-                {h.imported && (
-                  <div className="mt-1">
-                    <span
-                      className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 ring-1 ring-slate-300"
-                      title="Imported from legacy Simpro record"
-                      data-testid={`hazard-legacy-badge-${h.id}`}
-                    >
-                      Legacy
-                    </span>
+          <CaptureCardGrid testid="hazards-grid">
+            {filtered.map((h) => {
+              // v160.3.0-adjust-17b — Real hazard reports (not legacy)
+              // with a photo still get the photo header; legacy SSRA
+              // imports render compact CaptureCard only. Both share the
+              // same colour stripe + delete/view icons.
+              const withPhoto = !h.imported && h.photo_url;
+              const extraBadges = h.severity ? [<StatusBadge key="sev" value={h.severity} />] : [];
+              if (withPhoto) {
+                return (
+                  <div key={h.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden" data-testid={`hazard-card-photo-${h.id}`}>
+                    <div className="aspect-video bg-slate-100">
+                      <img
+                        src={h.photo_url.startsWith('http') ? h.photo_url : `${BACKEND}${h.photo_url}`}
+                        alt={h.title}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <CaptureCard
+                      record={h}
+                      resourceKind="hazards"
+                      apiPath="hazards"
+                      subtitle={h.description}
+                      badges={extraBadges}
+                      onDeleted={evict}
+                    />
                   </div>
-                )}
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{h.description || h.submitted_by_name || ''}</p>
-                <div className="mt-3 flex items-center justify-between"><StatusBadge value={h.status} /><span className="text-[10px] text-slate-400">{(h.created_at || '').slice(0, 10)}</span></div>
-                <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
-                  <PdfActions resourceKind="hazards" recordId={h.id} source={h.source} title={h.title} size="sm" />
-                  <EmailButton resourceKind="hazards" recordId={h.id} source={h.source}
-                    subject={`Hazard Report: ${h.title} (severity: ${h.severity})`}
-                    body={`A hazard has been reported.\n\nTitle: ${h.title}\nSeverity: ${h.severity}\nDescription: ${h.description || ''}`}
-                    attachments={h.photo_url ? [{ file_url: h.photo_url, label: 'hazard-photo.jpg' }] : []}
-                    variant="row" size="sm" label="Email" />
-                  <DeleteRecordButton resourceKind="hazards" apiPath="hazards" recordId={h.id} source={h.source} label="Hazard" recordTitle={h.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+                );
+              }
+              return (
+                <CaptureCard
+                  key={h.id}
+                  record={h}
+                  resourceKind="hazards"
+                  apiPath="hazards"
+                  subtitle={h.description || null}
+                  badges={extraBadges}
+                  onDeleted={evict}
+                />
+              );
+            })}
+          </CaptureCardGrid>
        </>)}
         </TabsContent>
       </Tabs>

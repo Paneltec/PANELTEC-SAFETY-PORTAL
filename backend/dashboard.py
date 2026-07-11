@@ -18,21 +18,23 @@ UPLOAD_ROOT = Path(__file__).parent / "uploads"
 
 
 async def _count(collection: str, org_id: str, workspace_id: Optional[str]) -> int:
-    q = {"org_id": org_id, "deleted_at": None}
+    # v160.3.0-adjust-18 — Exclude legacy imported rows from live
+    # compliance metrics. Legacy records remain visible on the Capture
+    # tabs (with the LEGACY pill) but must not inflate this-quarter
+    # dashboard counts.
+    q = {"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}}
     if workspace_id:
         q["workspace_id"] = workspace_id
     return await db[collection].count_documents(q)
 
 
 async def _count_before(collection: str, org_id: str, workspace_id: Optional[str], before_iso: str) -> int:
-    """v157.1 — Count of live (non-deleted) docs whose `created_at` predates
-    the ISO cutoff. Used to compute per-metric quarter-over-quarter deltas.
-    Note: this reflects "how many of the currently-live docs were created
-    before the cutoff", not "how many existed at the cutoff moment". The
-    delta therefore expresses NET GROWTH inside the quarter, ignoring docs
-    that were both created and soft-deleted before the cutoff (edge case,
-    accepted for the sake of a single index-friendly query)."""
-    q = {"org_id": org_id, "deleted_at": None, "created_at": {"$lt": before_iso}}
+    """v157.1 — Count of live (non-deleted, non-imported) docs whose
+    `created_at` predates the ISO cutoff. Used to compute per-metric
+    quarter-over-quarter deltas.
+    v160.3.0-adjust-18 — Also exclude `imported: True`."""
+    q = {"org_id": org_id, "deleted_at": None, "imported": {"$ne": True},
+         "created_at": {"$lt": before_iso}}
     if workspace_id:
         q["workspace_id"] = workspace_id
     return await db[collection].count_documents(q)
@@ -68,12 +70,12 @@ async def metrics(
     scope_filter: dict = {}
     if not privileged:
         scope_filter = {"created_by": user["id"]}
-    swms_c = await db.swms.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
-    pre_c = await db.pre_starts.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
-    diary_c = await db.site_diary_entries.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
-    haz_c = await db.hazards.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
-    inc_c = await db.incidents.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
-    insp_c = await db.inspections.count_documents({"org_id": org_id, "deleted_at": None, **scope_filter})
+    swms_c = await db.swms.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
+    pre_c = await db.pre_starts.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
+    diary_c = await db.site_diary_entries.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
+    haz_c = await db.hazards.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
+    inc_c = await db.incidents.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
+    insp_c = await db.inspections.count_documents({"org_id": org_id, "deleted_at": None, "imported": {"$ne": True}, **scope_filter})
 
     # v157.1 — quarter-over-quarter deltas. Only computed when the previous
     # period had at least one live doc; otherwise `None` and the frontend
@@ -96,15 +98,19 @@ async def metrics(
     }
 
     # Records needing attention = open/in_progress hazards + open incidents + draft SWMS awaiting review
+    # v160.3.0-adjust-18 — Exclude legacy imports from all three counts.
     if privileged:
         needs_attention = await db.hazards.count_documents(
-            {"org_id": org_id, "deleted_at": None, "status": {"$in": ["open", "in_progress"]}}
+            {"org_id": org_id, "deleted_at": None, "imported": {"$ne": True},
+             "status": {"$in": ["open", "in_progress"]}}
         )
         needs_attention += await db.incidents.count_documents(
-            {"org_id": org_id, "deleted_at": None, "follow_up_status": {"$in": ["open", "in_progress"]}}
+            {"org_id": org_id, "deleted_at": None, "imported": {"$ne": True},
+             "follow_up_status": {"$in": ["open", "in_progress"]}}
         )
         needs_attention += await db.swms.count_documents(
-            {"org_id": org_id, "deleted_at": None, "status": "submitted"}
+            {"org_id": org_id, "deleted_at": None, "imported": {"$ne": True},
+             "status": "submitted"}
         )
         # Attention score: simple heuristic — start at 100, subtract per attention item, floor 40
         score = max(40, 100 - needs_attention * 3)
