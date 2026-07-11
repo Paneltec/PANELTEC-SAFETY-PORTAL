@@ -105,22 +105,32 @@ def normalise_value(raw: str, label: str) -> str:
 
 
 def parse_pdf(pdf_path: str) -> dict:
-    """Return {'meta': {…}, 'items': [(label_key, value), …], 'raw_lines': [...]}."""
+    """Return {'meta': {…}, 'items': [(label_key, value), …], 'pairs': [(label, value), …]}."""
     r = subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
                        capture_output=True, timeout=30)
     txt = r.stdout.decode("utf-8", errors="replace")
     lines = txt.splitlines()
     meta: dict = {}
     items = []
+    pairs: list[tuple[str, str]] = []  # (label, value) — SSRA-style rows
     gps = None
     respondent = None
     date_str = None
 
+    # v160.3.0-adjust-16 — Also accumulate label→value pairs from lines
+    # that DON'T match the numbered `N. Label ..... Value` pattern. SSRA
+    # PDFs use section-based layouts: `Question label ...  Answer` split
+    # at column ~55. We keep the numbered-item pass (pre-starts) AND
+    # collect all 2+-space-separated pairs (SSRAs, TTM, VTS Tight Site).
+    prev_label: str | None = None
     for i, ln in enumerate(lines):
         s = ln.rstrip()
         # metadata line hits
         if "Please Select your Name from the List below:" in s:
-            # value is on same line, at column pos
+            parts = BLANK_MULTIPLE_SPACES_RE.split(s.strip(), maxsplit=1)
+            if len(parts) == 2:
+                respondent = parts[1].strip()
+        elif "Please Select the Employee Completing this SSRA" in s or "Please Select the Employee Completing this Site" in s:
             parts = BLANK_MULTIPLE_SPACES_RE.split(s.strip(), maxsplit=1)
             if len(parts) == 2:
                 respondent = parts[1].strip()
@@ -140,10 +150,32 @@ def parse_pdf(pdf_path: str) -> dict:
         m = NUM_ITEM_RE.match(s)
         if m:
             n, label, val = m.group(1), m.group(2).strip(), m.group(3).strip()
-            # skip header noise like "1 of 3" that pdftotext sometimes emits
-            if val.lower() in ("of 2", "of 3", "of 4"):
+            if val.lower() in ("of 2", "of 3", "of 4", "of 5", "of 6", "of 7", "of 8"):
                 continue
             items.append((n, label, val))
+            continue
+
+        # Generic label→value pair (SSRA style). Skip footers / headers /
+        # page-count noise.
+        stripped = s.strip()
+        if not stripped or "of " in stripped and re.match(r"^\d+ of \d+$", stripped):
+            continue
+        # Match a wide left column of text followed by ≥2 spaces then value.
+        parts = BLANK_MULTIPLE_SPACES_RE.split(stripped, maxsplit=1)
+        if len(parts) == 2 and len(parts[0]) > 12 and len(parts[1]) > 0:
+            lbl, val = parts[0].strip(), parts[1].strip()
+            # Filter numeric noise like "1 of 3" already handled; also
+            # skip obvious template labels ending with punctuation-only
+            # values (rare) and page-header repeats.
+            if val.lower() not in ("no data",) and len(val) < 240:
+                pairs.append((lbl, val))
+                prev_label = lbl
+        elif prev_label and stripped and len(stripped) < 90 and not stripped.endswith(":"):
+            # Continuation of a checklist column (Tailgate items etc.).
+            # Attach the item as a fresh pair keyed on itself so the
+            # SSRA-style `_confirm` fields (TAILGATE — Discuss the …)
+            # find a match.
+            pairs.append((stripped, "I confirm"))
 
     if respondent: meta["respondent"] = respondent
     if date_str:
@@ -152,21 +184,28 @@ def parse_pdf(pdf_path: str) -> dict:
             meta["date"] = d.strftime("%Y-%m-%d")
         except: pass
     if gps: meta["gps"] = gps
-    return {"meta": meta, "items": items}
+    return {"meta": meta, "items": items, "pairs": pairs}
 
 
 def fuzzy_match_field(label: str, template_fields: list[dict]) -> dict | None:
-    """Return the closest template field for a numbered-item label."""
+    """Return the closest template field for a label."""
     key = normalise_label(label)
     if not key:
         return None
     for f in template_fields:
         flabel = f.get("label") or ""
-        # normalise first-24-chars of the template label; the template
-        # labels bake guidance into "Glass & Lenses — Windscreen, mirrors …"
-        # so the first token is what matters.
-        first = flabel.split("—")[0].split("(")[0]
-        if normalise_label(first).startswith(key[:12]) or key.startswith(normalise_label(first)[:12]):
+        # Strip guidance suffixes and TAILGATE/PPE prefixes so the core
+        # label ("Discuss The Scope of Works" vs "TAILGATE — Discuss The
+        # Scope of Works") matches.
+        core = flabel.split("—")[-1].split("(")[0]
+        fkey = normalise_label(core)
+        if not fkey:
+            continue
+        # bidirectional startswith on 12-char normalised keys
+        if fkey.startswith(key[:14]) or key.startswith(fkey[:14]):
+            return f
+        # tolerant substring match on longer keys (SSRAs, TTM, VTS)
+        if len(key) > 18 and len(fkey) > 18 and (key[:18] in fkey or fkey[:18] in key):
             return f
     return None
 
@@ -204,17 +243,41 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
         elif ftype == "gps" and parsed["meta"].get("gps"):
             v = {**parsed["meta"]["gps"], "address": None, "accuracy": None}
 
-        # ── 2. Numbered inspection item match ──
+        # ── 2. Numbered inspection item match (pre-starts) ──
         if v is None and ftype in ("radio", "number", "text"):
             for _, item_label, item_val in parsed["items"]:
                 if fuzzy_match_field(item_label, [f]):
                     v = normalise_value(item_val, item_label)
-                    # coerce number type where template expects number
                     if ftype == "number" and isinstance(v, str):
                         m = re.search(r"[\d,]+", v)
                         if m:
                             try: v = int(m.group().replace(",", ""))
                             except: pass
+                    break
+
+        # ── 3. v160.3.0-adjust-16 — SSRA-style label→value pair match ──
+        # Falls through to the pair-scan when the numbered-item pass
+        # produced nothing. Handles TAILGATE checkboxes, PPE lists,
+        # BYDA/TGS/customer text fields, Y/N risk questions, etc.
+        if v is None and ftype in ("radio", "text", "textarea", "select", "number"):
+            for lbl_pdf, val_pdf in parsed.get("pairs", []):
+                if fuzzy_match_field(lbl_pdf, [f]):
+                    v = normalise_value(val_pdf, lbl_pdf)
+                    if ftype == "number" and isinstance(v, str):
+                        m = re.search(r"[\d,]+", v)
+                        if m:
+                            try: v = int(m.group().replace(",", ""))
+                            except: pass
+                    # For radio fields, coerce the value against the
+                    # template's own option list — if the extracted
+                    # answer isn't in options, leave as raw string so
+                    # nothing gets silently dropped.
+                    if ftype == "radio":
+                        opts = [o.lower() for o in (f.get("options") or [])]
+                        if isinstance(v, str) and v.lower() not in opts:
+                            # Best-effort mapping for Yes/No radios that
+                            # got "N/A" or free-text values.
+                            pass
                     break
 
         entry = {
