@@ -5376,3 +5376,67 @@ All 3 files. No mobile touch → no Metro clear.
   `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-5`
 - `/app/memory/PRD.md` (this entry)
 
+
+
+# 2026-07-11 — v160.3.0-adjust-6 SHIPPED — Page-level top-nav clearance sweep
+
+## Root cause
+The shared `<main>` element in `AppShell.jsx` had symmetric
+`p-4 sm:p-6 lg:p-8` padding — top padding 16/24/32px depending on
+viewport. Combined with the topbar's `sticky top-0 h-16` (64px), the
+first page content landed at y=80-96px. That's technically not
+"clipped" (the topbar takes up space in normal flow via
+`position: sticky`) but visually cramped, especially on pages that
+lead with a `PageHeader` pastel banner — the crumb "SETTINGS /
+Certifications" and the h1 "Certifications" sat almost flush against
+the topbar's bottom border.
+
+## Fix — one change, every page inherits
+`<main className="flex-1 p-4 sm:p-6 lg:p-8">`
+  → `<main className="flex-1 p-4 pt-6 sm:p-6 sm:pt-8 lg:p-8 lg:pt-10">`
+
+Extra top padding (24/32/40px depending on viewport) on top of the
+existing side/bottom rhythm. Every route rendered under
+`<Outlet />` — Dashboard, Certifications, Workers, Sites, Compliance
+Hub, User Manual, Permission Presets, Reports, Audit Exports,
+Suppliers, System settings, etc. — inherits the clearance
+automatically. Zero per-page changes needed.
+
+## Audit table (spot-checked via source grep + PageHeader usage)
+| Route | Was clipped? | Action |
+|-------|--------------|--------|
+| /app/dashboard              | Y (marginal) | Fixed via shared <main> |
+| /app/certifications         | Y (user-reported) | Fixed via shared <main> |
+| /app/workers                | Y (marginal) | Fixed via shared <main> |
+| /app/sites                  | Y (marginal) | Fixed via shared <main> |
+| /app/compliance/*           | Y (marginal) | Fixed via shared <main> |
+| /app/permission-presets     | Y (marginal) | Fixed via shared <main> |
+| /app/settings/*             | Y (marginal) | Fixed via shared <main> |
+| /app/inspections            | N (already had page-banner spacing) | Extra buffer added |
+| /app/audit-exports          | N (already had page-banner spacing) | Extra buffer added |
+| /app/user-manual            | Y (had leading H1)  | Fixed via shared <main> |
+
+No per-page overrides needed — the shared `<main>` fix reaches every
+authenticated route.
+
+## Grep confirmation — no per-page sticky headers competing
+`grep -rn "sticky top-0" /app/frontend/src/pages` returned 0 hits
+across all page files, so no in-page sticky nav collides with the
+global topbar. `PageHeader` component is non-sticky (grep on
+`components/capture/Ui.jsx`) — safe from this class of bug.
+
+## Regression
+- Backend suite: **37/37 green** (frontend-only fix — backend not
+  touched).
+- Mobile untouched — no Metro cache clear required.
+
+## Version bump → `paneltec-v160.3.0-adjust-6`
+All 3 files.
+
+## Files touched
+- `frontend/src/components/layout/AppShell.jsx` (main padding + inline
+  comment noting the fix scope)
+- `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
+  `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-6`
+- `/app/memory/PRD.md` (this entry)
+

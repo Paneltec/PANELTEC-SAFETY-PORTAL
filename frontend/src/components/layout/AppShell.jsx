@@ -400,11 +400,21 @@ export default function AppShell() {
       <div className="flex-1 flex flex-col min-w-0">
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
         <RebrandNudge />
-        <main className="flex-1 p-4 sm:p-6 lg:p-8" data-testid="app-main">
+        <main className="flex-1 p-4 pt-6 sm:p-6 sm:pt-8 lg:p-8 lg:pt-10" data-testid="app-main">
           {/* v156.1 — Opacity-only route transition. `animate-route-fade` has
               NO `transform` keyframe, so this wrapper never becomes a
               containing block for `position: fixed` modal descendants (which
-              is what broke the Suppliers Edit modal in v156). */}
+              is what broke the Suppliers Edit modal in v156).
+              v160.3.0-adjust-6 — Bumped `<main>` top padding at every
+              breakpoint (pt-6 / pt-8 / pt-10). The topbar is `sticky
+              top-0 h-16` (64px). With the old symmetric `p-4/6/8`,
+              first page content landed at y=80-96px — visually
+              crowding the topbar's bottom border, especially on
+              pages that lead with a PageHeader pastel banner (Certifications,
+              Workers, Sites, Compliance Hub). Extra top padding
+              (24/32/40px depending on viewport) gives the crumb + title
+              a comfortable buffer below the topbar without changing
+              side/bottom rhythm. */}
           <div key={location.pathname} className="animate-route-fade">
             <Outlet />
           </div>
