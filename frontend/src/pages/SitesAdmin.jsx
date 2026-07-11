@@ -114,7 +114,6 @@ export default function SitesAdmin() {
       <PageHeader
         crumb="Compliance / Sites"
         title="Sites"
-        theme="emerald"
         subtitle="Every site (Simpro-synced + manually added) with a printable QR gate-sign, dynamic sign-on questions and a live count of who&rsquo;s signed on right now."
         action={
           <div className="flex items-center gap-2">
@@ -122,14 +121,14 @@ export default function SitesAdmin() {
               type="button"
               onClick={() => setShowRecycle(true)}
               data-testid="sites-recycle-bin-btn"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-400 text-slate-900 text-xs font-semibold hover:bg-amber-500 shadow-sm">
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">
               <Archive size={13} /> Recycle bin
             </button>
             <button
               type="button"
               onClick={() => setShowAdd(true)}
               data-testid="sites-add-btn"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-bold hover:bg-emerald-800 shadow-sm">
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-bold hover:bg-orange-600">
               <Plus size={14} /> Add site
             </button>
           </div>

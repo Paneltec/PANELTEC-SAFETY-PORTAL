@@ -176,9 +176,8 @@ export default function AuditExports() {
   return (
     <div className="max-w-6xl mx-auto" data-testid="audit-exports">
       <PageHeader crumb="Compliance / Audit Exports" title="Audit Exports"
-        theme="emerald"
         subtitle="Generate signed evidence packs for Comcare, SafeWork and client audits."
-        action={<button onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm" data-testid="export-create-btn">+ New export</button>} />
+        action={<button onClick={() => setOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600" data-testid="export-create-btn">+ New export</button>} />
 
       <HowThisWorks schematicSlug="audit_exports" />
 

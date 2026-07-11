@@ -294,22 +294,21 @@ export default function PlantVehicles() {
       <PageHeader
         crumb="Compliance / Plant & Vehicles"
         title="Plant & Vehicles"
-        theme="emerald"
-        subtitle={<>Unified asset register — live Navixy fleet + manually-added plant, tools and containers. <Link to="/app/settings/integrations" className="text-emerald-700 hover:underline ml-1">Manage Navixy</Link></>}
+        subtitle={<>Unified asset register — live Navixy fleet + manually-added plant, tools and containers. <Link to="/app/settings/integrations" className="text-brand-blue hover:underline ml-1">Manage Navixy</Link></>}
         action={
           <div className="flex items-center gap-2">
-            <button onClick={load} disabled={refreshing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 shadow-sm" data-testid="assets-refresh">
+            <button onClick={load} disabled={refreshing} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm hover:bg-slate-50 disabled:opacity-50" data-testid="assets-refresh">
               {refreshing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw />} Refresh
             </button>
             {canEdit && (
               <>
                 <button onClick={() => setPrintIds(assets.map((a) => a.id))} disabled={!assets.length}
-                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 text-sm hover:bg-slate-50 disabled:opacity-50"
                   data-testid="assets-print-labels">
                   <Printer /> Print Labels
                 </button>
                 <button onClick={openCreate}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
                   data-testid="assets-add">
                   <Plus /> Add Asset
                 </button>
