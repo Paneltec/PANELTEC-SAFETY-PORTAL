@@ -198,6 +198,20 @@ SITE_DIARY_SAMPLES = [
 
 
 async def _seed_capture(org_id: str, ws_ids: list[str], user_ids: dict[str, str]) -> None:
+    # v160.3.0-adjust-13a — Env-flag gate. Startup used to blindly seed
+    # SWMS/pre-starts/site-diary/hazards/incidents/inspections rows in
+    # every boot when the collection was empty. Test fixtures also
+    # leaked into `form_submissions` (13× TEST_phase38 + 4× empty
+    # Equipment Pre-Use + assorted others) — polluting the Capture
+    # tabs and frustrating the operator, who could not tell real
+    # records from demo residue.
+    #
+    # New behaviour: this helper is a no-op unless the operator
+    # explicitly opts in via `ENABLE_DEMO_SEED=true` in the env. The
+    # rest of `seed_all()` (org/user/workspace bootstrapping) still
+    # runs so the app remains usable on a fresh DB.
+    if os.environ.get("ENABLE_DEMO_SEED", "").lower() not in ("1", "true", "yes"):
+        return
     creator = user_ids.get("demo@paneltec.com")
     if not creator:
         return
