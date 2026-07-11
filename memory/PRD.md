@@ -5333,3 +5333,46 @@ All 3 files.
   `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-3`
 - `/app/memory/PRD.md` (this entry)
 
+
+
+# 2026-07-11 — v160.3.0-adjust-5 SHIPPED — Active Sessions delete confirmation + self-revoke guard
+
+## User-visible changes
+- **Red trash icon** replaces the "sign out" icon on each session row.
+- **AlertDialog confirmation** now precedes every revoke — "Revoke
+  this session? The user will be logged out immediately on their
+  next request. Any unsaved work in that session will be lost."
+- Current-session row still shows the trash icon disabled with an
+  improved tooltip: *"This is your current session"*.
+
+## Backend hardening
+- `DELETE /api/admin/active-sessions/{jti}` gains a **self-revoke
+  guard** — decodes the caller's own jti from the Bearer JWT and
+  rejects with `400` when it matches the target. Falls back to
+  `user_id` match if the JWT can't be parsed (coarser but safer).
+- Endpoint was already admin-only via `_require_admin(user)` (no
+  RBAC drift). Force-logout-everyone flow untouched.
+
+## Regression coverage — `test_v160_3_0_adjust_5_sessions.py`
+5/5 PASS:
+1. Admin can revoke another user's session (204 + row disappears).
+2. Worker cannot revoke any session (403 + row untouched).
+3. Admin cannot revoke their own current jti (400 + row still alive
+   + error message contains "own current session" / "sign out").
+4. Unknown jti → 404.
+5. Second revoke on same jti → 404.
+
+Full v160.2/3 suite: **43/43 green**.
+
+## Version bump → `paneltec-v160.3.0-adjust-5`
+All 3 files. No mobile touch → no Metro clear.
+
+## Files touched
+- `backend/admin_active_sessions.py` (self-revoke guard + Request import)
+- `backend/tests/test_v160_3_0_adjust_5_sessions.py` (new, 5 tests)
+- `frontend/src/components/settings/ActiveSessionsPanel.jsx`
+  (Trash2 icon + AlertDialog confirm + updated tooltip)
+- `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
+  `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-5`
+- `/app/memory/PRD.md` (this entry)
+

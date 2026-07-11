@@ -20,7 +20,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from auth import get_current_user
 from db import db
@@ -82,15 +82,48 @@ async def list_active_sessions(user: dict = Depends(get_current_user)):
 
 
 @router.delete("/active-sessions/{jti}", status_code=204)
-async def revoke_session(jti: str, user: dict = Depends(get_current_user)):
+async def revoke_session(jti: str, request: Request,
+                          user: dict = Depends(get_current_user)):
     """Revoke ONE session. Forces that token to fail on its next request via
-    the token_version mismatch path."""
+    the token_version mismatch path.
+
+    v160.3.0-adjust-5 — Blocks revoking the caller's OWN current session
+    (400). "Force logout everyone" (which iterates and skips the caller
+    server-side) is the intended path for that. Prevents an admin from
+    accidentally logging themselves out mid-review.
+    """
     _require_admin(user)
     sess = await db.active_sessions.find_one(
         {"jti": jti, "org_id": user["org_id"]}, {"_id": 0},
     )
     if not sess:
         raise HTTPException(404, "Session not found")
+
+    # v160.3.0-adjust-5 — Extract caller's own jti from the Bearer JWT
+    # to allow blocking self-revoke by jti (the precise UX contract).
+    # Falls back to user_id match if jti isn't parseable, which is a
+    # coarser but safer guard (admin still can't nuke themselves).
+    caller_jti = None
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        try:
+            import jwt as _jwt
+            from auth import JWT_ALGORITHM, _secret
+            payload = _jwt.decode(auth_header[7:], _secret(),
+                                  algorithms=[JWT_ALGORITHM])
+            caller_jti = payload.get("jti")
+        except Exception:
+            caller_jti = None
+    is_self = (caller_jti and caller_jti == jti) or (
+        not caller_jti and sess.get("user_id") == user["id"]
+    )
+    if is_self:
+        raise HTTPException(
+            400,
+            "You can't revoke your own current session. "
+            "Use 'Force logout everyone' or sign out normally.",
+        )
+
     # Bump token_version so any cached JWT for this user that uses this jti
     # also fails the next /auth/me check (defence in depth).
     await db.users.update_one(

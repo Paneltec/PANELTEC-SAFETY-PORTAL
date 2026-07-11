@@ -1,14 +1,24 @@
 // Phase 3.18 — Active Sessions panel inside the Session Timeout card.
+// v160.3.0-adjust-5 — Swapped the "Revoke" icon from `LogOut` to a red
+// `Trash2` to match the user's mental model ("delete this session")
+// and the delete-icon language used elsewhere in the app. Wrapped the
+// revoke action in an AlertDialog confirmation so a mis-click can't
+// silently log a colleague out mid-shift.
 //
 // Lists every live session in the org with name, role, last-activity (relative
-// time), and a "Revoke" button. Auto-refreshes every 30s so an admin can watch
+// time), and a Revoke button. Auto-refreshes every 30s so an admin can watch
 // a force-logout-all take effect, or confirm a worker has signed out after
 // finishing a shift. The "current session" row is non-revokable (revoking
 // yourself is what "Force logout all" is for).
 import { useEffect, useState } from 'react';
-import { LogOut, RefreshCw, Loader2, Users } from 'lucide-react';
+import { Trash2, RefreshCw, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
+import {
+  AlertDialog, AlertDialogTrigger, AlertDialogContent, AlertDialogHeader,
+  AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogCancel, AlertDialogAction,
+} from '../ui/alert-dialog';
 
 const ROLE_BADGE = {
   admin:      'bg-violet-100 text-violet-700',
@@ -35,6 +45,7 @@ export default function ActiveSessionsPanel() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busyJti, setBusyJti] = useState(null);
+  const [confirmRow, setConfirmRow] = useState(null);
   const [nowTick, setNowTick] = useState(0);
 
   const load = async () => {
@@ -48,7 +59,6 @@ export default function ActiveSessionsPanel() {
     }
   };
 
-  // Initial fetch + 30s auto-refresh + 15s relative-time re-render.
   useEffect(() => {
     load();
     const refresh = setInterval(load, 30000);
@@ -56,15 +66,9 @@ export default function ActiveSessionsPanel() {
     return () => { clearInterval(refresh); clearInterval(tick); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Touch nowTick → silence unused-var lint without doing anything.
   void nowTick;
 
-  const revoke = async (row) => {
-    if (row.is_current_session) {
-      toast.error('Use "Force logout everyone" to sign yourself out.');
-      return;
-    }
+  const doRevoke = async (row) => {
     setBusyJti(row.jti);
     try {
       await api.delete(`/admin/active-sessions/${row.jti}`);
@@ -74,6 +78,7 @@ export default function ActiveSessionsPanel() {
       toast.error(apiError(e));
     } finally {
       setBusyJti(null);
+      setConfirmRow(null);
     }
   };
 
@@ -132,17 +137,52 @@ export default function ActiveSessionsPanel() {
               </div>
               <button
                 type="button"
-                onClick={() => revoke(r)}
+                onClick={() => setConfirmRow(r)}
                 disabled={r.is_current_session || busyJti === r.jti}
-                title={r.is_current_session ? "Use 'Force logout everyone' to sign yourself out" : 'Revoke this session'}
+                title={r.is_current_session
+                  ? 'This is your current session'
+                  : 'Revoke this session'}
                 data-testid={`revoke-session-${r.jti}`}
-                className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50 disabled:opacity-40 disabled:hover:bg-white">
-                {busyJti === r.jti ? <Loader2 size={11} className="animate-spin" /> : <LogOut size={11} />}
+                aria-label={`Revoke ${r.user_name}'s session`}
+                className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-rose-600 disabled:hover:border-rose-200">
+                {busyJti === r.jti ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={12} />}
               </button>
             </li>
           ))}
         </ul>
       )}
+
+      <AlertDialog open={!!confirmRow} onOpenChange={(open) => !open && setConfirmRow(null)}>
+        <AlertDialogContent data-testid="revoke-session-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Revoke this session?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmRow && (
+                <>
+                  <span className="block font-medium text-slate-900 mb-2">
+                    {confirmRow.user_name} · {confirmRow.user_email}
+                  </span>
+                  The user will be logged out immediately on their next request.
+                  Any unsaved work in that session will be lost.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={!!busyJti}
+              data-testid="revoke-session-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => confirmRow && doRevoke(confirmRow)}
+              disabled={!!busyJti}
+              data-testid="revoke-session-confirm"
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
+              {busyJti ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              Revoke session
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

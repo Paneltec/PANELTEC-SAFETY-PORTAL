@@ -560,3 +560,38 @@ ol.zebra-list > li:hover {
     .hover-lift:hover,
     .hover-lift:active { transform: none !important; }
 }
+
+/* v160.3.0-adjust-4 — Reserve topnav clearance on every full-viewport
+ * modal-style overlay. Every custom modal in the app uses the same
+ * pattern: `<div class="fixed inset-0 z-50 flex items-center ..." >`
+ * (or `place-items-center` / `grid`). Historically these centred the
+ * modal panel in the FULL viewport, so on typical 900px screens the
+ * panel top edge landed near the topnav (`sticky top-0 h-16`, z-30).
+ * Even though the modal container itself has a higher z-index, some
+ * Chromium builds paint the sticky topnav's border/shadow OVER the
+ * modal header at the shared row-1 region — the user-reported
+ * "modal header clipped behind top nav" symptom on WorkerViewModal /
+ * Edit Worker modal.
+ *
+ * Fix: reserve `padding-top: 4rem` (matches the 64px topnav height)
+ * on every element matching this overlay pattern. Effective centring
+ * shifts down by 64px, guaranteeing the modal header sits clear of
+ * the topnav baseline regardless of stacking order.
+ *
+ * Shadcn Sheet/Dialog primitives (in `/components/ui/sheet.jsx` and
+ * `/components/ui/dialog.jsx`) render inside a Radix Portal with
+ * `bg-background` (opaque) and their own layout — not affected by
+ * this rule (they don't have `flex items-center` on the fixed
+ * inset-0 wrapper).
+ *
+ * Drawer-style overlays (right-side panels via `flex justify-end`
+ * WITHOUT `items-center`) are also unaffected — the selector only
+ * matches modals that center vertically.
+ */
+.fixed.inset-0.flex.items-center,
+.fixed.inset-0.grid.place-items-center,
+.fixed.inset-0.grid.place-items-end,
+.fixed.inset-0.flex.items-end {
+    padding-top: 4rem;
+}
+
