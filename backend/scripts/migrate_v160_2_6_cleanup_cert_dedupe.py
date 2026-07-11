@@ -73,24 +73,37 @@ async def main() -> dict:
                 "updated_at": "$updated_at",
                 "created_at": "$created_at",
                 "source": "$source",
+                "expiry_date": "$expiry_date",
             }},
         }},
         {"$match": {"count": {"$gt": 1}}},
     ]
     groups = await db.worker_certifications.aggregate(pipeline).to_list(None)
 
-    # 3) Soft-delete older siblings, keep newest updated_at.
+    # 3) Soft-delete older siblings, keep by tiebreaker:
+    #    latest expiry_date wins → fallback: newest updated_at →
+    #    fallback: newest created_at.
+    #    (v160.2.6-cleanup-slotin: switched from pure updated_at because
+    #     an XLSX re-import can bump `updated_at` on a row that carries
+    #     the *older* expiry, effectively hiding the correct future
+    #     expiry a user manually entered.)
     now = datetime.now(timezone.utc)
     kept: list[str] = []
     deleted: list[str] = []
+    _EPOCH_DT = datetime.min.replace(tzinfo=timezone.utc)
+    _EPOCH_D = "0000-00-00"
+
+    def _key(d):
+        # expiry_date is stored as "YYYY-MM-DD" string (or None); string
+        # order == chronological order for that ISO shape, and None sorts
+        # to the epoch sentinel.
+        exp = d.get("expiry_date") or _EPOCH_D
+        upd = d.get("updated_at") or d.get("created_at") or _EPOCH_DT
+        crt = d.get("created_at") or _EPOCH_DT
+        return (exp, upd, crt)
+
     for g in groups:
         docs = g["docs"]
-        # Sort by (updated_at desc, created_at desc). None-safe.
-        def _key(d):
-            return (
-                d.get("updated_at") or d.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
-                d.get("created_at") or datetime.min.replace(tzinfo=timezone.utc),
-            )
         docs.sort(key=_key, reverse=True)
         keeper = docs[0]
         kept.append(keeper["id"])

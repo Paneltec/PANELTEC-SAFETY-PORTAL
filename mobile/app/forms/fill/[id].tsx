@@ -255,6 +255,13 @@ function SignatureModal({ visible, onSave, onClose }: any) {
 /* ─── Photo field ─── */
 function PhotoField({ photos, onChange, testId }: any) {
   const pick = async (useCamera: boolean) => {
+    // v160.2.9-lib-audit — Set expectations on the web preview so
+    // testers don't mistake the browser file-dialog for a bug. On
+    // native (iOS/Android) `launchImageLibraryAsync` opens the phone
+    // gallery directly — unavoidable web-only fallback here.
+    if (!useCamera && Platform.OS === 'web') {
+      toast.info('Web preview — using browser file picker. On the phone this opens your gallery.');
+    }
     const perm = useCamera
       ? await ImagePicker.requestCameraPermissionsAsync()
       : await ImagePicker.requestMediaLibraryPermissionsAsync();

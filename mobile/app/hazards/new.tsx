@@ -59,6 +59,10 @@ export default function HazardNewScreen() {
   };
 
   const pickFromGallery = async () => {
+    // v160.2.9-lib-audit — Set expectations on the web preview.
+    if (Platform.OS === 'web') {
+      toast.info('Web preview — using browser file picker. On the phone this opens your gallery.');
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 0.7,

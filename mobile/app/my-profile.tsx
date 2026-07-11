@@ -96,6 +96,11 @@ export default function MyProfileScreen() {
         <Text style={s.overline}>MY PROFILE · READ ONLY</Text>
         <Text style={s.heading}>{w ? `${w.first_name || ''} ${w.last_name || ''}`.trim() || 'Profile' : 'Loading…'}</Text>
         {w?.position ? <Text style={s.sub}>{w.position}</Text> : null}
+        {!loading && !error && w && (
+          <Text testID="my-profile-hint" style={s.pageHint}>
+            This is the record your admin holds for you. Details are read-only here — ask them to update anything that looks wrong.
+          </Text>
+        )}
 
         {loading && (
           <ActivityIndicator style={{ marginTop: 24 }} color={Colors.imBronze} />
@@ -237,6 +242,7 @@ const s = StyleSheet.create({
   overline:  { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.imBronze },
   heading:   { fontSize: 24, fontWeight: '800', color: Colors.ink, marginTop: 4, letterSpacing: -0.5 },
   sub:       { fontSize: 13, color: Colors.textSecondary, marginTop: 3 },
+  pageHint:  { fontSize: 12, lineHeight: 17, color: Colors.textTertiary, marginTop: 10, marginBottom: 6, paddingRight: 8 },
   errorCard: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 18, padding: 12, backgroundColor: 'rgba(139,58,58,0.08)', borderWidth: 1, borderColor: Colors.imError, borderRadius: 10 },
   errorText: { flex: 1, color: Colors.imError, fontSize: 13, fontWeight: '600' },
   emptyCard: { marginTop: 18, padding: 14, borderWidth: 1, borderColor: Colors.imBorder, borderRadius: 12, backgroundColor: Colors.imSurface },

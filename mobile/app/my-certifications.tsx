@@ -95,8 +95,12 @@ export default function MyCertificationsScreen() {
         }
       >
         <Text style={s.overline}>MY CERTIFICATIONS · READ ONLY</Text>
-        <Text style={s.heading}>{certs.length} on file</Text>
-        <Text style={s.sub}>Amber = expiring soon. Red = expired. Ask your admin if any detail is wrong.</Text>
+        <Text style={s.heading}>
+          {certs.length === 0
+            ? 'No certifications yet'
+            : `${certs.length} certification${certs.length === 1 ? '' : 's'} on file`}
+        </Text>
+        <Text style={s.sub}>Amber = expiring soon. Red = expired. Ask your admin if any detail looks wrong.</Text>
 
         {/* Search */}
         <View style={s.searchRow}>

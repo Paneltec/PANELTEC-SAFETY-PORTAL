@@ -4243,3 +4243,218 @@ The 5 pre-existing failures (v114 hard-coded version, phase_38,
 auth_persistence real-role edge, paneltec_backend login token) are
 unrelated to touched files.
 
+
+
+# 2026-07-10 — v160.2.6-cleanup-slotin — Cert dedupe tiebreaker fix
+
+- Reversed the wrong keep on demo worker `f80a2fb0…`. Un-deleted the
+  manual First Aid row `efe34296…` (expiry 2026-06-17); soft-deleted
+  the XLSX-imported `c61b826c…` (expiry 2024-11-07).
+- Updated dedupe tiebreaker in
+  `backend/scripts/migrate_v160_2_6_cleanup_cert_dedupe.py` from
+  `(updated_at DESC)` to `(expiry_date DESC, updated_at DESC,
+  created_at DESC)` — latest expiry always wins.
+- New regression test `test_latest_expiry_wins_tiebreaker` exercises
+  the exact manual-vs-XLSX shape.  All 3 tests PASS. Migration re-run
+  is a no-op.
+
+
+# 2026-07-10 — v160.2.7 — Worker view-only access audit + guardrail
+
+## Scope
+Audit every enabled worker mobile module → backend resource →
+required permission grant. Snapshot `user_permissions`, then run an
+idempotent guardrail migration that strips any `view:false` override
+on the 10 enabled-module resources for worker-role users.
+
+## Deliverables
+- Audit doc: `/app/memory/v160_2_7_worker_audit.md`
+- Migration: `backend/scripts/migrate_v160_2_7_worker_perms.py`
+- Snapshot: `user_permissions_backup_v160_2_7` (4 rows).
+- Tests: `backend/tests/test_v160_2_7_worker_perms.py` — 3/3 PASS
+    - idempotency
+    - `ROLE_DEFAULTS["worker"]` invariant holds on 10 resources
+    - live curl: worker JWT → 200 on 8 view endpoints.
+
+## Findings
+- All 10 currently-enabled worker mobile modules already grant
+  `view=True` in `ROLE_DEFAULTS["worker"]`. Preset needed no change.
+- 11 worker users enumerated. **0 users** carry a `view:false`
+  override on any of those 10 resources. No backfill deletions
+  required. Migration completed as a defensive assertion.
+
+## Phase B (deferred — needs explicit approval)
+Literal reading of "view-only **org-wide**" could imply granting
+`team_view=True` on the 6 team-scoped operational resources for the
+worker preset. That would REVERSE the v159.2 team-scoping hardening
+(workers would see every colleague's hazards / incidents / pre-starts,
+not just their own). Not applied automatically — flagged in the audit
+doc §6.
+
+## Version
+`paneltec-v160.2.7` across mobile version.ts, frontend version.js,
+service-worker.js CACHE_VERSION.
+
+
+
+# 2026-07-11 — v160.2.8 — Worker-clarity UX pass SHIPPED
+
+## Deliverables
+Copy-only pass across 4 worker-facing mobile screens. No layout, colour
+or functional changes. Plain-English subtitles + guided empty states +
+plain-English CTAs where the original strings assumed prior product
+knowledge.
+
+## Per-file receipts
+- `mobile/app/forms/library.tsx`
+    - L140 subtitle: **"Find and fill any form you have access to.
+      Search or tap a category to browse."**
+    - L185-186 empty state: **"No forms are enabled for your role yet."
+      / "Ask your admin to switch on a form category for your role and
+      it will appear here."**
+- `mobile/app/my-profile.tsx`
+    - L100-102 page hint: **"This is the record your admin holds for
+      you. Details are read-only here — ask them to update anything
+      that looks wrong."**
+    - L118-121 empty state: **"No worker profile is linked to your
+      account. Ask your HSEQ lead to create your worker record so your
+      compliance details show up here."**
+- `mobile/app/my-certifications.tsx`
+    - L103 section hint: **"Amber = expiring soon. Red = expired. Ask
+      your admin if any detail looks wrong."**
+    - L137-141 empty state: **"No certifications on file yet." / "Your
+      admin hasn't uploaded any certificates for you. Ask them to add
+      them from the Workers screen."**
+- `mobile/app/(tabs)/qr-signon.tsx`
+    - L56 subtitle: **"Point your camera at the site's sign-on QR to
+      check in. You can also scan a worker or supplier QR, or paste a
+      scan link below."**
+
+## Visual verification
+- Screenshot captured on paneltec-v160.2.9 mobile bundle:
+  `/tmp/v160_2_8_library.png` — Forms Library shows the new subtitle
+  under "Forms Library" title, category tiles unchanged.
+- Home screen version banner reads **PANELTEC CIVIL · paneltec-v160.2.8**
+  during the standalone v160.2.8 window before v160.2.9 rolled forward.
+
+## Version bumps → `paneltec-v160.2.8`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js` (`CACHE_VERSION`)
+
+## Deferred (not this cycle)
+- Icon-only button labels + outbox/locked-module copy — worker-facing
+  surfaces beyond the 4 shipped here weren't required for the queued
+  release window. Queue for a follow-up copy pass when the user
+  greenlights.
+
+
+# 2026-07-11 — v160.2.9 — Multi-worker picker "add one at a time" + photo-library web-preview toast
+
+## Part A — WorkerPicker.tsx add-one-at-a-time (main brief)
+
+### Scope
+Multi-mode WorkerPicker went from a checkbox-toggle sheet with a
+trigger reading "3 workers" to an explicit **add-one-at-a-time**
+pattern. Single-select behaviour is untouched.
+
+### UX changes (`src/components/WorkerPicker.tsx`)
+- **Trigger label (multi mode)**:
+    - Empty roster → **"Add first worker"**
+    - ≥1 selected → **"Add another worker"**
+    - Company filter suffix (` · <company>`) preserved.
+    - Leading icon switched to `add-circle-outline` (the `+` affordance).
+      Single-select still uses the `person` icon.
+- **Selected roster** now renders as a vertical list of tap-target
+  rows BELOW the trigger:
+    - Row = person icon · name · trade/role subtitle · circular X
+      remove button (`Colors.borderLight` bg, 28×28, `Ionicons close`).
+    - Each row + remove button carry stable testIDs:
+      `${testID}-selected-${workerId}` / `${testID}-remove-${workerId}`.
+    - The list ships as `${testID}-selected-list`.
+    - Accessibility: remove buttons carry `accessibilityLabel="Remove <name>"`
+      + `accessibilityRole="button"`.
+- **Modal behaviour**:
+    - Tap on an un-added row → append to selection AND close the
+      modal (no more Done button).
+    - Already-added rows are dimmed (`opacity: 0.5` + muted name) AND
+      show an explicit **"Added"** pill (orange soft bg, checkmark-circle).
+      `disabled` + `activeOpacity: 1` blocks accidental toggle-off.
+    - The `Done` button previously rendered under the FlatList is
+      removed in multi mode — it duplicated add-one-at-a-time.
+
+### Files touched
+- `mobile/src/components/WorkerPicker.tsx` (single file — the pattern
+  is centralised, so every caller — Pre-Start, Hazard, Incident, Plant
+  Inspection, and dynamic form-fill worker_ids fields — inherits the
+  new UX automatically).
+
+### Visual receipts (admin @ pre-starts/new)
+- `/tmp/v160_2_9_workerpicker_empty.png` — trigger reads "Add first
+  worker" with `+` icon; no roster below.
+- `/tmp/v160_2_9_after_first_add.png` — after picking one worker,
+  trigger flips to **"Add another worker"** and the roster shows one
+  row (Stephen Guy · foreman) with a circular X remove.
+- `/tmp/v160_2_9_modal_reopen_dimmed.png` — reopening the modal
+  shows RICK ANTRIM row dimmed with an orange **"Added"** pill.
+- `/tmp/v160_2_9_two_workers.png` — two workers in the vertical
+  roster (Stephen Guy + RICK ANTRIM), each with own X.
+
+## Part B — Photo-library web-preview toast (v160.2.9-lib-audit slot-in)
+
+### Audit table
+| file | picker library | web behaviour | fix |
+|------|----------------|---------------|-----|
+| `mobile/app/forms/fill/[id].tsx` (PhotoField) | `expo-image-picker` | browser file dialog (unavoidable on web) | +toast |
+| `mobile/app/hazards/new.tsx` (pickFromGallery) | `expo-image-picker` | browser file dialog | +toast |
+| `mobile/src/components/swms/ScanSwmsModal.tsx` (pickLibrary) | `expo-image-picker` | browser file dialog | +Alert |
+
+- **Zero occurrences** of `<input type="file">` in RN source (the 3
+  `<input>` matches in `forms/fill/[id].tsx` are `type="date"`).
+- Every Library affordance uses `ImagePicker.launchImageLibraryAsync`
+  which resolves to the **native photo gallery** on iOS/Android.
+- Permissions are correctly gated on `requestMediaLibraryPermissionsAsync`
+  / `requestCameraPermissionsAsync` before dispatch.
+
+### Fixes applied
+- **`forms/fill/[id].tsx` L257-268**: `pick(useCamera)` now fires a
+  `toast.info('Web preview — using browser file picker. On the phone
+  this opens your gallery.')` BEFORE the picker launches when
+  `Platform.OS === 'web' && !useCamera`. Native path untouched.
+- **`hazards/new.tsx` L61-64**: `pickFromGallery` fires the same
+  `toast.info` on web only.
+- **`components/swms/ScanSwmsModal.tsx` L38-46**: `pickLibrary`
+  surfaces an `Alert.alert('Web preview', …)` on web only (this
+  component doesn't import the toast singleton; Alert reuses the
+  modal's own dialog primitive so no extra dependency).
+
+### Web-preview toast — expected phrasing
+`Web preview — using browser file picker. On the phone this opens your gallery.`
+
+### On-device behaviour walkthrough (can't test native from here)
+- On iOS / Android, `Platform.OS !== 'web'`, so **the toast/alert is
+  skipped entirely**. `ImagePicker.launchImageLibraryAsync` opens the
+  OS photo picker directly (iOS PhotoKit / Android MediaStore) — no
+  browser file dialog can exist because there's no browser. Verified
+  by inspection of `expo-image-picker`'s platform.ios.ts / .android.ts
+  entry points in `node_modules/expo-image-picker`.
+
+## Version bumps → `paneltec-v160.2.9`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+## Metro cache clear
+Ran the exact protocol:
+```
+sudo supervisorctl restart mobile && rm -rf /tmp/metro-* /app/mobile/.expo /app/mobile/node_modules/.cache && mkdir -p /app/mobile/.expo/types && touch /app/mobile/.expo/types/router.d.ts
+```
+Mobile back at HTTP 200 within 25s. Home screen version banner reads
+`paneltec-v160.2.9`.
+
+## Deferred (per user's Feb 11 message)
+- **Crane Lift grouped-crew pattern** — user hasn't confirmed the
+  brief yet. NOT built in this cycle.
+- **v160.3.0 — Qualification-gated forms** — next in queue.
+- **Admin QR generator** for form-template QR codes — P3 parking lot.
+

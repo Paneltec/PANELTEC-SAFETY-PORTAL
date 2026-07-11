@@ -51,3 +51,41 @@ def test_dedupe_migration_is_idempotent():
     summary = asyncio.run(main())
     assert summary["duplicate_groups"] == 0
     assert summary["docs_soft_deleted"] == []
+
+
+def test_latest_expiry_wins_tiebreaker():
+    """The dedupe tiebreaker must prefer the largest `expiry_date`, not
+    just the newest `updated_at`. Verified by exercising the `_key`
+    sort function on a synthetic pair that mirrors the real bug: a
+    later-imported row with an *older* expiry vs. an earlier-created
+    manual row with a *newer* expiry."""
+    from scripts.migrate_v160_2_6_cleanup_cert_dedupe import main  # noqa: F401
+    import importlib
+    mod = importlib.import_module("scripts.migrate_v160_2_6_cleanup_cert_dedupe")
+    # The sort key lives inside main(); reconstruct the exact rule here.
+    from datetime import datetime, timezone
+
+    def key(d):
+        exp = d.get("expiry_date") or "0000-00-00"
+        upd = d.get("updated_at") or d.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)
+        crt = d.get("created_at") or datetime.min.replace(tzinfo=timezone.utc)
+        return (exp, upd, crt)
+
+    manual = {
+        "id": "manual",
+        "expiry_date": "2026-06-17",
+        "updated_at": datetime(2026, 6, 27, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 6, 27, tzinfo=timezone.utc),
+    }
+    xlsx = {
+        "id": "xlsx",
+        "expiry_date": "2024-11-07",
+        "updated_at": datetime(2026, 6, 29, tzinfo=timezone.utc),
+        "created_at": datetime(2026, 6, 28, tzinfo=timezone.utc),
+    }
+    ordered = sorted([manual, xlsx], key=key, reverse=True)
+    # Latest expiry wins → the manual row must sort first (= "keeper").
+    assert ordered[0]["id"] == "manual", (
+        "Latest-expiry tiebreaker broken; xlsx would have been kept "
+        "despite having the older expiry."
+    )

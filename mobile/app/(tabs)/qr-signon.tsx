@@ -53,7 +53,7 @@ export default function QRSignOnScreen() {
         <ScrollView contentContainerStyle={s.container} keyboardShouldPersistTaps="handled">
           <Text style={s.overline}>QR SCANNER</Text>
           <Text style={s.heading}>SCAN & SIGN-ON</Text>
-          <Text style={s.sub}>Scan a site, worker, or supplier QR code to begin.</Text>
+          <Text style={s.sub}>Point your camera at the site&apos;s sign-on QR to check in. You can also scan a worker or supplier QR, or paste a scan link below.</Text>
 
           <View testID="qr-viewfinder" style={s.viewfinder}>
             <View style={s.viewfinderInner}>

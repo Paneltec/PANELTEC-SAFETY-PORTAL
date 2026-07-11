@@ -36,6 +36,16 @@ export default function ScanSwmsModal({ visible, onClose, onCreated }: Props) {
   };
 
   const pickLibrary = async () => {
+    // v160.2.9-lib-audit — Set expectations on the web preview.
+    if (Platform.OS === 'web') {
+      // Best-effort inline notice; ScanSwmsModal doesn't import the
+      // toast singleton, so we surface via Alert on non-native only.
+      // Kept off native so we don't nag phone users with an extra tap.
+      Alert.alert(
+        'Web preview',
+        'Using the browser file picker. On the phone this opens your gallery.',
+      );
+    }
     const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (result.canceled || !result.assets?.[0]) return;
     const a = result.assets[0];

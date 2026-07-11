@@ -7,6 +7,18 @@
  * pre-start crew rosters.
  *
  * v160.0.10.1 — introduced for Hazard/Pre-Start/Incident/Plant Inspection.
+ * v160.2.9    — Multi mode now uses an "add one at a time" pattern:
+ *   • Trigger reads "Add first worker" (empty) or "Add another worker"
+ *     with a leading `+` icon.
+ *   • Selected workers render as a vertical list of rows BELOW the
+ *     trigger — each row shows the name + a small circular X tap
+ *     target that removes just that worker.
+ *   • Tapping a worker inside the modal ADDS them and closes the
+ *     modal. To add multiple workers the user re-taps "Add another
+ *     worker" — this is the requested add-one-at-a-time UX.
+ *   • Workers already in the roster are dimmed inside the modal and
+ *     ignore taps, so double-adds are impossible.
+ *   • Single-select behaviour is unchanged.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -118,12 +130,17 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
     if (!nm) return '';
     return ` · ${nm}`;
   })();
+  // v160.2.9 — Trigger text in multi mode is now a plain "Add first
+  // worker" / "Add another worker" CTA. The list of already-selected
+  // workers is rendered as rows below the trigger, not inside the
+  // trigger label, so scanning the roster no longer requires opening
+  // the modal.
   const triggerText = (() => {
     if (props.multi) {
       const ids = props.value || [];
-      if (ids.length === 0) return `Select workers · ${companyScoped.length}${filterSuffix}`;
-      if (ids.length === 1) return nameOf(workers.find(w => w.id === ids[0])) || '1 worker';
-      return `${ids.length} workers`;
+      return ids.length === 0
+        ? `Add first worker${filterSuffix}`
+        : `Add another worker${filterSuffix}`;
     }
     const found = workers.find(w => w.id === props.value);
     if (found) return nameOf(found);
@@ -135,15 +152,36 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
 
   const toggle = (w: Worker) => {
     if (props.multi) {
+      // v160.2.9 — Add-one-at-a-time: a tap inside the modal ADDS the
+      // worker (never toggles-off) and closes the modal. Removal is
+      // done by tapping the small circular X on the row below the
+      // trigger. Already-selected rows are dimmed and ignore taps.
       const cur = props.value || [];
-      const next = cur.includes(w.id) ? cur.filter(x => x !== w.id) : [...cur, w.id];
+      if (cur.includes(w.id)) { setOpen(false); return; }
+      const next = [...cur, w.id];
       const wobjs = workers.filter(x => next.includes(x.id));
       props.onChange(next, wobjs);
+      setOpen(false);
     } else {
       props.onChange(w.id, w);
       setOpen(false);
     }
   };
+
+  // v160.2.9 — Removal handler for a single selected worker.
+  const removeOne = (id: string) => {
+    if (!props.multi) return;
+    const cur = props.value || [];
+    const next = cur.filter(x => x !== id);
+    const wobjs = workers.filter(x => next.includes(x.id));
+    props.onChange(next, wobjs);
+  };
+
+  // Selected worker objects (multi mode) — resolved once per render so
+  // the roster list below the trigger can render name + trade badge.
+  const selectedWorkers: Worker[] = props.multi
+    ? ((props.value || []).map((id) => workers.find(w => w.id === id)).filter(Boolean) as Worker[])
+    : [];
 
   return (
     <View>
@@ -154,13 +192,56 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
         onPress={() => setOpen(true)}
         activeOpacity={0.75}
       >
-        <Ionicons name="person" size={16} color={Colors.orangeLight} />
+        {/* v160.2.9 — Leading `+` icon in multi mode, otherwise the
+            existing person icon (single-select shape unchanged). */}
+        <Ionicons
+          name={props.multi ? 'add-circle-outline' : 'person'}
+          size={16}
+          color={Colors.orangeLight}
+        />
         <Text style={[s.triggerText, !props.value && s.triggerPlaceholder]}>{triggerText}</Text>
         <Ionicons name="chevron-down" size={16} color={Colors.textTertiary} />
       </TouchableOpacity>
       {props.hint ? (
         <Text testID={(props.testID || 'worker-picker') + '-hint'} style={s.hint}>{props.hint}</Text>
       ) : null}
+
+      {/* v160.2.9 — Selected worker rows below the trigger (multi mode
+          only). Each row = name + optional trade + small circular X
+          remove button. When empty this section renders nothing so the
+          form doesn't get a floating gap. */}
+      {props.multi && selectedWorkers.length > 0 && (
+        <View
+          testID={(props.testID || 'worker-picker') + '-selected-list'}
+          style={s.selectedList}
+        >
+          {selectedWorkers.map((w) => (
+            <View
+              key={w.id}
+              testID={(props.testID || 'worker-picker') + `-selected-${w.id}`}
+              style={s.selectedRow}
+            >
+              <Ionicons name="person" size={14} color={Colors.orangeLight} />
+              <View style={{ flex: 1 }}>
+                <Text style={s.selectedName} numberOfLines={1}>{nameOf(w)}</Text>
+                {(w.trade || w.role) ? (
+                  <Text style={s.selectedMeta} numberOfLines={1}>{w.trade || w.role}</Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                testID={(props.testID || 'worker-picker') + `-remove-${w.id}`}
+                style={s.removeBtn}
+                onPress={() => removeOne(w.id)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={`Remove ${nameOf(w)}`}
+                accessibilityRole="button"
+              >
+                <Ionicons name="close" size={14} color={Colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      )}
 
       <Modal visible={open} animationType="slide" transparent onRequestClose={() => setOpen(false)}>
         <View style={s.modalBackdrop}>
@@ -192,35 +273,40 @@ export default function WorkerPicker(props: SingleProps | MultiProps) {
               data={filtered}
               keyExtractor={(w) => w.id}
               keyboardShouldPersistTaps="handled"
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  testID={`worker-option-${item.id}`}
-                  style={[s.row, isSelected(item.id) && s.rowSelected]}
-                  onPress={() => toggle(item)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.rowName}>{nameOf(item)}</Text>
-                    {/* v160.0.12.4 — company suffix dropped; the top toggle
-                        already scopes the list. Meta hidden if empty. */}
-                    {(item.trade || item.role) ? (
-                      <Text style={s.rowMeta}>{item.trade || item.role}</Text>
+              renderItem={({ item }) => {
+                const alreadyAdded = props.multi && (props.value || []).includes(item.id);
+                return (
+                  <TouchableOpacity
+                    testID={`worker-option-${item.id}`}
+                    style={[s.row, isSelected(item.id) && s.rowSelected, alreadyAdded && s.rowDimmed]}
+                    onPress={() => toggle(item)}
+                    disabled={alreadyAdded}
+                    activeOpacity={alreadyAdded ? 1 : 0.7}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.rowName, alreadyAdded && s.rowNameDimmed]}>{nameOf(item)}</Text>
+                      {(item.trade || item.role) ? (
+                        <Text style={s.rowMeta}>{item.trade || item.role}</Text>
+                      ) : null}
+                    </View>
+                    {alreadyAdded ? (
+                      // v160.2.9 — Explicit "Already added" pill so the
+                      // admin instantly knows this row is already on
+                      // the roster below the trigger.
+                      <View style={s.addedPill}>
+                        <Ionicons name="checkmark-circle" size={14} color={Colors.orange} />
+                        <Text style={s.addedPillText}>Added</Text>
+                      </View>
+                    ) : isSelected(item.id) ? (
+                      <Ionicons name="checkmark" size={20} color={Colors.orange} />
                     ) : null}
-                  </View>
-                  {isSelected(item.id) && (
-                    <Ionicons name="checkmark" size={20} color={Colors.orange} />
-                  )}
-                </TouchableOpacity>
-              )}
+                  </TouchableOpacity>
+                );
+              }}
             />
-            {props.multi && (
-              <TouchableOpacity
-                testID="worker-picker-done"
-                style={s.doneBtn}
-                onPress={() => setOpen(false)}
-              >
-                <Text style={s.doneBtnText}>Done</Text>
-              </TouchableOpacity>
-            )}
+            {/* v160.2.9 — "Done" button removed in multi mode. Add-one-
+                at-a-time closes the modal after each pick, so a Done
+                button would just duplicate the row-tap behaviour. */}
           </View>
         </View>
       </Modal>
@@ -266,4 +352,27 @@ const s = StyleSheet.create({
     alignItems: 'center', marginTop: 10,
   },
   doneBtnText: { color: Colors.imSurface, fontWeight: '700', fontSize: 15 }, // linter-ok: pure white on brand orange
+  // v160.2.9 — Add-one-at-a-time selected roster below the trigger.
+  selectedList: { marginTop: 8, gap: 6 },
+  selectedRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    backgroundColor: Colors.surfaceLight,
+    paddingHorizontal: 12, paddingVertical: 10,
+  },
+  selectedName: { fontSize: 14, fontWeight: '600', color: Colors.ink },
+  selectedMeta: { fontSize: 11, color: Colors.textTertiary, marginTop: 1 },
+  removeBtn: {
+    width: 28, height: 28, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: Colors.borderLight,
+  },
+  rowDimmed: { opacity: 0.5 },
+  rowNameDimmed: { color: Colors.textTertiary },
+  addedPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: Colors.orangeSoft, borderRadius: 999,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  addedPillText: { fontSize: 11, color: Colors.orange, fontWeight: '600' },
 });

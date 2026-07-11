@@ -137,6 +137,7 @@ export default function FormsCategoriesScreen() {
           <Text style={s.headerTitle}>Forms Library</Text>
           <View style={{ width: 56 }} />
         </View>
+        <Text style={s.headerSub}>Find and fill any form you have access to. Search or tap a category to browse.</Text>
         {/* v160.2.5b — Search + camera-icon QR scan, docked in the sticky
             header so they don't scroll away. */}
         <View style={s.searchRow}>
@@ -181,7 +182,8 @@ export default function FormsCategoriesScreen() {
         ) : totalEnabled === 0 ? (
           <View style={s.emptyBox}>
             <Ionicons name="document-outline" size={28} color={Colors.brandInkMuted} />
-            <Text style={s.emptyText}>No forms enabled for your role — contact your admin.</Text>
+            <Text style={s.emptyText}>No forms are enabled for your role yet.</Text>
+            <Text style={s.emptyHint}>Ask your admin to switch on a form category for your role and it will appear here.</Text>
           </View>
         ) : searchActive ? (
           /* v160.2.5b — Flat search results across every category */
@@ -235,7 +237,7 @@ export default function FormsCategoriesScreen() {
                   <Text style={[s.cardBlurb, dimmed && s.dimText]} numberOfLines={2}>{cat.blurb}</Text>
                   <View style={s.cardFoot}>
                     <Text style={[s.cardCount, dimmed && s.dimText]}>
-                      {n} {n === 1 ? 'form' : 'forms'}
+                      {dimmed ? 'Nothing here yet' : `${n} ${n === 1 ? 'form' : 'forms'}`}
                     </Text>
                     {!dimmed && <Ionicons name="chevron-forward" size={14} color={Colors.brandInkMuted} />}
                   </View>
@@ -275,11 +277,16 @@ const s = StyleSheet.create({
     fontSize: 16, fontWeight: '700', color: Colors.brandSurface,
     letterSpacing: 0.2,
   },
+  headerSub: {
+    fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.72)',
+    marginTop: 8, textAlign: 'center', paddingHorizontal: 8,
+  },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
   heading: { fontSize: 26, fontWeight: '800', color: Colors.brandInk, marginTop: 4 },
   sub: { fontSize: 13, color: Colors.brandInkMuted, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.brandInkMuted, textAlign: 'center', paddingHorizontal: 24 },
+  emptyHint: { fontSize: 12, color: Colors.brandInkMuted, textAlign: 'center', paddingHorizontal: 32, marginTop: 2, opacity: 0.85 },
   grid: {
     flexDirection: 'row', flexWrap: 'wrap',
     justifyContent: 'space-between',

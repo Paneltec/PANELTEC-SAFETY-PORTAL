@@ -77,7 +77,7 @@ export default function ProfileScreen() {
 
   const clearCache = async () => {
     await AsyncStorage.clear();
-    Alert.alert('Cache cleared', 'All local data has been cleared. The app will now reload.');
+    Alert.alert('Reset complete', 'Local data cleared and you have been signed out. Sign back in to continue.');
     setAuth(false);
   };
 
@@ -232,7 +232,7 @@ export default function ProfileScreen() {
         {/* Actions */}
         <TouchableOpacity testID="clear-cache-btn" style={st.actionRow} onPress={clearCache} activeOpacity={0.7}>
           <Ionicons name="trash" size={18} color={Colors.textSecondary} />
-          <Text style={st.actionText}>CLEAR CACHE & RELOAD</Text>
+          <Text style={st.actionText}>SIGN OUT & RESET APP DATA</Text>
         </TouchableOpacity>
 
         <TouchableOpacity testID="sign-out-btn" style={st.signOutBtn} onPress={handleSignOut} activeOpacity={0.7}>
