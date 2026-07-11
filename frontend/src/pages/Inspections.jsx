@@ -7,6 +7,7 @@ import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import { CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.

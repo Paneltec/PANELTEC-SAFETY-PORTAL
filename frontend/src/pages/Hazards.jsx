@@ -7,7 +7,7 @@ import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
-import CaptureCard, { CaptureCardGrid } from '../components/CaptureCard';
+import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -29,9 +29,14 @@ export default function HazardsList() {
 
   return (
     <div className="max-w-7xl mx-auto" data-testid="hazards-list">
-      <PageHeader crumb="Capture / Hazard Reports" title="Hazard Reports"
-        subtitle="Snap a hazard — AI classifies severity and drafts the report."
-        action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
+      <CaptureSticky testid="hazards-sticky">
+        <PageHeader crumb="Capture / Hazard Reports" title="Hazard Reports"
+          subtitle="Snap a hazard — AI classifies severity and drafts the report."
+          action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
+        {items.length > 0 && (
+          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
+        )}
+      </CaptureSticky>
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="hazards-tabs">
         <TabsList className="bg-slate-100 border border-slate-200">
           <TabsTrigger value="dashboard" data-testid="hazards-tab-dashboard">Dashboard</TabsTrigger>
@@ -51,7 +56,6 @@ export default function HazardsList() {
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No hazards reported" body="Report your first hazard with a photo and AI classification." action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-empty-create" />} />
        : (<>
-          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
           <CaptureCardGrid testid="hazards-grid">
             {filtered.map((h) => {
               // v160.3.0-adjust-17b — Real hazard reports (not legacy)

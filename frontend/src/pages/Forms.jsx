@@ -1242,14 +1242,18 @@ export default function Forms() {
 
   return (
     <div className="max-w-7xl mx-auto" data-testid="forms-page">
+      {/* v160.3.0-adjust-17e/20 — Sticky page header: title + action
+          buttons + search + category filter stay pinned; card grid
+          scrolls below. */}
+      <div className="sticky top-16 z-20 bg-white -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 pt-1 pb-3 border-b border-slate-100">
       {/* Page header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <h1 className="font-display text-4xl sm:text-5xl font-bold text-slate-900 tracking-tight">Form Templates</h1>
-        <p className="mt-2 text-base text-slate-500">Choose a form to fill, build your own, or generate with AI</p>
+        <p className="mt-1 text-sm text-slate-500">Choose a form to fill, build your own, or generate with AI</p>
       </div>
 
       {/* Toolbar */}
-      <div className="mb-5 flex flex-wrap items-center gap-2">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
         {canEdit && (
           <button onClick={() => setImporting(true)} data-testid="toolbar-import"
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">
@@ -1276,7 +1280,7 @@ export default function Forms() {
       </div>
 
       {/* Search + category dropdown */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 max-w-md">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input value={search} onChange={(e) => setSearch(e.target.value)}
@@ -1304,6 +1308,7 @@ export default function Forms() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {/* Cards */}

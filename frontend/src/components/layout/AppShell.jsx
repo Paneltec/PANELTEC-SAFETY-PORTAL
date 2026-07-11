@@ -72,6 +72,10 @@ const NAV = [
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },
     { to: '/app/forms', label: 'Forms', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-forms', pastel: 'sky' },
+    // v160.3.0-adjust-20b — Drag-drop import entry point. Opens the
+    // shared <PdfImportModal>. Admin/HSEQ-lead only. Renders as a
+    // button (not a NavLink) so it doesn't try to navigate.
+    { action: 'open-import', label: 'Import PDFs', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-import-pdfs', adminOnly: true, pastel: 'sky' },
   ]},
   { section: 'Compliance', items: [
     { to: '/app/suppliers', label: 'Suppliers', icon: People24Regular, iconActive: People24Filled, testid: 'nav-suppliers', pastel: 'sage' },
@@ -118,12 +122,16 @@ const SECTION_TINTS = {
   Settings:   { idle: 'text-slate-500',   hover: 'group-hover:text-slate-700' },
 };
 
-const SidebarNav = ({ collapsed, onItemClick }) => {
+const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
   const can = useCan();
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
       {NAV.map((group) => {
-        const visible = group.items.filter((it) => !it.resource || can(it.resource, 'open'));
+        const visible = group.items.filter((it) => {
+          if (it.adminOnly && !isAdmin) return false;
+          if (it.resource && !can(it.resource, 'open')) return false;
+          return true;
+        });
         if (visible.length === 0) return null;
         const tint = SECTION_TINTS[group.section] || SECTION_TINTS.Settings;
         return (
@@ -132,8 +140,34 @@ const SidebarNav = ({ collapsed, onItemClick }) => {
             <ul className="space-y-0.5">
               {visible.map((it) => {
                 const IconFilled = it.iconActive || it.icon;
+                const key = it.to || it.action || it.testid;
+                // v160.3.0-adjust-20b — Action item (opens a modal via
+                // custom event). Rendered as a plain button so it's
+                // never `isActive` and doesn't participate in routing.
+                if (it.action) {
+                  return (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onItemClick && onItemClick();
+                          window.dispatchEvent(new CustomEvent(`paneltec:${it.action}`));
+                        }}
+                        data-testid={it.testid}
+                        title={collapsed ? it.label : undefined}
+                        className="group w-full flex items-center gap-3 rounded-lg pr-2.5 pl-2.5 py-2 text-sm text-slate-700 hover:text-slate-900 sidebar-idle text-left"
+                      >
+                        <IconFilled
+                          className={`shrink-0 transition-colors sidebar-icon ${tint.idle} ${tint.hover}`}
+                          style={{ width: 20, height: 20 }}
+                        />
+                        {!collapsed && <span className="truncate flex-1">{it.label}</span>}
+                      </button>
+                    </li>
+                  );
+                }
                 return (
-                  <li key={it.to}>
+                  <li key={key}>
                     <NavLink to={it.to} onClick={onItemClick} data-testid={it.testid}
                       className={({ isActive }) =>
                         `group flex items-center gap-3 rounded-lg pr-2.5 pl-2.5 py-2 text-sm transition-all ${
@@ -167,6 +201,14 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   // v160.3.0-adjust-19 — Drag-drop PDF import.
   const [importOpen, setImportOpen] = useState(false);
   const canImport = ['admin', 'hseq_lead'].includes((user?.role || '').toLowerCase());
+  // v160.3.0-adjust-20b — Sidebar "Import PDFs" nav item dispatches
+  // this custom event; the TopBar owns the modal state so a single
+  // modal instance is reused across both entry points.
+  useEffect(() => {
+    const onOpenImport = () => setImportOpen(true);
+    window.addEventListener('paneltec:open-import', onOpenImport);
+    return () => window.removeEventListener('paneltec:open-import', onOpenImport);
+  }, []);
   const navigate = useNavigate();
   const location = useLocation();
   const { workspaceId, setWorkspaceId } = useWorkspace();
@@ -334,25 +376,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   );
 }
 
-const SidebarShell = ({ collapsed }) => (
-  // Phase 4.11.4 (v126) — `sticky top-0 h-screen` makes the sidebar
-  // a viewport-tall column that anchors to the top of the page.
-  // Previously the aside had no height constraint and flex
-  // `align-items: stretch` made it grow to the full document height
-  // on long pages (User Manual, Permission Presets), so scrolling the
-  // page scrolled the sidebar in lockstep. Now the sidebar is
-  // viewport-bounded and its inner `<nav overflow-y-auto>` handles
-  // any internal scroll when the rail is taller than the viewport.
-  //
-  // v160.3.0-adjust-3 — Explicit `z-20` on the sidebar column so it
-  // sits under the topbar (`z-30`) in stacking hierarchy. Sticky
-  // positioning creates its own stacking context, and with an
-  // implicit `z-index: auto` the sidebar column could out-paint the
-  // topbar's border/shadow at the shared row-1 boundary on some
-  // Chromium builds — resulting in the "layout overlap" the user
-  // reported at 1200-1400px viewports. `z-20` fixes the paint order
-  // without breaking any topbar-dropdown menus (which sit at `z-50`
-  // via Radix Portal).
+const SidebarShell = ({ collapsed, isAdmin }) => (
   <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen z-20 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
     <div className={`h-16 flex items-center border-b border-slate-200 bg-white ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
@@ -361,7 +385,7 @@ const SidebarShell = ({ collapsed }) => (
           : <Logo size="sm" />}
       </Link>
     </div>
-    <SidebarNav collapsed={collapsed} />
+    <SidebarNav collapsed={collapsed} isAdmin={isAdmin} />
   </aside>
 );
 
@@ -404,11 +428,15 @@ export default function AppShell() {
     effective: user?.effective_permissions || {},
     role: user?.role || null,
   };
+  // v160.3.0-adjust-20b — Sidebar admin-only items (Import PDFs) key
+  // off the same role check that gates the backend `/api/imports/pdf`
+  // endpoint.
+  const isAdmin = ['admin', 'hseq_lead'].includes((user?.role || '').toLowerCase());
 
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} />
+      <SidebarShell collapsed={collapsed} isAdmin={isAdmin} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
@@ -416,7 +444,7 @@ export default function AppShell() {
             <Logo size="sm" />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2"><X size={18} /></button>
           </div>
-          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} />
+          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} isAdmin={isAdmin} />
         </SheetContent>
       </Sheet>
 
