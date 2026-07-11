@@ -70,13 +70,12 @@ def _fetch_static_map(lat: float, lng: float,
                        width: int = 500, height: int = 300,
                        zoom: int = 16) -> Optional[Path]:
     """Return a Path to a cached PNG static map for (lat, lng), or None
-    if the fetch fails (network, service down, timeout). Best-effort;
-    logs but never raises.
+    if the composition fails. Best-effort; logs but never raises.
 
-    v160.3.0-adjust-16c — Uses Yandex static-maps as the primary
-    provider (no API key, single-URL, marker built-in, DNS reliably
-    resolves inside our infra). Falls back to composing an OpenStreetMap
-    tile if Yandex fails.
+    v160.3.0-adjust-16e — Composes the map from raw OpenStreetMap tiles
+    (via `gps_map_composer.compose_static_map`) so labels are in English
+    (Latin script) rather than Yandex's Cyrillic. Cache is on-disk and
+    permanent — a location's map doesn't change.
     """
     try:
         lat_f, lng_f = float(lat), float(lng)
@@ -87,31 +86,20 @@ def _fetch_static_map(lat: float, lng: float,
     if cached.exists() and cached.stat().st_size > 200:
         return cached
 
-    providers = [
-        # Yandex static-maps — free, no key, marker built-in (pm2rdm =
-        # red medium pushpin).
-        (
-            f"https://static-maps.yandex.ru/1.x/?ll={lng_f},{lat_f}"
-            f"&z={min(zoom, 17)}&l=map&size={min(width,650)},{min(height,450)}"
-            f"&pt={lng_f},{lat_f},pm2rdm"
-        ),
-    ]
-    for url in providers:
-        try:
-            req = urllib.request.Request(url, headers={
-                "User-Agent": "PaneltecCivil/1.0 (forms-pdf-renderer)"
-            })
-            with urllib.request.urlopen(req, timeout=6) as r:
-                data = r.read()
-            if len(data) < 500:
-                log.warning("staticmap fetch too small (%d bytes) for %s,%s", len(data), lat_f, lng_f)
-                continue
-            cached.write_bytes(data)
-            return cached
-        except Exception as e:
-            log.warning("staticmap fetch failed for %s,%s (%s): %s", lat_f, lng_f, url[:60], e)
-            continue
-    return None
+    try:
+        from gps_map_composer import compose_static_map
+        img = compose_static_map(lat_f, lng_f, width=width, height=height, zoom=zoom)
+    except Exception as e:
+        log.warning("staticmap composer crashed for %s,%s: %s", lat_f, lng_f, e)
+        return None
+    if img is None:
+        return None
+    try:
+        img.save(cached, "PNG", optimize=True)
+    except Exception as e:
+        log.warning("staticmap cache write failed for %s,%s: %s", lat_f, lng_f, e)
+        return None
+    return cached
 
 
 def _photo_path(submission_id: str, photo: dict) -> Optional[Path]:

@@ -1373,17 +1373,15 @@ export function SubmissionViewModal({ submissionId, onClose }) {
     }
     if (f.type === 'gps') {
       if (!v || v.lat == null) return <span className="text-slate-400 italic text-sm">Not captured.</span>;
-      // v160.3.0-adjust-16c — Embed a static map image (Yandex static-maps
-      // — no API key, red-pushpin marker) instead of a live iframe. This
-      // matches the PDF renderer + performs better than an iframe.
+      // v160.3.0-adjust-16e — Fetch the map from our backend proxy which
+      // composes an OSM tile mosaic (English labels) and caches on disk.
       const lat = Number(v.lat);
       const lng = Number(v.lng);
-      const mapUrl =
-        `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}` +
-        `&z=16&l=map&size=500,300&pt=${lng},${lat},pm2rdm`;
+      const apiBase = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+      const mapUrl = `${apiBase}/api/gps-map?lat=${lat}&lng=${lng}&w=500&h=300&z=16`;
       return (
         <div className="rounded-lg border border-slate-200 overflow-hidden bg-white" data-testid="gps-map-block">
-          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer" className="block">
+          <a href={`https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=16/${lat}/${lng}`} target="_blank" rel="noreferrer" className="block">
             <img src={mapUrl} alt="Site location map"
                  className="w-full h-auto object-cover bg-slate-100"
                  style={{ maxHeight: 260 }}

@@ -142,6 +142,34 @@ async def whoami(user: dict = Depends(get_current_user)):
 
 
 # mount routers
+# v160.3.0-adjust-16e — Static-map proxy for GPS fields. Serves the
+# OSM-composed PNG from disk cache; composes on demand if not yet cached.
+# Public (no auth) because `<img>` in a browser can't forward Bearer
+# headers; the image is a public map — no PII beyond the coords passed
+# in the query string (which the caller already knows). Cached
+# permanently on disk keyed by rounded lat/lng.
+from fastapi.responses import FileResponse, Response  # noqa: E402
+from forms_pdf import _fetch_static_map  # noqa: E402
+
+
+@api.get("/gps-map")
+async def gps_map_proxy(lat: float, lng: float,
+                        w: int = 500, h: int = 300, z: int = 16):
+    # Clamp to sane bounds so this endpoint can't be used to
+    # gigabyte-scan tiles.
+    w = max(64, min(w, 800))
+    h = max(64, min(h, 600))
+    z = max(1, min(z, 18))
+    path = _fetch_static_map(lat, lng, width=w, height=h, zoom=z)
+    if not path or not path.exists():
+        return Response(status_code=502, content=b"map unavailable")
+    return FileResponse(
+        str(path),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=604800"},
+    )
+
+
 api.include_router(auth_router)
 api.include_router(ai_router)
 api.include_router(dashboard_router)
