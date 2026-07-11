@@ -4773,3 +4773,75 @@ within 25s. Web HTTP 200.
   Small polish, added when the mapping is applied and users start
   scanning the list.
 
+
+
+# 2026-07-11 — v160.3.0-apply SHIPPED — Cert mapping applied
+
+## Scope
+Applied the v160.3.0 cert-to-form mapping proposal (from
+`/app/memory/v160_3_0_cert_mapping_proposal.md`) to live templates
+in batch. Snapshot taken before writes. Idempotent — re-runs modify
+0 rows. **Test-artefact templates skipped**, one-off `_(none)_` rows
+left ungated per proposal.
+
+## Applied inventory (20 templates now gated)
+
+| Template | Slugs | Reason |
+|----------|-------|--------|
+| Confined Space Entry Permit | `confined_space` | keyword |
+| Construction Heavy Equipment Pre-Operation Checklist | `white_card` | category_baseline |
+| Crane Lift / Rigging Plan | `dogging`, `basic_rigging` | keyword |
+| Daily Plant Inspection | `white_card` | category_baseline |
+| Daily Scaffold Inspection | `white_card` | category_baseline |
+| Daily Site Inspection | `white_card` | category_baseline |
+| End of Day Site Sign-Off | `white_card` | category_baseline |
+| Equipment Pre-Use Checklist | `white_card` | category_baseline |
+| Heavy Vehicle Daily Check | `white_card` | category_baseline |
+| Incident Report | `white_card` | category_baseline |
+| Incident Report Form | `white_card` | category_baseline |
+| Near Miss Report | `white_card` | category_baseline |
+| Plant Pre-Start Checklist (Heavy Equipment) | `white_card` | category_baseline |
+| Site Induction Checklist | `white_card` | keyword |
+| Site Sign-In / Visitor Register | `white_card` | keyword |
+| Test Hot Work Permit | `white_card` | category_baseline |
+| Toolbox Talk | `white_card` | category_baseline |
+| Toolbox Talk Attendance | `white_card` | category_baseline |
+| Vehicle Pre-Use Inspection | `white_card` | category_baseline |
+| Working at Heights Permit | `working_at_heights` | keyword |
+
+## Left ungated (per proposal `_(none)_`)
+Asbestos Awareness / Class B Removal, Drug & Alcohol Test Record,
+Excavation / Trench Permit, Hot Work Permit, JSEA — Job Safety &
+Environmental Analysis, SWMS Sign-On, site-safety-checklist.
+User is free to open the Web Admin → Forms → Edit template →
+"Qualification requirements" and gate any of these later without
+re-running the script.
+
+## Skipped as test artefacts (hard-deleted during this cycle)
+`v160.3.0 gated 019ec084`, `v160.3.0 gated 563c2309`,
+`v160.3.0 gated b72c767a` — leftover fixture templates from the
+v160.3.0 pytest run. Cleaned up so the audit table stays honest.
+
+## Deliverables
+- `backend/scripts/migrate_v160_3_0_apply_cert_map.py` — parses
+  the proposal markdown, snapshots to
+  `form_templates_backup_v160_3_0_apply`, applies slug lists per
+  row, silently drops unknown slugs, prints a JSON per-template
+  summary (applied / unchanged / skipped / not_found).
+- `backend/tests/test_v160_3_0_apply_cert_map.py` — 5/5 PASS:
+  snapshot exists, every proposed slug list persisted with order,
+  `_(none)_` rows remain ungated, test-artefact templates not
+  gated, migration idempotent on second run.
+- Full v160.2/3 suite: **29/29 green**.
+
+## Version bump → `paneltec-v160.3.0-apply`
+All 3 files. No mobile source changed — Metro cache clear not
+required (no bundle content moved).
+
+## What's next (deferred to next fork per context management)
+- **v160.3.1** — Crane Lift grouped-crew pattern.
+- **v160.3.2** — Drag-to-reorder multi-worker roster.
+
+Both briefs remain in this PRD from the earlier cycle. No mobile
+source touched this cycle so v160.3.1 can start from a clean tree.
+
