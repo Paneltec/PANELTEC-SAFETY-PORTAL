@@ -6,13 +6,15 @@ import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
 export default function PreStartsList() {
   const [items, setItems] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/pre-starts').then((r) => setItems(r.data)).finally(() => setLoading(false)); }, []);
+  useEffect(() => { api.get('/pre-starts').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="prestarts-list">
@@ -21,9 +23,10 @@ export default function PreStartsList() {
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No pre-starts yet" body="Capture your first daily pre-start with crew sign-ons."
             action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-empty-create" />} />
-       : (
+       : (<>
+        <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="prestarts" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((p) => (
+          {filtered.map((p) => (
             <div key={p.id} className="rounded-2xl border border-slate-200 bg-white p-4" data-testid={`prestart-card-${p.id}`}>
               {/* v160.3.0-adjust-15 — LEGACY pill + template name so
                *  imported records are distinguishable from live captures
@@ -61,7 +64,7 @@ export default function PreStartsList() {
             </div>
           ))}
         </div>
-       )}
+       </>)}
     </div>
   );
 }

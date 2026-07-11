@@ -38,9 +38,10 @@ export default function RiskAssessments() {
             title="No risk assessments yet"
             body="Workers submit a Risk Assessment from the mobile Forms Library (TTM Register, Construction & Excavation SSRA, Viatec Traffic Solutions SSRA). They land here."
           />
-        ) : (
+        ) : (<>
+          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="risk-assessments" />
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {items.map((r) => {
+            {filtered.map((r) => {
               const title = r.template_name_snapshot || r.template_name || 'Risk assessment';
               const operator = r.submitted_by_name || r.operator || r.created_by_name || '';
               return (
@@ -103,7 +104,7 @@ export default function RiskAssessments() {
                 </div>
               );
             })}
-          </div>
+          </div></>
         )}
       </div>
     </div>

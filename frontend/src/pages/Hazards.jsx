@@ -6,6 +6,7 @@ import api, { API_BASE, apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -17,8 +18,9 @@ const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
 export default function HazardsList() {
   const [items, setItems] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/hazards').then((r) => setItems(r.data)).finally(() => setLoading(false)); }, []);
+  useEffect(() => { api.get('/hazards').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="hazards-list">
@@ -43,9 +45,10 @@ export default function HazardsList() {
         <TabsContent value="list" className="mt-4">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No hazards reported" body="Report your first hazard with a photo and AI classification." action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-empty-create" />} />
-       : (
+       : (<>
+          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((h) => (
+          {filtered.map((h) => (
             <div key={h.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid={`hazard-card-${h.id}`}>
               {/* v160.3.0-adjust-16a — Only render the photo header when
                *   the card actually has one. Legacy SSRA imports have
@@ -96,7 +99,7 @@ export default function HazardsList() {
             </div>
           ))}
         </div>
-       )}
+       </>)}
         </TabsContent>
       </Tabs>
     </div>
