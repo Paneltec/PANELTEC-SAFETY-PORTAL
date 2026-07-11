@@ -47,10 +47,21 @@ export default function HazardsList() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {items.map((h) => (
             <div key={h.id} className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid={`hazard-card-${h.id}`}>
-              <div className="aspect-video bg-slate-100 flex items-center justify-center text-slate-300">
-                {h.photo_url ? <img src={h.photo_url.startsWith('http') ? h.photo_url : `${BACKEND}${h.photo_url}`} alt={h.title} className="w-full h-full object-cover" />
-                  : <Camera size={32} />}
-              </div>
+              {/* v160.3.0-adjust-16a — Only render the photo header when
+               *   the card actually has one. Legacy SSRA imports have
+               *   no attached image and the previous unconditional
+               *   `aspect-video` placeholder gave us a giant grey
+               *   camera-icon block on every card, dominating the grid.
+               */}
+              {h.photo_url && (
+                <div className="aspect-video bg-slate-100 flex items-center justify-center text-slate-300">
+                  <img
+                    src={h.photo_url.startsWith('http') ? h.photo_url : `${BACKEND}${h.photo_url}`}
+                    alt={h.title}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
               <div className="p-4">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="font-display font-semibold text-sm truncate">

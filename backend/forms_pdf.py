@@ -8,6 +8,7 @@ Shares the brand tokens + frame helpers with `pdf_renderer.py`.
 from __future__ import annotations
 import base64
 import io
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -84,30 +85,54 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
     else:
         story += [_section("Responses")]
         for f in fields:
-            label = f.get("label") or "Untitled"
+            raw_label = f.get("label") or "Untitled"
+            # v160.3.0-adjust-16a — Trim label to the short title. Strip
+            # everything after the em-dash (fill-flow guidance like
+            # "— Windscreen, mirrors & light covers") AND any trailing
+            # parenthetical (e.g. "(fill in if Yes above)"). The full
+            # label is still stored on the template + submission —
+            # only the display is simplified. Also drop the field-type
+            # debug tag next to the label — that was dev noise on a
+            # user-facing report.
+            label = raw_label.split("—")[0].strip()
+            label = re.sub(r"\s*\([^)]*\)\s*$", "", label).strip() or raw_label
             ftype = f.get("type") or "text"
             val = f.get("value")
 
-            # Field header row.
-            story += [Spacer(1, 4)]
-            story += [_para(f"<b>{label}</b>  <font color='#94A3B8' size='7'>{ftype.upper()}</font>", "PtBody")]
+            # v160.3.0-adjust-16a (photo suppression) — Skip empty photo
+            # fields entirely. Every SSRA / TTM / Tight-Site template
+            # declares 3-6 photo slots that are usually empty on legacy
+            # imports. Rendering them as "No photos captured." creates
+            # long stretches of near-empty rows that dominate the
+            # report. If there's no attachment, the field disappears.
+            if ftype == "photo":
+                has_photo = isinstance(val, list) and any(
+                    isinstance(ph, dict) and (ph.get("filename") or ph.get("url") or ph.get("data_url"))
+                    for ph in val
+                )
+                if not has_photo:
+                    continue
+
+            # v160.3.0-adjust-16a (tighten) — Reduced inter-field spacer
+            # from 4pt to 2pt so scannable-checklist density replaces
+            # the previous form-like whitespace.
+            story += [Spacer(1, 2)]
+            story += [_para(f"<b>{label}</b>", "PtBody")]
 
             if ftype == "photo":
-                if isinstance(val, list) and val:
-                    for ph in val:
-                        path = _photo_path(sub.get("id", ""), ph)
-                        if path:
-                            try:
-                                img = Image(str(path), width=4.0 * inch, height=3.0 * inch,
-                                            kind="proportional")
-                                story.append(img)
-                                story.append(_para(ph.get("filename") or "", "PtSmall"))
-                            except Exception:
-                                story.append(_para("[Photo unavailable]", "PtMuted"))
-                        else:
-                            story.append(_para(f"[Photo missing on disk: {ph.get('filename', '')}]", "PtMuted"))
-                else:
-                    story.append(_para("No photos captured.", "PtMuted"))
+                # (Only reached when has_photo was true — safe to render.)
+                for ph in val:
+                    path = _photo_path(sub.get("id", ""), ph)
+                    if path:
+                        try:
+                            img = Image(str(path), width=4.0 * inch, height=3.0 * inch,
+                                        kind="proportional")
+                            story.append(img)
+                            story.append(_para(ph.get("filename") or "", "PtSmall"))
+                        except Exception:
+                            story.append(_para("[Photo unavailable]", "PtMuted"))
+                    else:
+                        story.append(_para(f"[Photo missing on disk: {ph.get('filename', '')}]", "PtMuted"))
 
             elif ftype == "signature":
                 raw = _decode_signature(val)
