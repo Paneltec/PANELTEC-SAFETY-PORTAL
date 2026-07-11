@@ -19,6 +19,7 @@ import SiteDiaryList, { SiteDiaryNew } from '@/pages/SiteDiary';
 import HazardsList, { HazardNew } from '@/pages/Hazards';
 import IncidentsList, { IncidentNew } from '@/pages/Incidents';
 import InspectionsList, { InspectionNew } from '@/pages/Inspections';
+import RiskAssessments from '@/pages/RiskAssessments';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
 import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
@@ -115,6 +116,8 @@ function App() {
               <Route path="incidents/new" element={<IncidentNew />} />
 
               <Route path="inspections" element={<InspectionsList />} />
+              {/* v160.3.0-adjust-13 — new Capture bucket. */}
+              <Route path="risk-assessments" element={<RiskAssessments />} />
               <Route path="inspections/new" element={<InspectionNew />} />
 
               <Route path="contractors" element={<ContractorsList />} />

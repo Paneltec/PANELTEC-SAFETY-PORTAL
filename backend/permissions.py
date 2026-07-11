@@ -41,6 +41,10 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     "hazards":         {"label": "Hazards",              "email_supported": True,  "delete_supported": True},
     "incidents":       {"label": "Incidents",            "email_supported": True,  "delete_supported": True},
     "inspections":     {"label": "Inspections",          "email_supported": True,  "delete_supported": True},
+    # v160.3.0-adjust-13 — new Capture bucket. Behaves exactly like
+    # `inspections` (view/open/edit/email/delete). Routes read via the
+    # mirror-projection on templates with category === "risk_assessment".
+    "risk_assessments": {"label": "Risk Assessments",     "email_supported": True,  "delete_supported": True},
     "contractors":     {"label": "Contractors",          "email_supported": True,  "delete_supported": True},
     "renewals":        {"label": "Renewal links",        "email_supported": True,  "delete_supported": True},
     "audit_exports":   {"label": "Audit exports",        "email_supported": True,  "delete_supported": False},
@@ -98,6 +102,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "hazards":         _all_no_delete(True),
         "incidents":       _all_no_delete(True),
         "inspections":     _all_no_delete(True),
+        # v160.3.0-adjust-13 — HSEQ Lead: same defaults as `inspections`.
+        "risk_assessments": _all_no_delete(True),
         "contractors":     _all_no_delete(True),
         "renewals":        _all_no_delete(True),
         "audit_exports":   _all_no_delete(True),
@@ -121,6 +127,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "hazards":         _all_no_delete(True),
         "incidents":       _all_no_delete(True),
         "inspections":     _all_no_delete(True),
+        # v160.3.0-adjust-13 — same defaults as `inspections`.
+        "risk_assessments": _all_no_delete(True),
         "contractors":     _all_no_delete(True),
         "renewals":        _all_no_delete(True),
         "audit_exports":   _grant(open=True, view=True, edit=False, email=True),
@@ -146,6 +154,8 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "hazards":         _grant(open=True, view=True, edit=True,  email=False),
         "incidents":       _grant(open=True, view=True, edit=True,  email=False),
         "inspections":     _grant(open=True, view=True, edit=False, email=False),
+        # v160.3.0-adjust-13 — worker parity with inspections (view own).
+        "risk_assessments": _grant(open=True, view=True, edit=False, email=False),
         "contractors":     _grant(),
         "renewals":        _grant(),
         "audit_exports":   _grant(),

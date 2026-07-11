@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from db import db
 from models import (
-    HazardIn, IncidentIn, InspectionIn, PreStartIn, SiteDiaryIn, SwmsIn,
+    HazardIn, IncidentIn, InspectionIn, PreStartIn, RiskAssessmentIn, SiteDiaryIn, SwmsIn,
     SwmsReview, new_id, now_iso,
 )
 from permissions import require_permission, require_module, resolve_team_scope
@@ -274,6 +274,14 @@ incidents_router  = build_router("incidents",    "incidents",           Incident
                                  mirror_categories=["incident"])
 inspections_router = build_router("inspections", "inspections",         InspectionIn,  "inspections",  "inspection",
                                   mirror_categories=["inspection"])
+# v160.3.0-adjust-13 — Risk Assessments Capture bucket. Reads submissions
+# via mirror-projection on templates with category === "risk_assessment".
+# Uses its own collection so any future native writes stay isolated.
+risk_assessments_router = build_router(
+    "risk-assessments", "risk_assessments", RiskAssessmentIn,
+    "risk_assessments", "risk_assessment",
+    mirror_categories=["risk_assessment"],
+)
 
 
 # ---------- SWMS review (extra endpoint) ----------

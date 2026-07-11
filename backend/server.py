@@ -30,7 +30,7 @@ from auth import get_current_user, router as auth_router  # noqa: E402
 from contractors import router as contractors_router  # noqa: E402
 from crud import (  # noqa: E402
     diary_router, hazards_router, incidents_router, inspections_router,
-    prestarts_router, swms_router,
+    prestarts_router, risk_assessments_router, swms_router,
 )
 from dashboard import files_router, router as dashboard_router  # noqa: E402
 from db import close as close_db  # noqa: E402
@@ -162,6 +162,8 @@ api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
 api.include_router(inspections_router)
+# v160.3.0-adjust-13 — new Capture bucket, sibling of inspections.
+api.include_router(risk_assessments_router)
 api.include_router(contractors_router)
 api.include_router(renewals_router)
 api.include_router(renewals_public_router)

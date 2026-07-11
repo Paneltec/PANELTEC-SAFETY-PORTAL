@@ -75,7 +75,13 @@ router = APIRouter(
 )
 
 WRITE_ROLES = {"admin", "hseq_lead"}
-ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general", "pre_start", "admin"}
+ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general", "pre_start", "admin",
+                      # v160.3.0-adjust-13 — first-class categories for the new
+                      # Capture-tab routing. `hazard` and `site_diary` were
+                      # previously used as template-category strings but were
+                      # normalised down to `general` on write. `risk_assessment`
+                      # is brand new — routes to the /app/risk-assessments tab.
+                      "hazard", "site_diary", "risk_assessment"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
                        "worker_picker", "job_picker", "site_picker", "customer_picker",

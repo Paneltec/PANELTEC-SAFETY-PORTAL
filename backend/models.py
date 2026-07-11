@@ -211,6 +211,27 @@ class InspectionIn(BaseModel):
     gps_suburb: Optional[str] = None
 
 
+# v160.3.0-adjust-13 — Risk Assessments Capture bucket. Structurally
+# identical to InspectionIn (workspace + date + optional notes + optional
+# operator context). The Capture tab's list endpoint reads submissions
+# via the mirror-projection on templates with category === "risk_assessment",
+# so a native RiskAssessmentIn shape is rarely written directly, but the
+# `build_router` factory requires a Pydantic model for its POST route to
+# type-check the body.
+class RiskAssessmentIn(BaseModel):
+    workspace_id: str
+    template_name: str
+    date: str
+    notes: Optional[str] = None
+    operator: Optional[str] = None
+    operator_signature: Optional[str] = None
+    gps_latitude: Optional[float] = None
+    gps_longitude: Optional[float] = None
+    gps_accuracy: Optional[float] = None
+    gps_street: Optional[str] = None
+    gps_suburb: Optional[str] = None
+
+
 # ---------- Dashboard ----------
 
 class DashboardMetrics(BaseModel):
