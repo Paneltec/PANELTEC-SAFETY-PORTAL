@@ -1,25 +1,29 @@
-// Risk Assessments — Capture sub-tab. v160.3.0-adjust-16a.
+// Risk Assessments — Capture sub-tab. v160.3.0-adjust-16d.
 // Card layout matching Hazards / Pre-Starts patterns:
 //   • Template name in bold
 //   • LEGACY pill for imported rows (adjust-15 pattern)
 //   • Operator name (`submitted_by_name`)
 //   • SUBMITTED status + date pill row
-//   • Open report + trash-icon delete
+//   • Open report + email + trash-icon delete (adjust-16d — reinstated
+//     with the correct underscored resourceKind so <Can> gates resolve)
+//   • Client-side search + sort toolbar (adjust-17)
 //   • No photo placeholder when no photo attached (adjust-16a pattern)
 import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import CaptureListToolbar from '../components/CaptureListToolbar';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 
 export default function RiskAssessments() {
   const [items, setItems] = useState([]);
+  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     api.get('/risk-assessments')
-      .then((r) => setItems(r.data))
+      .then((r) => { setItems(r.data); setFiltered(r.data); })
       .finally(() => setLoading(false));
   }, []);
 
@@ -73,14 +77,14 @@ export default function RiskAssessments() {
                     <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
                       <div className="inline-flex gap-1 items-center">
                         <PdfActions
-                          resourceKind="risk-assessments"
+                          resourceKind="risk_assessments"
                           recordId={r.id}
                           source={r.source}
                           title={title}
                           size="sm"
                         />
                         <EmailButton
-                          resourceKind="risk-assessments"
+                          resourceKind="risk_assessments"
                           recordId={r.id}
                           source={r.source}
                           subject={`Risk Assessment: ${title} — ${r.date || ''}`}
@@ -91,13 +95,16 @@ export default function RiskAssessments() {
                         />
                       </div>
                       <DeleteRecordButton
-                        resourceKind="risk-assessments"
+                        resourceKind="risk_assessments"
                         apiPath="risk-assessments"
                         recordId={r.id}
                         source={r.source}
                         label="Risk assessment"
                         recordTitle={`${title} · ${r.date || ''}`}
-                        onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
+                        onDeleted={(id) => {
+                          setItems((prev) => prev.filter((x) => x.id !== id));
+                          setFiltered((prev) => prev.filter((x) => x.id !== id));
+                        }}
                       />
                     </div>
                   </div>

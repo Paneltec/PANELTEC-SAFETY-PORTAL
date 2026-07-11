@@ -1373,13 +1373,26 @@ export function SubmissionViewModal({ submissionId, onClose }) {
     }
     if (f.type === 'gps') {
       if (!v || v.lat == null) return <span className="text-slate-400 italic text-sm">Not captured.</span>;
+      // v160.3.0-adjust-16c — Embed a static map image (Yandex static-maps
+      // — no API key, red-pushpin marker) instead of a live iframe. This
+      // matches the PDF renderer + performs better than an iframe.
+      const lat = Number(v.lat);
+      const lng = Number(v.lng);
+      const mapUrl =
+        `https://static-maps.yandex.ru/1.x/?ll=${lng},${lat}` +
+        `&z=16&l=map&size=500,300&pt=${lng},${lat},pm2rdm`;
       return (
-        <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
-          <iframe title="gps-view" src={`https://www.google.com/maps?q=${v.lat},${v.lng}&hl=en&z=16&output=embed`}
-            width="100%" height="140" style={{ border: 0 }} loading="lazy" referrerPolicy="no-referrer-when-downgrade" />
+        <div className="rounded-lg border border-slate-200 overflow-hidden bg-white" data-testid="gps-map-block">
+          <a href={`https://www.google.com/maps?q=${lat},${lng}`} target="_blank" rel="noreferrer" className="block">
+            <img src={mapUrl} alt="Site location map"
+                 className="w-full h-auto object-cover bg-slate-100"
+                 style={{ maxHeight: 260 }}
+                 loading="lazy"
+                 onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+          </a>
           <div className="px-3 py-2 grid grid-cols-3 gap-2 text-[11px] text-slate-600">
-            <div><span className="block text-slate-400 uppercase tracking-wider">Lat</span>{Number(v.lat).toFixed(5)}</div>
-            <div><span className="block text-slate-400 uppercase tracking-wider">Lng</span>{Number(v.lng).toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lat</span>{lat.toFixed(5)}</div>
+            <div><span className="block text-slate-400 uppercase tracking-wider">Lng</span>{lng.toFixed(5)}</div>
             <div><span className="block text-slate-400 uppercase tracking-wider">± m</span>{Math.round(v.accuracy ?? 0)}</div>
           </div>
         </div>
@@ -1396,7 +1409,64 @@ export function SubmissionViewModal({ submissionId, onClose }) {
         </div>
       );
     }
-    return <div className="text-sm text-slate-800">{v ?? '—'}</div>;
+    // v160.3.0-adjust-16c — Worker picker returns `[{worker_id, name,
+    // company_label}, …]` — must render the names, NOT dump the object
+    // as a React child (previously crashed the modal with "Objects are
+    // not valid as a React child").
+    if (f.type === 'worker_picker') {
+      if (!Array.isArray(v) || v.length === 0) {
+        return <span className="text-slate-400 italic text-sm">Not assigned.</span>;
+      }
+      return (
+        <div className="flex flex-wrap gap-2">
+          {v.map((w, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-800 text-xs">
+              <span className="font-medium">{w?.name || '—'}</span>
+              {w?.company_label && (
+                <span className="text-slate-500">· {w.company_label}</span>
+              )}
+            </span>
+          ))}
+        </div>
+      );
+    }
+    // v160.3.0-adjust-16c — Defensive stringification for any residual
+    // object / array values so the modal never crashes on unexpected
+    // shapes (e.g. legacy submissions with rich objects). Also strip any
+    // literal `<b>…</b>` markup that may have leaked in from a stringified
+    // template value.
+    let display;
+    if (v === null || v === undefined || v === '') {
+      display = '—';
+    } else if (typeof v === 'object') {
+      display = Array.isArray(v)
+        ? v.map((x) => (typeof x === 'object' ? JSON.stringify(x) : String(x))).join(', ')
+        : JSON.stringify(v);
+    } else {
+      display = String(v);
+    }
+    display = display.replace(/<\/?b>/gi, '');
+    return <div className="text-sm text-slate-800 whitespace-pre-line">{display}</div>;
+  };
+
+  // v160.3.0-adjust-16b — Smart label display: strip section prefix
+  // ("TAILGATE — Item" → "Item") OR guidance suffix ("Fluid Levels —
+  // Check oil…" → "Fluid Levels"). Mirrors backend/forms_pdf.py.
+  const displayLabel = (raw) => {
+    if (!raw) return 'Untitled';
+    let lbl = raw.trim();
+    if (lbl.includes('—')) {
+      const [before, ...rest] = lbl.split('—');
+      const after = rest.join('—').trim();
+      const b = (before || '').trim();
+      if (b && b === b.toUpperCase() && b.length <= 24 && after) {
+        lbl = after;
+      } else {
+        lbl = b || after;
+      }
+    }
+    lbl = lbl.replace(/\s*\([^)]*\)\s*$/, '').trim();
+    return lbl || raw;
   };
 
   return (
@@ -1414,16 +1484,28 @@ export function SubmissionViewModal({ submissionId, onClose }) {
             <X size={18} />
           </button>
         </div>
-        <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-5 flex-1">
+        <div className="px-4 sm:px-6 py-5 overflow-y-auto space-y-4 flex-1">
           {loading ? <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading…</div>
             : !data ? <div className="text-sm text-slate-500">Submission not found.</div>
-            : (data.fields || []).map((f) => (
-              <div key={f.id}>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  {f.label}
-                  <span className="ml-2 text-[10px] uppercase tracking-wider font-medium text-slate-400">{f.type}</span>
+            : (data.fields || [])
+                .filter((f) => {
+                  // v160.3.0-adjust-16b — Suppress empty photo rows in the
+                  // UI too, matching the PDF renderer.
+                  if (f.type === 'photo') {
+                    return Array.isArray(f.value) && f.value.some(
+                      (ph) => ph && (ph.filename || ph.file_url || ph.url)
+                    );
+                  }
+                  return true;
+                })
+                .map((f) => (
+              <div key={f.id} className="grid grid-cols-1 sm:grid-cols-[minmax(180px,40%)_1fr] gap-2 sm:gap-4 pb-3 border-b border-slate-100 last:border-b-0">
+                <label className="block text-xs font-semibold text-slate-700 sm:pt-1" data-testid={`submission-field-label-${f.id}`}>
+                  {displayLabel(f.label)}
                 </label>
-                {renderValue(f)}
+                <div data-testid={`submission-field-value-${f.id}`}>
+                  {renderValue(f)}
+                </div>
               </div>
             ))}
         </div>

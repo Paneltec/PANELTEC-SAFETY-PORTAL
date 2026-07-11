@@ -8,7 +8,9 @@ Shares the brand tokens + frame helpers with `pdf_renderer.py`.
 from __future__ import annotations
 import base64
 import io
+import logging
 import re
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -22,8 +24,94 @@ from pdf_renderer import (
     STYLES, _bullets, _crumb, _kv_table, _make_doc, _para, _section,
 )
 
+log = logging.getLogger(__name__)
+
+
+# v160.3.0-adjust-16b — Smart em-dash strip.
+# The adjust-16a rule "strip everything after em-dash" was overzealous: it
+# collapsed multi-item SSRA fields (`TAILGATE — Discuss Scope`,
+# `TAILGATE — Designate Radio Channel`, …) to the same "TAILGATE" label,
+# so the PDF/UI showed 7 identical rows. The correct rule:
+#   • if the BEFORE part is a short ALL-CAPS section prefix (≤ 24 chars)
+#     → keep the AFTER part as the label (that's the actual item text).
+#   • otherwise (mixed-case guidance suffix) → keep BEFORE as the label
+#     (adjust-16a's original intent, e.g. "Fluid Levels — Check oil…" →
+#     "Fluid Levels").
+# Always strip a trailing parenthetical guidance ("(fill in if …)").
+def _display_label(raw_label: str) -> str:
+    if not raw_label:
+        return "Untitled"
+    lbl = raw_label.strip()
+    if "—" in lbl:
+        before, _, after = lbl.partition("—")
+        before, after = before.strip(), after.strip()
+        # Section prefix pattern (TAILGATE, PPE, RISK, EMERGENCY, …)
+        if before and before.upper() == before and len(before) <= 24 and after:
+            lbl = after
+        else:
+            lbl = before or after
+    lbl = re.sub(r"\s*\([^)]*\)\s*$", "", lbl).strip()
+    return lbl or raw_label
+
 UPLOADS_ROOT = Path(__file__).parent / "uploads"
 FORM_PHOTOS = UPLOADS_ROOT / "form_photos"
+
+# v160.3.0-adjust-16c — Static map image cache. When a GPS field is
+# rendered, we fetch a static tile from OpenStreetMap's staticmap service
+# (no API key, free) and cache it under `/app/backend/gps_map_cache/`
+# keyed by rounded lat,lng (5 decimals ≈ 1 m precision). A location's
+# rendered map doesn't change so entries are permanent. Failures degrade
+# gracefully to text-only rendering.
+GPS_MAP_CACHE = Path(__file__).parent / "gps_map_cache"
+GPS_MAP_CACHE.mkdir(exist_ok=True)
+
+
+def _fetch_static_map(lat: float, lng: float,
+                       width: int = 500, height: int = 300,
+                       zoom: int = 16) -> Optional[Path]:
+    """Return a Path to a cached PNG static map for (lat, lng), or None
+    if the fetch fails (network, service down, timeout). Best-effort;
+    logs but never raises.
+
+    v160.3.0-adjust-16c — Uses Yandex static-maps as the primary
+    provider (no API key, single-URL, marker built-in, DNS reliably
+    resolves inside our infra). Falls back to composing an OpenStreetMap
+    tile if Yandex fails.
+    """
+    try:
+        lat_f, lng_f = float(lat), float(lng)
+        key = f"{round(lat_f, 5)},{round(lng_f, 5)}_{width}x{height}_z{zoom}.png"
+    except (TypeError, ValueError):
+        return None
+    cached = GPS_MAP_CACHE / key
+    if cached.exists() and cached.stat().st_size > 200:
+        return cached
+
+    providers = [
+        # Yandex static-maps — free, no key, marker built-in (pm2rdm =
+        # red medium pushpin).
+        (
+            f"https://static-maps.yandex.ru/1.x/?ll={lng_f},{lat_f}"
+            f"&z={min(zoom, 17)}&l=map&size={min(width,650)},{min(height,450)}"
+            f"&pt={lng_f},{lat_f},pm2rdm"
+        ),
+    ]
+    for url in providers:
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "PaneltecCivil/1.0 (forms-pdf-renderer)"
+            })
+            with urllib.request.urlopen(req, timeout=6) as r:
+                data = r.read()
+            if len(data) < 500:
+                log.warning("staticmap fetch too small (%d bytes) for %s,%s", len(data), lat_f, lng_f)
+                continue
+            cached.write_bytes(data)
+            return cached
+        except Exception as e:
+            log.warning("staticmap fetch failed for %s,%s (%s): %s", lat_f, lng_f, url[:60], e)
+            continue
+    return None
 
 
 def _photo_path(submission_id: str, photo: dict) -> Optional[Path]:
@@ -84,27 +172,45 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
         story += [_section("Responses"), _para("No data captured.", "PtMuted")]
     else:
         story += [_section("Responses")]
+
+        # v160.3.0-adjust-16b — Two-pass render:
+        #   1. Group scalar rows (radio / text / number / textarea / select /
+        #      worker_picker / date) into a single label|value table so each
+        #      field renders as its own row, matching the CVT reference layout
+        #      the user asked for:
+        #          Signs, Tools & Equipment          On Board
+        #          Jetting System                    OK
+        #          Fire Extinguisher…                OK
+        #   2. Flush the scalar table, then emit any complex row
+        #      (photo / signature / gps / vehicle_navixy) inline.
+        SCALAR_TYPES = {"text", "textarea", "number", "select", "radio",
+                        "date", "worker_picker", "checkbox"}
+
+        pending_rows: list = []
+
+        def _flush():
+            nonlocal pending_rows
+            if pending_rows:
+                story.append(_kv_table(pending_rows))
+                story.append(Spacer(1, 4))
+                pending_rows = []
+
+        def _scalar_value_str(v, ftype: str) -> str:
+            if v is None:
+                return "—"
+            if ftype == "worker_picker" and isinstance(v, list):
+                names = [w.get("name") for w in v if isinstance(w, dict) and w.get("name")]
+                return ", ".join(names) if names else "—"
+            return _value_to_text(v)
+
         for f in fields:
             raw_label = f.get("label") or "Untitled"
-            # v160.3.0-adjust-16a — Trim label to the short title. Strip
-            # everything after the em-dash (fill-flow guidance like
-            # "— Windscreen, mirrors & light covers") AND any trailing
-            # parenthetical (e.g. "(fill in if Yes above)"). The full
-            # label is still stored on the template + submission —
-            # only the display is simplified. Also drop the field-type
-            # debug tag next to the label — that was dev noise on a
-            # user-facing report.
-            label = raw_label.split("—")[0].strip()
-            label = re.sub(r"\s*\([^)]*\)\s*$", "", label).strip() or raw_label
+            label = _display_label(raw_label)
             ftype = f.get("type") or "text"
             val = f.get("value")
 
             # v160.3.0-adjust-16a (photo suppression) — Skip empty photo
-            # fields entirely. Every SSRA / TTM / Tight-Site template
-            # declares 3-6 photo slots that are usually empty on legacy
-            # imports. Rendering them as "No photos captured." creates
-            # long stretches of near-empty rows that dominate the
-            # report. If there's no attachment, the field disappears.
+            # fields entirely.
             if ftype == "photo":
                 has_photo = isinstance(val, list) and any(
                     isinstance(ph, dict) and (ph.get("filename") or ph.get("url") or ph.get("data_url"))
@@ -113,14 +219,19 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
                 if not has_photo:
                     continue
 
-            # v160.3.0-adjust-16a (tighten) — Reduced inter-field spacer
-            # from 4pt to 2pt so scannable-checklist density replaces
-            # the previous form-like whitespace.
-            story += [Spacer(1, 2)]
-            story += [_para(f"<b>{label}</b>", "PtBody")]
+            # Scalar → accumulate into two-column table.
+            if ftype in SCALAR_TYPES:
+                pending_rows.append((label, _scalar_value_str(val, ftype)))
+                continue
+
+            # Complex field — flush the scalar table first, then render.
+            _flush()
+            # v160.3.0-adjust-16b — Use Paragraph directly for the bold
+            # label; `_para` HTML-escapes `<` and would render "<b>…</b>"
+            # as literal text on the PDF.
+            story += [Spacer(1, 2), Paragraph(f"<b>{label}</b>", STYLES["PtBody"])]
 
             if ftype == "photo":
-                # (Only reached when has_photo was true — safe to render.)
                 for ph in val:
                     path = _photo_path(sub.get("id", ""), ph)
                     if path:
@@ -152,6 +263,21 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
                     lng = val.get("lng")
                     acc = val.get("accuracy")
                     captured = (val.get("captured_at") or "")[:19].replace("T", " ")
+
+                    # v160.3.0-adjust-16c — Embed a static map image
+                    # inline (OpenStreetMap staticmap, cached to disk).
+                    # If fetch fails, gracefully drop back to text-only.
+                    map_path = None
+                    if isinstance(lat, (int, float)) and isinstance(lng, (int, float)):
+                        map_path = _fetch_static_map(lat, lng)
+                    if map_path:
+                        try:
+                            story.append(Image(str(map_path), width=4.5 * inch, height=2.7 * inch,
+                                               kind="proportional"))
+                            story.append(Spacer(1, 4))
+                        except Exception:
+                            log.warning("failed to embed static map from %s", map_path)
+
                     story.append(_kv_table([
                         ("Latitude", f"{lat:.6f}" if isinstance(lat, (int, float)) else lat),
                         ("Longitude", f"{lng:.6f}" if isinstance(lng, (int, float)) else lng),
@@ -175,6 +301,9 @@ def render_form_submission_pdf(sub: dict, template: dict) -> bytes:
 
             else:
                 story.append(_para(_value_to_text(val)))
+
+        # Final flush of any trailing scalars.
+        _flush()
 
     story += [Spacer(1, 8), _para(
         f"Submission id {sub.get('id', '')[:8]} · Paneltec Civil", "PtSmall")]

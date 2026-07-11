@@ -105,27 +105,39 @@ def normalise_value(raw: str, label: str) -> str:
 
 
 def parse_pdf(pdf_path: str) -> dict:
-    """Return {'meta': {…}, 'items': [(label_key, value), …], 'pairs': [(label, value), …]}."""
+    """Return {'meta': {…}, 'items': [(n, label, value), …],
+    'pairs': [(label, value), …], 'raw_lines': [str, …],
+    'bullets': {section: [item_text, …]}}.
+
+    v160.3.0-adjust-16b changes:
+      * Removed the "orphan short line → I confirm" continuation heuristic
+        that polluted the pair list (was assigning "pumps"→"I confirm" and
+        cascading spurious fuzzy matches).
+      * Accumulate raw lines so downstream template-driven extraction can
+        do column-aware label lookups + multi-line value accretion.
+      * Detect ALL-CAPS section headers ("TAILGATE MEETING",
+        "DOCUMENT CHECK", "SITE SPECIFIC RISK ASSESMENT", …) and collect
+        right-column bullet items indented under them — used by the SSRA
+        family to answer `TAILGATE — Discuss X` style multi-select fields.
+    """
     r = subprocess.run(["pdftotext", "-layout", pdf_path, "-"],
                        capture_output=True, timeout=30)
     txt = r.stdout.decode("utf-8", errors="replace")
     lines = txt.splitlines()
     meta: dict = {}
     items = []
-    pairs: list[tuple[str, str]] = []  # (label, value) — SSRA-style rows
+    pairs: list[tuple[str, str]] = []
+    bullets: dict[str, list[str]] = {}
+    current_section: str | None = None
     gps = None
     respondent = None
     date_str = None
 
-    # v160.3.0-adjust-16 — Also accumulate label→value pairs from lines
-    # that DON'T match the numbered `N. Label ..... Value` pattern. SSRA
-    # PDFs use section-based layouts: `Question label ...  Answer` split
-    # at column ~55. We keep the numbered-item pass (pre-starts) AND
-    # collect all 2+-space-separated pairs (SSRAs, TTM, VTS Tight Site).
-    prev_label: str | None = None
-    for i, ln in enumerate(lines):
+    for ln in lines:
         s = ln.rstrip()
-        # metadata line hits
+        stripped = s.strip()
+
+        # ── Metadata ──
         if "Please Select your Name from the List below:" in s:
             parts = BLANK_MULTIPLE_SPACES_RE.split(s.strip(), maxsplit=1)
             if len(parts) == 2:
@@ -147,6 +159,19 @@ def parse_pdf(pdf_path: str) -> dict:
         if gm and not gps:
             gps = {"lat": float(gm.group(1)), "lng": float(gm.group(2))}
 
+        # ── Section header detection ──
+        # ALL-CAPS lines with ≥8 chars and no digits — the SSRA / VTS PDFs
+        # use these as section dividers (TAILGATE MEETING, DOCUMENT CHECK,
+        # SITE SPECIFIC RISK ASSESMENT, EMERGENCY & FIRST AID, …).
+        if (stripped and stripped == stripped.upper() and
+                len(stripped) >= 8 and len(stripped) <= 80 and
+                not any(ch.isdigit() for ch in stripped) and
+                re.match(r"^[A-Z0-9 \-&()/,'.]+$", stripped)):
+            current_section = stripped
+            bullets.setdefault(current_section, [])
+            continue
+
+        # ── Numbered inspection items (pre-starts) ──
         m = NUM_ITEM_RE.match(s)
         if m:
             n, label, val = m.group(1), m.group(2).strip(), m.group(3).strip()
@@ -155,27 +180,25 @@ def parse_pdf(pdf_path: str) -> dict:
             items.append((n, label, val))
             continue
 
-        # Generic label→value pair (SSRA style). Skip footers / headers /
-        # page-count noise.
-        stripped = s.strip()
-        if not stripped or "of " in stripped and re.match(r"^\d+ of \d+$", stripped):
+        # ── Noise skip ──
+        if not stripped or re.match(r"^\d+ of \d+$", stripped):
             continue
-        # Match a wide left column of text followed by ≥2 spaces then value.
+
+        # ── Label → value pair (left col + ≥2 spaces + right col) ──
         parts = BLANK_MULTIPLE_SPACES_RE.split(stripped, maxsplit=1)
         if len(parts) == 2 and len(parts[0]) > 12 and len(parts[1]) > 0:
             lbl, val = parts[0].strip(), parts[1].strip()
-            # Filter numeric noise like "1 of 3" already handled; also
-            # skip obvious template labels ending with punctuation-only
-            # values (rare) and page-header repeats.
-            if val.lower() not in ("no data",) and len(val) < 240:
+            if val.lower() not in ("no data",) and len(val) < 500:
                 pairs.append((lbl, val))
-                prev_label = lbl
-        elif prev_label and stripped and len(stripped) < 90 and not stripped.endswith(":"):
-            # Continuation of a checklist column (Tailgate items etc.).
-            # Attach the item as a fresh pair keyed on itself so the
-            # SSRA-style `_confirm` fields (TAILGATE — Discuss the …)
-            # find a match.
-            pairs.append((stripped, "I confirm"))
+            continue
+
+        # ── Right-column bullet under a section header ──
+        # Indented single-column line (>= 40 chars indent OR any indented
+        # line inside a known section) — collect as a bullet item.
+        leading = len(s) - len(s.lstrip())
+        if current_section and stripped and leading >= 40 and len(stripped) <= 160:
+            bullets[current_section].append(stripped)
+            continue
 
     if respondent: meta["respondent"] = respondent
     if date_str:
@@ -184,30 +207,128 @@ def parse_pdf(pdf_path: str) -> dict:
             meta["date"] = d.strftime("%Y-%m-%d")
         except: pass
     if gps: meta["gps"] = gps
-    return {"meta": meta, "items": items, "pairs": pairs}
+
+    # v160.3.0-adjust-16b — Merge multi-line pair labels. When the
+    # pdftotext left column wraps ("Please Select the Rest of your
+    # Traffic Management" / "Team from the List Below:"), consecutive
+    # pairs are actually ONE field. Rebuild by concatenating the label
+    # AND the values whenever the previous label ends without
+    # terminating punctuation.
+    merged_pairs: list[tuple[str, str]] = []
+    for lbl, val in pairs:
+        lbl_stripped = lbl.rstrip()
+        if merged_pairs and merged_pairs[-1][0].rstrip() and \
+           not merged_pairs[-1][0].rstrip()[-1] in ":?.":
+            prev_lbl, prev_val = merged_pairs[-1]
+            merged_pairs[-1] = (
+                f"{prev_lbl} {lbl_stripped}".strip(),
+                f"{prev_val}, {val}".strip(", "),
+            )
+        else:
+            merged_pairs.append((lbl_stripped, val))
+
+    # v160.3.0-adjust-16b — Promote right-column bullets of any pair whose
+    # LEFT column matches a section-header anchor into the `bullets` map
+    # for that section. This captures TAILGATE items that ended up as
+    # pair values (`Please Assemble Today's Team … → Discuss The Scope
+    # of Works`) rather than pure right-column indented lines.
+    ANCHOR_HINTS = {
+        "TAILGATE MEETING": ("assemble", "tailgate", "check each box"),
+        "SITE SPECIFIC RISK ASSESMENT (SSRA) COMPONENT": ("ppe","personal protective"),
+        "DOCUMENT CHECK - SWMS, PERMITS & PRE-STARTS": ("swms onsite","copy of the below","applicable swms"),
+    }
+    for lbl, val in merged_pairs:
+        low = lbl.lower()
+        for sec, hints in ANCHOR_HINTS.items():
+            if any(h in low for h in hints):
+                bullets.setdefault(sec, [])
+                # Split multi-value strings by comma (from the merge step)
+                for piece in re.split(r"\s*,\s*", val):
+                    piece = piece.strip()
+                    if piece and piece not in bullets[sec]:
+                        bullets[sec].append(piece)
+
+    return {"meta": meta, "items": items, "pairs": merged_pairs,
+            "raw_lines": lines, "bullets": bullets, "text": txt}
+
+
+def _norm(s: str) -> str:
+    """Aggressive normalisation for fuzzy matching (letters+digits only)."""
+    return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+
+def _words(s: str) -> set[str]:
+    """Extract discriminative words (≥ 4 chars, lower, no punctuation).
+    Used for word-overlap fuzzy matching between template field labels
+    and PDF text — more robust than substring matching when labels are
+    line-wrapped or paraphrased."""
+    STOP = {
+        "the","and","for","are","from","have","been","this","that","with",
+        "your","onto","onsite","above","below","when","what","list","been",
+        "into","also","made","site","team","name","date","time","upon",
+        "please","enter","select","check","confirm","today","complete",
+        "completed","using","used","other","note","state","details",
+    }
+    toks = re.findall(r"[A-Za-z][A-Za-z0-9]{3,}", (s or "").lower())
+    return {t for t in toks if t not in STOP}
+
+
+def _core_label(flabel: str) -> str:
+    """Strip TAILGATE-style section prefixes and (parenthetical) guidance
+    to extract the discriminative core of a template field label."""
+    core = flabel
+    if "—" in core:
+        before, _, after = core.partition("—")
+        before, after = before.strip(), after.strip()
+        if before and before.upper() == before and len(before) <= 24 and after:
+            core = after
+        else:
+            core = before or after
+    core = re.sub(r"\s*\([^)]*\)\s*", " ", core)
+    return core.strip(" :?.,")
 
 
 def fuzzy_match_field(label: str, template_fields: list[dict]) -> dict | None:
-    """Return the closest template field for a label."""
-    key = normalise_label(label)
-    if not key:
+    """Word-overlap fuzzy match between a PDF label and template fields.
+
+    v160.3.0-adjust-16b: replaces the old prefix-substring matcher (which
+    collided `Site Contact Name` with `Site Contact Phone Number`) with a
+    discriminative-word count. Requires:
+      * ≥ 3 shared meaningful words, OR
+      * Full containment of the shorter normalised core (≥ 12 chars).
+    """
+    key_norm = _norm(label)
+    key_words = _words(label)
+    if len(key_norm) < 6 and len(key_words) < 2:
         return None
+    best = None
+    best_score = 0
     for f in template_fields:
         flabel = f.get("label") or ""
-        # Strip guidance suffixes and TAILGATE/PPE prefixes so the core
-        # label ("Discuss The Scope of Works" vs "TAILGATE — Discuss The
-        # Scope of Works") matches.
-        core = flabel.split("—")[-1].split("(")[0]
-        fkey = normalise_label(core)
-        if not fkey:
+        core = _core_label(flabel)
+        fkey_norm = _norm(core)
+        fkey_words = _words(core)
+        if not fkey_norm:
             continue
-        # bidirectional startswith on 12-char normalised keys
-        if fkey.startswith(key[:14]) or key.startswith(fkey[:14]):
+        # Exact core equality
+        if fkey_norm == key_norm:
             return f
-        # tolerant substring match on longer keys (SSRAs, TTM, VTS)
-        if len(key) > 18 and len(fkey) > 18 and (key[:18] in fkey or fkey[:18] in key):
-            return f
-    return None
+        overlap = key_words & fkey_words
+        score = 0
+        # Word-overlap
+        if len(overlap) >= 3:
+            score = 10 + len(overlap)
+        elif len(overlap) >= 2 and (len(fkey_words) <= 3 or len(key_words) <= 3):
+            score = 6 + len(overlap)
+        # Substring containment (guarded by minimum length)
+        shorter = min(len(fkey_norm), len(key_norm))
+        if shorter >= 14:
+            long_n, short_n = (key_norm, fkey_norm) if len(key_norm) >= len(fkey_norm) else (fkey_norm, key_norm)
+            if short_n in long_n:
+                score = max(score, 8 + shorter // 4)
+        if score > best_score:
+            best, best_score = f, score
+    return best if best_score >= 6 else None
 
 
 async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
@@ -225,21 +346,82 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
 
     parsed = parse_pdf(pdf_abs)
     meta_resp = parsed["meta"].get("respondent")
+    all_bullets = [b for arr in parsed.get("bullets", {}).values() for b in arr]
+    all_text = parsed.get("text", "")
     fields_out = []
     populated = 0
+    worker_picker_prefilled = False  # v160.3.0-adjust-16b — only the first picker gets meta_resp
+
+    def _looks_like_garbage(s) -> bool:
+        """Reject obviously-wrong values captured from PDF footers /
+        signature blocks. Prevents `Customer name if 'Other'` from
+        showing `Signature: Date:`."""
+        if not isinstance(s, str):
+            return False
+        low = s.lower().strip()
+        if low.startswith("signature:") or low.startswith("date:"):
+            return True
+        if re.match(r"^\d+\s*of\s*\d+$", low):
+            return True
+        return False
+
+    def _multiline_after(label_text: str) -> str | None:
+        """v160.3.0-adjust-16b — Column-aware multi-line value grab. Find
+        the first PDF line whose LEFT column (before the ≥2-space gap)
+        contains `label_text` (fuzzy). Return the RIGHT column text,
+        accumulating continuation lines (all whitespace, no left column)
+        until the next labeled line or a blank line."""
+        needle = _norm(label_text)
+        if len(needle) < 6:
+            return None
+        lines = parsed.get("raw_lines", [])
+        n = len(lines)
+        for i, s in enumerate(lines):
+            if not s.strip():
+                continue
+            parts = BLANK_MULTIPLE_SPACES_RE.split(s.strip(), maxsplit=1)
+            if len(parts) != 2:
+                continue
+            lbl_norm = _norm(parts[0])
+            if not (needle in lbl_norm or (len(needle) >= 16 and lbl_norm[:16] in needle)):
+                continue
+            # Found the anchor. Determine the right-column indent.
+            m = re.search(r"\S {2,}(\S)", s)
+            if not m:
+                continue
+            right_col = s.index(m.group(1), m.start())
+            acc = [parts[1].strip()]
+            # Accumulate continuation lines: subsequent lines where left
+            # column is empty (only whitespace before right_col).
+            for j in range(i + 1, min(i + 8, n)):
+                nx = lines[j]
+                if not nx.strip():
+                    break
+                nleft = nx[:right_col] if len(nx) >= right_col else nx
+                if nleft.strip():  # Left column is populated → new label.
+                    break
+                cont = nx[right_col:].strip() if len(nx) >= right_col else nx.strip()
+                if not cont:
+                    break
+                acc.append(cont)
+            value = " ".join(x for x in acc if x)
+            return value or None
+        return None
 
     # ── 1. Standard Header prefill ──
     for f in template_fields:
         ftype = f.get("type")
         flabel = (f.get("label") or "").lower()
+        raw_flabel = f.get("label") or ""
         v = None
 
         if ftype == "date" and parsed["meta"].get("date"):
             v = parsed["meta"]["date"]
-        elif ftype == "worker_picker" and meta_resp and any(
-            k in flabel for k in ("operator", "auditor", "assessor", "team leader", "name")
+        elif ftype == "worker_picker" and meta_resp and not worker_picker_prefilled and any(
+            k in flabel for k in ("operator", "auditor", "assessor", "team leader")
         ):
             v = [{"worker_id": None, "name": meta_resp, "company_label": None}]
+            worker_picker_prefilled = True
         elif ftype == "gps" and parsed["meta"].get("gps"):
             v = {**parsed["meta"]["gps"], "address": None, "accuracy": None}
 
@@ -255,10 +437,57 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
                             except: pass
                     break
 
-        # ── 3. v160.3.0-adjust-16 — SSRA-style label→value pair match ──
-        # Falls through to the pair-scan when the numbered-item pass
-        # produced nothing. Handles TAILGATE checkboxes, PPE lists,
-        # BYDA/TGS/customer text fields, Y/N risk questions, etc.
+        # ── 3. Template-driven multi-line grab (SSRA text / textarea / select) ──
+        # v160.3.0-adjust-16b — Use the template field's own label
+        # (its `_core_label`) to locate the value column, and accumulate
+        # continuation lines. This is the fix for truncated values like
+        # "Viatec have the TGS and are undertaking Tra…" — we now capture
+        # multi-line free-text and long addresses in full.
+        if v is None and ftype in ("text", "textarea", "select", "number", "radio"):
+            core = _core_label(raw_flabel)
+            grabbed = _multiline_after(core)
+            if grabbed:
+                v = normalise_value(grabbed, raw_flabel)
+                if ftype == "number" and isinstance(v, str):
+                    m = re.search(r"[\d,]+", v)
+                    if m:
+                        try: v = int(m.group().replace(",", ""))
+                        except: pass
+
+        # ── 4. TAILGATE / multi-select bullet lookup ──
+        # v160.3.0-adjust-16b — For section-prefixed template fields
+        # (`TAILGATE — Discuss The Scope of Works` etc.), scan the
+        # collected right-column bullets under that section header for
+        # a substring match on the item text. If found → "I confirm"
+        # (or the field's first Y-option). If missing → leave None.
+        if v is None and ftype in ("radio", "select") and "—" in raw_flabel:
+            before, _, after = raw_flabel.partition("—")
+            section_prefix = before.strip().upper()
+            item = _core_label(raw_flabel)
+            item_key = _norm(item)
+            if item_key and len(item_key) >= 8:
+                # Prefer bullets under a matching section header, but fall
+                # back to any bullet across the doc.
+                candidate_lists = []
+                for sec, arr in parsed.get("bullets", {}).items():
+                    if section_prefix and section_prefix.split()[0] in sec:
+                        candidate_lists.append(arr)
+                if not candidate_lists:
+                    candidate_lists = [all_bullets]
+                found = False
+                for arr in candidate_lists:
+                    for b in arr:
+                        bkey = _norm(b)
+                        if item_key in bkey or bkey in item_key:
+                            found = True
+                            break
+                    if found:
+                        break
+                if found:
+                    opts = f.get("options") or []
+                    v = opts[0] if opts else "I confirm"
+
+        # ── 5. Legacy SSRA-style pair fallback ──
         if v is None and ftype in ("radio", "text", "textarea", "select", "number"):
             for lbl_pdf, val_pdf in parsed.get("pairs", []):
                 if fuzzy_match_field(lbl_pdf, [f]):
@@ -268,25 +497,17 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
                         if m:
                             try: v = int(m.group().replace(",", ""))
                             except: pass
-                    # For radio fields, coerce the value against the
-                    # template's own option list — if the extracted
-                    # answer isn't in options, leave as raw string so
-                    # nothing gets silently dropped.
-                    if ftype == "radio":
-                        opts = [o.lower() for o in (f.get("options") or [])]
-                        if isinstance(v, str) and v.lower() not in opts:
-                            # Best-effort mapping for Yes/No radios that
-                            # got "N/A" or free-text values.
-                            pass
                     break
 
         entry = {
             "field_id": f["id"],
             "value": v,
-            # Passthrough for legacy display:
             "label": f.get("label"),
             "type": ftype,
         }
+        if _looks_like_garbage(v):
+            entry["value"] = None
+            v = None
         if v is not None and v != "" and v != []:
             populated += 1
         fields_out.append(entry)
@@ -298,7 +519,8 @@ async def process_submission(db, sub, tpl_by_id: dict) -> tuple[int, int]:
                   "submitted_by_name": parsed["meta"].get("respondent") or sub.get("submitted_by_name"),
                   "deep_parsed": True,
                   "deep_parsed_at": now,
-                  "deep_parse_stats": {"populated": populated, "total": len(template_fields)}}},
+                  "deep_parse_stats": {"populated": populated, "total": len(template_fields),
+                                      "method": "adjust-16b"}}},
     )
     return populated, len(template_fields)
 
