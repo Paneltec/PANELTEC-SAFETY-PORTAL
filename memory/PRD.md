@@ -5276,3 +5276,60 @@ backend cycle).
 6. **v160.3.5** (proposed at v160.3.0-adjust-2 finish) — Audit
    Exports blob purge housekeeping (90-day grace).
 
+
+
+# 2026-07-11 — v160.3.0-adjust-3 SHIPPED — Web admin sidebar/topbar stacking-context hardening
+
+## Root cause
+Sidebar column (`<aside>`) is `position: sticky top-0 h-screen`
+which creates its own stacking context. The topbar
+(`<header>`) is `sticky top-0 z-30`. **Sidebar had no explicit
+z-index** — computed as `z-index: auto`.
+
+When two sticky elements share a viewport row (both at y=0-64px),
+the paint order of their borders/backgrounds becomes browser
+implementation-defined. Chromium can end up painting the sidebar's
+sticky stacking context OVER the topbar's border-b at the shared
+row-1 boundary on some viewports (esp. 1200-1400px where the two
+are visually tightly abutted), producing the "layout overlap" the
+user reported.
+
+## Fix
+- Sidebar column: **added explicit `z-20`** — participates in the
+  same stacking hierarchy as the topbar (z-30) but sits UNDER it,
+  so the topbar always paints on top at the shared row.
+- Sidebar logo header row: **added `bg-white`** explicitly (was
+  inherited via cascade — now guaranteed to paint a solid strip
+  matching the topbar's white background at row 1).
+- **Radix Portal dropdowns unaffected** — they render at `z-50`
+  outside the sidebar/topbar stacking contexts entirely.
+
+## Verification — 4 breakpoints
+DOM inspection at each viewport confirms clean layout:
+| Viewport | Sidebar z | Topbar z | Sidebar w | Topbar x |
+|----------|-----------|----------|-----------|----------|
+| 1200 px  | 20 | 30 | 256 | 256 |
+| 1400 px  | 20 | 30 | 256 | 256 |
+| 1600 px  | 20 | 30 | 256 | 256 |
+| 1920 px  | 20 | 30 | 256 | 256 |
+
+Screenshots at each: `/tmp/v160_3_0_adjust_3_after_{1200,1400,1600,1920}.png`.
+Before screenshot for the visual regression baseline:
+`/tmp/v160_3_0_adjust_3_before.png`.
+
+## Regression
+- Full v160.2/3 backend suite: **38/38 green** (frontend-only fix
+  — backend untouched).
+- Mobile untouched — no Metro cache clear required.
+
+## Version bump → `paneltec-v160.3.0-adjust-3`
+All 3 files.
+
+## Files touched
+- `frontend/src/components/layout/AppShell.jsx` (SidebarShell —
+  `z-20` + `bg-white` on header row + verbose comment explaining
+  the stacking-context hazard)
+- `mobile/src/lib/version.ts`, `frontend/src/lib/version.js`,
+  `frontend/public/service-worker.js` → `paneltec-v160.3.0-adjust-3`
+- `/app/memory/PRD.md` (this entry)
+

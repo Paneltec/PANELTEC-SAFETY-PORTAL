@@ -320,8 +320,18 @@ const SidebarShell = ({ collapsed }) => (
   // page scrolled the sidebar in lockstep. Now the sidebar is
   // viewport-bounded and its inner `<nav overflow-y-auto>` handles
   // any internal scroll when the rail is taller than the viewport.
-  <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
-    <div className={`h-16 flex items-center border-b border-slate-200 ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
+  //
+  // v160.3.0-adjust-3 — Explicit `z-20` on the sidebar column so it
+  // sits under the topbar (`z-30`) in stacking hierarchy. Sticky
+  // positioning creates its own stacking context, and with an
+  // implicit `z-index: auto` the sidebar column could out-paint the
+  // topbar's border/shadow at the shared row-1 boundary on some
+  // Chromium builds — resulting in the "layout overlap" the user
+  // reported at 1200-1400px viewports. `z-20` fixes the paint order
+  // without breaking any topbar-dropdown menus (which sit at `z-50`
+  // via Radix Portal).
+  <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen z-20 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
+    <div className={`h-16 flex items-center border-b border-slate-200 bg-white ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
         {collapsed
           ? <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#2C6BFF" /></svg>
