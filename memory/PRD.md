@@ -4647,3 +4647,129 @@ group id render as a single "Crew" section:
 `v160.3.0` (qualification-gated forms) → `v160.3.1` (crew group) →
 `v160.3.2` (drag-reorder) → `v160.3.3` (SWMS edit — if promoted).
 
+
+
+# 2026-07-11 — v160.3.0 SHIPPED — Qualification-gated forms
+
+## Scope
+Templates can opt into cert-based gating. When a worker opens a gated
+template, the mobile client fetches `/access-check` and either lets
+them through (all required certs valid) or renders a full-screen
+blocker listing what's missing / expired. Admins bypass server-side.
+
+## Deliverables
+
+### Backend
+- **`backend/cert_kinds.py`** — canonical slug vocabulary (15 slugs:
+  `white_card`, `first_aid`, `cpr`, `working_at_heights`,
+  `confined_space`, `traffic_control`, `hr_licence`, `mr_licence`,
+  `ewp_licence`, `forklift_licence`, `dogging`, `basic_rigging`,
+  `taswater_induction`, `tasrail_induction`, `airport_induction`).
+  Fuzzy name matcher via normalisation + alias index. Status
+  resolver (`valid` / `expiring_soon` / `expired` / `no_expiry`)
+  with a 30-day warning window. Same latest-expiry tiebreaker as
+  v160.2.6-cleanup dedupe.
+- **`forms.py`** — `TemplateIn` / `TemplatePatch` gain
+  `required_certifications: List[str]`. `_clean_cert_slugs` filters
+  to known slugs (unknowns silently dropped) so hand-crafted JSON
+  can't poison the gate.
+- **`GET /api/forms/cert-kinds`** — canonical vocabulary for the
+  web-admin picker + docs.
+- **`GET /api/forms/templates/{id}/access-check`** — returns
+  `{ok, mode: "no_gate"|"admin_bypass"|"gated", template_id,
+   worker_id, required: [{slug, label, status, expiry_date}]}`.
+  Admin/hseq_lead bypass with `ok=true`.
+- **`scripts/migrate_v160_3_0_cert_gate.py`** — idempotent shape
+  backfill. Snapshot to `form_templates_backup_v160_3_0`, then
+  `$set: {required_certifications: []}` on any template missing
+  the field. First run: 45 templates back-filled. Second run: 0.
+  **No template is auto-gated.**
+
+### Mobile (`app/forms/fill/[id].tsx` + `src/components/CertGateBlocker.tsx`)
+- New `CertGateBlocker.tsx` — full-screen safearea blocker with
+  status rows (red for expired/missing, olive for valid/no_expiry),
+  count of blocking requirements, single "Back to forms" CTA. No
+  override path.
+- `fill/[id].tsx` fires the access-check alongside the template
+  fetch. When `ok=false`, renders the blocker instead of the form.
+  Admins never see it (server-side `admin_bypass`).
+
+### Web Admin (`components/forms/TemplateBuilder.jsx`)
+- New "Qualification requirements" section in the template editor
+  header. Fetches `/forms/cert-kinds` on mount, renders 15 pill
+  toggles. Selected slugs saved on template create/update via the
+  new payload field. When ≥1 slug selected, a "Gated · N" pill
+  appears next to the section header.
+
+### Cert-to-Form Mapping Proposal (proposal only — NOT applied)
+- `/app/memory/v160_3_0_cert_mapping_proposal.md` — audit of all 30
+  active templates with suggested slugs based on keyword match +
+  safety-critical category baseline (`white_card` fallback for
+  pre_start / inspection / near_miss / incident / toolbox when no
+  keyword hits).
+- **User review required before any template is gated.** Apply via
+  Web Admin UI or PATCH `/api/forms/templates/{id}`.
+
+## Regression tests — `backend/tests/test_v160_3_0_cert_gating.py`
+12/12 PASS:
+1. Slug matcher covers common cert-name spellings.
+2. Slug matcher returns `None` on ambiguous / unknown.
+3. `cert_status` covers all expiry paths (no_expiry, expired, edge
+   at exactly 30 days, expiring_soon, valid).
+4. POST /forms/templates persists only known slugs.
+5. PATCH /forms/templates clears and resets the gate (dedupes,
+   preserves order).
+6. GET /forms/cert-kinds returns the canonical vocabulary.
+7. Access-check `no_gate` mode → ok=true, empty required.
+8. Access-check `admin_bypass` mode → ok=true even when admin
+   personally holds none of the required certs.
+9. Access-check gated worker OK when all required certs valid.
+10. Access-check gated worker blocked when any cert expired /
+    missing.
+11. Access-check latest-expiry-wins tiebreaker (mirrors
+    v160.2.6-cleanup dedupe rule).
+12. Migration is idempotent.
+
+Full v160.2/3 suite: **24/24 green**.
+
+## Live blocker receipt
+`/tmp/v160_3_0_blocker.png` — worker_stephen viewing a template
+gated on `white_card + first_aid + confined_space`:
+  - White Card → **Expired** · Expiry 27/05/26 (red row)
+  - First Aid → **Missing** (red row)
+  - Confined Space Entry → **Missing** (red row)
+  - Footer hint: *"3 requirements are blocking access."*
+  - Orange "Back to forms" button
+  - No override path.
+
+## Version bumps → `paneltec-v160.3.0`
+- `mobile/src/lib/version.ts`
+- `frontend/src/lib/version.js`
+- `frontend/public/service-worker.js`
+
+Metro cache clear ran with the corrected protocol; mobile HTTP 200
+within 25s. Web HTTP 200.
+
+## Design notes (defaults picked — no user questions per direction)
+- **Bypass roles**: `admin` + `hseq_lead` only. Manager / supervisor
+  / worker / contractor all gated. Rationale: aligned with existing
+  `WRITE_ROLES` for forms.
+- **Expiry policy**: fail-safe. `expired` blocks. `no_expiry`,
+  `expiring_soon`, `valid` all pass. `expiring_soon` window = 30d.
+- **No admin-side override**: intentional. Auditability wins over
+  in-app escape hatch. Admins can add / renew certs on the Workers
+  screen if the block is wrong.
+- **Slug allowlist enforced twice**: on write (`_clean_cert_slugs`)
+  AND on read (label lookup falls through to the raw slug if
+  somehow persisted). Belt + braces.
+- **Latest-expiry tiebreaker** intentionally mirrors
+  v160.2.6-cleanup dedupe so both features stay coherent when a
+  worker has legitimate duplicate rows (e.g. renewed First Aid).
+
+## What's NOT done in this cycle (deferred)
+- Cert-to-form mapping is proposal-only. User to review then apply
+  via the Web Admin picker or PATCH endpoint.
+- No "cert-gated" badge on template cards in the Forms library.
+  Small polish, added when the mapping is applied and users start
+  scanning the list.
+

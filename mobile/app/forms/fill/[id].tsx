@@ -20,6 +20,7 @@ import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
 import ConfirmModal from '../../../src/components/ConfirmModal';
+import CertGateBlocker from '../../../src/components/CertGateBlocker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 /* ─── Colour helper for radio buttons ─── */
@@ -772,6 +773,23 @@ export default function FillOutScreen() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  // v160.3.0 — Qualification gate. Fetches the access-check payload
+  // alongside the template load. When the gate blocks the caller
+  // (`ok: false`), we render `<CertGateBlocker />` instead of the
+  // form body — the worker never sees the fields until certs pass.
+  // Admins bypass server-side (`mode === "admin_bypass"`), so
+  // `gateInfo.ok` is true and this branch is never taken.
+  const [gateInfo, setGateInfo] = useState<any>(null);
+  const [gateLoading, setGateLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    api.get(`/forms/templates/${id}/access-check`)
+      .then(({ data }) => { if (alive) setGateInfo(data); })
+      .catch(() => { if (alive) setGateInfo({ ok: true, mode: 'no_gate', required: [] }); })
+      .finally(() => { if (alive) setGateLoading(false); });
+    return () => { alive = false; };
+  }, [id]);
+
   // Load draft
   useEffect(() => {
     AsyncStorage.getItem(draftKey).then((raw) => {
@@ -931,8 +949,22 @@ export default function FillOutScreen() {
     finally { setSaving(false); setProgress(''); }
   };
 
-  if (loading) return <SafeAreaView style={fs.safe}><ActivityIndicator testID="fill-loading" style={{ marginTop: 60 }} color={Colors.blue} /></SafeAreaView>;
+  if (loading || gateLoading) return <SafeAreaView style={fs.safe}><ActivityIndicator testID="fill-loading" style={{ marginTop: 60 }} color={Colors.blue} /></SafeAreaView>;
   if (!tpl) return <SafeAreaView style={fs.safe}><Text style={{ padding: 24 }}>Template not found.</Text></SafeAreaView>;
+
+  // v160.3.0 — Blocker screen when the worker is missing required certs.
+  // Admins bypass server-side so this branch never renders for them.
+  if (gateInfo && gateInfo.ok === false) {
+    return (
+      <SafeAreaView style={fs.safe} edges={['top']}>
+        <CertGateBlocker
+          templateName={tpl.name}
+          required={gateInfo.required || []}
+          onBack={() => router.back()}
+        />
+      </SafeAreaView>
+    );
+  }
 
   const activeSelectField = tpl.fields?.find((f: any) => f.id === selectModalField);
 

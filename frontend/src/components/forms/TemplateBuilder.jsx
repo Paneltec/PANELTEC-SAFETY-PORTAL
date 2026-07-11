@@ -128,6 +128,20 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
       ? template.fields.map((f) => ({ ...f, id: f.id || newFieldId(), options: f.options || [] }))
       : [{ ...emptyField(), label: '' }],
   );
+  // v160.3.0 — Qualification gate. Admin edits which cert-kind slugs
+  // must be current on the caller's worker record before this template
+  // can be opened. Empty list = ungated.
+  const [requiredCertifications, setRequiredCertifications] = useState(
+    template?.required_certifications || [],
+  );
+  const [certKinds, setCertKinds] = useState([]);
+  useEffect(() => {
+    let alive = true;
+    api.get('/forms/cert-kinds')
+      .then(({ data }) => { if (alive) setCertKinds(Array.isArray(data) ? data : []); })
+      .catch(() => { /* leave empty — user will see a note */ });
+    return () => { alive = false; };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({ name: null, fields: {} });
 
@@ -185,6 +199,9 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
           placeholder: f.placeholder || '',
           config: f.config || {},
         })),
+        // v160.3.0 — Only send the gate list on save; backend enforces
+        // slug allowlist and silently drops anything unknown.
+        required_certifications: requiredCertifications,
       };
       if (isEdit) {
         const { data } = await api.patch(`/forms/templates/${template.id}`, payload);
@@ -244,6 +261,52 @@ export default function TemplateBuilder({ template, onClose, onSaved }) {
               data-testid="builder-description"
               className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl bg-white text-slate-700" />
             {errors.name && <p className="text-xs text-rose-600 inline-flex items-center gap-1"><AlertCircle size={11} /> {errors.name}</p>}
+            {/* v160.3.0 — Qualification requirements picker */}
+            <div className="mt-2 pt-2 border-t border-slate-100" data-testid="builder-cert-gate">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">
+                  Qualification requirements
+                </span>
+                {requiredCertifications.length > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    Gated · {requiredCertifications.length}
+                  </span>
+                )}
+              </div>
+              {certKinds.length === 0 ? (
+                <p className="text-[11px] text-slate-400 italic">Loading cert-kinds…</p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap gap-1.5">
+                    {certKinds.map((k) => {
+                      const on = requiredCertifications.includes(k.slug);
+                      return (
+                        <button
+                          key={k.slug}
+                          type="button"
+                          data-testid={`builder-cert-${k.slug}`}
+                          onClick={() => setRequiredCertifications((prev) =>
+                            on ? prev.filter((s) => s !== k.slug) : [...prev, k.slug],
+                          )}
+                          className={`text-[11px] font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                            on
+                              ? 'bg-amber-500 text-white border-amber-500'
+                              : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          {k.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1.5">
+                    {requiredCertifications.length === 0
+                      ? 'Ungated — every worker can open this form.'
+                      : 'Workers missing any of these certs will see a blocker before the form opens. Admins bypass automatically.'}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
           <button onClick={onClose} disabled={saving} data-testid="builder-close"
             className="p-2 rounded-xl hover:bg-slate-100 min-w-[44px] min-h-[44px] flex items-center justify-center">

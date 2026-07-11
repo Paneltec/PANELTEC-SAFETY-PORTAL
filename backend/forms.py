@@ -122,11 +122,34 @@ def _clean_field(f: dict) -> dict:
     }
 
 
+def _clean_cert_slugs(slugs) -> list[str]:
+    """v160.3.0 — Filter an inbound list to only slugs we know about.
+
+    Silent drop is intentional: a payload with `["white_card", "made_up"]`
+    persists as `["white_card"]` so the gate can't be fooled by hand-crafted
+    JSON. Order is preserved (admins hand-pick the display order in the
+    template editor).
+    """
+    from cert_kinds import ALL_SLUGS
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in (slugs or []):
+        s = str(raw or "").strip().lower()
+        if s in ALL_SLUGS and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
 class TemplateIn(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     category: str = "general"
     description: Optional[str] = Field(default="", max_length=2000)
     fields: list[dict] = []
+    # v160.3.0 — Qualification gating. When non-empty, the mobile client
+    # calls `/access-check` before opening the fill screen and blocks
+    # if the worker is missing or expired on any listed slug.
+    required_certifications: list[str] = Field(default_factory=list)
 
 
 class TemplatePatch(BaseModel):
@@ -134,6 +157,9 @@ class TemplatePatch(BaseModel):
     category: Optional[str] = None
     description: Optional[str] = Field(default=None, max_length=2000)
     fields: Optional[list[dict]] = None
+    # v160.3.0 — Allow admins to add / remove cert gates without
+    # re-uploading the whole template. Empty list = ungated.
+    required_certifications: Optional[list[str]] = None
 
 
 class ImportPayload(BaseModel):
@@ -432,6 +458,129 @@ async def get_template(template_id: str, user: dict = Depends(get_current_user))
     return {**_serialise(row), "submission_count": n}
 
 
+# ──────────────── v160.3.0 — Qualification gating ────────────────
+
+# Roles that bypass the gate entirely — they can already write / audit
+# everything anyway, so an in-app licence check would just get in the way.
+GATE_BYPASS_ROLES: frozenset[str] = frozenset({"admin", "hseq_lead"})
+
+
+@router.get("/cert-kinds")
+async def list_cert_kinds(user: dict = Depends(get_current_user)):
+    """v160.3.0 — Canonical cert-kind vocabulary.
+
+    Serves the web admin's template-editor picker + is safe to expose to
+    every authenticated caller (no PII, no per-org data). Kept in code
+    (`cert_kinds.py`) rather than a DB collection — see module docstring
+    for the reasoning.
+    """
+    from cert_kinds import KINDS
+    return [{"slug": k.slug, "label": k.label} for k in KINDS]
+
+
+@router.get("/templates/{template_id}/access-check")
+async def template_access_check(template_id: str,
+                                user: dict = Depends(get_current_user)):
+    """Decide whether the caller can open this template right now.
+
+    Response shape:
+        {
+          "ok": bool,
+          "mode": "no_gate" | "admin_bypass" | "gated",
+          "template_id": str,
+          "worker_id": str | None,
+          "required": [
+            {"slug", "label",
+             "status": "valid"|"expiring_soon"|"no_expiry"|"expired"|"missing",
+             "expiry_date": str | null}
+          ]
+        }
+
+    - `no_gate`  — template has no cert requirements → `ok=true`, empty list.
+    - `admin_bypass` — caller role in GATE_BYPASS_ROLES → `ok=true`.
+      Requirements are still enumerated (with the admin's OWN cert
+      status where a worker profile exists) so the web-admin preview
+      panel can render the same list the worker will see.
+    - `gated` — caller must have a satisfying cert for every slug in
+      `required_certifications`. `ok=false` when any slug is missing
+      or expired.
+    """
+    tpl = await db.form_templates.find_one(
+        {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "required_certifications": 1, "name": 1},
+    )
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+
+    from cert_kinds import KIND_LABELS, SATISFYING_STATUSES, summarise_worker_certs
+
+    required = list(tpl.get("required_certifications") or [])
+    if not required:
+        return {
+            "ok": True, "mode": "no_gate",
+            "template_id": template_id,
+            "worker_id": None,
+            "required": [],
+        }
+
+    # Resolve the caller's linked worker row + their active certs.
+    # v160.3.0 — Mirror the resolution used by `/api/me/worker-profile`
+    # (workers.py:382) so a worker with only a `user_id` link (no
+    # email) still resolves properly.
+    email = (user.get("email") or "").lower()
+    query = {
+        "org_id": user["org_id"], "deleted_at": None,
+        "$or": [{"user_id": user["id"]}] + ([{"email": email}] if email else []),
+    }
+    worker = await db.workers.find_one(query, {"_id": 0, "id": 1})
+    worker_id = worker.get("id") if worker else None
+    certs: list[dict] = []
+    if worker_id:
+        certs = await db.worker_certifications.find(
+            {"org_id": user["org_id"], "worker_id": worker_id, "deleted_at": None},
+            {"_id": 0, "name": 1, "expiry_date": 1},
+        ).to_list(500)
+    have = summarise_worker_certs(certs)
+
+    detail = []
+    all_satisfied = True
+    for slug in required:
+        info = have.get(slug)
+        if info is None:
+            detail.append({
+                "slug": slug,
+                "label": KIND_LABELS.get(slug, slug),
+                "status": "missing",
+                "expiry_date": None,
+            })
+            all_satisfied = False
+        else:
+            status = info["status"]
+            detail.append({
+                "slug": slug,
+                "label": KIND_LABELS.get(slug, slug),
+                "status": status,
+                "expiry_date": info.get("expiry_date"),
+            })
+            if status not in SATISFYING_STATUSES:
+                all_satisfied = False
+
+    role = (user.get("role") or "").lower()
+    if role in GATE_BYPASS_ROLES:
+        return {
+            "ok": True, "mode": "admin_bypass",
+            "template_id": template_id,
+            "worker_id": worker_id,
+            "required": detail,
+        }
+    return {
+        "ok": all_satisfied, "mode": "gated",
+        "template_id": template_id,
+        "worker_id": worker_id,
+        "required": detail,
+    }
+
+
 @router.post("/templates", status_code=201)
 async def create_template(body: TemplateIn, user: dict = Depends(get_current_user)):
     _require_write(user, action="create")
@@ -441,6 +590,9 @@ async def create_template(body: TemplateIn, user: dict = Depends(get_current_use
         "category": _norm_category(body.category),
         "description": (body.description or "").strip(),
         "fields": [_clean_field(f) for f in (body.fields or [])],
+        # v160.3.0 — Only accept slugs we know. Silently drops unknown
+        # entries so a hand-crafted request can't poison the gate.
+        "required_certifications": _clean_cert_slugs(body.required_certifications),
         "source": "manual", "imported_at": None,
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
@@ -460,6 +612,9 @@ async def update_template(template_id: str, body: TemplatePatch,
         payload["category"] = _norm_category(payload["category"])
     if "fields" in payload and payload["fields"] is not None:
         payload["fields"] = [_clean_field(f) for f in payload["fields"]]
+    if "required_certifications" in payload and payload["required_certifications"] is not None:
+        # v160.3.0 — Same slug allowlist enforced on PATCH.
+        payload["required_certifications"] = _clean_cert_slugs(payload["required_certifications"])
     payload["updated_at"] = now_iso()
     row = await db.form_templates.find_one_and_update(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
