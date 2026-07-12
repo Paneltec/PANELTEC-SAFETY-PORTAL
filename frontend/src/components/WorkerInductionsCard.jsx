@@ -1,8 +1,9 @@
 // Phase 3.11 — Per-worker Inductions card shown inside the worker drawer.
 // Phase 3.12 — Cards now open `InductionCardModal` (view/edit/add).
 import { useEffect, useState } from 'react';
-import { Loader2, CalendarOff, Check } from 'lucide-react';
+import { Loader2, CalendarOff, Check, FileText, AlertTriangle } from 'lucide-react';
 import api, { apiError } from '../lib/api';
+import { filesUrl } from '../lib/downloadUrl';
 import { toast } from 'sonner';
 import InductionCardModal from './InductionCardModal';
 
@@ -78,6 +79,11 @@ export default function WorkerInductionsCard({ workerId, workerName }) {
                   {cell?.held_no_expiry ? <Check size={9} className="mr-1" /> : null}
                   {meta.label}
                 </span>
+                {/* v160.3.5b — per-row file-presence chip */}
+                <FilePresenceChip
+                  workerId={workerId}
+                  cell={cell}
+                />
                 {cell?.expiry_date && (
                   <span className="text-[10px] font-mono text-slate-500">
                     {cell.expiry_date.slice(8, 10)}/{cell.expiry_date.slice(5, 7)}/{cell.expiry_date.slice(2, 4)}
@@ -118,3 +124,41 @@ export default function WorkerInductionsCard({ workerId, workerName }) {
 const Tag = ({ children }) => (
   <span className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-white text-[#5b21b6]">{children}</span>
 );
+
+// v160.3.5b — Per-row file-presence chip. Renders one of three states:
+//   • Cell has a `doc_file_id` → clickable "📄 File" (green) that opens the
+//     GridFS blob via the shared download-token flow (`filesUrl`).
+//   • Cell exists (cert_id set) but has NO doc_file_id → "⚠ No file"
+//     (orange) — a real induction record with metadata only.
+//   • Cell doesn't exist yet (empty slot) → renders nothing.
+function FilePresenceChip({ workerId, cell }) {
+  if (!cell || !cell.cert_id) return null;
+  if (!cell.doc_file_id) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-orange-50 text-orange-700 border border-orange-200"
+        title="No file attached"
+        data-testid={`induction-file-missing-${cell.cert_id}`}
+      >
+        <AlertTriangle size={9} /> No file
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      onClick={async (e) => {
+        e.stopPropagation();
+        try {
+          const u = await filesUrl(`/workers/${workerId}/certifications/${cell.cert_id}/file`);
+          window.open(u, '_blank', 'noopener,noreferrer');
+        } catch (_err) { toast.error('Unable to open file'); }
+      }}
+      className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100"
+      title="Open attached file"
+      data-testid={`induction-file-open-${cell.cert_id}`}
+    >
+      <FileText size={9} /> File
+    </button>
+  );
+}
