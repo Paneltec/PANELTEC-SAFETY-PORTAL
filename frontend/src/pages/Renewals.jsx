@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { HelpCircle, Loader2, Settings, X } from 'lucide-react';
+import { HelpCircle, Loader2, Settings, X, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
@@ -25,6 +25,35 @@ import {
 
 const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
 const IMPORT_ROLES = new Set(['admin', 'manager']);
+
+// v160.3.6j — Same relative-days chip pattern used across the app (v6f/v6g).
+function daysUntil(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return Math.round((d.setHours(0, 0, 0, 0) - today.getTime()) / 86400000);
+}
+
+// v160.3.6j — Twin of the SortHeaderBtn on Workers/Certifications.
+function SortHeaderBtn({ label, k, sortKey, sortDir, onClick }) {
+  const active = sortKey === k;
+  const Icon = !active ? ArrowUpDown : sortDir === 'desc' ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      data-testid={`renewal-sort-${k}`}
+      onClick={() => onClick(k)}
+      className={
+        'inline-flex items-center gap-1 uppercase tracking-wider text-[10px] font-semibold text-left ' +
+        (active ? 'text-[#1e4a8c]' : 'text-slate-500 hover:text-slate-700')
+      }
+    >
+      {label}
+      <Icon size={10} className={active ? '' : 'opacity-50'} />
+    </button>
+  );
+}
 
 export default function Renewals() {
   const user = getUser();
@@ -82,6 +111,29 @@ export default function Renewals() {
     catch (e) { toast.error(apiError(e)); }
   };
 
+  // v160.3.6j — sortable columns on the grid layout.
+  const [sortKey, setSortKey] = useState('contractor');
+  const [sortDir, setSortDir] = useState('asc');
+  const toggleSort = (k) => {
+    if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortKey(k); setSortDir('asc'); }
+  };
+  const sortedItems = useMemo(() => {
+    const dir = sortDir === 'desc' ? -1 : 1;
+    const arr = items.slice();
+    const cmp = (a, b) => {
+      if (a == null && b == null) return 0;
+      if (a == null) return 1;
+      if (b == null) return -1;
+      return String(a).localeCompare(String(b)) * dir;
+    };
+    if (sortKey === 'contractor')   arr.sort((a, b) => cmp((a.contractor_name || '').toLowerCase(), (b.contractor_name || '').toLowerCase()));
+    else if (sortKey === 'subject') arr.sort((a, b) => cmp((a.subject || '').toLowerCase(), (b.subject || '').toLowerCase()));
+    else if (sortKey === 'status')  arr.sort((a, b) => cmp(a.status || '', b.status || ''));
+    else if (sortKey === 'expires') arr.sort((a, b) => cmp(a.expires_at || 'z', b.expires_at || 'z'));
+    return arr;
+  }, [items, sortKey, sortDir]);
+
   return (
     <div className="max-w-6xl mx-auto" data-testid="renewals-list">
       <PageHeader crumb="Compliance / Renewal Links" title="Renewal Links"
@@ -123,15 +175,41 @@ export default function Renewals() {
       )}
       {items.length === 0 ? <EmptyState title="No renewal links yet" body="Create a link and send it to a contractor." />
        : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider"><tr><th className="text-left px-4 py-3">Contractor</th><th className="text-left px-4 py-3">Subject / Docs</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Expires</th><th className="text-left px-4 py-3"></th></tr></thead>
-            <tbody>
-              {items.map((r) => (
-                <tr key={r.id} className="border-t border-slate-100" data-testid={`renewal-row-${r.id}`}>
-                  <td className="px-4 py-3 font-medium">{r.contractor_name}</td>
-                  <td className="px-4 py-3 text-slate-600 text-xs">
-                    {r.subject && <div className="font-semibold text-slate-700 mb-0.5">{r.subject}</div>}
+        // v160.3.6j — CSS-Grid card-row layout (Path B pattern shared with
+        // Workers v6e / Certifications v6f/g). Header + rows share one
+        // gridTemplateColumns so columns cannot drift, "Email link" no longer
+        // wraps to two lines, and every action button is a normalised 32×32
+        // icon-only pill colour-coded by role (blue Email, slate Copy/Edit,
+        // rose Revoke/Delete). Tooltip on hover carries the full label.
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto" data-testid="renewals-grid">
+          <div className="min-w-[900px]">
+            {/* Sort header row */}
+            <div
+              className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-4 py-3 gap-3"
+              style={{ gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}
+            >
+              <SortHeaderBtn label="Contractor" k="contractor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeaderBtn label="Subject / Docs" k="subject" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeaderBtn label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <SortHeaderBtn label="Expires" k="expires" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <div className="text-right">Action</div>
+            </div>
+            {sortedItems.map((r) => {
+              const d = daysUntil(r.expires_at);
+              return (
+                <div key={r.id} data-testid={`renewal-row-${r.id}`}
+                  className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-4 py-3 gap-3"
+                  style={{ gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}>
+                  {/* Contractor */}
+                  <div className="min-w-0">
+                    <div className="font-semibold text-slate-900 truncate">{r.contractor_name}</div>
+                    {r.contractor_email && (
+                      <div className="text-[11px] text-slate-500 truncate" title={r.contractor_email}>{r.contractor_email}</div>
+                    )}
+                  </div>
+                  {/* Subject / Docs */}
+                  <div className="min-w-0 text-xs text-slate-600">
+                    {r.subject && <div className="font-semibold text-slate-700 mb-0.5 truncate" title={r.subject}>{r.subject}</div>}
                     <div className="flex flex-wrap gap-1">
                       {(r.doc_types_requested || []).map((slug) => {
                         const known = !!typeLabel[slug];
@@ -145,43 +223,71 @@ export default function Renewals() {
                         );
                       })}
                     </div>
-                  </td>
-                  <td className="px-4 py-3"><StatusBadge value={r.status} /></td>
-                  <td className="px-4 py-3 text-slate-500 text-xs">{(r.expires_at || '').slice(0, 10)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1 items-center">
-                      {r.status === 'pending' && (
-                        <>
-                          <EmailButton
-                            resourceKind="renewals"
-                            recordId={r.id}
-                            subject={r.subject || `Document Renewal Request — Paneltec Civil`}
-                            body={r.message || `Hi ${r.contractor_name},\n\nPlease re-submit the following document(s) via the secure link below:\n${(r.doc_types_requested || []).map((t) => typeLabel[t] || t).join(', ')}\n\nThe link expires on ${(r.expires_at || '').slice(0, 10)}.\n\nThanks,\nPaneltec Civil`}
-                            recipients={r.contractor_email ? [r.contractor_email] : []}
-                            variant="primary" size="sm" label="Email link"
-                          />
-                          <button onClick={() => copyToClipboard(r.public_url, { successMsg: 'Link copied' })} className="px-2 py-1 text-xs rounded border border-slate-200 hover:bg-slate-50 inline-flex items-center gap-1"><Copy /> Copy</button>
-                        </>
-                      )}
-                      {canEdit && r.status !== 'used' && (
-                        <button onClick={() => setEditing({ ...r, expires_date: (r.expires_at || '').slice(0, 10) })}
-                          data-testid={`renewal-edit-${r.id}`} title="Edit renewal link"
-                          className="p-1.5 rounded text-[#1e4a8c] bg-[#e6eff9] hover:bg-[#d8e6f4]">
-                          <Pencil />
+                  </div>
+                  {/* Status */}
+                  <div className="min-w-0"><StatusBadge value={r.status} /></div>
+                  {/* Expires */}
+                  <div className="min-w-0 text-xs">
+                    <div className="text-slate-700">{(r.expires_at || '').slice(0, 10) || '—'}</div>
+                    {r.expires_at && d !== null && (
+                      <div
+                        className={`inline-flex items-center gap-0.5 mt-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                          d < 0
+                            ? 'bg-[#fbe4e7] text-[#7a1f33] border border-[#e69aa3]'
+                            : d <= 7
+                              ? 'bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]'
+                              : 'bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]'
+                        }`}
+                      >
+                        {d < 0 ? `${Math.abs(d)}d ago` : d === 0 ? 'today' : `in ${d}d`}
+                      </div>
+                    )}
+                  </div>
+                  {/* Actions — every button is a 32×32 icon-only pill colour-coded by role. */}
+                  <div className="flex items-center justify-end gap-1 flex-wrap">
+                    {r.status === 'pending' && (
+                      <>
+                        <EmailButton
+                          resourceKind="renewals"
+                          recordId={r.id}
+                          subject={r.subject || `Document Renewal Request — Paneltec Civil`}
+                          body={r.message || `Hi ${r.contractor_name},\n\nPlease re-submit the following document(s) via the secure link below:\n${(r.doc_types_requested || []).map((t) => typeLabel[t] || t).join(', ')}\n\nThe link expires on ${(r.expires_at || '').slice(0, 10)}.\n\nThanks,\nPaneltec Civil`}
+                          recipients={r.contractor_email ? [r.contractor_email] : []}
+                          variant="primary" size="sm" label=""
+                          className="!inline-flex !items-center !justify-center !w-8 !h-8 !p-0 !rounded-lg !bg-[#1e4a8c] hover:!bg-[#163a70]"
+                        />
+                        <button onClick={() => copyToClipboard(r.public_url, { successMsg: 'Link copied' })}
+                          title="Copy public link"
+                          aria-label="Copy public link"
+                          data-testid={`renewal-copy-${r.id}`}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+                          <Copy />
                         </button>
-                      )}
-                      {canEdit && r.status === 'pending' && (
-                        <button onClick={() => revoke(r.id)} className="px-2 py-1 text-xs rounded border border-red-200 text-red-700 hover:bg-red-50 inline-flex items-center gap-1" data-testid={`revoke-${r.id}`}><X size={12} /> Revoke</button>
-                      )}
-                      {canEdit && (
-                        <DeleteRecordButton resourceKind="renewals" apiPath="renewals" recordId={r.id} label="Renewal link" recordTitle={r.contractor_name} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                      </>
+                    )}
+                    {canEdit && r.status !== 'used' && (
+                      <button onClick={() => setEditing({ ...r, expires_date: (r.expires_at || '').slice(0, 10) })}
+                        data-testid={`renewal-edit-${r.id}`} title="Edit renewal link" aria-label="Edit renewal link"
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-[#1e4a8c]">
+                        <Pencil />
+                      </button>
+                    )}
+                    {canEdit && r.status === 'pending' && (
+                      <button onClick={() => revoke(r.id)}
+                        title="Revoke renewal link" aria-label="Revoke renewal link"
+                        data-testid={`revoke-${r.id}`}
+                        className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50">
+                        <X size={13} />
+                      </button>
+                    )}
+                    {canEdit && (
+                      <DeleteRecordButton resourceKind="renewals" apiPath="renewals" recordId={r.id} label="Renewal link" recordTitle={r.contractor_name} iconOnly onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
        )}
 
