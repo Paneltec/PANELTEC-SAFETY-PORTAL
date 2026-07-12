@@ -359,7 +359,7 @@ export default function DocumentLibrary() {
             </button>
           ) : null} />
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="folder-grid">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-2.5" data-testid="folder-grid">
           {filtered.map((f) => (
             renamingId === f.id ? (
               <div key={f.id} className={`rounded-xl border border-brand-blue/40 ${PASTEL_BG[f.color_key] || PASTEL_BG.sky} p-3 flex flex-col gap-2`}
@@ -382,11 +382,11 @@ export default function DocumentLibrary() {
                 data-testid={`folder-card-${f.id}`}>
                 <button
                   onClick={() => navigate(`/app/document-library/${f.id}`)}
-                  className="w-full text-left p-4"
+                  className="w-full text-left p-3"
                 >
-                  <FolderOpen size={28} className={`${PASTEL_ICON[f.color_key] || PASTEL_ICON.sky} mb-2`} />
-                  <div className="font-display font-semibold text-sm text-slate-900 line-clamp-2 leading-snug min-h-[2.5rem]">{f.name}</div>
-                  <div className="text-xs text-slate-500 mt-1.5">
+                  <FolderOpen size={22} className={`${PASTEL_ICON[f.color_key] || PASTEL_ICON.sky} mb-1.5`} />
+                  <div className="font-display font-semibold text-[13px] text-slate-900 line-clamp-2 leading-snug min-h-[2.1rem]">{f.name}</div>
+                  <div className="text-[11px] text-slate-500 mt-1">
                     {f.file_count} {f.file_count === 1 ? 'file' : 'files'}
                   </div>
                 </button>

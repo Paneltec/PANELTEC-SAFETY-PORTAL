@@ -20,7 +20,7 @@ const TabsList = React.forwardRef(({ className, variant, ...props }, ref) => (
     ref={ref}
     className={cn(
       variant === "hero"
-        ? "inline-flex items-center gap-4"
+        ? "inline-flex flex-row-reverse items-center gap-4"
         : "inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm",
       className
     )}
@@ -28,26 +28,43 @@ const TabsList = React.forwardRef(({ className, variant, ...props }, ref) => (
 ))
 TabsList.displayName = TabsPrimitive.List.displayName
 
-const TabsTrigger = React.forwardRef(({ className, variant, ...props }, ref) => (
+const TabsTrigger = React.forwardRef(({ className, variant, emphasis, ...props }, ref) => (
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
       variant === "hero"
-        ? cn(
-            "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40",
-            "disabled:pointer-events-none disabled:opacity-50",
-            // Inactive = text-link
-            "text-sm font-semibold text-slate-500 hover:text-[#1e4a8c] hover:underline underline-offset-4 px-1",
-            // Active = filled CTA capsule
-            "data-[state=active]:no-underline data-[state=active]:text-white",
-            "data-[state=active]:bg-[#1e4a8c] data-[state=active]:rounded-full",
-            "data-[state=active]:px-5 data-[state=active]:py-2.5 data-[state=active]:text-base",
-            "data-[state=active]:shadow-lg data-[state=active]:shadow-[#1e4a8c]/20",
-            // Count-badge chip adapts to active/inactive
-            "[&_span]:tabular-nums",
-            "[&[data-state=active]_span]:!bg-white/20 [&[data-state=active]_span]:!text-white"
-          )
+        ? emphasis === "secondary"
+          // v160.3.6k — Secondary tab (Dashboard): ALWAYS subdued text-link.
+          // Never a peer to the primary capsule. Tiny inactive, slightly
+          // heavier when active but never a capsule / border / shadow.
+          ? cn(
+              "inline-flex items-center gap-1 whitespace-nowrap transition-all cursor-pointer",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40",
+              "text-[11px] font-medium uppercase tracking-wider text-slate-400 px-1 py-1",
+              "hover:text-slate-600 hover:underline underline-offset-4 decoration-slate-300",
+              "data-[state=active]:text-[#1e4a8c] data-[state=active]:text-sm",
+              "data-[state=active]:font-semibold data-[state=active]:normal-case data-[state=active]:tracking-normal",
+              "data-[state=active]:underline data-[state=active]:decoration-[#1e4a8c]/50",
+              "[&_span]:tabular-nums"
+            )
+          // v160.3.6k — Primary tab (List): ALWAYS a big capsule. Filled when
+          // active, outlined when inactive. Same physical size in both states,
+          // so List commands attention permanently rather than shrinking away
+          // whenever Dashboard is selected.
+          : cn(
+              "inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40",
+              "disabled:pointer-events-none disabled:opacity-50",
+              // Base capsule (INACTIVE) — outlined blue on white
+              "rounded-full px-5 py-2.5 text-base font-semibold",
+              "border-2 border-[#1e4a8c] text-[#1e4a8c] bg-white hover:bg-[#e6eff9]",
+              // ACTIVE state — filled blue with white text + shadow lift
+              "data-[state=active]:bg-[#1e4a8c] data-[state=active]:text-white data-[state=active]:border-transparent",
+              "data-[state=active]:shadow-lg data-[state=active]:shadow-[#1e4a8c]/20",
+              // Count-badge chip: soft-blue on inactive, glass-white on active
+              "[&_span]:tabular-nums [&_span]:!bg-[#e6eff9] [&_span]:!text-[#1e4a8c]",
+              "[&[data-state=active]_span]:!bg-white/20 [&[data-state=active]_span]:!text-white"
+            )
         : cn(
             "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer",
             "text-slate-700 hover:bg-slate-100",

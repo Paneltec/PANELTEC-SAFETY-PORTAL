@@ -183,8 +183,8 @@ export default function AuditExports() {
 
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="audit-exports-tabs">
         <TabsList variant="hero">
-          <TabsTrigger variant="hero" value="dashboard" data-testid="audit-exports-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" value="list" data-testid="audit-exports-tab-list">
+          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="audit-exports-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="audit-exports-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{groups.length}</span>
           </TabsTrigger>
         </TabsList>

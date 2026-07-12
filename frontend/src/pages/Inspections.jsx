@@ -50,8 +50,8 @@ export default function InspectionsList() {
         action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-create-btn" />} />
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="inspections-tabs">
         <TabsList variant="hero">
-          <TabsTrigger variant="hero" value="dashboard" data-testid="inspections-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" value="list" data-testid="inspections-tab-list">
+          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="inspections-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="inspections-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
           </TabsTrigger>
         </TabsList>

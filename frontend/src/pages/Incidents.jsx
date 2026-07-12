@@ -48,8 +48,8 @@ export default function IncidentsList() {
 
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="incidents-tabs">
         <TabsList variant="hero">
-          <TabsTrigger variant="hero" value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" value="list" data-testid="incidents-tab-list">
+          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="incidents-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
           </TabsTrigger>
         </TabsList>
