@@ -38,9 +38,9 @@ export default function HazardsList() {
         )}
       </CaptureSticky>
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="hazards-tabs">
-        <TabsList className="bg-slate-100 border border-slate-200">
-          <TabsTrigger value="dashboard" data-testid="hazards-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="list" data-testid="hazards-tab-list">
+        <TabsList variant="hero">
+          <TabsTrigger variant="hero" value="dashboard" data-testid="hazards-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" value="list" data-testid="hazards-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
           </TabsTrigger>
         </TabsList>

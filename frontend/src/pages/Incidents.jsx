@@ -47,9 +47,9 @@ export default function IncidentsList() {
         action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />} />
 
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="incidents-tabs">
-        <TabsList className="bg-slate-100 border border-slate-200">
-          <TabsTrigger value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="list" data-testid="incidents-tab-list">
+        <TabsList variant="hero">
+          <TabsTrigger variant="hero" value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" value="list" data-testid="incidents-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
           </TabsTrigger>
         </TabsList>
