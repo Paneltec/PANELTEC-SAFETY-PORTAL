@@ -23,6 +23,12 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
+// v160.3.7c — Per-row delete confirm uses shadcn AlertDialog to match the
+// bulk-delete flow on other list pages.
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+} from '../components/ui/alert-dialog';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
@@ -48,6 +54,8 @@ function fmtAgo(iso) {
 export default function SitesAdmin() {
   const user = getUser();
   const canEdit = EDIT_ROLES.has(user?.role);
+  // v160.3.7c — per-row delete is admin-only (stricter than canEdit).
+  const canDelete = user?.role === 'admin';
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -56,6 +64,9 @@ export default function SitesAdmin() {
   const [showAdd, setShowAdd] = useState(false);
   const [showRecycle, setShowRecycle] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  // v160.3.7c — single-row delete confirm state
+  const [deleteFor, setDeleteFor] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -95,6 +106,32 @@ export default function SitesAdmin() {
       setSelected(new Set());
       reload();
     } catch (e) { toast.error(apiError(e)); }
+  };
+
+  // v160.3.7c — Single-row delete. Reuses the existing bulk-delete
+  // endpoint with a one-item array — no new backend surface, and we
+  // inherit the "active Simpro jobs" refusal path automatically.
+  const doSingleDelete = async () => {
+    if (!deleteFor) return;
+    setDeleteBusy(true);
+    try {
+      const r = await api.post('/sites/bulk-delete', { site_ids: [deleteFor.simpro_site_id] });
+      const refused = r.data?.refused || [];
+      if (refused.length && refused[0]?.reason === 'linked_to_active_simpro_jobs') {
+        toast.warning(`Can't delete "${deleteFor.name}" — it has active Simpro jobs.`);
+      } else if ((r.data?.deleted || 0) > 0) {
+        toast.success(`"${deleteFor.name}" moved to recycle bin.`);
+        setRows((prev) => prev.filter((r2) => r2.simpro_site_id !== deleteFor.simpro_site_id));
+        setSelected((prev) => {
+          if (!prev.has(deleteFor.simpro_site_id)) return prev;
+          const n = new Set(prev); n.delete(deleteFor.simpro_site_id); return n;
+        });
+      } else {
+        toast.error('Delete failed — site not found.');
+      }
+      setDeleteFor(null);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setDeleteBusy(false); }
   };
 
   if (!canEdit) {
@@ -256,6 +293,18 @@ export default function SitesAdmin() {
                         className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50">
                         <Printer /> Print QR
                       </button>
+                      {/* v160.3.7c — Admin-only single-row delete. */}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => setDeleteFor(s)}
+                          data-testid={`site-delete-btn-${s.simpro_site_id}`}
+                          title={`Delete ${s.name}`}
+                          aria-label={`Delete ${s.name}`}
+                          className="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors">
+                          <Trash2 size={12} />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -271,6 +320,35 @@ export default function SitesAdmin() {
       {editFor && <EditSiteDrawer site={editFor} onClose={() => setEditFor(null)} onSaved={() => { setEditFor(null); reload(); }} />}
       {showAdd && <AddSiteModal onClose={() => setShowAdd(false)} onCreated={() => { setShowAdd(false); reload(); }} />}
       {showRecycle && <RecycleBinModal onClose={() => setShowRecycle(false)} onRestored={() => reload()} />}
+
+      {/* v160.3.7c — Single-row delete confirm */}
+      <AlertDialog open={!!deleteFor} onOpenChange={(o) => { if (!o && !deleteBusy) setDeleteFor(null); }}>
+        <AlertDialogContent data-testid="site-delete-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete site &ldquo;{deleteFor?.name}&rdquo;?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will move the site record and any linked GPS / QR / sign-on
+              question data to the recycle bin. Existing form submissions filed
+              against this site are preserved but will show as{' '}
+              <em>(deleted site)</em>. Sites linked to active Simpro jobs are
+              refused server-side.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteBusy} data-testid="site-delete-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doSingleDelete}
+              disabled={deleteBusy || !deleteFor}
+              data-testid="site-delete-confirm"
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
+              {deleteBusy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              Move to recycle bin
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
