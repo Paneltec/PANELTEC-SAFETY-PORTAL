@@ -5,11 +5,15 @@ import { cn } from "@/lib/utils"
 
 const Tabs = TabsPrimitive.Root
 
+// v160.3.6h — Segmented-control tab switcher. Both tabs read as first-class
+// buttons: active is a filled Paneltec-blue capsule, inactive keeps bold
+// slate-700 text (not muted) with a hover tint so the affordance is obvious.
+// Any consumer already using shadcn Tabs picks the new look up for free.
 const TabsList = React.forwardRef(({ className, ...props }, ref) => (
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-9 items-center justify-center rounded-lg bg-muted p-1 text-muted-foreground",
+      "inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm",
       className
     )}
     {...props} />
@@ -20,7 +24,12 @@ const TabsTrigger = React.forwardRef(({ className, ...props }, ref) => (
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-md px-3 py-1 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow",
+      "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer",
+      "text-slate-700 hover:bg-slate-100",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40",
+      "disabled:pointer-events-none disabled:opacity-50",
+      "data-[state=active]:bg-[#1e4a8c] data-[state=active]:text-white data-[state=active]:shadow",
+      "[&_span]:tabular-nums [&[data-state=active]_span]:text-white/80 [&[data-state=active]_span]:!bg-white/15 [&[data-state=active]_span]:!text-white",
       className
     )}
     {...props} />

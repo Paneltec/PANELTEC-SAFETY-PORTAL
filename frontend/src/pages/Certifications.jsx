@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Award, ClipboardList, Loader2, ArrowUpDown, ArrowUp, ArrowDown, FileText, FileWarning, Package, ChevronRight, ChevronDown as ChevronDownIcon, AlertTriangle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { filesUrl } from '../lib/downloadUrl';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
@@ -92,6 +93,46 @@ function daysUntilExpiry(iso) {
   return Math.round(diffMs / 86400000);
 }
 
+// v160.3.6h — 40×40 worker photo with initials fallback. Twin of the
+// component in Workers.jsx v160.3.6c; kept inline here to avoid churning
+// two files with a new shared component when the code is a dozen lines.
+// `filesUrl()` has inflight-dedup + 15-min token cache so N concurrent
+// renders trigger exactly one `POST /auth/download-token`.
+function WorkerRowPhoto({ worker }) {
+  const [src, setSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    if (!worker?.photo_url) { setSrc(null); setBroken(false); return () => { alive = false; }; }
+    setBroken(false);
+    filesUrl(worker.photo_url)
+      .then((u) => { if (alive) setSrc(u); })
+      .catch(() => { if (alive) setBroken(true); });
+    return () => { alive = false; };
+  }, [worker?.photo_url]);
+  const initials = `${(worker?.first_name?.[0] || '?').toUpperCase()}${(worker?.last_name?.[0] || '').toUpperCase()}`;
+  if (!worker?.photo_url || broken) {
+    return (
+      <div
+        className="w-10 h-10 rounded-full bg-[#e6eff9] border border-[#b9d2ec] flex items-center justify-center text-[#1e4a8c] font-semibold text-xs shrink-0 select-none"
+        aria-label={`${worker?.first_name || ''} ${worker?.last_name || ''} — no photo`}
+      >
+        {initials}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src || ''}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+      className="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0"
+    />
+  );
+}
+
 function exportCsv(rows) {
   const headers = ['worker', 'name', 'issuer', 'issue_date', 'expiry_date', 'status', 'seed_folder'];
   const lines = [headers.join(',')];
@@ -123,7 +164,8 @@ export default function Certifications() {
   // rank first, then expiry) — preserves the pre-6f behaviour so the
   // "compliance attention queue" reads the same on page load.
   // v160.3.6g — sort keys re-scoped to WORKER-LEVEL aggregates.
-  const [sortKey, setSortKey] = useState('attention');
+  // v160.3.6h — default flipped to alphabetical (worker) per user feedback.
+  const [sortKey, setSortKey] = useState('worker');
   const [sortDir, setSortDir] = useState('asc');
   const toggleSort = (k) => {
     if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -150,12 +192,21 @@ export default function Certifications() {
   const [previewCert, setPreviewCert] = useState(null);   // 👁  View PDF
   const [editCert, setEditCert] = useState(null);         // ✏️ Edit
   const [deleteCert, setDeleteCert] = useState(null);     // 🗑 Delete (admin)
+  // v160.3.6h — left-join workers so (a) zero-cert workers still appear as
+  // rows, and (b) we can render their real photo instead of just initials.
+  const [workers, setWorkers] = useState([]);
 
   const load = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/workers/certifications/all');
-      setRows(data || []);
+      // Parallel fetch: cert list + workers directory. Workers is authoritative
+      // for the roster (80 today); certs list only contains people with ≥1 cert.
+      const [certs, ws] = await Promise.all([
+        api.get('/workers/certifications/all'),
+        api.get('/workers'),
+      ]);
+      setRows(certs.data || []);
+      setWorkers(ws.data || []);
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -190,15 +241,33 @@ export default function Certifications() {
     // worker qualifies via name, ALL of their certs are shown so the
     // admin still sees the full context. Filter-chip semantics are
     // per-cert: an expanded worker shows only the matching certs.
+    // v160.3.6h — LEFT JOIN against the workers directory so workers with
+    // zero certs still appear (they're arguably the highest-priority rows
+    // — brand new / not inducted / ZIP not applied). Only rendered on the
+    // `all` filter — a status filter that requires ≥1 matching cert can't
+    // match a worker who has zero certs, and the `filteredCerts` array
+    // used by CSV export stays cert-scoped so downstream schema is intact.
     const q = search.trim().toLowerCase();
     const groups = new Map();
+    // Seed from the workers directory first so people with 0 certs get a row.
+    for (const w of workers) {
+      groups.set(w.id, {
+        worker_id: w.id,
+        first_name: w.first_name || '',
+        last_name: w.last_name || '',
+        photo_url: w.photo_url || null,
+        certs: [],
+      });
+    }
+    // Add / hydrate with certs.
     for (const r of rows) {
       const wid = r.worker_id;
       if (!groups.has(wid)) {
         groups.set(wid, {
           worker_id: wid,
-          first_name: r.worker_first_name,
-          last_name: r.worker_last_name,
+          first_name: r.worker_first_name || '',
+          last_name: r.worker_last_name || '',
+          photo_url: null,
           certs: [],
         });
       }
@@ -216,16 +285,21 @@ export default function Certifications() {
     const shaped = [];
     for (const g of groups.values()) {
       const nameHit = workerNameMatches(g);
-      // Which certs to display in the expanded state:
-      //   - Must satisfy the filter chip.
-      //   - If searching, must also satisfy the cert-side match UNLESS the
-      //     worker name itself matched (then all their certs stay visible).
       const displayCerts = g.certs.filter((c) => {
         if (!certMatchesFilter(c)) return false;
         if (!q) return true;
         return nameHit || certMatchesSearch(c);
       });
-      if (displayCerts.length === 0) continue; // hide workers with no matching certs
+      // For zero-cert workers: keep them ONLY on the `all` filter, ONLY when
+      // the search string is empty OR matches their name. Any status filter
+      // requires at least one cert, so zero-cert workers can't satisfy it.
+      const zeroCert = g.certs.length === 0;
+      if (zeroCert) {
+        if (filter !== 'all') continue;
+        if (q && !nameHit) continue;
+      } else if (displayCerts.length === 0) {
+        continue;
+      }
 
       let expired = 0, expiring = 0, missing = 0, valid = 0, noExpiry = 0, simpro = 0, manual = 0;
       let latest = null;
@@ -249,6 +323,7 @@ export default function Certifications() {
         }),
         counts: { total: g.certs.length, expired, expiring, missing, valid, noExpiry, simpro, manual },
         latest_updated_at: latest,
+        zeroCert,
       });
     }
 
@@ -267,7 +342,7 @@ export default function Certifications() {
     else if (sortKey === 'expired')   shaped.sort((a, b) => (a.counts.expired - b.counts.expired) * dir || byName(a, b));
     else if (sortKey === 'updated')   shaped.sort((a, b) => ((a.latest_updated_at || '').localeCompare(b.latest_updated_at || '')) * dir);
     return shaped;
-  }, [rows, filter, search, sortKey, sortDir]);
+  }, [rows, workers, filter, search, sortKey, sortDir]);
 
   const sendReminder = async (cert) => {
     setSendingId(cert.id);
@@ -300,7 +375,7 @@ export default function Certifications() {
         <TabsList className="bg-slate-100 border border-slate-200">
           <TabsTrigger value="dashboard" data-testid="certifications-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="list" data-testid="certifications-tab-list">
-            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{rows.length}</span>
+            List <span className="ml-1.5 text-[10px] tabular-nums px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-700">{workers.length || rows.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="certifications-tab-dashboard-content">
@@ -392,7 +467,6 @@ export default function Certifications() {
 
             {workerGroups.map((g) => {
               const isOpen = expanded.has(g.worker_id);
-              const initials = `${(g.first_name?.[0] || '?').toUpperCase()}${(g.last_name?.[0] || '').toUpperCase()}`;
               return (
                 <React.Fragment key={g.worker_id}>
                   <div
@@ -412,29 +486,41 @@ export default function Certifications() {
                       {isOpen ? <ChevronDownIcon size={14} /> : <ChevronRight size={14} />}
                     </button>
 
-                    {/* Worker identity */}
+                    {/* Worker identity — v160.3.6h photo + name/count subtitle */}
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-10 h-10 rounded-full bg-[#e6eff9] border border-[#b9d2ec] flex items-center justify-center text-[#1e4a8c] font-semibold text-xs shrink-0 select-none">
-                        {initials}
-                      </div>
+                      <WorkerRowPhoto worker={g} />
                       <div className="min-w-0">
                         <div className="font-semibold text-slate-900 truncate">
                           {g.first_name} {g.last_name}
                         </div>
                         <div className="text-[11px] text-slate-500 truncate">
-                          {g.counts.total} cert{g.counts.total === 1 ? '' : 's'}
-                          {g.counts.simpro ? ` · Simpro ${g.counts.simpro}` : ''}
-                          {g.counts.manual ? ` · Manual ${g.counts.manual}` : ''}
+                          {g.zeroCert
+                            ? 'No certifications on file'
+                            : <>
+                                {g.counts.total} cert{g.counts.total === 1 ? '' : 's'}
+                                {g.counts.simpro ? ` · Simpro ${g.counts.simpro}` : ''}
+                                {g.counts.manual ? ` · Manual ${g.counts.manual}` : ''}
+                              </>}
                         </div>
                       </div>
                     </div>
 
                     {/* Summary chips */}
                     <div className="flex flex-wrap items-center gap-1 min-w-0">
-                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200"
-                        data-testid={`worker-cert-total-${g.worker_id}`}>
-                        <Award size={9} /> {g.counts.total}
-                      </span>
+                      {g.zeroCert ? (
+                        <span
+                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]"
+                          data-testid={`worker-cert-none-${g.worker_id}`}
+                          title="This worker has no certifications on record. Either brand new, not inducted, or the Simpro ZIP has not been imported."
+                        >
+                          <FileWarning size={9} /> NO CERTS
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200"
+                          data-testid={`worker-cert-total-${g.worker_id}`}>
+                          <Award size={9} /> {g.counts.total}
+                        </span>
+                      )}
                       {g.counts.expired > 0 && (
                         <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f7d8dc] text-[#a8324c] border border-[#e69aa3]"
                           data-testid={`worker-cert-expired-${g.worker_id}`}

@@ -1534,16 +1534,18 @@ export default function Workers() {
       <PageHeader crumb="Settings / Workers" title="Workers"
         subtitle="Your field crew — synced from Simpro or added manually." />
 
-      {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix */}
-      <div className="mb-4 inline-flex p-1 rounded-lg bg-slate-100 border border-slate-200" data-testid="workers-tabs">
+      {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix
+          v160.3.6h — restyled to match the app-wide segmented control from
+          shadcn Tabs (pill-shaped, both tabs read as real buttons). */}
+      <div className="mb-4 inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm" data-testid="workers-tabs">
         <button onClick={() => setTab('directory')} data-testid="tab-directory"
-          className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${
-            tab === 'directory' ? 'bg-white text-[#1e4a8c] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>
+          className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40 ${
+            tab === 'directory' ? 'bg-[#1e4a8c] text-white shadow' : 'text-slate-700 hover:bg-slate-100'}`}>
           Directory
         </button>
         <button onClick={() => setTab('matrix')} data-testid="tab-matrix"
-          className={`px-4 py-1.5 text-xs font-semibold uppercase tracking-wider rounded-md transition-colors ${
-            tab === 'matrix' ? 'bg-white text-[#5b21b6] shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>
+          className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40 ${
+            tab === 'matrix' ? 'bg-[#5b21b6] text-white shadow' : 'text-slate-700 hover:bg-slate-100'}`}>
           Inductions Matrix
         </button>
       </div>
