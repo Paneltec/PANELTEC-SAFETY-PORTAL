@@ -53,6 +53,11 @@ from integrations_simpro_workers import (  # noqa: E402
     router as simpro_workers_router,
     seed_cert_kinds_on_startup,
 )
+from simpro_zip_import import (  # noqa: E402
+    router as simpro_zip_router,
+    bulk_router as simpro_zip_bulk_router,
+)
+from cron_simpro_delta import register_simpro_cron  # noqa: E402
 from integrations_m365 import router as m365_router  # noqa: E402
 from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
@@ -206,6 +211,8 @@ api.include_router(exports_router)
 api.include_router(integrations_router)
 api.include_router(simpro_router)
 api.include_router(simpro_workers_router)
+api.include_router(simpro_zip_router)
+api.include_router(simpro_zip_bulk_router)
 api.include_router(m365_router)
 api.include_router(textmagic_router)
 api.include_router(ask_router)
@@ -421,6 +428,11 @@ async def on_startup():
             log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney)")
         except Exception as e:
             log.warning("backup_snapshot scheduler hook failed: %s", e)
+        # v160.3.2 — Optional Simpro delta cron (opt-in via env).
+        try:
+            register_simpro_cron(scheduler)
+        except Exception as e:
+            log.warning("simpro_delta_cron scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.

@@ -35,6 +35,17 @@ const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disable
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
 
+
+// v160.3.2 — small "6h ago" / "3d ago" formatter for the Simpro last-sync pill
+function relativeTime(iso) {
+  if (!iso) return '—';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
 function StatusPill({ user }) {
   // Phase 4.7.2 — derive from (status, invite_pending, is_locked) so the
   // pill reflects the current auth state immediately after admin actions
@@ -137,6 +148,7 @@ export default function UsersManagement() {
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [refreshSimproOpen, setRefreshSimproOpen] = useState(false);  // v160.3.1 — Simpro Worker Sync
+  const [lastSync, setLastSync] = useState(null);                     // v160.3.2 — last sync marker
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
   const [actionBusy, setActionBusy] = useState(false);
@@ -153,8 +165,14 @@ export default function UsersManagement() {
       setSimproStatus({ connected: ok && companies.length > 0, companies });
     } catch { setSimproStatus({ connected: false, companies: [] }); }
   };
+  const loadLastSync = async () => {
+    try {
+      const { data } = await api.get('/integrations/simpro/workers/last-sync');
+      setLastSync(data);
+    } catch { /* silent */ }
+  };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); loadSimpro(); }, []);
+  useEffect(() => { load(); loadSimpro(); loadLastSync(); }, []);
 
   if (!can('users', 'view')) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
@@ -206,6 +224,18 @@ export default function UsersManagement() {
             >
               <RefreshCw size={14} /> Refresh from Simpro
             </button>
+            {lastSync?.last_synced_at && (
+              <span
+                className="text-[11px] text-slate-500"
+                data-testid="last-simpro-sync"
+                title={`${lastSync.triggered_by || 'manual'} · ${lastSync.last_synced_at}`}
+              >
+                Synced {relativeTime(lastSync.last_synced_at)}
+                {lastSync.triggered_by === 'cron' && (
+                  <span className="ml-1 text-[9px] uppercase tracking-wider text-emerald-700 font-semibold">CRON</span>
+                )}
+              </span>
+            )}
             <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
               title="Paste multiple email addresses at once"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">

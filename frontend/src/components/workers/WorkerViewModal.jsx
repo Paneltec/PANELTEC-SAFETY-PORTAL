@@ -3,8 +3,9 @@
 // `GET /api/workers/{id}` and displays identity, contact, personal,
 // availability, clients and certifications with expiring/expired highlights.
 import React, { useEffect, useState } from 'react';
-import { Award, Calendar, HardHat, Loader2, MapPin, Users, X } from 'lucide-react';
+import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
+import { SimproZipUploadModal } from './SimproZipUploadModal';
 
 const DAYS = [
   { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' },
@@ -85,6 +86,13 @@ export default function WorkerViewModal({ workerId, onClose }) {
   const [certs, setCerts] = useState([]);
   const [clientMeta, setClientMeta] = useState({});
   const [error, setError] = useState(null);
+  const [zipOpen, setZipOpen] = useState(false);  // v160.3.2 Simpro ZIP import
+  const [currentUser, setCurrentUser] = useState(null);
+
+  useEffect(() => {
+    // Hydrate the viewer identity once — used to gate the ZIP upload button.
+    api.get('/auth/me').then((r) => setCurrentUser(r.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -143,6 +151,22 @@ export default function WorkerViewModal({ workerId, onClose }) {
             <X size={16} />
           </button>
         </div>
+
+        {/* v160.3.2 — Simpro ZIP import quick-action bar */}
+        {!loading && worker && ['admin', 'hr_lead', 'hseq_lead'].includes((currentUser?.role || '').toLowerCase()) && (
+          <div className="px-6 py-2.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+            <div className="text-xs text-slate-500">
+              Attach certifications + documents in bulk via a Simpro ZIP export.
+            </div>
+            <button
+              onClick={() => setZipOpen(true)}
+              data-testid="worker-simpro-zip-btn"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-xs font-semibold hover:bg-emerald-800 shadow-sm"
+            >
+              <Upload size={12} /> Upload Simpro ZIP
+            </button>
+          </div>
+        )}
 
         <div className="px-6 py-4 overflow-y-auto space-y-4 flex-1">
           {loading && (
@@ -287,6 +311,16 @@ export default function WorkerViewModal({ workerId, onClose }) {
           </button>
         </div>
       </div>
+      {zipOpen && worker && (
+        <SimproZipUploadModal
+          worker={worker}
+          onClose={() => setZipOpen(false)}
+          onDone={() => {
+            // Refetch certs after commit
+            api.get(`/workers/${workerId}/certifications`).then((r) => setCerts(r.data || [])).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }
