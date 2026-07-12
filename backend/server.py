@@ -52,6 +52,7 @@ from integrations_simpro import router as simpro_router  # noqa: E402
 from integrations_simpro_workers import (  # noqa: E402
     router as simpro_workers_router,
     seed_cert_kinds_on_startup,
+    ensure_hr_dedup_index,
 )
 from simpro_zip_import import (  # noqa: E402
     router as simpro_zip_router,
@@ -324,6 +325,17 @@ async def on_startup():
         log.info("Cert reminder scan: %s", stats)
     except Exception as e:
         log.warning("Cert reminder scan failed at startup: %s", e)
+
+    # v160.3.1 — Simpro cert_kinds + licence_mapping seed load (idempotent).
+    try:
+        await seed_cert_kinds_on_startup()
+    except Exception as e:
+        log.warning("Simpro cert_kinds seed failed: %s", e)
+    # v160.3.3 — HR docs dedup index.
+    try:
+        await ensure_hr_dedup_index()
+    except Exception as e:
+        log.warning("HR dedup index setup failed: %s", e)
 
     # v151.1 — auto-install server tools (LibreOffice / Tesseract / Poppler)
     # if the container overlay has wiped them. See file_pdf.py for the full

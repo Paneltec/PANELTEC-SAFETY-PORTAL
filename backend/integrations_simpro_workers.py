@@ -96,6 +96,17 @@ async def seed_cert_kinds_on_startup() -> None:
              len(kinds), len(mapping))
 
 
+# v160.3.3 — Hash-dedup unique index for HR docs. Idempotent.
+async def ensure_hr_dedup_index() -> None:
+    try:
+        await db.worker_hr_documents.create_index(
+            [("worker_id", 1), ("sha256", 1)],
+            unique=True, sparse=True, name="uniq_worker_sha256",
+        )
+    except Exception as e:  # pragma: no cover
+        log.warning("HR dedup index creation failed: %s", e)
+
+
 # ─────────────────────────────────────────────────────────────
 # Simpro fetch (reuses config from the main integrations_simpro module)
 # ─────────────────────────────────────────────────────────────

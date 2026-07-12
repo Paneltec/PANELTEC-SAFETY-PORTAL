@@ -27,6 +27,7 @@ import {
 // Phase 4.7 — admin access controls (invite / PIN / reset / unlock).
 import AccessSection from '../components/auth/AccessSection';
 import AccessKebab from '../components/auth/AccessKebab';
+import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
 
 const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
 const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
@@ -147,6 +148,7 @@ export default function UsersManagement() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [bulkZipOpen, setBulkZipOpen] = useState(false);  // v160.3.3 — Bulk ZIP import
   const [refreshSimproOpen, setRefreshSimproOpen] = useState(false);  // v160.3.1 — Simpro Worker Sync
   const [lastSync, setLastSync] = useState(null);                     // v160.3.2 — last sync marker
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
@@ -236,6 +238,14 @@ export default function UsersManagement() {
                 )}
               </span>
             )}
+            <button
+              onClick={() => setBulkZipOpen(true)}
+              data-testid="bulk-simpro-zip-btn"
+              title="Bulk import Simpro ZIP exports (multiple workers at once)"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm"
+            >
+              <Download size={14} /> Bulk import ZIPs
+            </button>
             <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
               title="Paste multiple email addresses at once"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
@@ -484,6 +494,12 @@ export default function UsersManagement() {
       {refreshSimproOpen && (
         <RefreshFromSimproModal
           onClose={() => setRefreshSimproOpen(false)}
+          onDone={() => load()}
+        />
+      )}
+      {bulkZipOpen && (
+        <BulkSimproZipModal
+          onClose={() => setBulkZipOpen(false)}
           onDone={() => load()}
         />
       )}

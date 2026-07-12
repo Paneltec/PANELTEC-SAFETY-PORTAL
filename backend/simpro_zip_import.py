@@ -24,6 +24,7 @@ admin | hr_lead on read.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import re
@@ -51,10 +52,11 @@ DOC_EXTS = {".pdf", ".jpg", ".jpeg", ".png", ".webp", ".doc", ".docx"}
 
 FOLDER_ALIASES = {
     "certificates": "certificates", "certificate": "certificates", "certs": "certificates",
-    "expired": "expired", "old": "expired",
+    "expired": "expired", "old": "expired", "ood": "expired",
+    "expired ood": "expired",  # matches "EXPIRED / OOD" combined folder
     "inductions": "inductions", "induction": "inductions",
     "licences": "licences", "licenses": "licences", "licence": "licences",
-    "private confidential": "private",  # matches "PRIVATE & CONFIDENTIAL" after _norm
+    "private confidential": "private",
     "private and confidential": "private",
     "private": "private", "confidential": "private", "hr": "private",
     "photo": "photo", "photos": "photo",
@@ -66,14 +68,88 @@ def _norm(s: str) -> str:
 
 
 def _folder_key(path: str) -> Optional[str]:
-    """Return one of certificates|expired|inductions|licences|private|photo|None."""
-    for p in PurePosixPath(path).parts:
+    """Return one of certificates|expired|inductions|licences|private|photo|None.
+
+    Handles combined folder names like ``EXPIRED / OOD/`` (single path
+    part with slash-space) and nested ``CERTIFICATES/OOD/`` (OOD is a
+    sub-folder = expired classification wins over parent). We iterate
+    parts LAST-to-first so nested OOD wins over its parent.
+    """
+    parts = list(PurePosixPath(path).parts)
+    # Nested OOD promotes the parent to expired
+    for p in reversed(parts):
         if not p:
             continue
         n = _norm(p)
         if n in FOLDER_ALIASES:
             return FOLDER_ALIASES[n]
     return None
+
+
+# v160.3.3 — worker identification from ZIP contents.
+# Extracts likely name tokens from photo filenames + PDF filenames,
+# fuzzy-matches to portal workers.
+_NAME_STOPWORDS = {
+    "photo", "pic", "picture", "aa", "exp", "iss", "ood", "cert", "certificate",
+    "signed", "signature", "form", "letter", "policy", "employee", "employ",
+    "confidential", "private", "attachment", "document", "documents",
+    "induction", "licence", "license", "training", "refresher",
+}
+
+
+def _extract_name_tokens(zf: "zipfile.ZipFile") -> list[str]:
+    """Return name-like tokens from photo + PDF filenames."""
+    tokens: list[str] = []
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        base = PurePosixPath(info.filename).stem
+        norm = _norm(base)
+        # Only keep alphabetical words 3-20 chars
+        for w in norm.split():
+            if 3 <= len(w) <= 20 and w.isalpha() and w not in _NAME_STOPWORDS:
+                tokens.append(w)
+    return tokens
+
+
+async def _identify_worker(zip_bytes: bytes, org_id: str) -> tuple[Optional[dict], float, list[str]]:
+    """Return (best_worker, confidence, top_tokens). None if no confident match."""
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
+    except zipfile.BadZipFile:
+        return None, 0.0, []
+    tokens = _extract_name_tokens(zf)
+    if not tokens:
+        return None, 0.0, []
+    from collections import Counter
+    freq = Counter(tokens)
+    top = [t for t, _ in freq.most_common(6)]
+
+    best_worker, best_score = None, 0.0
+    async for w in db.workers.find({"org_id": org_id, "deleted_at": None},
+                                    {"_id": 0, "id": 1, "first_name": 1, "last_name": 1}):
+        fn = _norm(w.get("first_name") or "")
+        ln = _norm(w.get("last_name") or "")
+        if not (fn or ln):
+            continue
+        # Score = weighted overlap: full-name hit + initials hit
+        score = 0.0
+        for t in top:
+            if t == fn: score += 0.45
+            elif t == ln: score += 0.45
+            elif fn.startswith(t) or t.startswith(fn): score += 0.20
+            elif ln.startswith(t) or t.startswith(ln): score += 0.20
+        # Initials-only heuristic (AF, AH, AK, AG, DB)
+        initials_a = (fn[:1] + ln[:1]).lower() if fn and ln else ""
+        initials_b = (ln[:1] + fn[:1]).lower() if fn and ln else ""
+        for t in freq:
+            if t in (initials_a, initials_b) and len(t) == 2:
+                score += 0.10 * min(freq[t], 5)
+        if score > best_score:
+            best_worker, best_score = w, score
+    if best_score < 0.5:
+        return None, round(best_score, 3), top
+    return best_worker, round(best_score, 3), top
 
 
 async def _load_slug_index() -> list[tuple[str, str]]:
@@ -160,10 +236,17 @@ async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
             continue
 
         if folder == "private":
+            sha = hashlib.sha256(zf.read(name)).hexdigest()
+            # v160.3.3 — hash dedup for HR docs
+            existing_hr = await db.worker_hr_documents.find_one(
+                {"worker_id": worker_id, "org_id": org_id, "sha256": sha, "deleted_at": None}
+            )
             plan_files.append({
                 "filename": base, "zip_path": name, "folder": "private",
-                "size": info.file_size, "action": "hr_folder",
+                "size": info.file_size,
+                "action": "hr_dedup_skip" if existing_hr else "hr_folder",
                 "matched_slug": None, "match_score": 0.0, "attach_to_cert_id": None,
+                "sha256": sha,
             })
             continue
 
@@ -191,6 +274,7 @@ async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
         "attach":       sum(1 for p in plan_files if p["action"] == "attach"),
         "create":       sum(1 for p in plan_files if p["action"] == "create"),
         "hr_folder":    sum(1 for p in plan_files if p["action"] == "hr_folder"),
+        "hr_dedup_skip": sum(1 for p in plan_files if p["action"] == "hr_dedup_skip"),
         "unmatched":    sum(1 for p in plan_files if p["action"] == "unmatched"),
         "skipped":      sum(1 for p in plan_files if p["action"] == "skip_unsupported"),
         "photo":        1 if photo else 0,
@@ -243,11 +327,14 @@ async def _commit_zip(
         )
         gid_str = str(gid)
 
+        if p["action"] == "hr_dedup_skip":
+            continue  # already exists — skip write
         if p["action"] == "hr_folder":
             doc = {
                 "id": new_id(), "org_id": org_id, "worker_id": worker_id,
                 "filename": p["filename"], "folder": "private",
                 "gridfs_id": gid_str, "size": p["size"],
+                "sha256": p.get("sha256"),
                 "source": "simpro_zip", "uploaded_by": user_id,
                 "uploaded_at": ts, "deleted_at": None,
             }
@@ -349,50 +436,64 @@ async def worker_zip_import(
     return {"dry_run": False, "worker_id": worker_id, "plan": plan, "result": result}
 
 
+@bulk_router.post("/identify-zip")
+async def identify_zip(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_roles("admin", "hseq_lead")),
+):
+    """v160.3.3 — quick worker-identification probe. Reads a single ZIP,
+    peeks at photo + PDF filenames, returns best-worker candidate + top
+    name tokens. Used by the BulkSimproZipModal to render an auto-match
+    row before the user confirms."""
+    raw = await file.read()
+    w, score, tokens = await _identify_worker(raw, user["org_id"])
+    return {
+        "filename": file.filename,
+        "size": len(raw),
+        "matched_worker": ({"id": w["id"],
+                              "name": f"{w.get('first_name','')} {w.get('last_name','')}".strip()}
+                             if w else None),
+        "match_score": score,
+        "top_name_tokens": tokens,
+    }
+
+
 @bulk_router.post("/bulk-zip-import")
 async def bulk_zip_import(
     files: list[UploadFile] = File(...),
     dry_run: int = Query(1),
     user: dict = Depends(require_roles("admin", "hseq_lead")),
 ):
-    """Multiple ZIPs at once. Filename e.g. `Aaron Foster - Documents.zip`
-    → fuzzy-match to a worker by name. Same preview + commit flow per worker.
+    """Multiple ZIPs at once. v160.3.3 — worker identification now uses
+    ZIP contents (photo + PDF filenames) instead of ZIP filename, since
+    Simpro's export names them all `employee_attachments.zip`.
     """
     org_id = user["org_id"]
-    # Load workers for matching
-    workers: list[dict] = []
-    async for w in db.workers.find({"org_id": org_id, "deleted_at": None},
-                                    {"_id": 0, "id": 1, "first_name": 1, "last_name": 1}):
-        workers.append(w)
     per_zip = []
     for f in files:
         raw = await f.read()
-        stem = _norm(PurePosixPath(f.filename or "unknown.zip").stem)
-        stem = re.sub(r"\bdocuments?\b|\bsimpro\b|\bemployee\b", "", stem).strip()
-        # Match to worker by combined first+last name
-        best_worker, best_score = None, 0.0
-        for w in workers:
-            candidate = _norm(f"{w.get('first_name','')} {w.get('last_name','')}")
-            score = SequenceMatcher(None, stem, candidate).ratio()
-            if score > best_score:
-                best_worker, best_score = w, score
-        if best_score < 0.6 or not best_worker:
+        matched, score, tokens = await _identify_worker(raw, org_id)
+        if not matched:
             per_zip.append({"filename": f.filename, "matched_worker": None,
-                             "match_score": round(best_score, 3),
-                             "error": "No worker match ≥ 0.6"})
+                             "match_score": score, "top_name_tokens": tokens,
+                             "error": "No confident worker match (< 0.5)"})
             continue
         try:
-            plan = await _plan_zip(raw, best_worker["id"], org_id)
+            plan = await _plan_zip(raw, matched["id"], org_id)
         except HTTPException as e:
-            per_zip.append({"filename": f.filename, "matched_worker": best_worker,
-                             "match_score": round(best_score, 3), "error": e.detail})
+            per_zip.append({"filename": f.filename,
+                             "matched_worker": {"id": matched["id"],
+                                                  "name": f"{matched.get('first_name','')} {matched.get('last_name','')}".strip()},
+                             "match_score": score, "error": e.detail})
             continue
         entry = {"filename": f.filename,
-                  "matched_worker": {"id": best_worker["id"],
-                                       "name": f"{best_worker.get('first_name','')} {best_worker.get('last_name','')}".strip()},
-                  "match_score": round(best_score, 3), "plan": plan}
+                  "matched_worker": {"id": matched["id"],
+                                       "name": f"{matched.get('first_name','')} {matched.get('last_name','')}".strip()},
+                  "match_score": score,
+                  "top_name_tokens": tokens,
+                  "plan": plan}
         if not dry_run:
-            entry["result"] = await _commit_zip(raw, plan, best_worker["id"], org_id, user["id"], _fs_bucket())
+            entry["result"] = await _commit_zip(raw, plan, matched["id"], org_id, user["id"], _fs_bucket())
         per_zip.append(entry)
     return {"dry_run": bool(dry_run), "zips": per_zip,
              "total_zips": len(files),
