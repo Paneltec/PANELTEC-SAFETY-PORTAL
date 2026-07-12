@@ -102,20 +102,83 @@ function CompanyChip({ label }) {
   return <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${tints[label] || tints.Manual}`}>{label}</span>;
 }
 
-function Section({ icon: Icon, title, badge, defaultOpen = false, testid, children }) {
+function Section({ icon: Icon, title, badge, badges, defaultOpen = false, testid, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white" data-testid={testid}>
       <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left flex-wrap"
         data-testid={`${testid}-toggle`}>
         <Icon size={14} className="text-slate-500" />
-        <span className="text-sm font-semibold text-slate-800 flex-1">{title}</span>
+        <span className="text-sm font-semibold text-slate-800 mr-1">{title}</span>
+        {/* v160.3.4c — richer summary pills via the `badges` node prop. The
+             legacy single `badge` string still renders for backwards compat. */}
+        {badges}
         {badge ? <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">{badge}</span> : null}
-        <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && <div className="px-4 py-4 border-t border-slate-200">{children}</div>}
     </div>
+  );
+}
+
+// v160.3.4c — Compact chip used in EditModal section headers, mirrors the
+// styling of the read-only VIEW modal so both flows look consistent.
+function EditSummaryPill({ tone = 'neutral', children, testid, title }) {
+  const tones = {
+    neutral:  'bg-[#e6eff9] text-[#1e4a8c] border-[#b9d2ec]',
+    simpro:   'bg-emerald-50 text-emerald-800 border-emerald-200',
+    manual:   'bg-slate-100 text-slate-600 border-slate-200',
+    pending:  'bg-amber-50 text-amber-800 border-amber-200',
+    expired:  'bg-rose-50 text-rose-700 border-rose-200',
+    warn:     'bg-orange-50 text-orange-700 border-orange-200',
+    hr:       'bg-sky-50 text-sky-800 border-sky-200',
+    violet:   'bg-violet-50 text-violet-800 border-violet-200',
+  };
+  const cls = tones[tone] || tones.neutral;
+  return (
+    <span
+      title={title}
+      data-testid={testid}
+      className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border ${cls}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+// v160.3.4c — Photo for the EditModal header. Mirrors WorkerViewModal.WorkerPhoto
+// so both entry points render the same headshot. Falls back to a monogram tile.
+function EditWorkerPhoto({ worker }) {
+  const [src, setSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
+    import('../lib/downloadUrl')
+      .then(({ filesUrl }) => filesUrl(worker.photo_url))
+      .then((u) => { if (alive) setSrc(u); })
+      .catch(() => { if (alive) setBroken(true); });
+    return () => { alive = false; };
+  }, [worker?.photo_url]);
+  if (!worker?.photo_url || broken) {
+    return (
+      <div
+        className="w-14 h-14 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-base shrink-0"
+        data-testid="worker-edit-photo-placeholder"
+      >
+        {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src || ''}
+      alt=""
+      onError={() => setBroken(true)}
+      className="w-14 h-14 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
+      data-testid="worker-edit-photo"
+    />
   );
 }
 
@@ -258,8 +321,29 @@ function CertificationsPanel({ workerId, canEdit }) {
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
+  // v160.3.4c — preload the cert list so the collapsed header can show
+  // accurate source/status pills without waiting for the panel to expand.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { if (open) load(); }, [open, workerId]);
+  useEffect(() => { load(); }, [workerId]);
+
+  // v160.3.4c — same aggregation formula as WorkerViewModal + EditModal.
+  const certAgg = useMemo(() => {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 86400_000);
+    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
+    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0;
+    for (const c of rows) {
+      if (simproSet.has(c.source)) simpro++; else manual++;
+      if (c.pending_review) pending++;
+      if (!c.doc_file_id) missing++;
+      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
+      if (exp && !isNaN(exp)) {
+        if (exp < now) expired++;
+        else if (exp <= soon) expiringSoon++;
+      }
+    }
+    return { total: rows.length, simpro, manual, pending, missing, expired, expiringSoon };
+  }, [rows]);
 
   const upload = async (fileList) => {
     if (!fileList || !fileList.length) return;
@@ -311,14 +395,42 @@ function CertificationsPanel({ workerId, canEdit }) {
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white" data-testid="section-certifications">
       <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left"
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left flex-wrap"
         data-testid="section-certifications-toggle">
         <Award size={14} className="text-slate-500" />
-        <span className="text-sm font-semibold text-slate-800 flex-1">Certifications</span>
-        {rows.length > 0 && (
-          <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">{rows.length}</span>
+        <span className="text-sm font-semibold text-slate-800 mr-1">Certifications</span>
+        {/* v160.3.4c — rich summary pills mirroring WorkerViewModal. */}
+        {certAgg.total === 0 ? (
+          <EditSummaryPill tone="manual" testid="certs-panel-empty">No items</EditSummaryPill>
+        ) : (
+          <EditSummaryPill testid="certs-panel-total">{certAgg.total} items</EditSummaryPill>
         )}
-        <ChevronDown size={14} className={`text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {certAgg.simpro > 0 && (
+          <EditSummaryPill tone="simpro" testid="certs-panel-simpro">Simpro · {certAgg.simpro}</EditSummaryPill>
+        )}
+        {certAgg.manual > 0 && (
+          <EditSummaryPill tone="manual" testid="certs-panel-manual">Manual · {certAgg.manual}</EditSummaryPill>
+        )}
+        {certAgg.pending > 0 && (
+          <EditSummaryPill tone="pending" testid="certs-panel-pending">Pending · {certAgg.pending}</EditSummaryPill>
+        )}
+        {certAgg.missing > 0 && (
+          <EditSummaryPill tone="warn" testid="certs-panel-missing"
+            title={`${certAgg.missing} cert(s) have no attached file`}>
+            <AlertTriangle size={10} /> {certAgg.missing} missing file
+          </EditSummaryPill>
+        )}
+        {certAgg.expired > 0 && (
+          <EditSummaryPill tone="expired" testid="certs-panel-expired">
+            {certAgg.expired} expired
+          </EditSummaryPill>
+        )}
+        {certAgg.expiringSoon > 0 && (
+          <EditSummaryPill tone="pending" testid="certs-panel-expiring">
+            {certAgg.expiringSoon} expiring
+          </EditSummaryPill>
+        )}
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
         <div className="px-4 py-4 border-t border-slate-200 space-y-3">
@@ -764,19 +876,143 @@ function EditModal({ worker, onClose, onSaved }) {
 
   const enabledDayCount = Object.values(f.availability).filter((r) => r.enabled).length;
 
+  // v160.3.4c — Aggregate data for the section summary chips. Mirrors the
+  // treatment on the read-only VIEW modal so admins get the same at-a-glance
+  // signal from either entry point.
+  const [aggCerts, setAggCerts] = useState(null);
+  const [aggHr, setAggHr] = useState(null);
+  const [aggUnmatched, setAggUnmatched] = useState(null);
+  useEffect(() => {
+    if (!worker?.id) return;
+    let alive = true;
+    api.get(`/workers/${worker.id}/certifications`)
+      .then((r) => { if (alive) setAggCerts(r.data || []); })
+      .catch(() => { if (alive) setAggCerts([]); });
+    api.get(`/workers/${worker.id}/hr-documents`)
+      .then((r) => { if (alive) setAggHr((r.data?.documents || []).length); })
+      .catch(() => { if (alive) setAggHr(null); });
+    api.get(`/workers/${worker.id}/unmatched-documents`)
+      .then((r) => { if (alive) setAggUnmatched((r.data?.documents || []).length); })
+      .catch(() => { if (alive) setAggUnmatched(null); });
+    return () => { alive = false; };
+  }, [worker?.id]);
+  const certAgg = useMemo(() => {
+    const arr = aggCerts || [];
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 86400_000);
+    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
+    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0, inductions = 0;
+    for (const c of arr) {
+      if (simproSet.has(c.source)) simpro++; else manual++;
+      if (c.pending_review) pending++;
+      if (!c.doc_file_id) missing++;
+      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
+      if (exp && !isNaN(exp)) {
+        if (exp < now) expired++;
+        else if (exp <= soon) expiringSoon++;
+      }
+      const slug = (c.cert_kind_slug || '').toLowerCase();
+      const nm = (c.name || '').toLowerCase();
+      if (slug.includes('induction') || nm.includes('induction')) inductions++;
+    }
+    return { total: arr.length, simpro, manual, pending, missing, expired, expiringSoon, inductions };
+  }, [aggCerts]);
+
+  const personalFilled = [
+    f.birth_date, f.country, f.state, f.postal_code, f.street_address,
+  ].filter(Boolean).length;
+
+  const certBadges = (
+    <>
+      {certAgg.total === 0 ? (
+        <EditSummaryPill tone="manual" testid="edit-section-certs-empty">No items</EditSummaryPill>
+      ) : (
+        <EditSummaryPill testid="edit-section-certs-total">{certAgg.total} items</EditSummaryPill>
+      )}
+      {certAgg.simpro > 0 && (
+        <EditSummaryPill tone="simpro" testid="edit-section-certs-simpro">Simpro · {certAgg.simpro}</EditSummaryPill>
+      )}
+      {certAgg.manual > 0 && (
+        <EditSummaryPill tone="manual" testid="edit-section-certs-manual">Manual · {certAgg.manual}</EditSummaryPill>
+      )}
+      {certAgg.pending > 0 && (
+        <EditSummaryPill tone="pending" testid="edit-section-certs-pending">Pending · {certAgg.pending}</EditSummaryPill>
+      )}
+      {certAgg.missing > 0 && (
+        <EditSummaryPill tone="warn" testid="edit-section-certs-missing"
+          title={`${certAgg.missing} cert(s) have no attached file`}>
+          <AlertTriangle size={10} /> {certAgg.missing} missing file
+        </EditSummaryPill>
+      )}
+      {certAgg.expired > 0 && (
+        <EditSummaryPill tone="expired" testid="edit-section-certs-expired">
+          {certAgg.expired} expired
+        </EditSummaryPill>
+      )}
+      {certAgg.expiringSoon > 0 && (
+        <EditSummaryPill tone="pending" testid="edit-section-certs-expiring">
+          {certAgg.expiringSoon} expiring
+        </EditSummaryPill>
+      )}
+    </>
+  );
+  const inductionsBadges = certAgg.inductions > 0 ? (
+    <EditSummaryPill tone="violet" testid="edit-section-inductions-count">
+      {certAgg.inductions} inductions
+    </EditSummaryPill>
+  ) : null;
+  const personalBadges = (
+    <>
+      {personalFilled > 0 ? (
+        <EditSummaryPill testid="edit-section-personal-filled">
+          {personalFilled} / 5 fields set
+        </EditSummaryPill>
+      ) : (
+        <EditSummaryPill tone="manual" testid="edit-section-personal-empty">Not set</EditSummaryPill>
+      )}
+      {aggHr != null && aggHr > 0 && (
+        <EditSummaryPill tone="hr" testid="edit-section-personal-hr">
+          HR docs · {aggHr}
+        </EditSummaryPill>
+      )}
+      {aggUnmatched != null && aggUnmatched > 0 && (
+        <EditSummaryPill tone="warn" testid="edit-section-personal-unmatched"
+          title="Documents awaiting triage on the read-only view">
+          <AlertTriangle size={10} /> Unmatched · {aggUnmatched}
+        </EditSummaryPill>
+      )}
+    </>
+  );
+  const availabilityBadges = (
+    enabledDayCount === 0
+      ? <EditSummaryPill tone="manual" testid="edit-section-avail-empty">Not set</EditSummaryPill>
+      : <EditSummaryPill testid="edit-section-avail-count">{enabledDayCount} day{enabledDayCount === 1 ? '' : 's'}</EditSummaryPill>
+  );
+  const clientsBadges = (
+    (f.client_ids || []).length === 0
+      ? <EditSummaryPill tone="manual" testid="edit-section-clients-empty">0</EditSummaryPill>
+      : <EditSummaryPill testid="edit-section-clients-count">{f.client_ids.length} assigned</EditSummaryPill>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="worker-edit-modal">
       <form onSubmit={submit} className="w-full max-w-5xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9]">
-          <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
-          <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>
-          {!isNew && (
-            <p className="mt-1.5 text-xs text-slate-600/80 leading-relaxed max-w-3xl">
-              Manage identity, address, availability, client assignments and certifications.
-              Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.
-            </p>
-          )}
+          <div className="flex items-start gap-3">
+            {/* v160.3.4c — photo mirrored from the read-only VIEW modal */}
+            {!isNew && <EditWorkerPhoto worker={worker} />}
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">{isNew ? 'New worker' : 'Edit worker'}</div>
+              <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5">{isNew ? 'Add worker' : fullName(worker)}</h2>
+              {!isNew && (
+                <p className="mt-1.5 text-xs text-slate-600/80 leading-relaxed max-w-3xl">
+                  Manage identity, address, availability, client assignments and certifications.
+                  Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
         {isSimpro && (
           <div className="px-6 py-2 text-xs text-[#1e4a8c] bg-[#e6eff9]/60 border-b border-[#b9d2ec] flex items-center gap-1.5">
@@ -817,7 +1053,7 @@ function EditModal({ worker, onClose, onSaved }) {
 
           {/* Personal */}
           <Section icon={MapPin} title="Personal" testid="section-personal"
-            badge={[f.state, f.suburb].filter(Boolean).join(', ') || null}
+            badges={personalBadges}
             defaultOpen={false}>
             <div className="grid grid-cols-2 gap-3">
               <label><span className="block text-xs font-medium text-slate-700 mb-1">Birth date</span>
@@ -851,7 +1087,7 @@ function EditModal({ worker, onClose, onSaved }) {
 
           {/* Availability */}
           <Section icon={Calendar} title="Availability" testid="section-availability"
-            badge={enabledDayCount > 0 ? `${enabledDayCount} day${enabledDayCount === 1 ? '' : 's'}` : null}
+            badges={availabilityBadges}
             defaultOpen={false}>
             <div className="space-y-1.5">
               {DAYS.map(dayRow)}
@@ -863,7 +1099,7 @@ function EditModal({ worker, onClose, onSaved }) {
 
           {/* Clients */}
           <Section icon={Users} title="Clients" testid="section-clients"
-            badge={f.client_ids.length ? `${f.client_ids.length} selected` : null}
+            badges={clientsBadges}
             defaultOpen={false}>
             <div className="text-xs text-slate-500 mb-2">Populate from SimPRO:</div>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -903,7 +1139,8 @@ function EditModal({ worker, onClose, onSaved }) {
 
           {/* Phase 3.11 — Inductions snapshot from the live matrix */}
           {!isNew && (
-            <Section icon={Award} title="Inductions" testid="section-inductions">
+            <Section icon={Award} title="Inductions" testid="section-inductions"
+              badges={inductionsBadges}>
               <WorkerInductionsCard workerId={worker.id} workerName={[worker.first_name, worker.last_name].filter(Boolean).join(' ')} />
             </Section>
           )}
