@@ -1267,6 +1267,10 @@ export default function Workers() {
   const [tab, setTab] = useState('directory');
   // Per-worker induction-status chip map (loaded once with the matrix call).
   const [chipByWorker, setChipByWorker] = useState({});
+  // v160.3.6 — Per-worker Simpro-ZIP application status. Powers the
+  // "ZIP APPLIED / ZIP MISSING / MANUAL" row chip so admins can spot
+  // the ZIP-missing backlog at a glance.
+  const [zipStatusByWorker, setZipStatusByWorker] = useState({});
   // Phase 4.7.1 — map of email → { id, status } so we can render the
   // AccessKebab on linked rows or a "Create login" button otherwise.
   const [userByEmail, setUserByEmail] = useState({});
@@ -1295,6 +1299,12 @@ export default function Workers() {
         const m = {}; (mx.data?.rows || []).forEach((r) => { m[r.id] = r.chip; });
         setChipByWorker(m);
       } catch (_) { /* silent */ }
+      // v160.3.6 — pull ZIP status alongside so the chip row can render
+      // ZIP APPLIED / MISSING / MANUAL. Admin-gated on the server.
+      try {
+        const z = await api.get('/integrations/simpro/workers/zip-status');
+        setZipStatusByWorker(z.data?.workers || {});
+      } catch (_) { /* worker/supervisor may 403 — expected */ }
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -1493,14 +1503,57 @@ export default function Workers() {
                           </span>
                         ) : null}
                         {(() => {
+                          // v160.3.6 — Simpro ZIP application status chip.
+                          const zs = zipStatusByWorker[w.id];
+                          if (!zs) return null;
+                          if (!zs.simpro_sourced) {
+                            return (
+                              <span data-testid={`chip-zip-${w.id}`}
+                                title="Worker added manually — Simpro ZIP not applicable"
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                                📦 MANUAL
+                              </span>
+                            );
+                          }
+                          if (zs.zip_applied) {
+                            return (
+                              <span data-testid={`chip-zip-${w.id}`}
+                                title={`Simpro ZIP imported — ${zs.cert_count} cert(s) on file`}
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                📦 ZIP APPLIED
+                              </span>
+                            );
+                          }
+                          return (
+                            <span data-testid={`chip-zip-${w.id}`}
+                              title="Simpro-sourced worker with NO ZIP imported yet — click Edit → Upload Simpro ZIP"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                              📦 ZIP MISSING
+                            </span>
+                          );
+                        })()}
+                        {(() => {
                           const v = chipByWorker[w.id];
-                          // Show explicit "No data" pill when worker is in the dataset but has zero cells.
+                          const zs = zipStatusByWorker[w.id];
+                          const certCount = zs?.cert_count || 0;
+                          // v160.3.6 — Rename the ambiguous "No data" chip. If the
+                          // worker has certs on file but no matrix cell status, show
+                          // the cert count. If zero certs, be explicit about that.
                           if (!v || v === 'unknown') {
+                            if (certCount > 0) {
+                              return (
+                                <span data-testid={`chip-induction-${w.id}`}
+                                  title={`${certCount} cert(s) on file — matrix column mapping pending`}
+                                  className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]">
+                                  <Award size={9} /> {certCount} CERTS
+                                </span>
+                              );
+                            }
                             return (
                               <span data-testid={`chip-induction-${w.id}`}
-                                title="No induction data on file for this worker"
+                                title="No certifications on file"
                                 className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-dashed border-slate-200">
-                                <Award size={9} /> No data
+                                <Award size={9} /> 0 CERTS
                               </span>
                             );
                           }

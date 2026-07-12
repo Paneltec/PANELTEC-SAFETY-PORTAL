@@ -501,7 +501,7 @@ async def induction_matrix(user: dict = Depends(get_current_user)):
         cols.append({
             "column_key": row["_id"]["k"],
             "header": row["_id"]["h"],
-            "category": row["_id"]["c"] or "competency",
+            "category": row["_id"].get("c") or "competency",
         })
 
     # Cells.

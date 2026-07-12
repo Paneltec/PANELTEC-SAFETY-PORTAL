@@ -596,6 +596,18 @@ async def _commit_zip(
             written_files.append({"cert_id": cert_id, "filename": p["filename"],
                                     "action": "attach", "gridfs_id": gid_str})
         else:  # create
+            # v160.3.6 — opportunistically link to a matrix column so the
+            # Inductions matrix lights up immediately (no post-import
+            # backfill required for freshly-imported certs).
+            _slug_hint = _induction_slug(p["filename"].rsplit(".", 1)[0])
+            _col_key = None
+            if _slug_hint:
+                _col = await db.induction_columns.find_one(
+                    {"org_id": org_id, "column_key": _slug_hint},
+                    {"_id": 0, "column_key": 1},
+                )
+                if _col:
+                    _col_key = _col["column_key"]
             new_cert = {
                 "id": new_id(), "org_id": org_id, "worker_id": worker_id,
                 "name": p["filename"].rsplit(".", 1)[0][:160],
@@ -607,6 +619,7 @@ async def _commit_zip(
                 "notes": "",
                 "source": "simpro_zip",
                 "cert_kind_slug": p.get("matched_slug"),
+                "column_key": _col_key,
                 "pending_review": True,
                 "expired_folder": bool(p.get("is_expired_folder")),
                 "created_by": user_id,
@@ -770,6 +783,160 @@ async def list_hr_documents(
         d.pop("_id", None)
         rows.append(d)
     return {"documents": rows}
+
+
+# v160.3.6 — Induction matrix backfill + workers zip-status derivation.
+
+def _induction_slug(name: str) -> str:
+    """Kebab-case a cert name for fuzzy induction matching."""
+    s = re.sub(r"[^a-zA-Z0-9]+", "-", (name or "").lower()).strip("-")
+    # Drop noise + numeric-only tokens.
+    parts = [p for p in s.split("-") if p and not p.isdigit()]
+    return "-".join(parts)
+
+
+@bulk_router.post("/inductions/backfill-matrix-links")
+async def backfill_matrix_links(
+    body: dict = Body(default_factory=dict),
+    user: dict = Depends(require_roles("admin", "hseq_lead")),
+):
+    """One-shot migration that links Simpro-imported certs to induction
+    matrix columns via slug fuzzy match. Idempotent. If the org has zero
+    matrix columns, they're auto-seeded from the observed induction cert
+    names.
+
+    Body: `{"dry_run": true|false}` — dry_run=true only reports counts
+    without writing. Default is dry_run=false (writes).
+    """
+    org = user["org_id"]
+    dry_run = bool((body or {}).get("dry_run", False))
+    ts = now_iso()
+
+    # 1. Load existing induction columns for this org.
+    existing_cols: dict[str, dict] = {}  # slug -> {id, column_key, header}
+    async for c in db.induction_columns.find({"org_id": org}, {"_id": 0}):
+        header = (c.get("header") or "").strip()
+        slug = _induction_slug(header)
+        if slug:
+            existing_cols[slug] = c
+
+    # 2. Scan unlinked induction-family certs.
+    unlinked: list[dict] = []
+    async for cert in db.worker_certifications.find(
+        {"org_id": org, "deleted_at": None,
+         "$or": [{"column_key": None}, {"column_key": {"$exists": False}}]},
+        {"_id": 0, "id": 1, "name": 1, "cert_kind_slug": 1, "worker_id": 1},
+    ):
+        nm = (cert.get("name") or "").lower()
+        slug = (cert.get("cert_kind_slug") or "").lower()
+        if "induction" in nm or "induction" in slug \
+           or any(k in nm for k in ("licence", "license", "card", "ticket",
+                                     "cpr", "first aid", "white card")):
+            unlinked.append(cert)
+
+    # 3. Auto-seed missing columns from observed cert names when the org
+    #    has fewer than 20 columns (arbitrary "empty catalogue" threshold).
+    seeded = 0
+    if len(existing_cols) < 20:
+        seen_slugs: dict[str, str] = {}
+        for c in unlinked:
+            seed_slug = _induction_slug(c.get("name") or "")
+            if seed_slug and seed_slug not in existing_cols and seed_slug not in seen_slugs:
+                seen_slugs[seed_slug] = c.get("name") or seed_slug
+        # Cap to top-30 by cert-count occurrence to avoid catalogue explosion.
+        slug_counts: dict[str, int] = {}
+        for c in unlinked:
+            s = _induction_slug(c.get("name") or "")
+            if s and s not in existing_cols:
+                slug_counts[s] = slug_counts.get(s, 0) + 1
+        for slug in sorted(slug_counts.keys(), key=lambda k: -slug_counts[k])[:30]:
+            header = seen_slugs.get(slug, slug).strip()
+            column_key = slug
+            category = "site_induction" if "induction" in slug else "competency"
+            row = {
+                "id": new_id(), "org_id": org, "header": header,
+                "column_key": column_key, "category": category,
+                "seed_source": "auto_backfill_v160_3_6",
+                "created_by": user["id"], "created_at": ts, "updated_at": ts,
+            }
+            if not dry_run:
+                await db.induction_columns.insert_one(row)
+            existing_cols[slug] = row
+            seeded += 1
+
+    # 4. Fuzzy-link each unlinked cert to a column (threshold 0.85).
+    linked = 0
+    per_worker: dict[str, int] = {}
+    slug_list = list(existing_cols.keys())
+    for cert in unlinked:
+        cslug = _induction_slug(cert.get("name") or "")
+        if not cslug:
+            continue
+        # Exact hit first.
+        best_slug, best_score = None, 0.0
+        if cslug in existing_cols:
+            best_slug, best_score = cslug, 1.0
+        else:
+            for s in slug_list:
+                r = SequenceMatcher(None, cslug, s).ratio()
+                if r > best_score:
+                    best_slug, best_score = s, r
+        if best_slug and best_score >= 0.85:
+            if not dry_run:
+                await db.worker_certifications.update_one(
+                    {"id": cert["id"]},
+                    {"$set": {"column_key": existing_cols[best_slug]["column_key"],
+                              "updated_at": ts}},
+                )
+            linked += 1
+            per_worker[cert["worker_id"]] = per_worker.get(cert["worker_id"], 0) + 1
+    return {
+        "dry_run": dry_run,
+        "matrix_columns_created": seeded,
+        "matrix_columns_total": len(existing_cols),
+        "certs_scanned": len(unlinked),
+        "certs_linked": linked,
+        "certs_still_unlinked": len(unlinked) - linked,
+        "workers_touched": len(per_worker),
+    }
+
+
+@bulk_router.get("/zip-status")
+async def workers_zip_status(user: dict = Depends(require_roles("admin", "hseq_lead", "supervisor"))):
+    """Return per-worker Simpro-ZIP application status. Powers the
+    Workers-list `ZIP APPLIED / ZIP MISSING / MANUAL` pill."""
+    org = user["org_id"]
+    # Aggregate cert counts per worker for the ZIP-sourced set.
+    pipeline = [
+        {"$match": {"org_id": org, "deleted_at": None}},
+        {"$group": {
+            "_id": "$worker_id",
+            "cert_count": {"$sum": 1},
+            "zip_certs": {"$sum": {
+                "$cond": [
+                    {"$in": ["$source", ["simpro_zip", "simpro_zip_reclassified"]]},
+                    1, 0,
+                ]}},
+        }},
+    ]
+    by_worker: dict[str, dict] = {}
+    async for row in db.worker_certifications.aggregate(pipeline):
+        by_worker[row["_id"]] = {"cert_count": row["cert_count"],
+                                   "zip_certs": row["zip_certs"]}
+    out: dict[str, dict] = {}
+    async for w in db.workers.find(
+        {"org_id": org, "deleted_at": None},
+        {"_id": 0, "id": 1, "simpro_employee_id": 1, "photo_gridfs_id": 1},
+    ):
+        agg = by_worker.get(w["id"], {"cert_count": 0, "zip_certs": 0})
+        simpro_sourced = w.get("simpro_employee_id") is not None
+        zip_applied = bool(agg["zip_certs"] > 0 or w.get("photo_gridfs_id"))
+        out[w["id"]] = {
+            "cert_count": agg["cert_count"],
+            "zip_applied": zip_applied,
+            "simpro_sourced": simpro_sourced,
+        }
+    return {"workers": out}
 
 
 # ─────────────────────────────────────────────────────────────
