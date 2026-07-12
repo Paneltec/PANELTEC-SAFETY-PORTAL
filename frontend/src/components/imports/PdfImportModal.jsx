@@ -8,7 +8,7 @@
 // Batch summary at the bottom + per-row "View" link that navigates to
 // the target Capture tab.
 import React, { useCallback, useRef, useState } from 'react';
-import { Upload, CheckCircle2, XCircle, AlertCircle, Loader2, ExternalLink, X } from 'lucide-react';
+import { Upload, CheckCircle2, XCircle, AlertCircle, Loader2, ExternalLink, X, Info, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import api, { apiError } from '../../lib/api';
@@ -115,6 +115,62 @@ export default function PdfImportModal({ open, onClose, onImported }) {
           </button>
         </div>
         <div className="p-5 overflow-y-auto space-y-4 flex-1">
+          {/* v160.3.7b — Purpose + collapsible how-it-works / when-to-use */}
+          <div
+            data-testid="pdf-import-intro"
+            className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2.5">
+            <div className="flex gap-2.5">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-700 shrink-0">
+                <Info size={14} />
+              </span>
+              <p className="text-xs text-slate-700 leading-relaxed">
+                Bulk-imports historical filled-in PDF forms (pre-starts, SSRAs,
+                hazard reports, inspections, incidents, etc.) that were captured
+                on paper or in older systems, and turns them back into structured
+                Paneltec form submissions. Use this when migrating archived
+                compliance records into your compliance archive OR when catching
+                up after a period of offline paper-based capture.
+              </p>
+            </div>
+
+            <details className="group rounded-lg border border-slate-200 bg-white" data-testid="pdf-import-howitworks">
+              <summary className="list-none cursor-pointer select-none flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 hover:bg-slate-50">
+                <ChevronRight size={12} className="transition-transform group-open:rotate-90 text-slate-500" />
+                How it works
+              </summary>
+              <ol className="px-4 pb-3 pt-1 text-xs text-slate-600 leading-relaxed list-decimal ml-4 space-y-1">
+                <li><strong>Drop or browse</strong> — select one or more legacy PDF files (10&nbsp;MB per file max, multi-file OK).</li>
+                <li><strong>Automatic classification</strong> — each PDF is matched to its Paneltec form template by looking at document headers and known field patterns.</li>
+                <li><strong>Deep-parser extraction</strong> — checkbox / radio strings, dates, worker names, site names, plant IDs and form-specific fields are pulled out and mapped to the target template&apos;s field schema (currently up to ~90 % coverage on the standard Paneltec templates).</li>
+                <li><strong>Filed into the archive</strong> — each PDF becomes a <code className="px-1 py-0.5 rounded bg-slate-100 text-[10px]">form_submissions</code> row viewable under the Capture tab for that form type, alongside your day-to-day mobile submissions. The original PDF is preserved as an attachment.</li>
+                <li><strong>Review anything unmatched</strong> — anything the parser couldn&apos;t confidently classify lands in the &ldquo;Unmatched captures&rdquo; triage list for admin review.</li>
+              </ol>
+            </details>
+
+            <details className="group rounded-lg border border-slate-200 bg-white" data-testid="pdf-import-whentouse">
+              <summary className="list-none cursor-pointer select-none flex items-center gap-1.5 px-3 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-700 hover:bg-slate-50">
+                <ChevronRight size={12} className="transition-transform group-open:rotate-90 text-slate-500" />
+                When to use
+              </summary>
+              <ul className="px-4 pb-3 pt-1 text-xs text-slate-600 leading-relaxed list-disc ml-4 space-y-1">
+                <li>Migrating an archive of paper-filled forms into Paneltec for the first time</li>
+                <li>Catching up after a Simpro sync gap</li>
+                <li>Auditor prep — bringing older submissions into the digital record before an audit</li>
+              </ul>
+            </details>
+
+            <div
+              data-testid="pdf-import-tips"
+              className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 leading-snug">
+              <div className="font-semibold mb-0.5">Tips</div>
+              <ul className="list-disc ml-4 space-y-0.5">
+                <li><strong>File names help</strong> — a PDF named <code className="px-1 py-0.5 rounded bg-white/70 text-[10px]">2024-08-12 Pre-Start CVT.pdf</code> gives the classifier a head start.</li>
+                <li><strong>Safe to re-run</strong> — the parser dedupes by file hash, so re-importing the same PDFs won&apos;t duplicate submissions.</li>
+                <li><strong>Not for renewing certs</strong> — for individual certification / insurance renewals, use the <em>Renewal Links</em> feature instead.</li>
+              </ul>
+            </div>
+          </div>
+
           <div
             onDrop={onDrop}
             onDragOver={onDragOver}

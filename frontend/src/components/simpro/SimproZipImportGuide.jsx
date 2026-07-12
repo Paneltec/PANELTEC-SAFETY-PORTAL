@@ -91,7 +91,7 @@ function ScreenshotSlot({
     <figure
       data-testid={testid}
       data-uploaded={hasImage ? 'true' : 'false'}
-      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-h-36 cursor-zoom-in inline-block align-top"
+      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden block w-full my-3 cursor-zoom-in"
       onClick={expand}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expand(); } }}
       role="button"
@@ -99,43 +99,35 @@ function ScreenshotSlot({
       aria-label={hasImage ? `Expand ${alt}` : 'Expand screenshot placeholder'}
     >
       {hasImage ? (
-        <div className="relative h-36">
+        // v160.3.6z — Fixed reference image at full step-column width.
+        // No Remove button (user decision: these are permanent onboarding
+        // assets once placed). Admin can still hit the API directly to
+        // swap; UI treats it as locked in.
+        <div className="relative">
           <img
             src={src}
             alt={alt}
             loading="lazy"
             onError={() => setImgErrored(true)}
             data-testid={`${testid}-image`}
-            className="block h-36 w-auto max-w-none"
+            className="block w-full h-auto"
           />
           {overlay}
-          {isAdmin && (
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
-              disabled={busy}
-              data-testid={`${testid}-remove-btn`}
-              title="Remove uploaded image and restore placeholder"
-              className="absolute top-1 right-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/90 border border-slate-200 shadow-sm text-[10px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
-              <Dismiss20Regular className="w-3 h-3" /> Remove
-            </button>
-          )}
         </div>
       ) : (
         // v160.3.6y — Clean empty state, no fake Simpro mockup styling.
-        // Wide banner shape (4:1) matches the shape a real Simpro
-        // screenshot will land as when uploaded.
+        // v160.3.6z — Full-width to match the wording column; the Upload
+        // button ONLY appears here (empty state), never on a placed image.
         <div
           data-testid={`${testid}-placeholder`}
-          className="flex flex-col items-center justify-center gap-1 px-4 py-3 bg-slate-50 text-center border border-dashed border-slate-300 rounded-lg m-1"
-          style={{ width: 480, maxWidth: '100%', height: 128 }}>
-          <span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400">
+          className="flex flex-col items-center justify-center gap-2 px-6 py-8 bg-slate-50 text-center border border-dashed border-slate-300 rounded-lg m-2">
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-md text-slate-400">
             <Image20Regular />
           </span>
-          <div className="text-[11px] font-semibold text-slate-600 leading-tight">
+          <div className="text-xs font-semibold text-slate-600 leading-tight">
             Screenshot placeholder — admin to attach
           </div>
-          <div className="text-[10px] text-slate-400 leading-snug line-clamp-1 max-w-full">
+          <div className="text-[11px] text-slate-500 leading-snug max-w-2xl">
             {caption}
           </div>
           {isAdmin ? (
@@ -153,19 +145,19 @@ function ScreenshotSlot({
                 onClick={openPicker}
                 disabled={busy}
                 data-testid={`${testid}-upload-btn`}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                <ArrowUpload20Regular className="w-3 h-3" /> {busy ? 'Uploading…' : 'Upload →'}
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <ArrowUpload20Regular className="w-3.5 h-3.5" /> {busy ? 'Uploading…' : 'Upload →'}
               </button>
             </>
           ) : (
-            <div className="text-[10px] text-slate-400">
+            <div className="text-[11px] text-slate-400">
               Ask an admin to attach this screenshot.
             </div>
           )}
         </div>
       )}
       {caption && hasImage && (
-        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-2 py-1 text-[10px] italic text-slate-500 flex items-center justify-between gap-2">
+        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-3 py-1.5 text-[11px] italic text-slate-500 flex items-center justify-between gap-3">
           <span className="truncate">{caption}</span>
           {uploaded?.uploaded_at && (
             <span

@@ -1001,72 +1001,83 @@ function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenS
   // v160.3.0-adjust-17e — colored left stripe + category badge sourced
   // from the shared templateColors palette. `chipBg/chipText` overrides
   // the flat grey CAT_PILL when the category has a colour mapping.
+  // v160.3.7a — Shrunk padding, typography and buttons. Description is
+  // URL-sanitised + clamped to 2 lines with the full text on hover.
   const colour = categoryColor(t.category);
+  const cleanDescription = React.useMemo(() => {
+    const raw = t.description || '';
+    // Strip any embedded URLs (data-entry cruft), collapse whitespace,
+    // trim. If nothing's left we render an em-dash placeholder.
+    return raw
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }, [t.description]);
   return (
-    <div className="group relative rounded-3xl border border-slate-200 bg-white p-5 hover:border-slate-300 hover:shadow-card transition-all flex flex-col overflow-hidden"
+    <div className="group relative rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-card transition-all flex flex-col overflow-hidden"
       data-testid={`template-card-${t.id}`}>
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`} aria-hidden />
-      <div className="flex items-start gap-2 mb-3">
-        <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2.5 py-1 rounded-full ${colour.chipBg} ${colour.chipText}`}>
+      <div className="flex items-start gap-1.5 mb-2">
+        <span className={`inline-block text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${colour.chipBg} ${colour.chipText}`}>
           {categoryLabel(t.category)}
         </span>
         <div className="flex-1" />
         <button onClick={onPreview} data-testid={`card-icon-preview-${t.id}`} title="Preview"
-          className="w-8 h-8 rounded-xl flex items-center justify-center text-blue-600 hover:bg-blue-50">
-          <Phone size={14} />
+          className="w-7 h-7 rounded-lg flex items-center justify-center text-blue-600 hover:bg-blue-50">
+          <Phone size={12} />
         </button>
         {canEdit && (
           <button onClick={onEdit} data-testid={`card-icon-edit-${t.id}`} title="Edit"
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-slate-600 hover:bg-slate-100">
-            <Pencil size={14} />
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-slate-600 hover:bg-slate-100">
+            <Pencil size={12} />
           </button>
         )}
         {canEdit && (
           <button onClick={onDelete} data-testid={`card-icon-delete-${t.id}`} title="Delete"
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-rose-600 hover:bg-rose-50">
-            <Trash2 size={14} />
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-rose-600 hover:bg-rose-50">
+            <Trash2 size={12} />
           </button>
         )}
       </div>
-      <h3 className="font-display text-2xl font-bold text-slate-900 leading-tight">{t.name}</h3>
-      <p className="mt-2 text-sm text-slate-500 leading-relaxed">{t.description || '—'}</p>
-      <div className="mt-3 flex items-center gap-3 text-[11px] text-slate-400">
+      <h3 className="font-display text-base font-bold text-slate-900 leading-tight line-clamp-2" title={t.name}>{t.name}</h3>
+      <p
+        className="mt-1.5 text-xs text-slate-500 leading-snug line-clamp-2"
+        title={cleanDescription || 'No description'}
+        data-testid={`card-desc-${t.id}`}>
+        {cleanDescription || '—'}
+      </p>
+      <div className="mt-2 flex items-center flex-wrap gap-2 text-[10px] text-slate-400">
         <span>{(t.fields || []).length} fields</span>
         {(t.submission_count ?? 0) > 0 && (
           <button onClick={onOpenSubmissions} data-testid={`card-subs-${t.id}`}
-            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
+            className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 hover:bg-emerald-100">
             {t.submission_count} sent
           </button>
         )}
         {t.source === 'ai' && (
-          <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
-            <Sparkles size={9} /> AI draft
+          <span className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700">
+            <Sparkles size={8} /> AI draft
           </span>
         )}
-        {/* v160.3.0-adjust-10 — Paneltec maker's mark. Renders only when
-         *   the template was seeded by us (`source === "paneltec"`).
-         *   Uses the existing `/brand/mark.png` asset + brand orange
-         *   accent. Subtle pill, right-aligned with the other meta
-         *   pills so the card layout stays uniform. */}
         {t.source === 'paneltec' && (
           <span
             data-testid={`card-paneltec-badge-${t.id}`}
             title="Seeded by Paneltec"
-            className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-orange-50 text-orange-700 ring-1 ring-orange-200"
+            className="inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-700 ring-1 ring-orange-200"
           >
-            <img src="/brand/mark.png" alt="" aria-hidden="true" className="h-3 w-3 object-contain" />
+            <img src="/brand/mark.png" alt="" aria-hidden="true" className="h-2.5 w-2.5 object-contain" />
             Paneltec
           </span>
         )}
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         <button onClick={onPreview} data-testid={`card-preview-${t.id}`}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl border-2 border-blue-200 bg-white text-blue-700 text-sm font-semibold hover:bg-blue-50">
-          <Phone size={13} /> Preview
+          className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg border border-blue-200 bg-white text-blue-700 text-xs font-semibold hover:bg-blue-50">
+          <Phone size={11} /> Preview
         </button>
         <button onClick={onFill} data-testid={`card-fill-${t.id}`}
-          className="inline-flex items-center justify-center gap-1.5 px-3 py-2.5 min-h-[44px] rounded-xl bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800">
-          <Pencil size={13} /> Fill This Form
+          className="inline-flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800">
+          <Pencil size={11} /> Fill This Form
         </button>
       </div>
     </div>
@@ -1321,7 +1332,7 @@ export default function Forms() {
           <div className="text-xs text-slate-500 mt-1">Try a different category or clear the search.</div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="forms-grid">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" data-testid="forms-grid">
           {filtered.map((t) => (
             <TemplateCard key={t.id} t={t} canEdit={canEdit}
               onPreview={() => setPreviewT(t)}

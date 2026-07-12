@@ -1535,45 +1535,48 @@ export default function Workers() {
         subtitle="Your field crew — synced from Simpro or added manually." />
 
       {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.
-          v160.3.6p — App-wide consistency: Directory is the PRIMARY hero
-          (big Paneltec-blue capsule, always prominent) and Inductions Matrix
-          is the tiny secondary footnote — same pattern as List / Dashboard
-          on the 7 other list pages. Same physical capsule size in both
-          active + inactive states. `flex-row-reverse` renders Directory on
-          the LEFT visually while keeping DOM order intact for keyboard nav. */}
-      <div className="mb-4 inline-flex flex-row-reverse items-center gap-4" data-testid="workers-tabs">
-        {/* Inductions Matrix — secondary, tiny slate footnote */}
-        <button
-          type="button"
-          onClick={() => setTab('matrix')}
-          data-testid="tab-matrix"
-          aria-pressed={tab === 'matrix'}
-          className={[
-            'inline-flex items-center gap-1 whitespace-nowrap transition-all cursor-pointer py-1 px-1',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40',
-            tab === 'matrix'
-              ? 'text-sm font-semibold text-[#1e4a8c] underline underline-offset-4 decoration-[#1e4a8c]/50 normal-case'
-              : 'text-[11px] font-medium uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:underline underline-offset-4 decoration-slate-300',
-          ].join(' ')}
-        >
-          Inductions Matrix
-        </button>
-        {/* Directory — primary hero, big Paneltec-blue capsule, filled ↔ outlined */}
+          v160.3.6z — Reverted to EQUAL-WEIGHT segmented pill (v6h look).
+          Both tabs read as first-class buttons: same size, same font, both
+          get the filled Paneltec-blue capsule when active. Directory and
+          Inductions Matrix are equally important on this page — no hero/
+          secondary hierarchy. (The 7 list-heavy pages keep their v6p
+          hero treatment; only Workers uses this equal-weight variant.) */}
+      <div
+        className="mb-4 inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm"
+        data-testid="workers-tabs"
+        role="tablist"
+      >
         <button
           type="button"
           onClick={() => setTab('directory')}
           data-testid="tab-directory"
-          aria-pressed={tab === 'directory'}
+          role="tab"
+          aria-selected={tab === 'directory'}
           className={[
-            'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer',
+            'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40',
-            'rounded-full px-5 py-2.5 text-base font-semibold border-2',
             tab === 'directory'
-              ? 'bg-[#1e4a8c] text-white border-transparent shadow-lg shadow-[#1e4a8c]/20'
-              : 'bg-white text-[#1e4a8c] border-[#1e4a8c] hover:bg-[#e6eff9]',
+              ? 'bg-[#1e4a8c] text-white shadow'
+              : 'text-slate-700 hover:bg-slate-100',
           ].join(' ')}
         >
           Directory
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('matrix')}
+          data-testid="tab-matrix"
+          role="tab"
+          aria-selected={tab === 'matrix'}
+          className={[
+            'inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40',
+            tab === 'matrix'
+              ? 'bg-[#1e4a8c] text-white shadow'
+              : 'text-slate-700 hover:bg-slate-100',
+          ].join(' ')}
+        >
+          Inductions Matrix
         </button>
       </div>
 

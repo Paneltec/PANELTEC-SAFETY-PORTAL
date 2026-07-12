@@ -13,6 +13,8 @@ import { PageHeader } from '../components/capture/Ui';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
+// v160.3.7 — Admin instruction card explaining what this page is for.
+import CertificationsGuide from '../components/certifications/CertificationsGuide';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import CertEditModal from '../components/certifications/CertEditModal';
 import CertDeleteConfirm from '../components/certifications/CertDeleteConfirm';
@@ -359,6 +361,11 @@ export default function Certifications() {
     <div className="max-w-7xl mx-auto" data-testid="certifications-page">
       <PageHeader crumb="Settings / Certifications" title="Certifications"
         subtitle="Every certification across your crew, ranked by what needs attention." />
+
+      {/* v160.3.7 — Admin instruction card. Sits ABOVE the amber
+          Compliance attention queue banner so a new admin lands on
+          a page that explains itself before showing the alert list. */}
+      <CertificationsGuide />
 
       {/* Butter banner */}
       <div className="mb-5 rounded-2xl border border-[#e6d995] bg-[#fffaeb] px-4 py-3 flex items-center gap-3"
