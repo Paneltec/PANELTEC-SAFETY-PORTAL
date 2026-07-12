@@ -69,6 +69,9 @@ export default function Outbox() {
   const [toDelete, setToDelete] = useState(null);   // single row
   const [bulkPlan, setBulkPlan] = useState(null);   // { label, statuses, count }
   const [busy, setBusy] = useState(false);
+  // v160.3.6d — per-row selection for admin bulk-delete-by-ids
+  const [selected, setSelected] = useState(() => new Set());
+  const [selectionDelete, setSelectionDelete] = useState(false);
 
   const load = async () => {
     const params = new URLSearchParams();
@@ -77,6 +80,14 @@ export default function Outbox() {
     try {
       const { data: d } = await api.get('/email/outbox?' + params.toString());
       setData(d);
+      // v160.3.6d — drop any selected ids that no longer exist in the reloaded page
+      setSelected((prev) => {
+        if (prev.size === 0) return prev;
+        const visible = new Set((d.items || []).map((m) => m.id));
+        const next = new Set();
+        prev.forEach((id) => { if (visible.has(id)) next.add(id); });
+        return next.size === prev.size ? prev : next;
+      });
     } catch (e) { toast.error(apiError(e)); }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,6 +137,47 @@ export default function Outbox() {
       toast.success(`${deletedTotal} email${deletedTotal === 1 ? '' : 's'} deleted`);
       setBulkPlan(null);
       await load();
+    } catch (e) { toast.error(apiError(e) || 'Bulk delete failed'); }
+    finally { setBusy(false); }
+  };
+
+  // v160.3.6d — selection helpers + ids-based bulk delete (admin only)
+  const toggleRow = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+  const visibleIds = data.items.map((m) => m.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const someSelected = !allSelected && visibleIds.some((id) => selected.has(id));
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (visibleIds.every((id) => prev.has(id))) {
+        // all → none (within the current page)
+        const next = new Set(prev);
+        visibleIds.forEach((id) => next.delete(id));
+        return next;
+      }
+      // add every visible id
+      const next = new Set(prev);
+      visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+  const doSelectionDelete = async () => {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setBusy(true);
+    try {
+      const { data: r } = await api.post('/email/outbox/bulk-delete', { ids });
+      toast.success(`${r.deleted || 0} email${(r.deleted || 0) === 1 ? '' : 's'} deleted`);
+      setSelectionDelete(false);
+      clearSelection();
+      await load();
+      await loadCounts();
     } catch (e) { toast.error(apiError(e) || 'Bulk delete failed'); }
     finally { setBusy(false); }
   };
@@ -222,6 +274,19 @@ export default function Outbox() {
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[11px] uppercase tracking-wider text-slate-500">
             <tr>
+              {/* v160.3.6d — master checkbox column */}
+              <th className="w-10 px-3 py-2.5">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                  onChange={toggleAll}
+                  disabled={visibleIds.length === 0}
+                  aria-label={allSelected ? 'Deselect all visible' : 'Select all visible'}
+                  data-testid="outbox-select-all"
+                  className="w-3.5 h-3.5 cursor-pointer disabled:opacity-40"
+                />
+              </th>
               <th className="text-left px-4 py-2.5">Status</th>
               <th className="text-left px-4 py-2.5">To</th>
               <th className="text-left px-4 py-2.5">Subject</th>
@@ -232,10 +297,25 @@ export default function Outbox() {
           </thead>
           <tbody>
             {data.items.length === 0 && (
-              <tr><td colSpan={6} className="text-center text-sm text-slate-500 py-8">No outbox messages.</td></tr>
+              <tr><td colSpan={7} className="text-center text-sm text-slate-500 py-8">No outbox messages.</td></tr>
             )}
-            {data.items.map((m) => (
-              <tr key={m.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`outbox-row-${m.id}`}>
+            {data.items.map((m) => {
+              const isSelected = selected.has(m.id);
+              return (
+              <tr key={m.id}
+                  className={`border-t border-slate-100 hover:bg-slate-50 ${isSelected ? 'bg-[#e6eff9]/40' : ''}`}
+                  data-testid={`outbox-row-${m.id}`}>
+                <td className="px-3 py-3 align-middle">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleRow(m.id)}
+                    aria-label={`Select email ${m.subject || m.id}`}
+                    data-testid={`outbox-select-${m.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-3.5 h-3.5 cursor-pointer"
+                  />
+                </td>
                 <td className="px-4 py-3">
                   <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase tracking-wider border ${STATUS_STYLES[m.status]}`}>
                     {m.status}
@@ -266,10 +346,44 @@ export default function Outbox() {
                   </button>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
+
+      {/* v160.3.6d — floating selection action bar */}
+      {selected.size > 0 && (
+        <div
+          role="region"
+          aria-label="Bulk actions for selected emails"
+          data-testid="outbox-selection-bar"
+          className="fixed inset-x-0 bottom-6 z-30 flex justify-center px-4 pointer-events-none"
+        >
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-slate-200 bg-white shadow-xl px-5 py-3">
+            <span className="text-sm font-semibold text-slate-900" data-testid="outbox-selection-count">
+              {selected.size} selected
+            </span>
+            <span className="text-slate-300">|</span>
+            <button
+              type="button"
+              onClick={clearSelection}
+              className="text-xs font-medium text-slate-600 hover:text-slate-900"
+              data-testid="outbox-selection-clear"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectionDelete(true)}
+              data-testid="outbox-selection-delete"
+              className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold uppercase tracking-wider px-4 py-2"
+            >
+              <Trash2 size={13} /> Delete selected
+            </button>
+          </div>
+        </div>
+      )}
 
       {active && (
         <div className="fixed inset-0 bg-black/40 z-40 flex items-end sm:items-center justify-end" onClick={() => setActive(null)}>
@@ -344,6 +458,31 @@ export default function Outbox() {
             >
               {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
               Delete {bulkPlan?.count || 0}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v160.3.6d — Selection (ids-based) bulk delete confirmation */}
+      <AlertDialog open={selectionDelete} onOpenChange={(o) => { if (!o) setSelectionDelete(false); }}>
+        <AlertDialogContent data-testid="outbox-selection-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selected.size} selected email{selected.size === 1 ? '' : 's'}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This soft-deletes the selected emails from your outbox. Records remain in
+              the database for audit but are hidden from all lists.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy} data-testid="outbox-selection-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doSelectionDelete}
+              disabled={busy || selected.size === 0}
+              data-testid="outbox-selection-confirm"
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              Delete {selected.size}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
