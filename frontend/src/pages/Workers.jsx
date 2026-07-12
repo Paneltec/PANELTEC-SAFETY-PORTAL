@@ -4,7 +4,7 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -102,6 +102,30 @@ function CompanyChip({ label }) {
     Manual:   'bg-slate-100 text-slate-600',
   };
   return <span className={`text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full ${tints[label] || tints.Manual}`}>{label}</span>;
+}
+
+// v160.3.6a — Sortable table column header. Clickable button showing
+// a neutral up-down arrow, an ascending arrow, or a descending arrow.
+// Sort state is owned by the parent (URL-persisted via search params).
+function SortHeader({ label, k, sortKey, sortDir, onClick, className, title }) {
+  const active = sortKey === k;
+  const Icon = !active ? ArrowUpDown : sortDir === 'desc' ? ArrowDown : ArrowUp;
+  return (
+    <th className={className} data-testid={`sort-header-${k}`}>
+      <button
+        type="button"
+        onClick={() => onClick(k)}
+        title={title || `Sort by ${label.toLowerCase()}`}
+        className={
+          'inline-flex items-center gap-1 uppercase tracking-wider text-[10px] font-semibold ' +
+          (active ? 'text-[#1e4a8c]' : 'text-slate-500 hover:text-slate-700')
+        }
+      >
+        {label}
+        <Icon size={10} className={active ? '' : 'opacity-50'} />
+      </button>
+    </th>
+  );
 }
 
 function Section({ icon: Icon, title, badge, badges, defaultOpen = false, testid, children }) {
@@ -1310,14 +1334,64 @@ export default function Workers() {
   };
   useEffect(() => { load(); loadUsers(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // v160.3.6a — sortable column headers on the Directory tab.
+  // Persisted in `?sortk=<col>&sortd=asc|desc`. Default: name asc.
+  const sortKey = sp.get('sortk') || 'name';
+  const sortDir = sp.get('sortd') === 'desc' ? 'desc' : 'asc';
+  const setSort = (nextKey) => {
+    const next = new URLSearchParams(sp);
+    if (sortKey === nextKey) {
+      next.set('sortd', sortDir === 'asc' ? 'desc' : 'asc');
+    } else {
+      next.set('sortk', nextKey);
+      next.set('sortd', 'asc');
+    }
+    setSp(next, { replace: true });
+  };
+  const _zipRank = (w) => {
+    // Sort weight: MISSING (0) → APPLIED (1) → MANUAL (2). Puts the
+    // admin's backlog at the top of an ascending sort.
+    const zs = zipStatusByWorker[w.id];
+    if (!zs) return 3;
+    if (!zs.simpro_sourced) return 2;
+    return zs.zip_applied ? 1 : 0;
+  };
+  const _statusRank = (w) => {
+    const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
+    if (u?.is_locked) return 3;
+    if (u?.invite_pending && u?.status !== 'disabled') return 2;
+    if (u?.status === 'disabled') return 4;
+    return w.active ? 0 : 1;
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) => {
-      const blob = `${fullName(r)} ${r.email || ''} ${r.phone || ''} ${r.mobile || ''} ${r.suburb || ''} ${r.state || ''}`.toLowerCase();
-      return blob.includes(q);
+    let list = rows;
+    if (q) {
+      list = rows.filter((r) => {
+        const blob = `${fullName(r)} ${r.email || ''} ${r.phone || ''} ${r.mobile || ''} ${r.suburb || ''} ${r.state || ''}`.toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    // Apply sort AFTER filtering — searching + sorting compose.
+    const dir = sortDir === 'desc' ? -1 : 1;
+    const key = sortKey;
+    const strCmp = (a, b) => String(a || '').toLowerCase().localeCompare(String(b || '').toLowerCase());
+    const sorted = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (key === 'name') cmp = strCmp(fullName(a), fullName(b));
+      else if (key === 'email') cmp = strCmp(a.email, b.email);
+      else if (key === 'phone') cmp = strCmp(a.mobile || a.phone, b.mobile || b.phone);
+      else if (key === 'company') cmp = strCmp(a.company_label, b.company_label);
+      else if (key === 'profile') cmp = _zipRank(a) - _zipRank(b);
+      else if (key === 'status') cmp = _statusRank(a) - _statusRank(b);
+      // Stable secondary sort by name to avoid flicker between equal keys.
+      if (cmp === 0) cmp = strCmp(fullName(a), fullName(b));
+      return cmp * dir;
     });
-  }, [rows, search]);
+    return sorted;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, search, sortKey, sortDir, zipStatusByWorker, userByEmail]);
 
   const sync = async (company) => {
     setSyncOpen(false);
@@ -1454,12 +1528,12 @@ export default function Workers() {
             <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
               <tr>
                 <th className="px-3 py-3 w-8"></th>
-                <th className="text-left px-3 py-3">Name</th>
-                <th className="text-left px-3 py-3 hidden md:table-cell">Email</th>
-                <th className="text-left px-3 py-3 hidden lg:table-cell">Phone</th>
-                <th className="text-left px-3 py-3">Company</th>
-                <th className="text-left px-3 py-3 hidden xl:table-cell">Profile</th>
-                <th className="text-left px-3 py-3">Status</th>
+                <SortHeader label="Name" k="name" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
+                <SortHeader label="Email" k="email" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden md:table-cell" />
+                <SortHeader label="Phone" k="phone" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden lg:table-cell" />
+                <SortHeader label="Company" k="company" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
+                <SortHeader label="Profile" k="profile" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden xl:table-cell" title="Sort by Simpro ZIP status — ZIP MISSING at top ascending" />
+                <SortHeader label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
                 <th className="text-right px-3 py-3">Action</th>
               </tr>
             </thead>
