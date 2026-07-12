@@ -130,10 +130,27 @@ function SortHeader({ label, k, sortKey, sortDir, onClick, className, title }) {
 
 function Section({ icon: Icon, title, badge, badges, defaultOpen = false, testid, children }) {
   const [open, setOpen] = useState(defaultOpen);
+  const toggle = () => setOpen((v) => !v);
+  // v160.3.6b — Header is a `<div role="button">` rather than a `<button>`.
+  // A native `<button>` cannot legally contain other interactive elements
+  // (any pill that ever becomes a `<button>`, an `<a>`, or an input); the
+  // browser silently reparents the tree and swallows the click. The ID Card
+  // section shipped a pill inside the toggle in v160.3.5a and the chevron
+  // stopped responding on every worker. Using a div sidesteps the invalid-
+  // nesting trap for this and every other Section, regardless of what a
+  // caller passes to `badges` in future. Keyboard access is preserved via
+  // `tabIndex={0}` + Enter/Space handler + `aria-expanded`.
   return (
     <div className="border border-slate-200 rounded-xl overflow-hidden bg-white" data-testid={testid}>
-      <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left flex-wrap"
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        }}
+        aria-expanded={open}
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left flex-wrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40"
         data-testid={`${testid}-toggle`}>
         <Icon size={14} className="text-slate-500" />
         <span className="text-sm font-semibold text-slate-800 mr-1">{title}</span>
@@ -142,7 +159,7 @@ function Section({ icon: Icon, title, badge, badges, defaultOpen = false, testid
         {badges}
         {badge ? <span className="text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">{badge}</span> : null}
         <ChevronDown size={14} className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
-      </button>
+      </div>
       {open && <div className="px-4 py-4 border-t border-slate-200">{children}</div>}
     </div>
   );
