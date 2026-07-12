@@ -33,7 +33,7 @@ from difflib import SequenceMatcher
 from pathlib import PurePosixPath
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
@@ -770,6 +770,129 @@ async def list_hr_documents(
         d.pop("_id", None)
         rows.append(d)
     return {"documents": rows}
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.4b — File-serving endpoints for Simpro-imported blobs.
+# All three accept the short-lived download JWT via `?token=`
+# (get_current_user already supports it) OR a Bearer header.
+# ─────────────────────────────────────────────────────────────
+
+def _mime_from_filename(name: str) -> str:
+    ext = (name or "").rsplit(".", 1)[-1].lower()
+    return {
+        "pdf": "application/pdf",
+        "jpg": "image/jpeg", "jpeg": "image/jpeg",
+        "png": "image/png", "webp": "image/webp",
+        "heic": "image/heic", "heif": "image/heif",
+    }.get(ext, "application/octet-stream")
+
+
+async def _stream_gridfs(gridfs_id: str, filename: str):
+    """Open a GridFS blob and return a StreamingResponse. Common path."""
+    if not gridfs_id or ObjectId is None:
+        raise HTTPException(404, "File blob missing")
+    try:
+        stream = await _fs_bucket().open_download_stream(ObjectId(gridfs_id))
+    except Exception:
+        raise HTTPException(404, "File blob missing")
+
+    async def _iter():
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            yield chunk
+    mime = _mime_from_filename(filename)
+    return StreamingResponse(
+        _iter(), media_type=mime,
+        headers={"Content-Disposition":
+                 f'inline; filename="{filename or "file"}"'},
+    )
+
+
+@router.get("/{worker_id}/photo/{gridfs_id}")
+async def stream_worker_photo(
+    worker_id: str,
+    gridfs_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead",
+                                         "supervisor", "auditor", "worker")),
+):
+    """Serve a worker's profile photo from GridFS. Anyone in the org may
+    view — matches the visibility of the workers list."""
+    w = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "photo_gridfs_id": 1, "first_name": 1, "last_name": 1},
+    )
+    if not w:
+        raise HTTPException(404, "Worker not found")
+    # Only serve the blob if it matches what's registered on the worker.
+    if w.get("photo_gridfs_id") != gridfs_id:
+        raise HTTPException(404, "Photo not linked to worker")
+    fn = f'{(w.get("first_name") or "worker").lower()}-{(w.get("last_name") or "").lower()}.jpg'
+    return await _stream_gridfs(gridfs_id, fn)
+
+
+@router.get("/{worker_id}/certifications/{cert_id}/file")
+async def stream_cert_file(
+    worker_id: str,
+    cert_id: str,
+    request: Request,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead",
+                                         "supervisor", "auditor", "worker")),
+):
+    """Serve a cert's attached file. Handles BOTH storage backends:
+      - GridFS (Simpro ZIP imports): `doc_file_id` is a 24-hex ObjectId.
+      - `doc_files` (legacy upload flow): `doc_file_id` is a UUID → look
+        up the file row and serve directly (preserves the caller's
+        download token).
+    """
+    cert = await db.worker_certifications.find_one(
+        {"id": cert_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not cert:
+        raise HTTPException(404, "Cert not found")
+    dfid = cert.get("doc_file_id") or ""
+    if not dfid:
+        raise HTTPException(404, "Cert has no attached file")
+    # GridFS ObjectId hex? 24 chars, all hex.
+    if len(dfid) == 24 and all(c in "0123456789abcdef" for c in dfid.lower()):
+        filename = (cert.get("name") or "certificate") + ".pdf"
+        return await _stream_gridfs(dfid, filename)
+    # Otherwise it's a `doc_files.id` — serve from local disk directly.
+    df = await db.doc_files.find_one(
+        {"id": dfid, "org_id": user["org_id"], "deleted_at": None},
+    )
+    if not df:
+        raise HTTPException(404, "File not found")
+    from pathlib import Path as _Path
+    from fastapi.responses import FileResponse
+    from document_library import UPLOAD_DIR as _DOC_UPLOAD_DIR
+    path = _Path(_DOC_UPLOAD_DIR) / df["folder_id"] / df["stored_name"]
+    if not path.exists():
+        raise HTTPException(404, "File missing on disk")
+    return FileResponse(
+        str(path),
+        media_type=df.get("mime") or "application/octet-stream",
+        filename=df.get("filename"),
+    )
+
+
+@router.get("/{worker_id}/hr-documents/{doc_id}/file")
+async def stream_hr_document(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    """Serve an HR document from GridFS. Admin/hr_lead only."""
+    doc = await db.worker_hr_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "HR document not found")
+    return await _stream_gridfs(doc.get("gridfs_id"), doc.get("filename") or "hr-doc")
 
 
 # Last sync marker for the Users page.

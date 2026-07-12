@@ -393,12 +393,19 @@ function CertificationsPanel({ workerId, canEdit }) {
                           <td className="px-3 py-2 whitespace-nowrap"><StatusBadgeCert status={c.status} /></td>
                           <td className="px-3 py-2 text-center">
                             {c.doc_file_id ? (
-                              <a href={`${process.env.REACT_APP_BACKEND_URL}/api/document-library/files/${c.doc_file_id}/download`}
-                                 target="_blank" rel="noreferrer" title="View file"
+                              <button type="button"
+                                 onClick={async () => {
+                                   try {
+                                     const { filesUrl } = await import('../lib/downloadUrl');
+                                     const u = await filesUrl(`/workers/${workerId}/certifications/${c.id}/file`);
+                                     window.open(u, '_blank', 'noopener,noreferrer');
+                                   } catch (_e) { toast.error('Unable to open file'); }
+                                 }}
+                                 title="View file"
                                  data-testid={`cert-file-${c.id}`}
                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
                                 <FileText size={11} />
-                              </a>
+                              </button>
                             ) : <span className="text-[10px] text-slate-400 italic" title="no file">—</span>}
                           </td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">

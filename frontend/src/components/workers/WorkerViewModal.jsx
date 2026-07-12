@@ -3,8 +3,9 @@
 // `GET /api/workers/{id}` and displays identity, contact, personal,
 // availability, clients and certifications with expiring/expired highlights.
 import React, { useEffect, useState } from 'react';
-import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink } from 'lucide-react';
+import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
+import { filesUrl } from '../../lib/downloadUrl';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
 import { toast } from 'sonner';
 
@@ -24,6 +25,33 @@ function shortDate(iso) {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(2, 4)}`;
 }
 
+// v160.3.4b — Compact chip used in section headers to show source /
+// status breakdowns. Uses the existing IM palette (soft-blue for neutral
+// count, emerald for Simpro-imported, grey for manual, amber for pending,
+// rose for expired, sky for HR docs).
+function SummaryPill({ tone = 'neutral', children, testid, title }) {
+  const tones = {
+    neutral:   'bg-[#e6eff9] text-[#1e4a8c] border-[#b9d2ec]',
+    simpro:    'bg-emerald-50 text-emerald-800 border-emerald-200',
+    manual:    'bg-slate-100 text-slate-600 border-slate-200',
+    pending:   'bg-amber-50 text-amber-800 border-amber-200',
+    expired:   'bg-rose-50 text-rose-700 border-rose-200',
+    warn:      'bg-orange-50 text-orange-700 border-orange-200',
+    hr:        'bg-sky-50 text-sky-800 border-sky-200',
+    violet:    'bg-violet-50 text-violet-800 border-violet-200',
+  };
+  const cls = tones[tone] || tones.neutral;
+  return (
+    <span
+      title={title}
+      data-testid={testid}
+      className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full border ${cls}`}
+    >
+      {children}
+    </span>
+  );
+}
+
 function CompanyChip({ label }) {
   const tints = {
     Paneltec: 'bg-[#e6eff9] text-[#1e4a8c]',
@@ -37,7 +65,42 @@ function CompanyChip({ label }) {
   );
 }
 
-function CertRow({ cert }) {
+// v160.3.4b — Worker profile photo. Loads via a short-lived download JWT
+// so `<img src>` works despite the backend requiring auth. Silently hides
+// when no photo is set OR when the token/blob fetch fails.
+function WorkerPhoto({ worker }) {
+  const [src, setSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
+    filesUrl(worker.photo_url)
+      .then((u) => { if (alive) setSrc(u); })
+      .catch(() => { if (alive) setBroken(true); });
+    return () => { alive = false; };
+  }, [worker?.photo_url]);
+  if (!worker?.photo_url || broken) {
+    return (
+      <div
+        className="w-16 h-16 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-lg shrink-0"
+        data-testid="worker-view-photo-placeholder"
+      >
+        {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src || ''}
+      alt=""
+      onError={() => setBroken(true)}
+      className="w-16 h-16 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
+      data-testid="worker-view-photo"
+    />
+  );
+}
+
+function CertRow({ cert, workerId }) {
   const status = cert.status || {};
   const key = status.key || 'no_expiry';
   const map = {
@@ -48,19 +111,29 @@ function CertRow({ cert }) {
     missing_file:  { bg: 'bg-slate-100', ink: 'text-slate-600', border: 'border-slate-200' },
   };
   const style = map[key] || map.no_expiry;
+  const openFile = async () => {
+    if (!cert.doc_file_id) return;
+    try {
+      const u = await filesUrl(`/workers/${workerId}/certifications/${cert.id}/file`);
+      window.open(u, '_blank', 'noopener,noreferrer');
+    } catch (_e) {
+      toast.error('Unable to open file');
+    }
+  };
   return (
     <tr className="border-t border-slate-100" data-testid={`view-cert-row-${cert.id}`}>
       <td className="px-3 py-2 font-medium text-slate-900 break-words max-w-[260px]">
         <div className="flex items-center gap-1.5 flex-wrap">
           <span>{cert.name}</span>
-          {cert.source === 'simpro' && (
+          {(cert.source === 'simpro' || cert.source === 'simpro_zip'
+             || cert.source === 'simpro_zip_reclassified') && (
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200"
               title="Imported from Simpro"
               data-testid={`view-cert-source-simpro-${cert.id}`}
             >SIMPRO</span>
           )}
-          {cert.source !== 'simpro' && (
+          {!['simpro', 'simpro_zip', 'simpro_zip_reclassified'].includes(cert.source) && (
             <span
               className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200"
               title="Manually added"
@@ -77,6 +150,21 @@ function CertRow({ cert }) {
           {status.label || '—'}
         </span>
       </td>
+      <td className="px-3 py-2 text-center whitespace-nowrap">
+        {cert.doc_file_id ? (
+          <button
+            type="button"
+            onClick={openFile}
+            data-testid={`view-cert-open-${cert.id}`}
+            title="Open file"
+            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"
+          >
+            <FileText size={12} />
+          </button>
+        ) : (
+          <span className="text-[10px] text-slate-400 italic" title="no file">—</span>
+        )}
+      </td>
     </tr>
   );
 }
@@ -92,6 +180,7 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
   // v160.3.4 — Unmatched Documents triage tab
   const [tab, setTab] = useState(defaultTab || 'profile'); // profile | unmatched
   const [unmatchedCount, setUnmatchedCount] = useState(null);
+  const [hrDocCount, setHrDocCount] = useState(null); // v160.3.4b — HR docs count for section badge
 
   useEffect(() => {
     // Hydrate the viewer identity once — used to gate the ZIP upload button.
@@ -111,6 +200,17 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
   }, [workerId, currentUser]);
 
   useEffect(() => { refreshUnmatched(); }, [refreshUnmatched]);
+
+  // v160.3.4b — HR docs count for the Personal-tab section badge.
+  useEffect(() => {
+    const role = (currentUser?.role || '').toLowerCase();
+    if (!['admin', 'hr_lead'].includes(role)) { setHrDocCount(null); return; }
+    let alive = true;
+    api.get(`/workers/${workerId}/hr-documents`)
+      .then((r) => { if (alive) setHrDocCount((r.data?.documents || []).length); })
+      .catch(() => { if (alive) setHrDocCount(null); });
+    return () => { alive = false; };
+  }, [workerId, currentUser]);
 
   useEffect(() => {
     let alive = true;
@@ -148,22 +248,59 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
     ? DAYS.filter((d) => worker.availability[d.key]?.enabled)
     : [];
 
+  // v160.3.4b — Section summary aggregates (client-side, no extra API calls).
+  const certAgg = React.useMemo(() => {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 86400_000);
+    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
+    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0;
+    let inductions = 0;
+    for (const c of certs) {
+      if (simproSet.has(c.source)) simpro++;
+      else manual++;
+      if (c.pending_review) pending++;
+      if (!c.doc_file_id) missing++;
+      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
+      if (exp && !isNaN(exp)) {
+        if (exp < now) expired++;
+        else if (exp <= soon) expiringSoon++;
+      }
+      // Induction detection: cert_kind_slug ending with -induction, or the
+      // name contains "induction" (case-insensitive). Best-effort — we
+      // don't have the cert_kinds catalogue on the client here.
+      const slug = (c.cert_kind_slug || '').toLowerCase();
+      const nm = (c.name || '').toLowerCase();
+      if (slug.includes('induction') || nm.includes('induction')) inductions++;
+    }
+    return { total: certs.length, simpro, manual, pending, missing,
+              expired, expiringSoon, inductions };
+  }, [certs]);
+
+  const personalFilled = worker ? [
+    worker.birth_date, worker.country, worker.state,
+    worker.postal_code, worker.street_address,
+  ].filter(Boolean).length : 0;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="worker-view-modal">
       <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden max-h-[92vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Worker profile · Read only</div>
-            <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5" data-testid="worker-view-name">
-              {worker ? fullName(worker) : 'Loading…'}
-            </h2>
-            {worker && (
-              <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                <CompanyChip label={worker.company_label} />
-                {worker.position && <span className="text-xs text-slate-600">{worker.position}</span>}
-              </div>
-            )}
+          <div className="flex items-start gap-4 min-w-0 flex-1">
+            {/* v160.3.4b — worker photo. Loads via short-lived download JWT. */}
+            {worker && <WorkerPhoto worker={worker} />}
+            <div className="min-w-0 flex-1">
+              <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Worker profile · Read only</div>
+              <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5" data-testid="worker-view-name">
+                {worker ? fullName(worker) : 'Loading…'}
+              </h2>
+              {worker && (
+                <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                  <CompanyChip label={worker.company_label} />
+                  {worker.position && <span className="text-xs text-slate-600">{worker.position}</span>}
+                </div>
+              )}
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded hover:bg-white/60" data-testid="worker-view-close">
             <X size={16} />
@@ -236,8 +373,20 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
 
               {/* Personal */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-personal">
-                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm">
+                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
                   <MapPin size={14} className="text-slate-500" /> Personal
+                  {personalFilled > 0 ? (
+                    <SummaryPill testid="section-personal-filled">
+                      {personalFilled} / 5 fields set
+                    </SummaryPill>
+                  ) : (
+                    <SummaryPill tone="manual" testid="section-personal-empty">Not set</SummaryPill>
+                  )}
+                  {hrDocCount != null && hrDocCount > 0 && (
+                    <SummaryPill tone="hr" testid="section-personal-hr-docs">
+                      HR docs · {hrDocCount}
+                    </SummaryPill>
+                  )}
                 </div>
                 <dl className="grid grid-cols-2 gap-y-1.5 gap-x-4 text-sm">
                   <dt className="text-slate-500 text-xs">Birth date</dt><dd className="text-slate-800">{shortDate(worker.birth_date)}</dd>
@@ -251,12 +400,14 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
 
               {/* Availability */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-availability">
-                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm">
+                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
                   <Calendar size={14} className="text-slate-500" /> Availability
-                  {enabledDays.length > 0 && (
-                    <span className="ml-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">
+                  {enabledDays.length === 0 ? (
+                    <SummaryPill tone="manual" testid="section-avail-empty">Not set</SummaryPill>
+                  ) : (
+                    <SummaryPill testid="section-avail-count">
                       {enabledDays.length} day{enabledDays.length === 1 ? '' : 's'}
-                    </span>
+                    </SummaryPill>
                   )}
                 </div>
                 {enabledDays.length === 0 ? (
@@ -279,12 +430,14 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
 
               {/* Clients */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-clients">
-                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm">
+                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
                   <Users size={14} className="text-slate-500" /> Clients
-                  {(worker.client_ids || []).length > 0 && (
-                    <span className="ml-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">
-                      {worker.client_ids.length}
-                    </span>
+                  {(worker.client_ids || []).length === 0 ? (
+                    <SummaryPill tone="manual" testid="section-clients-empty">0</SummaryPill>
+                  ) : (
+                    <SummaryPill testid="section-clients-count">
+                      {worker.client_ids.length} assigned
+                    </SummaryPill>
                   )}
                 </div>
                 {(worker.client_ids || []).length === 0 ? (
@@ -307,12 +460,52 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
 
               {/* Certifications */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-certifications">
-                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm">
+                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
                   <Award size={14} className="text-slate-500" /> Certifications
-                  {certs.length > 0 && (
-                    <span className="ml-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded-full bg-[#e6eff9] text-[#1e4a8c]">
-                      {certs.length}
-                    </span>
+                  {certAgg.total === 0 ? (
+                    <SummaryPill tone="manual" testid="section-certs-empty">No items</SummaryPill>
+                  ) : (
+                    <SummaryPill testid="section-certs-total">
+                      {certAgg.total} item{certAgg.total === 1 ? '' : 's'}
+                    </SummaryPill>
+                  )}
+                  {certAgg.simpro > 0 && (
+                    <SummaryPill tone="simpro" testid="section-certs-simpro">
+                      Simpro · {certAgg.simpro}
+                    </SummaryPill>
+                  )}
+                  {certAgg.manual > 0 && (
+                    <SummaryPill tone="manual" testid="section-certs-manual">
+                      Manual · {certAgg.manual}
+                    </SummaryPill>
+                  )}
+                  {certAgg.inductions > 0 && (
+                    <SummaryPill tone="violet" testid="section-certs-inductions">
+                      Inductions · {certAgg.inductions}
+                    </SummaryPill>
+                  )}
+                  {certAgg.pending > 0 && (
+                    <SummaryPill tone="pending" testid="section-certs-pending">
+                      Pending · {certAgg.pending}
+                    </SummaryPill>
+                  )}
+                  {certAgg.missing > 0 && (
+                    <SummaryPill tone="warn" testid="section-certs-missing"
+                      title={`${certAgg.missing} cert(s) have no attached file`}>
+                      <AlertTriangle size={10} /> {certAgg.missing} missing file
+                    </SummaryPill>
+                  )}
+                  {certAgg.expired > 0 && (
+                    <SummaryPill tone="expired" testid="section-certs-expired"
+                      title={`${certAgg.expired} cert(s) expired`}>
+                      {certAgg.expired} expired
+                    </SummaryPill>
+                  )}
+                  {certAgg.expiringSoon > 0 && (
+                    <SummaryPill tone="pending" testid="section-certs-expiring"
+                      title={`${certAgg.expiringSoon} cert(s) expiring within 30 days`}>
+                      {certAgg.expiringSoon} expiring
+                    </SummaryPill>
                   )}
                 </div>
                 {certs.length === 0 ? (
@@ -326,10 +519,11 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
                           <th className="text-left px-3 py-2 hidden md:table-cell">Issuer</th>
                           <th className="text-left px-3 py-2 whitespace-nowrap">Expiry</th>
                           <th className="text-left px-3 py-2 whitespace-nowrap">Status</th>
+                          <th className="text-center px-3 py-2 whitespace-nowrap">File</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {certs.map((c) => <CertRow key={c.id} cert={c} />)}
+                        {certs.map((c) => <CertRow key={c.id} cert={c} workerId={workerId} />)}
                       </tbody>
                     </table>
                   </div>
@@ -513,15 +707,19 @@ function UnmatchedDocsTab({ workerId, onChange }) {
                 </td>
                 <td className="px-3 py-2 text-right whitespace-nowrap">
                   <div className="inline-flex items-center gap-1">
-                    <a
-                      href={`/api/workers/${workerId}/unmatched-documents/${d.id}/file`}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const u = await filesUrl(`/workers/${workerId}/unmatched-documents/${d.id}/file`);
+                          window.open(u, '_blank', 'noopener,noreferrer');
+                        } catch (_e) { toast.error('Unable to open file'); }
+                      }}
                       className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
                       data-testid={`unmatched-preview-${d.id}`}
                     >
                       <ExternalLink size={11} /> View
-                    </a>
+                    </button>
                     <button
                       type="button"
                       onClick={() => { setReclassifyDoc(d); setReclassifySlug(''); }}

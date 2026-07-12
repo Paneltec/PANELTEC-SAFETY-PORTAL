@@ -77,6 +77,20 @@ async def get_current_user(
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth[7:]
+    # v160.3.4b — file-serving endpoints can't attach a Bearer header
+    # when the URL is opened from `<a target="_blank">` or `<img src>`.
+    # Accept a short-lived download-scoped JWT via `?token=` query.
+    # NEVER accept the long-lived access JWT via query — that would leak
+    # 30-day credentials into server logs & referer headers.
+    if not token:
+        qtok = request.query_params.get("token")
+        if qtok:
+            try:
+                probe = jwt.decode(qtok, _secret(), algorithms=[JWT_ALGORITHM])
+            except jwt.InvalidTokenError:
+                probe = None
+            if probe and probe.get("type") == "download":
+                token = qtok
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated",
                             headers={"X-Auth-Reason": "jwt-missing"})
@@ -240,6 +254,34 @@ async def logout(user: dict = Depends(get_current_user)):
     except Exception:
         pass
     return {"ok": True}
+
+
+# v160.3.4b — short-lived JWT for file-serving endpoints that must be
+# opened via `<a href>` or `<img src>` (which cannot attach a Bearer
+# header). The frontend fetches this before rendering a file link and
+# appends the returned token as `?token=<jwt>`. Token TTL is 15 minutes
+# so it stays out of long-lived caches / referer headers.
+DOWNLOAD_TOKEN_TTL_MINUTES = 15
+
+
+@router.post("/download-token")
+async def issue_download_token(user: dict = Depends(get_current_user)):
+    """Return a 15-minute download-scoped JWT carrying the caller's
+    identity. Accepted by any file endpoint via `?token=<jwt>`. Never
+    accepted for API mutation endpoints."""
+    payload = {
+        "sub": user["id"],
+        "email": user["email"],
+        "tv": user.get("token_version", 0),
+        "type": "download",
+        "exp": datetime.now(timezone.utc)
+                + timedelta(minutes=DOWNLOAD_TOKEN_TTL_MINUTES),
+    }
+    tok = jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+    return {
+        "token": tok,
+        "expires_in_seconds": DOWNLOAD_TOKEN_TTL_MINUTES * 60,
+    }
 
 
 # ---------- Account self-service ----------
