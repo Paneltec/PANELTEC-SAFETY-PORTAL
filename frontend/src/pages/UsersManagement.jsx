@@ -264,11 +264,14 @@ export default function UsersManagement() {
           Positioned directly above the tabs so a new admin can't miss it. */}
       <SimproZipImportGuide />
 
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="users-tabs">
-        <TabsList className="bg-slate-100 border border-slate-200">
-          <TabsTrigger value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="list" data-testid="users-tab-list">
-            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{users.length}</span>
+      {/* v160.3.6u — Flipped to v6p hero hierarchy (LIST is the primary big
+          blue capsule; Dashboard collapses to a tiny secondary text-link).
+          This page was missed in the original v6p sweep. */}
+      <Tabs defaultValue="list" className="mt-2" data-testid="users-tabs">
+        <TabsList variant="hero">
+          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="users-tab-list">
+            List <span>{users.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="users-tab-dashboard-content">

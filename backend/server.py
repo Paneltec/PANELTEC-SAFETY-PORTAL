@@ -258,6 +258,11 @@ from swms_extras import router as swms_extras_router, admin_router as swms_admin
 api.include_router(swms_extras_router)
 api.include_router(swms_admin_router)
 
+# v160.3.6u — Admin-uploaded reference screenshots for in-app help guides
+# (e.g. the Simpro ZIP staff guide on /app/settings/users).
+from help_reference_images import router as help_reference_images_router  # noqa: E402
+api.include_router(help_reference_images_router)
+
 from file_pdf import router as file_pdf_router  # noqa: E402
 api.include_router(file_pdf_router)
 

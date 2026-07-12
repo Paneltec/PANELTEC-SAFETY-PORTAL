@@ -135,11 +135,13 @@ export default function SitesAdmin() {
         }
       />
 
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="sites-tabs">
-        <TabsList className="bg-slate-100 border border-slate-200">
-          <TabsTrigger value="dashboard" data-testid="sites-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="list" data-testid="sites-tab-list">
-            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{filtered.length}</span>
+      {/* v160.3.6u — Completing the v6p tab-hierarchy sweep. LIST is
+          the primary hero capsule; Dashboard is the tiny secondary link. */}
+      <Tabs defaultValue="list" className="mt-2" data-testid="sites-tabs">
+        <TabsList variant="hero">
+          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="sites-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="sites-tab-list">
+            List <span>{filtered.length}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="sites-tab-dashboard-content">

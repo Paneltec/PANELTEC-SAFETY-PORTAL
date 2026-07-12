@@ -1,21 +1,21 @@
 // v160.3.6t — Simpro ZIP staff import guide.
-// Renders above the User Permissions tabs so a new admin can't miss it.
+// v160.3.6u — Wired the "Upload reference image →" button to the new
+// admin-only backend endpoint (POST /api/help/reference-images/upload).
+// The two screenshot slots now render actual uploaded images when
+// present, keep the placeholder card when empty, and give admins an
+// inline "×" to revert without a code deploy.
 //
-// Collapsible slate-outlined card (matches HowThisWorks pattern). Default
-// state is OPEN because this is onboarding material; state is persisted
-// per-user in localStorage so once dismissed it stays collapsed.
+// Slots:
+//   simpro-employee     — Simpro Employee Profile view (screenshot 1)
+//   simpro-attachments  — Simpro Attachments tab (screenshot 2, ring overlay)
 //
-// Two screenshot slots are supported:
-//   /img/help/simpro-employee.png       — Simpro Employee Profile (Daniel Butler)
-//   /img/help/simpro-attachments.png    — Simpro Attachments tab (folders + tiny top-right ZIP button)
-// If either file is missing we fall back to a labelled empty state card
-// so the guide never looks broken.
-//
-// The second screenshot is overlaid with an SVG red-ring + arrow that
-// points at the tiny download-ZIP icon top-right (just left of the blue
-// CREATE FOLDER button) — that's the whole point of the guide.
+// The pre-wired SVG red-ring + arrow overlay from v6t stays on the
+// second slot — the moment a screenshot is uploaded, the ring lands
+// on the top-right of the image (where Simpro renders the download-ZIP
+// icon, just left of the blue CREATE FOLDER button).
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { toast } from 'sonner';
 import {
   Info20Regular,
   ChevronDown20Regular,
@@ -24,7 +24,10 @@ import {
   ArrowDownload20Regular,
   Image20Regular,
   ArrowUpload20Regular,
+  Dismiss20Regular,
 } from '@fluentui/react-icons';
+import api, { apiError, API_BASE } from '../../lib/api';
+import { getUser } from '../../lib/auth';
 
 const STORAGE_KEY = 'howThisWorks:simpro_zip_import_guide';
 
@@ -42,25 +45,66 @@ function writeStored(open) {
   catch (_) { /* noop */ }
 }
 
-/** Screenshot slot — renders the image, or a labelled placeholder if missing. */
-function ScreenshotSlot({ src, alt, caption, testid, overlay }) {
-  const [errored, setErrored] = useState(false);
+/** Screenshot slot — renders the image if uploaded, otherwise the labelled
+ *  placeholder + admin upload CTA. */
+function ScreenshotSlot({
+  slot,
+  alt,
+  caption,
+  testid,
+  overlay,
+  uploaded,          // { url, uploaded_at } | null
+  cacheKey,          // int — bumps ?v=... to bust <img> cache after re-upload
+  isAdmin,
+  onUpload,          // (file) => Promise
+  onDelete,          // () => Promise
+  busy,
+}) {
+  const inputRef = useRef(null);
+  const [imgErrored, setImgErrored] = useState(false);
+
+  const openPicker = () => inputRef.current?.click();
+
+  const onFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';  // allow re-selecting the same filename
+    if (!file) return;
+    setImgErrored(false);
+    await onUpload(file);
+  };
+
+  const hasImage = Boolean(uploaded?.url) && !imgErrored;
+  const src = uploaded?.url
+    ? `${API_BASE}${uploaded.url.replace(/^\/api/, '')}?v=${cacheKey}`
+    : null;
 
   return (
     <figure
       data-testid={testid}
+      data-uploaded={hasImage ? 'true' : 'false'}
       className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      {!errored ? (
+      {hasImage ? (
         <div className="relative">
           <img
             src={src}
             alt={alt}
             loading="lazy"
-            onError={() => setErrored(true)}
+            onError={() => setImgErrored(true)}
             data-testid={`${testid}-image`}
             className="block w-full h-auto"
           />
           {overlay}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onDelete}
+              disabled={busy}
+              data-testid={`${testid}-remove-btn`}
+              title="Remove uploaded image and restore placeholder"
+              className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/90 border border-slate-200 shadow-sm text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+              <Dismiss20Regular className="w-3.5 h-3.5" /> Remove
+            </button>
+          )}
         </div>
       ) : (
         <div
@@ -75,28 +119,51 @@ function ScreenshotSlot({ src, alt, caption, testid, overlay }) {
           <div className="text-xs text-slate-500 max-w-md">
             {caption}
           </div>
-          <div className="text-[11px] text-slate-400 mt-1">
-            Drop at <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{src}</code>
-          </div>
-          <button
-            type="button"
-            data-testid={`${testid}-upload-btn`}
-            title="Reference image upload will be wired to admin storage in a future release."
-            className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">
-            <ArrowUpload20Regular /> Upload reference image →
-          </button>
+          {isAdmin ? (
+            <>
+              <input
+                ref={inputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={onFileChange}
+                data-testid={`${testid}-file-input`}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={openPicker}
+                disabled={busy}
+                data-testid={`${testid}-upload-btn`}
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <ArrowUpload20Regular /> {busy ? 'Uploading…' : 'Upload reference image →'}
+              </button>
+              <div className="text-[11px] text-slate-400 mt-1">
+                PNG / JPEG / WEBP · max 5&nbsp;MB · slot <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{slot}</code>
+              </div>
+            </>
+          ) : (
+            <div className="text-[11px] text-slate-400 mt-1">
+              Ask an admin to attach this screenshot.
+            </div>
+          )}
         </div>
       )}
-      {caption && !errored && (
-        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-3 py-2 text-[11px] italic text-slate-500">
-          {caption}
+      {caption && hasImage && (
+        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-3 py-2 text-[11px] italic text-slate-500 flex items-center justify-between gap-3">
+          <span>{caption}</span>
+          {uploaded?.uploaded_at && (
+            <span
+              data-testid={`${testid}-uploaded-at`}
+              className="text-slate-400 tabular-nums">
+              uploaded {new Date(uploaded.uploaded_at).toLocaleString()}
+            </span>
+          )}
         </figcaption>
       )}
     </figure>
   );
 }
 
-/** Numbered step row with an inline body. */
 function Step({ n, title, children, testid }) {
   return (
     <li data-testid={testid} className="flex gap-3">
@@ -116,12 +183,74 @@ export default function SimproZipImportGuide() {
   useEffect(() => { writeStored(open); }, [open]);
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
+  const currentUser = getUser();
+  const isAdmin = currentUser?.role === 'admin';
+
+  // slot -> { url, uploaded_at, size_bytes, content_type } | null
+  const [slots, setSlots] = useState({
+    'simpro-employee': null,
+    'simpro-attachments': null,
+  });
+  const [cacheKey, setCacheKey] = useState(() => Date.now());
+  const [busySlot, setBusySlot] = useState(null);
+
+  const refresh = useCallback(async () => {
+    try {
+      const { data } = await api.get('/help/reference-images');
+      const next = { 'simpro-employee': null, 'simpro-attachments': null };
+      for (const row of data?.items || []) {
+        next[row.slot] = row;
+      }
+      setSlots(next);
+      setCacheKey(Date.now());
+    } catch (_) {
+      /* silent — the placeholders are already the correct empty state */
+    }
+  }, []);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const handleUpload = useCallback(async (slot, file) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image too large (max 5 MB).');
+      return;
+    }
+    setBusySlot(slot);
+    const form = new FormData();
+    form.append('slot', slot);
+    form.append('file', file);
+    try {
+      await api.post('/help/reference-images/upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Reference screenshot uploaded.');
+      await refresh();
+    } catch (e) {
+      toast.error(apiError(e) || 'Upload failed');
+    } finally {
+      setBusySlot(null);
+    }
+  }, [refresh]);
+
+  const handleDelete = useCallback(async (slot) => {
+    setBusySlot(slot);
+    try {
+      await api.delete(`/help/reference-images/${slot}`);
+      toast.success('Reference screenshot removed.');
+      await refresh();
+    } catch (e) {
+      toast.error(apiError(e) || 'Remove failed');
+    } finally {
+      setBusySlot(null);
+    }
+  }, [refresh]);
+
   return (
     <section
       data-testid="simpro-zip-import-guide"
       data-open={open ? 'true' : 'false'}
       className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      {/* Header / toggle */}
       <button
         type="button"
         onClick={toggle}
@@ -146,14 +275,12 @@ export default function SimproZipImportGuide() {
 
       {open && (
         <div className="border-t border-slate-100 px-4 sm:px-6 py-5 bg-slate-50/40 space-y-6">
-          {/* Intro */}
           <p className="text-sm text-slate-700 max-w-3xl">
             Paneltec pulls certificates, inductions and licences straight out of Simpro via
             per-employee ZIP downloads. The download icon in Simpro is small and easy to
             miss — this guide walks a new admin through the exact clicks.
           </p>
 
-          {/* ⚠ TIP callout — the whole reason this guide exists */}
           <div
             data-testid="simpro-zip-import-guide-tip"
             className="flex gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -166,7 +293,6 @@ export default function SimproZipImportGuide() {
             </div>
           </div>
 
-          {/* Steps */}
           <ol className="space-y-4">
             <Step n={1} testid="simpro-zip-step-1" title="Log into Simpro">
               Open <span className="font-medium text-slate-800">paneltec.simprosuite.com</span>{' '}
@@ -185,10 +311,16 @@ export default function SimproZipImportGuide() {
             </Step>
 
             <ScreenshotSlot
+              slot="simpro-employee"
               testid="simpro-zip-guide-screenshot-1"
-              src="/img/help/simpro-employee.png"
               alt="Simpro Employee Profile view for Daniel Butler"
               caption="Screenshot 1 — Simpro Employee Profile (example worker: Daniel Butler)."
+              uploaded={slots['simpro-employee']}
+              cacheKey={cacheKey}
+              isAdmin={isAdmin}
+              busy={busySlot === 'simpro-employee'}
+              onUpload={(file) => handleUpload('simpro-employee', file)}
+              onDelete={() => handleDelete('simpro-employee')}
             />
 
             <Step n={4} testid="simpro-zip-step-4" title="Click the Attachments tab">
@@ -211,14 +343,17 @@ export default function SimproZipImportGuide() {
             </Step>
 
             <ScreenshotSlot
+              slot="simpro-attachments"
               testid="simpro-zip-guide-screenshot-2"
-              src="/img/help/simpro-attachments.png"
               alt="Simpro Attachments tab — red ring highlighting the tiny top-right download-ZIP icon"
               caption="Screenshot 2 — The red ring highlights the download-ZIP icon (top-right, just left of CREATE FOLDER)."
+              uploaded={slots['simpro-attachments']}
+              cacheKey={cacheKey}
+              isAdmin={isAdmin}
+              busy={busySlot === 'simpro-attachments'}
+              onUpload={(file) => handleUpload('simpro-attachments', file)}
+              onDelete={() => handleDelete('simpro-attachments')}
               overlay={
-                // Red highlight ring + arrow — anchored to the top-right where
-                // Simpro renders the download-ZIP icon. Percentages keep it
-                // reasonable across responsive widths.
                 <svg
                   data-testid="simpro-zip-guide-arrow-overlay"
                   className="pointer-events-none absolute inset-0 w-full h-full"
@@ -263,7 +398,6 @@ export default function SimproZipImportGuide() {
             </Step>
           </ol>
 
-          {/* Troubleshooting */}
           <div
             data-testid="simpro-zip-import-guide-troubleshooting"
             className="rounded-xl border border-slate-200 bg-white px-4 py-4">
