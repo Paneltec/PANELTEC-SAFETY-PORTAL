@@ -441,6 +441,50 @@ async def delete_renewal(rid: str, user: dict = Depends(get_current_user)):
     return {"ok": True}
 
 
+# v160.3.6w — Bulk soft-delete (mirrors Outbox/ActiveSessions v6d/v6v pattern).
+class BulkDeleteIn(BaseModel):
+    ids: List[str] = Field(default_factory=list, description="Renewal link ids to soft-delete")
+
+
+@router.post("/bulk-delete")
+async def bulk_delete_renewals(
+    body: BulkDeleteIn,
+    user: dict = Depends(get_current_user),
+) -> dict:
+    """Soft-delete many renewal links in one shot. Same semantics as the
+    single delete: sets `deleted_at`, flips `status` to `revoked` so any
+    live public tokens die immediately.
+
+    Response: {requested, deleted, not_found}
+    """
+    _require_write(user)
+    ids = [i for i in (body.ids or []) if isinstance(i, str) and i]
+    if not ids:
+        return {"requested": 0, "deleted": 0, "not_found": []}
+
+    unique_ids = list({i for i in ids})
+    live_rows = await db.renewal_links.find(
+        {"id": {"$in": unique_ids}, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1},
+    ).to_list(len(unique_ids))
+    live_ids = {r["id"] for r in live_rows}
+    not_found = [i for i in unique_ids if i not in live_ids]
+
+    if not live_ids:
+        return {"requested": len(ids), "deleted": 0, "not_found": not_found}
+
+    now = now_iso()
+    res = await db.renewal_links.update_many(
+        {"id": {"$in": list(live_ids)}, "org_id": user["org_id"]},
+        {"$set": {"deleted_at": now, "status": "revoked"}},
+    )
+    return {
+        "requested": len(ids),
+        "deleted": int(getattr(res, "modified_count", 0) or 0),
+        "not_found": not_found,
+    }
+
+
 # ---------- Public endpoints ----------
 
 @public_router.get("/{token}")

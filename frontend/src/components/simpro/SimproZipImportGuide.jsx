@@ -46,7 +46,10 @@ function writeStored(open) {
 }
 
 /** Screenshot slot — renders the image if uploaded, otherwise the labelled
- *  placeholder + admin upload CTA. */
+ *  placeholder + admin upload CTA. v160.3.6x — Compact thumbnail (~1/3 the
+ *  previous size) that opens a lightbox on click. Overlay SVG uses
+ *  `preserveAspectRatio="none"` so the red ring stays anchored to the
+ *  top-right of the image at any thumbnail width. */
 function ScreenshotSlot({
   slot,
   alt,
@@ -58,12 +61,13 @@ function ScreenshotSlot({
   isAdmin,
   onUpload,          // (file) => Promise
   onDelete,          // () => Promise
+  onExpand,          // (payload) => void  · open the lightbox
   busy,
 }) {
   const inputRef = useRef(null);
   const [imgErrored, setImgErrored] = useState(false);
 
-  const openPicker = () => inputRef.current?.click();
+  const openPicker = (e) => { e?.stopPropagation?.(); inputRef.current?.click(); };
 
   const onFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -78,11 +82,22 @@ function ScreenshotSlot({
     ? `${API_BASE}${uploaded.url.replace(/^\/api/, '')}?v=${cacheKey}`
     : null;
 
+  const expand = () => onExpand?.({
+    hasImage, src, alt, caption, overlay,
+    uploadedAt: uploaded?.uploaded_at,
+  });
+
   return (
     <figure
       data-testid={testid}
       data-uploaded={hasImage ? 'true' : 'false'}
-      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-w-xs cursor-zoom-in"
+      onClick={expand}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expand(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={hasImage ? `Expand ${alt}` : 'Expand screenshot placeholder'}
+    >
       {hasImage ? (
         <div className="relative">
           <img
@@ -97,26 +112,26 @@ function ScreenshotSlot({
           {isAdmin && (
             <button
               type="button"
-              onClick={onDelete}
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
               disabled={busy}
               data-testid={`${testid}-remove-btn`}
               title="Remove uploaded image and restore placeholder"
-              className="absolute top-2 right-2 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white/90 border border-slate-200 shadow-sm text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
-              <Dismiss20Regular className="w-3.5 h-3.5" /> Remove
+              className="absolute top-1 right-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-white/90 border border-slate-200 shadow-sm text-[10px] font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
+              <Dismiss20Regular className="w-3 h-3" /> Remove
             </button>
           )}
         </div>
       ) : (
         <div
           data-testid={`${testid}-placeholder`}
-          className="flex flex-col items-center justify-center gap-2 px-6 py-10 bg-slate-50 text-center">
-          <span className="inline-flex items-center justify-center w-10 h-10 rounded-lg bg-white border border-dashed border-slate-300 text-slate-400">
-            <Image20Regular />
+          className="flex flex-col items-center justify-center gap-1.5 px-3 py-4 bg-slate-50 text-center">
+          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white border border-dashed border-slate-300 text-slate-400">
+            <Image20Regular className="w-3.5 h-3.5" />
           </span>
-          <div className="text-sm font-semibold text-slate-700">
-            Screenshot placeholder — admin to attach
+          <div className="text-xs font-semibold text-slate-700 leading-tight">
+            Screenshot placeholder
           </div>
-          <div className="text-xs text-slate-500 max-w-md">
+          <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">
             {caption}
           </div>
           {isAdmin ? (
@@ -134,33 +149,112 @@ function ScreenshotSlot({
                 onClick={openPicker}
                 disabled={busy}
                 data-testid={`${testid}-upload-btn`}
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
-                <ArrowUpload20Regular /> {busy ? 'Uploading…' : 'Upload reference image →'}
+                className="mt-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                <ArrowUpload20Regular className="w-3 h-3" /> {busy ? 'Uploading…' : 'Upload →'}
               </button>
-              <div className="text-[11px] text-slate-400 mt-1">
-                PNG / JPEG / WEBP · max 5&nbsp;MB · slot <code className="px-1 py-0.5 rounded bg-white border border-slate-200">{slot}</code>
+              <div className="text-[9px] text-slate-400">
+                PNG · JPEG · WEBP · 5 MB max
               </div>
             </>
           ) : (
-            <div className="text-[11px] text-slate-400 mt-1">
+            <div className="text-[10px] text-slate-400">
               Ask an admin to attach this screenshot.
             </div>
           )}
         </div>
       )}
       {caption && hasImage && (
-        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-3 py-2 text-[11px] italic text-slate-500 flex items-center justify-between gap-3">
-          <span>{caption}</span>
+        <figcaption className="border-t border-slate-100 bg-slate-50/60 px-2 py-1 text-[10px] italic text-slate-500 flex items-center justify-between gap-2">
+          <span className="truncate">{caption}</span>
           {uploaded?.uploaded_at && (
             <span
               data-testid={`${testid}-uploaded-at`}
-              className="text-slate-400 tabular-nums">
-              uploaded {new Date(uploaded.uploaded_at).toLocaleString()}
+              className="text-slate-400 tabular-nums whitespace-nowrap">
+              {new Date(uploaded.uploaded_at).toLocaleDateString()}
             </span>
           )}
         </figcaption>
       )}
     </figure>
+  );
+}
+
+/** v160.3.6x — Lightbox modal. Click-to-expand for the compact ScreenshotSlot
+ *  thumbnails. Supports both real-image and empty-placeholder states so
+ *  QA can verify the pipeline in either case. */
+function ScreenshotLightbox({ payload, onClose }) {
+  useEffect(() => {
+    if (!payload) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    // Freeze background scroll while open
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [payload, onClose]);
+
+  if (!payload) return null;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={payload.alt || 'Screenshot preview'}
+      data-testid="simpro-zip-guide-lightbox"
+      onClick={onClose}
+      className="fixed inset-0 z-[110] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8">
+      <div
+        className="relative max-w-5xl max-h-[90vh] w-full bg-white rounded-2xl shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          data-testid="simpro-zip-guide-lightbox-close"
+          aria-label="Close preview"
+          className="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-9 h-9 rounded-full bg-white/95 border border-slate-200 shadow text-slate-600 hover:bg-slate-50 hover:text-slate-900">
+          <Dismiss20Regular />
+        </button>
+        {payload.hasImage ? (
+          <div className="relative bg-slate-50">
+            <img
+              src={payload.src}
+              alt={payload.alt}
+              data-testid="simpro-zip-guide-lightbox-image"
+              className="block w-full h-auto max-h-[85vh] object-contain"
+            />
+            {payload.overlay}
+          </div>
+        ) : (
+          <div
+            data-testid="simpro-zip-guide-lightbox-placeholder"
+            className="flex flex-col items-center justify-center gap-3 px-8 py-16 bg-slate-50 text-center">
+            <span className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-white border border-dashed border-slate-300 text-slate-400">
+              <Image20Regular />
+            </span>
+            <div className="text-base font-semibold text-slate-700">
+              No screenshot uploaded yet
+            </div>
+            <div className="text-sm text-slate-500 max-w-lg">
+              {payload.caption}
+            </div>
+          </div>
+        )}
+        {payload.caption && (
+          <div className="border-t border-slate-100 bg-white px-4 py-2 text-xs italic text-slate-500 flex items-center justify-between gap-3">
+            <span>{payload.caption}</span>
+            {payload.uploadedAt && (
+              <span className="text-slate-400 tabular-nums whitespace-nowrap">
+                uploaded {new Date(payload.uploadedAt).toLocaleString()}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -193,6 +287,9 @@ export default function SimproZipImportGuide() {
   });
   const [cacheKey, setCacheKey] = useState(() => Date.now());
   const [busySlot, setBusySlot] = useState(null);
+  // v160.3.6x — Lightbox payload for click-to-expand. Shared between
+  // both ScreenshotSlot children so we only mount one modal at a time.
+  const [lightbox, setLightbox] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -321,6 +418,7 @@ export default function SimproZipImportGuide() {
               busy={busySlot === 'simpro-employee'}
               onUpload={(file) => handleUpload('simpro-employee', file)}
               onDelete={() => handleDelete('simpro-employee')}
+              onExpand={setLightbox}
             />
 
             <Step n={4} testid="simpro-zip-step-4" title="Click the Attachments tab">
@@ -353,6 +451,7 @@ export default function SimproZipImportGuide() {
               busy={busySlot === 'simpro-attachments'}
               onUpload={(file) => handleUpload('simpro-attachments', file)}
               onDelete={() => handleDelete('simpro-attachments')}
+              onExpand={setLightbox}
               overlay={
                 <svg
                   data-testid="simpro-zip-guide-arrow-overlay"
@@ -438,6 +537,10 @@ export default function SimproZipImportGuide() {
           </div>
         </div>
       )}
+
+      {/* v160.3.6x — click-to-expand lightbox (rendered at section root so
+          it escapes the collapsible content stacking context) */}
+      <ScreenshotLightbox payload={lightbox} onClose={() => setLightbox(null)} />
     </section>
   );
 }

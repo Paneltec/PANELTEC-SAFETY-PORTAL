@@ -9,6 +9,12 @@ import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
+// v160.3.6w — Onboarding guide + AlertDialog for the bulk-delete confirm.
+import RenewalLinksGuide from '../components/renewals/RenewalLinksGuide';
+import {
+  AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
+} from '../components/ui/alert-dialog';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -114,6 +120,11 @@ export default function Renewals() {
   // v160.3.6j — sortable columns on the grid layout.
   const [sortKey, setSortKey] = useState('contractor');
   const [sortDir, setSortDir] = useState('asc');
+
+  // v160.3.6w — per-row selection + bulk delete (Outbox v6d pattern)
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const toggleSort = (k) => {
     if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(k); setSortDir('asc'); }
@@ -133,6 +144,43 @@ export default function Renewals() {
     else if (sortKey === 'expires') arr.sort((a, b) => cmp(a.expires_at || 'z', b.expires_at || 'z'));
     return arr;
   }, [items, sortKey, sortDir]);
+
+  // v160.3.6w — selection helpers (mirrors Outbox v6d / ActiveSessions v6v)
+  const visibleIds = sortedItems.map((r) => r.id);
+  const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+  const someSelected = !allSelected && visibleIds.some((id) => selected.has(id));
+  const toggleRow = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setSelected((prev) => {
+    const next = new Set(prev);
+    if (visibleIds.every((id) => next.has(id))) {
+      visibleIds.forEach((id) => next.delete(id));
+    } else {
+      visibleIds.forEach((id) => next.add(id));
+    }
+    return next;
+  });
+  const clearSelection = () => setSelected(new Set());
+  const doBulkDelete = async () => {
+    if (selected.size === 0) return;
+    const ids = Array.from(selected);
+    setBulkBusy(true);
+    try {
+      const { data } = await api.post('/renewals/bulk-delete', { ids });
+      const n = data?.deleted || 0;
+      const missing = data?.not_found?.length || 0;
+      let msg = `${n} renewal link${n === 1 ? '' : 's'} deleted`;
+      if (missing > 0) msg += ` · ${missing} already gone`;
+      toast.success(msg);
+      setBulkConfirmOpen(false);
+      clearSelection();
+      await load();
+    } catch (e) { toast.error(apiError(e) || 'Bulk delete failed'); }
+    finally { setBulkBusy(false); }
+  };
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="renewals-list">
@@ -156,6 +204,9 @@ export default function Renewals() {
             </button>
           </div>
         )} />
+
+      {/* v160.3.6w — Feature purpose + how-to guide (collapsible, default open) */}
+      <RenewalLinksGuide />
 
       {needsEmailCount > 0 && !needsEmailDismissed && (
         <div data-testid="needs-email-banner"
@@ -186,8 +237,19 @@ export default function Renewals() {
             {/* Sort header row */}
             <div
               className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-4 py-3 gap-3"
-              style={{ gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}
+              style={{ gridTemplateColumns: '32px minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}
             >
+              {/* v160.3.6w — master checkbox */}
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                onChange={toggleAll}
+                disabled={visibleIds.length === 0 || !canEdit}
+                aria-label={allSelected ? 'Deselect all visible renewal links' : 'Select all visible renewal links'}
+                data-testid="renewals-select-all"
+                className="w-3.5 h-3.5 cursor-pointer disabled:opacity-40"
+              />
               <SortHeaderBtn label="Contractor" k="contractor" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeaderBtn label="Subject / Docs" k="subject" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
               <SortHeaderBtn label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
@@ -196,10 +258,22 @@ export default function Renewals() {
             </div>
             {sortedItems.map((r) => {
               const d = daysUntil(r.expires_at);
+              const isSelected = selected.has(r.id);
               return (
                 <div key={r.id} data-testid={`renewal-row-${r.id}`}
-                  className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-4 py-3 gap-3"
-                  style={{ gridTemplateColumns: 'minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}>
+                  className={`grid items-center border-t border-slate-100 px-4 py-3 gap-3 ${isSelected ? 'bg-[#e6eff9]/40' : 'hover:bg-slate-50'}`}
+                  style={{ gridTemplateColumns: '32px minmax(180px, 1.4fr) minmax(240px, 2fr) 120px minmax(140px, 1fr) 200px' }}>
+                  {/* v160.3.6w — per-row checkbox */}
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleRow(r.id)}
+                    disabled={!canEdit}
+                    aria-label={`Select ${r.contractor_name}'s renewal link`}
+                    data-testid={`renewal-select-${r.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-3.5 h-3.5 cursor-pointer disabled:opacity-40"
+                  />
                   {/* Contractor */}
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-900 truncate">{r.contractor_name}</div>
