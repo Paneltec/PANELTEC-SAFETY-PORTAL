@@ -1,0 +1,1528 @@
+[
+  {
+    "slug": "white-card",
+    "name": "White Card",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "White Card",
+      "White card "
+    ],
+    "source_count": 63
+  },
+  {
+    "slug": "traffic-control",
+    "name": "Traffic Control",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Traffic Control"
+    ],
+    "source_count": 57
+  },
+  {
+    "slug": "first-aid",
+    "name": "First Aid",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "First Aid",
+      "First Aid "
+    ],
+    "source_count": 51
+  },
+  {
+    "slug": "cpr",
+    "name": "CPR",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "CPR"
+    ],
+    "source_count": 40
+  },
+  {
+    "slug": "west-tamar-council",
+    "name": "West Tamar Council",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "West Tamar Council"
+    ],
+    "source_count": 23
+  },
+  {
+    "slug": "taswater-induction",
+    "name": "TasWater Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasWater Induction",
+      "TasWater Induction "
+    ],
+    "source_count": 22
+  },
+  {
+    "slug": "traffic-ticket",
+    "name": "Traffic Ticket",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Traffic Ticket"
+    ],
+    "source_count": 18
+  },
+  {
+    "slug": "drivers-licence",
+    "name": "Drivers Licence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Drivers Licence"
+    ],
+    "source_count": 17
+  },
+  {
+    "slug": "tas-gas-induction",
+    "name": "Tas Gas Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tas Gas Induction"
+    ],
+    "source_count": 15
+  },
+  {
+    "slug": "fork-lift",
+    "name": "Fork Lift",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Fork Lift",
+      "Fork Lift "
+    ],
+    "source_count": 14
+  },
+  {
+    "slug": "meander-valley-council",
+    "name": "Meander Valley Council",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Meander Valley Council"
+    ],
+    "source_count": 14
+  },
+  {
+    "slug": "tas-water-induction",
+    "name": "Tas Water Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tas Water Induction"
+    ],
+    "source_count": 12
+  },
+  {
+    "slug": "car",
+    "name": "Car",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car"
+    ],
+    "source_count": 11
+  },
+  {
+    "slug": "pssr",
+    "name": "PSSR",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "PSSR"
+    ],
+    "source_count": 11
+  },
+  {
+    "slug": "a-drivers-licence",
+    "name": "A-Drivers Licence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "A-Drivers Licence "
+    ],
+    "source_count": 8
+  },
+  {
+    "slug": "car-medium-rigid",
+    "name": "Car , Medium Rigid ,",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car , Medium Rigid , "
+    ],
+    "source_count": 8
+  },
+  {
+    "slug": "pssr-passport",
+    "name": "PSSR Passport",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      " PSSR Passport"
+    ],
+    "source_count": 8
+  },
+  {
+    "slug": "traffic-management-plans-instalation",
+    "name": "Traffic Management Plans instalation",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Traffic Management Plans instalation"
+    ],
+    "source_count": 8
+  },
+  {
+    "slug": "car-or-heavy-rigid",
+    "name": "Car / Heavy Rigid",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car / Heavy Rigid"
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "confine-spaces",
+    "name": "Confine Spaces",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Confine Spaces"
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "excavator",
+    "name": "Excavator",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Excavator"
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "taswater-cdo-induction",
+    "name": "TasWater CDO Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasWater CDO Induction "
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "traffic-management-advanced-prepare-plans",
+    "name": "Traffic Management Advanced ( prepare plans )",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Traffic Management Advanced ( prepare plans )"
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "working-safely-heights",
+    "name": "Working Safely @ Heights",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Working Safely @ Heights"
+    ],
+    "source_count": 7
+  },
+  {
+    "slug": "car-or-heavy-combination",
+    "name": "Car / Heavy Combination",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car / Heavy Combination"
+    ],
+    "source_count": 6
+  },
+  {
+    "slug": "confined-space",
+    "name": "Confined Space",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Confined Space",
+      "Confined Space "
+    ],
+    "source_count": 6
+  },
+  {
+    "slug": "high-risk-fork-lift",
+    "name": "High Risk - Fork Lift",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "High Risk - Fork Lift"
+    ],
+    "source_count": 6
+  },
+  {
+    "slug": "implement-traffic-plans",
+    "name": "Implement Traffic Plans",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Implement Traffic Plans"
+    ],
+    "source_count": 6
+  },
+  {
+    "slug": "working-at-heights",
+    "name": "Working at heights",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Working at heights"
+    ],
+    "source_count": 6
+  },
+  {
+    "slug": "a-drivers-licence-mr",
+    "name": "A-Drivers Licence MR.",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "A-Drivers Licence MR."
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "confined-spaces",
+    "name": "Confined Spaces",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Confined Spaces",
+      "Confined Spaces "
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "excavator-operator",
+    "name": "Excavator Operator",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Excavator Operator"
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "fire-fighting-equiptment-portable",
+    "name": "Fire fighting equiptment ( portable )",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Fire fighting equiptment ( portable )"
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "mv-and-nmc-induction",
+    "name": "MV & NMC INDUCTION",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MV & NMC INDUCTION"
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "oh-and-s",
+    "name": "OH&S",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "OH&S"
+    ],
+    "source_count": 5
+  },
+  {
+    "slug": "asbestos-removal",
+    "name": "Asbestos Removal",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Asbestos Removal"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "driver-licence",
+    "name": "Driver LIcence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Driver LIcence"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "fire-response-training",
+    "name": "Fire Response Training",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Fire Response Training"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "hr-drivers-license",
+    "name": "HR Drivers License",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "HR Drivers License"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "optus-induction",
+    "name": "Optus Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Optus Induction"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "pressure-water-jetting",
+    "name": "Pressure Water Jetting",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Pressure Water Jetting"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "tas-rail",
+    "name": "Tas Rail",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tas Rail"
+    ],
+    "source_count": 4
+  },
+  {
+    "slug": "asbestos-awareness",
+    "name": "Asbestos Awareness",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Asbestos Awareness"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "boags",
+    "name": "BOAGS",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "BOAGS "
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "chainsaw",
+    "name": "Chainsaw",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Chainsaw"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "civil-construction-and-maint-cert-111",
+    "name": "Civil Construction and Maint Cert 111",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Civil Construction and Maint Cert 111"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "civil-contractor-plant-operator",
+    "name": "Civil Contractor Plant Operator",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Civil Contractor Plant Operator"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "class-c-drivers-licence",
+    "name": "Class C Drivers Licence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Class C Drivers Licence"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "drivers",
+    "name": "Drivers",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Drivers"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "drivers-licence-mr",
+    "name": "Drivers Licence MR",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Drivers Licence MR"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "front-end-loader",
+    "name": "Front end loader",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Front end loader "
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "mvc",
+    "name": "MVC",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MVC"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "nbn-induction",
+    "name": "NBN Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "NBN Induction"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "skid-steer-loader",
+    "name": "Skid Steer Loader",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Skid Steer Loader "
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "venarchie",
+    "name": "Venarchie",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Venarchie"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "vsjv-induction",
+    "name": "VSJV Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "VSJV Induction"
+    ],
+    "source_count": 3
+  },
+  {
+    "slug": "apply-risk-management-process",
+    "name": "Apply Risk Management Process",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Apply Risk Management Process"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "asbestos-removal-non-friable",
+    "name": "Asbestos Removal - Non friable",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Asbestos Removal - Non friable"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "car-or-heavy-rigid-or-motorcycle",
+    "name": "Car / Heavy Rigid / Motorcycle",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car / Heavy Rigid / Motorcycle"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "drug-and-alcohol-testing",
+    "name": "Drug & Alcohol Testing",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Drug & Alcohol Testing"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "fairbrother-induction",
+    "name": "Fairbrother Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Fairbrother Induction"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "gas-industry-operations-cert-111",
+    "name": "Gas Industry Operations Cert 111",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Gas Industry Operations Cert 111"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "high-pressure-water-jetter",
+    "name": "High Pressure Water Jetter",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "High Pressure Water Jetter"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "high-risk-work",
+    "name": "High Risk Work",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "High Risk Work"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "instructed-person",
+    "name": "Instructed Person",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Instructed Person"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "jasper-krushka",
+    "name": "Jasper Krushka",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Jasper Krushka"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "manhole-work-and-rescue",
+    "name": "Manhole Work & Rescue",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Manhole Work & Rescue"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "mr-drivers-licence",
+    "name": "MR DRIVERS LICENCE",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MR DRIVERS LICENCE"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "nmc",
+    "name": "NMC",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "NMC"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "northern-midlands-induction",
+    "name": "Northern Midlands Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Northern Midlands Induction"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "oh-and-s-qld",
+    "name": "OH&S Qld",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "OH&S Qld"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "philip-woods",
+    "name": "Philip Woods",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Philip Woods"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "plumbing-license",
+    "name": "Plumbing License",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Plumbing License"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "tandem",
+    "name": "Tandem",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tandem"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "tas-gas",
+    "name": "Tas Gas",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tas Gas"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "tas-water",
+    "name": "Tas Water",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Tas Water"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "tasgas",
+    "name": "TasGas",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasGas"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "tasgas-induction",
+    "name": "TasGas Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasGas Induction"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "taswater-cdo-damstra",
+    "name": "TasWater CDO Damstra",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasWater CDO Damstra"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "vacuum-loading-system",
+    "name": "Vacuum Loading System",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Vacuum Loading System"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "vec-sis",
+    "name": "Vec-SIS",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Vec-SIS"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "work-safely-heights",
+    "name": "Work Safely @ Heights",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Work Safely @ Heights"
+    ],
+    "source_count": 2
+  },
+  {
+    "slug": "airport-induction",
+    "name": "Airport Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Airport Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "apply-fatigue-managemant",
+    "name": "Apply Fatigue Managemant",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Apply Fatigue Managemant"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "asbestos-removal-supervise",
+    "name": "Asbestos Removal ( Supervise )",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Asbestos Removal ( Supervise )"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "ausco",
+    "name": "Ausco",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Ausco"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "back-hoe-and-skid-steer-loader-op",
+    "name": "Back Hoe & Skid Steer Loader Op.",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Back Hoe & Skid Steer Loader Op."
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "butt-weld-and-electro-fuse-plastic-pipes",
+    "name": "Butt Weld & Electro Fuse Plastic Pipes",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Butt Weld & Electro Fuse Plastic Pipes"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "butt-weld-plastic-pipes",
+    "name": "Butt Weld Plastic Pipes",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Butt Weld Plastic Pipes"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "cabler-license",
+    "name": "cabler license",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "cabler license"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "car-heavy-combination-motorcycle",
+    "name": "Car , Heavy combination, motorcycle",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car , Heavy combination, motorcycle"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "car-or-motorbike",
+    "name": "Car / Motorbike",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Car / Motorbike"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "cert-111-surface-extraction",
+    "name": "Cert 111 Surface Extraction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Cert 111 Surface Extraction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "chain-saw",
+    "name": "Chain saw",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Chain saw"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "construction-industry",
+    "name": "Construction Industry",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Construction Industry"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "dbyd-certified-locator",
+    "name": "DBYD Certified Locator",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "DBYD Certified Locator"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "devonport-city-council-induction",
+    "name": "Devonport City Council Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Devonport City Council Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "downer",
+    "name": "Downer",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Downer"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "dozer",
+    "name": "Dozer",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Dozer"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "drivers-auto",
+    "name": "Drivers- Auto",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Drivers- Auto"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "electro-fusion-pipe-welding",
+    "name": "Electro Fusion Pipe Welding",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Electro Fusion Pipe Welding"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "first-attack-firefighter",
+    "name": "First Attack Firefighter",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "First Attack Firefighter"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "forest-industries",
+    "name": "Forest Industries",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Forest Industries"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "fulton-hogan-induction",
+    "name": "Fulton Hogan Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Fulton Hogan Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "gas-safety-awareness",
+    "name": "Gas Safety Awareness",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Gas Safety Awareness"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "haul-truck",
+    "name": "Haul Truck",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Haul Truck "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "hc-drivers-licence",
+    "name": "HC Drivers Licence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "HC Drivers Licence"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "health-and-safety-training",
+    "name": "Health & Safety Training",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Health & Safety Training"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "height-safety",
+    "name": "Height Safety",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Height Safety "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "high-risk-lf",
+    "name": "High Risk LF",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "High Risk LF"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "huawei-induction",
+    "name": "Huawei Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Huawei Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "hydro-tasmania",
+    "name": "Hydro Tasmania",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Hydro Tasmania"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "low-voltage-rescue",
+    "name": "Low Voltage Rescue",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Low Voltage Rescue"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "meander-vally-council",
+    "name": "Meander Vally Council",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Meander Vally Council"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "medicare",
+    "name": "Medicare",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Medicare"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "medium-ridged",
+    "name": "Medium Ridged",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Medium Ridged"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "mental-health-first-aider",
+    "name": "Mental Health First Aider",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Mental Health First Aider"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "midlands-council",
+    "name": "Midlands Council",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Midlands Council"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "motorcycle",
+    "name": "Motorcycle",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Motorcycle "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "mr-licence-danny-kirkland",
+    "name": "MR Licence - Danny Kirkland",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MR Licence - Danny Kirkland "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "mr-license",
+    "name": "MR License",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MR License"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "mvc-induction",
+    "name": "MVC INDUCTION",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "MVC INDUCTION"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "nbn-contractors-licence",
+    "name": "NBN Contractors Licence",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "NBN Contractors Licence"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "ohs-cert-iv-part",
+    "name": "OHS CERT IV ( PART)",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "OHS CERT IV ( PART)"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "on-road-of-road",
+    "name": "On Road Of Road",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "On Road Of Road"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "operate-drain-cleaning",
+    "name": "Operate Drain Cleaning",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Operate Drain Cleaning"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "permit-holder-tas-gas",
+    "name": "Permit Holder ( Tas Gas )",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Permit Holder ( Tas Gas )"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "power-line-training",
+    "name": "POWER LINE TRAINING",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "POWER LINE TRAINING"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "practitioners-licence-dept-justice",
+    "name": "Practitioners Licence Dept. Justice.",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Practitioners Licence Dept. Justice."
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "prepare-to-work-in-gas-industry",
+    "name": "Prepare to work in Gas Industry",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Prepare to work in Gas Industry"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "security-certificate",
+    "name": "Security Certificate",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Security Certificate"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "skidder",
+    "name": "Skidder",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Skidder"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "ta-and-e-cert-iv",
+    "name": "TA&E CERT IV",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TA&E CERT IV"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "tasgas-hse-ind",
+    "name": "TasGas HSE Ind",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasGas HSE Ind"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "tasgas-hse-induction",
+    "name": "TasGas HSE Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasGas HSE Induction "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "tasnetworks",
+    "name": "TasNetworks",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TasNetworks"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "telstra-acc-plant-locator",
+    "name": "Telstra Acc Plant Locator",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Telstra Acc Plant Locator"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "tesi-ip-instructed-person-certificate",
+    "name": "TESI_IP_Instructed_Person_Certificate",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TESI_IP_Instructed_Person_Certificate  "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "tlic4006a-drivig-mc-vehicles",
+    "name": "TLIC4006A Drivig MC Vehicles",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "TLIC4006A Drivig MC Vehicles"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "trillity",
+    "name": "Trillity",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Trillity"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "type-a-water-jetting",
+    "name": "Type A Water Jetting",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Type A Water Jetting "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "ucg-induction",
+    "name": "UCG Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "UCG Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "visionstream",
+    "name": "Visionstream",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Visionstream "
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "vsjv",
+    "name": "VSJV",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "VSJV"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "vsjv-induction-144",
+    "name": "VSJV-Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "VSJV-Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "wh-and-s-cert-iv",
+    "name": "WH&S CERT IV",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "WH&S CERT IV"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "wheeled-loader-mill-yard",
+    "name": "Wheeled loader (mill Yard)",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Wheeled loader (mill Yard)"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "work-place-safety-induction",
+    "name": "Work Place Safety Induction",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Work Place Safety Induction"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "work-safely-in-construction-industry",
+    "name": "Work Safely in Construction Industry",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Work Safely in Construction Industry"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "working-heights",
+    "name": "Working @ Heights",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Working @ Heights"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "working-with-vunerable-people",
+    "name": "Working with Vunerable People",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Working with Vunerable People"
+    ],
+    "source_count": 1
+  },
+  {
+    "slug": "workplace-breathing-apparatus",
+    "name": "Workplace Breathing Apparatus",
+    "category": null,
+    "requires_expiry": null,
+    "simpro_variants": [
+      "Workplace Breathing Apparatus"
+    ],
+    "source_count": 1
+  }
+]

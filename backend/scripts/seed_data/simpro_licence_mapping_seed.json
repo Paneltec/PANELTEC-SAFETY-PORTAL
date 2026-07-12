@@ -1,0 +1,950 @@
+[
+  {
+    "simpro_licence_name_raw": "White Card",
+    "cert_kind_slug": "white-card",
+    "map_status": "auto",
+    "occurrences": 44
+  },
+  {
+    "simpro_licence_name_raw": "White card ",
+    "cert_kind_slug": "white-card",
+    "map_status": "auto",
+    "occurrences": 19
+  },
+  {
+    "simpro_licence_name_raw": "Traffic Control",
+    "cert_kind_slug": "traffic-control",
+    "map_status": "auto",
+    "occurrences": 57
+  },
+  {
+    "simpro_licence_name_raw": "First Aid",
+    "cert_kind_slug": "first-aid",
+    "map_status": "auto",
+    "occurrences": 26
+  },
+  {
+    "simpro_licence_name_raw": "First Aid ",
+    "cert_kind_slug": "first-aid",
+    "map_status": "auto",
+    "occurrences": 25
+  },
+  {
+    "simpro_licence_name_raw": "CPR",
+    "cert_kind_slug": "cpr",
+    "map_status": "auto",
+    "occurrences": 40
+  },
+  {
+    "simpro_licence_name_raw": "West Tamar Council",
+    "cert_kind_slug": "west-tamar-council",
+    "map_status": "auto",
+    "occurrences": 23
+  },
+  {
+    "simpro_licence_name_raw": "TasWater Induction",
+    "cert_kind_slug": "taswater-induction",
+    "map_status": "auto",
+    "occurrences": 16
+  },
+  {
+    "simpro_licence_name_raw": "TasWater Induction ",
+    "cert_kind_slug": "taswater-induction",
+    "map_status": "auto",
+    "occurrences": 6
+  },
+  {
+    "simpro_licence_name_raw": "Traffic Ticket",
+    "cert_kind_slug": "traffic-ticket",
+    "map_status": "auto",
+    "occurrences": 18
+  },
+  {
+    "simpro_licence_name_raw": "Drivers Licence",
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto",
+    "occurrences": 17
+  },
+  {
+    "simpro_licence_name_raw": "Tas Gas Induction",
+    "cert_kind_slug": "tas-gas-induction",
+    "map_status": "auto",
+    "occurrences": 15
+  },
+  {
+    "simpro_licence_name_raw": "Fork Lift ",
+    "cert_kind_slug": "fork-lift",
+    "map_status": "auto",
+    "occurrences": 9
+  },
+  {
+    "simpro_licence_name_raw": "Fork Lift",
+    "cert_kind_slug": "fork-lift",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "Meander Valley Council",
+    "cert_kind_slug": "meander-valley-council",
+    "map_status": "auto",
+    "occurrences": 14
+  },
+  {
+    "simpro_licence_name_raw": "Tas Water Induction",
+    "cert_kind_slug": "tas-water-induction",
+    "map_status": "auto",
+    "occurrences": 12
+  },
+  {
+    "simpro_licence_name_raw": "Car",
+    "cert_kind_slug": "car",
+    "map_status": "auto",
+    "occurrences": 11
+  },
+  {
+    "simpro_licence_name_raw": "PSSR",
+    "cert_kind_slug": "pssr",
+    "map_status": "auto",
+    "occurrences": 11
+  },
+  {
+    "simpro_licence_name_raw": "A-Drivers Licence ",
+    "cert_kind_slug": "a-drivers-licence",
+    "map_status": "auto",
+    "occurrences": 8
+  },
+  {
+    "simpro_licence_name_raw": "Car , Medium Rigid , ",
+    "cert_kind_slug": "car-medium-rigid",
+    "map_status": "auto",
+    "occurrences": 8
+  },
+  {
+    "simpro_licence_name_raw": " PSSR Passport",
+    "cert_kind_slug": "pssr-passport",
+    "map_status": "auto",
+    "occurrences": 8
+  },
+  {
+    "simpro_licence_name_raw": "Traffic Management Plans instalation",
+    "cert_kind_slug": "traffic-management-plans-instalation",
+    "map_status": "auto",
+    "occurrences": 8
+  },
+  {
+    "simpro_licence_name_raw": "Car / Heavy Rigid",
+    "cert_kind_slug": "car-or-heavy-rigid",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "Confine Spaces",
+    "cert_kind_slug": "confine-spaces",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "Excavator",
+    "cert_kind_slug": "excavator",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "TasWater CDO Induction ",
+    "cert_kind_slug": "taswater-cdo-induction",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "Traffic Management Advanced ( prepare plans )",
+    "cert_kind_slug": "traffic-management-advanced-prepare-plans",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "Working Safely @ Heights",
+    "cert_kind_slug": "working-safely-heights",
+    "map_status": "auto",
+    "occurrences": 7
+  },
+  {
+    "simpro_licence_name_raw": "Car / Heavy Combination",
+    "cert_kind_slug": "car-or-heavy-combination",
+    "map_status": "auto",
+    "occurrences": 6
+  },
+  {
+    "simpro_licence_name_raw": "Confined Space ",
+    "cert_kind_slug": "confined-space",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "Confined Space",
+    "cert_kind_slug": "confined-space",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "High Risk - Fork Lift",
+    "cert_kind_slug": "high-risk-fork-lift",
+    "map_status": "auto",
+    "occurrences": 6
+  },
+  {
+    "simpro_licence_name_raw": "Implement Traffic Plans",
+    "cert_kind_slug": "implement-traffic-plans",
+    "map_status": "auto",
+    "occurrences": 6
+  },
+  {
+    "simpro_licence_name_raw": "Working at heights",
+    "cert_kind_slug": "working-at-heights",
+    "map_status": "auto",
+    "occurrences": 6
+  },
+  {
+    "simpro_licence_name_raw": "A-Drivers Licence MR.",
+    "cert_kind_slug": "a-drivers-licence-mr",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "Confined Spaces",
+    "cert_kind_slug": "confined-spaces",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Confined Spaces ",
+    "cert_kind_slug": "confined-spaces",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Excavator Operator",
+    "cert_kind_slug": "excavator-operator",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "Fire fighting equiptment ( portable )",
+    "cert_kind_slug": "fire-fighting-equiptment-portable",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "MV & NMC INDUCTION",
+    "cert_kind_slug": "mv-and-nmc-induction",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "OH&S",
+    "cert_kind_slug": "oh-and-s",
+    "map_status": "auto",
+    "occurrences": 5
+  },
+  {
+    "simpro_licence_name_raw": "Asbestos Removal",
+    "cert_kind_slug": "asbestos-removal",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Driver LIcence",
+    "cert_kind_slug": "driver-licence",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Fire Response Training",
+    "cert_kind_slug": "fire-response-training",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "HR Drivers License",
+    "cert_kind_slug": "hr-drivers-license",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Optus Induction",
+    "cert_kind_slug": "optus-induction",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Pressure Water Jetting",
+    "cert_kind_slug": "pressure-water-jetting",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Tas Rail",
+    "cert_kind_slug": "tas-rail",
+    "map_status": "auto",
+    "occurrences": 4
+  },
+  {
+    "simpro_licence_name_raw": "Asbestos Awareness",
+    "cert_kind_slug": "asbestos-awareness",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "BOAGS ",
+    "cert_kind_slug": "boags",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Chainsaw",
+    "cert_kind_slug": "chainsaw",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Civil Construction and Maint Cert 111",
+    "cert_kind_slug": "civil-construction-and-maint-cert-111",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Civil Contractor Plant Operator",
+    "cert_kind_slug": "civil-contractor-plant-operator",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Class C Drivers Licence",
+    "cert_kind_slug": "class-c-drivers-licence",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Drivers",
+    "cert_kind_slug": "drivers",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Drivers Licence MR",
+    "cert_kind_slug": "drivers-licence-mr",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Front end loader ",
+    "cert_kind_slug": "front-end-loader",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "MVC",
+    "cert_kind_slug": "mvc",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "NBN Induction",
+    "cert_kind_slug": "nbn-induction",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Skid Steer Loader ",
+    "cert_kind_slug": "skid-steer-loader",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Venarchie",
+    "cert_kind_slug": "venarchie",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "VSJV Induction",
+    "cert_kind_slug": "vsjv-induction",
+    "map_status": "auto",
+    "occurrences": 3
+  },
+  {
+    "simpro_licence_name_raw": "Apply Risk Management Process",
+    "cert_kind_slug": "apply-risk-management-process",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Asbestos Removal - Non friable",
+    "cert_kind_slug": "asbestos-removal-non-friable",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Car / Heavy Rigid / Motorcycle",
+    "cert_kind_slug": "car-or-heavy-rigid-or-motorcycle",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Drug & Alcohol Testing",
+    "cert_kind_slug": "drug-and-alcohol-testing",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Fairbrother Induction",
+    "cert_kind_slug": "fairbrother-induction",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Gas Industry Operations Cert 111",
+    "cert_kind_slug": "gas-industry-operations-cert-111",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "High Pressure Water Jetter",
+    "cert_kind_slug": "high-pressure-water-jetter",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "High Risk Work",
+    "cert_kind_slug": "high-risk-work",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Instructed Person",
+    "cert_kind_slug": "instructed-person",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Jasper Krushka",
+    "cert_kind_slug": "jasper-krushka",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Manhole Work & Rescue",
+    "cert_kind_slug": "manhole-work-and-rescue",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "MR DRIVERS LICENCE",
+    "cert_kind_slug": "mr-drivers-licence",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "NMC",
+    "cert_kind_slug": "nmc",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Northern Midlands Induction",
+    "cert_kind_slug": "northern-midlands-induction",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "OH&S Qld",
+    "cert_kind_slug": "oh-and-s-qld",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Philip Woods",
+    "cert_kind_slug": "philip-woods",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Plumbing License",
+    "cert_kind_slug": "plumbing-license",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Tandem",
+    "cert_kind_slug": "tandem",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Tas Gas",
+    "cert_kind_slug": "tas-gas",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Tas Water",
+    "cert_kind_slug": "tas-water",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "TasGas",
+    "cert_kind_slug": "tasgas",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "TasGas Induction",
+    "cert_kind_slug": "tasgas-induction",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "TasWater CDO Damstra",
+    "cert_kind_slug": "taswater-cdo-damstra",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Vacuum Loading System",
+    "cert_kind_slug": "vacuum-loading-system",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Vec-SIS",
+    "cert_kind_slug": "vec-sis",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Work Safely @ Heights",
+    "cert_kind_slug": "work-safely-heights",
+    "map_status": "auto",
+    "occurrences": 2
+  },
+  {
+    "simpro_licence_name_raw": "Airport Induction",
+    "cert_kind_slug": "airport-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Apply Fatigue Managemant",
+    "cert_kind_slug": "apply-fatigue-managemant",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Asbestos Removal ( Supervise )",
+    "cert_kind_slug": "asbestos-removal-supervise",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Ausco",
+    "cert_kind_slug": "ausco",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Back Hoe & Skid Steer Loader Op.",
+    "cert_kind_slug": "back-hoe-and-skid-steer-loader-op",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Butt Weld & Electro Fuse Plastic Pipes",
+    "cert_kind_slug": "butt-weld-and-electro-fuse-plastic-pipes",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Butt Weld Plastic Pipes",
+    "cert_kind_slug": "butt-weld-plastic-pipes",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "cabler license",
+    "cert_kind_slug": "cabler-license",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Car , Heavy combination, motorcycle",
+    "cert_kind_slug": "car-heavy-combination-motorcycle",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Car / Motorbike",
+    "cert_kind_slug": "car-or-motorbike",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Cert 111 Surface Extraction",
+    "cert_kind_slug": "cert-111-surface-extraction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Chain saw",
+    "cert_kind_slug": "chain-saw",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Construction Industry",
+    "cert_kind_slug": "construction-industry",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "DBYD Certified Locator",
+    "cert_kind_slug": "dbyd-certified-locator",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Devonport City Council Induction",
+    "cert_kind_slug": "devonport-city-council-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Downer",
+    "cert_kind_slug": "downer",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Dozer",
+    "cert_kind_slug": "dozer",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Drivers- Auto",
+    "cert_kind_slug": "drivers-auto",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Electro Fusion Pipe Welding",
+    "cert_kind_slug": "electro-fusion-pipe-welding",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "First Attack Firefighter",
+    "cert_kind_slug": "first-attack-firefighter",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Forest Industries",
+    "cert_kind_slug": "forest-industries",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Fulton Hogan Induction",
+    "cert_kind_slug": "fulton-hogan-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Gas Safety Awareness",
+    "cert_kind_slug": "gas-safety-awareness",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Haul Truck ",
+    "cert_kind_slug": "haul-truck",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "HC Drivers Licence",
+    "cert_kind_slug": "hc-drivers-licence",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Health & Safety Training",
+    "cert_kind_slug": "health-and-safety-training",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Height Safety ",
+    "cert_kind_slug": "height-safety",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "High Risk LF",
+    "cert_kind_slug": "high-risk-lf",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Huawei Induction",
+    "cert_kind_slug": "huawei-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Hydro Tasmania",
+    "cert_kind_slug": "hydro-tasmania",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Low Voltage Rescue",
+    "cert_kind_slug": "low-voltage-rescue",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Meander Vally Council",
+    "cert_kind_slug": "meander-vally-council",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Medicare",
+    "cert_kind_slug": "medicare",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Medium Ridged",
+    "cert_kind_slug": "medium-ridged",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Mental Health First Aider",
+    "cert_kind_slug": "mental-health-first-aider",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Midlands Council",
+    "cert_kind_slug": "midlands-council",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Motorcycle ",
+    "cert_kind_slug": "motorcycle",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "MR Licence - Danny Kirkland ",
+    "cert_kind_slug": "mr-licence-danny-kirkland",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "MR License",
+    "cert_kind_slug": "mr-license",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "MVC INDUCTION",
+    "cert_kind_slug": "mvc-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "NBN Contractors Licence",
+    "cert_kind_slug": "nbn-contractors-licence",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "OHS CERT IV ( PART)",
+    "cert_kind_slug": "ohs-cert-iv-part",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "On Road Of Road",
+    "cert_kind_slug": "on-road-of-road",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Operate Drain Cleaning",
+    "cert_kind_slug": "operate-drain-cleaning",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Permit Holder ( Tas Gas )",
+    "cert_kind_slug": "permit-holder-tas-gas",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "POWER LINE TRAINING",
+    "cert_kind_slug": "power-line-training",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Practitioners Licence Dept. Justice.",
+    "cert_kind_slug": "practitioners-licence-dept-justice",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Prepare to work in Gas Industry",
+    "cert_kind_slug": "prepare-to-work-in-gas-industry",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Security Certificate",
+    "cert_kind_slug": "security-certificate",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Skidder",
+    "cert_kind_slug": "skidder",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TA&E CERT IV",
+    "cert_kind_slug": "ta-and-e-cert-iv",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TasGas HSE Ind",
+    "cert_kind_slug": "tasgas-hse-ind",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TasGas HSE Induction ",
+    "cert_kind_slug": "tasgas-hse-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TasNetworks",
+    "cert_kind_slug": "tasnetworks",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Telstra Acc Plant Locator",
+    "cert_kind_slug": "telstra-acc-plant-locator",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TESI_IP_Instructed_Person_Certificate  ",
+    "cert_kind_slug": "tesi-ip-instructed-person-certificate",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "TLIC4006A Drivig MC Vehicles",
+    "cert_kind_slug": "tlic4006a-drivig-mc-vehicles",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Trillity",
+    "cert_kind_slug": "trillity",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Type A Water Jetting ",
+    "cert_kind_slug": "type-a-water-jetting",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "UCG Induction",
+    "cert_kind_slug": "ucg-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Visionstream ",
+    "cert_kind_slug": "visionstream",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "VSJV",
+    "cert_kind_slug": "vsjv",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "VSJV-Induction",
+    "cert_kind_slug": "vsjv-induction-144",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "WH&S CERT IV",
+    "cert_kind_slug": "wh-and-s-cert-iv",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Wheeled loader (mill Yard)",
+    "cert_kind_slug": "wheeled-loader-mill-yard",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Work Place Safety Induction",
+    "cert_kind_slug": "work-place-safety-induction",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Work Safely in Construction Industry",
+    "cert_kind_slug": "work-safely-in-construction-industry",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Working @ Heights",
+    "cert_kind_slug": "working-heights",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Working with Vunerable People",
+    "cert_kind_slug": "working-with-vunerable-people",
+    "map_status": "auto",
+    "occurrences": 1
+  },
+  {
+    "simpro_licence_name_raw": "Workplace Breathing Apparatus",
+    "cert_kind_slug": "workplace-breathing-apparatus",
+    "map_status": "auto",
+    "occurrences": 1
+  }
+]
