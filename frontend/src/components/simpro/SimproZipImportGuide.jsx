@@ -91,7 +91,7 @@ function ScreenshotSlot({
     <figure
       data-testid={testid}
       data-uploaded={hasImage ? 'true' : 'false'}
-      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-w-xs cursor-zoom-in"
+      className="relative rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden max-h-36 cursor-zoom-in inline-block align-top"
       onClick={expand}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); expand(); } }}
       role="button"
@@ -99,14 +99,14 @@ function ScreenshotSlot({
       aria-label={hasImage ? `Expand ${alt}` : 'Expand screenshot placeholder'}
     >
       {hasImage ? (
-        <div className="relative">
+        <div className="relative h-36">
           <img
             src={src}
             alt={alt}
             loading="lazy"
             onError={() => setImgErrored(true)}
             data-testid={`${testid}-image`}
-            className="block w-full h-auto"
+            className="block h-36 w-auto max-w-none"
           />
           {overlay}
           {isAdmin && (
@@ -122,16 +122,20 @@ function ScreenshotSlot({
           )}
         </div>
       ) : (
+        // v160.3.6y — Clean empty state, no fake Simpro mockup styling.
+        // Wide banner shape (4:1) matches the shape a real Simpro
+        // screenshot will land as when uploaded.
         <div
           data-testid={`${testid}-placeholder`}
-          className="flex flex-col items-center justify-center gap-1.5 px-3 py-4 bg-slate-50 text-center">
-          <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-white border border-dashed border-slate-300 text-slate-400">
-            <Image20Regular className="w-3.5 h-3.5" />
+          className="flex flex-col items-center justify-center gap-1 px-4 py-3 bg-slate-50 text-center border border-dashed border-slate-300 rounded-lg m-1"
+          style={{ width: 480, maxWidth: '100%', height: 128 }}>
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-md text-slate-400">
+            <Image20Regular />
           </span>
-          <div className="text-xs font-semibold text-slate-700 leading-tight">
-            Screenshot placeholder
+          <div className="text-[11px] font-semibold text-slate-600 leading-tight">
+            Screenshot placeholder — admin to attach
           </div>
-          <div className="text-[10px] text-slate-500 leading-snug line-clamp-2">
+          <div className="text-[10px] text-slate-400 leading-snug line-clamp-1 max-w-full">
             {caption}
           </div>
           {isAdmin ? (
@@ -149,12 +153,9 @@ function ScreenshotSlot({
                 onClick={openPicker}
                 disabled={busy}
                 data-testid={`${testid}-upload-btn`}
-                className="mt-1 inline-flex items-center gap-1 px-2.5 py-1 rounded-md border border-slate-300 bg-white text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-slate-300 bg-white text-[10px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
                 <ArrowUpload20Regular className="w-3 h-3" /> {busy ? 'Uploading…' : 'Upload →'}
               </button>
-              <div className="text-[9px] text-slate-400">
-                PNG · JPEG · WEBP · 5 MB max
-              </div>
             </>
           ) : (
             <div className="text-[10px] text-slate-400">
@@ -453,25 +454,31 @@ export default function SimproZipImportGuide() {
               onDelete={() => handleDelete('simpro-attachments')}
               onExpand={setLightbox}
               overlay={
+                // v160.3.6y — Overlay recalibrated for a WIDE Simpro
+                // Attachments screenshot (roughly 3-4:1 aspect). ViewBox is
+                // 400×100 with preserveAspectRatio="none" so the ring +
+                // arrow always sit in the top-right ~10 % of the image —
+                // exactly where Simpro renders the download-ZIP icon,
+                // immediately left of the blue CREATE FOLDER button.
                 <svg
                   data-testid="simpro-zip-guide-arrow-overlay"
                   className="pointer-events-none absolute inset-0 w-full h-full"
-                  viewBox="0 0 100 60"
+                  viewBox="0 0 400 100"
                   preserveAspectRatio="none"
                   aria-hidden="true">
                   <circle
-                    cx="86" cy="8" r="3.2"
-                    fill="none" stroke="#EF4444" strokeWidth="0.9"
+                    cx="360" cy="14" r="10"
+                    fill="none" stroke="#EF4444" strokeWidth="1.6"
                     vectorEffect="non-scaling-stroke"
                   />
                   <path
-                    d="M70 22 Q78 16 84 10"
-                    fill="none" stroke="#EF4444" strokeWidth="0.9"
+                    d="M300 45 Q335 30 352 18"
+                    fill="none" stroke="#EF4444" strokeWidth="1.6"
                     strokeLinecap="round"
                     vectorEffect="non-scaling-stroke"
                   />
                   <polygon
-                    points="84,10 82.2,11.6 82.4,9.2"
+                    points="352,18 346,23 348,15"
                     fill="#EF4444"
                   />
                 </svg>
