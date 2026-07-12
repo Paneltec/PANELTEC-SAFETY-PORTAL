@@ -169,3 +169,19 @@ Trigger `e1_tester` (Phase 2) against the preview URL to lock in a green-tick sm
 ---
 
 *Audit executed against MongoDB `test_database` at `2026-07-11T08:34Z`. No writes were made to any collection during this audit.*
+
+---
+
+## Post-audit patches
+
+### `paneltec-v160.3.0-adjust-20e` — service-worker version aligned
+**Applied**: 2026-07-11 (post-audit) · **Verdict now**: 🟢 **GREEN — cleared to deploy**
+
+Three-file version-constant bump (no functional code change):
+- `frontend/public/service-worker.js` → `CACHE_VERSION = 'paneltec-v160.3.0-adjust-20e'`
+- `frontend/src/lib/version.js` → `RUNNING_VERSION = 'paneltec-v160.3.0-adjust-20e'`
+- `mobile/src/lib/version.ts` → `MOBILE_BUNDLE_VERSION = 'paneltec-v160.3.0-adjust-20e'`
+
+All three now aligned. Existing service-worker clients will detect the CACHE_VERSION change on next visit, invalidate their old bundle, and force-reload once via the `paneltec_sw_force_reload` broadcast.
+
+Backend, integrations, data hygiene and secret-scan results from the original audit remain valid — no code paths touched.
