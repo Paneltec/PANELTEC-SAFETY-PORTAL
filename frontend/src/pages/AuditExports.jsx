@@ -181,7 +181,7 @@ export default function AuditExports() {
 
       <HowThisWorks schematicSlug="audit_exports" />
 
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="audit-exports-tabs">
+      <Tabs defaultValue="list" className="mt-2" data-testid="audit-exports-tabs">
         <TabsList variant="hero">
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="audit-exports-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="audit-exports-tab-list">

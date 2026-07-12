@@ -46,7 +46,7 @@ export default function IncidentsList() {
         subtitle="Structured incident capture with witness statements and evidence."
         action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-create-btn" />} />
 
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="incidents-tabs">
+      <Tabs defaultValue="list" className="mt-2" data-testid="incidents-tabs">
         <TabsList variant="hero">
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="incidents-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="incidents-tab-list">

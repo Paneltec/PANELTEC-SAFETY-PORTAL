@@ -320,7 +320,7 @@ export default function PlantVehicles() {
 
       <HowThisWorks schematicSlug="plant_vehicles" />
 
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="vehicles-tabs">
+      <Tabs defaultValue="list" className="mt-2" data-testid="vehicles-tabs">
         <TabsList variant="hero">
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="vehicles-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="vehicles-tab-list">

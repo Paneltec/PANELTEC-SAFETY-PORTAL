@@ -1371,7 +1371,7 @@ export default function Workers() {
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
   // Phase 3.11 — Directory + Inductions Matrix tabs.
-  const [tab, setTab] = useState('matrix');
+  const [tab, setTab] = useState('directory');
   // Per-worker induction-status chip map (loaded once with the matrix call).
   const [chipByWorker, setChipByWorker] = useState({});
   // v160.3.6 — Per-worker Simpro-ZIP application status. Powers the
@@ -1535,46 +1535,45 @@ export default function Workers() {
         subtitle="Your field crew — synced from Simpro or added manually." />
 
       {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.
-          v160.3.6n — Hero variant with Inductions Matrix as the PRIMARY
-          (big violet capsule, always prominent) and Directory as the tiny
-          slate text-link footnote. Same physical capsule size in both
-          active + inactive states — Matrix commands attention permanently,
-          Directory sits alongside as a secondary switch. `flex-row-reverse`
-          renders Matrix on the left visually while keeping DOM order intact
-          for keyboard nav / focus. */}
+          v160.3.6p — App-wide consistency: Directory is the PRIMARY hero
+          (big Paneltec-blue capsule, always prominent) and Inductions Matrix
+          is the tiny secondary footnote — same pattern as List / Dashboard
+          on the 7 other list pages. Same physical capsule size in both
+          active + inactive states. `flex-row-reverse` renders Directory on
+          the LEFT visually while keeping DOM order intact for keyboard nav. */}
       <div className="mb-4 inline-flex flex-row-reverse items-center gap-4" data-testid="workers-tabs">
-        {/* Directory — secondary, tiny */}
-        <button
-          type="button"
-          onClick={() => setTab('directory')}
-          data-testid="tab-directory"
-          aria-pressed={tab === 'directory'}
-          className={[
-            'inline-flex items-center gap-1 whitespace-nowrap transition-all cursor-pointer py-1 px-1',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40',
-            tab === 'directory'
-              ? 'text-sm font-semibold text-[#5b21b6] underline underline-offset-4 decoration-[#5b21b6]/50 normal-case'
-              : 'text-[11px] font-medium uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:underline underline-offset-4 decoration-slate-300',
-          ].join(' ')}
-        >
-          Directory
-        </button>
-        {/* Inductions Matrix — primary, big capsule, filled ↔ outlined */}
+        {/* Inductions Matrix — secondary, tiny slate footnote */}
         <button
           type="button"
           onClick={() => setTab('matrix')}
           data-testid="tab-matrix"
           aria-pressed={tab === 'matrix'}
           className={[
-            'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40',
-            'rounded-full px-5 py-2.5 text-base font-semibold border-2',
+            'inline-flex items-center gap-1 whitespace-nowrap transition-all cursor-pointer py-1 px-1',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40',
             tab === 'matrix'
-              ? 'bg-[#5b21b6] text-white border-transparent shadow-lg shadow-[#5b21b6]/20'
-              : 'bg-white text-[#5b21b6] border-[#5b21b6] hover:bg-[#f5f0fb]',
+              ? 'text-sm font-semibold text-[#1e4a8c] underline underline-offset-4 decoration-[#1e4a8c]/50 normal-case'
+              : 'text-[11px] font-medium uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:underline underline-offset-4 decoration-slate-300',
           ].join(' ')}
         >
           Inductions Matrix
+        </button>
+        {/* Directory — primary hero, big Paneltec-blue capsule, filled ↔ outlined */}
+        <button
+          type="button"
+          onClick={() => setTab('directory')}
+          data-testid="tab-directory"
+          aria-pressed={tab === 'directory'}
+          className={[
+            'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40',
+            'rounded-full px-5 py-2.5 text-base font-semibold border-2',
+            tab === 'directory'
+              ? 'bg-[#1e4a8c] text-white border-transparent shadow-lg shadow-[#1e4a8c]/20'
+              : 'bg-white text-[#1e4a8c] border-[#1e4a8c] hover:bg-[#e6eff9]',
+          ].join(' ')}
+        >
+          Directory
         </button>
       </div>
 

@@ -257,6 +257,10 @@ export default function UsersManagement() {
             </button>
           </div>) : null} />
 
+      {/* v160.3.6o — Staff onboarding guide for Simpro ZIP downloads.
+          Positioned directly above the tabs so a new admin can't miss it. */}
+      <SimproZipImportGuide />
+
       <Tabs defaultValue="dashboard" className="mt-2" data-testid="users-tabs">
         <TabsList className="bg-slate-100 border border-slate-200">
           <TabsTrigger value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>

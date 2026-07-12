@@ -37,7 +37,7 @@ export default function HazardsList() {
           <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
         )}
       </CaptureSticky>
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="hazards-tabs">
+      <Tabs defaultValue="list" className="mt-2" data-testid="hazards-tabs">
         <TabsList variant="hero">
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="hazards-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="hazards-tab-list">

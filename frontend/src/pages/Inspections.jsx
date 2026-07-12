@@ -48,7 +48,7 @@ export default function InspectionsList() {
       <PageHeader crumb="Capture / Inspection Reports" title="Inspection Reports"
         subtitle="Scheduled inspections — site walk, plant, working at height."
         action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-create-btn" />} />
-      <Tabs defaultValue="dashboard" className="mt-2" data-testid="inspections-tabs">
+      <Tabs defaultValue="list" className="mt-2" data-testid="inspections-tabs">
         <TabsList variant="hero">
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="inspections-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="inspections-tab-list">
