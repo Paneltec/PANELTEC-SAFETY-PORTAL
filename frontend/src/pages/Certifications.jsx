@@ -3,7 +3,8 @@
 // search, CSV export, and the same Send Reminder action available in the
 // Worker edit modal.
 import React, { useEffect, useMemo, useState } from 'react';
-import { Award, ClipboardList, Loader2, ArrowUpDown, ArrowUp, ArrowDown, FileText, FileWarning, Package } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Award, ClipboardList, Loader2, ArrowUpDown, ArrowUp, ArrowDown, FileText, FileWarning, Package, ChevronRight, ChevronDown as ChevronDownIcon, AlertTriangle, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -121,11 +122,29 @@ export default function Certifications() {
   // v160.3.6f — sortable column state. Default is `attention` (status
   // rank first, then expiry) — preserves the pre-6f behaviour so the
   // "compliance attention queue" reads the same on page load.
+  // v160.3.6g — sort keys re-scoped to WORKER-LEVEL aggregates.
   const [sortKey, setSortKey] = useState('attention');
   const [sortDir, setSortDir] = useState('asc');
   const toggleSort = (k) => {
     if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else { setSortKey(k); setSortDir('asc'); }
+  };
+  // v160.3.6g — persist expanded worker rows in ?open= so refresh keeps them.
+  const [urlParams, setUrlParams] = useSearchParams();
+  const initialOpen = new Set(
+    (urlParams.get('open') || '').split(',').map((s) => s.trim()).filter(Boolean)
+  );
+  const [expanded, setExpanded] = useState(initialOpen);
+  const toggleExpanded = (workerId) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(workerId)) next.delete(workerId); else next.add(workerId);
+      const csv = Array.from(next).join(',');
+      const nextParams = new URLSearchParams(urlParams);
+      if (csv) nextParams.set('open', csv); else nextParams.delete('open');
+      setUrlParams(nextParams, { replace: true });
+      return next;
+    });
   };
   // Phase 3.17 — row actions
   const [previewCert, setPreviewCert] = useState(null);   // 👁  View PDF
@@ -151,46 +170,103 @@ export default function Certifications() {
     return c;
   }, [rows]);
 
-  const filtered = useMemo(() => {
+  const filteredCerts = useMemo(() => {
+    // v160.3.6g — the FLAT filtered cert list (used for CSV export). Kept
+    // separate from the grouped view so downstream consumers (CSV, tests)
+    // still see one row per cert.
     const q = search.trim().toLowerCase();
-    const ranked = rows
+    return rows
       .filter((r) => filter === 'all' ? true : r.status?.key === filter)
       .filter((r) => {
         if (!q) return true;
         const blob = `${r.worker_first_name} ${r.worker_last_name} ${r.name} ${r.issuer || ''} ${r.doc_seed_folder || ''}`.toLowerCase();
         return blob.includes(q);
       });
-    // v160.3.6f — pluggable sort. `attention` = pre-existing status-rank
-    // + expiry compound ordering; the rest are per-column simple sorts.
-    const dir = sortDir === 'desc' ? -1 : 1;
-    const cmp = (a, b, get) => {
-      const va = get(a), vb = get(b);
-      if (va == null && vb == null) return 0;
-      if (va == null) return 1;
-      if (vb == null) return -1;
-      if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * dir;
-      return String(va).localeCompare(String(vb)) * dir;
-    };
-    const sorted = ranked.slice();
-    if (sortKey === 'attention') {
-      sorted.sort((a, b) => {
-        const ra = STATUS_RANK[a.status?.key] ?? 9;
-        const rb = STATUS_RANK[b.status?.key] ?? 9;
-        if (ra !== rb) return (ra - rb) * dir;
-        return ((a.expiry_date || 'z').localeCompare(b.expiry_date || 'z')) * dir;
-      });
-    } else if (sortKey === 'worker') {
-      sorted.sort((a, b) => cmp(a, b, (r) => `${r.worker_last_name || ''} ${r.worker_first_name || ''}`.trim().toLowerCase()));
-    } else if (sortKey === 'cert') {
-      sorted.sort((a, b) => cmp(a, b, (r) => (r.name || '').toLowerCase()));
-    } else if (sortKey === 'expiry') {
-      sorted.sort((a, b) => cmp(a, b, (r) => r.expiry_date || null));
-    } else if (sortKey === 'status') {
-      sorted.sort((a, b) => cmp(a, b, (r) => STATUS_RANK[r.status?.key] ?? 9));
-    } else if (sortKey === 'source') {
-      sorted.sort((a, b) => cmp(a, b, (r) => (r.doc_seed_folder ? `1_${r.doc_seed_folder}` : '2_manual')));
+  }, [rows, filter, search]);
+
+  const workerGroups = useMemo(() => {
+    // v160.3.6g — Group by worker_id. For search, a worker qualifies if
+    // either their name matches OR any of their certs matches; when a
+    // worker qualifies via name, ALL of their certs are shown so the
+    // admin still sees the full context. Filter-chip semantics are
+    // per-cert: an expanded worker shows only the matching certs.
+    const q = search.trim().toLowerCase();
+    const groups = new Map();
+    for (const r of rows) {
+      const wid = r.worker_id;
+      if (!groups.has(wid)) {
+        groups.set(wid, {
+          worker_id: wid,
+          first_name: r.worker_first_name,
+          last_name: r.worker_last_name,
+          certs: [],
+        });
+      }
+      groups.get(wid).certs.push(r);
     }
-    return sorted;
+    const workerNameMatches = (g) =>
+      !q || `${g.first_name} ${g.last_name}`.toLowerCase().includes(q);
+    const certMatchesSearch = (c) => {
+      if (!q) return true;
+      const blob = `${c.name} ${c.issuer || ''} ${c.doc_seed_folder || ''}`.toLowerCase();
+      return blob.includes(q);
+    };
+    const certMatchesFilter = (c) => filter === 'all' || c.status?.key === filter;
+
+    const shaped = [];
+    for (const g of groups.values()) {
+      const nameHit = workerNameMatches(g);
+      // Which certs to display in the expanded state:
+      //   - Must satisfy the filter chip.
+      //   - If searching, must also satisfy the cert-side match UNLESS the
+      //     worker name itself matched (then all their certs stay visible).
+      const displayCerts = g.certs.filter((c) => {
+        if (!certMatchesFilter(c)) return false;
+        if (!q) return true;
+        return nameHit || certMatchesSearch(c);
+      });
+      if (displayCerts.length === 0) continue; // hide workers with no matching certs
+
+      let expired = 0, expiring = 0, missing = 0, valid = 0, noExpiry = 0, simpro = 0, manual = 0;
+      let latest = null;
+      for (const c of g.certs) {
+        const k = c.status?.key;
+        if (k === 'expired') expired++;
+        else if (k === 'expiring_soon') expiring++;
+        else if (k === 'missing_file') missing++;
+        else if (k === 'valid') valid++;
+        else if (k === 'no_expiry') noExpiry++;
+        if (c.doc_seed_folder) simpro++; else manual++;
+        if (c.updated_at && (!latest || c.updated_at > latest)) latest = c.updated_at;
+      }
+      shaped.push({
+        ...g,
+        displayCerts: displayCerts.sort((a, b) => {
+          const ra = STATUS_RANK[a.status?.key] ?? 9;
+          const rb = STATUS_RANK[b.status?.key] ?? 9;
+          if (ra !== rb) return ra - rb;
+          return (a.expiry_date || 'z').localeCompare(b.expiry_date || 'z');
+        }),
+        counts: { total: g.certs.length, expired, expiring, missing, valid, noExpiry, simpro, manual },
+        latest_updated_at: latest,
+      });
+    }
+
+    const dir = sortDir === 'desc' ? -1 : 1;
+    const byName = (a, b) => (`${a.last_name} ${a.first_name}`).localeCompare(`${b.last_name} ${b.first_name}`) * dir;
+    if (sortKey === 'attention') {
+      shaped.sort((a, b) => {
+        const aw = a.counts.expired * 100 + a.counts.expiring * 10 + a.counts.missing;
+        const bw = b.counts.expired * 100 + b.counts.expiring * 10 + b.counts.missing;
+        if (aw !== bw) return (bw - aw) * dir; // higher weight first ASCENDING
+        return byName(a, b);
+      });
+    } else if (sortKey === 'worker')  shaped.sort(byName);
+    else if (sortKey === 'total')     shaped.sort((a, b) => (a.counts.total - b.counts.total) * dir || byName(a, b));
+    else if (sortKey === 'missing')   shaped.sort((a, b) => (a.counts.missing - b.counts.missing) * dir || byName(a, b));
+    else if (sortKey === 'expired')   shaped.sort((a, b) => (a.counts.expired - b.counts.expired) * dir || byName(a, b));
+    else if (sortKey === 'updated')   shaped.sort((a, b) => ((a.latest_updated_at || '').localeCompare(b.latest_updated_at || '')) * dir);
+    return shaped;
   }, [rows, filter, search, sortKey, sortDir]);
 
   const sendReminder = async (cert) => {
@@ -256,7 +332,7 @@ export default function Certifications() {
             placeholder="Search worker, cert or issuer…" data-testid="cert-search"
             className="pl-9 pr-3 py-2 text-sm border border-slate-300 rounded-lg bg-white w-72" />
         </div>
-        <button onClick={() => exportCsv(filtered)} disabled={filtered.length === 0}
+        <button onClick={() => exportCsv(filteredCerts)} disabled={filteredCerts.length === 0}
           data-testid="cert-export-csv"
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           <Download /> Export CSV
@@ -267,7 +343,7 @@ export default function Certifications() {
         <div className="text-sm text-slate-500 inline-flex items-center gap-2">
           <Loader2 size={14} className="animate-spin" /> Loading certifications…
         </div>
-      ) : filtered.length === 0 ? (
+      ) : workerGroups.length === 0 ? (
         <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center" data-testid="cert-empty">
           <Award size={28} className="mx-auto text-slate-300 mb-2" />
           <div className="text-sm font-medium text-slate-700">
@@ -280,154 +356,247 @@ export default function Certifications() {
           </div>
         </div>
       ) : (
-        // v160.3.6f — Grid card-row layout (Path B pattern from Workers v6e).
-        // Header + rows share one gridTemplateColumns so columns cannot drift.
-        // Column budget (~940px min): 190 worker · 240 cert · 150 expiry ·
-        // 130 status · 150 source · 220 action. Fits at 1280 with room to spare.
+        // v160.3.6g — Grouped-by-worker layout. Worker rows are the primary
+        // scannable list; each worker's individual certs expand behind a
+        // chevron so the admin doesn't see the same person 7 times in a row.
         <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto" data-testid="cert-table">
           <div className="min-w-[950px]">
-            {/* Sort header row */}
+            {/* Sort header row (worker-level) */}
             <div
               className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-3 py-3 gap-3"
-              style={{ gridTemplateColumns: 'minmax(190px, 1.5fr) minmax(240px, 2fr) minmax(150px, 1.2fr) minmax(130px, 1fr) minmax(150px, 1.2fr) 220px' }}
+              style={{ gridTemplateColumns: '28px minmax(220px, 2fr) minmax(300px, 2.5fr) minmax(120px, 1fr) 120px' }}
             >
-              <SortHeaderBtn label="Worker"        k="worker" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeaderBtn label="Certification" k="cert"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
-              <SortHeaderBtn label="Expiry"        k="expiry" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} title="Sort by expiry date — earliest first ascending" />
-              <SortHeaderBtn label="Status"        k="status" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} title="Sort by status urgency — Expired at top ascending" />
-              <SortHeaderBtn label="Source"        k="source" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} title="Sort by source — Simpro first ascending" />
+              <div />
+              <SortHeaderBtn label="Worker"       k="worker"  sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              <div className="text-slate-500">Summary</div>
+              <SortHeaderBtn label="Updated"      k="updated" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} title="Sort by most recent cert change" />
               <div className="text-right">Action</div>
             </div>
+            {/* Secondary sort chips row — worker aggregate sorts, kept below the header for discoverability */}
+            <div
+              className="grid items-center bg-slate-50/60 border-b border-slate-100 text-[10px] uppercase tracking-wider text-slate-400 px-3 py-1.5 gap-3"
+              style={{ gridTemplateColumns: '28px minmax(220px, 2fr) minmax(300px, 2.5fr) minmax(120px, 1fr) 120px' }}
+            >
+              <div />
+              <div className="flex items-center gap-2">
+                <SortHeaderBtn label="Attention" k="attention" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} title="Highest-risk workers first — expired × 100 + expiring × 10 + missing" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SortHeaderBtn label="Total"       k="total"   sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortHeaderBtn label="Missing"     k="missing" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+                <SortHeaderBtn label="Expired"     k="expired" sortKey={sortKey} sortDir={sortDir} onClick={toggleSort} />
+              </div>
+              <div />
+              <div />
+            </div>
 
-            {filtered.map((c) => {
-              const days = daysUntilExpiry(c.expiry_date);
-              const hasFile = !!c.doc_file_id;
-              const source = c.doc_seed_folder ? 'simpro' : 'manual';
+            {workerGroups.map((g) => {
+              const isOpen = expanded.has(g.worker_id);
+              const initials = `${(g.first_name?.[0] || '?').toUpperCase()}${(g.last_name?.[0] || '').toUpperCase()}`;
               return (
-                <div
-                  key={c.id}
-                  data-testid={`cert-row-${c.id}`}
-                  className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-3 py-3 gap-3"
-                  style={{ gridTemplateColumns: 'minmax(190px, 1.5fr) minmax(240px, 2fr) minmax(150px, 1.2fr) minmax(130px, 1fr) minmax(150px, 1.2fr) 220px' }}
-                >
-                  {/* Worker */}
-                  <div className="min-w-0">
-                    <div className="font-semibold text-slate-900 truncate">
-                      {c.worker_first_name} {c.worker_last_name}
+                <React.Fragment key={g.worker_id}>
+                  <div
+                    data-testid={`worker-cert-row-${g.worker_id}`}
+                    className={`grid items-center border-t border-slate-100 hover:bg-slate-50 px-3 py-3 gap-3 ${isOpen ? 'bg-[#e6eff9]/40' : ''}`}
+                    style={{ gridTemplateColumns: '28px minmax(220px, 2fr) minmax(300px, 2.5fr) minmax(120px, 1fr) 120px' }}
+                  >
+                    {/* Chevron */}
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(g.worker_id)}
+                      data-testid={`worker-cert-toggle-${g.worker_id}`}
+                      aria-expanded={isOpen}
+                      title={isOpen ? 'Collapse' : 'Expand'}
+                      className="inline-flex items-center justify-center w-6 h-6 rounded hover:bg-slate-200 text-slate-500"
+                    >
+                      {isOpen ? <ChevronDownIcon size={14} /> : <ChevronRight size={14} />}
+                    </button>
+
+                    {/* Worker identity */}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-10 h-10 rounded-full bg-[#e6eff9] border border-[#b9d2ec] flex items-center justify-center text-[#1e4a8c] font-semibold text-xs shrink-0 select-none">
+                        {initials}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-900 truncate">
+                          {g.first_name} {g.last_name}
+                        </div>
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {g.counts.total} cert{g.counts.total === 1 ? '' : 's'}
+                          {g.counts.simpro ? ` · Simpro ${g.counts.simpro}` : ''}
+                          {g.counts.manual ? ` · Manual ${g.counts.manual}` : ''}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Summary chips */}
+                    <div className="flex flex-wrap items-center gap-1 min-w-0">
+                      <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200"
+                        data-testid={`worker-cert-total-${g.worker_id}`}>
+                        <Award size={9} /> {g.counts.total}
+                      </span>
+                      {g.counts.expired > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f7d8dc] text-[#a8324c] border border-[#e69aa3]"
+                          data-testid={`worker-cert-expired-${g.worker_id}`}
+                          title={`${g.counts.expired} expired`}>
+                          <AlertTriangle size={9} /> {g.counts.expired} EXPIRED
+                        </span>
+                      )}
+                      {g.counts.expiring > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]"
+                          data-testid={`worker-cert-expiring-${g.worker_id}`}
+                          title={`${g.counts.expiring} expiring within 30 days`}>
+                          <Clock size={9} /> {g.counts.expiring} SOON
+                        </span>
+                      )}
+                      {g.counts.missing > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]"
+                          data-testid={`worker-cert-missing-${g.worker_id}`}
+                          title={`${g.counts.missing} missing file`}>
+                          <FileWarning size={9} /> {g.counts.missing} NO FILE
+                        </span>
+                      )}
+                      {g.counts.valid > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#d8ecdd] text-[#1f7a3f] border border-[#b6dcbf]"
+                          data-testid={`worker-cert-valid-${g.worker_id}`}
+                          title={`${g.counts.valid} valid`}>
+                          {g.counts.valid} VALID
+                        </span>
+                      )}
+                      {g.counts.noExpiry > 0 && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#d8e6f4] text-[#1e4a8c] border border-[#b9d2ec]"
+                          data-testid={`worker-cert-no-expiry-${g.worker_id}`}
+                          title={`${g.counts.noExpiry} no expiry`}>
+                          {g.counts.noExpiry} NO EXPIRY
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Latest updated */}
+                    <div className="text-[11px] text-slate-500 truncate" title={g.latest_updated_at || ''}>
+                      {g.latest_updated_at ? new Date(g.latest_updated_at).toLocaleDateString() : '—'}
+                    </div>
+
+                    {/* Row-level action: expand hint */}
+                    <div className="flex items-center justify-end">
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(g.worker_id)}
+                        data-testid={`worker-cert-open-${g.worker_id}`}
+                        className="text-[10px] font-semibold uppercase tracking-wider text-[#1e4a8c] hover:underline"
+                      >
+                        {isOpen ? 'Hide certs' : 'View certs'}
+                      </button>
                     </div>
                   </div>
 
-                  {/* Certification — name + issuer subtitle */}
-                  <div className="min-w-0">
-                    <div className="font-medium text-slate-900 truncate" title={c.name}>{c.name}</div>
-                    {c.issuer && (
-                      <div className="text-[11px] text-slate-500 truncate" title={c.issuer}>{c.issuer}</div>
-                    )}
-                  </div>
-
-                  {/* Expiry — ISO date + relative-days chip */}
-                  <div className="min-w-0 text-xs">
-                    <div className="text-slate-700">{c.expiry_date || '—'}</div>
-                    {c.expiry_date && days !== null && (
+                  {/* Expanded child rows — individual certs */}
+                  {isOpen && g.displayCerts.map((c) => {
+                    const days = daysUntilExpiry(c.expiry_date);
+                    const hasFile = !!c.doc_file_id;
+                    const source = c.doc_seed_folder ? 'simpro' : 'manual';
+                    return (
                       <div
-                        data-testid={`cert-days-${c.id}`}
-                        className={`inline-flex items-center gap-0.5 mt-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                          days < 0
-                            ? 'bg-[#fbe4e7] text-[#7a1f33] border border-[#e69aa3]'
-                            : days <= 30
-                              ? 'bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]'
-                              : days <= 90
-                                ? 'bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]'
-                                : 'bg-slate-100 text-slate-500 border border-slate-200'
-                        }`}
+                        key={c.id}
+                        data-testid={`cert-row-${c.id}`}
+                        className="grid items-center border-t border-dashed border-slate-100 bg-slate-50/40 px-3 py-2.5 gap-3 pl-10"
+                        style={{ gridTemplateColumns: '28px minmax(240px, 2.5fr) minmax(160px, 1.2fr) minmax(120px, 1fr) minmax(160px, 1.2fr) 200px' }}
                       >
-                        {days < 0 ? `${Math.abs(days)}d ago` : days === 0 ? 'today' : `in ${days}d`}
+                        <div />
+                        {/* Cert name + issuer */}
+                        <div className="min-w-0">
+                          <div className="font-medium text-slate-900 truncate" title={c.name}>{c.name}</div>
+                          {c.issuer && <div className="text-[11px] text-slate-500 truncate">{c.issuer}</div>}
+                        </div>
+                        {/* Expiry */}
+                        <div className="min-w-0 text-xs">
+                          <div className="text-slate-700">{c.expiry_date || '—'}</div>
+                          {c.expiry_date && days !== null && (
+                            <div
+                              data-testid={`cert-days-${c.id}`}
+                              className={`inline-flex items-center gap-0.5 mt-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                days < 0
+                                  ? 'bg-[#fbe4e7] text-[#7a1f33] border border-[#e69aa3]'
+                                  : days <= 30
+                                    ? 'bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]'
+                                    : days <= 90
+                                      ? 'bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]'
+                                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                              }`}
+                            >
+                              {days < 0 ? `${Math.abs(days)}d ago` : days === 0 ? 'today' : `in ${days}d`}
+                            </div>
+                          )}
+                        </div>
+                        {/* Status */}
+                        <div className="min-w-0">
+                          <span data-testid={`status-${c.status?.key}-${c.id}`}
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${STATUS_CHIP[c.status?.key] || STATUS_CHIP.missing_file}`}>
+                            {c.status?.label}
+                          </span>
+                        </div>
+                        {/* Source + file */}
+                        <div className="flex flex-wrap items-center gap-1 min-w-0">
+                          {source === 'simpro' ? (
+                            <span title={`Imported from Simpro folder: ${c.doc_seed_folder}`}
+                              data-testid={`cert-source-simpro-${c.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 max-w-[130px]">
+                              <Package size={9} />
+                              <span className="truncate">{c.doc_seed_folder}</span>
+                            </span>
+                          ) : (
+                            <span title="Added manually"
+                              data-testid={`cert-source-manual-${c.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                              MANUAL
+                            </span>
+                          )}
+                          {hasFile ? (
+                            <span title="Certificate file uploaded"
+                              data-testid={`cert-file-yes-${c.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]">
+                              <FileText size={9} /> FILE
+                            </span>
+                          ) : (
+                            <span title="No certificate file"
+                              data-testid={`cert-file-no-${c.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]">
+                              <FileWarning size={9} /> NO FILE
+                            </span>
+                          )}
+                        </div>
+                        {/* Actions */}
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <button
+                            onClick={() => setPreviewCert(c)}
+                            disabled={!c.doc_file_id}
+                            title={c.doc_file_id ? 'View PDF' : 'No file uploaded'}
+                            data-testid={`cert-view-${c.id}`}
+                            className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600"
+                          ><Eye /></button>
+                          {canEdit && (
+                            <button onClick={() => setEditCert(c)} title="Edit" data-testid={`cert-edit-${c.id}`}
+                              className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700"
+                            ><Pencil /></button>
+                          )}
+                          {isAdmin && (
+                            <button onClick={() => setDeleteCert(c)} title="Delete" data-testid={`cert-delete-${c.id}`}
+                              className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+                            ><Trash2 /></button>
+                          )}
+                          {canEdit && (
+                            <button onClick={() => sendReminder(c)} disabled={sendingId === c.id}
+                              data-testid={`send-reminder-${c.id}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fbe4e7] text-[#7a1f33] text-[10px] font-semibold uppercase tracking-wider hover:bg-[#f4c7cd] disabled:opacity-60">
+                              {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail />}
+                              Remind
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Status */}
-                  <div className="min-w-0">
-                    <span data-testid={`status-${c.status?.key}-${c.id}`}
-                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border ${STATUS_CHIP[c.status?.key] || STATUS_CHIP.missing_file}`}>
-                      {c.status?.label}
-                    </span>
-                  </div>
-
-                  {/* Source + file-present chips */}
-                  <div className="flex flex-wrap items-center gap-1 min-w-0">
-                    {source === 'simpro' ? (
-                      <span
-                        title={`Imported from Simpro folder: ${c.doc_seed_folder}`}
-                        data-testid={`cert-source-simpro-${c.id}`}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200 max-w-[130px]"
-                      >
-                        <Package size={9} />
-                        <span className="truncate">{c.doc_seed_folder}</span>
-                      </span>
-                    ) : (
-                      <span
-                        title="Added manually — not from a Simpro ZIP import"
-                        data-testid={`cert-source-manual-${c.id}`}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200"
-                      >
-                        MANUAL
-                      </span>
-                    )}
-                    {hasFile ? (
-                      <span
-                        title="Certificate file uploaded"
-                        data-testid={`cert-file-yes-${c.id}`}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]"
-                      >
-                        <FileText size={9} /> FILE
-                      </span>
-                    ) : (
-                      <span
-                        title="No certificate file — request one from the worker"
-                        data-testid={`cert-file-no-${c.id}`}
-                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#92400e] border border-[#f6d99e]"
-                      >
-                        <FileWarning size={9} /> NO FILE
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Action icons */}
-                  <div className="flex items-center justify-end gap-1 flex-wrap">
-                    <button
-                      onClick={() => setPreviewCert(c)}
-                      disabled={!c.doc_file_id}
-                      title={c.doc_file_id ? 'View PDF' : 'No file uploaded'}
-                      data-testid={`cert-view-${c.id}`}
-                      className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600"
-                    ><Eye /></button>
-                    {canEdit && (
-                      <button
-                        onClick={() => setEditCert(c)}
-                        title="Edit"
-                        data-testid={`cert-edit-${c.id}`}
-                        className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700"
-                      ><Pencil /></button>
-                    )}
-                    {isAdmin && (
-                      <button
-                        onClick={() => setDeleteCert(c)}
-                        title="Delete"
-                        data-testid={`cert-delete-${c.id}`}
-                        className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-                      ><Trash2 /></button>
-                    )}
-                    {canEdit && (
-                      <button onClick={() => sendReminder(c)} disabled={sendingId === c.id}
-                        data-testid={`send-reminder-${c.id}`}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#fbe4e7] text-[#7a1f33] text-[10px] font-semibold uppercase tracking-wider hover:bg-[#f4c7cd] disabled:opacity-60">
-                        {sendingId === c.id ? <Loader2 size={11} className="animate-spin" /> : <Mail />}
-                        Remind
-                      </button>
-                    )}
-                  </div>
-                </div>
+                    );
+                  })}
+                </React.Fragment>
               );
             })}
           </div>
