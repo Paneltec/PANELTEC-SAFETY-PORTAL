@@ -3,6 +3,7 @@
 // Phase 2: Personal section (birth date + address), Availability scheduler,
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AlertTriangle, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -956,6 +957,21 @@ export default function Workers() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [viewingId, setViewingId] = useState(null); // v160.2.2 — read-only drawer
+  const [viewingDefaultTab, setViewingDefaultTab] = useState(null); // v160.3.4a — deep-link from Dashboard triage tile
+  // Deep-link from Dashboard triage tile: `?open=<id>&tab=unmatched`
+  const [sp, setSp] = useSearchParams();
+  useEffect(() => {
+    const openId = sp.get('open');
+    if (openId) {
+      setViewingId(openId);
+      setViewingDefaultTab(sp.get('tab') || 'profile');
+      // Consume the query param so a page refresh doesn't re-open.
+      const next = new URLSearchParams(sp);
+      next.delete('open'); next.delete('tab');
+      setSp(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [search, setSearch] = useState('');
   const [syncOpen, setSyncOpen] = useState(false);
@@ -1304,7 +1320,7 @@ export default function Workers() {
       )}
       {/* v160.2.2 — Read-only worker profile drawer (eye icon). */}
       {viewingId && (
-        <WorkerViewModal workerId={viewingId} onClose={() => setViewingId(null)} />
+        <WorkerViewModal workerId={viewingId} defaultTab={viewingDefaultTab} onClose={() => { setViewingId(null); setViewingDefaultTab(null); }} />
       )}
     </div>
   );

@@ -81,7 +81,7 @@ function CertRow({ cert }) {
   );
 }
 
-export default function WorkerViewModal({ workerId, onClose }) {
+export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState(null);
   const [certs, setCerts] = useState([]);
@@ -90,7 +90,7 @@ export default function WorkerViewModal({ workerId, onClose }) {
   const [zipOpen, setZipOpen] = useState(false);  // v160.3.2 Simpro ZIP import
   const [currentUser, setCurrentUser] = useState(null);
   // v160.3.4 — Unmatched Documents triage tab
-  const [tab, setTab] = useState('profile'); // profile | unmatched
+  const [tab, setTab] = useState(defaultTab || 'profile'); // profile | unmatched
   const [unmatchedCount, setUnmatchedCount] = useState(null);
 
   useEffect(() => {

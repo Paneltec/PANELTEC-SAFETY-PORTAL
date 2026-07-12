@@ -97,6 +97,99 @@ function UpcomingCertExpiriesCard() {
   );
 }
 
+// v160.3.4a — Documents-awaiting-triage tile. Fetches org-wide unmatched
+// count and, on click, deep-links to the first worker's Unmatched
+// Documents tab. Admin/hseq_lead/hr_lead only; other roles get 403 from
+// the endpoint and this component silently hides itself.
+function UnmatchedDocsTriageTile() {
+  const navigate = useNavigate();
+  const [data, setData] = useState(null); // {total_docs, worker_count, first_worker_id}
+  const [forbidden, setForbidden] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    api.get('/integrations/simpro/workers/unmatched-summary')
+      .then((r) => { if (alive) setData(r.data || {}); })
+      .catch((e) => {
+        if (!alive) return;
+        if (e?.response?.status === 403) setForbidden(true);
+        else setData({ total_docs: 0, worker_count: 0 });
+      });
+    return () => { alive = false; };
+  }, []);
+
+  if (forbidden) return null;
+  if (!data) {
+    return (
+      <div className="rounded-2xl border border-violet-200 bg-brand-violet-soft/40 p-4 animate-pulse" data-testid="dashboard-unmatched-triage-loading">
+        <div className="h-3 w-32 bg-violet-200/70 rounded mb-2" />
+        <div className="h-6 w-16 bg-violet-200/70 rounded" />
+      </div>
+    );
+  }
+  const empty = (data.total_docs || 0) === 0;
+  const goTriage = () => {
+    if (empty) return;
+    if (data.first_worker_id) {
+      navigate(`/app/settings/workers?open=${data.first_worker_id}&tab=unmatched`);
+    } else {
+      navigate('/app/settings/workers');
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={goTriage}
+      disabled={empty}
+      className={
+        'w-full rounded-2xl border-2 p-4 text-left transition-all ' +
+        (empty
+          ? 'border-emerald-200 bg-emerald-50/50 cursor-default'
+          : 'border-violet-300 bg-brand-violet-soft/50 hover:shadow-card hover:-translate-y-0.5')
+      }
+      data-testid="dashboard-unmatched-triage-tile"
+    >
+      <div className="flex items-center gap-2 mb-2">
+        <div className={
+          'rounded-lg p-1.5 ' +
+          (empty ? 'bg-emerald-100 text-emerald-700' : 'bg-violet-200 text-violet-800')
+        }>
+          <FileSearch size={14} />
+        </div>
+        <div className={
+          'text-[10px] font-semibold uppercase tracking-[0.16em] ' +
+          (empty ? 'text-emerald-700' : 'text-violet-800')
+        }>
+          Documents awaiting triage
+        </div>
+      </div>
+      {empty ? (
+        <div className="text-sm text-emerald-800" data-testid="dashboard-unmatched-triage-empty">
+          <span className="font-semibold">All clear.</span>{' '}
+          No unmatched Simpro import files.
+        </div>
+      ) : (
+        <>
+          <div className="flex items-baseline gap-2">
+            <div className="font-display text-3xl font-bold text-violet-900" data-testid="dashboard-unmatched-triage-count">
+              {data.total_docs}
+            </div>
+            <div className="text-xs text-violet-800/80">
+              file{data.total_docs === 1 ? '' : 's'}
+            </div>
+          </div>
+          <div className="text-xs text-slate-700 mt-1">
+            Across{' '}
+            <span className="font-semibold" data-testid="dashboard-unmatched-triage-workers">
+              {data.worker_count}
+            </span>{' '}
+            worker{data.worker_count === 1 ? '' : 's'} — click to triage.
+          </div>
+        </>
+      )}
+    </button>
+  );
+}
+
 function PlantDueWidget() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -708,6 +801,7 @@ export default function Dashboard() {
           </div>
 
           {/* Filler widgets — close the dead-space gap with the Ask column. */}
+          <UnmatchedDocsTriageTile />
           <UpcomingCertExpiriesCard />
           <PlantDueWidget />
           <RecentActivityCard />

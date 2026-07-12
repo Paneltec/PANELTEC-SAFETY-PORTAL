@@ -485,7 +485,13 @@ async def _commit_zip(
     zip_bytes: bytes, plan: dict, worker_id: str, org_id: str, user_id: str,
     fs: AsyncIOMotorGridFSBucket,
 ) -> dict:
-    """Apply plan → GridFS uploads + collection writes."""
+    """Apply plan → GridFS uploads + collection writes.
+
+    v160.3.4a — writes a `worker_import_snapshots` row capturing the
+    pre-commit state (cert IDs, HR doc IDs, photo_url) so a live import
+    can be rolled back by deleting the rows created after the snapshot's
+    `run_at` timestamp.
+    """
     zf = zipfile.ZipFile(io.BytesIO(zip_bytes))
     ts = now_iso()
     written_files: list[dict] = []
@@ -493,6 +499,43 @@ async def _commit_zip(
     created_certs: list[dict] = []
     unmatched_written: list[dict] = []
     photo_result = None
+
+    # ── Snapshot pre-state for rollback safety.
+    pre_worker = await db.workers.find_one(
+        {"id": worker_id, "org_id": org_id},
+        {"_id": 0, "photo_url": 1, "photo_gridfs_id": 1},
+    ) or {}
+    pre_cert_ids = [
+        r["id"] async for r in db.worker_certifications.find(
+            {"worker_id": worker_id, "org_id": org_id, "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    pre_hr_ids = [
+        r["id"] async for r in db.worker_hr_documents.find(
+            {"worker_id": worker_id, "org_id": org_id, "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+    ]
+    snapshot = {
+        "id": new_id(),
+        "org_id": org_id,
+        "worker_id": worker_id,
+        "kind": "simpro_zip_import",
+        "run_at": ts,
+        "triggered_by": user_id,
+        "pre_state": {
+            "photo_url": pre_worker.get("photo_url"),
+            "photo_gridfs_id": pre_worker.get("photo_gridfs_id"),
+            "cert_ids": pre_cert_ids,
+            "hr_doc_ids": pre_hr_ids,
+        },
+        "counts": None,
+        "created_at": ts,
+    }
+    await db.worker_import_snapshots.insert_one(snapshot)
+    snapshot.pop("_id", None)
+    snapshot_id = snapshot["id"]
 
     # Ensure fs bucket exists (backup_service registers `bk_fs` on startup;
     # if this endpoint runs before that, create a fresh handle).
@@ -590,18 +633,33 @@ async def _commit_zip(
         )
         photo_result = {"filename": p["filename"], "gridfs_id": str(gid), "photo_url": photo_url}
 
+    counts = {
+        "attached":   sum(1 for w in written_files if w.get("action") == "attach"),
+        "created":    len(created_certs),
+        "hr_docs":    len(hr_docs),
+        "unmatched":  len(unmatched_written),
+        "photo":      1 if photo_result else 0,
+    }
+    # Backfill counts + new-id manifest so the snapshot can drive a rollback.
+    await db.worker_import_snapshots.update_one(
+        {"id": snapshot_id},
+        {"$set": {
+            "counts": counts,
+            "post_ids": {
+                "new_cert_ids": [c["id"] for c in created_certs],
+                "new_hr_doc_ids": [h["id"] for h in hr_docs],
+                "new_unmatched_ids": [u["id"] for u in unmatched_written],
+                "new_photo_gridfs_id": (photo_result or {}).get("gridfs_id"),
+            },
+        }},
+    )
     return {
+        "snapshot_id": snapshot_id,
         "written_files": written_files, "hr_docs": hr_docs,
         "created_certs": created_certs,
         "unmatched_files": unmatched_written,
         "photo": photo_result,
-        "counts": {
-            "attached":   sum(1 for w in written_files if w.get("action") == "attach"),
-            "created":    len(created_certs),
-            "hr_docs":    len(hr_docs),
-            "unmatched":  len(unmatched_written),
-            "photo":      1 if photo_result else 0,
-        },
+        "counts": counts,
     }
 
 
@@ -737,6 +795,29 @@ async def list_cert_kinds(user: dict = Depends(require_roles("admin", "hseq_lead
         rows.append(k)
     rows.sort(key=lambda r: (r.get("name") or "").lower())
     return {"cert_kinds": rows}
+
+
+# v160.3.4a — org-wide unmatched-documents summary for the dashboard tile.
+@bulk_router.get("/unmatched-summary")
+async def unmatched_summary(user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead"))):
+    """Aggregate: how many unmatched documents are awaiting triage across
+    the org, and across how many distinct workers. Powers the Dashboard
+    triage tile — worker/supervisor/auditor roles never see this route."""
+    pipeline = [
+        {"$match": {"org_id": user["org_id"], "deleted_at": None}},
+        {"$group": {"_id": "$worker_id", "n": {"$sum": 1}}},
+    ]
+    total_docs = 0
+    worker_ids: list[str] = []
+    async for row in db.worker_unmatched_documents.aggregate(pipeline):
+        total_docs += int(row.get("n") or 0)
+        if row.get("_id"):
+            worker_ids.append(row["_id"])
+    return {
+        "total_docs": total_docs,
+        "worker_count": len(worker_ids),
+        "first_worker_id": worker_ids[0] if worker_ids else None,
+    }
 
 
 # ─────────────────────────────────────────────────────────────
