@@ -596,6 +596,42 @@ const LAYOUTS = [
   { value: 'avery',   label: 'Avery A4',     hint: '10 wallet cards on A4' },
 ];
 
+// v160.3.5a — Larger photo tile scoped to the ID Card section. Same
+// download-token + fallback logic as EditWorkerPhoto but sized for a
+// printable-card feel (128×128).
+function IdCardPhoto({ worker }) {
+  const [src, setSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
+    filesUrl(worker.photo_url)
+      .then((u) => { if (alive) setSrc(u); })
+      .catch(() => { if (alive) setBroken(true); });
+    return () => { alive = false; };
+  }, [worker?.photo_url]);
+  const initials = `${(worker?.first_name?.[0] || '?').toUpperCase()}${(worker?.last_name?.[0] || '').toUpperCase()}`;
+  if (!worker?.photo_url || broken) {
+    return (
+      <div
+        className="w-32 h-32 rounded-lg bg-[#e6eff9] border border-[#b9d2ec] flex items-center justify-center text-[#1e4a8c] font-display font-bold text-4xl"
+        data-testid="id-card-photo-placeholder"
+      >
+        {initials}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src || ''}
+      alt=""
+      onError={() => setBroken(true)}
+      className="w-32 h-32 rounded-lg object-cover border border-slate-200 bg-white"
+      data-testid="id-card-photo-img"
+    />
+  );
+}
+
 function IdCardSection({ worker, canEdit }) {
   // MUST have a server-side worker (i.e. not the unsaved `{}` new-form). Token
   // is filled lazily by the backend if missing, so we always trust the server
@@ -672,9 +708,31 @@ function IdCardSection({ worker, canEdit }) {
   };
 
   return (
-    <Section icon={QrCode} title="ID Card" testid="section-id-card"
-      badge={token ? `Token ${token.slice(0, 6)}…` : null} defaultOpen={false}>
-      <div className="grid md:grid-cols-[160px_1fr] gap-4">
+    <Section
+      icon={QrCode}
+      title="ID Card"
+      testid="section-id-card"
+      badges={
+        token
+          ? <EditSummaryPill testid="id-card-token-pill" title={`Full token: ${token}`}>
+              Token {token.slice(0, 6)}…
+            </EditSummaryPill>
+          : <EditSummaryPill tone="manual" testid="id-card-token-pending">
+              Awaiting token
+            </EditSummaryPill>
+      }
+      defaultOpen={false}>
+      <div className="grid md:grid-cols-[160px_160px_1fr] gap-4">
+        {/* v160.3.5a — printable-ID look: worker photo on the left, QR on the right */}
+        <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
+             data-testid="id-card-photo">
+          <IdCardPhoto worker={worker} />
+          <div className="text-[10px] uppercase tracking-wider text-slate-400">Photo</div>
+          <div className="text-[10px] text-slate-600 font-semibold text-center truncate max-w-[8rem]"
+               title={[worker.first_name, worker.last_name].filter(Boolean).join(' ')}>
+            {[worker.first_name, worker.last_name].filter(Boolean).join(' ') || '—'}
+          </div>
+        </div>
         {/* QR preview tile */}
         <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
           data-testid="id-card-qr">
