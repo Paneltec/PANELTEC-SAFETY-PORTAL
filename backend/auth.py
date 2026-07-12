@@ -117,6 +117,17 @@ async def get_current_user(
 
     user.pop("password_hash", None)
 
+    # v160.3.7d — Attach the JWT's `jti` to the user dict so downstream
+    # handlers (bulk-revoke, single-revoke) can identify the caller's own
+    # current session WITHOUT re-parsing the raw token from the request
+    # headers. Previously handlers did their own decode which occasionally
+    # returned None and triggered a broken "drop everything owned by this
+    # user" fallback (Stephen's 500 dev sessions were all his own, so
+    # bulk-revoke deleted zero rows).
+    jti = payload.get("jti")
+    if jti:
+        user["jti"] = jti
+
     # Phase 3.16 — session idle enforcement. Imported lazily to avoid a
     # circular import (session_timeout imports auth.get_current_user).
     # Hard-fails open if anything weird happens (e.g. db down): the goal

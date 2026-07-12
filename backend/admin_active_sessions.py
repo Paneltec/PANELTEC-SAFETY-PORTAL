@@ -101,24 +101,10 @@ async def revoke_session(jti: str, request: Request,
     if not sess:
         raise HTTPException(404, "Session not found")
 
-    # v160.3.0-adjust-5 — Extract caller's own jti from the Bearer JWT
-    # to allow blocking self-revoke by jti (the precise UX contract).
-    # Falls back to user_id match if jti isn't parseable, which is a
-    # coarser but safer guard (admin still can't nuke themselves).
-    caller_jti = None
-    auth_header = request.headers.get("authorization", "")
-    if auth_header.lower().startswith("bearer "):
-        try:
-            import jwt as _jwt
-            from auth import JWT_ALGORITHM, _secret
-            payload = _jwt.decode(auth_header[7:], _secret(),
-                                  algorithms=[JWT_ALGORITHM])
-            caller_jti = payload.get("jti")
-        except Exception:
-            caller_jti = None
-    is_self = (caller_jti and caller_jti == jti) or (
-        not caller_jti and sess.get("user_id") == user["id"]
-    )
+    # v160.3.7d — Use the jti that `get_current_user` attached to the
+    # user dict. Reliable and never None for a JWT-authenticated caller.
+    caller_jti = user.get("jti")
+    is_self = caller_jti and caller_jti == jti
     if is_self:
         raise HTTPException(
             400,
@@ -147,6 +133,10 @@ class BulkRevokeIn(BaseModel):
 
 
 def _caller_jti_from_request(request: Request) -> str | None:
+    # v160.3.7d — Kept as a defensive fallback ONLY (in case get_current_user
+    # ever changes and stops attaching the jti). The primary source is now
+    # user["jti"] set by auth.get_current_user. This helper is called from
+    # nowhere critical after v7d — it's a safety net for legacy callers.
     auth_header = request.headers.get("authorization", "")
     if not auth_header.lower().startswith("bearer "):
         return None
@@ -166,9 +156,17 @@ async def bulk_revoke_sessions(
     request: Request,
     user: dict = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """Revoke many sessions in one shot. Same safety guarantees as the
-    single-revoke path: the caller's own current session is silently
-    skipped so an admin can't accidentally log themselves out mid-review.
+    """Revoke many sessions in one shot.
+
+    v160.3.7d — The safety layer here USED to try to protect the caller
+    from nuking themselves by cross-referencing user_id when the jti
+    couldn't be parsed. In practice that filter deleted zero sessions
+    when the caller happened to own most of the rows (e.g. a dev with
+    500 accumulated sessions all under their own account). The fix:
+      * read jti directly from `user["jti"]` (set by get_current_user)
+      * skip ONLY that exact jti — never the whole user's fleet
+      * if for any reason jti is still unavailable, proceed anyway;
+        the admin explicitly ticked those rows.
 
     Response contract:
         {
@@ -183,10 +181,12 @@ async def bulk_revoke_sessions(
     if not ids:
         return {"requested": 0, "revoked": 0, "skipped_self": False, "not_found": []}
 
-    caller_jti = _caller_jti_from_request(request)
+    # Primary source: attached by get_current_user. Only fall back to
+    # re-parsing the header if the token was minted before the v7d fix
+    # (unlikely — tokens are per-request, not cached).
+    caller_jti = user.get("jti") or _caller_jti_from_request(request)
 
-    # Filter caller's own session out (skip silently — mirrors "Force logout
-    # everyone" behaviour). Also dedupe.
+    # Dedupe + drop ONLY the caller's exact current jti.
     unique_ids = list({i for i in ids})
     skipped_self = False
     revocable_ids: list[str] = []
@@ -211,14 +211,6 @@ async def bulk_revoke_sessions(
     ).to_list(len(revocable_ids))
     live_by_jti = {r["jti"]: r for r in live}
 
-    # Fallback self-check for tokens whose jti wasn't parseable but whose
-    # user_id happens to match the caller — never nuke your own row.
-    if not caller_jti:
-        for jti, row in list(live_by_jti.items()):
-            if row.get("user_id") == user["id"]:
-                skipped_self = True
-                live_by_jti.pop(jti, None)
-
     not_found = [jti for jti in revocable_ids if jti not in live_by_jti]
 
     if not live_by_jti:
@@ -232,7 +224,17 @@ async def bulk_revoke_sessions(
     # Bump token_version once per affected user so cached JWTs die on next
     # /auth/me. Some sessions may share a user_id — a single $inc is enough
     # per user, so we build a set.
-    affected_user_ids = {row["user_id"] for row in live_by_jti.values() if row.get("user_id")}
+    # v160.3.7d — EXCLUDE the caller's own user_id from the token_version
+    # bump. Otherwise: when Stephen bulk-revokes 5 of his own duplicate dev
+    # sessions, the $inc kills his own current JWT and he gets bounced to
+    # login mid-cleanup. The exact self-session was already filtered out of
+    # revocable_ids by the caller_jti guard, so leaving his token_version
+    # alone is safe — no un-revoked stale JWT can point at a now-deleted
+    # session because his session wasn't touched.
+    affected_user_ids = {
+        row["user_id"] for row in live_by_jti.values()
+        if row.get("user_id") and row.get("user_id") != user["id"]
+    }
     if affected_user_ids:
         await db.users.update_many(
             {"id": {"$in": list(affected_user_ids)}, "org_id": user["org_id"]},
