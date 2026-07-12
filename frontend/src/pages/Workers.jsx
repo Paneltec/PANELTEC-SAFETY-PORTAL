@@ -128,6 +128,29 @@ function SortHeader({ label, k, sortKey, sortDir, onClick, className, title }) {
   );
 }
 
+// v160.3.6e — div-based sort header used by the Workers grid layout.
+// Behaviour is identical to SortHeader; only the wrapper element differs
+// so it can sit inside a CSS Grid header row without table semantics.
+function SortHeaderBtn({ label, k, sortKey, sortDir, onClick, title }) {
+  const active = sortKey === k;
+  const Icon = !active ? ArrowUpDown : sortDir === 'desc' ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      data-testid={`sort-header-${k}`}
+      onClick={() => onClick(k)}
+      title={title || `Sort by ${label.toLowerCase()}`}
+      className={
+        'inline-flex items-center gap-1 uppercase tracking-wider text-[10px] font-semibold text-left ' +
+        (active ? 'text-[#1e4a8c]' : 'text-slate-500 hover:text-slate-700')
+      }
+    >
+      {label}
+      <Icon size={10} className={active ? '' : 'opacity-50'} />
+    </button>
+  );
+}
+
 function Section({ icon: Icon, title, badge, badges, defaultOpen = false, testid, children }) {
   const [open, setOpen] = useState(defaultOpen);
   const toggle = () => setOpen((v) => !v);
@@ -1583,210 +1606,226 @@ export default function Workers() {
             </button>
           ) : null} />
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto">
-          <table className="zebra-list w-full text-sm" data-testid="workers-table">
-            <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
-              <tr>
-                <th className="px-3 py-3 w-8"></th>
-                <SortHeader label="Name" k="name" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
-                <SortHeader label="Email" k="email" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden md:table-cell" />
-                <SortHeader label="Phone" k="phone" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden lg:table-cell" />
-                <SortHeader label="Company" k="company" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
-                <SortHeader label="Profile" k="profile" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3 hidden xl:table-cell" title="Sort by Simpro ZIP status — ZIP MISSING at top ascending" />
-                <SortHeader label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={setSort} className="text-left px-3 py-3" />
-                <th className="text-right px-3 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((w) => {
-                const clientsCount = (w.client_ids || []).length;
-                return (
-                  <tr key={w.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`worker-row-${w.id}`}>
-                    <td className="px-3 py-3"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggleSel(w.id)} className="w-3.5 h-3.5" /></td>
-                    <td className="px-3 py-3">
-                      {/* v160.3.6c — compact 40×40 photo + name+role stacked to
-                          the right. Photo stays inside the NAME cell so the
-                          sortable header stays a single "NAME" column. */}
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <WorkerRowPhoto worker={w} />
-                        <div className="min-w-0">
-                          <div className="font-semibold text-slate-900 truncate">{fullName(w)}</div>
-                          {w.position && <div className="text-xs text-slate-500 mt-0.5 truncate">{w.position}</div>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-slate-600 hidden md:table-cell">{w.email || '—'}</td>
-                    <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">{w.mobile || w.phone || '—'}</td>
-                    <td className="px-3 py-3"><CompanyChip label={w.company_label} /></td>
-                    <td className="px-3 py-3 hidden xl:table-cell">
-                      <div className="flex flex-wrap items-center gap-1 max-w-[280px]">
-                        {w.state ? (
-                          <span data-testid={`chip-state-${w.id}`}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
-                            <MapPin size={9} /> {w.state}
+        // v160.3.6e — Card-row grid layout. The previous <table> was
+        // overflowing (STATUS clipped to "AC...", ACTION icons ghosting
+        // outside the row). Every row now shares the same
+        // grid-template-columns as the sort header, so widths cannot drift.
+        // Column budget (~970px min): 40 identity 220 phone 110 company 90
+        // chips 200 status 120 action 190. Fits in ≥1280 viewports without
+        // horizontal scroll; below that a scrollbar appears via overflow-x-auto.
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto" data-testid="workers-table">
+          <div className="min-w-[980px]">
+            {/* Sort header row */}
+            <div
+              className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-3 py-3 gap-3"
+              style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 190px' }}
+            >
+              <div />
+              <SortHeaderBtn label="Name" k="name" sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+              <SortHeaderBtn label="Phone" k="phone" sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+              <SortHeaderBtn label="Company" k="company" sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+              <SortHeaderBtn label="Profile" k="profile" sortKey={sortKey} sortDir={sortDir} onClick={setSort} title="Sort by Simpro ZIP status" />
+              <SortHeaderBtn label="Status" k="status" sortKey={sortKey} sortDir={sortDir} onClick={setSort} />
+              <div className="text-right">Action</div>
+            </div>
+
+            {filtered.map((w) => {
+              const clientsCount = (w.client_ids || []).length;
+              return (
+                <div
+                  key={w.id}
+                  data-testid={`worker-row-${w.id}`}
+                  className="grid items-center border-t border-slate-100 hover:bg-slate-50 px-3 py-3 gap-3"
+                  style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 190px' }}
+                >
+                  {/* Selection */}
+                  <div>
+                    <input type="checkbox" checked={selected.has(w.id)} onChange={() => toggleSel(w.id)}
+                      data-testid={`select-${w.id}`}
+                      className="w-3.5 h-3.5 cursor-pointer" />
+                  </div>
+
+                  {/* Identity — photo + name / role / email stacked */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <WorkerRowPhoto worker={w} />
+                    <div className="min-w-0">
+                      <div className="font-semibold text-slate-900 truncate">{fullName(w)}</div>
+                      {w.position && <div className="text-[11px] text-slate-500 mt-0.5 truncate">{w.position}</div>}
+                      {w.email && <div className="text-[11px] text-slate-500 truncate" title={w.email}>{w.email}</div>}
+                    </div>
+                  </div>
+
+                  {/* Phone */}
+                  <div className="text-xs text-slate-500 truncate" title={w.mobile || w.phone || ''}>
+                    {w.mobile || w.phone || '—'}
+                  </div>
+
+                  {/* Company */}
+                  <div className="min-w-0"><CompanyChip label={w.company_label} /></div>
+
+                  {/* Profile chips — QR / ZIP / CERTS / state / clients / NFC / induction */}
+                  <div className="flex flex-wrap items-center gap-1 min-w-0">
+                    {w.state ? (
+                      <span data-testid={`chip-state-${w.id}`}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                        <MapPin size={9} /> {w.state}
+                      </span>
+                    ) : null}
+                    {clientsCount > 0 ? (
+                      <span data-testid={`chip-clients-${w.id}`}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c]">
+                        <Users size={9} /> {clientsCount}
+                      </span>
+                    ) : null}
+                    {w.nfc_uid ? (
+                      <span data-testid={`chip-nfc-${w.id}`} title={`NFC: ${w.nfc_uid}`}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f5f3ff] text-[#5b21b6]">
+                        <Smartphone size={9} /> NFC
+                      </span>
+                    ) : null}
+                    {w.scan_token ? (
+                      <span data-testid={`chip-qr-${w.id}`} title={`QR token: ${w.scan_token}`}
+                        className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                        <QrCode /> QR
+                      </span>
+                    ) : null}
+                    {(() => {
+                      const zs = zipStatusByWorker[w.id];
+                      if (!zs) return null;
+                      if (!zs.simpro_sourced) {
+                        return (
+                          <span data-testid={`chip-zip-${w.id}`}
+                            title="Worker added manually — Simpro ZIP not applicable"
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
+                            MANUAL
                           </span>
-                        ) : null}
-                        {clientsCount > 0 ? (
-                          <span data-testid={`chip-clients-${w.id}`}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c]">
-                            <Users size={9} /> {clientsCount}
+                        );
+                      }
+                      if (zs.zip_applied) {
+                        return (
+                          <span data-testid={`chip-zip-${w.id}`}
+                            title={`Simpro ZIP imported — ${zs.cert_count} cert(s) on file`}
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            ZIP
                           </span>
-                        ) : null}
-                        {w.nfc_uid ? (
-                          <span data-testid={`chip-nfc-${w.id}`} title={`NFC: ${w.nfc_uid}`}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#f5f3ff] text-[#5b21b6]">
-                            <Smartphone size={9} /> NFC
-                          </span>
-                        ) : null}
-                        {w.scan_token ? (
-                          <span data-testid={`chip-qr-${w.id}`} title={`QR token: ${w.scan_token}`}
-                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                            <QrCode /> QR
-                          </span>
-                        ) : null}
-                        {(() => {
-                          // v160.3.6 — Simpro ZIP application status chip.
-                          const zs = zipStatusByWorker[w.id];
-                          if (!zs) return null;
-                          if (!zs.simpro_sourced) {
-                            return (
-                              <span data-testid={`chip-zip-${w.id}`}
-                                title="Worker added manually — Simpro ZIP not applicable"
-                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 border border-slate-200">
-                                📦 MANUAL
-                              </span>
-                            );
-                          }
-                          if (zs.zip_applied) {
-                            return (
-                              <span data-testid={`chip-zip-${w.id}`}
-                                title={`Simpro ZIP imported — ${zs.cert_count} cert(s) on file`}
-                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                📦 ZIP APPLIED
-                              </span>
-                            );
-                          }
-                          return (
-                            <span data-testid={`chip-zip-${w.id}`}
-                              title="Simpro-sourced worker with NO ZIP imported yet — click Edit → Upload Simpro ZIP"
-                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
-                              📦 ZIP MISSING
-                            </span>
-                          );
-                        })()}
-                        {(() => {
-                          const v = chipByWorker[w.id];
-                          const zs = zipStatusByWorker[w.id];
-                          const certCount = zs?.cert_count || 0;
-                          // v160.3.6 — Rename the ambiguous "No data" chip. If the
-                          // worker has certs on file but no matrix cell status, show
-                          // the cert count. If zero certs, be explicit about that.
-                          if (!v || v === 'unknown') {
-                            if (certCount > 0) {
-                              return (
-                                <span data-testid={`chip-induction-${w.id}`}
-                                  title={`${certCount} cert(s) on file — matrix column mapping pending`}
-                                  className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]">
-                                  <Award size={9} /> {certCount} CERTS
-                                </span>
-                              );
-                            }
-                            return (
-                              <span data-testid={`chip-induction-${w.id}`}
-                                title="No certifications on file"
-                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-dashed border-slate-200">
-                                <Award size={9} /> 0 CERTS
-                              </span>
-                            );
-                          }
-                          // Abbreviated label + full text in tooltip to keep the row tight.
-                          const labelMap = { current: 'OK', expiring: 'SOON', expiring_90: '90d', expired: 'EXP', invalid_date: 'INV', not_held: 'N/H', held_no_expiry: 'HELD' };
-                          const fullMap  = { current: 'All current', expiring: 'Expiring 30d', expiring_90: 'Expiring 90d', expired: 'Has expired item(s)', invalid_date: 'Invalid date(s)', not_held: 'Not held', held_no_expiry: 'Held (no expiry)' };
+                        );
+                      }
+                      return (
+                        <span data-testid={`chip-zip-${w.id}`}
+                          title="Simpro-sourced worker with NO ZIP imported yet — click Edit → Upload Simpro ZIP"
+                          className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300">
+                          ZIP MISSING
+                        </span>
+                      );
+                    })()}
+                    {(() => {
+                      const v = chipByWorker[w.id];
+                      const zs = zipStatusByWorker[w.id];
+                      const certCount = zs?.cert_count || 0;
+                      if (!v || v === 'unknown') {
+                        if (certCount > 0) {
                           return (
                             <span data-testid={`chip-induction-${w.id}`}
-                              title={`Inductions: ${fullMap[v] || v}`}
-                              className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                                v === 'current' || v === 'held_no_expiry' ? 'bg-[#d8ecdd] text-[#1f7a3f]' :
-                                v === 'expiring' ? 'bg-[#fef3c7] text-[#92400e]' :
-                                v === 'expired' || v === 'invalid_date' ? 'bg-[#fbe4e7] text-[#7a1f33]' :
-                                'bg-slate-100 text-slate-500'
-                              }`}>
-                              <Award size={9} /> {labelMap[v] || v.toUpperCase()}
+                              title={`${certCount} cert(s) on file — matrix column mapping pending`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#e6eff9] text-[#1e4a8c] border border-[#b9d2ec]">
+                              <Award size={9} /> {certCount} CERTS
                             </span>
                           );
-                        })()}
-                        {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && !chipByWorker[w.id] && <span className="text-[11px] text-slate-300">—</span>}
-                      </div>
-                    </td>
-                    <td className="px-3 py-3">
-                      <StatusBadge active={w.active} />
-                      {(() => {
-                        const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
-                        if (!u) return null;
-                        // Phase 4.7.2 — derive from invite_pending / is_locked
-                        // so the pill flips immediately after Send invite /
-                        // Unlock without relying on the persisted `status`.
-                        let key = 'active', label = 'Active';
-                        if (u.is_locked) { key = 'locked'; label = 'Locked'; }
-                        else if (u.invite_pending && u.status !== 'disabled') { key = 'invited'; label = 'Invite pending'; }
-                        else if (u.status === 'disabled') { key = 'disabled'; label = 'Disabled'; }
-                        else if (u.status === 'invited') { key = 'invited'; label = 'Invite pending'; }
-                        const map = {
-                          active:   'bg-emerald-50 text-emerald-700 border border-emerald-200',
-                          invited:  'bg-amber-50 text-amber-700 border border-amber-200',
-                          locked:   'bg-rose-50 text-rose-700 border border-rose-200',
-                          disabled: 'bg-slate-100 text-slate-600 border border-slate-200',
-                        };
+                        }
                         return (
-                          <div className={`mt-1 inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${map[key]}`}
-                            data-testid={`worker-login-pill-${w.id}`}>
-                            {label}
-                          </div>
+                          <span data-testid={`chip-induction-${w.id}`}
+                            title="No certifications on file"
+                            className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-50 text-slate-400 border border-dashed border-slate-200">
+                            <Award size={9} /> 0 CERTS
+                          </span>
                         );
-                      })()}
-                    </td>
-                    <td className="sticky right-0 z-[5] bg-white px-3 py-3 text-right shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.08)]">
-                      {canEdit && confirmDelete !== w.id && (
-                        <div className="inline-flex gap-1 items-center">
-                          {(() => {
-                            const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
-                            if (u) return (
-                              <AccessKebab userId={u.id} canEdit={canEdit}
-                                testIdSuffix={`worker-${w.id}`}
-                                onAfterAction={loadUsers} />
-                            );
-                            if (w.email) return (
-                              <button onClick={() => createLogin(w)} title="Create login account"
-                                data-testid={`create-login-${w.id}`}
-                                className="inline-flex items-center px-2 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 text-[10px] font-semibold uppercase tracking-wider">
-                                + Login
-                              </button>
-                            );
-                            return null;
-                          })()}
-                          <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
-                          <button onClick={() => setViewingId(w.id)} title="View profile" data-testid={`view-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><EyeIcon /></button>
-                          <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
-                          <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
-                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
-                        </div>
-                      )}
-                      {canEdit && confirmDelete === w.id && (
-                        <span className="inline-flex items-center gap-1 bg-[#fbe4e7] border border-[#e69aa3] rounded px-2 py-1">
-                          <span className="text-[10px] font-semibold text-[#7a1f33] uppercase tracking-wider">Delete?</span>
-                          <button onClick={() => remove(w)} data-testid={`delete-confirm-${w.id}`} className="text-[10px] font-semibold text-[#7a1f33] hover:underline">Yes</button>
-                          <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-slate-500 hover:underline">No</button>
+                      }
+                      const labelMap = { current: 'OK', expiring: 'SOON', expiring_90: '90d', expired: 'EXP', invalid_date: 'INV', not_held: 'N/H', held_no_expiry: 'HELD' };
+                      const fullMap  = { current: 'All current', expiring: 'Expiring 30d', expiring_90: 'Expiring 90d', expired: 'Has expired item(s)', invalid_date: 'Invalid date(s)', not_held: 'Not held', held_no_expiry: 'Held (no expiry)' };
+                      return (
+                        <span data-testid={`chip-induction-${w.id}`}
+                          title={`Inductions: ${fullMap[v] || v}`}
+                          className={`inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                            v === 'current' || v === 'held_no_expiry' ? 'bg-[#d8ecdd] text-[#1f7a3f]' :
+                            v === 'expiring' ? 'bg-[#fef3c7] text-[#92400e]' :
+                            v === 'expired' || v === 'invalid_date' ? 'bg-[#fbe4e7] text-[#7a1f33]' :
+                            'bg-slate-100 text-slate-500'
+                          }`}>
+                          <Award size={9} /> {labelMap[v] || v.toUpperCase()}
                         </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      );
+                    })()}
+                    {!w.state && clientsCount === 0 && !w.nfc_uid && !w.scan_token && !chipByWorker[w.id] && <span className="text-[11px] text-slate-300">—</span>}
+                  </div>
+
+                  {/* Status stack — Active + login-derived pill on their own lines */}
+                  <div className="flex flex-col items-start gap-1 min-w-0">
+                    <StatusBadge active={w.active} />
+                    {(() => {
+                      const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
+                      if (!u) return null;
+                      let key = 'active', label = 'Active';
+                      if (u.is_locked) { key = 'locked'; label = 'Locked'; }
+                      else if (u.invite_pending && u.status !== 'disabled') { key = 'invited'; label = 'Invite pending'; }
+                      else if (u.status === 'disabled') { key = 'disabled'; label = 'Disabled'; }
+                      else if (u.status === 'invited') { key = 'invited'; label = 'Invite pending'; }
+                      const map = {
+                        active:   'bg-emerald-50 text-emerald-700 border border-emerald-200',
+                        invited:  'bg-amber-50 text-amber-700 border border-amber-200',
+                        locked:   'bg-rose-50 text-rose-700 border border-rose-200',
+                        disabled: 'bg-slate-100 text-slate-600 border border-slate-200',
+                      };
+                      return (
+                        <div className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${map[key]}`}
+                          data-testid={`worker-login-pill-${w.id}`}>
+                          {label}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Action icons — kept inside the row's white surface */}
+                  <div className="flex justify-end">
+                    {canEdit && confirmDelete !== w.id && (
+                      <div className="inline-flex gap-1 items-center flex-wrap justify-end">
+                        {(() => {
+                          const u = w.email ? userByEmail[w.email.toLowerCase()] : null;
+                          if (u) return (
+                            <AccessKebab userId={u.id} canEdit={canEdit}
+                              testIdSuffix={`worker-${w.id}`}
+                              onAfterAction={loadUsers} />
+                          );
+                          if (w.email) return (
+                            <button onClick={() => createLogin(w)} title="Create login account"
+                              data-testid={`create-login-${w.id}`}
+                              className="inline-flex items-center px-2 h-7 rounded bg-orange-50 text-orange-700 hover:bg-orange-100 text-[10px] font-semibold uppercase tracking-wider">
+                              + Login
+                            </button>
+                          );
+                          return null;
+                        })()}
+                        <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
+                        <button onClick={() => setViewingId(w.id)} title="View profile" data-testid={`view-${w.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><EyeIcon /></button>
+                        <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]"><Edit3 /></button>
+                        <button onClick={() => setConfirmDelete(w.id)} title="Delete" data-testid={`delete-${w.id}`}
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><Trash2 /></button>
+                      </div>
+                    )}
+                    {canEdit && confirmDelete === w.id && (
+                      <span className="inline-flex items-center gap-1 bg-[#fbe4e7] border border-[#e69aa3] rounded px-2 py-1">
+                        <span className="text-[10px] font-semibold text-[#7a1f33] uppercase tracking-wider">Delete?</span>
+                        <button onClick={() => remove(w)} data-testid={`delete-confirm-${w.id}`} className="text-[10px] font-semibold text-[#7a1f33] hover:underline">Yes</button>
+                        <button onClick={() => setConfirmDelete(null)} className="text-[10px] text-slate-500 hover:underline">No</button>
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
