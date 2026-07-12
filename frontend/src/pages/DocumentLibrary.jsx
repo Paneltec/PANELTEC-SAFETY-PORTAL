@@ -179,11 +179,59 @@ export default function DocumentLibrary() {
   };
   useEffect(() => { load(); }, []);
 
+  // v160.3.6m — Colour-filter state for the pastel legend. Multi-select
+  // Set — clicking a swatch toggles that colour on/off; empty Set = "all
+  // colours visible". Filters ALSO honour the free-text `filter` search
+  // box so the two act as an AND.
+  const [colorFilter, setColorFilter] = useState(() => new Set());
+  const toggleColor = (key) => {
+    setColorFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  // Palette labels — descriptive names based on the actual hex values
+  // in PASTEL_BG so admins can talk about "the mint folders" or "the
+  // sky folders" and everyone knows what they mean.
+  const PASTEL_LABEL = {
+    mint: 'Mint', sky: 'Sky', peach: 'Peach', blush: 'Blush',
+    lavender: 'Lavender', butter: 'Butter', sage: 'Sage', coral: 'Coral',
+    lilac: 'Lilac', slate: 'Slate',
+  };
+  // Solid swatch tokens for the legend dots (the PASTEL_BG classes are
+  // tuned for tile backgrounds; the legend needs a slightly punchier
+  // colour to read as a 12×12 dot).
+  const PASTEL_DOT = {
+    mint: 'bg-[#a8dbb5]', sky: 'bg-[#a9c4e8]', peach: 'bg-[#f4c8a6]',
+    blush: 'bg-[#f2b3bd]', lavender: 'bg-[#c9b8e8]', butter: 'bg-[#eddc9c]',
+    sage: 'bg-[#b3ceb0]', coral: 'bg-[#f0b9a3]', lilac: 'bg-[#c9b0e6]',
+    slate: 'bg-slate-300',
+  };
+  // Per-colour folder counts on the current dataset — legend only lists
+  // colours actually in use, so a fresh org doesn't see 10 empty swatches.
+  const colorCounts = useMemo(() => {
+    const c = {};
+    for (const f of folders) {
+      const k = f.color_key || 'sky';
+      c[k] = (c[k] || 0) + 1;
+    }
+    return c;
+  }, [folders]);
+  const legendEntries = useMemo(() =>
+    Object.keys(PASTEL_LABEL)
+      .filter((k) => (colorCounts[k] || 0) > 0)
+      .sort((a, b) => (colorCounts[b] - colorCounts[a])),
+  [colorCounts]);
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
-    if (!q) return folders;
-    return folders.filter((f) => f.name.toLowerCase().includes(q));
-  }, [folders, filter]);
+    let out = folders;
+    if (q) out = out.filter((f) => f.name.toLowerCase().includes(q));
+    if (colorFilter.size > 0) out = out.filter((f) => colorFilter.has(f.color_key || 'sky'));
+    return out;
+  }, [folders, filter, colorFilter]);
 
   const startCreate = () => { setCreating(true); setNewName(''); };
   const startRename = (f) => { setRenamingId(f.id); setNewName(f.name); };
@@ -325,6 +373,47 @@ export default function DocumentLibrary() {
           </button>
         )}
       </div>
+
+      {/* v160.3.6m — Folder colour legend. Doubles as (a) a key that
+          documents what each pastel means, and (b) a click-to-filter
+          navigation aid. Only shows colours actually in use. */}
+      {legendEntries.length > 1 && (
+        <div className="mb-5 flex items-center gap-3 flex-wrap text-xs" data-testid="folder-color-legend">
+          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">Colours</span>
+          {legendEntries.map((k) => {
+            const active = colorFilter.has(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => toggleColor(k)}
+                data-testid={`folder-color-${k}`}
+                aria-pressed={active}
+                title={active ? `Showing ${PASTEL_LABEL[k]} folders — click to clear` : `Filter to ${PASTEL_LABEL[k]} folders (${colorCounts[k]})`}
+                className={`inline-flex items-center gap-1.5 py-1 pl-1.5 pr-2.5 rounded-full transition-all ${
+                  active
+                    ? 'bg-[#e6eff9] ring-1 ring-[#1e4a8c]/40 text-[#1e4a8c]'
+                    : 'hover:bg-slate-100 text-slate-600'
+                }`}
+              >
+                <span className={`w-3 h-3 rounded-full ${PASTEL_DOT[k]} border border-black/5 shrink-0`} />
+                <span className="font-medium">{PASTEL_LABEL[k]}</span>
+                <span className="text-slate-400 tabular-nums">{colorCounts[k]}</span>
+              </button>
+            );
+          })}
+          {colorFilter.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setColorFilter(new Set())}
+              data-testid="folder-color-clear"
+              className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 hover:text-slate-900 underline underline-offset-4"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
 
       {/* v159.4 — Doc Library bulk-restrict modal */}
       <BulkRestrictModal

@@ -1371,7 +1371,7 @@ export default function Workers() {
   const [syncing, setSyncing] = useState(false);
   const [selected, setSelected] = useState(new Set());
   // Phase 3.11 — Directory + Inductions Matrix tabs.
-  const [tab, setTab] = useState('directory');
+  const [tab, setTab] = useState('matrix');
   // Per-worker induction-status chip map (loaded once with the matrix call).
   const [chipByWorker, setChipByWorker] = useState({});
   // v160.3.6 — Per-worker Simpro-ZIP application status. Powers the
@@ -1534,18 +1534,46 @@ export default function Workers() {
       <PageHeader crumb="Settings / Workers" title="Workers"
         subtitle="Your field crew — synced from Simpro or added manually." />
 
-      {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix
-          v160.3.6h — restyled to match the app-wide segmented control from
-          shadcn Tabs (pill-shaped, both tabs read as real buttons). */}
-      <div className="mb-4 inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm" data-testid="workers-tabs">
-        <button onClick={() => setTab('directory')} data-testid="tab-directory"
-          className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40 ${
-            tab === 'directory' ? 'bg-[#1e4a8c] text-white shadow' : 'text-slate-700 hover:bg-slate-100'}`}>
+      {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.
+          v160.3.6n — Hero variant with Inductions Matrix as the PRIMARY
+          (big violet capsule, always prominent) and Directory as the tiny
+          slate text-link footnote. Same physical capsule size in both
+          active + inactive states — Matrix commands attention permanently,
+          Directory sits alongside as a secondary switch. `flex-row-reverse`
+          renders Matrix on the left visually while keeping DOM order intact
+          for keyboard nav / focus. */}
+      <div className="mb-4 inline-flex flex-row-reverse items-center gap-4" data-testid="workers-tabs">
+        {/* Directory — secondary, tiny */}
+        <button
+          type="button"
+          onClick={() => setTab('directory')}
+          data-testid="tab-directory"
+          aria-pressed={tab === 'directory'}
+          className={[
+            'inline-flex items-center gap-1 whitespace-nowrap transition-all cursor-pointer py-1 px-1',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40',
+            tab === 'directory'
+              ? 'text-sm font-semibold text-[#5b21b6] underline underline-offset-4 decoration-[#5b21b6]/50 normal-case'
+              : 'text-[11px] font-medium uppercase tracking-wider text-slate-400 hover:text-slate-600 hover:underline underline-offset-4 decoration-slate-300',
+          ].join(' ')}
+        >
           Directory
         </button>
-        <button onClick={() => setTab('matrix')} data-testid="tab-matrix"
-          className={`inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40 ${
-            tab === 'matrix' ? 'bg-[#5b21b6] text-white shadow' : 'text-slate-700 hover:bg-slate-100'}`}>
+        {/* Inductions Matrix — primary, big capsule, filled ↔ outlined */}
+        <button
+          type="button"
+          onClick={() => setTab('matrix')}
+          data-testid="tab-matrix"
+          aria-pressed={tab === 'matrix'}
+          className={[
+            'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all cursor-pointer',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#5b21b6]/40',
+            'rounded-full px-5 py-2.5 text-base font-semibold border-2',
+            tab === 'matrix'
+              ? 'bg-[#5b21b6] text-white border-transparent shadow-lg shadow-[#5b21b6]/20'
+              : 'bg-white text-[#5b21b6] border-[#5b21b6] hover:bg-[#f5f0fb]',
+          ].join(' ')}
+        >
           Inductions Matrix
         </button>
       </div>

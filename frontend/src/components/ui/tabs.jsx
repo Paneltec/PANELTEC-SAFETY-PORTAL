@@ -61,9 +61,16 @@ const TabsTrigger = React.forwardRef(({ className, variant, emphasis, ...props }
               // ACTIVE state — filled blue with white text + shadow lift
               "data-[state=active]:bg-[#1e4a8c] data-[state=active]:text-white data-[state=active]:border-transparent",
               "data-[state=active]:shadow-lg data-[state=active]:shadow-[#1e4a8c]/20",
-              // Count-badge chip: soft-blue on inactive, glass-white on active
-              "[&_span]:tabular-nums [&_span]:!bg-[#e6eff9] [&_span]:!text-[#1e4a8c]",
-              "[&[data-state=active]_span]:!bg-white/20 [&[data-state=active]_span]:!text-white"
+              // v160.3.6l — Count badge is an elliptical oval:
+              // wider than tall via px-2.5 py-0.5 + rounded-full = true ellipse.
+              // Inactive: solid Paneltec-blue oval with white text on the white capsule.
+              // Active: subtly translucent white oval with a ring inset so the
+              // number floats gracefully on the blue capsule without a hard pill.
+              "[&_span]:tabular-nums [&_span]:leading-none",
+              "[&_span]:!px-2.5 [&_span]:!py-0.5 [&_span]:!rounded-full",
+              "[&_span]:!bg-[#1e4a8c] [&_span]:!text-white",
+              "[&[data-state=active]_span]:!bg-white/25 [&[data-state=active]_span]:!text-white",
+              "[&[data-state=active]_span]:ring-1 [&[data-state=active]_span]:ring-inset [&[data-state=active]_span]:ring-white/40"
             )
         : cn(
             "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-full px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wider transition-all cursor-pointer",
