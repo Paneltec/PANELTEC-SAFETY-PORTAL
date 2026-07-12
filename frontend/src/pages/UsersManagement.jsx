@@ -28,6 +28,9 @@ import {
 import AccessSection from '../components/auth/AccessSection';
 import AccessKebab from '../components/auth/AccessKebab';
 import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
+// v160.3.6t — restore missing import that caused a fatal ReferenceError
+// (`SimproZipImportGuide is not defined`) on /settings/user-permissions.
+import SimproZipImportGuide from '../components/simpro/SimproZipImportGuide';
 
 const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
 const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
