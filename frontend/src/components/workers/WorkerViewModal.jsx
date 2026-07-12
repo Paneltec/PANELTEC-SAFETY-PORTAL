@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
+import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
 import { toast } from 'sonner';
 
@@ -248,38 +249,10 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
     ? DAYS.filter((d) => worker.availability[d.key]?.enabled)
     : [];
 
-  // v160.3.4b — Section summary aggregates (client-side, no extra API calls).
-  const certAgg = React.useMemo(() => {
-    const now = new Date();
-    const soon = new Date(now.getTime() + 30 * 86400_000);
-    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
-    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0;
-    let inductions = 0;
-    for (const c of certs) {
-      if (simproSet.has(c.source)) simpro++;
-      else manual++;
-      if (c.pending_review) pending++;
-      if (!c.doc_file_id) missing++;
-      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
-      if (exp && !isNaN(exp)) {
-        if (exp < now) expired++;
-        else if (exp <= soon) expiringSoon++;
-      }
-      // Induction detection: cert_kind_slug ending with -induction, or the
-      // name contains "induction" (case-insensitive). Best-effort — we
-      // don't have the cert_kinds catalogue on the client here.
-      const slug = (c.cert_kind_slug || '').toLowerCase();
-      const nm = (c.name || '').toLowerCase();
-      if (slug.includes('induction') || nm.includes('induction')) inductions++;
-    }
-    return { total: certs.length, simpro, manual, pending, missing,
-              expired, expiringSoon, inductions };
-  }, [certs]);
-
-  const personalFilled = worker ? [
-    worker.birth_date, worker.country, worker.state,
-    worker.postal_code, worker.street_address,
-  ].filter(Boolean).length : 0;
+  // v160.3.5 — Section summary aggregates via the shared helper so this
+  // matches EditModal exactly. See `lib/workerSectionSummary.js`.
+  const certAgg = React.useMemo(() => summariseCertifications(certs), [certs]);
+  const personalFilled = personalFilledCount(worker);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/30 backdrop-blur-sm"
@@ -480,7 +453,12 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
                     </SummaryPill>
                   )}
                   {certAgg.inductions > 0 && (
-                    <SummaryPill tone="violet" testid="section-certs-inductions">
+                    <SummaryPill tone="violet" testid="section-certs-inductions"
+                      title={
+                        Object.entries(certAgg.inductionsByFolder)
+                          .map(([f, n]) => `${f}: ${n}`)
+                          .join(' · ')
+                      }>
                       Inductions · {certAgg.inductions}
                     </SummaryPill>
                   )}

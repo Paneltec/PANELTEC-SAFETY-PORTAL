@@ -9,6 +9,8 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { stashInlinePdf } from '../lib/pdfStash';
+import { summariseCertifications, personalFilledCount } from '../lib/workerSectionSummary';
+import { filesUrl } from '../lib/downloadUrl';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
@@ -155,8 +157,7 @@ function EditWorkerPhoto({ worker }) {
   React.useEffect(() => {
     let alive = true;
     if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
-    import('../lib/downloadUrl')
-      .then(({ filesUrl }) => filesUrl(worker.photo_url))
+    filesUrl(worker.photo_url)
       .then((u) => { if (alive) setSrc(u); })
       .catch(() => { if (alive) setBroken(true); });
     return () => { alive = false; };
@@ -326,24 +327,8 @@ function CertificationsPanel({ workerId, canEdit }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { load(); }, [workerId]);
 
-  // v160.3.4c — same aggregation formula as WorkerViewModal + EditModal.
-  const certAgg = useMemo(() => {
-    const now = new Date();
-    const soon = new Date(now.getTime() + 30 * 86400_000);
-    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
-    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0;
-    for (const c of rows) {
-      if (simproSet.has(c.source)) simpro++; else manual++;
-      if (c.pending_review) pending++;
-      if (!c.doc_file_id) missing++;
-      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
-      if (exp && !isNaN(exp)) {
-        if (exp < now) expired++;
-        else if (exp <= soon) expiringSoon++;
-      }
-    }
-    return { total: rows.length, simpro, manual, pending, missing, expired, expiringSoon };
-  }, [rows]);
+  // v160.3.5 — same helper as EditModal & WorkerViewModal.
+  const certAgg = useMemo(() => summariseCertifications(rows), [rows]);
 
   const upload = async (fileList) => {
     if (!fileList || !fileList.length) return;
@@ -508,7 +493,6 @@ function CertificationsPanel({ workerId, canEdit }) {
                               <button type="button"
                                  onClick={async () => {
                                    try {
-                                     const { filesUrl } = await import('../lib/downloadUrl');
                                      const u = await filesUrl(`/workers/${workerId}/certifications/${c.id}/file`);
                                      window.open(u, '_blank', 'noopener,noreferrer');
                                    } catch (_e) { toast.error('Unable to open file'); }
@@ -896,31 +880,9 @@ function EditModal({ worker, onClose, onSaved }) {
       .catch(() => { if (alive) setAggUnmatched(null); });
     return () => { alive = false; };
   }, [worker?.id]);
-  const certAgg = useMemo(() => {
-    const arr = aggCerts || [];
-    const now = new Date();
-    const soon = new Date(now.getTime() + 30 * 86400_000);
-    const simproSet = new Set(['simpro', 'simpro_zip', 'simpro_zip_reclassified']);
-    let simpro = 0, manual = 0, pending = 0, missing = 0, expired = 0, expiringSoon = 0, inductions = 0;
-    for (const c of arr) {
-      if (simproSet.has(c.source)) simpro++; else manual++;
-      if (c.pending_review) pending++;
-      if (!c.doc_file_id) missing++;
-      const exp = c.expiry_date ? new Date(c.expiry_date) : null;
-      if (exp && !isNaN(exp)) {
-        if (exp < now) expired++;
-        else if (exp <= soon) expiringSoon++;
-      }
-      const slug = (c.cert_kind_slug || '').toLowerCase();
-      const nm = (c.name || '').toLowerCase();
-      if (slug.includes('induction') || nm.includes('induction')) inductions++;
-    }
-    return { total: arr.length, simpro, manual, pending, missing, expired, expiringSoon, inductions };
-  }, [aggCerts]);
+  const certAgg = useMemo(() => summariseCertifications(aggCerts || []), [aggCerts]);
 
-  const personalFilled = [
-    f.birth_date, f.country, f.state, f.postal_code, f.street_address,
-  ].filter(Boolean).length;
+  const personalFilled = personalFilledCount(f);
 
   const certBadges = (
     <>
@@ -956,11 +918,33 @@ function EditModal({ worker, onClose, onSaved }) {
       )}
     </>
   );
-  const inductionsBadges = certAgg.inductions > 0 ? (
-    <EditSummaryPill tone="violet" testid="edit-section-inductions-count">
-      {certAgg.inductions} inductions
-    </EditSummaryPill>
-  ) : null;
+  const inductionsBadges = (
+    <>
+      {certAgg.inductions === 0 ? (
+        <EditSummaryPill tone="manual" testid="edit-section-inductions-empty">No content</EditSummaryPill>
+      ) : (
+        <EditSummaryPill tone="violet" testid="edit-section-inductions-count">
+          {certAgg.inductions} inductions
+        </EditSummaryPill>
+      )}
+      {Object.entries(certAgg.inductionsByFolder)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 6)
+        .map(([folder, n]) => {
+          const label = folder.length > 20 ? folder.slice(0, 18) + '…' : folder;
+          return (
+            <EditSummaryPill
+              key={folder}
+              tone="neutral"
+              testid={`edit-section-inductions-folder-${folder.replace(/\s+/g, '-').toLowerCase()}`}
+              title={folder}
+            >
+              {label} · {n}
+            </EditSummaryPill>
+          );
+        })}
+    </>
+  );
   const personalBadges = (
     <>
       {personalFilled > 0 ? (
