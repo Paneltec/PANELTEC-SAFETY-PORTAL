@@ -33,12 +33,18 @@ from difflib import SequenceMatcher
 from pathlib import PurePosixPath
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from auth import require_roles
 from db import db
 from models import new_id, now_iso
+
+try:
+    from bson import ObjectId  # motor / pymongo BSON id
+except ImportError:  # pragma: no cover
+    ObjectId = None  # type: ignore
 
 log = logging.getLogger("paneltec.simpro.zip")
 
@@ -192,6 +198,177 @@ def _match_slug(filename: str, slug_index: list[tuple[str, str]]) -> tuple[Optio
     return best_slug, round(best_score, 3)
 
 
+# v160.3.4 — Auto-taxonomy suggestion for unmatched files.
+# Purpose: for files that don't match ANY existing cert_kind, generate a
+# candidate `cert_kind_slug` + human label so an admin can bulk-accept
+# a batch of "same-looking" unknowns as a new kind. This is the primary
+# lever to drop the unmatched rate from ~40% to ~5%.
+_DATE_PATTERNS = (
+    re.compile(r"\d{4}[-/_.]\d{1,2}[-/_.]\d{1,2}"),      # 2024-05-01
+    re.compile(r"\d{1,2}[-/_.]\d{1,2}[-/_.]\d{2,4}"),    # 01/05/24
+    re.compile(r"\b\d{6,8}\b"),                             # 010524 / 20240501
+    re.compile(r"\b(?:19|20)\d{2}\b"),                      # bare year
+)
+
+_TAXONOMY_NOISE = {
+    "expired", "expiry", "expires", "renewal", "renewed", "updated",
+    "current", "new", "old", "final", "draft", "signed", "signature",
+    "certificate", "cert", "certified", "ticket", "licence", "license",
+    "card", "induction", "inducted", "training", "trained", "refresher",
+    "copy", "scan", "scanned", "photo", "pic", "picture", "img", "image",
+    "v1", "v2", "v3", "v4", "aa", "exp", "iss", "ood",
+    "employee", "worker", "staff", "staffnew",
+    "attachment", "document", "file", "form", "letter", "policy",
+    "confidential", "private", "hr",
+}
+
+
+def _generate_taxonomy_suggestion(
+    filename: str,
+    worker_name_tokens: Optional[set[str]] = None,
+) -> dict:
+    """From an unmatched filename, produce a candidate cert_kind slug +
+    human label + confidence. Confidence heuristic favours filenames
+    with 2-4 clean tokens after date/noise stripping.
+
+    v160.3.4 tightened: also strips the target worker's name tokens
+    + auto-detected initial-pairs (DB / AK / DDB style) so filenames
+    like ``Petuna - Daniel Butler - EXP …`` collapse to slug ``petuna``
+    instead of leaking a personal name into the catalogue.
+    """
+    stem = PurePosixPath(filename).stem
+    s = stem
+    for pat in _DATE_PATTERNS:
+        s = pat.sub(" ", s)
+    # Split on any non-alnum, then de-noise.
+    tokens = re.split(r"[^a-zA-Z]+", s)
+    wn = worker_name_tokens or set()
+    clean = []
+    for t in tokens:
+        if not t or not t.isalpha():
+            continue
+        tl = t.lower()
+        if tl in _TAXONOMY_NOISE:
+            continue
+        if tl in wn:
+            continue  # worker's own first/last name
+        if len(t) <= 3 and t.isupper() and tl not in {"whs", "loto", "tc"}:
+            # Likely initials (DB, AK, DDB, MC). Keep a small whitelist of
+            # real cert acronyms that also happen to be short + uppercase.
+            continue
+        if len(tl) < 2 or len(tl) > 24:
+            continue
+        clean.append(tl)
+    # Cap the token count to prevent runaway slugs from filenames that
+    # accidentally survived the noise filter.
+    clean = clean[:5]
+    if not clean:
+        return {"slug": None, "label": None, "confidence": 0.0}
+    # Confidence sweet spot: 2-4 clean tokens is a strong signal.
+    n = len(clean)
+    conf = {1: 0.55, 2: 0.85, 3: 0.90, 4: 0.85, 5: 0.70}.get(n, 0.50)
+    label = " ".join(w.capitalize() for w in clean)
+    slug = "-".join(clean)
+    return {"slug": slug, "label": label, "confidence": round(conf, 2)}
+
+
+async def _load_existing_cert_slugs() -> set[str]:
+    """All slugs currently in `cert_kinds` — used for dedupe on suggest."""
+    out: set[str] = set()
+    async for k in db.cert_kinds.find({}, {"_id": 0, "slug": 1}):
+        s = k.get("slug")
+        if s:
+            out.add(s)
+    return out
+
+
+def _fuzzy_hit(candidate: str, existing: set[str], threshold: float = 0.80) -> Optional[str]:
+    """Return an existing slug that fuzzy-matches candidate at >= threshold,
+    or None. Prevents catalogue pollution when Auto-Taxonomy would
+    otherwise duplicate a slug that's already in cert_kinds."""
+    if candidate in existing:
+        return candidate
+    best_hit, best_score = None, 0.0
+    for e in existing:
+        r = SequenceMatcher(None, candidate, e).ratio()
+        if r > best_score:
+            best_hit, best_score = e, r
+    if best_score >= threshold:
+        return best_hit
+    return None
+
+
+def _aggregate_unmatched_suggestions(plan_files: list[dict],
+                                       existing_slugs: set[str]) -> list[dict]:
+    """Group unmatched-plan-file rows by generated slug. Return sorted
+    groups with count, sample filenames, existing-slug hit (if any),
+    and the auto-accept default flag.
+
+    Per user-confirmed spec (v160.3.4):
+      - auto_accept_default = True when count >= 3 OR confidence >= 0.85
+        (AND the suggestion doesn't collide with an existing slug).
+      - Groups whose suggestion fuzzy-hits an existing slug (>= 0.80)
+        should NOT create a new cert_kind — the UI shows them as
+        "route to existing".
+    """
+    groups: dict[str, dict] = {}
+    for p in plan_files:
+        if p.get("action") != "unmatched":
+            continue
+        sug = p.get("suggestion") or {}
+        slug = sug.get("slug")
+        if not slug:
+            # No usable slug at all — leave as "no suggestion" bucket.
+            g = groups.setdefault("__no_suggestion__", {
+                "suggested_slug": None,
+                "suggested_label": None,
+                "confidence": 0.0,
+                "existing_slug_hit": None,
+                "count": 0,
+                "sample_filenames": [],
+                "zip_paths": [],
+                "auto_accept_default": False,
+            })
+            g["count"] += 1
+            if len(g["sample_filenames"]) < 5:
+                g["sample_filenames"].append(p["filename"])
+            g["zip_paths"].append(p["zip_path"])
+            continue
+        existing_hit = _fuzzy_hit(slug, existing_slugs)
+        g = groups.setdefault(slug, {
+            "suggested_slug": slug,
+            "suggested_label": sug["label"],
+            "confidence": sug["confidence"],
+            "existing_slug_hit": existing_hit,
+            "count": 0,
+            "sample_filenames": [],
+            "zip_paths": [],
+        })
+        g["count"] += 1
+        if len(g["sample_filenames"]) < 5:
+            g["sample_filenames"].append(p["filename"])
+        g["zip_paths"].append(p["zip_path"])
+    # Finalise auto_accept_default now that count is settled.
+    for slug, g in groups.items():
+        if slug == "__no_suggestion__":
+            continue
+        g["auto_accept_default"] = bool(
+            g["existing_slug_hit"] is None
+            and (g["count"] >= 3 or g["confidence"] >= 0.85)
+        )
+    # Sort: existing-hit rows first (route-to-existing is safest), then
+    # auto-accept-default true, then by count desc.
+    ordered = sorted(
+        groups.values(),
+        key=lambda g: (
+            0 if g["existing_slug_hit"] else 1,
+            0 if g.get("auto_accept_default") else 1,
+            -g["count"],
+        ),
+    )
+    return ordered
+
+
 async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
     """Parse ZIP → per-file plan. No writes. No GridFS. Read-only preview."""
     if len(zip_bytes) > MAX_ZIP_BYTES:
@@ -202,6 +379,21 @@ async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
         raise HTTPException(400, "Not a valid ZIP file")
 
     slug_index = await _load_slug_index()
+    # v160.3.4 — resolve target worker's name tokens so auto-taxonomy
+    # can strip them from filename-derived slugs. Prevents worker names
+    # + initials from leaking into the cert_kinds catalogue.
+    worker_doc = await db.workers.find_one(
+        {"id": worker_id, "org_id": org_id},
+        {"_id": 0, "first_name": 1, "last_name": 1},
+    )
+    worker_name_tokens: set[str] = set()
+    if worker_doc:
+        for fld in ("first_name", "last_name"):
+            v = (worker_doc.get(fld) or "").strip().lower()
+            if v:
+                for part in re.split(r"[^a-z]+", v):
+                    if len(part) >= 2:
+                        worker_name_tokens.add(part)
     # Existing simpro-linked certs on this worker (to route matches for "attach vs create")
     existing_certs: dict[str, dict] = {}
     async for c in db.worker_certifications.find(
@@ -257,6 +449,8 @@ async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
                 "filename": base, "zip_path": name, "folder": folder or "other",
                 "size": info.file_size, "action": "unmatched",
                 "matched_slug": None, "match_score": score, "attach_to_cert_id": None,
+                # v160.3.4 — auto-taxonomy candidate
+                "suggestion": _generate_taxonomy_suggestion(base, worker_name_tokens),
             })
             continue
         existing = existing_certs.get(slug)
@@ -280,7 +474,11 @@ async def _plan_zip(zip_bytes: bytes, worker_id: str, org_id: str) -> dict:
         "photo":        1 if photo else 0,
         "total_files":  len(plan_files) + (1 if photo else 0),
     }
-    return {"files": plan_files, "photo": photo, "counts": counts}
+    # v160.3.4 — aggregate auto-taxonomy suggestions for unmatched files.
+    existing_slugs = await _load_existing_cert_slugs()
+    unmatched_groups = _aggregate_unmatched_suggestions(plan_files, existing_slugs)
+    return {"files": plan_files, "photo": photo, "counts": counts,
+             "unmatched_groups": unmatched_groups}
 
 
 async def _commit_zip(
@@ -528,3 +726,267 @@ async def last_sync_marker(user: dict = Depends(require_roles("admin", "hseq_lea
             "triggered_by": latest.get("triggered_by"),
             "counts": latest.get("counts"),
             "snapshot_id": latest.get("id")}
+
+
+# v160.3.4 — cert_kinds catalogue for the reclassify dropdown.
+@bulk_router.get("/cert-kinds")
+async def list_cert_kinds(user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead"))):
+    rows = []
+    async for k in db.cert_kinds.find({}, {"_id": 0, "slug": 1, "name": 1,
+                                            "category": 1, "source": 1}):
+        rows.append(k)
+    rows.sort(key=lambda r: (r.get("name") or "").lower())
+    return {"cert_kinds": rows}
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.4 — Auto-taxonomy accept + Unmatched Documents triage
+# ─────────────────────────────────────────────────────────────
+
+
+@bulk_router.post("/accept-suggestions")
+async def accept_taxonomy_suggestions(
+    body: dict = Body(...),
+    user: dict = Depends(require_roles("admin", "hseq_lead")),
+):
+    """Persist accepted auto-taxonomy suggestions into `cert_kinds`
+    + `simpro_licence_mapping`. Idempotent — existing slugs get their
+    `simpro_variants` merged; brand-new slugs get inserted with
+    `source = 'auto_taxonomy'`.
+
+    Body:
+      {
+        "suggestions": [
+          {"slug": "...", "label": "...", "simpro_variants": ["..."]}
+        ]
+      }
+    """
+    suggestions = body.get("suggestions") or []
+    if not isinstance(suggestions, list):
+        raise HTTPException(400, "suggestions must be a list")
+    created: list[str] = []
+    merged: list[str] = []
+    ts = now_iso()
+    for s in suggestions:
+        slug = (s or {}).get("slug")
+        label = (s or {}).get("label") or slug
+        variants = (s or {}).get("simpro_variants") or []
+        if not slug or not label:
+            continue
+        # Idempotent cert_kinds upsert — merge variants on collision.
+        existing = await db.cert_kinds.find_one({"slug": slug})
+        if existing:
+            merged_variants = list({*(existing.get("simpro_variants") or []),
+                                     *variants})
+            await db.cert_kinds.update_one(
+                {"slug": slug},
+                {"$set": {"simpro_variants": merged_variants,
+                          "updated_at": ts}},
+            )
+            merged.append(slug)
+        else:
+            await db.cert_kinds.insert_one({
+                "slug": slug,
+                "name": label,
+                "category": None,
+                "requires_expiry": None,
+                "simpro_variants": variants,
+                "source_count": len(variants),
+                "source": "auto_taxonomy",
+                "created_by": user["id"],
+                "created_at": ts,
+                "updated_at": ts,
+            })
+            created.append(slug)
+        # Mirror licence_mapping so future ZIP planner picks them up.
+        for v in variants:
+            if not v:
+                continue
+            await db.simpro_licence_mapping.update_one(
+                {"simpro_licence_name_raw": v},
+                {"$set": {"cert_kind_slug": slug,
+                          "map_status": "auto_taxonomy",
+                          "updated_at": ts},
+                 "$setOnInsert": {"created_at": ts}},
+                upsert=True,
+            )
+    log.info("auto_taxonomy accept · created=%d · merged=%d · user=%s",
+              len(created), len(merged), user["id"])
+    return {"created": created, "merged": merged,
+             "total": len(created) + len(merged)}
+
+
+# ── Unmatched Documents triage ─────────────────────────────────
+
+@router.get("/{worker_id}/unmatched-documents")
+async def list_unmatched_documents(
+    worker_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead")),
+):
+    """List all not-yet-triaged unmatched files for a worker."""
+    rows = []
+    async for d in db.worker_unmatched_documents.find(
+        {"worker_id": worker_id, "org_id": user["org_id"], "deleted_at": None}
+    ).sort([("uploaded_at", -1)]):
+        d.pop("_id", None)
+        rows.append(d)
+    return {"documents": rows}
+
+
+@router.get("/{worker_id}/unmatched-documents/{doc_id}/file")
+async def stream_unmatched_document(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead")),
+):
+    """Stream the GridFS blob so admins can preview before triaging."""
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    fs = _fs_bucket()
+    gid = doc.get("gridfs_id")
+    if not gid or ObjectId is None:
+        raise HTTPException(404, "File blob missing")
+    try:
+        stream = await fs.open_download_stream(ObjectId(gid))
+    except Exception:
+        raise HTTPException(404, "File blob missing")
+
+    async def _iter():
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            yield chunk
+
+    ext = (doc.get("filename") or "").rsplit(".", 1)[-1].lower()
+    mime = {"pdf": "application/pdf", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+             "png": "image/png", "webp": "image/webp"}.get(ext, "application/octet-stream")
+    return StreamingResponse(_iter(), media_type=mime,
+                              headers={"Content-Disposition":
+                                       f'inline; filename="{doc.get("filename") or "file"}"'})
+
+
+@router.post("/{worker_id}/unmatched-documents/{doc_id}/reclassify")
+async def reclassify_unmatched_document(
+    worker_id: str,
+    doc_id: str,
+    body: dict = Body(...),
+    user: dict = Depends(require_roles("admin", "hseq_lead")),
+):
+    """Reclassify an unmatched doc → create a `worker_certifications`
+    row referencing the same GridFS blob. Marks the unmatched doc
+    reviewed + soft-deleted (blob retained)."""
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    slug = (body or {}).get("cert_kind_slug")
+    if not slug:
+        raise HTTPException(400, "cert_kind_slug required")
+    ck = await db.cert_kinds.find_one({"slug": slug})
+    if not ck:
+        raise HTTPException(400, f"Unknown cert_kind_slug: {slug}")
+    name = ((body or {}).get("cert_name")
+             or ck.get("name")
+             or doc["filename"].rsplit(".", 1)[0][:160])
+    ts = now_iso()
+    new_cert = {
+        "id": new_id(),
+        "org_id": user["org_id"],
+        "worker_id": worker_id,
+        "name": name,
+        "issuer": "Simpro (ZIP import · reclassified)",
+        "issue_date": None,
+        "expiry_date": None,
+        "doc_file_id": doc.get("gridfs_id"),
+        "doc_folder_id": None,
+        "doc_seed_folder": "",
+        "notes": "",
+        "source": "simpro_zip_reclassified",
+        "cert_kind_slug": slug,
+        "pending_review": True,
+        "expired_folder": False,
+        "created_by": user["id"],
+        "created_at": ts,
+        "updated_at": ts,
+        "deleted_at": None,
+    }
+    await db.worker_certifications.insert_one(new_cert)
+    new_cert.pop("_id", None)
+    await db.worker_unmatched_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"reviewed": True, "reviewed_by": user["id"],
+                  "reviewed_at": ts,
+                  "reclassified_to_cert_id": new_cert["id"],
+                  "deleted_at": ts, "deleted_by": user["id"]}},
+    )
+    return {"cert": new_cert}
+
+
+@router.post("/{worker_id}/unmatched-documents/{doc_id}/move-to-hr")
+async def move_unmatched_to_hr(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hr_lead")),
+):
+    """Move an unmatched doc into `worker_hr_documents` (private tier).
+    Same GridFS blob is referenced — no duplicate upload."""
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    ts = now_iso()
+    hr_doc = {
+        "id": new_id(),
+        "org_id": user["org_id"],
+        "worker_id": worker_id,
+        "filename": doc.get("filename"),
+        "folder": "private",
+        "gridfs_id": doc.get("gridfs_id"),
+        "size": doc.get("size"),
+        "sha256": None,
+        "source": "simpro_zip_moved_from_unmatched",
+        "uploaded_by": user["id"],
+        "uploaded_at": ts,
+        "deleted_at": None,
+    }
+    await db.worker_hr_documents.insert_one(hr_doc)
+    hr_doc.pop("_id", None)
+    await db.worker_unmatched_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"moved_to_hr_id": hr_doc["id"],
+                  "reviewed": True, "reviewed_by": user["id"],
+                  "reviewed_at": ts,
+                  "deleted_at": ts, "deleted_by": user["id"]}},
+    )
+    return {"hr_document": hr_doc}
+
+
+@router.delete("/{worker_id}/unmatched-documents/{doc_id}")
+async def delete_unmatched_document(
+    worker_id: str,
+    doc_id: str,
+    user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead")),
+):
+    """Soft-delete. `deleted_at` + `deleted_by` set; blob retained for
+    30 days (garbage-collected out of band)."""
+    doc = await db.worker_unmatched_documents.find_one(
+        {"id": doc_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+    )
+    if not doc:
+        raise HTTPException(404, "Unmatched document not found")
+    ts = now_iso()
+    await db.worker_unmatched_documents.update_one(
+        {"id": doc_id},
+        {"$set": {"deleted_at": ts, "deleted_by": user["id"]}},
+    )
+    return {"deleted": True, "doc_id": doc_id}

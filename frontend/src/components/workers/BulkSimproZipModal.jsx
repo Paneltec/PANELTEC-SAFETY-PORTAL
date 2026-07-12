@@ -1,17 +1,24 @@
 import React, { useCallback, useState } from 'react';
-import { Upload, Loader2, Check, X as XIcon, AlertCircle, Users } from 'lucide-react';
+import { Upload, Loader2, Check, X as XIcon, AlertCircle, Users, Sparkles } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { toast } from 'sonner';
+import { UnmatchedSuggestions } from './SimproZipUploadModal';
 
 // v160.3.3 — Bulk multi-ZIP upload. Drops N ZIPs at once, auto-identifies
 // which worker each ZIP belongs to via `/identify-zip`, admins can override
 // any auto-match via a dropdown, then commits sequentially.
+// v160.3.4 — adds a "Review unmatched" step between identify and commit
+// that combines auto-taxonomy suggestions across all ZIPs.
 export function BulkSimproZipModal({ onClose, onDone }) {
-  const [phase, setPhase] = useState('idle'); // idle | identifying | ready | running | done | error
+  const [phase, setPhase] = useState('idle'); // idle | identifying | ready | reviewing | running | done | error
   const [zips, setZips] = useState([]);         // [{file, name, matched_worker, match_score, tokens}]
   const [workers, setWorkers] = useState([]);
   const [results, setResults] = useState([]);
   const [error, setError] = useState(null);
+  // v160.3.4 — combined unmatched suggestion state
+  const [combinedGroups, setCombinedGroups] = useState([]);
+  const [acceptChecked, setAcceptChecked] = useState({});
+  const [applyingSuggestions, setApplyingSuggestions] = useState(false);
 
   React.useEffect(() => {
     api.get('/workers').then((r) => setWorkers(r.data || [])).catch(() => {});
@@ -45,6 +52,80 @@ export function BulkSimproZipModal({ onClose, onDone }) {
     }
     setZips(identified);
     setPhase('ready');
+  };
+
+  // v160.3.4 — dry-run every ZIP that has an assigned worker, then
+  // combine `unmatched_groups` across all ZIPs into a single review panel.
+  const gotoReview = async () => {
+    setPhase('reviewing');
+    const combined = new Map();
+    for (const z of zips) {
+      const wid = z.override_worker_id || z.matched_worker?.id;
+      if (!wid) continue;
+      try {
+        const fd = new FormData();
+        fd.append('file', z.file);
+        const { data } = await api.post(
+          `/workers/${wid}/simpro-zip-import?dry_run=1`,
+          fd,
+          { headers: { 'Content-Type': 'multipart/form-data' } }
+        );
+        (data.unmatched_groups || []).forEach((g) => {
+          const key = g.suggested_slug || '__no_suggestion__';
+          const prev = combined.get(key);
+          if (!prev) {
+            combined.set(key, { ...g, sample_filenames: [...(g.sample_filenames || [])] });
+          } else {
+            prev.count += g.count;
+            g.sample_filenames.forEach((f) => {
+              if (!prev.sample_filenames.includes(f) && prev.sample_filenames.length < 6) {
+                prev.sample_filenames.push(f);
+              }
+            });
+          }
+        });
+      } catch (_e) { /* silent — continue to next zip */ }
+    }
+    const list = Array.from(combined.values()).sort(
+      (a, b) => (b.count || 0) - (a.count || 0)
+    );
+    // Re-compute auto_accept_default with combined counts.
+    list.forEach((g) => {
+      if (g.suggested_slug && !g.existing_slug_hit) {
+        g.auto_accept_default = g.count >= 3 || (g.confidence || 0) >= 0.85;
+      }
+    });
+    const seed = {};
+    list.forEach((g) => {
+      if (g.suggested_slug && !g.existing_slug_hit) {
+        seed[g.suggested_slug] = !!g.auto_accept_default;
+      }
+    });
+    setCombinedGroups(list);
+    setAcceptChecked(seed);
+  };
+
+  const acceptAndCommit = async () => {
+    const suggestions = combinedGroups
+      .filter((g) => g.suggested_slug && !g.existing_slug_hit && acceptChecked[g.suggested_slug])
+      .map((g) => ({
+        slug: g.suggested_slug,
+        label: g.suggested_label,
+        simpro_variants: g.sample_filenames.map((f) => f.replace(/\.[^.]+$/, '')),
+      }));
+    setApplyingSuggestions(true);
+    try {
+      if (suggestions.length > 0) {
+        await api.post('/integrations/simpro/workers/accept-suggestions', { suggestions });
+        toast.success(`Accepted ${suggestions.length} new cert kind${suggestions.length === 1 ? '' : 's'}`);
+      }
+    } catch (e) {
+      toast.error(apiError(e));
+      setApplyingSuggestions(false);
+      return;
+    }
+    setApplyingSuggestions(false);
+    await commit();
   };
 
   const commit = async () => {
@@ -188,6 +269,41 @@ export function BulkSimproZipModal({ onClose, onDone }) {
             </div>
           )}
 
+          {phase === 'reviewing' && (
+            <div data-testid="bulk-simpro-reviewing" className="space-y-3">
+              {combinedGroups.length === 0 ? (
+                <div className="py-10 flex items-center justify-center text-slate-500 text-sm gap-2">
+                  <Loader2 size={16} className="animate-spin" /> Dry-running each ZIP + collecting suggestions…
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs text-slate-600">
+                    Combined auto-taxonomy across {zips.filter((z) => z.override_worker_id).length} ZIP(s).
+                    Accept suggestions before committing to boost cert-kind coverage in one hit.
+                  </div>
+                  <UnmatchedSuggestions
+                    groups={combinedGroups}
+                    acceptChecked={acceptChecked}
+                    onToggle={(slug, val) =>
+                      setAcceptChecked((s) => ({ ...s, [slug]: val }))
+                    }
+                    onSelectAll={(val) => {
+                      const next = {};
+                      combinedGroups.forEach((g) => {
+                        if (g.suggested_slug && !g.existing_slug_hit) next[g.suggested_slug] = val;
+                      });
+                      setAcceptChecked(next);
+                    }}
+                    onAcceptAndReplan={() => {
+                      toast.info('Selections captured — press "Accept + commit" to persist and upload.');
+                    }}
+                    applying={false}
+                  />
+                </>
+              )}
+            </div>
+          )}
+
           {phase === 'running' && (
             <div className="py-12 flex items-center justify-center text-slate-500 text-sm gap-2">
               <Loader2 size={16} className="animate-spin" /> Uploading ZIPs sequentially…
@@ -228,12 +344,22 @@ export function BulkSimproZipModal({ onClose, onDone }) {
           </button>
           {phase === 'ready' && (
             <button
-              onClick={commit}
+              onClick={gotoReview}
               disabled={zips.every((z) => !z.override_worker_id)}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-700 text-white text-sm font-semibold hover:bg-violet-800 disabled:opacity-50 shadow-sm"
+              data-testid="bulk-simpro-review"
+            >
+              <Sparkles size={13} /> Review unmatched suggestions
+            </button>
+          )}
+          {phase === 'reviewing' && (
+            <button
+              onClick={acceptAndCommit}
+              disabled={applyingSuggestions || combinedGroups.length === 0}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50 shadow-sm"
               data-testid="bulk-simpro-apply"
             >
-              <Upload size={13} /> Apply {zips.filter((z) => z.override_worker_id).length} ZIP{zips.filter((z) => z.override_worker_id).length === 1 ? '' : 's'}
+              <Upload size={13} /> Accept selected + commit {zips.filter((z) => z.override_worker_id).length} ZIP{zips.filter((z) => z.override_worker_id).length === 1 ? '' : 's'}
             </button>
           )}
         </div>

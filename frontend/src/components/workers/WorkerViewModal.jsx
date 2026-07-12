@@ -3,9 +3,10 @@
 // `GET /api/workers/{id}` and displays identity, contact, personal,
 // availability, clients and certifications with expiring/expired highlights.
 import React, { useEffect, useState } from 'react';
-import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X } from 'lucide-react';
+import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
+import { toast } from 'sonner';
 
 const DAYS = [
   { key: 'mon', label: 'Mon' }, { key: 'tue', label: 'Tue' },
@@ -88,11 +89,28 @@ export default function WorkerViewModal({ workerId, onClose }) {
   const [error, setError] = useState(null);
   const [zipOpen, setZipOpen] = useState(false);  // v160.3.2 Simpro ZIP import
   const [currentUser, setCurrentUser] = useState(null);
+  // v160.3.4 — Unmatched Documents triage tab
+  const [tab, setTab] = useState('profile'); // profile | unmatched
+  const [unmatchedCount, setUnmatchedCount] = useState(null);
 
   useEffect(() => {
     // Hydrate the viewer identity once — used to gate the ZIP upload button.
     api.get('/auth/me').then((r) => setCurrentUser(r.data)).catch(() => {});
   }, []);
+
+  // v160.3.4 — refresh unmatched count for the tab badge.
+  const refreshUnmatched = React.useCallback(async () => {
+    const role = (currentUser?.role || '').toLowerCase();
+    if (!['admin', 'hseq_lead', 'hr_lead'].includes(role)) return;
+    try {
+      const { data } = await api.get(`/workers/${workerId}/unmatched-documents`);
+      setUnmatchedCount((data?.documents || []).length);
+    } catch {
+      setUnmatchedCount(null);
+    }
+  }, [workerId, currentUser]);
+
+  useEffect(() => { refreshUnmatched(); }, [refreshUnmatched]);
 
   useEffect(() => {
     let alive = true;
@@ -168,6 +186,23 @@ export default function WorkerViewModal({ workerId, onClose }) {
           </div>
         )}
 
+        {/* v160.3.4 — Tab strip (admin/hr_lead/hseq_lead only) */}
+        {!loading && worker && ['admin', 'hr_lead', 'hseq_lead'].includes((currentUser?.role || '').toLowerCase()) && (
+          <div className="px-6 border-b border-slate-200 bg-white flex items-center gap-1" data-testid="worker-view-tabs">
+            <TabButton active={tab === 'profile'} onClick={() => setTab('profile')} testid="tab-profile">
+              Profile
+            </TabButton>
+            <TabButton active={tab === 'unmatched'} onClick={() => setTab('unmatched')} testid="tab-unmatched">
+              Unmatched Documents
+              {unmatchedCount != null && unmatchedCount > 0 && (
+                <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-rose-100 text-rose-700 text-[10px] font-bold" data-testid="unmatched-count-badge">
+                  {unmatchedCount}
+                </span>
+              )}
+            </TabButton>
+          </div>
+        )}
+
         <div className="px-6 py-4 overflow-y-auto space-y-4 flex-1">
           {loading && (
             <div className="text-sm text-slate-500 inline-flex items-center gap-2">
@@ -179,7 +214,7 @@ export default function WorkerViewModal({ workerId, onClose }) {
               {error}
             </div>
           )}
-          {!loading && worker && (
+          {!loading && worker && tab === 'profile' && (
             <>
               {/* Identity + contact */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-identity">
@@ -302,6 +337,12 @@ export default function WorkerViewModal({ workerId, onClose }) {
               </section>
             </>
           )}
+          {!loading && worker && tab === 'unmatched' && (
+            <UnmatchedDocsTab
+              workerId={workerId}
+              onChange={refreshUnmatched}
+            />
+          )}
         </div>
 
         <div className="px-6 py-3 border-t border-slate-200 flex justify-end bg-slate-50">
@@ -318,8 +359,246 @@ export default function WorkerViewModal({ workerId, onClose }) {
           onDone={() => {
             // Refetch certs after commit
             api.get(`/workers/${workerId}/certifications`).then((r) => setCerts(r.data || [])).catch(() => {});
+            refreshUnmatched();
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// v160.3.4 — small local tab button.
+function TabButton({ active, onClick, testid, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      data-testid={testid}
+      className={
+        'px-3 py-2 text-xs font-semibold border-b-2 -mb-px inline-flex items-center gap-1 ' +
+        (active
+          ? 'border-blue-600 text-blue-700'
+          : 'border-transparent text-slate-500 hover:text-slate-800')
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+// v160.3.4 — Unmatched Documents triage panel. Lists all
+// `worker_unmatched_documents` for the worker + provides Reclassify,
+// Move-to-HR, and Delete (soft) actions.
+function UnmatchedDocsTab({ workerId, onChange }) {
+  const [rows, setRows] = React.useState(null);
+  const [certKinds, setCertKinds] = React.useState([]);
+  const [busy, setBusy] = React.useState('');
+  const [reclassifyDoc, setReclassifyDoc] = React.useState(null); // doc being reclassified
+  const [reclassifySlug, setReclassifySlug] = React.useState('');
+
+  const load = React.useCallback(async () => {
+    try {
+      const { data } = await api.get(`/workers/${workerId}/unmatched-documents`);
+      setRows(data?.documents || []);
+    } catch {
+      setRows([]);
+    }
+  }, [workerId]);
+
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    // Load cert_kinds catalogue once for the reclassify dropdown.
+    api.get('/integrations/simpro/workers/cert-kinds').then((r) => {
+      setCertKinds(r.data?.cert_kinds || []);
+    }).catch(() => {
+      // Fallback: leave empty; users can still Delete + Move-to-HR
+      setCertKinds([]);
+    });
+  }, []);
+
+  const doReclassify = async () => {
+    if (!reclassifyDoc || !reclassifySlug) return;
+    setBusy(reclassifyDoc.id);
+    try {
+      await api.post(
+        `/workers/${workerId}/unmatched-documents/${reclassifyDoc.id}/reclassify`,
+        { cert_kind_slug: reclassifySlug }
+      );
+      toast.success('Reclassified as ' + reclassifySlug);
+      setReclassifyDoc(null);
+      setReclassifySlug('');
+      await load();
+      onChange?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doMoveToHR = async (doc) => {
+    if (!window.confirm(`Move "${doc.filename}" to HR (private) documents?`)) return;
+    setBusy(doc.id);
+    try {
+      await api.post(`/workers/${workerId}/unmatched-documents/${doc.id}/move-to-hr`);
+      toast.success('Moved to HR documents');
+      await load();
+      onChange?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const doDelete = async (doc) => {
+    if (!window.confirm(`Delete "${doc.filename}"? (soft-delete · blob retained 30 days)`)) return;
+    setBusy(doc.id);
+    try {
+      await api.delete(`/workers/${workerId}/unmatched-documents/${doc.id}`);
+      toast.success('Document deleted');
+      await load();
+      onChange?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  if (rows === null) {
+    return (
+      <div className="text-sm text-slate-500 inline-flex items-center gap-2">
+        <Loader2 size={14} className="animate-spin" /> Loading unmatched documents…
+      </div>
+    );
+  }
+
+  if (rows.length === 0) {
+    return (
+      <div className="border border-slate-200 rounded-xl px-4 py-6 text-center text-sm text-slate-500 bg-white" data-testid="unmatched-empty">
+        <AlertTriangle size={20} className="mx-auto text-slate-400 mb-2" />
+        No unmatched documents. Every Simpro ZIP file was routed to a cert row, HR folder, or a photo.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3" data-testid="unmatched-docs-tab">
+      <div className="rounded-xl border border-rose-200 bg-rose-50/40 px-3 py-2 text-xs text-rose-900">
+        <span className="font-semibold">{rows.length} unmatched document{rows.length === 1 ? '' : 's'}.</span>{' '}
+        Preview each one, then Reclassify it as an existing cert_kind, Move it to HR (private), or Delete.
+      </div>
+      <div className="rounded-xl border border-slate-200 overflow-hidden bg-white">
+        <table className="w-full text-xs" data-testid="unmatched-table">
+          <thead className="bg-slate-50 text-slate-500 text-[10px] uppercase tracking-wider">
+            <tr>
+              <th className="text-left px-3 py-2">Filename</th>
+              <th className="text-left px-3 py-2 hidden md:table-cell">Folder</th>
+              <th className="text-left px-3 py-2 hidden md:table-cell">Uploaded</th>
+              <th className="text-right px-3 py-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {rows.map((d) => (
+              <tr key={d.id} className="hover:bg-slate-50" data-testid={`unmatched-row-${d.id}`}>
+                <td className="px-3 py-2 font-medium text-slate-900 max-w-[240px] truncate" title={d.filename}>
+                  {d.filename}
+                </td>
+                <td className="px-3 py-2 uppercase text-[10px] tracking-wider text-slate-600 hidden md:table-cell">
+                  {d.zip_folder || '—'}
+                </td>
+                <td className="px-3 py-2 text-slate-500 hidden md:table-cell whitespace-nowrap">
+                  {(d.uploaded_at || '').slice(0, 10)}
+                </td>
+                <td className="px-3 py-2 text-right whitespace-nowrap">
+                  <div className="inline-flex items-center gap-1">
+                    <a
+                      href={`/api/workers/${workerId}/unmatched-documents/${d.id}/file`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+                      data-testid={`unmatched-preview-${d.id}`}
+                    >
+                      <ExternalLink size={11} /> View
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => { setReclassifyDoc(d); setReclassifySlug(''); }}
+                      disabled={busy === d.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-emerald-300 bg-emerald-50 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                      data-testid={`unmatched-reclassify-${d.id}`}
+                    >
+                      <Award size={11} /> Reclassify
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => doMoveToHR(d)}
+                      disabled={busy === d.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-amber-300 bg-amber-50 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 disabled:opacity-50"
+                      data-testid={`unmatched-move-hr-${d.id}`}
+                    >
+                      <Archive size={11} /> HR
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => doDelete(d)}
+                      disabled={busy === d.id}
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-300 bg-white text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                      data-testid={`unmatched-delete-${d.id}`}
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {reclassifyDoc && (
+        <div
+          className="fixed inset-0 z-[80] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={(e) => e.target === e.currentTarget && setReclassifyDoc(null)}
+          data-testid="reclassify-modal"
+        >
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+            <div className="text-sm font-semibold text-slate-900 mb-1">Reclassify document</div>
+            <div className="text-xs text-slate-600 mb-3 truncate" title={reclassifyDoc.filename}>
+              {reclassifyDoc.filename}
+            </div>
+            <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">
+              Cert kind
+            </label>
+            <select
+              value={reclassifySlug}
+              onChange={(e) => setReclassifySlug(e.target.value)}
+              className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2"
+              data-testid="reclassify-slug-select"
+            >
+              <option value="">— select a cert kind —</option>
+              {certKinds.map((k) => (
+                <option key={k.slug} value={k.slug}>{k.name} ({k.slug})</option>
+              ))}
+            </select>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setReclassifyDoc(null)}
+                className="px-3 py-1.5 rounded-lg text-sm text-slate-700 hover:bg-slate-100"
+                data-testid="reclassify-cancel"
+              >Cancel</button>
+              <button
+                type="button"
+                onClick={doReclassify}
+                disabled={!reclassifySlug || busy === reclassifyDoc.id}
+                className="px-3 py-1.5 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50"
+                data-testid="reclassify-confirm"
+              >Reclassify</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

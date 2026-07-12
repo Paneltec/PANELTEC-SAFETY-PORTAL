@@ -14,6 +14,9 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [rawFile, setRawFile] = useState(null);
+  // v160.3.4 — per-group "accept new cert kind" checkbox state
+  const [acceptChecked, setAcceptChecked] = useState({}); // { suggested_slug: bool }
+  const [applyingSuggestions, setApplyingSuggestions] = useState(false);
 
   const onDrop = useCallback(async (e) => {
     e.preventDefault();
@@ -38,10 +41,59 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
       setPreview(data);
+      // v160.3.4 — seed accept-checkbox state from auto_accept_default.
+      const seed = {};
+      (data.unmatched_groups || []).forEach((g) => {
+        if (g.suggested_slug && !g.existing_slug_hit) {
+          seed[g.suggested_slug] = !!g.auto_accept_default;
+        }
+      });
+      setAcceptChecked(seed);
       setPhase('preview');
     } catch (e) {
       setError(apiError(e));
       setPhase('error');
+    }
+  };
+
+  const acceptAndReplan = async () => {
+    if (!rawFile || !preview) return;
+    const groups = preview.unmatched_groups || [];
+    const suggestions = groups
+      .filter((g) => g.suggested_slug && !g.existing_slug_hit && acceptChecked[g.suggested_slug])
+      .map((g) => ({
+        slug: g.suggested_slug,
+        label: g.suggested_label,
+        simpro_variants: g.sample_filenames.map((f) => f.replace(/\.[^.]+$/, '')),
+      }));
+    if (suggestions.length === 0) {
+      toast.info('No suggestions selected to accept');
+      return;
+    }
+    setApplyingSuggestions(true);
+    try {
+      await api.post('/integrations/simpro/workers/accept-suggestions', { suggestions });
+      toast.success(`Accepted ${suggestions.length} new cert kind${suggestions.length === 1 ? '' : 's'} — re-planning ZIP`);
+      // Re-plan against the newly-populated catalogue.
+      const fd = new FormData();
+      fd.append('file', rawFile);
+      const { data } = await api.post(
+        `/workers/${worker.id}/simpro-zip-import?dry_run=1`,
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      );
+      setPreview(data);
+      const seed = {};
+      (data.unmatched_groups || []).forEach((g) => {
+        if (g.suggested_slug && !g.existing_slug_hit) {
+          seed[g.suggested_slug] = !!g.auto_accept_default;
+        }
+      });
+      setAcceptChecked(seed);
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setApplyingSuggestions(false);
     }
   };
 
@@ -89,8 +141,8 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
               Upload Simpro ZIP — {worker.first_name} {worker.last_name}
             </h3>
             <p className="mt-0.5 text-sm text-slate-600">
-              Drop the ZIP from Simpro's "Export Employee Documents" action.
-              We'll route each file to the matching cert row.
+              Drop the ZIP from Simpro&apos;s &quot;Export Employee Documents&quot; action.
+              We&apos;ll route each file to the matching cert row.
             </p>
           </div>
           <button
@@ -147,11 +199,30 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
               </div>
               {preview.photo && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 flex items-center gap-2">
-                  <ImageIcon size={13} /> Photo detected — <span className="font-mono">{preview.photo.filename}</span> will be set as this worker's profile picture.
+                  <ImageIcon size={13} /> Photo detected — <span className="font-mono">{preview.photo.filename}</span> will be set as this worker&apos;s profile picture.
                 </div>
               )}
+              {/* v160.3.4 — Auto-taxonomy suggestions for unmatched files */}
+              {(preview.unmatched_groups || []).length > 0 && (
+                <UnmatchedSuggestions
+                  groups={preview.unmatched_groups}
+                  acceptChecked={acceptChecked}
+                  onToggle={(slug, val) =>
+                    setAcceptChecked((s) => ({ ...s, [slug]: val }))
+                  }
+                  onSelectAll={(val) => {
+                    const next = {};
+                    preview.unmatched_groups.forEach((g) => {
+                      if (g.suggested_slug && !g.existing_slug_hit) next[g.suggested_slug] = val;
+                    });
+                    setAcceptChecked(next);
+                  }}
+                  onAcceptAndReplan={acceptAndReplan}
+                  applying={applyingSuggestions}
+                />
+              )}
               <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs" data-testid="simpro-zip-preview-table">
                   <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider">
                     <tr>
                       <th className="text-left px-3 py-2">File</th>
@@ -277,5 +348,134 @@ function ActionPill({ action }) {
     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider ${styles[action] || 'bg-slate-100 text-slate-500'}`}>
       {label[action] || action}
     </span>
+  );
+}
+
+// v160.3.4 — Auto-taxonomy Accept panel. Groups unmatched files by
+// suggested slug and lets admins bulk-accept them as new cert kinds.
+export function UnmatchedSuggestions({ groups, acceptChecked, onToggle,
+                                        onSelectAll, onAcceptAndReplan,
+                                        applying }) {
+  const newKindGroups = groups.filter((g) => g.suggested_slug && !g.existing_slug_hit);
+  const routedGroups  = groups.filter((g) => g.existing_slug_hit);
+  const noSuggestion  = groups.find((g) => !g.suggested_slug);
+  const selectedCount = newKindGroups.filter(
+    (g) => acceptChecked[g.suggested_slug]).length;
+  return (
+    <div
+      className="rounded-xl border border-violet-200 bg-violet-50/60 p-3"
+      data-testid="simpro-unmatched-suggestions"
+    >
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-wider text-violet-900">
+            Auto-Taxonomy · new cert kind suggestions
+          </div>
+          <div className="text-[11px] text-violet-800/80 mt-0.5">
+            Tick to accept a suggested slug — will be added to the catalogue
+            and files re-classified on next re-plan.
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onSelectAll(true)}
+            className="text-[11px] px-2 py-1 rounded border border-violet-300 bg-white text-violet-800 hover:bg-violet-100"
+            data-testid="unmatched-select-all"
+          >Select all</button>
+          <button
+            type="button"
+            onClick={() => onSelectAll(false)}
+            className="text-[11px] px-2 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+            data-testid="unmatched-clear-all"
+          >Clear</button>
+        </div>
+      </div>
+
+      {newKindGroups.length > 0 && (
+        <div className="rounded-lg border border-violet-200 overflow-hidden bg-white">
+          <table className="w-full text-xs">
+            <thead className="bg-violet-50 text-violet-700 uppercase tracking-wider text-[10px]">
+              <tr>
+                <th className="text-left px-2 py-1.5 w-8">Accept</th>
+                <th className="text-left px-2 py-1.5">Suggested slug</th>
+                <th className="text-left px-2 py-1.5">Label</th>
+                <th className="text-right px-2 py-1.5">Files</th>
+                <th className="text-right px-2 py-1.5">Confidence</th>
+                <th className="text-left px-2 py-1.5">Sample files</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-violet-100">
+              {newKindGroups.map((g) => {
+                const checked = !!acceptChecked[g.suggested_slug];
+                return (
+                  <tr key={g.suggested_slug} className="hover:bg-violet-50/50">
+                    <td className="px-2 py-1.5">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => onToggle(g.suggested_slug, e.target.checked)}
+                        data-testid={`accept-kind-${g.suggested_slug}`}
+                        className="rounded border-violet-400 text-violet-700 focus:ring-violet-500"
+                      />
+                    </td>
+                    <td className="px-2 py-1.5 font-mono text-[11px] text-violet-900">
+                      {g.suggested_slug}
+                    </td>
+                    <td className="px-2 py-1.5 text-slate-800">{g.suggested_label}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold text-slate-900">
+                      {g.count}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-slate-600">
+                      {(g.confidence * 100).toFixed(0)}%
+                      {g.auto_accept_default && (
+                        <span
+                          className="ml-1 text-[9px] font-semibold text-emerald-700 uppercase"
+                          title="Auto-checked by default"
+                        >★</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-[10px] text-slate-500 truncate max-w-[220px]"
+                        title={g.sample_filenames.join(' · ')}>
+                      {g.sample_filenames.slice(0, 2).join(' · ')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {routedGroups.length > 0 && (
+        <div className="mt-2 text-[11px] text-slate-600">
+          <span className="font-semibold">Routed to existing catalogue:</span>{' '}
+          {routedGroups.map((g) =>
+            `${g.suggested_slug} → ${g.existing_slug_hit} (${g.count})`
+          ).join(', ')}
+        </div>
+      )}
+
+      {noSuggestion && noSuggestion.count > 0 && (
+        <div className="mt-2 text-[11px] text-rose-700">
+          <span className="font-semibold">{noSuggestion.count} file(s)</span> couldn&apos;t produce a usable slug — they&apos;ll land in the Unmatched Documents triage tab for manual reclassification.
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <span className="text-[11px] text-slate-600">
+          {selectedCount} of {newKindGroups.length} selected
+        </span>
+        <button
+          type="button"
+          onClick={onAcceptAndReplan}
+          disabled={applying || selectedCount === 0}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-700 text-white text-xs font-semibold hover:bg-violet-800 disabled:opacity-50 shadow-sm"
+          data-testid="unmatched-accept-and-replan"
+        >
+          {applying ? 'Applying…' : 'Accept selected + re-plan'}
+        </button>
+      </div>
+    </div>
   );
 }
