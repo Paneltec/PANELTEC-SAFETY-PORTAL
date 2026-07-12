@@ -185,3 +185,52 @@ Three-file version-constant bump (no functional code change):
 All three now aligned. Existing service-worker clients will detect the CACHE_VERSION change on next visit, invalidate their old bundle, and force-reload once via the `paneltec_sw_force_reload` broadcast.
 
 Backend, integrations, data hygiene and secret-scan results from the original audit remain valid — no code paths touched.
+
+---
+
+## Post-audit deltas — v160.3.4b state (2026-07-12)
+
+**Version cycle since original audit (v160.3.0-adjust-20e):**
+
+- `v160.3.1` — Simpro worker API sync + 10 new workers onboarded (Company 2 + 3)
+- `v160.3.2` — Simpro Phase D (per-worker ZIP import) + nightly delta cron
+- `v160.3.3` — Bulk multi-ZIP UI + SHA-256 dedup on HR / unmatched documents
+- `v160.3.4` — Auto-taxonomy expansion + Unmatched Documents triage tab · coverage 67% → 91%
+- `v160.3.4a` — GO LIVE: 5 real workers imported (Daniel Butler, Aaron Foster, Aaron Holmes, Alexander Kingston, Amanda Guy) + Dashboard triage tile
+- `v160.3.4b` — File-auth hotfix (short-lived download JWT) + missing photo endpoint + section summary indicators
+
+**Change footprint — additive-only:**
+
+- No breaking route changes
+- No destructive migrations
+- No mobile logic changes (only `MOBILE_BUNDLE_VERSION` string bumps)
+- No auth surface changes for existing users — new endpoints only
+- No changes to legacy `_serve()` public file routes in `dashboard.py`
+- All new endpoints live under `/api/integrations/simpro/workers/*` and `/api/workers/{id}/*`
+
+**Backend regression noise:**
+
+Unchanged from the audit baseline. The 13 failing / 21 error pytest cases documented earlier remain — they trace back to a stale `Account disabled — contact your administrator` seed for `TEST_ADMIN_EMAIL`, pre-existing and unrelated to the v160.3.x delta. All 14 v160.3.4 unmatched-triage tests pass in isolation.
+
+**Deploy readiness verdict: 🟢 GREEN — cleared to deploy**
+
+### Final pre-deploy checks (v160.3.4b)
+
+| Check | Result |
+|---|---|
+| `paneltec-v160.3.4b` alignment across all 3 version files | ✅ frontend + service-worker + mobile all match |
+| `supervisorctl status` — production processes | ✅ backend, frontend, mobile, mongodb, nginx-code-proxy all RUNNING (`code-server` STOPPED is expected — dev-only) |
+| `GET /api/health` | ✅ `{"ok":true}` |
+| `HEAD /api/openapi.json` | ✅ HTTP 200 |
+| `GET /api/gps-map?lat=-41.4&lng=147.1` | ✅ HTTP 200, `image/png`, ~49 KB (OSM proxy still healthy) |
+| Frontend webpack compile | ✅ 110 pre-existing lint warnings, 0 errors |
+| Python lint (`simpro_zip_import.py`, `auth.py`) | ✅ clean |
+
+### Deferred items — pick up in the next fork
+
+1. `v160.3.1 crane crew` (mobile P1 backlog) — resume as originally planned
+2. Bulk-clear the `Pending · N` flag once admins have eyeballed the 271 newly-imported certs
+3. Optional (P2): sweep the 8 legacy public `_serve()` routes onto flex-auth + `?token=` — currently rely on obscure UUIDs, works but not org-isolated
+4. Optional (P2): 30-day GridFS garbage collector for soft-deleted unmatched documents
+5. Optional (P3): clickable filter chips on section summary pills (e.g. click `Expiring · 2` → filter cert table)
+6. `v160.4.0` — Simpro Sync + Rules UI (originally scoped)
