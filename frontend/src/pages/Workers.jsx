@@ -224,6 +224,49 @@ function EditWorkerPhoto({ worker }) {
   );
 }
 
+// v160.3.6c — Compact 40×40 circular photo for the Workers list rows.
+// Reuses `filesUrl()` which has an inflight-dedup + 15-min in-memory token
+// cache — 68 rows mounting concurrently trigger exactly ONE
+// `POST /auth/download-token` request, not 68. Falls back to the same
+// initials monogram used everywhere else (ID Card / Edit header / View
+// modal) so the missing-photo look is consistent org-wide.
+function WorkerRowPhoto({ worker }) {
+  const [src, setSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    if (!worker?.photo_url) { setSrc(null); setBroken(false); return () => { alive = false; }; }
+    setBroken(false);
+    filesUrl(worker.photo_url)
+      .then((u) => { if (alive) setSrc(u); })
+      .catch(() => { if (alive) setBroken(true); });
+    return () => { alive = false; };
+  }, [worker?.photo_url]);
+  const initials = `${(worker?.first_name?.[0] || '?').toUpperCase()}${(worker?.last_name?.[0] || '').toUpperCase()}`;
+  if (!worker?.photo_url || broken) {
+    return (
+      <div
+        className="w-10 h-10 rounded-full bg-[#e6eff9] border border-[#b9d2ec] flex items-center justify-center text-[#1e4a8c] font-semibold text-xs shrink-0 select-none"
+        data-testid={`worker-row-photo-placeholder-${worker?.id || 'unknown'}`}
+        aria-label={`${worker?.first_name || ''} ${worker?.last_name || ''} — no photo on file`}
+      >
+        {initials}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src || ''}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      onError={() => setBroken(true)}
+      className="w-10 h-10 rounded-full object-cover border border-slate-200 bg-white shrink-0"
+      data-testid={`worker-row-photo-${worker.id}`}
+    />
+  );
+}
+
 function ClientPicker({ company, onClose, selectedIds, onApply }) {
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
@@ -1561,8 +1604,16 @@ export default function Workers() {
                   <tr key={w.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`worker-row-${w.id}`}>
                     <td className="px-3 py-3"><input type="checkbox" checked={selected.has(w.id)} onChange={() => toggleSel(w.id)} className="w-3.5 h-3.5" /></td>
                     <td className="px-3 py-3">
-                      <div className="font-semibold text-slate-900">{fullName(w)}</div>
-                      {w.position && <div className="text-xs text-slate-500 mt-0.5">{w.position}</div>}
+                      {/* v160.3.6c — compact 40×40 photo + name+role stacked to
+                          the right. Photo stays inside the NAME cell so the
+                          sortable header stays a single "NAME" column. */}
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <WorkerRowPhoto worker={w} />
+                        <div className="min-w-0">
+                          <div className="font-semibold text-slate-900 truncate">{fullName(w)}</div>
+                          {w.position && <div className="text-xs text-slate-500 mt-0.5 truncate">{w.position}</div>}
+                        </div>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-slate-600 hidden md:table-cell">{w.email || '—'}</td>
                     <td className="px-3 py-3 text-slate-500 hidden lg:table-cell">{w.mobile || w.phone || '—'}</td>
