@@ -1,6 +1,7 @@
 """FastAPI app entrypoint — mounts all routers under /api."""
 import logging
 import os
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -423,6 +424,12 @@ async def on_startup():
         # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
         # Both wrap `_do_snapshot` (defined in backup_service.install()) which
         # was stashed on app.state during router mount just above.
+        # v160.3.6r — Added `misfire_grace_time=3h` because the pod restarts
+        # frequently for hot-reloads. APScheduler's default 1-second grace
+        # meant that if the pod was down at 00:00 Sydney, that whole slot was
+        # skipped forever and the daily snapshot silently stopped happening.
+        # Also fires a catch-up run at startup if the last snapshot is >25h
+        # old so a restart storm can't leave the org without a fresh backup.
         try:
             _do_snap = getattr(app.state, "bk_do_snapshot", None)
             if _do_snap is None:
@@ -431,13 +438,46 @@ async def on_startup():
                               hour="*/6", minute=0,
                               timezone="Australia/Sydney",
                               id="backup_snapshot_6h", max_instances=1,
-                              coalesce=True, replace_existing=True)
+                              coalesce=True, replace_existing=True,
+                              misfire_grace_time=3 * 3600)
             scheduler.add_job(_do_snap, "cron",
                               day_of_week="mon-fri", hour=17, minute=0,
                               timezone="Australia/Sydney",
                               id="backup_snapshot_cob", max_instances=1,
-                              coalesce=True, replace_existing=True)
-            log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney)")
+                              coalesce=True, replace_existing=True,
+                              misfire_grace_time=3 * 3600)
+            log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney) · grace=3h")
+            # v160.3.6r — catch-up: if the most recent snapshot is >25h old,
+            # kick one immediately. Runs 60 s after startup so the rest of
+            # the app is fully up before we start dumping Mongo.
+            async def _backup_catchup():
+                try:
+                    latest = await _mongo_db.bk_snapshots.find_one(
+                        {"status": "ready"}, sort=[("created_at", -1)])
+                    hrs = None
+                    if latest and latest.get("created_at"):
+                        raw = latest["created_at"]
+                        # created_at can be a datetime or an ISO string.
+                        if isinstance(raw, str):
+                            try:
+                                raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                            except Exception:
+                                raw = None
+                        if isinstance(raw, datetime):
+                            if raw.tzinfo is None:
+                                raw = raw.replace(tzinfo=timezone.utc)
+                            hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
+                    if hrs is None or hrs > 25:
+                        log.warning("backup catch-up: last snapshot age=%s hours — kicking now", hrs)
+                        await _do_snap()
+                        log.info("backup catch-up: snapshot completed")
+                    else:
+                        log.info("backup catch-up: last snapshot %.1fh old — no catch-up needed", hrs)
+                except Exception as ce:
+                    log.warning("backup catch-up failed: %s", ce)
+            scheduler.add_job(_backup_catchup, "date",
+                              run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
+                              id="backup_snapshot_catchup", replace_existing=True)
         except Exception as e:
             log.warning("backup_snapshot scheduler hook failed: %s", e)
         # v160.3.2 — Optional Simpro delta cron (opt-in via env).

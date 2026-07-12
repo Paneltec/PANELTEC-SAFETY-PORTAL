@@ -43,7 +43,7 @@ const ACCENTS = {
   amber:  { hex: '#F59E0B', ring: 'ring-amber-500/40',  text: 'text-amber-400',
             chip: 'bg-amber-500/10 text-amber-300 border-amber-500/30',
             bar: '#F59E0B' },
-  emerald:{ hex: '#10B981', ring: 'ring-emerald-500/40', text: 'text-emerald-400',
+  emerald:{ hex: '#10B981', ring: 'ring-emerald-500/40', text: 'text-emerald-600',
             chip: 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
             bar: '#10B981' },
   violet: { hex: '#7C3AED', ring: 'ring-violet-500/40', text: 'text-violet-400',
@@ -83,27 +83,27 @@ function HeroBand({ title, tagline, moduleColour, schematicSlug, refreshedAt, ca
   return (
     <div
       data-testid="module-dashboard-hero"
-      className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-slate-100 mb-6"
+      className="relative overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 text-slate-900 mb-6"
     >
       {/* Subtle diagonal grid + accent glow */}
-      <div className="absolute inset-0 opacity-[0.06] pointer-events-none"
+      <div className="absolute inset-0 opacity-[0.04] pointer-events-none"
            style={{ backgroundImage:
-             'linear-gradient(to right, rgba(255,255,255,0.5) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.5) 1px, transparent 1px)',
+             'linear-gradient(to right, rgba(15,23,42,0.4) 1px, transparent 1px), linear-gradient(to bottom, rgba(15,23,42,0.4) 1px, transparent 1px)',
              backgroundSize: '32px 32px' }} />
       <div className="absolute -top-24 -right-24 w-72 h-72 rounded-full pointer-events-none"
-           style={{ background: `radial-gradient(circle, ${accent.hex}44 0%, transparent 70%)` }} />
+           style={{ background: `radial-gradient(circle, ${accent.hex}22 0%, transparent 70%)` }} />
 
       <div className="relative flex flex-col sm:flex-row items-stretch">
         <div className="flex-1 px-6 sm:px-8 py-6 sm:py-8">
           <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] font-semibold">
             <span className={`inline-block w-2 h-2 rounded-full ${accent.text.replace('text-', 'bg-')} shadow-[0_0_8px_currentColor] ${accent.text}`} />
             <span className={accent.text}>PANELTEC INTELLIGENCE</span>
-            <span className="text-slate-500">· MODULE DASHBOARD</span>
+            <span className="text-slate-400">· MODULE DASHBOARD</span>
           </div>
-          <h1 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight text-white">
+          <h1 className="mt-2 font-display text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">
             {title}
           </h1>
-          {tagline && <p className="mt-2 text-sm text-slate-400 max-w-xl">{tagline}</p>}
+          {tagline && <p className="mt-2 text-sm text-slate-500 max-w-xl">{tagline}</p>}
 
           <div className="mt-4 flex flex-wrap items-center gap-2 text-[11px]">
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border ${accent.chip}`}>
@@ -111,7 +111,7 @@ function HeroBand({ title, tagline, moduleColour, schematicSlug, refreshedAt, ca
               Refreshed {formatWhen(refreshedAt)}
             </span>
             {cacheHit && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-700 bg-slate-800/60 text-slate-400">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-slate-200 bg-slate-100 text-slate-500">
                 cache hit · 60 s window
               </span>
             )}
@@ -119,12 +119,12 @@ function HeroBand({ title, tagline, moduleColour, schematicSlug, refreshedAt, ca
         </div>
 
         {schematicSlug && (
-          <div className="hidden sm:flex items-center justify-center border-l border-slate-800 bg-slate-900/40 px-4 py-4 w-56">
+          <div className="hidden sm:flex items-center justify-center border-l border-slate-200 bg-slate-50 px-4 py-4 w-56">
             <img
               src={`/api/help/schematics/paneltec_${schematicSlug}.png`}
               alt=""
               loading="lazy"
-              className="max-h-32 w-auto object-contain opacity-90"
+              className="max-h-32 w-auto object-contain opacity-95"
             />
           </div>
         )}
@@ -138,25 +138,25 @@ function KpiTile({ tile, accent }) {
   return (
     <div
       data-testid={`module-dashboard-kpi-${tile.key}`}
-      className={`relative rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 p-4
-                  hover:border-slate-700 transition-colors`}
+      className={`relative rounded-2xl border border-slate-200 bg-white text-slate-900 p-4
+                  hover:border-slate-300 transition-colors`}
     >
-      <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
+      <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
         {tile.label}
       </div>
       <div className="mt-2 flex items-baseline gap-2">
-        <div className={`font-display text-3xl font-bold tabular-nums ${placeholder ? 'text-slate-400' : 'text-white'}`}>
+        <div className={`font-display text-3xl font-bold tabular-nums ${placeholder ? 'text-slate-500' : 'text-slate-900'}`}>
           {typeof tile.value === 'number' ? tile.value.toLocaleString() : (tile.value ?? '—')}
         </div>
-        {tile.unit && <div className="text-xs text-slate-500">{tile.unit}</div>}
+        {tile.unit && <div className="text-xs text-slate-400">{tile.unit}</div>}
       </div>
       {typeof tile.trend === 'number' && (
-        <div className={`mt-1 text-[11px] font-semibold ${tile.trend >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+        <div className={`mt-1 text-[11px] font-semibold ${tile.trend >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
           {tile.trend >= 0 ? '↑' : '↓'} {Math.abs(Math.round(tile.trend * 100))}%
         </div>
       )}
       {placeholder && (
-        <div className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-slate-500"
+        <div className="mt-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-slate-400"
              title={tile.hint || 'Coming soon'}>
           <Info20Regular className="w-3 h-3" />
           <span>Coming soon</span>
@@ -172,13 +172,13 @@ function BarCard({ chart, accent }) {
   const data = Array.isArray(chart.data) ? chart.data : [];
   const total = data.reduce((s, d) => s + (d.y || 0), 0);
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 p-4"
+    <div className="rounded-2xl border border-slate-200 bg-white text-slate-900 p-4"
          data-testid={`module-dashboard-chart-${chart.type}`}>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
+        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
           {chart.title}
         </div>
-        <div className="text-[11px] text-slate-500 tabular-nums">total {total.toLocaleString()}</div>
+        <div className="text-[11px] text-slate-400 tabular-nums">total {total.toLocaleString()}</div>
       </div>
       <div className="h-56">
         {data.length === 0 ? (
@@ -207,13 +207,13 @@ function DonutCard({ chart }) {
   const data = Array.isArray(chart.data) ? chart.data : [];
   const total = data.reduce((s, d) => s + (d.value || 0), 0);
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 p-4"
+    <div className="rounded-2xl border border-slate-200 bg-white text-slate-900 p-4"
          data-testid={`module-dashboard-chart-${chart.type}`}>
       <div className="flex items-center justify-between mb-2">
-        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
+        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
           {chart.title}
         </div>
-        <div className="text-[11px] text-slate-500 tabular-nums">total {total.toLocaleString()}</div>
+        <div className="text-[11px] text-slate-400 tabular-nums">total {total.toLocaleString()}</div>
       </div>
       <div className="h-56">
         {data.length === 0 ? (
@@ -253,7 +253,7 @@ function DonutCard({ chart }) {
 
 function EmptyChart({ label }) {
   return (
-    <div className="h-full w-full flex items-center justify-center text-xs text-slate-500 italic">
+    <div className="h-full w-full flex items-center justify-center text-xs text-slate-400 italic">
       {label}
     </div>
   );
@@ -262,31 +262,31 @@ function EmptyChart({ label }) {
 function AttentionTable({ rows }) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return (
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 text-center"
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center"
            data-testid="module-dashboard-attention-empty">
-        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
+        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
           Records needing attention
         </div>
-        <div className="mt-2 text-sm text-slate-400">
+        <div className="mt-2 text-sm text-slate-500">
           Nothing needs your attention right now. Clean board. ✓
         </div>
       </div>
     );
   }
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden"
+    <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
          data-testid="module-dashboard-attention">
-      <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-400">
+      <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
           Records needing attention
         </div>
-        <span className="text-[11px] text-slate-500">Top {rows.length}</span>
+        <span className="text-[11px] text-slate-400">Top {rows.length}</span>
       </div>
       <ul className="divide-y divide-slate-800">
         {rows.map((r, i) => (
           <li key={r.id || i}
               data-testid={`module-dashboard-attention-row-${i}`}
-              className="px-4 py-3 hover:bg-slate-800/60 transition-colors">
+              className="px-4 py-3 hover:bg-slate-100 transition-colors">
             <Link to={r.route || '#'}
                   className="flex items-center gap-3 group">
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded border ${SEVERITY_CHIP[r.severity] || SEVERITY_CHIP.slate}`}>
@@ -294,17 +294,17 @@ function AttentionTable({ rows }) {
                 {r.severity || 'info'}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-slate-100 truncate group-hover:text-white">
+                <div className="text-sm text-slate-900 truncate group-hover:text-slate-900">
                   {r.label}
                 </div>
                 {r.timestamp && (
-                  <div className="mt-0.5 text-[11px] text-slate-500 inline-flex items-center gap-1">
+                  <div className="mt-0.5 text-[11px] text-slate-400 inline-flex items-center gap-1">
                     <Clock20Regular className="w-3 h-3" />
                     {formatWhen(r.timestamp)}
                   </div>
                 )}
               </div>
-              <ChevronRight20Regular className="text-slate-500 group-hover:text-orange-400" />
+              <ChevronRight20Regular className="text-slate-400 group-hover:text-orange-400" />
             </Link>
           </li>
         ))}
@@ -323,7 +323,7 @@ function QuickActionsRow({ actions }) {
           to={a.route}
           data-testid={`module-dashboard-quick-action-${i}`}
           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg
-                     bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold
+                     bg-orange-500 hover:bg-orange-600 text-slate-900 text-sm font-semibold
                      shadow-sm transition-colors"
         >
           {a.icon}
@@ -389,7 +389,7 @@ export default function ModuleDashboard({
       />
 
       {loading && !data && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 text-slate-400 p-8 text-center text-sm"
+        <div className="rounded-2xl border border-slate-200 bg-white text-slate-500 p-8 text-center text-sm"
              data-testid="module-dashboard-loading">
           Loading dashboard…
         </div>
@@ -403,7 +403,7 @@ export default function ModuleDashboard({
       )}
 
       {isTodo && (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 text-slate-100 p-8 text-center"
+        <div className="rounded-2xl border border-slate-200 bg-white text-slate-900 p-8 text-center"
              data-testid="module-dashboard-todo">
           <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-widest font-semibold text-orange-400 mb-2">
             <span className="inline-block w-2 h-2 rounded-full bg-orange-400 shadow-[0_0_8px_#F97316]" />
@@ -412,7 +412,7 @@ export default function ModuleDashboard({
           <div className="text-lg font-display font-semibold">
             The {title} dashboard is being built.
           </div>
-          <p className="mt-2 text-sm text-slate-400 max-w-lg mx-auto">
+          <p className="mt-2 text-sm text-slate-500 max-w-lg mx-auto">
             {data?.coming_soon_message ||
               'Real metrics for this module land in a later Phase 4.17 update.'}
           </p>
