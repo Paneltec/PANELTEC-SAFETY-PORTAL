@@ -39,7 +39,7 @@ def _require_write(user: dict, action: str = "edit"):
         raise HTTPException(403, f"Permission denied: workers.{action}")
 
 
-def _serialise(doc: dict) -> dict:
+def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
     out = {k: v for k, v in doc.items() if k != "_id"}
     cid = doc.get("simpro_company_id")
     if doc.get("source") == "manual":
@@ -50,7 +50,29 @@ def _serialise(doc: dict) -> dict:
         out["company_label"] = "Viatec"
     else:
         out["company_label"] = "Simpro"
+    # v160.3.1 — PII gate on `simpro_sync_snapshot.pii`.
+    # Only `admin` / `hr_lead` see the PII subdoc. The worker viewing
+    # their OWN record also sees it (checked at the calling endpoint).
+    # For every other viewer, `pii` is stripped and a bool `_pii_available`
+    # is exposed so the UI can render a "Restricted" chip.
+    snap = out.get("simpro_sync_snapshot")
+    if isinstance(snap, dict):
+        pii = snap.get("pii") or {}
+        viewer_role = ((viewer or {}).get("role") or "").lower()
+        viewer_id = (viewer or {}).get("id")
+        viewer_email = _lower_safe((viewer or {}).get("email"))
+        privileged = viewer_role in {"admin", "hr_lead", "hseq_lead"}
+        own_row = bool(viewer_id and (doc.get("user_id") == viewer_id
+                        or _lower_safe(doc.get("email")) == viewer_email and viewer_email))
+        if not (privileged or own_row):
+            snap_view = {k: v for k, v in snap.items() if k != "pii"}
+            snap_view["_pii_available"] = bool(pii)
+            out["simpro_sync_snapshot"] = snap_view
     return out
+
+
+def _lower_safe(s):
+    return (s or "").strip().lower() if isinstance(s, str) else ""
 
 
 # v159.0 — Thin projection returned to non-admin/hseq callers. Deliberately
@@ -195,7 +217,7 @@ async def list_workers(
                 {"org_id": user["org_id"], "email": (user.get("email") or "").lower(), "deleted_at": None},
                 {"_id": 0},
             )
-        return [_serialise(me)] if me else []
+        return [_serialise(me, viewer=user)] if me else []
 
     cursor = db.workers.find(
         {"org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
@@ -228,7 +250,7 @@ async def get_worker(worker_id: str, user: dict = Depends(get_current_user)):
         )
         if not owns:
             raise HTTPException(403, "Permission denied: workers.view")
-    return _serialise(doc)
+    return _serialise(doc, viewer=user)
 
 
 @router.post("", status_code=201)
@@ -248,7 +270,7 @@ async def create_worker(body: WorkerIn, user: dict = Depends(get_current_user)):
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
     }
     await db.workers.insert_one(doc)
-    return _serialise(doc)
+    return _serialise(doc, viewer=user)
 
 
 @router.patch("/{worker_id}")
@@ -268,7 +290,7 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
     )
     if not result:
         raise HTTPException(404, "Worker not found")
-    return _serialise(result)
+    return _serialise(result, viewer=user)
 
 
 @router.delete("/{worker_id}", status_code=204)

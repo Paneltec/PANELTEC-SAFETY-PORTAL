@@ -48,7 +48,25 @@ function CertRow({ cert }) {
   const style = map[key] || map.no_expiry;
   return (
     <tr className="border-t border-slate-100" data-testid={`view-cert-row-${cert.id}`}>
-      <td className="px-3 py-2 font-medium text-slate-900 break-words max-w-[220px]">{cert.name}</td>
+      <td className="px-3 py-2 font-medium text-slate-900 break-words max-w-[260px]">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span>{cert.name}</span>
+          {cert.source === 'simpro' && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200"
+              title="Imported from Simpro"
+              data-testid={`view-cert-source-simpro-${cert.id}`}
+            >SIMPRO</span>
+          )}
+          {cert.source !== 'simpro' && (
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-slate-100 text-slate-500 border border-slate-200"
+              title="Manually added"
+              data-testid={`view-cert-source-manual-${cert.id}`}
+            >MANUAL</span>
+          )}
+        </div>
+      </td>
       <td className="px-3 py-2 text-slate-500 hidden md:table-cell">{cert.issuer || '—'}</td>
       <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{shortDate(cert.expiry_date)}</td>
       <td className="px-3 py-2 whitespace-nowrap">

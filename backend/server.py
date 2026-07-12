@@ -49,6 +49,10 @@ from comms_safe_mode import router as comms_safe_mode_router  # noqa: E402 — P
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
 from integrations_simpro import router as simpro_router  # noqa: E402
+from integrations_simpro_workers import (  # noqa: E402
+    router as simpro_workers_router,
+    seed_cert_kinds_on_startup,
+)
 from integrations_m365 import router as m365_router  # noqa: E402
 from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
@@ -201,6 +205,7 @@ api.include_router(renewals_public_router)
 api.include_router(exports_router)
 api.include_router(integrations_router)
 api.include_router(simpro_router)
+api.include_router(simpro_workers_router)
 api.include_router(m365_router)
 api.include_router(textmagic_router)
 api.include_router(ask_router)

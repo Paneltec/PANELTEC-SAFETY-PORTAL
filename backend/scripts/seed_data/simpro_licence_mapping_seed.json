@@ -91,15 +91,17 @@
   },
   {
     "simpro_licence_name_raw": "Tas Water Induction",
-    "cert_kind_slug": "tas-water-induction",
-    "map_status": "auto",
-    "occurrences": 12
+    "cert_kind_slug": "taswater-induction",
+    "map_status": "auto_merged",
+    "occurrences": 12,
+    "variant": "general"
   },
   {
     "simpro_licence_name_raw": "Car",
-    "cert_kind_slug": "car",
-    "map_status": "auto",
-    "occurrences": 11
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 11,
+    "variant_class": "C"
   },
   {
     "simpro_licence_name_raw": "PSSR",
@@ -109,15 +111,17 @@
   },
   {
     "simpro_licence_name_raw": "A-Drivers Licence ",
-    "cert_kind_slug": "a-drivers-licence",
-    "map_status": "auto",
-    "occurrences": 8
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 8,
+    "variant_class": "C"
   },
   {
     "simpro_licence_name_raw": "Car , Medium Rigid , ",
-    "cert_kind_slug": "car-medium-rigid",
-    "map_status": "auto",
-    "occurrences": 8
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 8,
+    "variant_class": "MR"
   },
   {
     "simpro_licence_name_raw": " PSSR Passport",
@@ -127,20 +131,21 @@
   },
   {
     "simpro_licence_name_raw": "Traffic Management Plans instalation",
-    "cert_kind_slug": "traffic-management-plans-instalation",
-    "map_status": "auto",
+    "cert_kind_slug": "traffic-management-plans-installation",
+    "map_status": "auto_merged",
     "occurrences": 8
   },
   {
     "simpro_licence_name_raw": "Car / Heavy Rigid",
-    "cert_kind_slug": "car-or-heavy-rigid",
-    "map_status": "auto",
-    "occurrences": 7
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 7,
+    "variant_class": "HR"
   },
   {
     "simpro_licence_name_raw": "Confine Spaces",
-    "cert_kind_slug": "confine-spaces",
-    "map_status": "auto",
+    "cert_kind_slug": "confined-space",
+    "map_status": "auto_merged",
     "occurrences": 7
   },
   {
@@ -151,9 +156,10 @@
   },
   {
     "simpro_licence_name_raw": "TasWater CDO Induction ",
-    "cert_kind_slug": "taswater-cdo-induction",
-    "map_status": "auto",
-    "occurrences": 7
+    "cert_kind_slug": "taswater-induction",
+    "map_status": "auto_merged",
+    "occurrences": 7,
+    "variant": "cdo"
   },
   {
     "simpro_licence_name_raw": "Traffic Management Advanced ( prepare plans )",
@@ -163,15 +169,16 @@
   },
   {
     "simpro_licence_name_raw": "Working Safely @ Heights",
-    "cert_kind_slug": "working-safely-heights",
-    "map_status": "auto",
+    "cert_kind_slug": "working-at-heights",
+    "map_status": "auto_merged",
     "occurrences": 7
   },
   {
     "simpro_licence_name_raw": "Car / Heavy Combination",
-    "cert_kind_slug": "car-or-heavy-combination",
-    "map_status": "auto",
-    "occurrences": 6
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 6,
+    "variant_class": "HC"
   },
   {
     "simpro_licence_name_raw": "Confined Space ",
@@ -205,9 +212,10 @@
   },
   {
     "simpro_licence_name_raw": "A-Drivers Licence MR.",
-    "cert_kind_slug": "a-drivers-licence-mr",
-    "map_status": "auto",
-    "occurrences": 5
+    "cert_kind_slug": "drivers-licence",
+    "map_status": "auto_merged",
+    "occurrences": 5,
+    "variant_class": "MR"
   },
   {
     "simpro_licence_name_raw": "Confined Spaces",

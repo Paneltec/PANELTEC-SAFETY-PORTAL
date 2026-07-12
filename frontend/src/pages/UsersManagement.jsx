@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2 } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -136,6 +136,7 @@ export default function UsersManagement() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [refreshSimproOpen, setRefreshSimproOpen] = useState(false);  // v160.3.1 — Simpro Worker Sync
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
   const [actionBusy, setActionBusy] = useState(false);
@@ -195,6 +196,15 @@ export default function UsersManagement() {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download size={14} /> Import from Simpro
+            </button>
+            <button
+              onClick={() => setRefreshSimproOpen(true)}
+              disabled={!simproStatus.connected}
+              data-testid="refresh-from-simpro-btn"
+              title={simproStatus.connected ? 'Refresh worker profiles + licences from Simpro' : 'Connect Simpro in Settings → Integrations first'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              <RefreshCw size={14} /> Refresh from Simpro
             </button>
             <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
               title="Paste multiple email addresses at once"
@@ -441,6 +451,12 @@ export default function UsersManagement() {
         onClose={() => setImportOpen(false)}
         onDone={() => { load(); }}
       />}
+      {refreshSimproOpen && (
+        <RefreshFromSimproModal
+          onClose={() => setRefreshSimproOpen(false)}
+          onDone={() => load()}
+        />
+      )}
     </div>
   );
 }
@@ -1467,6 +1483,155 @@ function SessionHistoryTab({ userId }) {
     </div>
   );
 }
+
+// v160.3.1 — Simpro Worker Sync modal. Runs a dry-run first, shows the
+// plan, then executes on confirm. Emits a snapshot_id the user can look
+// up in the audit log (future UI). Idempotent — safe to re-click.
+function RefreshFromSimproModal({ onClose, onDone }) {
+  const [phase, setPhase] = React.useState('planning'); // planning | ready | running | done | error
+  const [plan, setPlan] = React.useState(null);
+  const [result, setResult] = React.useState(null);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setPhase('planning');
+    api.post('/integrations/simpro/workers/refresh?dry_run=1')
+      .then((r) => { if (!cancelled) { setPlan(r.data); setPhase('ready'); } })
+      .catch((e) => { if (!cancelled) { setError(apiError(e)); setPhase('error'); } });
+    return () => { cancelled = true; };
+  }, []);
+
+  const runIt = async () => {
+    setPhase('running');
+    try {
+      const r = await api.post('/integrations/simpro/workers/refresh?dry_run=0');
+      setResult(r.data);
+      setPhase('done');
+      toast.success(
+        `Simpro refresh complete — ${r.data.counts.workers_new_created} new · ${r.data.counts.certs_added} certs added`,
+        { description: `Snapshot: ${(r.data.snapshot_id || '').slice(0, 8)}` }
+      );
+      onDone?.();
+    } catch (e) {
+      setError(apiError(e));
+      setPhase('error');
+      toast.error('Simpro refresh failed');
+    }
+  };
+
+  const c = plan?.counts;
+  return (
+    <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+         onClick={phase === 'running' ? undefined : onClose}
+         data-testid="refresh-simpro-modal">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <RefreshCw size={18} />
+          </div>
+          <div className="flex-1">
+            <h3 className="font-display text-lg font-semibold text-slate-900">Refresh workers from Simpro</h3>
+            <p className="mt-0.5 text-sm text-slate-600">
+              Pulls live employee detail + licences via the Simpro API. Idempotent.
+              PII allowlist: DoB, address, emergency contact only.
+            </p>
+          </div>
+        </div>
+
+        {phase === 'planning' && (
+          <div className="py-8 flex items-center justify-center text-slate-500 text-sm gap-2" data-testid="refresh-simpro-planning">
+            <Loader2 size={16} className="animate-spin" /> Planning changes…
+          </div>
+        )}
+
+        {phase === 'ready' && c && (
+          <div data-testid="refresh-simpro-plan" className="space-y-3">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm">
+              <div className="grid grid-cols-2 gap-y-1.5">
+                <div className="text-slate-500">Employees fetched</div>
+                <div className="text-right font-semibold text-slate-900">{c.simpro_employees}</div>
+                <div className="text-slate-500">Workers matched</div>
+                <div className="text-right font-semibold text-slate-900">{c.workers_matched}</div>
+                <div className="text-slate-500">New workers to create</div>
+                <div className="text-right font-semibold text-emerald-700">{c.workers_new_created}</div>
+                <div className="text-slate-500">Licences to add</div>
+                <div className="text-right font-semibold text-emerald-700">{c.certs_added}</div>
+                <div className="text-slate-500">Licences to update</div>
+                <div className="text-right font-semibold text-amber-700">{c.certs_updated}</div>
+                <div className="text-slate-500">Licences unchanged</div>
+                <div className="text-right text-slate-500">{c.certs_unchanged}</div>
+                <div className="text-slate-500">Workers with PII to populate</div>
+                <div className="text-right font-semibold text-slate-900">{c.pii_workers_updated}</div>
+              </div>
+            </div>
+            {plan.new_workers_preview?.length > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                <div className="font-semibold text-[11px] uppercase tracking-wider mb-1">
+                  New workers to onboard ({plan.new_workers_preview.length})
+                </div>
+                <ul className="space-y-0.5">
+                  {plan.new_workers_preview.slice(0, 12).map((n, i) => (
+                    <li key={i} className="truncate">
+                      <span className="font-medium">{n.simpro_name}</span>
+                      <span className="text-emerald-700"> · {n.position || '—'}</span>
+                      <span className="text-emerald-600 ml-1">({n.simpro_company === '2' ? 'Paneltec' : 'VTS'})</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
+        {phase === 'running' && (
+          <div className="py-8 flex items-center justify-center text-slate-500 text-sm gap-2" data-testid="refresh-simpro-running">
+            <Loader2 size={16} className="animate-spin" /> Applying changes to your workers…
+          </div>
+        )}
+
+        {phase === 'done' && result && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900" data-testid="refresh-simpro-done">
+            <div className="font-semibold mb-1 flex items-center gap-1.5"><Check size={14} /> Sync applied successfully.</div>
+            <div className="text-xs text-emerald-800">
+              Snapshot ID: <span className="font-mono">{result.snapshot_id?.slice(0, 8)}</span> · use{' '}
+              <span className="font-mono">POST /api/integrations/simpro/workers/rollback/{result.snapshot_id?.slice(0, 8)}…</span>{' '}
+              to reverse this run.
+            </div>
+          </div>
+        )}
+
+        {phase === 'error' && (
+          <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900" data-testid="refresh-simpro-error">
+            <div className="font-semibold mb-1 flex items-center gap-1.5"><AlertCircle size={14} /> Refresh failed.</div>
+            <div className="text-xs text-rose-800">{error}</div>
+          </div>
+        )}
+
+        <div className="mt-5 flex items-center justify-end gap-2">
+          <button
+            onClick={onClose}
+            disabled={phase === 'running'}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50"
+            data-testid="refresh-simpro-cancel-btn"
+          >
+            {phase === 'done' ? 'Close' : 'Cancel'}
+          </button>
+          {phase === 'ready' && (
+            <button
+              onClick={runIt}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm"
+              data-testid="refresh-simpro-apply-btn"
+            >
+              <RefreshCw size={13} /> Apply now
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 
 
