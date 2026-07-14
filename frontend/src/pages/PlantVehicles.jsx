@@ -6,6 +6,8 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link } from 'react-router-dom';
 import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while the print-labels modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { stashInlinePdf } from '../lib/pdfStash';
 import { copyToClipboard } from '../lib/clipboard';
 import { useCan } from '../lib/permissions';
@@ -90,6 +92,7 @@ function PairingChips({ asset }) {
 }
 
 function PrintLabelsModal({ assetIds, onClose }) {
+  useLockBodyScroll();
   const [layout, setLayout] = useState('a6');
   const openLabel = async () => {
     try {

@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import axios from 'axios';
+// v160.3.7k — Inoculation sweep: lock body scroll while the ScanResolver
+// quick-action modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { getToken } from '../lib/auth';
 import api, { apiError } from '../lib/api';
 import { copyToClipboard } from '../lib/clipboard';
@@ -358,6 +361,8 @@ function ErrorCard({ testId, tone, Icon, title, body, footer }) {
 
 function ScanQuickActions({ assetToken, assetName }) {
   const [open, setOpen] = useState(null); // 'service' | 'defect' | 'meter' | null
+  // v160.3.7k — lock body scroll while a quick-action modal is open.
+  useLockBodyScroll(!!open);
   const [form, setForm] = useState({ description: '', hours: '', km: '', defect_severity: 'minor', title: '' });
   const [busy, setBusy] = useState(false);
 

@@ -8,6 +8,10 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while any of the three
+// service-tab modals (ScheduleEditor, DeleteRecordDialog, RecordEditor)
+// are open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 function statusPill(status) {
   if (status === 'overdue') return ['OVERDUE', 'bg-rose-50 text-rose-700 border-rose-200'];
@@ -96,6 +100,7 @@ export function ServiceSchedulesTab({ asset, canEdit }) {
 }
 
 function ScheduleEditor({ asset, initial, onClose, onSaved }) {
+  useLockBodyScroll();
   const isEdit = !!initial;
   const [form, setForm] = useState(() => ({
     name: initial?.name || '', interval_kind: initial?.interval_kind || 'hours',
@@ -304,6 +309,7 @@ export function ServiceLogTab({ asset, canEdit }) {
 }
 
 function DeleteRecordDialog({ record, onCancel, onConfirm }) {
+  useLockBodyScroll();
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-3"
       onClick={(e) => e.target === e.currentTarget && onCancel()}
@@ -380,6 +386,7 @@ function RecordRow({ record, canEdit, onEdit, onDelete }) {
 }
 
 function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
+  useLockBodyScroll();
   const isEdit = !!initial;
   const [form, setForm] = useState({
     title: initial?.title ?? (kind === 'defect' ? 'Defect' : 'Service performed'),

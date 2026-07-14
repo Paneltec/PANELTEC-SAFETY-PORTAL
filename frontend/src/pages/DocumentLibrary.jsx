@@ -192,6 +192,28 @@ export default function DocumentLibrary() {
     });
   };
 
+  // v160.3.7o — colour-group recolour picker state + handler. Only admins
+  // reach this UI (`canEdit` gate at the button). Persists via the existing
+  // PATCH /folders/{id} endpoint which already supports `color_key`.
+  const [colorPickerFolderId, setColorPickerFolderId] = useState(null);
+  const recolorFolder = useCallback(async (folder, nextKey) => {
+    if (!folder || nextKey === folder.color_key) {
+      setColorPickerFolderId(null);
+      return;
+    }
+    // Optimistic update — flip the tile immediately, roll back on error.
+    const prevKey = folder.color_key;
+    setFolders((rs) => rs.map((r) => (r.id === folder.id ? { ...r, color_key: nextKey } : r)));
+    setColorPickerFolderId(null);
+    try {
+      await api.patch(`/document-library/folders/${folder.id}`, { color_key: nextKey });
+      toast.success(`Folder recoloured to ${nextKey}.`);
+    } catch (e) {
+      toast.error(apiError(e));
+      setFolders((rs) => rs.map((r) => (r.id === folder.id ? { ...r, color_key: prevKey } : r)));
+    }
+  }, []);
+
   // Palette labels — descriptive names based on the actual hex values
   // in PASTEL_BG so admins can talk about "the mint folders" or "the
   // sky folders" and everyone knows what they mean.
@@ -480,7 +502,15 @@ export default function DocumentLibrary() {
                   </div>
                 </button>
                 {canEdit && !f.is_system && confirmDeleteId !== f.id && (
-                  <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5">
+                  <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5" data-testid={`folder-actions-${f.id}`}>
+                    {/* v160.3.7o — recolour swatch: click to open the palette picker,
+                        pick a new group and the tile re-tints instantly. */}
+                    <button onClick={() => setColorPickerFolderId(f.id)}
+                      data-testid={`folder-recolor-btn-${f.id}`}
+                      title={`Recolour · currently ${PASTEL_LABEL[f.color_key || 'sky']}`}
+                      className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:bg-white flex items-center">
+                      <span className={`inline-block w-3 h-3 rounded-full border border-white/60 ${PASTEL_DOT[f.color_key || 'sky']}`} />
+                    </button>
                     <button onClick={() => startRename(f)} data-testid={`folder-rename-btn-${f.id}`}
                       title="Rename"
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-white">
@@ -493,6 +523,28 @@ export default function DocumentLibrary() {
                         <X size={11} />
                       </button>
                     )}
+                  </div>
+                )}
+                {/* v160.3.7o — inline colour-group picker popover */}
+                {canEdit && colorPickerFolderId === f.id && (
+                  <div
+                    data-testid={`folder-recolor-popover-${f.id}`}
+                    className="absolute top-8 right-1.5 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-2 grid grid-cols-5 gap-1.5"
+                    onMouseLeave={() => setColorPickerFolderId(null)}
+                  >
+                    {Object.keys(PASTEL_LABEL).filter((k) => k !== 'slate').map((k) => {
+                      const active = (f.color_key || 'sky') === k;
+                      return (
+                        <button
+                          key={k}
+                          onClick={() => recolorFolder(f, k)}
+                          data-testid={`folder-recolor-swatch-${f.id}-${k}`}
+                          title={PASTEL_LABEL[k]}
+                          className={`w-6 h-6 rounded-full ${PASTEL_DOT[k]} border-2 ${active ? 'border-slate-900' : 'border-white'} hover:border-slate-500 transition-colors`}
+                          aria-label={`Change folder colour to ${PASTEL_LABEL[k]}`}
+                        />
+                      );
+                    })}
                   </div>
                 )}
                 {canEdit && confirmDeleteId === f.id && (

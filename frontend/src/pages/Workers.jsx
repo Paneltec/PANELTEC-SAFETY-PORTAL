@@ -10,6 +10,9 @@ import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { stashInlinePdf } from '../lib/pdfStash';
 import { summariseCertifications, personalFilledCount } from '../lib/workerSectionSummary';
+// v160.3.7k — Inoculation sweep: lock body scroll while ClientPicker or
+// EditModal is open on the Workers page.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { filesUrl } from '../lib/downloadUrl';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
@@ -291,6 +294,7 @@ function WorkerRowPhoto({ worker }) {
 }
 
 function ClientPicker({ company, onClose, selectedIds, onApply }) {
+  useLockBodyScroll();
   const [loading, setLoading] = useState(true);
   const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
@@ -920,6 +924,7 @@ function IdCardSection({ worker, canEdit }) {
 
 
 function EditModal({ worker, onClose, onSaved }) {
+  useLockBodyScroll();
   const isNew = !worker.id;
   const isSimpro = worker.source === 'simpro';
   const [f, setF] = useState({

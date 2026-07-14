@@ -5,6 +5,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
+// v160.3.7k — Inoculation sweep: lock body scroll while any Forms modal
+// (FillOut, Preview, Import, AiBuilder, SubmissionView) is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import {
   Camera, CheckCircle2, Download, Eraser, FilePlus, FileText, Loader2, MapPin,
   Pencil, Phone, Plus, RefreshCw, Search, Share2, Sparkles, Trash2, Truck, Upload,
@@ -455,6 +458,7 @@ function _readDraft(template, userId) {
 }
 
 function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceScanToken, sourceAssetId }) {
+  useLockBodyScroll();
   const userId = (() => {
     try { return JSON.parse(localStorage.getItem('paneltec.user') || 'null')?.id; }
     catch { return null; }
@@ -834,6 +838,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
 // ─────────────── Preview modal ───────────────
 
 function PreviewModal({ template, onClose, onFill }) {
+  useLockBodyScroll();
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
@@ -888,6 +893,7 @@ function PreviewModal({ template, onClose, onFill }) {
 // ─────────────── Import + Build-with-AI modals ───────────────
 
 function ImportModal({ onClose, onImported }) {
+  useLockBodyScroll();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -944,6 +950,7 @@ function ImportModal({ onClose, onImported }) {
 }
 
 function AiBuilderModal({ onClose, onCreated }) {
+  useLockBodyScroll();
   const [prompt, setPrompt] = useState('');
   const [category, setCategory] = useState('general');
   const [busy, setBusy] = useState(false);
@@ -1362,6 +1369,7 @@ export default function Forms() {
 // ─────────────── Read-only submission view (used by FormSubmissions) ───────────────
 
 export function SubmissionViewModal({ submissionId, onClose }) {
+  useLockBodyScroll();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {

@@ -26,6 +26,8 @@ import {
   Search20Regular as Search,
   Search20Regular as SearchIcon,
 } from '@fluentui/react-icons';
+// v160.3.7k — Inoculation sweep: lock body scroll while the SWMS history modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const ROLE_CHOICES = [
   ['admin', 'Admin'],
@@ -380,6 +382,7 @@ function SearchableMulti({ label, items, selected, onToggle, testid }) {
 }
 
 function HistoryModal({ swms, onClose }) {
+  useLockBodyScroll();
   const [chain, setChain] = useState(null);
   const [loading, setLoading] = useState(true);
   const [diffFor, setDiffFor] = useState(null); // { swmsId, previousId, currentLabel, previousLabel }

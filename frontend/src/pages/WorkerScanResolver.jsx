@@ -8,6 +8,8 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken } from '../lib/auth';
 import Logo from '../components/brand/Logo';
+// v160.3.7k — Inoculation sweep: lock body scroll while the worker sign-in modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const PUBLIC = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
@@ -35,6 +37,8 @@ export default function WorkerScanResolver() {
   const navigate = useNavigate();
   const [state, setState] = useState({ status: 'loading', profile: null, err: null });
   const [signInOpen, setSignInOpen] = useState(false);
+  // v160.3.7k — lock body scroll while the sign-in modal is open.
+  useLockBodyScroll(signInOpen);
   const [sites, setSites] = useState([]);
   const [siteQ, setSiteQ] = useState('');
   const debouncedQ = useDebounced(siteQ, 300);

@@ -6,6 +6,9 @@ import { apiError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 import PaneltecHero from '../components/marketing/PaneltecHero';
+// v160.3.7k — Inoculation sweep: lock body scroll while the iOS install
+// instructions modal is open on the Cover page.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -21,6 +24,9 @@ export default function Cover() {
   const [busy, setBusy] = useState(false);
   const { canInstall, isIOS, prompt: triggerInstall, dismiss: dismissInstall } = usePwaInstall();
   const [iosOpen, setIosOpen] = useState(false);
+  // v160.3.7k — Lock body scroll while the iOS install-instructions
+  // modal is up so touch scrolls don't leak to the page underneath.
+  useLockBodyScroll(iosOpen);
   // Phase 4.7.2 — same self-serve forgot-password modal the /login page uses.
   // The previous Cover.jsx pointed at a dead `/forgot-password` route.
   const [forgotOpen, setForgotOpen] = useState(false);

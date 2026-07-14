@@ -14,6 +14,9 @@ import InductionImportWizard from './InductionImportWizard';
 import { stashInlinePdf } from '../lib/pdfStash';
 import PdfPreviewModal from './PdfPreviewModal';
 import InductionCardModal from './InductionCardModal';
+// v160.3.7k — Inoculation sweep: lock body scroll while either the print-
+// popover or the CellEditor modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -82,6 +85,8 @@ export default function InductionsMatrix({ onWorkerClick }) {
   // Phase 3.11h — multi-select for print.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [printOpen, setPrintOpen] = useState(false);
+  // v160.3.7k — lock body scroll while the print popover is open.
+  useLockBodyScroll(printOpen);
   const [printOpts, setPrintOpts] = useState({
     layout: 'a4_landscape', include_cover: true, include_legend: true,
     include_raw: false, include_last_updated: false, combined: true,
@@ -780,6 +785,7 @@ function EmptyMatrix({ canEdit, onImport }) {
 // ────────────────── Inline cell editor ──────────────────
 
 function CellEditor({ worker, col, cell, onClose, onSaved }) {
+  useLockBodyScroll();
   const [date, setDate] = useState(cell?.expiry_date || '');
   const [notHeld, setNotHeld] = useState(!!cell?.not_held);
   const [held, setHeld] = useState(!!cell?.held_no_expiry);

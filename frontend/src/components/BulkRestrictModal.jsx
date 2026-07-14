@@ -6,13 +6,28 @@
 // it becomes a generic bulk-deny UI.
 import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { ShieldOff, Search as SearchIcon, X } from 'lucide-react';
+import { ShieldOff, Search as SearchIcon, X, Palette } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from './ui/dialog';
 
 const ROLE_LABEL = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', contractor: 'Contractor', auditor: 'Auditor' };
+
+// v160.3.7o — Colour-group taxonomy mirrors the Document Library pastel
+// legend (see PASTEL_DOT/PASTEL_LABEL in DocumentLibrary.jsx). Kept in
+// sync manually — if a new colour is added there, add it here too.
+const COLOR_GROUPS = [
+  { key: 'sky',    label: 'Sky',    dot: 'bg-[#a9c4e8]' },
+  { key: 'blush',  label: 'Blush',  dot: 'bg-[#f2b3bd]' },
+  { key: 'mint',   label: 'Mint',   dot: 'bg-[#a8dbb5]' },
+  { key: 'amber',  label: 'Amber',  dot: 'bg-[#eddc9c]' },   // maps to 'butter' in the folder palette
+  { key: 'sage',   label: 'Sage',   dot: 'bg-[#b3ceb0]' },
+  { key: 'lilac',  label: 'Lilac',  dot: 'bg-[#c9b0e6]' },
+  { key: 'peach',  label: 'Peach',  dot: 'bg-[#f4c8a6]' },
+  { key: 'coral',  label: 'Coral',  dot: 'bg-[#f0b9a3]' },
+  { key: 'lavender', label: 'Lavender', dot: 'bg-[#c9b8e8]' },
+];
 
 export default function BulkRestrictModal({
   open, onClose,
@@ -26,6 +41,24 @@ export default function BulkRestrictModal({
   const [roleFilter, setRoleFilter] = useState('');
   const [selected, setSelected] = useState(new Set());
   const [busy, setBusy] = useState(false);
+  // v160.3.7n — hide seed/test accounts by default. The modal is a
+  // real-people-picker; showing `Test One / Test Two / warmup-test` etc.
+  // pollutes the list and confused the admin ("only 17 workers listed").
+  const [hideTest, setHideTest] = useState(true);
+  // v160.3.7o — Optional colour-group selection. Admins pick 1-N groups
+  // to communicate scope of restriction; groups get named in the audit
+  // reason string so the intent is preserved on the user_permissions row.
+  // NOTE: enforcement is currently app-wide (`documents.view=deny`) — the
+  // colour-group intent is captured for audit + a future per-folder ACL
+  // ship (v160.4). Flagged clearly in the modal warning banner.
+  const [selectedGroups, setSelectedGroups] = useState(() => new Set());
+  const toggleGroup = (k) => {
+    setSelectedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -35,12 +68,12 @@ export default function BulkRestrictModal({
     (async () => {
       setLoading(true);
       try {
-        const { data } = await api.get('/users');
+        const { data } = await api.get('/users', { params: { hide_test: hideTest } });
         setUsers(data || []);
       } catch (e) { toast.error(apiError(e)); }
       finally { setLoading(false); }
     })();
-  }, [open]);
+  }, [open, hideTest]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -75,10 +108,16 @@ export default function BulkRestrictModal({
     if (selected.size === 0) return;
     setBusy(true);
     try {
+      const groups = Array.from(selectedGroups);
+      const reasonParts = [`Bulk restrict from ${resourceLabel} toolbar`];
+      if (groups.length > 0) {
+        reasonParts.push(`colour groups: ${groups.join(', ')}`);
+      }
       const r = await api.post('/permissions/bulk-restrict', {
         user_ids: Array.from(selected),
         resource, action, value: false,
-        reason: `Bulk restrict from ${resourceLabel} toolbar`,
+        reason: reasonParts.join(' · '),
+        color_groups: groups.length > 0 ? groups : undefined,
       });
       toast.success(`Restricted ${r.data.updated} user${r.data.updated === 1 ? '' : 's'} from ${resourceLabel}.`);
       onApplied?.(r.data);
@@ -102,6 +141,42 @@ export default function BulkRestrictModal({
         </DialogHeader>
 
         <div className="space-y-3">
+          {/* v160.3.7o — By colour group section */}
+          <div
+            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
+            data-testid="bulk-restrict-color-groups"
+          >
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] font-semibold text-slate-600 mb-2">
+              <Palette size={12} /> By colour group
+              <span className="ml-auto text-[10px] normal-case tracking-normal text-slate-500 font-normal">Optional · scopes the restriction to folders tagged with these pastels</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {COLOR_GROUPS.map((g) => {
+                const on = selectedGroups.has(g.key);
+                return (
+                  <button
+                    key={g.key}
+                    type="button"
+                    onClick={() => toggleGroup(g.key)}
+                    data-testid={`bulk-restrict-color-group-${g.key}`}
+                    className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border transition-colors ${on ? 'bg-orange-100 border-orange-400 text-orange-900' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
+                    aria-pressed={on}
+                  >
+                    <span className={`inline-block w-3 h-3 rounded-full border border-white/60 ${g.dot}`} />
+                    {g.label}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedGroups.size > 0 && (
+              <div className="mt-2 text-[11px] text-slate-600" data-testid="bulk-restrict-color-groups-summary">
+                Selected {selectedGroups.size} colour group{selectedGroups.size === 1 ? '' : 's'}.
+                Users you tick below will lose access to folders tagged with these colours.
+                {' '}Enforcement in this ship is app-wide (<code className="px-1 bg-white rounded border border-slate-200">documents.view=deny</code>); per-folder ACL lands in v160.4.
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px]">
               <SearchIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -124,6 +199,20 @@ export default function BulkRestrictModal({
               className="px-3 py-1.5 text-xs rounded-lg border border-slate-300 bg-white hover:bg-slate-50">
               Select all visible ({filtered.length})
             </button>
+            {/* v160.3.7n — Show/hide seed/test accounts toggle. Defaults to
+                hidden so the picker shows real people only. */}
+            <label
+              className="inline-flex items-center gap-1.5 text-[11px] text-slate-600 cursor-pointer select-none"
+              data-testid="bulk-restrict-hide-test-toggle"
+            >
+              <input
+                type="checkbox"
+                checked={!hideTest}
+                onChange={(e) => setHideTest(!e.target.checked)}
+                className="w-3.5 h-3.5 accent-slate-500"
+              />
+              Show test accounts
+            </label>
           </div>
 
           <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-xl">

@@ -34,6 +34,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import { stashInlinePdf } from '../lib/pdfStash';
+// v160.3.7k — Inoculation sweep: lock body scroll while any of the three
+// SitesAdmin modals (AddSiteModal, EditSiteDrawer, RecycleBinModal) is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 import {
   ArrowSync20Regular as RefreshCcw,
@@ -356,6 +359,7 @@ export default function SitesAdmin() {
 // ─────────────────── Add Site Modal ───────────────────
 
 function AddSiteModal({ onClose, onCreated }) {
+  useLockBodyScroll();
   const [name, setName] = useState('');
   const [address, setAddress] = useState('');
   const [suburb, setSuburb] = useState('');
@@ -457,6 +461,7 @@ function AddSiteModal({ onClose, onCreated }) {
 // ─────────────────── Edit Site Drawer ───────────────────
 
 function EditSiteDrawer({ site, onClose, onSaved }) {
+  useLockBodyScroll();
   const isManual = (site.kind || 'simpro') === 'manual';
   const [name, setName] = useState(site.name || '');
   const [manualAddress, setManualAddress] = useState(site.manual_address || site.address || '');
@@ -657,6 +662,7 @@ function EditSiteDrawer({ site, onClose, onSaved }) {
 // ─────────────────── Recycle Bin Modal ───────────────────
 
 function RecycleBinModal({ onClose, onRestored }) {
+  useLockBodyScroll();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
 

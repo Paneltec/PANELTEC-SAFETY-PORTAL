@@ -4,6 +4,8 @@ import { Mail, RefreshCw, Ban, ExternalLink, AlertTriangle, Filter, Trash2, Chev
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { PageHeader } from '../components/capture/Ui';
+// v160.3.7k — Inoculation sweep: lock body scroll while the Outbox detail drawer is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle,
   AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction,
@@ -66,6 +68,8 @@ export default function Outbox() {
   const [statusF, setStatusF] = useState('');
   const [kindF, setKindF] = useState('');
   const [active, setActive] = useState(null);
+  // v160.3.7k — lock body scroll while the detail drawer is open.
+  useLockBodyScroll(!!active);
   const [toDelete, setToDelete] = useState(null);   // single row
   const [bulkPlan, setBulkPlan] = useState(null);   // { label, statuses, count }
   const [busy, setBusy] = useState(false);

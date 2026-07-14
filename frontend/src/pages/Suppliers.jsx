@@ -16,6 +16,8 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+// v160.3.7k — Inoculation sweep: lock body scroll while a Suppliers modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import SupplierDrawer from '../components/suppliers/SupplierDrawer';
 
@@ -110,6 +112,7 @@ function ToggleSwitch({ checked, onChange, testid }) {
 }
 
 function EditModal({ supplier, allSuppliers, onClose, onSaved }) {
+  useLockBodyScroll();
   const [form, setForm] = useState({
     custom_contact: supplier.contact_name || '',
     custom_phone: supplier.phone || '',

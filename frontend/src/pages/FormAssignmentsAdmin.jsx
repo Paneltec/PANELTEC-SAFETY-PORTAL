@@ -12,6 +12,9 @@ import { Loader2, Save, AlertTriangle, Check, Truck, Wrench, Hammer, Box, Layout
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+// v160.3.7k — Inoculation sweep: lock body scroll while the FormAssignments
+// notify-confirm modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -63,6 +66,8 @@ export default function FormAssignmentsAdmin() {
   const [saving, setSaving] = useState(false);
   const [recipientPreview, setRecipientPreview] = useState({ count: 0, sample: [] });
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // v160.3.7k — lock body scroll while the confirm modal is open.
+  useLockBodyScroll(confirmOpen);
   const [workerSearch, setWorkerSearch] = useState('');
   const [workerResults, setWorkerResults] = useState([]);
 

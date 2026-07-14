@@ -27,6 +27,11 @@ class BulkRestrictIn(BaseModel):
     action: str
     value: bool = False  # v159.3 primary use-case is `deny`
     reason: Optional[str] = None  # free-form audit note
+    # v160.3.7o — Optional colour-group scope. When present the string list
+    # is echoed into the audit-log reason so a future admin can see which
+    # DocLibrary pastel groups the restriction was intended for. NOT yet
+    # enforced at read-time — that's the v160.4 per-folder ACL ship.
+    color_groups: Optional[List[str]] = None
 
 
 @router.post("/bulk-restrict")
@@ -71,6 +76,7 @@ async def bulk_restrict(
         "action": body.action,
         "value": bool(body.value),
         "reason": body.reason,
+        "color_groups": body.color_groups or [],
         "sample_effective": (
             await effective_for(targets[0]) if targets else None
         ),

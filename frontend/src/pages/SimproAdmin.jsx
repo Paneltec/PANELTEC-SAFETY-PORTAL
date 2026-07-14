@@ -3,6 +3,8 @@ import { Loader2, Play, Save, Plug, CheckCircle2, AlertCircle, X, ListChecks } f
 import { toast } from 'sonner';
 import api from '../lib/api';
 import { BackButton } from '../components/capture/Ui';
+// v160.3.7k — Inoculation sweep: lock body scroll while the Simpro Companies modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import {
   AdminCard, StatusPill, Field, Input, InputWithToggle, SavedChip, isMasked, authErrorToast,
 } from '../components/IntegrationFormUI';
@@ -100,6 +102,7 @@ function Toggle({ checked, onChange, testid }) {
 }
 
 function CompaniesModal({ open, items, loading, initialSelected, onDone, onClose }) {
+  useLockBodyScroll(open);
   const [selected, setSelected] = useState(() => new Set(initialSelected.map(String)));
 
   useEffect(() => {

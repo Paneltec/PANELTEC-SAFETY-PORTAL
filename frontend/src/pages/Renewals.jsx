@@ -6,6 +6,8 @@ import { copyToClipboard } from '../lib/clipboard';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../components/ui/dialog';
 import EmailButton from '../components/EmailButton';
+// v160.3.7k — Inoculation sweep: lock body scroll while the NeedsEmailDrawer is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
@@ -434,6 +436,7 @@ export default function Renewals() {
 }
 
 function NeedsEmailDrawer({ open, contractors, onClose, onSaved }) {
+  useLockBodyScroll(open);
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState(false);
 

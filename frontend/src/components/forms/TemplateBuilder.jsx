@@ -22,6 +22,8 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { CATEGORIES, CAT_PILL, categoryLabel, FieldRunner } from '../../pages/Forms';
+// v160.3.7k — Inoculation sweep: lock body scroll while the template builder is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 const FIELD_TYPES = [
   { key: 'text',      label: 'Short text' },
@@ -119,6 +121,7 @@ function FieldEditor({ field, index, onChange, onRemove, error }) {
 }
 
 export default function TemplateBuilder({ template, onClose, onSaved }) {
+  useLockBodyScroll();
   const isEdit = !!template?.id;
   const [name, setName] = useState(template?.name || '');
   const [category, setCategory] = useState(template?.category || 'general');

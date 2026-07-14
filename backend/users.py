@@ -88,10 +88,51 @@ async def _other_active_admins_count(org_id: str, exclude_user_id: Optional[str]
     return await db.users.count_documents(q)
 
 
+# v160.3.7n — Central definition of "test / seed / disposable" accounts so
+# every admin-facing modal that lists users can hide the demo seed pool
+# (Casey Worker, Test One, Test Two, Test Outbox User, Test Worker (Stephen
+# Org), the warmup smoke user, and any `test_…@example.com` disposables)
+# without each caller re-implementing the same regex. Kept as a single
+# `$or` Mongo condition rather than a Python filter so `.count_documents`
+# and `.find` stay consistent and the index on `email` is still used.
+_TEST_ACCOUNT_OR = [
+    # Any address on the fake `example.com` domain (all our disposable
+    # test accounts land here — Playwright, curl, delete-test seeds).
+    {"email": {"$regex": r"@example\.com$", "$options": "i"}},
+    # Bare `@paneltec.com` (no `.au`) — the five original demo seed
+    # accounts: admin@, audit@, demo@, super@, worker@. The real org
+    # email domain is `@paneltec.com.au`.
+    {"email": {"$regex": r"^[^@]+@paneltec\.com$", "$options": "i"}},
+    # Prefix `test_` — matches `test_outbox@…`, `test_1234@…` etc.
+    {"email": {"$regex": r"^test[_\d]", "$options": "i"}},
+    # Warmup smoke-test seed used by the v144 boot self-check.
+    {"email": {"$regex": r"^warmup[-_]", "$options": "i"}},
+    # Any account explicitly flagged as test in the DB (opt-in — we
+    # don't backfill this on real users). Set by the `POST /users`
+    # test-fixture helper. Safe: unset means "not a test account".
+    {"is_test": True},
+    # v160.3.7n — `worker_stephen@paneltec.com.au` is the seeded
+    # "Test Worker (Stephen Org)" account. Match it explicitly rather
+    # than pattern-matching so real Stephen family members aren't hit.
+    {"email": "worker_stephen@paneltec.com.au"},
+]
+
+
 @router.get("")
-async def list_users(user: dict = Depends(require_permission("users", "view"))):
+async def list_users(
+    hide_test: bool = False,
+    user: dict = Depends(require_permission("users", "view")),
+):
+    # v160.3.7n — `hide_test=true` filters out seeded demo accounts + fake
+    # `@example.com` disposables. Off by default so /settings/users keeps
+    # showing everything (admins need to be able to find seed rows to
+    # delete them). Modals that pick real people (Doc Library restrict,
+    # form assignees, SWMS assignees) opt in.
+    q: dict = {"org_id": user["org_id"]}
+    if hide_test:
+        q["$nor"] = _TEST_ACCOUNT_OR
     docs = await db.users.find(
-        {"org_id": user["org_id"]},
+        q,
         {"_id": 0, "password_hash": 0},
     ).sort("created_at", 1).to_list(500)
     out = []
