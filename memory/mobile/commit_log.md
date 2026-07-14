@@ -374,3 +374,20 @@
   - `/app/mobile/app/(tabs)/outbox.tsx` (fixed icon name)
   - `/app/mobile/app/forms/submissions/[templateId].tsx` (shadow → boxShadow)
   - `/app/mobile/app/swms/index.tsx` (shadow → boxShadow)
+
+
+## Iteration 17 — v160.3.8.0 Crane Lift Grouped-Crew Pattern
+- **Commit**: 76788cd7ddb24acac923bb948f5bb32315327389
+- **Date**: 2026-07-14T09:31:00Z
+- **Changes**:
+  - Created `src/components/CrewGroupCard.tsx`: bordered card, shared company toggle, stacked workers
+  - Updated `app/forms/fill/[id].tsx`: `.map()` → `.reduce()` with crew group detection via `useMemo`
+  - Updated MongoDB Crane Lift template: added `config.group="crew"` + `config.group_label="Rigging Crew"` to f14/f15/f16
+  - Version bumped to `paneltec-v160.3.8.0` (mobile version.ts, frontend version.js, frontend service-worker.js)
+- **Files modified**:
+  - `/app/mobile/src/components/CrewGroupCard.tsx` (NEW)
+  - `/app/mobile/app/forms/fill/[id].tsx` (crew group rendering logic)
+  - `/app/mobile/src/lib/version.ts` (version bump)
+  - `/app/frontend/src/lib/version.js` (version bump)
+  - `/app/frontend/public/service-worker.js` (version bump)
+- **Verified**: Crane Lift crew card renders, company toggle propagates, non-crew forms unaffected
