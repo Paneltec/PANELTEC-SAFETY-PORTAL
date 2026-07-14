@@ -128,31 +128,30 @@ function ModuleNode({ data }) {
 
 const NODE_TYPES = { moduleNode: ModuleNode };
 
-// react-flow doesn't have a native "group / zone" node type, so zones
-// are rendered as absolutely-positioned coloured rectangles behind the
-// nodes using a separate SVG overlay layer. Kept outside the flow so
-// they don't interfere with node dragging / selection.
-function ZoneBands() {
+// v160.3.7x — Zone LABELS only. The previous `ZoneBands` component
+// rendered large pastel rectangles behind each zone; when a node was
+// dragged (or hovered in a way that lifted it out of place) the coloured
+// backdrop looked heavy and disconnected from the industrial-panel
+// aesthetic. This replaces those with small floating uppercase text
+// markers sitting above each cluster — the canvas underneath stays a
+// clean white so the icon halos + black cables do the visual work.
+function ZoneLabels() {
   return (
     <>
-      {SCHEMATIC_ZONES.map((z) => {
-        const c = folderColor(z.color);
-        return (
-          <div
-            key={z.key}
-            className={`absolute rounded-3xl border border-slate-200 ${c.bg}`}
-            style={{
-              left: z.x, top: z.y, width: z.w, height: z.h,
-              opacity: 0.35, pointerEvents: 'none',
-              zIndex: 0,
-            }}
-          >
-            <div className="absolute top-2 left-4 text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-600/80 pointer-events-none">
-              {z.label}
-            </div>
-          </div>
-        );
-      })}
+      {SCHEMATIC_ZONES.map((z) => (
+        <div
+          key={z.key}
+          className="absolute text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500 pointer-events-none"
+          style={{
+            left: z.x + 12,
+            top: z.y + 6,
+            zIndex: 0,
+          }}
+          data-testid={`schematic-zone-label-${z.key}`}
+        >
+          {z.label}
+        </div>
+      ))}
     </>
   );
 }
@@ -278,7 +277,7 @@ export default function ProgramSchematicPage() {
         className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm schematic-canvas"
         style={{ height: 1050 }}
       >
-        <ZoneBands />
+        <ZoneLabels />
         <ReactFlowProvider>
           <ReactFlow
             nodes={nodes}
