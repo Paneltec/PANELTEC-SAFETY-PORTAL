@@ -114,10 +114,21 @@ async def revoke_session(jti: str, request: Request,
 
     # Bump token_version so any cached JWT for this user that uses this jti
     # also fails the next /auth/me check (defence in depth).
-    await db.users.update_one(
-        {"id": sess["user_id"], "org_id": user["org_id"]},
-        {"$inc": {"token_version": 1}, "$set": {"updated_at": now_iso()}},
-    )
+    #
+    # v160.3.7m — CRITICAL: only bump when the deleted session belongs to a
+    # DIFFERENT user. The caller's own current-session JTI is already blocked
+    # above (400) but Stephen (and any admin) may still be deleting one of
+    # their OWN duplicate sessions — a different jti sharing the same
+    # user_id. If we bumped `token_version` on that path the caller's own
+    # currently-authenticated JWT would fail its next tv check and the UI
+    # would silently kick them to /login. That was the v7l regression the
+    # single-row handler carried forward from before v7d — v7d only fixed
+    # the bulk path. Same guarantee now enforced here.
+    if sess["user_id"] != user["id"]:
+        await db.users.update_one(
+            {"id": sess["user_id"], "org_id": user["org_id"]},
+            {"$inc": {"token_version": 1}, "$set": {"updated_at": now_iso()}},
+        )
     # Phase 3.21 — snapshot the row into history before we delete it.
     from session_history import record_session_end
     await record_session_end(jti, user["org_id"], "admin_revoke",
