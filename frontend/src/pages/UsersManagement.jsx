@@ -31,6 +31,9 @@ import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
 // v160.3.6t — restore missing import that caused a fatal ReferenceError
 // (`SimproZipImportGuide is not defined`) on /settings/user-permissions.
 import SimproZipImportGuide from '../components/simpro/SimproZipImportGuide';
+// v160.3.7h — Shared body-scroll-lock hook. Applied to every overlay on
+// this page so scrolling inside a modal never leaks to the page beneath.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
 const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
@@ -90,6 +93,9 @@ function inviteMailtoHref(user) {
 }
 
 function ConfirmActionModal({ kind, user, busy, onConfirm, onClose }) {
+  // v160.3.7h — lock body scroll while this confirm is open so the page
+  // underneath (Users list) doesn't scroll and steal focus from the modal.
+  useLockBodyScroll();
   const isDelete = kind === 'delete';
   const title = isDelete ? `Delete ${user.name || user.email}?` : `Force sign-out ${user.name || user.email}?`;
   const body = isDelete
@@ -159,6 +165,9 @@ export default function UsersManagement() {
   const [actionBusy, setActionBusy] = useState(false);
   const [bulkSelected, setBulkSelected] = useState(() => new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  // v160.3.7h — Lock body scroll for the inline bulk-delete confirm (this
+  // modal lives in the parent JSX so it can't own its own useEffect).
+  useLockBodyScroll(bulkConfirmOpen);
   const me = getUser();
 
   const load = async () => { try { const { data } = await api.get('/users'); setUsers(data); } catch (e) { toast.error(apiError(e)); } };
@@ -534,13 +543,8 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
   // v160.3.7g — Lock body scroll while the drawer is open so wheel/touch
   // scrolls inside the drawer don't leak through to the page underneath.
-  // Previously scrolling the drawer moved the background instead — the
-  // exact bug reported on /settings/users.
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
-  }, []);
+  // v160.3.7h — Refactored onto the shared useLockBodyScroll hook.
+  useLockBodyScroll();
 
   const load = async () => {
     try {
@@ -912,6 +916,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 }
 
 function SavePresetModal({ overrides, onClose, onCreated }) {
+  useLockBodyScroll();
   const [label, setLabel] = useState('');
   const [description, setDescription] = useState('');
   const [busy, setBusy] = useState(false);
@@ -1009,6 +1014,7 @@ function InviteModal({ onClose, onDone }) {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function BulkInviteModal({ existingEmails, onClose, onDone }) {
+  useLockBodyScroll();
   const [rawText, setRawText] = useState('');
   const [channel, setChannel] = useState('auto'); // auto | email | sms — informational for now
   const [role, setRole] = useState('worker');
@@ -1246,6 +1252,7 @@ const ROLE_OPTIONS_IMPORT = [
 ];
 
 function ImportFromSimproDrawer({ companies, onClose, onDone }) {
+  useLockBodyScroll();
   const allCompanyIds = useMemo(() => companies.map((c) => String(c.id)), [companies]);
   const [selectedCompanies, setSelectedCompanies] = useState([]);
   // Phase 3.21 — filterMode state retained internally as a constant
@@ -1568,6 +1575,7 @@ function SessionHistoryTab({ userId }) {
 // plan, then executes on confirm. Emits a snapshot_id the user can look
 // up in the audit log (future UI). Idempotent — safe to re-click.
 function RefreshFromSimproModal({ onClose, onDone }) {
+  useLockBodyScroll();
   const [phase, setPhase] = React.useState('planning'); // planning | ready | running | done | error
   const [plan, setPlan] = React.useState(null);
   const [result, setResult] = React.useState(null);
