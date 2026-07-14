@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Layers } from 'lucide-react';
 import ReactFlow, {
-  Background, MiniMap, Handle, Position,
+  Background, Handle, Position,
   ReactFlowProvider,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -91,12 +91,12 @@ function ModuleNode({ data }) {
       <div className="flex items-center justify-center transition-transform group-hover:scale-105"
            style={{ width: w, height: h }}>
         {imgSrc ? (
-          <div className="bg-white rounded-2xl p-1 shadow-sm flex items-center justify-center overflow-hidden"
+          <div className="bg-white rounded-2xl p-3 shadow-sm flex items-center justify-center overflow-hidden"
                style={{ width: w, height: h }}>
             <img
               src={imgSrc}
               alt=""
-              className="max-h-full max-w-full object-contain"
+              className="w-full h-full object-contain"
               loading="lazy"
               data-testid={`schematic-node-image-${slug}`}
             />
@@ -128,33 +128,12 @@ function ModuleNode({ data }) {
 
 const NODE_TYPES = { moduleNode: ModuleNode };
 
-// v160.3.7x — Zone LABELS only. The previous `ZoneBands` component
-// rendered large pastel rectangles behind each zone; when a node was
-// dragged (or hovered in a way that lifted it out of place) the coloured
-// backdrop looked heavy and disconnected from the industrial-panel
-// aesthetic. This replaces those with small floating uppercase text
-// markers sitting above each cluster — the canvas underneath stays a
-// clean white so the icon halos + black cables do the visual work.
-function ZoneLabels() {
-  return (
-    <>
-      {SCHEMATIC_ZONES.map((z) => (
-        <div
-          key={z.key}
-          className="absolute text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500 pointer-events-none"
-          style={{
-            left: z.x + 12,
-            top: z.y + 6,
-            zIndex: 0,
-          }}
-          data-testid={`schematic-zone-label-${z.key}`}
-        >
-          {z.label}
-        </div>
-      ))}
-    </>
-  );
-}
+// v160.3.7ab — Zone labels removed. The floating "INTELLIGENCE / CAPTURE
+// / …" markers overlayed the diagram and cluttered the read; users can
+// infer clusters from the icon families and hover tooltips. Zone coords
+// stay in `SCHEMATIC_ZONES` because the config file consumers may still
+// reference them for future layout ideas — the DOM output is now empty.
+function ZoneLabels() { return null; }
 
 export default function ProgramSchematicPage() {
   const navigate = useNavigate();
@@ -302,12 +281,9 @@ export default function ProgramSchematicPage() {
             defaultEdgeOptions={{ type: 'default' }}
           >
             <Background gap={24} color="#e2e8f0" />
-            <MiniMap
-              pannable zoomable
-              nodeStrokeWidth={2}
-              className="schematic-minimap !bg-white/95 !border !border-slate-200 !rounded-xl !shadow"
-              style={{ width: 160, height: 100 }}
-            />
+            {/* v160.3.7ab — MiniMap removed. Diagram is locked at zoom 1
+                and pan is barely used, so the corner minimap added
+                clutter without value. */}
             {/* v160.3.7y — Zoom is now locked at 1x so the zoom-in/out
                 and fit-view controls would be no-ops. Controls hidden. */}
           </ReactFlow>
