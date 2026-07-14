@@ -43,7 +43,7 @@ from suppliers import router as suppliers_router  # noqa: E402
 from supplier_panels import router as supplier_panels_router  # noqa: E402
 from workers import router as workers_router, me_router as workers_me_router  # noqa: E402
 from workers_qr import router as workers_qr_router, scan_router as worker_scan_router, backfill_scan_tokens  # noqa: E402
-from worker_certifications import router as worker_certifications_router  # noqa: E402
+from worker_certifications import router as worker_certifications_router, certs_router as certs_bulk_router  # noqa: E402
 from forms import router as forms_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from comms_safe_mode import router as comms_safe_mode_router  # noqa: E402 — Phase 4.7.3
@@ -239,6 +239,7 @@ api.include_router(supplier_folders_router)
 api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)
 api.include_router(worker_certifications_router)
+api.include_router(certs_bulk_router)  # v160.3.7ai — /certifications bulk ops
 api.include_router(workers_router)
 api.include_router(workers_me_router)  # v160.2.2 — /me/worker-profile
 api.include_router(workers_qr_router)

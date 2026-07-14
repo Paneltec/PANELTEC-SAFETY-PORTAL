@@ -875,8 +875,14 @@ function LanDeliveryCard() {
         </div>
 
         {/* NAS disk usage gauge — reported by the agent on every
-            poll. Coloured: green <70%, amber 70-90%, red >90%. */}
-        {s.disk_usage && <DiskGauge usage={s.disk_usage} reportedAt={s.disk_usage_at}/>}
+            poll. Coloured: green <70%, amber 70-90%, red >90%.
+            v160.3.7ah — Always render, even when disk_usage is
+            missing or zero. Silent hiding used to leave admins
+            wondering why "some sites have a gauge and mine doesn't",
+            and a null/zero payload from the agent now surfaces as
+            an explicit "Unavailable" state instead of "0 MB free
+            of 0 MB". */}
+        <DiskGauge usage={s.disk_usage} reportedAt={s.disk_usage_at}/>
       </div>
     </Section>
   );
@@ -888,23 +894,39 @@ function LanDeliveryCard() {
 // `{total, used, free}` (bytes, no suffix) but this component previously
 // only looked at `_bytes`-suffixed keys, so the gauge always rendered
 // "0 MB free of 0 MB · 0% used". Accept both shapes for forward-compat.
+// v160.3.7ah — Explicit "Unavailable" rendering for a null/zero
+// payload. Instead of hiding the row (silent) or showing "0 MB free
+// of 0 MB" (misleading), the gauge now surfaces an amber
+// `Unavailable — NAS mount not reachable from server` chip with a
+// title-attr tooltip explaining what the operator should check.
 function DiskGauge({ usage, reportedAt }) {
-  const total = Number(usage.total_bytes ?? usage.total) || 0;
-  const used  = Number(usage.used_bytes  ?? usage.used)  || 0;
-  const free  = Number(usage.free_bytes  ?? usage.free)  || 0;
+  const u     = usage || {};
+  const total = Number(u.total_bytes ?? u.total) || 0;
+  const used  = Number(u.used_bytes  ?? u.used)  || 0;
+  const free  = Number(u.free_bytes  ?? u.free)  || 0;
   const pct   = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
-  const path  = usage.path || usage.mount_point || null;
-  const missing = total === 0;
+  const path  = u.path || u.mount_point || null;
+  // Unavailable = never reported, or total is zero, or free+used+total all zero.
+  // A total of 0 is impossible on a real mount — it's the fingerprint of a
+  // failed statvfs / SMB probe. Treat it as an error state so the operator
+  // has a chance to act instead of watching a permanent "reading pending…".
+  const unavailable = !usage || total === 0;
   // Traffic-light colour band.
   const colour =
-    missing    ? "#94a3b8" :  // slate-400 when we have no reading
-    pct >= 90  ? "#ef4444" :
-    pct >= 70  ? "#f59e0b" :
-                 "#10b981";
+    unavailable ? "#f59e0b" :   // amber — needs operator attention
+    pct >= 90   ? "#ef4444" :
+    pct >= 70   ? "#f59e0b" :
+                  "#10b981";
   const fmtGB = (b) =>
     b >= 1024 ** 4 ? `${(b / 1024 ** 4).toFixed(2)} TB` :
     b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` :
                      `${(b / 1024 ** 2).toFixed(0)} MB`;
+  const unavailableTip =
+    "The NAS mount is not reachable from the backup agent. " +
+    "Common causes: NAS powered off, SMB share credentials changed, " +
+    "network route dropped, or the agent's mount point moved. " +
+    "Snapshots continue to be written to the Hub — LAN mirroring " +
+    "resumes automatically once the mount is back online.";
   return (
     <div data-testid="backup-disk-gauge"
       style={{
@@ -914,9 +936,13 @@ function DiskGauge({ usage, reportedAt }) {
       <div style={{ display: "flex", justifyContent: "space-between",
                     marginBottom: 4 }}>
         <span><strong>NAS disk{path ? ` · ${path}` : ""}</strong></span>
-        <span style={{ color: colour, fontWeight: 800 }}>
-          {missing
-            ? "reading pending…"
+        <span
+          style={{ color: colour, fontWeight: 800, cursor: unavailable ? "help" : "default" }}
+          title={unavailable ? unavailableTip : undefined}
+          data-testid={unavailable ? "backup-disk-unavailable" : "backup-disk-available"}
+        >
+          {unavailable
+            ? "Unavailable — mount not reachable"
             : <>{fmtGB(free)} free of {fmtGB(total)} · {pct}% used</>}
         </span>
       </div>
@@ -925,13 +951,23 @@ function DiskGauge({ usage, reportedAt }) {
         overflow: "hidden",
       }}>
         <div style={{
-          background: colour, height: "100%", width: `${pct}%`,
-          transition: "width 600ms ease, background 600ms ease",
+          background: colour, height: "100%",
+          width: unavailable ? "100%" : `${pct}%`,
+          opacity: unavailable ? 0.35 : 1,
+          transition: "width 600ms ease, background 600ms ease, opacity 400ms ease",
         }}/>
       </div>
-      {reportedAt && (
+      {reportedAt && !unavailable && (
         <div style={{ fontSize: 10, color: "rgba(0,0,0,0.5)", marginTop: 2 }}>
           Reported {fmtAge(reportedAt)}
+        </div>
+      )}
+      {unavailable && (
+        <div style={{ fontSize: 10, color: "#b45309", marginTop: 2 }}
+             data-testid="backup-disk-unavailable-hint">
+          {reportedAt
+            ? <>Last successful reading {fmtAge(reportedAt)} · hover the label for causes.</>
+            : <>Agent has not reported a disk reading yet · hover the label for causes.</>}
         </div>
       )}
     </div>

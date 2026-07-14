@@ -608,6 +608,24 @@ async def _commit_zip(
                 )
                 if _col:
                     _col_key = _col["column_key"]
+            # v160.3.7ai — Re-use prior admin decisions:
+            # if this column already has ≥1 cert row that an admin has
+            # personally released (pending_review=false, source=simpro_zip),
+            # the mapping is considered "trusted" and future imports for
+            # the same column_key ship un-pending. Rule is intentionally
+            # conservative — a single accepted row is enough evidence
+            # that the auto-slug matcher is doing the right thing for
+            # THIS column, but doesn't change confidence anywhere else.
+            _pending = True
+            if _col_key:
+                _prior_accepted = await db.worker_certifications.find_one(
+                    {"org_id": org_id, "column_key": _col_key,
+                     "source": "simpro_zip", "pending_review": False,
+                     "deleted_at": None},
+                    {"_id": 1},
+                )
+                if _prior_accepted:
+                    _pending = False
             new_cert = {
                 "id": new_id(), "org_id": org_id, "worker_id": worker_id,
                 "name": p["filename"].rsplit(".", 1)[0][:160],
@@ -620,7 +638,7 @@ async def _commit_zip(
                 "source": "simpro_zip",
                 "cert_kind_slug": p.get("matched_slug"),
                 "column_key": _col_key,
-                "pending_review": True,
+                "pending_review": _pending,
                 "expired_folder": bool(p.get("is_expired_folder")),
                 "created_by": user_id,
                 "created_at": ts, "updated_at": ts, "deleted_at": None,

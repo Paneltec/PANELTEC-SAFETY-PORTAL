@@ -35,6 +35,15 @@ router = APIRouter(
     dependencies=[Depends(require_module("certifications"))],  # v160.0.9
 )
 
+# v160.3.7ai — Second router for org-level cert operations that live
+# OUTSIDE the `/workers` prefix. Right now it hosts the bulk
+# `clear-pending-review` action; future org-scoped bulk ops belong
+# here too (bulk-reassign, bulk-recategorise, etc.).
+certs_router = APIRouter(
+    prefix="/certifications", tags=["certifications"],
+    dependencies=[Depends(require_module("certifications"))],
+)
+
 WRITE_ROLES = {"admin", "hseq_lead"}
 DEFAULT_FOLDER_NAME = "Licences & Tickets"
 FALLBACK_FOLDER_NAME = "Uncategorised"
@@ -841,3 +850,80 @@ async def trigger_reminder_scan(user: dict = Depends(get_current_user)):
     _require_write(user, action="scan_reminders")
     stats = await run_reminder_scan()
     return {"ok": True, **stats}
+
+
+
+# ────────────────────── Bulk operations ──────────────────────
+# v160.3.7ai — Bulk-clear the `pending_review` flag on Simpro-imported
+# certs. The v160.3.6 ZIP import backfill always stamps
+# `pending_review: True` on newly-created rows so a human can eyeball
+# the cert-name → column-key match. In practice the auto-slug matcher
+# is highly accurate (635+ live rows all show correct column_keys),
+# so the flag adds noise without adding signal once an admin has
+# already sanity-checked one row for a given column. This endpoint
+# lets admins clear the flag in one call, either row-by-row or in
+# bulk (scope="all_pending").
+class BulkClearPendingReviewIn(BaseModel):
+    ids: Optional[list[str]] = None
+    scope: Optional[str] = None     # "all_pending" — clear every pending row in the org
+
+
+@certs_router.post("/bulk-clear-pending-review")
+async def bulk_clear_pending_review(
+    body: BulkClearPendingReviewIn,
+    user: dict = Depends(get_current_user),
+):
+    """Clear `pending_review` on a set of certifications.
+
+    Payload variants:
+      • `{ids: ["cert-id-1", "cert-id-2"]}` — clear a specific selection.
+        Any id not owned by the caller's org is silently ignored.
+      • `{scope: "all_pending"}` — clear every pending cert in the
+        caller's org in one shot (the "271 rows" bulk action).
+      • Passing neither returns 400 to avoid an accidental
+        clear-nothing.
+    """
+    _require_write(user, action="bulk_clear_pending_review")
+    filt: dict = {
+        "org_id": user["org_id"],
+        "deleted_at": None,
+        "pending_review": True,
+    }
+    if body.ids:
+        # v160.3.7ai — Explicit id list. Bounded to avoid pathological
+        # payloads; 5000 is plenty for the largest org's Simpro dump.
+        if len(body.ids) > 5000:
+            raise HTTPException(400, "Too many ids in one request (max 5000)")
+        filt["id"] = {"$in": body.ids}
+    elif body.scope != "all_pending":
+        raise HTTPException(
+            400,
+            "Provide either `ids` or `scope: 'all_pending'`.",
+        )
+
+    ts = now_iso()
+    result = await db.worker_certifications.update_many(
+        filt,
+        {"$set": {"pending_review": False,
+                  "pending_review_cleared_at": ts,
+                  "pending_review_cleared_by": user.get("id"),
+                  "updated_at": ts}},
+    )
+    updated = int(result.modified_count or 0)
+
+    # Audit-log the bulk clear so a future auditor can retrace who
+    # released these rows. Only log when we actually updated something
+    # so we don't spam the log with no-op requests.
+    if updated:
+        await db.audit_logs.insert_one({
+            "org_id":     user["org_id"],
+            "actor_id":   user.get("id"),
+            "actor_name": user.get("name") or user.get("email"),
+            "action":     "certifications.bulk_clear_pending_review",
+            "at":         ts,
+            "count":      updated,
+            "scope":      body.scope if not body.ids else "ids",
+            "ids_count":  len(body.ids) if body.ids else None,
+        })
+
+    return {"updated": updated}

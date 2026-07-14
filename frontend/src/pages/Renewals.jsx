@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import EmailButton from '../components/EmailButton';
 // v160.3.7k — Inoculation sweep: lock body scroll while the NeedsEmailDrawer is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
+import { loadListSort, saveListSort } from '../lib/listSort';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
@@ -120,16 +121,25 @@ export default function Renewals() {
   };
 
   // v160.3.6j — sortable columns on the grid layout.
-  const [sortKey, setSortKey] = useState('contractor');
-  const [sortDir, setSortDir] = useState('asc');
+  // v160.3.7aj — persisted per-browser in `paneltec_list_sort:renewals`.
+  const _renewalSortDefault = { key: 'contractor', dir: 'asc' };
+  const [sortKey, setSortKey] = useState(() => loadListSort('renewals', _renewalSortDefault).key);
+  const [sortDir, setSortDir] = useState(() => loadListSort('renewals', _renewalSortDefault).dir);
 
   // v160.3.6w — per-row selection + bulk delete (Outbox v6d pattern)
   const [selected, setSelected] = useState(() => new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const toggleSort = (k) => {
-    if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(k); setSortDir('asc'); }
+    if (sortKey === k) {
+      const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+      setSortDir(nextDir);
+      saveListSort('renewals', k, nextDir);
+    } else {
+      setSortKey(k);
+      setSortDir('asc');
+      saveListSort('renewals', k, 'asc');
+    }
   };
   const sortedItems = useMemo(() => {
     const dir = sortDir === 'desc' ? -1 : 1;

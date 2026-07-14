@@ -13,6 +13,7 @@ import { summariseCertifications, personalFilledCount } from '../lib/workerSecti
 // v160.3.7k — Inoculation sweep: lock body scroll while ClientPicker or
 // EditModal is open on the Workers page.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
+import { loadListSort, saveListSort } from '../lib/listSort';
 import { filesUrl } from '../lib/downloadUrl';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import InductionsMatrix from '../components/InductionsMatrix';
@@ -1424,16 +1425,28 @@ export default function Workers() {
 
   // v160.3.6a — sortable column headers on the Directory tab.
   // Persisted in `?sortk=<col>&sortd=asc|desc`. Default: name asc.
-  const sortKey = sp.get('sortk') || 'name';
-  const sortDir = sp.get('sortd') === 'desc' ? 'desc' : 'asc';
+  // v160.3.7aj — When the URL has no `sortk`/`sortd` we fall back to
+  // the last remembered choice from `paneltec_list_sort:workers` so a
+  // fresh visit to /app/settings/workers restores the operator's
+  // preference. Clicks still update BOTH the URL (for share/bookmark)
+  // AND the localStorage cache (for next fresh visit).
+  const _workerSortDefault = loadListSort('workers', { key: 'name', dir: 'asc' });
+  const sortKey = sp.get('sortk') || _workerSortDefault.key;
+  const sortDir = (sp.get('sortd') === 'desc' || sp.get('sortd') === 'asc')
+    ? sp.get('sortd')
+    : _workerSortDefault.dir;
   const setSort = (nextKey) => {
     const next = new URLSearchParams(sp);
+    let nextDir;
     if (sortKey === nextKey) {
-      next.set('sortd', sortDir === 'asc' ? 'desc' : 'asc');
+      nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+      next.set('sortd', nextDir);
     } else {
+      nextDir = 'asc';
       next.set('sortk', nextKey);
-      next.set('sortd', 'asc');
+      next.set('sortd', nextDir);
     }
+    saveListSort('workers', nextKey, nextDir);
     setSp(next, { replace: true });
   };
   const _zipRank = (w) => {

@@ -18,6 +18,8 @@ import CertificationsGuide from '../components/certifications/CertificationsGuid
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import CertEditModal from '../components/certifications/CertEditModal';
 import CertDeleteConfirm from '../components/certifications/CertDeleteConfirm';
+import useLockBodyScroll from '../lib/useLockBodyScroll';
+import { loadListSort, saveListSort } from '../lib/listSort';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -167,11 +169,22 @@ export default function Certifications() {
   // "compliance attention queue" reads the same on page load.
   // v160.3.6g — sort keys re-scoped to WORKER-LEVEL aggregates.
   // v160.3.6h — default flipped to alphabetical (worker) per user feedback.
-  const [sortKey, setSortKey] = useState('worker');
-  const [sortDir, setSortDir] = useState('asc');
+  // v160.3.7aj — Per-browser persistence in `paneltec_list_sort:certifications`.
+  //   Fresh session → alpha-asc on `worker`. Explicit clicks are
+  //   remembered on reload. Clearing localStorage restores the default.
+  const _certSortDefault = { key: 'worker', dir: 'asc' };
+  const [sortKey, setSortKey] = useState(() => loadListSort('certifications', _certSortDefault).key);
+  const [sortDir, setSortDir] = useState(() => loadListSort('certifications', _certSortDefault).dir);
   const toggleSort = (k) => {
-    if (sortKey === k) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(k); setSortDir('asc'); }
+    if (sortKey === k) {
+      const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+      setSortDir(nextDir);
+      saveListSort('certifications', k, nextDir);
+    } else {
+      setSortKey(k);
+      setSortDir('asc');
+      saveListSort('certifications', k, 'asc');
+    }
   };
   // v160.3.6g — persist expanded worker rows in ?open= so refresh keeps them.
   const [urlParams, setUrlParams] = useSearchParams();
@@ -194,6 +207,9 @@ export default function Certifications() {
   const [previewCert, setPreviewCert] = useState(null);   // 👁  View PDF
   const [editCert, setEditCert] = useState(null);         // ✏️ Edit
   const [deleteCert, setDeleteCert] = useState(null);     // 🗑 Delete (admin)
+  // v160.3.7ai — Bulk-clear pending_review UI state.
+  const [showClearPending, setShowClearPending] = useState(false);
+  const [clearingPending, setClearingPending] = useState(false);
   // v160.3.6h — left-join workers so (a) zero-cert workers still appear as
   // rows, and (b) we can render their real photo instead of just initials.
   const [workers, setWorkers] = useState([]);
@@ -357,6 +373,31 @@ export default function Certifications() {
     finally { setSendingId(null); }
   };
 
+  // v160.3.7ai — Count of certs still waiting on an admin's manual
+  // "eyeball" pass. Powers the toolbar's bulk-clear affordance —
+  // hidden entirely at 0 so admins never see a no-op button.
+  const pendingCount = useMemo(
+    () => rows.reduce((n, r) => n + (r.pending_review ? 1 : 0), 0),
+    [rows],
+  );
+
+  const doClearAllPending = async () => {
+    if (clearingPending) return;
+    setClearingPending(true);
+    try {
+      const { data } = await api.post(
+        '/certifications/bulk-clear-pending-review',
+        { scope: 'all_pending' },
+      );
+      toast.success(
+        `Cleared pending review on ${data.updated || 0} cert${data.updated === 1 ? '' : 's'}`,
+      );
+      setShowClearPending(false);
+      await load();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setClearingPending(false); }
+  };
+
   return (
     <div className="max-w-7xl mx-auto" data-testid="certifications-page">
       <PageHeader crumb="Settings / Certifications" title="Certifications"
@@ -419,6 +460,23 @@ export default function Certifications() {
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           <Download /> Export CSV
         </button>
+        {/* v160.3.7ai — Bulk-clear pending review affordance.
+            Only renders when there's at least one pending row so
+            admins never see a no-op button. Uses a distinctive amber
+            look so it's obvious this is a batch admin action. */}
+        {canEdit && pendingCount > 0 && (
+          <button
+            onClick={() => setShowClearPending(true)}
+            data-testid="cert-bulk-clear-pending-btn"
+            title={`${pendingCount} imported cert${pendingCount === 1 ? '' : 's'} awaiting a manual review pass.`}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[#f6d99e] bg-[#fffaeb] text-sm font-semibold text-[#8c6a1a] hover:bg-[#fdf3d0]"
+          >
+            <ClipboardList size={14} /> Clear pending review
+            <span className="ml-1 text-[10px] tabular-nums px-1.5 py-0.5 rounded-full bg-[#f6d99e] text-[#5c4810]">
+              {pendingCount}
+            </span>
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -727,6 +785,79 @@ export default function Certifications() {
           onDeleted={(id) => setRows((rs) => rs.filter((r) => r.id !== id))}
         />
       )}
+      {showClearPending && (
+        <ClearPendingReviewModal
+          count={pendingCount}
+          busy={clearingPending}
+          onClose={() => (clearingPending ? null : setShowClearPending(false))}
+          onConfirm={doClearAllPending}
+        />
+      )}
+    </div>
+  );
+}
+
+// v160.3.7ai — Confirmation modal for the bulk "Clear pending review"
+// action. Uses `useLockBodyScroll` so the underlying certs table can't
+// scroll while the confirm is open. All copy is explicit about what
+// the action does (writes `pending_review: false` on N rows) and
+// what it does NOT do (no delete, no rename, no file move) so the
+// admin can hit Confirm without worrying.
+function ClearPendingReviewModal({ count, busy, onClose, onConfirm }) {
+  useLockBodyScroll(true);
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={onClose}
+      data-testid="cert-bulk-clear-pending-modal"
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl bg-white shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-slate-200">
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg bg-[#fffaeb] p-1.5 border border-[#f6d99e]">
+              <ClipboardList size={16} className="text-[#8c6a1a]" />
+            </div>
+            <h2 className="text-base font-semibold text-slate-900">
+              Clear pending review on {count.toLocaleString()} cert{count === 1 ? '' : 's'}?
+            </h2>
+          </div>
+        </div>
+        <div className="px-5 py-4 text-sm text-slate-700 space-y-2">
+          <p>
+            Every certification currently flagged{' '}
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#fffaeb] border border-[#f6d99e] text-[#8c6a1a] text-[10px] font-semibold uppercase tracking-wider">
+              pending review
+            </span>{' '}
+            in this organisation will be released.
+          </p>
+          <ul className="list-disc pl-5 text-xs text-slate-500 space-y-1">
+            <li>The cert file, worker link, and expiry date stay exactly as they are.</li>
+            <li>Only the <code>pending_review</code> flag flips to <code>false</code>.</li>
+            <li>An audit-log entry is written with your user id and the row count.</li>
+            <li>Future Simpro imports for a column with prior admin releases will auto-clear.</li>
+          </ul>
+        </div>
+        <div className="px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+          <button
+            type="button" onClick={onClose} disabled={busy}
+            data-testid="cert-bulk-clear-pending-cancel"
+            className="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+          <button
+            type="button" onClick={onConfirm} disabled={busy}
+            data-testid="cert-bulk-clear-pending-confirm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#8c6a1a] text-white text-sm font-semibold hover:bg-[#725417] disabled:opacity-60"
+          >
+            {busy && <Loader2 size={13} className="animate-spin" />}
+            Clear {count.toLocaleString()} row{count === 1 ? '' : 's'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
