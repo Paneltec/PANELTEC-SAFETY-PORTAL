@@ -83,18 +83,24 @@ function ModuleNode({ data }) {
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
 
-      {/* Frameless illustration */}
+      {/* v160.3.7w — Explicit white circular halo behind each icon.
+          `mix-blend-mode: multiply` from v7v wasn't enough (the source
+          PNGs have a fully-opaque white background). Wrapping the img
+          in a rounded-full white container gives a clean premium halo
+          over the pastel zone band. */}
       <div className="flex items-center justify-center transition-transform group-hover:scale-105"
            style={{ width: w, height: h }}>
         {imgSrc ? (
-          <img
-            src={imgSrc}
-            alt=""
-            style={{ mixBlendMode: 'multiply' }}
-            className="max-h-full max-w-full object-contain drop-shadow-md"
-            loading="lazy"
-            data-testid={`schematic-node-image-${slug}`}
-          />
+          <div className="bg-white rounded-full p-2 shadow-sm flex items-center justify-center"
+               style={{ width: w, height: h }}>
+            <img
+              src={imgSrc}
+              alt=""
+              className="max-h-24 max-w-24 object-contain"
+              loading="lazy"
+              data-testid={`schematic-node-image-${slug}`}
+            />
+          </div>
         ) : (
           <div className="flex flex-col items-center gap-1 text-slate-400">
             <Layers size={40} strokeWidth={1.5} />
