@@ -269,3 +269,123 @@ async def bulk_revoke_sessions(
         "skipped_self": skipped_self,
         "not_found": not_found,
     }
+
+
+# ---------- v160.3.7e — Purge inactive sessions (> N hours since activity) ----------
+
+class PurgeInactiveIn(BaseModel):
+    older_than_hours: int = Field(24, ge=1, le=720, description="Purge sessions with no activity in the last N hours (1–720).")
+
+
+def _cutoff_iso(hours: int) -> str:
+    """Return an ISO-8601 timestamp N hours ago in UTC (with `Z` suffix so it
+    string-compares against the same format we store on `last_activity_at`).
+    """
+    from datetime import timedelta
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    # Store-side format matches session_timeout's `.isoformat().replace('+00:00', 'Z')`
+    return cutoff.isoformat().replace('+00:00', 'Z')
+
+
+def _purge_query(user: dict, cutoff_iso: str, exclude_jti: str | None) -> dict:
+    """Build the Mongo filter for a purge. Sessions with no activity timestamp
+    at all are treated as inactive too — they're the oldest possible state."""
+    q: dict = {
+        "org_id": user["org_id"],
+        "$or": [
+            {"last_activity_at": {"$lt": cutoff_iso}},
+            {"last_activity_at": {"$exists": False}},
+            {"last_activity_at": None},
+        ],
+    }
+    if exclude_jti:
+        q["jti"] = {"$ne": exclude_jti}
+    return q
+
+
+@router.get("/active-sessions/purge-inactive/preview")
+async def preview_purge_inactive(
+    older_than_hours: int = 24,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Non-destructive preview: how many rows WOULD be purged. Lets the UI
+    show 'Purge N sessions' on the confirm button so admins see the blast
+    radius before they click."""
+    _require_admin(user)
+    if older_than_hours < 1 or older_than_hours > 720:
+        raise HTTPException(400, "older_than_hours must be between 1 and 720")
+    cutoff = _cutoff_iso(older_than_hours)
+    q = _purge_query(user, cutoff, exclude_jti=user.get("jti"))
+    n = await db.active_sessions.count_documents(q)
+    return {
+        "would_purge": int(n),
+        "cutoff": cutoff,
+        "older_than_hours": older_than_hours,
+    }
+
+
+@router.post("/active-sessions/purge-inactive")
+async def purge_inactive_sessions(
+    body: PurgeInactiveIn,
+    user: dict = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Bulk-purge every session whose `last_activity_at` is older than the
+    threshold. Excludes the caller's own current jti (same self-safety as
+    v7d bulk-revoke). Never bumps the caller's own `token_version` — admin
+    stays logged in mid-cleanup. Other users whose sessions are purged
+    DO get a `token_version` bump so cached JWTs die on the next request.
+    """
+    _require_admin(user)
+    hours = body.older_than_hours
+    cutoff = _cutoff_iso(hours)
+    caller_jti = user.get("jti")
+
+    # Snapshot which user_ids we're about to invalidate (for the
+    # cross-user token_version bump). We deliberately exclude the caller's
+    # own user_id from that set.
+    q = _purge_query(user, cutoff, exclude_jti=caller_jti)
+    victims = await db.active_sessions.find(
+        q, {"_id": 0, "jti": 1, "user_id": 1}
+    ).to_list(50_000)
+    if not victims:
+        return {
+            "purged": 0,
+            "cutoff": cutoff,
+            "skipped_self": bool(caller_jti),
+            "older_than_hours": hours,
+        }
+
+    other_user_ids = {
+        v["user_id"] for v in victims
+        if v.get("user_id") and v.get("user_id") != user["id"]
+    }
+    if other_user_ids:
+        await db.users.update_many(
+            {"id": {"$in": list(other_user_ids)}, "org_id": user["org_id"]},
+            {"$inc": {"token_version": 1}, "$set": {"updated_at": now_iso()}},
+        )
+
+    # Best-effort history snapshot (mirrors bulk-revoke). If the collection
+    # or module is missing, we still purge — audit trail is nice-to-have.
+    try:
+        from session_history import record_session_end
+        for v in victims:
+            try:
+                await record_session_end(
+                    v["jti"], user["org_id"], "admin_purge_inactive",
+                    fallback_user_id=v.get("user_id"),
+                )
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    result = await db.active_sessions.delete_many(q)
+    purged = int(getattr(result, "deleted_count", 0) or 0)
+
+    return {
+        "purged": purged,
+        "cutoff": cutoff,
+        "skipped_self": bool(caller_jti),
+        "older_than_hours": hours,
+    }

@@ -343,31 +343,35 @@ export default function SessionTimeoutCard() {
             )}
           </div>
         </div>
-        {/* Phase 3.21 Item 5 — non-destructive force-refresh-all */}
-        <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4">
+        {/* Phase 3.21 Item 5 — non-destructive force-refresh-all.
+            v160.3.7f — Toned down from amber (alarming) to slate (utility).
+            Users kept reading the amber styling as "an alert blocking me"
+            when it's just a system-maintenance tool. Same functionality,
+            calmer visual signal. */}
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <div className="flex items-start gap-3">
-            <div className="rounded-lg bg-amber-100 p-1.5 text-amber-700"><ArrowClockwise20Regular /></div>
+            <div className="rounded-lg bg-slate-200 p-1.5 text-slate-600"><ArrowClockwise20Regular /></div>
             <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-bold text-amber-900">Force refresh all clients</h3>
-              <p className="text-xs text-amber-800 mt-0.5">
+              <h3 className="text-sm font-bold text-slate-800">Force refresh all clients</h3>
+              <p className="text-xs text-slate-600 mt-0.5">
                 Broadcasts a cache-bust signal to every connected user. Each
                 client purges caches and hard-reloads within 60 seconds. Users
                 remain signed in — only the bundle is refreshed.
               </p>
               {!confirmForceRefresh ? (
                 <button type="button" onClick={openForceRefresh} data-testid="force-refresh-all-btn"
-                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-400 bg-white text-xs font-bold text-amber-800 hover:bg-amber-100">
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-100">
                   <ArrowClockwise20Regular style={{ width: 12, height: 12 }} /> Force refresh all clients
                 </button>
               ) : (
                 <div className="mt-3 flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-semibold text-amber-900" data-testid="force-refresh-count">
+                  <span className="text-xs font-semibold text-slate-800" data-testid="force-refresh-count">
                     {connectedCount === null
                       ? <span className="inline-flex items-center gap-1"><Loader2 size={11} className="animate-spin" /> counting connected clients…</span>
                       : <>{connectedCount} user{connectedCount === 1 ? '' : 's'} will hard-reload within 60 seconds.</>}
                   </span>
                   <button type="button" onClick={runForceRefresh} disabled={refreshing} data-testid="force-refresh-all-confirm"
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 disabled:opacity-60">
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-bold hover:bg-slate-900 disabled:opacity-60">
                     {refreshing ? <Loader2 size={12} className="animate-spin" /> : <ArrowClockwise20Regular style={{ width: 12, height: 12 }} />} Yes, broadcast refresh
                   </button>
                   <button type="button" onClick={() => setConfirmForceRefresh(false)} disabled={refreshing}

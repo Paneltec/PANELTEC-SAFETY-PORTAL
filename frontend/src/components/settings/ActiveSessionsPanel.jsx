@@ -12,9 +12,10 @@
 //     reaches the endpoint the caller can never nuke themselves.
 
 import { useEffect, useState } from 'react';
-import { Trash2, RefreshCw, Loader2, Users } from 'lucide-react';
+import { Trash2, RefreshCw, Loader2, Users, Timer } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
+import { RUNNING_VERSION } from '../../lib/version';
 import {
   AlertDialog, AlertDialogContent, AlertDialogHeader,
   AlertDialogTitle, AlertDialogDescription, AlertDialogFooter,
@@ -53,6 +54,11 @@ export default function ActiveSessionsPanel() {
   const [selected, setSelected] = useState(() => new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // v160.3.7e — "Purge inactive > 24h" state
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false);
+  const [purgePreview, setPurgePreview] = useState(null);   // { would_purge, cutoff }
+  const [purgeBusy, setPurgeBusy] = useState(false);
 
   const load = async () => {
     try {
@@ -154,6 +160,33 @@ export default function ActiveSessionsPanel() {
     (r) => r.is_current_session && selected.has(r.jti),
   );
 
+  // v160.3.7e — Purge inactive > 24h. Opens confirm with a preview count.
+  const openPurge = async () => {
+    setPurgeConfirmOpen(true);
+    setPurgePreview(null);
+    try {
+      const { data } = await api.get('/admin/active-sessions/purge-inactive/preview?older_than_hours=24');
+      setPurgePreview(data);
+    } catch (e) {
+      toast.error(apiError(e) || 'Preview failed');
+    }
+  };
+  const doPurge = async () => {
+    setPurgeBusy(true);
+    try {
+      const { data } = await api.post('/admin/active-sessions/purge-inactive', { older_than_hours: 24 });
+      toast.success(`${data?.purged || 0} inactive session${data?.purged === 1 ? '' : 's'} purged.`);
+      setPurgeConfirmOpen(false);
+      setPurgePreview(null);
+      clearSelection();
+      await load();
+    } catch (e) {
+      toast.error(apiError(e) || 'Purge failed');
+    } finally {
+      setPurgeBusy(false);
+    }
+  };
+
   return (
     <div className="mt-5 rounded-xl border border-slate-200 bg-white" data-testid="active-sessions-panel">
       <div className="flex items-center justify-between px-3.5 py-3 border-b border-slate-200 bg-slate-50/60">
@@ -174,6 +207,17 @@ export default function ActiveSessionsPanel() {
             <div className="text-sm font-bold text-slate-900">Active sessions</div>
             <div className="text-[11px] text-slate-500">
               {loading ? 'Loading…' : `${rows.length} live session${rows.length === 1 ? '' : 's'} · auto-refreshes every 30s`}
+              {' · '}
+              {/* v160.3.7f — Visible bundle-version chip so a stale-cache
+                  browser is obvious. If a user reports a bug and this chip
+                  shows an older version than the backend, they need a hard
+                  refresh before we chase server bugs. */}
+              <span
+                data-testid="active-sessions-bundle-version"
+                title="Frontend bundle version — hard-refresh if this is behind the backend"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono text-[10px]">
+                {RUNNING_VERSION}
+              </span>
             </div>
           </div>
         </div>
@@ -183,6 +227,16 @@ export default function ActiveSessionsPanel() {
           data-testid="active-sessions-refresh"
           className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           {loading ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />} Refresh
+        </button>
+        {/* v160.3.7e — Purge inactive > 24h. Safe for anyone active. */}
+        <button
+          type="button"
+          onClick={openPurge}
+          disabled={loading || purgeBusy}
+          title="Deletes all sessions with no activity in the last 24 hours — safe for anyone actively signed in"
+          data-testid="active-sessions-purge-inactive-btn"
+          className="ml-1.5 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+          <Timer size={11} /> Purge inactive &gt; 24h
         </button>
       </div>
 
@@ -346,6 +400,47 @@ export default function ActiveSessionsPanel() {
               className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
               {bulkBusy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
               Revoke {selected.size}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* v160.3.7e — Purge inactive > 24h confirm */}
+      <AlertDialog open={purgeConfirmOpen} onOpenChange={(o) => { if (!o && !purgeBusy) { setPurgeConfirmOpen(false); setPurgePreview(null); } }}>
+        <AlertDialogContent data-testid="active-sessions-purge-dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Purge inactive sessions</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete every session whose last activity is
+              older than <strong>24 hours</strong>. Active users won&apos;t be
+              affected. Your own session is excluded automatically.
+              <span className="mt-3 block rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700" data-testid="active-sessions-purge-preview">
+                {purgePreview === null ? (
+                  <>
+                    <Loader2 size={12} className="inline animate-spin mr-1.5" />
+                    Calculating impact…
+                  </>
+                ) : (
+                  <>
+                    <strong className="tabular-nums">{purgePreview.would_purge}</strong>{' '}
+                    session{purgePreview.would_purge === 1 ? '' : 's'} qualify for purge.
+                    <span className="block text-[10px] text-slate-500 mt-0.5">
+                      Cutoff: {new Date(purgePreview.cutoff).toLocaleString()}
+                    </span>
+                  </>
+                )}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={purgeBusy} data-testid="active-sessions-purge-cancel">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={doPurge}
+              disabled={purgeBusy || purgePreview === null || purgePreview.would_purge === 0}
+              data-testid="active-sessions-purge-confirm"
+              className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
+              {purgeBusy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
+              {purgePreview === null ? 'Purge' : `Purge ${purgePreview.would_purge} session${purgePreview.would_purge === 1 ? '' : 's'}`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
