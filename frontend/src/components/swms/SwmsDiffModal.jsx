@@ -7,6 +7,8 @@
 import { useEffect, useState } from 'react';
 import { Loader2, X, ArrowRight } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 const SECTIONS = [
   { key: 'hazards',           label: 'Hazards' },
@@ -16,6 +18,7 @@ const SECTIONS = [
 ];
 
 export default function SwmsDiffModal({ swmsId, previousId, currentLabel, previousLabel, onClose }) {
+  useLockBodyScroll();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
 

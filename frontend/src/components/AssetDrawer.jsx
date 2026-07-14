@@ -7,6 +7,8 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { stashInlinePdf } from '../lib/pdfStash';
+// v160.3.7k — Inoculation sweep: lock body scroll while this drawer is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
 import LiveCountersPanel from './LiveCountersPanel';
 import { Link, useNavigate } from 'react-router-dom';
@@ -104,6 +106,7 @@ const emptyForm = {
 };
 
 export default function AssetDrawer({ asset, onClose, onSaved }) {
+  useLockBodyScroll();
   const isEdit = !!asset?.id;
   const isNavixy = !!asset?.navixy_device_id;
   const [tab, setTab] = useState('details');

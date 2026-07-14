@@ -3,6 +3,8 @@ import { Upload, Loader2, Check, X as XIcon, AlertCircle, Users, Sparkles } from
 import api, { apiError } from '../../lib/api';
 import { toast } from 'sonner';
 import { UnmatchedSuggestions } from './SimproZipUploadModal';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 // v160.3.3 — Bulk multi-ZIP upload. Drops N ZIPs at once, auto-identifies
 // which worker each ZIP belongs to via `/identify-zip`, admins can override
@@ -10,6 +12,7 @@ import { UnmatchedSuggestions } from './SimproZipUploadModal';
 // v160.3.4 — adds a "Review unmatched" step between identify and commit
 // that combines auto-taxonomy suggestions across all ZIPs.
 export function BulkSimproZipModal({ onClose, onDone }) {
+  useLockBodyScroll();
   const [phase, setPhase] = useState('idle'); // idle | identifying | ready | reviewing | running | done | error
   const [zips, setZips] = useState([]);         // [{file, name, matched_worker, match_score, tokens}]
   const [workers, setWorkers] = useState([]);

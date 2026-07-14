@@ -884,16 +884,23 @@ function LanDeliveryCard() {
 
 
 // Compact disk-usage bar. Lives inside LanDeliveryCard.
+// v160.3.7j — Normalise field names: the backup agent reports
+// `{total, used, free}` (bytes, no suffix) but this component previously
+// only looked at `_bytes`-suffixed keys, so the gauge always rendered
+// "0 MB free of 0 MB · 0% used". Accept both shapes for forward-compat.
 function DiskGauge({ usage, reportedAt }) {
-  const used = Number(usage.used_bytes) || 0;
-  const total = Number(usage.total_bytes) || 1;
-  const free = Number(usage.free_bytes) || 0;
-  const pct = Math.min(100, Math.round((used / total) * 100));
+  const total = Number(usage.total_bytes ?? usage.total) || 0;
+  const used  = Number(usage.used_bytes  ?? usage.used)  || 0;
+  const free  = Number(usage.free_bytes  ?? usage.free)  || 0;
+  const pct   = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  const path  = usage.path || usage.mount_point || null;
+  const missing = total === 0;
   // Traffic-light colour band.
   const colour =
-    pct >= 90 ? "#ef4444" :
-    pct >= 70 ? "#f59e0b" :
-                "#10b981";
+    missing    ? "#94a3b8" :  // slate-400 when we have no reading
+    pct >= 90  ? "#ef4444" :
+    pct >= 70  ? "#f59e0b" :
+                 "#10b981";
   const fmtGB = (b) =>
     b >= 1024 ** 4 ? `${(b / 1024 ** 4).toFixed(2)} TB` :
     b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` :
@@ -906,9 +913,11 @@ function DiskGauge({ usage, reportedAt }) {
       }}>
       <div style={{ display: "flex", justifyContent: "space-between",
                     marginBottom: 4 }}>
-        <span><strong>NAS disk · {usage.path}</strong></span>
+        <span><strong>NAS disk{path ? ` · ${path}` : ""}</strong></span>
         <span style={{ color: colour, fontWeight: 800 }}>
-          {fmtGB(free)} free of {fmtGB(total)} · {pct}% used
+          {missing
+            ? "reading pending…"
+            : <>{fmtGB(free)} free of {fmtGB(total)} · {pct}% used</>}
         </span>
       </div>
       <div style={{

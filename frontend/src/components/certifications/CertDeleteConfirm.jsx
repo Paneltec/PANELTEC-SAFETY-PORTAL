@@ -7,8 +7,11 @@ import { useEffect, useState } from 'react';
 import { X, Loader2, ShieldAlert, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 export default function CertDeleteConfirm({ cert, onClose, onDeleted }) {
+  useLockBodyScroll();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {

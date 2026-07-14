@@ -3,6 +3,8 @@ import { Mail, X as XIcon, Loader2, Send, Paperclip, ChevronDown, ChevronRight, 
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import api, { apiError } from '../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -57,6 +59,7 @@ export default function EmailSendModal({
   const [message, setMessage] = useState(defaultBody.replace(/<[^>]+>/g, '').trim());
   const [m365Connected, setM365Connected] = useState(false);
   const [busy, setBusy] = useState(false);
+  useLockBodyScroll(isOpen);
 
   useEffect(() => {
     if (!isOpen) return;

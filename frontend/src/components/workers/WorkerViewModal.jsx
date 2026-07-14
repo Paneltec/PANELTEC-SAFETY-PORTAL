@@ -7,6 +7,8 @@ import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTrian
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
 import { toast } from 'sonner';
 
@@ -171,6 +173,7 @@ function CertRow({ cert, workerId }) {
 }
 
 export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
+  useLockBodyScroll();
   const [loading, setLoading] = useState(true);
   const [worker, setWorker] = useState(null);
   const [certs, setCerts] = useState([]);

@@ -8,6 +8,8 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 function fmtAgo(iso) {
   if (!iso) return null;
@@ -83,6 +85,7 @@ export default function LiveCountersPanel({ asset, onAssetUpdated }) {
 // AT-OR-BEFORE that snapshot but whose values are GREATER — that would break
 // the delta chain. (Same-day corrections are allowed; the backend upserts.)
 function HistoricalReadingModal({ asset, open, onClose, onSaved }) {
+  useLockBodyScroll(open);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [hours, setHours] = useState('');
   const [km, setKm] = useState('');

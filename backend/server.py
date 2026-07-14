@@ -483,6 +483,75 @@ async def on_startup():
             scheduler.add_job(_backup_catchup, "date",
                               run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
                               id="backup_snapshot_catchup", replace_existing=True)
+            # v160.3.7j — belt-and-braces watchdog. Every hour, verify the
+            # `backup_snapshot_6h` cron job is still registered on the
+            # scheduler. If APScheduler ever loses the job (e.g. an
+            # unhandled exception blew the trigger away, or a
+            # rare `replace_existing=True` race between two boots),
+            # re-register it AND kick a catch-up if the last snapshot is
+            # more than 25 h old. Runs quietly — never raises.
+            async def _backup_watchdog():
+                try:
+                    sched = getattr(app.state, "scheduler", None)
+                    if sched is None:
+                        return
+                    reregistered = []
+                    if sched.get_job("backup_snapshot_6h") is None:
+                        sched.add_job(
+                            _do_snap, "cron",
+                            hour="*/6", minute=0,
+                            timezone="Australia/Sydney",
+                            id="backup_snapshot_6h", max_instances=1,
+                            coalesce=True, replace_existing=True,
+                            misfire_grace_time=3 * 3600,
+                        )
+                        reregistered.append("backup_snapshot_6h")
+                    if sched.get_job("backup_snapshot_cob") is None:
+                        sched.add_job(
+                            _do_snap, "cron",
+                            day_of_week="mon-fri", hour=17, minute=0,
+                            timezone="Australia/Sydney",
+                            id="backup_snapshot_cob", max_instances=1,
+                            coalesce=True, replace_existing=True,
+                            misfire_grace_time=3 * 3600,
+                        )
+                        reregistered.append("backup_snapshot_cob")
+                    if reregistered:
+                        log.warning(
+                            "backup watchdog: re-registered missing job(s): %s",
+                            ", ".join(reregistered),
+                        )
+                        # Kick a catch-up too — if the job vanished for
+                        # >25 h we want a snapshot right now, not at the
+                        # next natural cron slot.
+                        try:
+                            latest = await _mongo_db.bk_snapshots.find_one(
+                                {"status": "ready"}, sort=[("created_at", -1)])
+                            hrs = None
+                            if latest and latest.get("created_at"):
+                                raw = latest["created_at"]
+                                if isinstance(raw, str):
+                                    try:
+                                        raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                                    except Exception:
+                                        raw = None
+                                if isinstance(raw, datetime):
+                                    if raw.tzinfo is None:
+                                        raw = raw.replace(tzinfo=timezone.utc)
+                                    hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
+                            if hrs is None or hrs > 25:
+                                log.warning(
+                                    "backup watchdog: snapshot age=%s h — kicking catch-up",
+                                    hrs,
+                                )
+                                await _do_snap()
+                        except Exception as ce:
+                            log.warning("backup watchdog catch-up failed: %s", ce)
+                except Exception as we:
+                    log.warning("backup watchdog failed: %s", we)
+            scheduler.add_job(_backup_watchdog, "interval", hours=1,
+                              id="backup_snapshot_watchdog", max_instances=1,
+                              coalesce=True, replace_existing=True)
         except Exception as e:
             log.warning("backup_snapshot scheduler hook failed: %s", e)
         # v160.3.2 — Optional Simpro delta cron (opt-in via env).

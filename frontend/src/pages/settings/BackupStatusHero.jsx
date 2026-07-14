@@ -188,6 +188,18 @@ export default function BackupStatusHero() {
         </div>
       </div>
 
+      {/* v160.3.7j — When status is anything other than healthy, surface
+          the health_reason inline (no click required) so admins immediately
+          see the diagnostic sentence explaining the DOWN / ATTENTION state. */}
+      {data.health !== 'healthy' && data.health_reason && (
+        <div data-testid="backup-status-diagnostic"
+             style={{ marginTop: 10, padding: '8px 12px',
+                      background: 'rgba(15,23,42,0.06)', borderRadius: 6,
+                      fontSize: 12, color: p.fg }}>
+          {data.health_reason}
+        </div>
+      )}
+
       {tipOpen && (
         <div data-testid="backup-status-tooltip"
              style={{ marginTop: 10, padding: '8px 12px',

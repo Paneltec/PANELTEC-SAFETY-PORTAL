@@ -2,6 +2,8 @@ import React, { useCallback, useState } from 'react';
 import { Upload, Loader2, FileText, Image as ImageIcon, ShieldAlert, Check, X as XIcon, AlertCircle } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { toast } from 'sonner';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 // v160.3.2 — Simpro ZIP Upload modal (worker-scoped).
 // Two-step flow:
@@ -9,6 +11,7 @@ import { toast } from 'sonner';
 //   2. Confirm  → POST ?dry_run=0 → commit + toast
 // Also supports individual file drag-drop (ZIP fallback path).
 export function SimproZipUploadModal({ worker, onClose, onDone }) {
+  useLockBodyScroll();
   const [phase, setPhase] = useState('idle'); // idle | planning | preview | running | done | error
   const [preview, setPreview] = useState(null);
   const [result, setResult] = useState(null);

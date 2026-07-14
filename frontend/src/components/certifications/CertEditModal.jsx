@@ -12,8 +12,11 @@ import { useEffect, useState } from 'react';
 import { X, Loader2, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 export default function CertEditModal({ cert, onClose, onSaved }) {
+  useLockBodyScroll();
   const [name, setName] = useState('');
   const [issuer, setIssuer] = useState('');
   const [issueDate, setIssueDate] = useState('');

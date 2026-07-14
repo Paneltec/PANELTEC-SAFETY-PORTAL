@@ -92,7 +92,7 @@ export default function ActiveSessionsPanel() {
     setBusyJti(row.jti);
     try {
       await api.delete(`/admin/active-sessions/${row.jti}`);
-      toast.success(`${row.user_name}'s session revoked.`);
+      toast.success(`${row.user_name}'s session deleted.`);
       setRows((rs) => rs.filter((r) => r.jti !== row.jti));
       setSelected((prev) => {
         if (!prev.has(row.jti)) return prev;
@@ -142,7 +142,7 @@ export default function ActiveSessionsPanel() {
       const { data } = await api.post('/admin/active-sessions/bulk-revoke', { ids });
       const revoked = data?.revoked || 0;
       const notFound = data?.not_found?.length || 0;
-      let msg = `${revoked} session${revoked === 1 ? '' : 's'} revoked`;
+      let msg = `${revoked} session${revoked === 1 ? '' : 's'} deleted`;
       if (notFound > 0) msg += ` · ${notFound} already gone`;
       if (data?.skipped_self) msg += ' · your own session was skipped';
       toast.success(msg);
@@ -150,7 +150,7 @@ export default function ActiveSessionsPanel() {
       clearSelection();
       await load();
     } catch (e) {
-      toast.error(apiError(e) || 'Bulk revoke failed');
+      toast.error(apiError(e) || 'Bulk delete failed');
     } finally {
       setBulkBusy(false);
     }
@@ -263,7 +263,7 @@ export default function ActiveSessionsPanel() {
                   onChange={() => toggleRow(r.jti)}
                   disabled={r.is_current_session}
                   aria-label={r.is_current_session
-                    ? 'Your current session — cannot be selected for revoke'
+                    ? 'Your current session — cannot be selected for delete'
                     : `Select ${r.user_name}'s session`}
                   data-testid={`session-select-${r.jti}`}
                   onClick={(e) => e.stopPropagation()}
@@ -295,9 +295,9 @@ export default function ActiveSessionsPanel() {
                   disabled={r.is_current_session || busyJti === r.jti}
                   title={r.is_current_session
                     ? 'This is your current session'
-                    : 'Revoke this session'}
+                    : 'Delete this session'}
                   data-testid={`revoke-session-${r.jti}`}
-                  aria-label={`Revoke ${r.user_name}'s session`}
+                  aria-label={`Delete ${r.user_name}'s session`}
                   className="inline-flex items-center justify-center w-7 h-7 rounded-lg border border-rose-200 bg-white text-rose-600 hover:bg-rose-500 hover:text-white hover:border-rose-500 transition-colors disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-rose-600 disabled:hover:border-rose-200">
                   {busyJti === r.jti ? <Loader2 size={11} className="animate-spin" /> : <Trash2 size={12} />}
                 </button>
@@ -334,7 +334,7 @@ export default function ActiveSessionsPanel() {
               data-testid="active-sessions-selection-delete"
               className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold uppercase tracking-wider px-4 py-2"
             >
-              <Trash2 size={13} /> Delete selected (Revoke sessions)
+              <Trash2 size={13} /> Delete selected
             </button>
           </div>
         </div>
@@ -344,7 +344,7 @@ export default function ActiveSessionsPanel() {
       <AlertDialog open={!!confirmRow} onOpenChange={(open) => !open && setConfirmRow(null)}>
         <AlertDialogContent data-testid="revoke-session-dialog">
           <AlertDialogHeader>
-            <AlertDialogTitle>Revoke this session?</AlertDialogTitle>
+            <AlertDialogTitle>Delete this session?</AlertDialogTitle>
             <AlertDialogDescription>
               {confirmRow && (
                 <>
@@ -367,7 +367,7 @@ export default function ActiveSessionsPanel() {
               data-testid="revoke-session-confirm"
               className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
               {busyJti ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
-              Revoke session
+              Delete session
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -378,7 +378,7 @@ export default function ActiveSessionsPanel() {
         <AlertDialogContent data-testid="active-sessions-bulk-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Revoke {selected.size} selected session{selected.size === 1 ? '' : 's'}?
+              Delete {selected.size} selected session{selected.size === 1 ? '' : 's'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               Each selected user will be logged out on their next request. Any
@@ -399,7 +399,7 @@ export default function ActiveSessionsPanel() {
               data-testid="active-sessions-bulk-confirm"
               className="bg-rose-600 hover:bg-rose-700 focus:ring-rose-600">
               {bulkBusy ? <Loader2 size={14} className="animate-spin mr-1.5" /> : <Trash2 size={14} className="mr-1.5" />}
-              Revoke {selected.size}
+              Delete {selected.size}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

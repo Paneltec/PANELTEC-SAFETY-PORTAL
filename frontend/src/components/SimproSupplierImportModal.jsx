@@ -8,11 +8,14 @@ import { X, Loader2, RefreshCw, Check, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const WRITE_ROLES = new Set(['admin', 'manager']);
 const ROW_HEIGHT = 60; // px — used for windowed scroll calculation
 
 export default function SimproSupplierImportModal({ onClose, onImported }) {
+  useLockBodyScroll();
   const user = getUser();
   const canImport = WRITE_ROLES.has(user?.role);
   const [rows, setRows] = useState([]);

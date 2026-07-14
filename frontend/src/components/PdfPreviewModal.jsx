@@ -13,6 +13,8 @@ import { X, Download, ExternalLink, Loader2, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 import * as pdfjsLib from 'pdfjs-dist';
 import api, { apiError } from '../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { stashInlinePdf } from '../lib/pdfStash';
 
 // v151 — pdfjs-dist workerSrc. Serve the worker as a same-origin static
@@ -40,6 +42,7 @@ const PDF_OK = (mime, name) => {
 export const isPdfPreviewable = PDF_OK;
 
 export default function PdfPreviewModal({ file, blobUrl, directUrl, headerExtras, footerExtras, onClose }) {
+  useLockBodyScroll();
   // Three modes:
   //   1. file={id, filename}            → mint a signed token, build iframe src.
   //   2. directUrl + file={filename}    → caller already has a same-origin

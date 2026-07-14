@@ -15,6 +15,8 @@ import { useState } from 'react';
 import { X, Loader2, Upload, CheckCircle2, AlertTriangle, FileWarning } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this wizard is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 const STATUS_PILL = {
   high:        'bg-[#d8ecdd] text-[#1f7a3f]',
@@ -24,6 +26,7 @@ const STATUS_PILL = {
 };
 
 export default function InductionImportWizard({ onClose, onCommitted }) {
+  useLockBodyScroll();
   const [step, setStep] = useState(1);
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState(false);

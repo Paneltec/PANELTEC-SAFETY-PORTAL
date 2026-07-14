@@ -12,6 +12,8 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { stashInlinePdf } from '../lib/pdfStash';
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
@@ -40,6 +42,7 @@ export default function InductionCardModal({
   initialMode = 'view',  // 'view' | 'edit' | 'add'
   onClose, onSaved,
 }) {
+  useLockBodyScroll();
   const user = getUser();
   const canWrite = WRITE_ROLES.has(user?.role);
   const canDelete = user?.role === 'admin';

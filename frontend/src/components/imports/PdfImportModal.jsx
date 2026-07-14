@@ -12,6 +12,8 @@ import { Upload, CheckCircle2, XCircle, AlertCircle, Loader2, ExternalLink, X, I
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import api, { apiError } from '../../lib/api';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../../lib/useLockBodyScroll';
 
 const STATUS_MAP = {
   queued:     { label: 'Queued',      icon: Loader2,        cls: 'text-slate-400' },
@@ -23,6 +25,7 @@ const STATUS_MAP = {
 };
 
 export default function PdfImportModal({ open, onClose, onImported }) {
+  useLockBodyScroll(open);
   const [files, setFiles] = useState([]); // {id, name, size, status, resp, error}
   const [busy, setBusy] = useState(false);
   const [drag, setDrag] = useState(false);

@@ -3,8 +3,11 @@
 // the parent hook, "Log out now" exits immediately.
 import { useEffect, useState } from 'react';
 import { ShieldAlert } from 'lucide-react';
+// v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 export default function SessionWarningModal({ secondsRemaining, onStay, onLogout }) {
+  useLockBodyScroll();
   const [n, setN] = useState(secondsRemaining || 60);
   useEffect(() => {
     if (n <= 0) { onLogout?.(); return; }
