@@ -304,6 +304,7 @@ export default function ProgramSchematicPage() {
             zoomOnDoubleClick={false}
             panOnScroll={false}
             panOnDrag={false}
+            preventScrolling={false}
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable={false}
