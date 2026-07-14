@@ -37,6 +37,8 @@ import {
   Trophy24Regular, Trophy24Filled,
   Mail24Regular, Mail24Filled,
   BookOpen24Regular, BookOpen24Filled,
+  // v160.3.7q — Program Schematic nav item.
+  Diagram24Regular, Diagram24Filled,
 } from '@fluentui/react-icons';
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
@@ -97,6 +99,8 @@ const NAV = [
     { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
     { to: '/app/settings/backup', label: 'Backup & Restore', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-settings-backup', adminOnly: true, pastel: 'slate' },
+    // v160.3.7q — Bird's-eye program schematic (adminOnly since it links out to every admin surface).
+    { to: '/app/settings/schematic', label: 'Program Schematic', icon: Diagram24Regular, iconActive: Diagram24Filled, testid: 'nav-settings-schematic', adminOnly: true, pastel: 'lavender' },
     { to: '/app/outbox', label: 'Email outbox', icon: Mail24Regular, iconActive: Mail24Filled, testid: 'nav-outbox', pastel: 'slate' },
     // Phase 4.11 (v121) — top-level Help entry so the user manual is
     // discoverable from anywhere in the app, not just the dashboard

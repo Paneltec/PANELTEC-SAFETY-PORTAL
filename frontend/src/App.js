@@ -63,6 +63,8 @@ import CacheBusterBanner from '@/components/CacheBusterBanner';
 // v160.3.7i — Simpro import walkthrough rehomed to its own page so it
 // stops breaking the Users & Permissions layout.
 import SimproImportGuidePage from '@/pages/help/SimproImportGuidePage';
+// v160.3.7q — Program-wide visual schematic
+import ProgramSchematicPage from '@/pages/settings/ProgramSchematicPage';
 
 // Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
 // at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
@@ -150,6 +152,8 @@ function App() {
               <Route path="settings/users" element={<UsersManagement />} />
               {/* v160.3.7i — dedicated help page for the Simpro ZIP import walkthrough. */}
               <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />
+              {/* v160.3.7q — Program-wide visual schematic diagram. */}
+              <Route path="settings/schematic" element={<ProgramSchematicPage />} />
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
               <Route path="settings/workers" element={<Workers />} />

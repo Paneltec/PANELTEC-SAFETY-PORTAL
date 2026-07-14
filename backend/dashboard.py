@@ -195,3 +195,75 @@ async def serve_form_photo(submission_id: str, name: str):
 @files_router.get("/swms_scans/{name}")
 async def serve_swms_scan(name: str):
     return _serve("swms_scans", name)
+
+
+# v160.3.7q — Program Schematic module-stats endpoint.
+#
+# Feeds the `/settings/schematic` bird's-eye page. Returns a shallow
+# `{collection: count}` map — org-scoped, live-count aggregate across
+# every collection surfaced on the diagram. Cached in-process for 30s so
+# repeated tab-switches don't hammer Mongo. Not persisted; the cache
+# rebuilds on the next request after expiry or on process restart.
+import asyncio as _asyncio
+import time as _time
+
+_MODULE_STATS_CACHE: dict = {}  # org_id -> (ts, payload)
+_MODULE_STATS_TTL = 30.0
+
+_MODULE_STATS_COLLECTIONS = {
+    # People
+    "workers":          {"c": "workers",           "q": {}},
+    "users":            {"c": "users",             "q": {}},
+    "active_sessions":  {"c": "active_sessions",   "q": {}},
+    # Capture
+    "swms":             {"c": "swms",              "q": {"deleted_at": None}},
+    "prestarts":        {"c": "prestarts",         "q": {"deleted_at": None}},
+    "diary_entries":    {"c": "diary_entries",     "q": {"deleted_at": None}},
+    "hazards":          {"c": "hazards",           "q": {"deleted_at": None}},
+    "incidents":        {"c": "incidents",         "q": {"deleted_at": None}},
+    "inspections":      {"c": "inspections",       "q": {"deleted_at": None}},
+    "risk_assessments": {"c": "risk_assessments",  "q": {"deleted_at": None}},
+    "form_submissions": {"c": "form_submissions",  "q": {"deleted_at": None}},
+    "form_templates":   {"c": "form_templates",    "q": {}},
+    # Compliance
+    "doc_folders":      {"c": "doc_folders",       "q": {}},
+    "doc_files":        {"c": "doc_files",         "q": {}},
+    "certifications":   {"c": "certifications",    "q": {}},
+    "contractors":      {"c": "contractors",       "q": {"deleted_at": None}},
+    "renewals":         {"c": "renewals",          "q": {}},
+    # Fleet
+    "sites":            {"c": "sites",             "q": {"deleted_at": None}},
+    "assets":           {"c": "assets",            "q": {}},
+    # Backup
+    "bk_snapshots":     {"c": "bk_snapshots",      "q": {}},
+}
+
+
+@router.get("/module-stats")
+async def module_stats(user: dict = Depends(get_current_user)):
+    """Aggregate live counts for the Program Schematic diagram.
+
+    Cached per-org for 30 s. Uses `asyncio.gather` across every counted
+    collection so the whole payload comes back in ~one Mongo round-trip
+    of latency instead of 20 sequential queries.
+    """
+    org_id = user["org_id"]
+    now = _time.time()
+    hit = _MODULE_STATS_CACHE.get(org_id)
+    if hit and (now - hit[0]) < _MODULE_STATS_TTL:
+        return {**hit[1], "cached": True, "ttl_s": _MODULE_STATS_TTL}
+
+    async def _one(name: str, cfg: dict):
+        q = {"org_id": org_id, **cfg["q"]}
+        try:
+            n = await db[cfg["c"]].count_documents(q)
+        except Exception:
+            n = 0
+        return name, n
+
+    pairs = await _asyncio.gather(*[
+        _one(name, cfg) for name, cfg in _MODULE_STATS_COLLECTIONS.items()
+    ])
+    payload = {"counts": dict(pairs), "generated_at": datetime.now(timezone.utc).isoformat()}
+    _MODULE_STATS_CACHE[org_id] = (now, payload)
+    return {**payload, "cached": False, "ttl_s": _MODULE_STATS_TTL}
