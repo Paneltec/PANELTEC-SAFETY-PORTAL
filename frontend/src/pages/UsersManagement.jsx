@@ -532,6 +532,16 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
   const [appliedPreset, setAppliedPreset] = useState(null);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
 
+  // v160.3.7g — Lock body scroll while the drawer is open so wheel/touch
+  // scrolls inside the drawer don't leak through to the page underneath.
+  // Previously scrolling the drawer moved the background instead — the
+  // exact bug reported on /settings/users.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   const load = async () => {
     try {
       const { data: u } = await api.get(`/users/${userRow.id}`);
@@ -643,16 +653,29 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
   return (
     <div className="fixed inset-0 bg-black/40 z-40 flex justify-end" onClick={onClose}>
-      <div className="bg-white w-full sm:max-w-2xl h-full overflow-auto p-6" onClick={(e) => e.stopPropagation()} data-testid="user-drawer">
-        <div className="flex items-start justify-between"><h2 className="font-display text-xl">{userRow.name}<div className="text-sm text-slate-500 font-normal">{userRow.email}</div></h2>
-          <button onClick={onClose} className="text-2xl text-slate-400">&times;</button></div>
-        <div className="mt-5 border-b border-slate-200 flex gap-4">
-          {['profile', 'permissions', 'sessions'].map((t) => (
-            <button key={t} onClick={() => setTab(t)} data-testid={t === 'sessions' ? 'session-history-tab' : `tab-${t}`}
-              className={`pb-2 text-sm font-medium ${tab === t ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-slate-500'}`}>{t === 'sessions' ? 'Session history' : t}</button>
-          ))}
+      {/* v160.3.7g — Drawer structural rebuild:
+          • outer panel: fixed height (h-full) + flex-col + overflow-hidden
+          • sticky header (name + close X) — stays visible while scrolling
+          • sticky tab strip — same reason
+          • ONE inner scroll region (flex-1 overflow-y-auto min-h-0) for
+            the content. Wheel/touch scrolls now stay inside the drawer.
+          Previously `overflow-auto` on the whole panel + no scroll lock
+          made the background page scroll instead of the drawer contents. */}
+      <div className="bg-white w-full sm:max-w-2xl h-full flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()} data-testid="user-drawer">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 pt-6 pb-3 shrink-0">
+          <div className="flex items-start justify-between">
+            <h2 className="font-display text-xl">{userRow.name}<div className="text-sm text-slate-500 font-normal">{userRow.email}</div></h2>
+            <button onClick={onClose} className="text-2xl text-slate-400 leading-none" data-testid="user-drawer-close">&times;</button>
+          </div>
+          <div className="mt-4 flex gap-4">
+            {['profile', 'permissions', 'sessions'].map((t) => (
+              <button key={t} onClick={() => setTab(t)} data-testid={t === 'sessions' ? 'session-history-tab' : `tab-${t}`}
+                className={`pb-2 text-sm font-medium ${tab === t ? 'border-b-2 border-brand-blue text-brand-blue' : 'text-slate-500'}`}>{t === 'sessions' ? 'Session history' : t}</button>
+            ))}
+          </div>
         </div>
 
+        <div className="flex-1 overflow-y-auto min-h-0 px-6 py-4" data-testid="user-drawer-scroll">
         {tab === 'sessions' && (
           <SessionHistoryTab userId={userRow.id} />
         )}
@@ -875,6 +898,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             )}
           </div>
         )}
+        </div>{/* /v160.3.7g scroll container */}
         {savePresetOpen && (
           <SavePresetModal
             overrides={perms?.overrides || {}}
