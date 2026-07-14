@@ -15,6 +15,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import { Layers } from 'lucide-react';
 import ReactFlow, {
   Background, Controls, MiniMap, Handle, Position,
   ReactFlowProvider,
@@ -43,9 +44,11 @@ function toRfNode(n, stats, onHide) {
       hint: n.hint,
       route: n.route,
       zone: n.zone,
+      image: n.image,
       stat: n.stat ? stats?.[n.stat] : null,
       onHide,
       w: n.w,
+      h: n.h,
     },
     // Draggable off — this is a diagram, not a whiteboard. If a user
     // wants a custom layout, we'll ship persistence in a later job.
@@ -54,39 +57,64 @@ function toRfNode(n, stats, onHide) {
   };
 }
 
-// Custom node — rounded card with tinted border, icon (small round dot
-// echoing the zone colour), label, live count chip, and a hover tooltip.
+// v160.3.7s — Industrial control-panel node. Wraps an illustration
+// (or lucide placeholder), the module name, and its live count in a
+// bold black-bordered card echoing the hero image's aesthetic.
 function ModuleNode({ data }) {
   const zoneColor = SCHEMATIC_ZONES.find((z) => z.key === data.zone)?.color || 'slate';
   const c = folderColor(zoneColor);
+  const w = data.w || 220;
+  const h = data.h || 220;
+  const imgSrc = data.image
+    ? `/img/schematic/nodes/${data.image}.png`
+    : null;
+  const slug = data.label.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   return (
     <div
       title={data.hint}
-      style={{ width: data.w || 200 }}
+      style={{ width: w, height: h }}
       onContextMenu={(e) => {
         e.preventDefault();
         data.onHide?.();
       }}
-      className={`schematic-node group relative rounded-2xl border-2 bg-white shadow-md hover:shadow-lg transition-all cursor-pointer overflow-hidden`}
-      data-testid={`schematic-node-${data.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
+      className={`schematic-node group relative rounded-2xl border-[3px] border-slate-900 bg-white shadow-[6px_6px_0_0_rgba(15,23,42,0.15)] hover:shadow-[8px_8px_0_0_rgba(15,23,42,0.25)] transition-shadow cursor-pointer overflow-hidden flex flex-col`}
+      data-testid={`schematic-node-${slug}`}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
-      <div className={`px-3 py-2 flex items-center gap-2 ${c.bg}`}>
-        <span className={`inline-block w-2.5 h-2.5 rounded-full ${c.dot} shrink-0`} />
-        <span className="text-[13px] font-semibold text-slate-800 truncate">{data.label}</span>
+
+      {/* Illustration or placeholder */}
+      <div className={`flex-1 flex items-center justify-center ${c.bg} border-b-[3px] border-slate-900`}>
+        {imgSrc ? (
+          <img
+            src={imgSrc}
+            alt=""
+            className="max-h-[110px] max-w-[85%] object-contain"
+            loading="lazy"
+            data-testid={`schematic-node-image-${slug}`}
+          />
+        ) : (
+          <div className="flex flex-col items-center gap-1 text-slate-500">
+            <Layers size={40} strokeWidth={1.5} />
+            <span className="text-[9px] uppercase tracking-[0.14em] font-semibold">Icon soon</span>
+          </div>
+        )}
       </div>
-      {data.stat != null && (
-        <div className="px-3 py-1.5 flex items-center justify-between border-t border-slate-100 bg-white">
-          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Live</span>
-          <span
-            className="text-[13px] font-bold tabular-nums text-slate-900"
-            data-testid={`schematic-stat-${data.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-          >
-            {Number(data.stat).toLocaleString()}
-          </span>
+
+      {/* Label + live count */}
+      <div className="px-2 py-1.5 bg-white shrink-0 text-center">
+        <div className="text-[12px] font-bold text-[#2C6BFF] leading-tight truncate">
+          {data.label}
         </div>
-      )}
+        {data.stat != null && (
+          <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-900 text-white text-[10px] font-bold tabular-nums"
+            data-testid={`schematic-stat-${slug}`}
+          >
+            <span className="text-slate-400 font-semibold uppercase tracking-wider text-[8px]">Live</span>
+            {Number(data.stat).toLocaleString()}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -172,11 +200,21 @@ export default function ProgramSchematicPage() {
         .filter((e) => !hidden.has(e.source) && !hidden.has(e.target))
         .map((e) => ({
           ...e,
-          type: 'default',
-          labelStyle: { fontSize: 10, fill: '#64748b', fontWeight: 500 },
-          labelBgStyle: { fill: '#ffffff', fillOpacity: 0.9 },
-          labelBgPadding: [4, 2],
-          style: { stroke: '#94a3b8', strokeWidth: 1.5, ...(e.style || {}) },
+          // v160.3.7s — Thick black orthogonal cables echo the hero-image
+          // wiring aesthetic. Bezier smooth curves gave a soft-tech feel;
+          // step-router gives the "industrial control board" vibe the
+          // user asked for.
+          type: 'smoothstep',
+          pathOptions: { borderRadius: 12, offset: 12 },
+          labelStyle: { fontSize: 10, fill: '#0f172a', fontWeight: 700 },
+          labelBgStyle: { fill: '#ffffff', fillOpacity: 1 },
+          labelBgPadding: [6, 3],
+          labelBgBorderRadius: 4,
+          style: {
+            stroke: '#0f172a',
+            strokeWidth: 2.5,
+            ...(e.style || {}),
+          },
         })),
     [hidden],
   );
@@ -260,7 +298,7 @@ export default function ProgramSchematicPage() {
 
       <div
         className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm schematic-canvas"
-        style={{ height: 820 }}
+        style={{ height: 1400 }}
       >
         <ZoneBands />
         <ReactFlowProvider>
@@ -311,7 +349,7 @@ export default function ProgramSchematicPage() {
           }
           .schematic-hero-cta { display: none !important; }
           .schematic-canvas {
-            height: 700px !important;
+            height: 1400px !important;
             page-break-inside: avoid;
             box-shadow: none !important;
             border-radius: 0 !important;

@@ -21,12 +21,12 @@
  *   Integrations   → mint     (Environmental & Risk — reads as "external")
  */
 export const SCHEMATIC_ZONES = [
-  { key: 'intelligence', label: 'Intelligence',  color: 'lilac',  x:  520, y:    0, w:  700, h:  150 },
-  { key: 'capture',      label: 'Capture',       color: 'butter', x:    0, y:  180, w:  480, h:  620 },
-  { key: 'compliance',   label: 'Compliance',    color: 'sky',    x:  520, y:  180, w:  460, h:  400 },
-  { key: 'fleet',        label: 'Fleet',         color: 'peach',  x: 1020, y:  180, w:  260, h:  240 },
-  { key: 'people',       label: 'People',        color: 'sage',   x: 1020, y:  450, w:  260, h:  240 },
-  { key: 'integrations', label: 'Integrations',  color: 'mint',   x:  520, y:  620, w:  760, h:  180 },
+  { key: 'intelligence', label: 'Intelligence',  color: 'lilac',  x:  510, y:    0, w:  740, h:  240 },
+  { key: 'capture',      label: 'Capture',       color: 'butter', x:    0, y:  240, w:  500, h: 1120 },
+  { key: 'compliance',   label: 'Compliance',    color: 'sky',    x:  510, y:  240, w:  480, h:  740 },
+  { key: 'fleet',        label: 'Fleet',         color: 'peach',  x: 1010, y:  240, w:  260, h:  480 },
+  { key: 'people',       label: 'People',        color: 'sage',   x: 1010, y:  720, w:  260, h:  640 },
+  { key: 'integrations', label: 'Integrations',  color: 'mint',   x:  510, y:  980, w:  480, h:  380 },
 ];
 
 /**
@@ -36,43 +36,43 @@ export const SCHEMATIC_ZONES = [
  */
 export const SCHEMATIC_NODES = [
   // — Intelligence —
-  { id: 'intel-centre',   zone: 'intelligence', label: 'Intelligence Centre',  route: '/app/dashboard',           x:  550, y:   40, w: 200, hint: 'Live compliance dashboard — headline KPIs across the org.' },
-  { id: 'ask-intel',      zone: 'intelligence', label: 'Ask Intelligence',     route: '/app/ask',                 x:  790, y:   40, w: 200, hint: 'Natural-language search over every archive with RAG citations.' },
-  { id: 'live-dashboard', zone: 'intelligence', label: 'Live Compliance Dashboard', route: '/app/dashboard',       x: 1030, y:   40, w: 200, hint: 'Real-time compliance signal with drill-through to source records.' },
+  { id: 'intel-centre',   zone: 'intelligence', label: 'Intelligence Centre',  route: '/app/dashboard',           x:  530, y:   30, w: 210, h: 200, hint: 'Live compliance dashboard — headline KPIs across the org.' },
+  { id: 'ask-intel',      zone: 'intelligence', label: 'Ask Intelligence',     route: '/app/ask',                 x:  770, y:   30, w: 210, h: 200, hint: 'Natural-language search over every archive with RAG citations.' },
+  { id: 'live-dashboard', zone: 'intelligence', label: 'Live Compliance Dashboard', route: '/app/dashboard',       x: 1010, y:   30, w: 210, h: 200, hint: 'Real-time compliance signal with drill-through to source records.' },
 
   // — Capture —
-  { id: 'ai-swms',        zone: 'capture', label: 'AI SWMS',              route: '/app/capture/ai-swms',           x:   30, y:  220, w: 200, stat: 'swms',             hint: 'AI-drafted Safe Work Method Statements with peer review.' },
-  { id: 'prestarts',      zone: 'capture', label: 'Daily Pre-Starts',     route: '/app/capture/prestarts',         x:  260, y:  220, w: 200, stat: 'prestarts',        hint: 'Morning fitness-for-work + plant check-in on mobile.' },
-  { id: 'site-diary',     zone: 'capture', label: 'Site Diary',           route: '/app/capture/site-diary',        x:   30, y:  310, w: 200, stat: 'diary_entries',    hint: 'Voice/photo daily log; AI summariser rolls up weekly.' },
-  { id: 'hazards',        zone: 'capture', label: 'Hazard Reports',       route: '/app/capture/hazards',           x:  260, y:  310, w: 200, stat: 'hazards',          hint: 'Snap-and-tag hazards from the field; auto-routes to reviewer.' },
-  { id: 'incidents',      zone: 'capture', label: 'Incident Reports',     route: '/app/capture/incidents',         x:   30, y:  400, w: 200, stat: 'incidents',        hint: 'ICAM-aligned incident capture + investigation workflow.' },
-  { id: 'inspections',    zone: 'capture', label: 'Inspection Reports',   route: '/app/capture/inspections',       x:  260, y:  400, w: 200, stat: 'inspections',      hint: 'Site-walk inspections with photo evidence and CAPA.' },
-  { id: 'risk-assess',    zone: 'capture', label: 'Risk Assessments',     route: '/app/capture/risk-assessments',  x:   30, y:  490, w: 200, stat: 'risk_assessments', hint: 'JSEA / risk matrices linked to task, site, and SWMS.' },
-  { id: 'forms',          zone: 'capture', label: 'Forms',                route: '/app/capture/forms',             x:  260, y:  490, w: 200, stat: 'form_submissions', hint: 'AI-built forms + submissions from mobile crew.' },
-  { id: 'import-pdfs',    zone: 'capture', label: 'Import PDFs',          route: '/app/import-pdfs',               x:   30, y:  580, w: 430, hint: 'Bulk-ingest legacy PDFs; AI classifies to the right archive.' },
+  { id: 'ai-swms',        zone: 'capture', label: 'AI SWMS',              image: 'ai_swms',          route: '/app/capture/ai-swms',           x:   30, y:  260, w: 220, h: 220, stat: 'swms',             hint: 'AI-drafted Safe Work Method Statements with peer review.' },
+  { id: 'prestarts',      zone: 'capture', label: 'Daily Pre-Starts',     image: 'daily_prestarts',  route: '/app/capture/prestarts',         x:  270, y:  260, w: 220, h: 220, stat: 'prestarts',        hint: 'Morning fitness-for-work + plant check-in on mobile.' },
+  { id: 'site-diary',     zone: 'capture', label: 'Site Diary',           image: 'site_diary',       route: '/app/capture/site-diary',        x:   30, y:  500, w: 220, h: 220, stat: 'diary_entries',    hint: 'Voice/photo daily log; AI summariser rolls up weekly.' },
+  { id: 'hazards',        zone: 'capture', label: 'Hazard Reports',       image: 'hazard_reports',   route: '/app/capture/hazards',           x:  270, y:  500, w: 220, h: 220, stat: 'hazards',          hint: 'Snap-and-tag hazards from the field; auto-routes to reviewer.' },
+  { id: 'incidents',      zone: 'capture', label: 'Incident Reports',     image: 'incident_reports', route: '/app/capture/incidents',         x:   30, y:  740, w: 220, h: 220, stat: 'incidents',        hint: 'ICAM-aligned incident capture + investigation workflow.' },
+  { id: 'inspections',    zone: 'capture', label: 'Inspection Reports',   route: '/app/capture/inspections',       x:  270, y:  740, w: 220, h: 220, stat: 'inspections',      hint: 'Site-walk inspections with photo evidence and CAPA.' },
+  { id: 'risk-assess',    zone: 'capture', label: 'Risk Assessments',     route: '/app/capture/risk-assessments',  x:   30, y:  980, w: 220, h: 220, stat: 'risk_assessments', hint: 'JSEA / risk matrices linked to task, site, and SWMS.' },
+  { id: 'forms',          zone: 'capture', label: 'Forms',                route: '/app/capture/forms',             x:  270, y:  980, w: 220, h: 220, stat: 'form_submissions', hint: 'AI-built forms + submissions from mobile crew.' },
+  { id: 'import-pdfs',    zone: 'capture', label: 'Import PDFs',          route: '/app/import-pdfs',               x:   30, y: 1220, w: 460, h: 130, hint: 'Bulk-ingest legacy PDFs; AI classifies to the right archive.' },
 
   // — Compliance —
-  { id: 'suppliers',      zone: 'compliance', label: 'Suppliers',         route: '/app/compliance/suppliers',      x:  540, y:  220, w: 210, stat: 'contractors',      hint: 'Contractor register with SWMS + insurance + licence tracking.' },
-  { id: 'renewal-links',  zone: 'compliance', label: 'Renewal Links',     route: '/app/compliance/renewals',       x:  770, y:  220, w: 210, stat: 'renewals',         hint: 'Public renewal links so subbies self-serve doc uploads.' },
-  { id: 'doc-library',    zone: 'compliance', label: 'Document Library',  route: '/app/document-library',          x:  540, y:  310, w: 210, stat: 'doc_folders',      hint: 'AI-tagged doc archive grouped by 9 semantic colour groups.' },
-  { id: 'audit-exports',  zone: 'compliance', label: 'Audit Exports',     route: '/app/compliance/audit-exports',  x:  770, y:  310, w: 210, hint: 'One-click auditor bundle: PDFs + JSON + evidence chain.' },
-  { id: 'certifications', zone: 'compliance', label: 'Certifications',    route: '/app/settings/certifications',   x:  540, y:  400, w: 210, stat: 'certifications',   hint: 'Worker card matrix — expiring soon, missing types, custody chain.' },
-  { id: 'backup',         zone: 'compliance', label: 'Backup & Restore',  route: '/app/settings/backup',           x:  770, y:  400, w: 210, stat: 'bk_snapshots',     hint: '6-hourly snapshots to LAN NAS + Hub. Watchdog auto-recovers cron.' },
+  { id: 'suppliers',      zone: 'compliance', label: 'Suppliers',         route: '/app/compliance/suppliers',      x:  530, y:  260, w: 220, h: 220, stat: 'contractors',      hint: 'Contractor register with SWMS + insurance + licence tracking.' },
+  { id: 'renewal-links',  zone: 'compliance', label: 'Renewal Links',     route: '/app/compliance/renewals',       x:  770, y:  260, w: 220, h: 220, stat: 'renewals',         hint: 'Public renewal links so subbies self-serve doc uploads.' },
+  { id: 'doc-library',    zone: 'compliance', label: 'Document Library',  image: 'document_library', route: '/app/document-library',          x:  530, y:  500, w: 220, h: 220, stat: 'doc_folders',      hint: 'AI-tagged doc archive grouped by 9 semantic colour groups.' },
+  { id: 'audit-exports',  zone: 'compliance', label: 'Audit Exports',     route: '/app/compliance/audit-exports',  x:  770, y:  500, w: 220, h: 220, hint: 'One-click auditor bundle: PDFs + JSON + evidence chain.' },
+  { id: 'certifications', zone: 'compliance', label: 'Certifications',    image: 'certifications',   route: '/app/settings/certifications',   x:  530, y:  740, w: 220, h: 220, stat: 'certifications',   hint: 'Worker card matrix — expiring soon, missing types, custody chain.' },
+  { id: 'backup',         zone: 'compliance', label: 'Backup & Restore',  image: 'backup_restore',   route: '/app/settings/backup',           x:  770, y:  740, w: 220, h: 220, stat: 'bk_snapshots',     hint: '6-hourly snapshots to LAN NAS + Hub. Watchdog auto-recovers cron.' },
 
   // — Fleet —
-  { id: 'plant',          zone: 'fleet', label: 'Plant & Vehicles',       route: '/app/plant',                     x: 1030, y:  220, w: 240, stat: 'assets',           hint: 'Rego, services, defects, Navixy telematics live feed.' },
-  { id: 'sites',          zone: 'fleet', label: 'Sites',                  route: '/app/compliance/sites',          x: 1030, y:  310, w: 240, stat: 'sites',            hint: 'Job sites synced from Simpro; QR check-ins, deleted-log.' },
+  { id: 'plant',          zone: 'fleet', label: 'Plant & Vehicles',       image: 'plant_vehicles',   route: '/app/plant',                     x: 1030, y:  260, w: 220, h: 220, stat: 'assets',           hint: 'Rego, services, defects, Navixy telematics live feed.' },
+  { id: 'sites',          zone: 'fleet', label: 'Sites',                  route: '/app/compliance/sites',          x: 1030, y:  500, w: 220, h: 220, stat: 'sites',            hint: 'Job sites synced from Simpro; QR check-ins, deleted-log.' },
 
   // — People —
-  { id: 'workers',        zone: 'people', label: 'Workers',               route: '/app/settings/workers',          x: 1030, y:  490, w: 240, stat: 'workers',          hint: 'WHS worker directory (Simpro-imported + manual).' },
-  { id: 'users-perms',    zone: 'people', label: 'Users & Permissions',   route: '/app/settings/users',            x: 1030, y:  580, w: 240, stat: 'users',            hint: 'App login accounts, roles, permission overrides.' },
-  { id: 'sessions',       zone: 'people', label: 'Active Sessions',       route: '/app/settings/system',           x: 1030, y:  640, w: 240, stat: 'active_sessions',  hint: 'Live JWT sessions with per-session delete + inactive purge.' },
+  { id: 'workers',        zone: 'people', label: 'Workers',               image: 'workers',          route: '/app/settings/workers',          x: 1030, y:  740, w: 220, h: 220, stat: 'workers',          hint: 'WHS worker directory (Simpro-imported + manual).' },
+  { id: 'users-perms',    zone: 'people', label: 'Users & Permissions',   route: '/app/settings/users',            x: 1030, y:  980, w: 220, h: 220, stat: 'users',            hint: 'App login accounts, roles, permission overrides.' },
+  { id: 'sessions',       zone: 'people', label: 'Active Sessions',       route: '/app/settings/system',           x: 1030, y: 1220, w: 220, h: 130, stat: 'active_sessions',  hint: 'Live JWT sessions with per-session delete + inactive purge.' },
 
   // — Integrations —
-  { id: 'simpro',         zone: 'integrations', label: 'Simpro',          route: '/app/settings/integrations',     x:  540, y:  660, w: 170, hint: 'Users, workers, sites, and attachment ZIPs sync from Simpro.' },
-  { id: 'navixy',         zone: 'integrations', label: 'Navixy',          route: '/app/settings/integrations',     x:  720, y:  660, w: 170, hint: 'Vehicle GPS, engine hours, trip summaries.' },
-  { id: 'm365',           zone: 'integrations', label: 'Microsoft 365',   route: '/app/settings/integrations',     x:  900, y:  660, w: 170, hint: 'Send renewal reminders + reports from your org email.' },
-  { id: 'emergent-llm',   zone: 'integrations', label: 'Emergent LLM',    route: '/app/settings/integrations',     x: 1080, y:  660, w: 170, hint: 'GPT / Claude / Gemini via a single universal key.' },
+  { id: 'simpro',         zone: 'integrations', label: 'Simpro',          route: '/app/settings/integrations',     x:  530, y: 1000, w: 200, h: 160, hint: 'Users, workers, sites, and attachment ZIPs sync from Simpro.' },
+  { id: 'navixy',         zone: 'integrations', label: 'Navixy',          route: '/app/settings/integrations',     x:  760, y: 1000, w: 200, h: 160, hint: 'Vehicle GPS, engine hours, trip summaries.' },
+  { id: 'm365',           zone: 'integrations', label: 'Microsoft 365',   route: '/app/settings/integrations',     x:  530, y: 1180, w: 200, h: 160, hint: 'Send renewal reminders + reports from your org email.' },
+  { id: 'emergent-llm',   zone: 'integrations', label: 'Emergent LLM',    route: '/app/settings/integrations',     x:  760, y: 1180, w: 200, h: 160, hint: 'GPT / Claude / Gemini via a single universal key.' },
 ];
 
 /**
