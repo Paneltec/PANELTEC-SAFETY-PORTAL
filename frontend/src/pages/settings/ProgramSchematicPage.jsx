@@ -91,7 +91,7 @@ function ModuleNode({ data }) {
       <div className="flex items-center justify-center transition-transform group-hover:scale-105"
            style={{ width: w, height: h }}>
         {imgSrc ? (
-          <div className="bg-white rounded-full p-1 shadow-sm flex items-center justify-center"
+          <div className="bg-white rounded-2xl p-1 shadow-sm flex items-center justify-center overflow-hidden"
                style={{ width: w, height: h }}>
             <img
               src={imgSrc}
