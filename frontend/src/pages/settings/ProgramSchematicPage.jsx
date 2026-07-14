@@ -267,7 +267,7 @@ export default function ProgramSchematicPage() {
 
       <div
         className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm schematic-canvas"
-        style={{ height: 1050 }}
+        style={{ height: 1200 }}
       >
         <ZoneLabels />
         <ReactFlowProvider>
@@ -277,7 +277,7 @@ export default function ProgramSchematicPage() {
             nodeTypes={NODE_TYPES}
             onNodeClick={onNodeClick}
             fitView
-            fitViewOptions={{ padding: 0.15 }}
+            fitViewOptions={{ padding: 0.1, minZoom: 1, maxZoom: 1 }}
             /* v160.3.7y — Lock the diagram at zoom = 1. Wheel-zoom was
                causing icons to crawl over the fixed white canvas; users
                want a static read-and-click layout. Pan-on-drag stays on
@@ -322,7 +322,7 @@ export default function ProgramSchematicPage() {
           @page { size: A3 landscape; margin: 10mm; }
           body { background: #ffffff !important; }
           .schematic-canvas {
-            height: 1050px !important;
+            height: 1200px !important;
             page-break-inside: avoid;
             box-shadow: none !important;
             border-radius: 0 !important;
