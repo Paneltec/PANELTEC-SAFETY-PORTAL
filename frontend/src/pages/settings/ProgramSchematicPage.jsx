@@ -57,14 +57,14 @@ function toRfNode(n, stats, onHide) {
   };
 }
 
-// v160.3.7s — Industrial control-panel node. Wraps an illustration
-// (or lucide placeholder), the module name, and its live count in a
-// bold black-bordered card echoing the hero image's aesthetic.
+// v160.3.7t — Frameless industrial-symbol node. The illustration IS the
+// tile — no zone-tint frame, no black border, no white footer. Zone
+// bands behind provide the pastel grouping; the icon+label reads as a
+// small punchy iconographic control-panel component. Label sits below
+// the icon in Paneltec-blue with a compact black "LIVE N" pill.
 function ModuleNode({ data }) {
-  const zoneColor = SCHEMATIC_ZONES.find((z) => z.key === data.zone)?.color || 'slate';
-  const c = folderColor(zoneColor);
-  const w = data.w || 220;
-  const h = data.h || 220;
+  const w = data.w || 128;
+  const h = data.h || 128;
   const imgSrc = data.image
     ? `/img/schematic/nodes/${data.image}.png`
     : null;
@@ -72,45 +72,45 @@ function ModuleNode({ data }) {
   return (
     <div
       title={data.hint}
-      style={{ width: w, height: h }}
+      style={{ width: w }}
       onContextMenu={(e) => {
         e.preventDefault();
         data.onHide?.();
       }}
-      className={`schematic-node group relative rounded-2xl border-[3px] border-slate-900 bg-white shadow-[6px_6px_0_0_rgba(15,23,42,0.15)] hover:shadow-[8px_8px_0_0_rgba(15,23,42,0.25)] transition-shadow cursor-pointer overflow-hidden flex flex-col`}
+      className="schematic-node group relative cursor-pointer flex flex-col items-center gap-1"
       data-testid={`schematic-node-${slug}`}
     >
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
 
-      {/* Illustration or placeholder */}
-      <div className={`flex-1 flex items-center justify-center ${c.bg} border-b-[3px] border-slate-900`}>
+      {/* Frameless illustration */}
+      <div className="flex items-center justify-center transition-transform group-hover:scale-105"
+           style={{ width: w, height: h }}>
         {imgSrc ? (
           <img
             src={imgSrc}
             alt=""
-            className="max-h-[110px] max-w-[85%] object-contain"
+            className="max-h-full max-w-full object-contain drop-shadow-md"
             loading="lazy"
             data-testid={`schematic-node-image-${slug}`}
           />
         ) : (
-          <div className="flex flex-col items-center gap-1 text-slate-500">
+          <div className="flex flex-col items-center gap-1 text-slate-400">
             <Layers size={40} strokeWidth={1.5} />
-            <span className="text-[9px] uppercase tracking-[0.14em] font-semibold">Icon soon</span>
           </div>
         )}
       </div>
 
-      {/* Label + live count */}
-      <div className="px-2 py-1.5 bg-white shrink-0 text-center">
-        <div className="text-[12px] font-bold text-[#2C6BFF] leading-tight truncate">
+      {/* Label + live count — sits directly beneath the icon */}
+      <div className="text-center leading-tight">
+        <div className="text-[11px] font-bold text-[#2C6BFF] max-w-[140px] truncate">
           {data.label}
         </div>
         {data.stat != null && (
-          <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-900 text-white text-[10px] font-bold tabular-nums"
+          <div className="mt-0.5 inline-flex items-center gap-1 px-1.5 py-[1px] rounded bg-slate-900 text-white text-[9px] font-bold tabular-nums"
             data-testid={`schematic-stat-${slug}`}
           >
-            <span className="text-slate-400 font-semibold uppercase tracking-wider text-[8px]">Live</span>
+            <span className="text-slate-400 font-semibold uppercase tracking-wider text-[7px]">Live</span>
             {Number(data.stat).toLocaleString()}
           </div>
         )}
@@ -219,9 +219,21 @@ export default function ProgramSchematicPage() {
     [hidden],
   );
 
-  const onNodeClick = (_evt, node) => {
+  const onNodeClick = (evt, node) => {
+    // v160.3.7t — Defensive click handler. `evt.stopPropagation()`
+    // prevents bubbling to the react-flow pane. Route is validated
+    // against the known list from `App.js` (starts with `/app/…`);
+    // an unmapped path used to fall through to the catch-all
+    // `<Navigate to="/" replace />` and bounce the admin to Cover
+    // ("clicking a node restarts the app"). If the route is missing
+    // we now toast politely instead of navigating into oblivion.
+    evt?.stopPropagation?.();
     const cfg = SCHEMATIC_NODES.find((n) => n.id === node.id);
-    if (cfg?.route) navigate(cfg.route);
+    if (!cfg?.route) {
+      toast.info(`${cfg?.label || node.id} — no dedicated route yet.`);
+      return;
+    }
+    navigate(cfg.route);
   };
 
   return (
@@ -298,7 +310,7 @@ export default function ProgramSchematicPage() {
 
       <div
         className="relative rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm schematic-canvas"
-        style={{ height: 1400 }}
+        style={{ height: 1050 }}
       >
         <ZoneBands />
         <ReactFlowProvider>
@@ -349,7 +361,7 @@ export default function ProgramSchematicPage() {
           }
           .schematic-hero-cta { display: none !important; }
           .schematic-canvas {
-            height: 1400px !important;
+            height: 1050px !important;
             page-break-inside: avoid;
             box-shadow: none !important;
             border-radius: 0 !important;
