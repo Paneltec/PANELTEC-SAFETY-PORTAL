@@ -277,7 +277,7 @@ export default function ProgramSchematicPage() {
             nodeTypes={NODE_TYPES}
             onNodeClick={onNodeClick}
             fitView
-            fitViewOptions={{ padding: 0.1, minZoom: 1, maxZoom: 1 }}
+            fitViewOptions={{ padding: 0.1, minZoom: 0.5, maxZoom: 1 }}
             /* v160.3.7y — Lock the diagram at zoom = 1. Wheel-zoom was
                causing icons to crawl over the fixed white canvas; users
                want a static read-and-click layout. Pan-on-drag stays on
@@ -288,7 +288,17 @@ export default function ProgramSchematicPage() {
                grabbing icons and pulling them off the canvas. Belt-and-
                braces: `draggable: false` is ALSO set on every node in
                `toRfNode()` so even a rogue react-flow default can't
-               re-enable it. */
+               re-enable it.
+               v160.3.7ae — Relaxed the fitView zoom clamp from
+               [1, 1] to [0.5, 1]. At [1, 1] fitView could only CENTER
+               the diagram; it could not shrink to fit narrower
+               viewports, so on laptop widths (<1656px) the 1400px
+               canvas overflowed the right edge and pushed the right-
+               column icons (Live Dashboard / Sites / Users & Perms)
+               off-screen. Scroll/pinch/double-click zoom stay hard-
+               disabled below — the diagram remains fully static
+               post-mount; the relaxed clamp only lets the initial
+               fit-to-frame scale down when it needs to. */
             zoomOnScroll={false}
             zoomOnPinch={false}
             zoomOnDoubleClick={false}
@@ -297,7 +307,7 @@ export default function ProgramSchematicPage() {
             nodesDraggable={false}
             nodesConnectable={false}
             elementsSelectable={false}
-            minZoom={1}
+            minZoom={0.5}
             maxZoom={1}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{ type: 'default' }}

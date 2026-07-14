@@ -89,41 +89,83 @@ export const SCHEMATIC_NODES = [
 ];
 
 /**
- * Labelled Bezier edges — describe the data-flow story of the app so a
- * new admin can trace how a hazard photo becomes an auditor-ready PDF.
- * `animated: true` for the "live pipeline" flows (Simpro import, mobile
- * capture, backup); static for reference lookups (RAG, evidence chain).
+ * Labelled data-flow edges. v160.3.7af rewires the entire connector set
+ * around the platform's real operational story so a new admin can trace
+ * "worker signs on → capture → analysis → dashboard → audit" without a
+ * legend. Story arc:
+ *   1. Identity backbone  (labelled)  — users-perms → workers → certs → renewals
+ *   2. External sync      (dashed)    — Simpro pulls workers/sites/suppliers,
+ *                                       Navixy pulls plant
+ *   3. AI funnel          (labelled)  — 6 field-capture surfaces feed
+ *                                       Intelligence Centre
+ *   4. Intel fanout                    — Intelligence Centre → Ask + Live
+ *   5. Governance output               — Live Dashboard → Audit; Intel → DocLib
+ *   6. Vendor links                    — Suppliers ↔ Sites + Plant
+ *   7. Comms outbound     (labelled)  — Microsoft 365 → Renewal Links
+ *   8. AI backend         (dashed)    — Emergent LLM → AI SWMS + Ask
+ *   9. Infra sinks        (dashed)    — DocLib / Certs / Audit → Backup
+ * Labels reserved for 5 headline edges only (identity, expiry watch, JWT,
+ * analysis, reminders) so the visual is dominated by connections rather
+ * than text. Every edge carries a black arrowhead on the TARGET end so
+ * direction reads at a glance. `smoothstep` routing (set in
+ * `ProgramSchematicPage.jsx`) gives the industrial control-board vibe.
+ * `animated: true` marks live pipelines; `strokeDasharray` marks
+ * dashed reference / infra edges.
  */
-export const SCHEMATIC_EDGES = [
-  // Simpro import
-  { id: 'e-simpro-workers',    source: 'simpro',    target: 'workers',        label: 'import',   animated: true },
-  { id: 'e-simpro-sites',      source: 'simpro',    target: 'sites',          label: 'import',   animated: true },
-  { id: 'e-simpro-certs',      source: 'simpro',    target: 'certifications', label: 'ZIP → cards', animated: true },
-  // Mobile capture → archive
-  { id: 'e-forms-doclib',      source: 'forms',       target: 'doc-library',  label: 'submissions', animated: true },
-  { id: 'e-prestarts-doclib',  source: 'prestarts',   target: 'doc-library',  label: 'archive',   animated: true },
-  { id: 'e-hazards-incidents', source: 'hazards',     target: 'incidents',    label: 'escalate' },
-  { id: 'e-inspections-audit', source: 'inspections', target: 'audit-exports', label: 'evidence' },
-  { id: 'e-swms-suppliers',    source: 'ai-swms',     target: 'suppliers',    label: 'attach' },
-  // Compliance → audit
-  { id: 'e-doclib-audit',      source: 'doc-library',    target: 'audit-exports', label: 'bundle' },
-  { id: 'e-certs-audit',       source: 'certifications', target: 'audit-exports', label: 'evidence' },
-  // Ask Intelligence RAG
-  { id: 'e-ask-doclib',        source: 'ask-intel', target: 'doc-library',   label: 'RAG', style: { strokeDasharray: '4 3' } },
-  { id: 'e-ask-incidents',     source: 'ask-intel', target: 'incidents',     label: 'RAG', style: { strokeDasharray: '4 3' } },
-  { id: 'e-ask-hazards',       source: 'ask-intel', target: 'hazards',       label: 'RAG', style: { strokeDasharray: '4 3' } },
-  // Fleet telematics
-  { id: 'e-navixy-plant',      source: 'navixy',    target: 'plant',         label: 'GPS + engine hrs', animated: true },
-  // People / access
-  { id: 'e-users-sessions',    source: 'users-perms', target: 'sessions',    label: 'issues JWT' },
-  { id: 'e-workers-users',     source: 'workers',   target: 'users-perms',   label: 'link' },
-  // Backup
-  { id: 'e-doclib-backup',     source: 'doc-library',  target: 'backup',     label: 'nightly snapshot', animated: true },
-  { id: 'e-certs-backup',      source: 'certifications', target: 'backup',   label: 'nightly snapshot', animated: true },
-  // Email outbound
-  { id: 'e-m365-renewals',     source: 'm365',      target: 'renewal-links', label: 'send reminders' },
-  // LLM
-  { id: 'e-llm-swms',          source: 'emergent-llm', target: 'ai-swms',    label: 'drafts', style: { strokeDasharray: '4 3' } },
-  { id: 'e-llm-ask',           source: 'emergent-llm', target: 'ask-intel',  label: 'answers', style: { strokeDasharray: '4 3' } },
-  { id: 'e-llm-diary',         source: 'emergent-llm', target: 'site-diary', label: 'summarises', style: { strokeDasharray: '4 3' } },
+const _ARROW = { type: 'arrowclosed', color: '#0f172a', width: 18, height: 18 };
+const _DASHED = { strokeDasharray: '4 3' };
+const _DASHED_LIVE = { strokeDasharray: '6 4' };
+
+const _RAW_EDGES = [
+  // Identity backbone ---------------------------------------------------------
+  { id: 'e-users-workers',  source: 'users-perms',    target: 'workers',        label: 'identity' },
+  { id: 'e-workers-certs',  source: 'workers',        target: 'certifications', label: 'expiry watch' },
+  { id: 'e-certs-renewals', source: 'certifications', target: 'renewal-links' },
+  { id: 'e-users-sessions', source: 'users-perms',    target: 'sessions',       label: 'JWT' },
+
+  // External sync (dashed animated) ------------------------------------------
+  { id: 'e-simpro-workers',   source: 'simpro', target: 'workers',   animated: true, style: _DASHED_LIVE },
+  { id: 'e-simpro-sites',     source: 'simpro', target: 'sites',     animated: true, style: _DASHED_LIVE },
+  { id: 'e-simpro-suppliers', source: 'simpro', target: 'suppliers', animated: true, style: _DASHED_LIVE },
+  { id: 'e-navixy-plant',     source: 'navixy', target: 'plant',     animated: true, style: _DASHED_LIVE },
+
+  // Capture → Intelligence Centre (the AI funnel) ----------------------------
+  { id: 'e-swms-intel',        source: 'ai-swms',     target: 'intel-centre', label: 'analysis' },
+  { id: 'e-diary-intel',       source: 'site-diary',  target: 'intel-centre' },
+  { id: 'e-hazards-intel',     source: 'hazards',     target: 'intel-centre' },
+  { id: 'e-incidents-intel',   source: 'incidents',   target: 'intel-centre' },
+  { id: 'e-inspections-intel', source: 'inspections', target: 'intel-centre' },
+  { id: 'e-prestarts-intel',   source: 'prestarts',   target: 'intel-centre' },
+
+  // Local capture links ------------------------------------------------------
+  { id: 'e-hazards-risk',   source: 'hazards',     target: 'risk-assess' },
+  { id: 'e-incidents-risk', source: 'incidents',   target: 'risk-assess' },
+  { id: 'e-forms-doclib',   source: 'forms',       target: 'doc-library' },
+  { id: 'e-imports-doclib', source: 'import-pdfs', target: 'doc-library' },
+
+  // Intelligence fanout ------------------------------------------------------
+  { id: 'e-intel-ask',  source: 'intel-centre', target: 'ask-intel' },
+  { id: 'e-intel-live', source: 'intel-centre', target: 'live-dashboard' },
+
+  // Governance / output ------------------------------------------------------
+  { id: 'e-live-audit',   source: 'live-dashboard', target: 'audit-exports' },
+  { id: 'e-intel-doclib', source: 'intel-centre',   target: 'doc-library' },
+
+  // Vendor links -------------------------------------------------------------
+  { id: 'e-suppliers-sites', source: 'suppliers', target: 'sites' },
+  { id: 'e-suppliers-plant', source: 'suppliers', target: 'plant' },
+
+  // Comms outbound -----------------------------------------------------------
+  { id: 'e-m365-renewals', source: 'm365', target: 'renewal-links', label: 'reminders' },
+
+  // AI backend (dashed) ------------------------------------------------------
+  { id: 'e-llm-swms', source: 'emergent-llm', target: 'ai-swms',   style: _DASHED },
+  { id: 'e-llm-ask',  source: 'emergent-llm', target: 'ask-intel', style: _DASHED },
+
+  // Infra sinks — Backup (dashed) --------------------------------------------
+  { id: 'e-doclib-backup', source: 'doc-library',    target: 'backup', style: _DASHED },
+  { id: 'e-certs-backup',  source: 'certifications', target: 'backup', style: _DASHED },
+  { id: 'e-audit-backup',  source: 'audit-exports',  target: 'backup', style: _DASHED },
 ];
+
+export const SCHEMATIC_EDGES = _RAW_EDGES.map((e) => ({ ...e, markerEnd: _ARROW }));
