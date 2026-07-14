@@ -60,6 +60,9 @@ import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 // Phase 4.7.3 — Comms Safe Mode admin page.
 import CommsSafeMode from '@/pages/CommsSafeMode';
 import CacheBusterBanner from '@/components/CacheBusterBanner';
+// v160.3.7i — Simpro import walkthrough rehomed to its own page so it
+// stops breaking the Users & Permissions layout.
+import SimproImportGuidePage from '@/pages/help/SimproImportGuidePage';
 
 // Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
 // at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
@@ -145,6 +148,8 @@ function App() {
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
               <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
               <Route path="settings/users" element={<UsersManagement />} />
+              {/* v160.3.7i — dedicated help page for the Simpro ZIP import walkthrough. */}
+              <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
               <Route path="settings/workers" element={<Workers />} />

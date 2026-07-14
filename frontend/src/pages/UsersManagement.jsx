@@ -28,9 +28,12 @@ import {
 import AccessSection from '../components/auth/AccessSection';
 import AccessKebab from '../components/auth/AccessKebab';
 import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
-// v160.3.6t — restore missing import that caused a fatal ReferenceError
-// (`SimproZipImportGuide is not defined`) on /settings/user-permissions.
-import SimproZipImportGuide from '../components/simpro/SimproZipImportGuide';
+// v160.3.7i — SimproZipImportGuide has been rehomed to its own page
+// (`/app/settings/help/simpro-import`). It previously rendered inline
+// here and broke the Users & Permissions layout. A subtle text link
+// pointing to the dedicated guide now sits above the Bulk import ZIPs
+// action in the page header.
+import { Link } from 'react-router-dom';
 // v160.3.7h — Shared body-scroll-lock hook. Applied to every overlay on
 // this page so scrolling inside a modal never leaks to the page beneath.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -269,9 +272,22 @@ export default function UsersManagement() {
             </button>
           </div>) : null} />
 
-      {/* v160.3.6o — Staff onboarding guide for Simpro ZIP downloads.
-          Positioned directly above the tabs so a new admin can't miss it. */}
-      <SimproZipImportGuide />
+      {/* v160.3.7i — SimproZipImportGuide was rehomed to
+          `/app/settings/help/simpro-import` because the full inline guide
+          broke this page's layout. All that remains here is a subtle text
+          link pointing admins to the dedicated help page. */}
+      <div
+        className="mt-3 mb-2 text-xs text-slate-500"
+        data-testid="simpro-import-guide-link"
+      >
+        Need help importing Simpro attachments?{' '}
+        <Link
+          to="/app/settings/help/simpro-import"
+          className="text-blue-600 hover:underline"
+        >
+          See the Simpro import guide →
+        </Link>
+      </div>
 
       {/* v160.3.6u — Flipped to v6p hero hierarchy (LIST is the primary big
           blue capsule; Dashboard collapses to a tiny secondary text-link).
