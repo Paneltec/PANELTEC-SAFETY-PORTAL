@@ -90,6 +90,7 @@ function ModuleNode({ data }) {
           <img
             src={imgSrc}
             alt=""
+            style={{ mixBlendMode: 'multiply' }}
             className="max-h-full max-w-full object-contain drop-shadow-md"
             loading="lazy"
             data-testid={`schematic-node-image-${slug}`}
