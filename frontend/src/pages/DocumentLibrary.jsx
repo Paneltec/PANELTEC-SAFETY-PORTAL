@@ -18,6 +18,10 @@ import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
 import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal';
+// v160.3.7p — Single source of truth for the Doc Library colour taxonomy.
+// Ships the semantic labels ("Health & Hazards", "SWMS & Competencies", …)
+// that replace the old cosmetic pastel names.
+import { FOLDER_COLORS, FOLDER_COLOR_LABELS, folderColor } from '../lib/folderColors';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -207,30 +211,29 @@ export default function DocumentLibrary() {
     setColorPickerFolderId(null);
     try {
       await api.patch(`/document-library/folders/${folder.id}`, { color_key: nextKey });
-      toast.success(`Folder recoloured to ${nextKey}.`);
+      toast.success(`Folder moved to “${folderColor(nextKey).label}”.`);
     } catch (e) {
       toast.error(apiError(e));
       setFolders((rs) => rs.map((r) => (r.id === folder.id ? { ...r, color_key: prevKey } : r)));
     }
   }, []);
 
-  // Palette labels — descriptive names based on the actual hex values
-  // in PASTEL_BG so admins can talk about "the mint folders" or "the
-  // sky folders" and everyone knows what they mean.
-  const PASTEL_LABEL = {
-    mint: 'Mint', sky: 'Sky', peach: 'Peach', blush: 'Blush',
-    lavender: 'Lavender', butter: 'Butter', sage: 'Sage', coral: 'Coral',
-    lilac: 'Lilac', slate: 'Slate',
-  };
-  // Solid swatch tokens for the legend dots (the PASTEL_BG classes are
-  // tuned for tile backgrounds; the legend needs a slightly punchier
-  // colour to read as a 12×12 dot).
-  const PASTEL_DOT = {
-    mint: 'bg-[#a8dbb5]', sky: 'bg-[#a9c4e8]', peach: 'bg-[#f4c8a6]',
-    blush: 'bg-[#f2b3bd]', lavender: 'bg-[#c9b8e8]', butter: 'bg-[#eddc9c]',
-    sage: 'bg-[#b3ceb0]', coral: 'bg-[#f0b9a3]', lilac: 'bg-[#c9b0e6]',
-    slate: 'bg-slate-300',
-  };
+  // v160.3.7p — Semantic colour taxonomy sourced from /lib/folderColors.
+  // The old cosmetic labels (`Sky`, `Mint`, …) told an admin nothing;
+  // now the legend and swatches surface "Health & Hazards", "SWMS &
+  // Competencies", etc. — grounded in what the folders actually contain.
+  const PASTEL_LABEL = FOLDER_COLOR_LABELS;
+  const PASTEL_DOT = FOLDER_COLORS.reduce((acc, c) => {
+    acc[c.slug] = c.dot;
+    return acc;
+  }, {});
+  // Cosmetic-name lookup — kept for the recolour-swatch tooltip so an
+  // admin who wants to know "which slug is this" can still see it on
+  // hover without cluttering the primary UI.
+  const PASTEL_COSMETIC = FOLDER_COLORS.reduce((acc, c) => {
+    acc[c.slug] = c.cosmetic;
+    return acc;
+  }, {});
   // Per-colour folder counts on the current dataset — legend only lists
   // colours actually in use, so a fresh org doesn't see 10 empty swatches.
   const colorCounts = useMemo(() => {
@@ -396,12 +399,14 @@ export default function DocumentLibrary() {
         )}
       </div>
 
-      {/* v160.3.6m — Folder colour legend. Doubles as (a) a key that
-          documents what each pastel means, and (b) a click-to-filter
-          navigation aid. Only shows colours actually in use. */}
+      {/* v160.3.6m — Folder group legend. Doubles as (a) a key that
+          documents what each semantic group contains, and (b) a
+          click-to-filter navigation aid. Only shows groups actually in
+          use. v160.3.7p — Renamed heading COLOURS→GROUPS to match the
+          new semantic taxonomy (Health & Hazards, SWMS & Competencies, …). */}
       {legendEntries.length > 1 && (
         <div className="mb-5 flex items-center gap-3 flex-wrap text-xs" data-testid="folder-color-legend">
-          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">Colours</span>
+          <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold shrink-0">Groups</span>
           {legendEntries.map((k) => {
             const active = colorFilter.has(k);
             return (
@@ -504,10 +509,13 @@ export default function DocumentLibrary() {
                 {canEdit && !f.is_system && confirmDeleteId !== f.id && (
                   <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5" data-testid={`folder-actions-${f.id}`}>
                     {/* v160.3.7o — recolour swatch: click to open the palette picker,
-                        pick a new group and the tile re-tints instantly. */}
+                        pick a new group and the tile re-tints instantly.
+                        v160.3.7p — Tooltip surfaces the semantic group name
+                        ("Health & Hazards") first, with the pastel slug in
+                        parens for admins who track the colour name. */}
                     <button onClick={() => setColorPickerFolderId(f.id)}
                       data-testid={`folder-recolor-btn-${f.id}`}
-                      title={`Recolour · currently ${PASTEL_LABEL[f.color_key || 'sky']}`}
+                      title={`Group · ${PASTEL_LABEL[f.color_key || 'sky']} (${PASTEL_COSMETIC[f.color_key || 'sky']}) — click to change`}
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:bg-white flex items-center">
                       <span className={`inline-block w-3 h-3 rounded-full border border-white/60 ${PASTEL_DOT[f.color_key || 'sky']}`} />
                     </button>
@@ -525,24 +533,34 @@ export default function DocumentLibrary() {
                     )}
                   </div>
                 )}
-                {/* v160.3.7o — inline colour-group picker popover */}
+                {/* v160.3.7o — inline colour-group picker popover
+                    v160.3.7p — Popover now shows each group's SEMANTIC
+                    label alongside its dot (grid → single column) so
+                    admins pick a meaningful bucket instead of a colour. */}
                 {canEdit && colorPickerFolderId === f.id && (
                   <div
                     data-testid={`folder-recolor-popover-${f.id}`}
-                    className="absolute top-8 right-1.5 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-2 grid grid-cols-5 gap-1.5"
+                    className="absolute top-8 right-1.5 z-20 bg-white border border-slate-200 rounded-xl shadow-xl p-2 w-56 space-y-0.5"
                     onMouseLeave={() => setColorPickerFolderId(null)}
                   >
-                    {Object.keys(PASTEL_LABEL).filter((k) => k !== 'slate').map((k) => {
-                      const active = (f.color_key || 'sky') === k;
+                    <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-400 px-2 pt-1 pb-1.5">
+                      Assign to group
+                    </div>
+                    {FOLDER_COLORS.filter((c) => c.slug !== 'slate').map((c) => {
+                      const active = (f.color_key || 'sky') === c.slug;
                       return (
                         <button
-                          key={k}
-                          onClick={() => recolorFolder(f, k)}
-                          data-testid={`folder-recolor-swatch-${f.id}-${k}`}
-                          title={PASTEL_LABEL[k]}
-                          className={`w-6 h-6 rounded-full ${PASTEL_DOT[k]} border-2 ${active ? 'border-slate-900' : 'border-white'} hover:border-slate-500 transition-colors`}
-                          aria-label={`Change folder colour to ${PASTEL_LABEL[k]}`}
-                        />
+                          key={c.slug}
+                          onClick={() => recolorFolder(f, c.slug)}
+                          data-testid={`folder-recolor-swatch-${f.id}-${c.slug}`}
+                          title={c.hint}
+                          className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[12px] text-left transition-colors ${active ? 'bg-slate-100 font-semibold text-slate-900' : 'hover:bg-slate-50 text-slate-700'}`}
+                          aria-label={`Assign to ${c.label} (${c.cosmetic})`}
+                        >
+                          <span className={`inline-block w-3.5 h-3.5 rounded-full ${c.dot} ${active ? 'ring-2 ring-slate-900 ring-offset-1' : 'border border-white/60'}`} />
+                          {c.label}
+                          <span className="ml-auto text-[10px] text-slate-400">{c.cosmetic.toLowerCase()}</span>
+                        </button>
                       );
                     })}
                   </div>

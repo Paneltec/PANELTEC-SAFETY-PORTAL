@@ -8,26 +8,27 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ShieldOff, Search as SearchIcon, X, Palette } from 'lucide-react';
 import api, { apiError } from '../lib/api';
+// v160.3.7p — Central colour taxonomy with semantic group labels.
+import { FOLDER_COLORS } from '../lib/folderColors';
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from './ui/dialog';
 
 const ROLE_LABEL = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', contractor: 'Contractor', auditor: 'Auditor' };
 
-// v160.3.7o — Colour-group taxonomy mirrors the Document Library pastel
-// legend (see PASTEL_DOT/PASTEL_LABEL in DocumentLibrary.jsx). Kept in
-// sync manually — if a new colour is added there, add it here too.
-const COLOR_GROUPS = [
-  { key: 'sky',    label: 'Sky',    dot: 'bg-[#a9c4e8]' },
-  { key: 'blush',  label: 'Blush',  dot: 'bg-[#f2b3bd]' },
-  { key: 'mint',   label: 'Mint',   dot: 'bg-[#a8dbb5]' },
-  { key: 'amber',  label: 'Amber',  dot: 'bg-[#eddc9c]' },   // maps to 'butter' in the folder palette
-  { key: 'sage',   label: 'Sage',   dot: 'bg-[#b3ceb0]' },
-  { key: 'lilac',  label: 'Lilac',  dot: 'bg-[#c9b0e6]' },
-  { key: 'peach',  label: 'Peach',  dot: 'bg-[#f4c8a6]' },
-  { key: 'coral',  label: 'Coral',  dot: 'bg-[#f0b9a3]' },
-  { key: 'lavender', label: 'Lavender', dot: 'bg-[#c9b8e8]' },
-];
+// v160.3.7p — Restrict modal now sources its colour swatches from
+// /lib/folderColors so the labels ("Health & Hazards", "SWMS &
+// Competencies", …) are always in sync with the Doc Library legend.
+// Uncategorised (`slate`) is intentionally excluded — you can't
+// meaningfully "restrict access to Uncategorised folders" as a policy;
+// the admin should first triage those folders into a real group.
+const COLOR_GROUPS = FOLDER_COLORS.filter((c) => c.slug !== 'slate').map((c) => ({
+  key: c.slug,
+  label: c.label,
+  cosmetic: c.cosmetic,
+  dot: c.dot,
+  hint: c.hint,
+}));
 
 export default function BulkRestrictModal({
   open, onClose,
@@ -161,6 +162,7 @@ export default function BulkRestrictModal({
                     data-testid={`bulk-restrict-color-group-${g.key}`}
                     className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border transition-colors ${on ? 'bg-orange-100 border-orange-400 text-orange-900' : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'}`}
                     aria-pressed={on}
+                    title={g.hint}
                   >
                     <span className={`inline-block w-3 h-3 rounded-full border border-white/60 ${g.dot}`} />
                     {g.label}
