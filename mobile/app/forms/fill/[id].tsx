@@ -16,6 +16,7 @@ import api, { apiError, API_BASE } from '../../../src/lib/api';
 import { Colors } from '../../../src/lib/colors';
 import WorkerPicker from '../../../src/components/WorkerPicker';
 import SwmsPicker from '../../../src/components/SwmsPicker';
+import CrewGroupCard from '../../../src/components/CrewGroupCard';
 import NavixyVehiclePicker from '../../../src/components/NavixyVehiclePicker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { toast } from '../../../src/lib/toast';
@@ -905,6 +906,39 @@ export default function FillOutScreen() {
   const fieldOffsetsRef = useRef<Record<string, number>>({});
   const scrollRef = useRef<ScrollView | null>(null);
 
+  // v160.3.8.0 — Detect consecutive worker_picker fields with
+  // config.group === "crew" and collapse them into a single CrewGroupCard.
+  // Returns a Set of field IDs that are part of a crew group (so the
+  // normal render loop can skip them) and an array of group objects.
+  const { crewGroupedIds, crewGroups } = useMemo(() => {
+    const fields = tpl?.fields || [];
+    const ids = new Set<string>();
+    const groups: Array<{ key: string; fields: any[] }> = [];
+    let i = 0;
+    while (i < fields.length) {
+      const f = fields[i];
+      if (f.type === 'worker_picker' && f.config?.group === 'crew') {
+        // Collect consecutive crew fields
+        const groupFields: any[] = [f];
+        let j = i + 1;
+        while (
+          j < fields.length &&
+          fields[j].type === 'worker_picker' &&
+          fields[j].config?.group === 'crew'
+        ) {
+          groupFields.push(fields[j]);
+          j++;
+        }
+        for (const gf of groupFields) ids.add(gf.id);
+        groups.push({ key: `crew-${groupFields[0].id}`, fields: groupFields });
+        i = j;
+      } else {
+        i++;
+      }
+    }
+    return { crewGroupedIds: ids, crewGroups: groups };
+  }, [tpl]);
+
   const submit = async () => {
     if (!tpl) return;
     // v160.1.5 — validation gate.
@@ -1051,9 +1085,30 @@ export default function FillOutScreen() {
           )}
           {(tpl.fields || []).length === 0 ? (
             <Text style={{ fontSize: 13, color: Colors.textTertiary, fontStyle: 'italic' }}>No fields in this template.</Text>
-          ) : (tpl.fields || []).map((f: any) => {
+          ) : (tpl.fields || []).reduce((acc: React.ReactElement[], f: any, idx: number) => {
+            // v160.3.8.0 — Crew-grouped worker_pickers are rendered
+            // as a single CrewGroupCard. Skip individual rendering
+            // for fields that belong to a crew group.
+            if (crewGroupedIds.has(f.id)) {
+              // Only render the card on the FIRST field of each group.
+              const group = crewGroups.find((g) => g.fields[0].id === f.id);
+              if (group) {
+                acc.push(
+                  <CrewGroupCard
+                    key={group.key}
+                    fields={group.fields}
+                    values={values}
+                    setVal={setVal}
+                    submitAttempted={submitAttempted}
+                    missingIds={missingIds}
+                    onFieldLayout={(fid, y) => { fieldOffsetsRef.current[fid] = y; }}
+                  />
+                );
+              }
+              return acc;
+            }
             const hasErr = submitAttempted && missingIds.has(f.id);
-            return (
+            acc.push(
             <View
               key={f.id}
               testID={`field-row-${f.id}`}
@@ -1270,8 +1325,9 @@ export default function FillOutScreen() {
                 </View>
               )}
             </View>
-          );})}
-        </ScrollView>
+          );
+            return acc;
+          }, [] as React.ReactElement[])}        </ScrollView>
 
         {/* Submit bar — orange-amber */}
         <View style={fs.submitBar}>
