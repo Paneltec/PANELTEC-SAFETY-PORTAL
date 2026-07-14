@@ -50,10 +50,13 @@ function toRfNode(n, stats, onHide) {
       w: n.w,
       h: n.h,
     },
-    // Draggable off — this is a diagram, not a whiteboard. If a user
-    // wants a custom layout, we'll ship persistence in a later job.
+    // v160.3.7ac — Belt-and-braces. The parent ReactFlow already has
+    // `nodesDraggable={false}` / `elementsSelectable={false}` / etc.,
+    // but hard-locking on the node object protects against a future
+    // regression that flips those props.
     draggable: false,
-    selectable: true,
+    selectable: false,
+    connectable: false,
   };
 }
 
@@ -91,12 +94,22 @@ function ModuleNode({ data }) {
       <div className="flex items-center justify-center transition-transform group-hover:scale-105"
            style={{ width: w, height: h }}>
         {imgSrc ? (
-          <div className="bg-white rounded-2xl p-3 shadow-sm flex items-center justify-center overflow-hidden"
-               style={{ width: w, height: h }}>
+          <div
+            className="bg-white rounded-2xl shadow-sm flex items-center justify-center overflow-hidden"
+            style={{ width: w, height: h }}
+          >
+            {/*
+              v160.3.7ac — Padding is on the `<img>` (not the halo) so
+              the browser reserves whitespace INSIDE the container's
+              content-box and `object-contain` scales the illustration
+              to fit that inner area. Combined with `overflow-hidden`
+              on the halo this guarantees the PNG cannot poke past the
+              rounded-square boundary regardless of the source aspect.
+            */}
             <img
               src={imgSrc}
               alt=""
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain p-4"
               loading="lazy"
               data-testid={`schematic-node-image-${slug}`}
             />
@@ -269,12 +282,21 @@ export default function ProgramSchematicPage() {
                causing icons to crawl over the fixed white canvas; users
                want a static read-and-click layout. Pan-on-drag stays on
                so the diagram can still be nudged if it extends past the
-               viewport, but every scale gesture is disabled. */
+               viewport, but every scale gesture is disabled.
+               v160.3.7ac — Fully static now. Node dragging, panning,
+               and selection all disabled — users were accidentally
+               grabbing icons and pulling them off the canvas. Belt-and-
+               braces: `draggable: false` is ALSO set on every node in
+               `toRfNode()` so even a rogue react-flow default can't
+               re-enable it. */
             zoomOnScroll={false}
             zoomOnPinch={false}
             zoomOnDoubleClick={false}
             panOnScroll={false}
-            panOnDrag={true}
+            panOnDrag={false}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            elementsSelectable={false}
             minZoom={1}
             maxZoom={1}
             proOptions={{ hideAttribution: true }}
