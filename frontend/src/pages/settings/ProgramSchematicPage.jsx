@@ -17,7 +17,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Layers } from 'lucide-react';
 import ReactFlow, {
-  Background, Controls, MiniMap, Handle, Position,
+  Background, MiniMap, Handle, Position,
   ReactFlowProvider,
 } from 'reactflow';
 import 'reactflow/dist/style.css';
@@ -285,9 +285,19 @@ export default function ProgramSchematicPage() {
             nodeTypes={NODE_TYPES}
             onNodeClick={onNodeClick}
             fitView
-            fitViewOptions={{ padding: 0.08 }}
-            minZoom={0.4}
-            maxZoom={1.6}
+            fitViewOptions={{ padding: 0.15 }}
+            /* v160.3.7y — Lock the diagram at zoom = 1. Wheel-zoom was
+               causing icons to crawl over the fixed white canvas; users
+               want a static read-and-click layout. Pan-on-drag stays on
+               so the diagram can still be nudged if it extends past the
+               viewport, but every scale gesture is disabled. */
+            zoomOnScroll={false}
+            zoomOnPinch={false}
+            zoomOnDoubleClick={false}
+            panOnScroll={false}
+            panOnDrag={true}
+            minZoom={1}
+            maxZoom={1}
             proOptions={{ hideAttribution: true }}
             defaultEdgeOptions={{ type: 'default' }}
           >
@@ -298,7 +308,8 @@ export default function ProgramSchematicPage() {
               className="schematic-minimap !bg-white/95 !border !border-slate-200 !rounded-xl !shadow"
               style={{ width: 160, height: 100 }}
             />
-            <Controls className="schematic-controls" position="bottom-left" />
+            {/* v160.3.7y — Zoom is now locked at 1x so the zoom-in/out
+                and fit-view controls would be no-ops. Controls hidden. */}
           </ReactFlow>
         </ReactFlowProvider>
       </div>
