@@ -91,12 +91,12 @@ function ModuleNode({ data }) {
       <div className="flex items-center justify-center transition-transform group-hover:scale-105"
            style={{ width: w, height: h }}>
         {imgSrc ? (
-          <div className="bg-white rounded-full p-2 shadow-sm flex items-center justify-center"
+          <div className="bg-white rounded-full p-1 shadow-sm flex items-center justify-center"
                style={{ width: w, height: h }}>
             <img
               src={imgSrc}
               alt=""
-              className="max-h-24 max-w-24 object-contain"
+              className="max-h-full max-w-full object-contain"
               loading="lazy"
               data-testid={`schematic-node-image-${slug}`}
             />
