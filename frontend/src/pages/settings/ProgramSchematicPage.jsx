@@ -191,9 +191,50 @@ export default function ProgramSchematicPage() {
       <PageHeader
         crumb="Settings / Program Schematic"
         title="Program Schematic"
-        subtitle="Bird's-eye view of every module, integration, and data-flow across Paneltec Civil. Click any node to jump into that module."
+        subtitle="The Paneltec Civil control panel — 27 modules, 6 zones, live data flow."
       />
 
+      {/* v160.3.7r — Industrial control-panel hero illustration. Sits
+          above the interactive react-flow diagram; clicking it smooth-
+          scrolls to the interactive detail view below so users get both
+          the wow-factor aesthetic overview AND the functional tool. */}
+      <a
+        href="#schematic-interactive"
+        onClick={(e) => {
+          e.preventDefault();
+          document.getElementById('schematic-interactive')?.scrollIntoView({
+            behavior: 'smooth', block: 'start',
+          });
+        }}
+        className="block group mb-4 rounded-3xl overflow-hidden shadow-lg border border-slate-200 bg-white hover:shadow-xl transition-shadow schematic-hero"
+        data-testid="schematic-hero-image"
+        aria-label="Program schematic hero — scroll to interactive view"
+      >
+        <img
+          src="/img/schematic/paneltec-control-panel-hero.png"
+          alt="Paneltec Civil industrial control-panel schematic — central control station connected by cables to Capture, Intelligence, Integrations, Compliance, Fleet, People, and Backup & Data equipment."
+          className="w-full block max-h-[500px] object-cover object-center"
+          loading="eager"
+        />
+      </a>
+
+      <div className="mb-4 flex justify-center">
+        <a
+          href="#schematic-interactive"
+          onClick={(e) => {
+            e.preventDefault();
+            document.getElementById('schematic-interactive')?.scrollIntoView({
+              behavior: 'smooth', block: 'start',
+            });
+          }}
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 text-white text-[11px] font-semibold uppercase tracking-[0.14em] hover:bg-slate-700 transition-colors schematic-hero-cta"
+          data-testid="schematic-hero-cta"
+        >
+          ↓ Interactive view below
+        </a>
+      </div>
+
+      <div id="schematic-interactive" className="scroll-mt-4">
       <div className="flex items-center gap-3 mb-3 text-xs">
         <div className="flex items-center gap-2 text-slate-500">
           <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
@@ -247,13 +288,28 @@ export default function ProgramSchematicPage() {
         </ReactFlowProvider>
       </div>
 
+      </div>
       {/* Print stylesheet — flatten to landscape, hide controls, keep the
           canvas at a fixed print height so react-flow's absolute-positioned
-          nodes stay in place instead of collapsing to zero. */}
+          nodes stay in place instead of collapsing to zero.
+          v160.3.7r — Print output now includes the industrial hero image
+          as page 1 (with a page-break) and the interactive diagram on
+          page 2 (landscape). */}
       <style>{`
         @media print {
           @page { size: A3 landscape; margin: 10mm; }
           body { background: #ffffff !important; }
+          .schematic-hero {
+            box-shadow: none !important;
+            border: 1px solid #e2e8f0 !important;
+            page-break-after: always;
+          }
+          .schematic-hero img {
+            max-height: none !important;
+            width: 100% !important;
+            height: auto !important;
+          }
+          .schematic-hero-cta { display: none !important; }
           .schematic-canvas {
             height: 700px !important;
             page-break-inside: avoid;
