@@ -240,6 +240,8 @@ api.include_router(suppliers_router)
 api.include_router(supplier_panels_router)
 api.include_router(worker_certifications_router)
 api.include_router(certs_bulk_router)  # v160.3.7ai — /certifications bulk ops
+from settings_nav import router as settings_nav_router  # noqa: E402
+api.include_router(settings_nav_router)  # v160.3.8.1 — /settings/nav-layout
 api.include_router(workers_router)
 api.include_router(workers_me_router)  # v160.2.2 — /me/worker-profile
 api.include_router(workers_qr_router)

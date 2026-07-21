@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import RebrandNudge from '@/components/RebrandNudge';
+// v160.3.8.1 — Draggable Settings sub-nav replaces the flat Settings section.
+import SettingsNav from '@/components/settings/SettingsNav';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
@@ -131,6 +133,22 @@ const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
       {NAV.map((group) => {
+        // v160.3.8.1 — The Settings section is now dynamic (per-org
+        // drag/drop layout + folders). Delegate to <SettingsNav />
+        // instead of the flat visible-item loop below. Non-admins
+        // see the same layout read-only; the component internally
+        // filters by adminOnly / resource gates using the same
+        // registry the backend seeds from.
+        if (group.section === 'Settings') {
+          return (
+            <SettingsNav
+              key={group.section}
+              collapsed={collapsed}
+              onItemClick={onItemClick}
+              isAdmin={isAdmin}
+            />
+          );
+        }
         const visible = group.items.filter((it) => {
           if (it.adminOnly && !isAdmin) return false;
           if (it.resource && !can(it.resource, 'open')) return false;
