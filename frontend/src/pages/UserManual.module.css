@@ -1,0 +1,354 @@
+/* v160.3.8.2 — Cheat-sheet theme for the User Manual page.
+   SCOPED via CSS Module — every selector below only applies inside
+   `<div className={styles.page}>`. Bump the version at the top of
+   the file if you change the visual language. */
+
+.page {
+  /* Warm cream paper — extends to the full main-column width by
+     bleeding a bit outside the AppShell's default padding. */
+  background: #FBF6EC;
+  color: #1F1B16;
+  padding: 32px 28px 56px;
+  margin: -1.5rem -1.5rem 0;   /* undo default page padding of AppShell */
+  min-height: calc(100vh - 4rem);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* --- Page title -------------------------------------------------- */
+.titleWrap {
+  max-width: 1400px;
+  margin: 0 auto 28px;
+  padding: 8px 4px 4px;
+  position: relative;
+}
+.sparkleRow {
+  display: flex;
+  gap: 10px;
+  color: #E9782E;
+  font-size: 18px;
+  opacity: 0.85;
+  margin-bottom: 6px;
+}
+.pageTitle {
+  font-size: clamp(36px, 4.5vw, 54px);
+  font-weight: 800;
+  color: #E9782E;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin: 0;
+  text-transform: none;
+}
+.pageSubtitle {
+  color: #5A554D;
+  font-size: 15px;
+  margin-top: 8px;
+  max-width: 640px;
+  line-height: 1.45;
+}
+.tocBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  align-items: center;
+  margin-top: 20px;
+  padding: 10px 12px;
+  background: #FFFCF5;
+  border: 1px solid #EAD9C0;
+  border-radius: 12px;
+}
+.tocLabel {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #5A554D;
+  margin-right: 6px;
+}
+.tocChip {
+  font-size: 11px;
+  color: #1F1B16;
+  background: transparent;
+  border: 1px dashed #EAD9C0;
+  padding: 3px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.tocChip:hover { background: #FBE6CE; border-color: #E9782E; }
+
+/* --- Card grid --------------------------------------------------- */
+.grid {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  grid-auto-flow: row dense;
+}
+@media (min-width: 768px)  { .grid { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 1280px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
+
+/* --- Section card ------------------------------------------------ */
+.card {
+  background: #FFFCF5;
+  border: 1px solid #EAD9C0;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  padding: 16px 18px 18px;
+  scroll-margin-top: 100px;
+  break-inside: avoid;   /* keep cards intact when printing */
+  page-break-inside: avoid;
+  overflow-wrap: anywhere;
+}
+.card::before {
+  content: '';
+  display: block;
+  height: 4px;
+  margin: -16px -18px 12px;
+  background: linear-gradient(90deg, #E9782E 0%, #F5B77A 100%);
+  border-top-left-radius: 13px;
+  border-top-right-radius: 13px;
+  opacity: 0.95;
+}
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #EAD9C0;
+}
+.pill {
+  background: #E9782E;
+  color: white;
+  border-radius: 8px;
+  padding: 3px 9px 4px;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  min-width: 30px;
+  text-align: center;
+  line-height: 1.1;
+  font-family: 'Inter', ui-sans-serif, sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.cardTitle {
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #1F1B16;
+  flex: 1;
+  line-height: 1.25;
+}
+.cardIcon { font-size: 18px; line-height: 1; }
+
+/* --- Card body typography --------------------------------------- */
+.card p {
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin: 0 0 8px;
+  color: #1F1B16;
+  font-weight: 500;
+}
+.card h1 {
+  display: none;      /* the manual's leading H1 is redundant with our page title */
+}
+.card h2 { display: none; }  /* card-scoped body — no H2 inside */
+.card h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 800;
+  margin: 12px 0 4px;
+  color: #B14E1B;
+}
+.card ul, .card ol {
+  padding-left: 18px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.card li { margin-bottom: 3px; }
+.card li::marker { color: #E9782E; }
+
+/* --- Tables ------------------------------------------------------ */
+.card table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 4px 0 10px;
+  background: transparent;
+}
+.card thead th {
+  background: #FBE6CE;
+  text-align: left;
+  font-weight: 700;
+  padding: 5px 8px;
+  color: #1F1B16;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #EAD9C0;
+}
+.card tbody td {
+  padding: 4px 8px;
+  border-top: 1px solid #F2E4CE;
+  vertical-align: top;
+  color: #1F1B16;
+}
+.card tbody tr:hover { background: #FBF6EC; }
+
+/* --- Code -------------------------------------------------------- */
+.card code {
+  background: #F5EBDB;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #B14E1B;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+.card pre {
+  background: #1F1B16;
+  color: #FBF6EC;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  overflow-x: auto;
+  margin: 4px 0 10px;
+  line-height: 1.4;
+}
+.card pre code {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+/* --- Callouts (blockquotes) ------------------------------------- */
+.callout {
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12.5px;
+  margin: 6px 0 10px;
+  display: flex;
+  gap: 8px;
+  line-height: 1.45;
+}
+.callout > * { margin-bottom: 0 !important; }
+.calloutIcon { flex: 0 0 auto; font-size: 14px; line-height: 1.2; }
+.calloutTip     { background: #E4F1E4; color: #1F5B34; }
+.calloutWarn    { background: #FEE2E2; color: #7F1D1D; }
+.calloutExample { background: #FBE6CE; color: #7A3A0F; }
+.calloutInfo    { background: #D9EBF5; color: #0B4A73; }
+
+/* --- Images inside cards ----------------------------------------- */
+.card img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  margin: 6px 0 10px;
+  border-radius: 8px;
+  border: 1px solid #EAD9C0;
+  background: #FFFCF5;
+}
+
+/* --- Preamble section (before the first ##) --------------------- */
+.preamble {
+  max-width: 1400px;
+  margin: 0 auto 20px;
+  padding: 12px 16px;
+  background: #FFFCF5;
+  border: 1px solid #EAD9C0;
+  border-radius: 12px;
+  color: #1F1B16;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.preamble p { margin: 0 0 8px; }
+.preamble p:last-child { margin-bottom: 0; }
+.preamble strong { color: #1F1B16; }
+
+/* --- Toolbar (search + PDF) ------------------------------------- */
+.toolbar {
+  max-width: 1400px;
+  margin: 0 auto 20px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.searchWrap {
+  position: relative;
+  flex: 1;
+  min-width: 260px;
+  max-width: 380px;
+}
+.searchInput {
+  width: 100%;
+  padding: 9px 34px 9px 34px;
+  border: 1px solid #EAD9C0;
+  background: #FFFCF5;
+  border-radius: 10px;
+  font-size: 13px;
+  color: #1F1B16;
+}
+.searchInput:focus {
+  outline: none;
+  border-color: #E9782E;
+  box-shadow: 0 0 0 2px rgba(233,120,46,0.20);
+}
+.searchIcon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #5A554D;
+  pointer-events: none;
+}
+.pdfBtn {
+  background: #E9782E;
+  color: white;
+  padding: 9px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+.pdfBtn:hover { background: #C25E1C; }
+
+/* --- Search highlight ------------------------------------------- */
+.mark {
+  background: #FBE6CE;
+  color: #1F1B16;
+  padding: 0 2px;
+  border-radius: 3px;
+  box-shadow: inset 0 -2px 0 #E9782E;
+}
+
+/* --- Print stylesheet ------------------------------------------- */
+@media print {
+  .page {
+    background: white !important;
+    color: black !important;
+    padding: 0;
+    margin: 0;
+    min-height: 0;
+  }
+  .grid { gap: 10px; }
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #b0a390;
+    background: white !important;
+  }
+  .card::before { background: #E9782E !important; }
+  .toolbar, .tocBar { display: none !important; }
+  .pageTitle { font-size: 28px; }
+  .pageSubtitle { font-size: 12px; }
+}
