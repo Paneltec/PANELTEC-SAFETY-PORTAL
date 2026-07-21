@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import {
   DndContext, PointerSensor, KeyboardSensor,
   useSensor, useSensors, closestCenter,
-  DragOverlay,
+  DragOverlay, useDroppable,
 } from '@dnd-kit/core';
 import {
   SortableContext, useSortable, verticalListSortingStrategy,
@@ -49,8 +49,16 @@ function saveCollapsed(state) {
   try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(state)); } catch { /* noop */ }
 }
 
-// Fresh org id — used for a new folder. Timestamp keeps it unique.
+// Fresh folder id. v160.3.8.5 — Prefer `crypto.randomUUID()` when
+// available so the id is guaranteed unique and stable across the
+// call site. Falls back to a Math.random-based combo for older
+// browsers (Safari <15) which don't expose it on window.
 function newFolderId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return 'folder_' + crypto.randomUUID();
+    }
+  } catch { /* noop */ }
   return 'folder_' + Math.random().toString(36).slice(2, 8) + '_' + Date.now().toString(36);
 }
 
@@ -159,6 +167,28 @@ export default function SettingsNav({ collapsed: navCollapsed, onItemClick, isAd
     setActiveId(null);
     const { active, over } = evt;
     if (!over || active.id === over.id) return;
+
+    // v160.3.8.5 — Body-drop path. Every folder registers an
+    // additional `body:<id>` droppable on its inner <ul> (see
+    // <FolderBody /> below) so drops onto an empty folder — which
+    // has zero sortable children — still land on a valid target.
+    // Without this, dropping on the "Drop items here" placeholder
+    // of a newly-created folder produced no `over` id and the drag
+    // was silently discarded. Root cause (1) in v160.3.8.5 spec.
+    if (typeof over.id === 'string' && over.id.startsWith('body:')) {
+      const folderId = over.id.slice('body:'.length);
+      const src = findItem(layout, active.id);
+      const target = findItem(layout, folderId);
+      if (!src || !target || target.node.type !== 'folder' || src.node.type !== 'item') return;
+      const { next: removed } = removeAtPath(layout, src.path);
+      const idx = removed.findIndex((n) => n.type === 'folder' && n.id === folderId);
+      if (idx < 0) return;
+      const withInsert = JSON.parse(JSON.stringify(removed));
+      withInsert[idx].children.push(src.node);   // append to end
+      commitLayout(withInsert);
+      return;
+    }
+
     const src = findItem(layout, active.id);
     const dst = findItem(layout, over.id);
     if (!src || !dst) return;
@@ -171,13 +201,15 @@ export default function SettingsNav({ collapsed: navCollapsed, onItemClick, isAd
       return;
     }
 
-    // If we dropped onto a folder header, put us at the FRONT of its
-    // children.
+    // If we dropped onto a folder header, append to the end of its
+    // children (v160.3.8.5 — was `unshift` prior; APPEND is more
+    // intuitive when dropping onto a partially-populated folder so
+    // the operator's most-recently-added item is at the bottom).
     if (dst.node.type === 'folder' && src.node.type === 'item') {
       const { next: removed } = removeAtPath(layout, src.path);
       const folderIdx = findItem(removed, dst.node.id).path[0];
       const withInsert = JSON.parse(JSON.stringify(removed));
-      withInsert[folderIdx].children.unshift(src.node);
+      withInsert[folderIdx].children.push(src.node);
       commitLayout(withInsert);
       return;
     }
@@ -351,7 +383,11 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
       {isAdmin && !navCollapsed && (
         <button
           type="button"
-          className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing p-0.5"
+          /* v160.3.8.5 — Bright-blue grip. Previous slate-400 was
+             barely visible on the cream sidebar. Uses Tailwind
+             blue-600 (`#2563EB`) idle → blue-700 (`#1D4ED8`) on
+             hover. Reveal-on-row-hover behaviour unchanged. */
+          className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing p-0.5"
           data-testid={`${reg.testid}-drag-handle`}
           {...attributes} {...listeners}
           title="Drag to reorder"
@@ -404,7 +440,8 @@ function SortableFolder({
         {isAdmin && !navCollapsed && (
           <button
             type="button"
-            className="opacity-0 group-hover/folder:opacity-100 text-slate-400 hover:text-slate-700 cursor-grab active:cursor-grabbing px-0.5 self-center"
+            /* v160.3.8.5 — Bright-blue grip on folders too. */
+            className="opacity-0 group-hover/folder:opacity-100 text-[#2563EB] hover:text-[#1D4ED8] cursor-grab active:cursor-grabbing px-0.5 self-center"
             data-testid={`settings-nav-folder-${folder.id}-drag-handle`}
             {...attributes} {...listeners}
             title="Drag folder"
@@ -450,21 +487,55 @@ function SortableFolder({
       </div>
       {!collapsed && (
         <SortableContext items={kidIds} strategy={verticalListSortingStrategy}>
-          <ul className="space-y-0.5 ml-1">
-            {kids.map((k) => (
-              <SortableItem
-                key={k.key} id={k.key} node={k}
-                navCollapsed={navCollapsed} onItemClick={onItemClick}
-                isAdmin={isAdmin} inFolder={true}
-              />
-            ))}
-            {kids.length === 0 && !navCollapsed && (
-              <li className="text-[10px] text-slate-400 italic pl-6 py-1">Drop items here</li>
-            )}
-          </ul>
+          <FolderBody folderId={folder.id} navCollapsed={navCollapsed} kids={kids} isAdmin={isAdmin} onItemClick={onItemClick} />
         </SortableContext>
       )}
     </li>
+  );
+}
+
+/**
+ * v160.3.8.5 — Explicit droppable for a folder's body ul.
+ *
+ * The parent `<SortableContext>` gives us ordering-inside-folder for
+ * whatever items live in the folder, but it does NOT register the ul
+ * itself as a drop target. When the folder is empty (kidIds = []),
+ * there are no sortable children to collide with, so any drop that
+ * misses the folder-header row falls through and gets silently
+ * discarded. Registering the ul as its own droppable — with id
+ * `body:<folderId>` — gives every folder (including brand-new
+ * empty ones) a robust drop zone that spans the whole card body.
+ *
+ * `handleDragEnd()` recognises the `body:` prefix and appends the
+ * dragged item to the folder's children.
+ */
+function FolderBody({ folderId, navCollapsed, kids, isAdmin, onItemClick }) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'body:' + folderId });
+  return (
+    <ul
+      ref={setNodeRef}
+      className="space-y-0.5 ml-1"
+      data-testid={`settings-nav-folder-${folderId}-body`}
+      style={{
+        minHeight: kids.length === 0 ? 30 : undefined,
+        borderRadius: 8,
+        background: isOver ? 'rgba(37, 99, 235, 0.08)' : 'transparent',
+        transition: 'background 120ms ease',
+      }}
+    >
+      {kids.map((k) => (
+        <SortableItem
+          key={k.key} id={k.key} node={k}
+          navCollapsed={navCollapsed} onItemClick={onItemClick}
+          isAdmin={isAdmin} inFolder={true}
+        />
+      ))}
+      {kids.length === 0 && !navCollapsed && (
+        <li className={`text-[10px] italic pl-6 py-1 transition-colors ${isOver ? 'text-[#1D4ED8] font-semibold' : 'text-slate-400'}`}>
+          {isOver ? 'Release to drop here' : 'Drop items here'}
+        </li>
+      )}
+    </ul>
   );
 }
 
