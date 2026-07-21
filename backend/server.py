@@ -346,6 +346,23 @@ async def on_startup():
     except Exception as e:
         log.warning("HR dedup index setup failed: %s", e)
 
+    # v160.3.8.4 — Reconcile every org's saved Settings-nav layout
+    # against the current registry. Any doc that predates a new nav
+    # item gets it appended to the root here so operators see it on
+    # next page load without a manual fix. Idempotent.
+    try:
+        from settings_nav import reconcile_all_orgs
+        r = await reconcile_all_orgs()
+        if r["reconciled"]:
+            log.info(
+                "Settings-nav reconcile: %d/%d org(s) updated. Diff: %s",
+                r["reconciled"], r["inspected"], r["per_org"],
+            )
+        else:
+            log.info("Settings-nav reconcile: %d org(s) already complete.", r["inspected"])
+    except Exception as e:
+        log.warning("Settings-nav reconcile skipped at startup: %s", e)
+
     # v151.1 — auto-install server tools (LibreOffice / Tesseract / Poppler)
     # if the container overlay has wiped them. See file_pdf.py for the full
     # rationale. Fire-and-forget: apt runs in a background asyncio task,
