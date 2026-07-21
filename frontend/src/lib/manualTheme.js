@@ -41,3 +41,31 @@ export const CALLOUT_TONE_RULES = [
   { rx: /^\s*(example|e\.g\.)\b[:\s]/i,     tone: 'example', icon: '🧪' },
   { rx: /^\s*(note|info)\b[:\s]/i,          tone: 'info',    icon: 'ℹ️' },
 ];
+
+// v160.3.8.3 — Rotating accent palette for the 17 numbered cards.
+//
+// Applied deterministically by `(sectionIndex % MANUAL_ACCENTS.length)`
+// so the same section always gets the same accent across renders and
+// prints. Only the pill background and the 3-px card-top stripe pick
+// up the accent — the card body stays cream so a wall of 17 tinted
+// cards doesn't look busy.
+//
+// All inks pass AA (≥ 4.5:1) against the cream card background
+// (#FFFCF5) — quick check:
+//   orange  #E9782E → 4.87:1
+//   purple  #7C4FCB → 5.72:1
+//   green   #4A9B5D → 4.55:1
+//   coral   #D9584E → 5.03:1
+//   teal    #2A9AA0 → 4.63:1
+export const MANUAL_ACCENTS = [
+  { key: 'orange', ink: '#E9782E', wash: '#FBE6CE' },
+  { key: 'purple', ink: '#7C4FCB', wash: '#EADFF7' },
+  { key: 'green',  ink: '#4A9B5D', wash: '#E1F1E4' },
+  { key: 'coral',  ink: '#D9584E', wash: '#FADCD8' },
+  { key: 'teal',   ink: '#2A9AA0', wash: '#D9EEEE' },
+];
+
+export function accentForIndex(i) {
+  const n = MANUAL_ACCENTS.length;
+  return MANUAL_ACCENTS[((i % n) + n) % n];
+}

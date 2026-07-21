@@ -106,7 +106,10 @@
   display: block;
   height: 4px;
   margin: -16px -18px 12px;
-  background: linear-gradient(90deg, #E9782E 0%, #F5B77A 100%);
+  /* v160.3.8.3 — Accent stripe pulls its colour from `--accent-ink`
+     (set inline per card in UserManual.jsx). Falls back to orange
+     if a card renders without the property for some reason. */
+  background: var(--accent-ink, #E9782E);
   border-top-left-radius: 13px;
   border-top-right-radius: 13px;
   opacity: 0.95;
@@ -120,7 +123,10 @@
   border-bottom: 1px solid #EAD9C0;
 }
 .pill {
-  background: #E9782E;
+  /* v160.3.8.3 — Background from per-card CSS variable so the 17
+     cards can cycle orange → purple → green → coral → teal without
+     touching this stylesheet. */
+  background: var(--accent-ink, #E9782E);
   color: white;
   border-radius: 8px;
   padding: 3px 9px 4px;
@@ -347,7 +353,15 @@
     border: 1px solid #b0a390;
     background: white !important;
   }
-  .card::before { background: #E9782E !important; }
+  .card::before { background: var(--accent-ink, #E9782E) !important; }
+  /* v160.3.8.3 — Force browsers to render the accent colours when
+     printing. Without `print-color-adjust: exact` Chrome/Edge strip
+     background fills to save ink, which would wipe the pill and the
+     top stripe (the two things carrying the cycle). */
+  .pill, .card::before {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
   .toolbar, .tocBar { display: none !important; }
   .pageTitle { font-size: 28px; }
   .pageSubtitle { font-size: 12px; }

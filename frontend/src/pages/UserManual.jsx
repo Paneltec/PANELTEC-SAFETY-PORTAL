@@ -7,7 +7,7 @@ import {
 import api from '../lib/api';
 import { stashInlinePdf } from '../lib/pdfStash';
 import styles from './UserManual.module.css';
-import { CALLOUT_TONE_RULES } from '../lib/manualTheme';
+import { CALLOUT_TONE_RULES, accentForIndex } from '../lib/manualTheme';
 
 // v160.3.8.2 — Cheat-sheet redesign.
 //
@@ -251,19 +251,27 @@ export default function UserManual() {
         <div style={{ textAlign: 'center', padding: '80px 0', color: '#5A554D' }}>Loading manual…</div>
       ) : (
         <div className={styles.grid} ref={contentRef} data-testid="manual-content">
-          {sections.map((s, i) => (
-            <ManualSectionCard
-              key={s.slug}
-              number={i + 1}
-              title={highlight(s.title, query)}
-              icon={s.icon}
-              slug={s.slug}
-            >
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-                {s.body}
-              </ReactMarkdown>
-            </ManualSectionCard>
-          ))}
+          {sections.map((s, i) => {
+            // v160.3.8.3 — Rotate accent colour across all 17 cards
+            // by deterministic modulo. CSS custom properties pipe
+            // the ink/wash into `.pill` and `.card::before` inside
+            // UserManual.module.css, so the stylesheet stays static.
+            const accent = accentForIndex(i);
+            return (
+              <ManualSectionCard
+                key={s.slug}
+                number={i + 1}
+                title={highlight(s.title, query)}
+                icon={s.icon}
+                slug={s.slug}
+                accent={accent}
+              >
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+                  {s.body}
+                </ReactMarkdown>
+              </ManualSectionCard>
+            );
+          })}
         </div>
       )}
     </div>
@@ -276,12 +284,19 @@ export default function UserManual() {
  * rendered from the caller (typically <ReactMarkdown …/>) so the
  * copy stays SOT-driven.
  */
-export function ManualSectionCard({ number, title, icon, slug, children }) {
+export function ManualSectionCard({ number, title, icon, slug, accent, children }) {
+  // v160.3.8.3 — Accent piped in as CSS custom properties. Callers
+  // that omit the prop get the default orange from the CSS fallback.
+  const cardStyle = accent
+    ? { '--accent-ink': accent.ink, '--accent-wash': accent.wash }
+    : undefined;
   return (
     <section
       className={styles.card}
       id={slug}
       data-testid={`manual-section-${slug}`}
+      data-accent={accent?.key || 'orange'}
+      style={cardStyle}
     >
       <header className={styles.cardHeader}>
         <span className={styles.pill} aria-hidden>{number}.</span>
