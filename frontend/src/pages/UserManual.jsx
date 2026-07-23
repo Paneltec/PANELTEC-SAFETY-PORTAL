@@ -1,11 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   Search24Regular, ArrowDownload24Regular, Dismiss16Regular,
+  Dismiss24Regular,
 } from '@fluentui/react-icons';
 import api from '../lib/api';
 import { stashInlinePdf } from '../lib/pdfStash';
+import useLockBodyScroll from '../lib/useLockBodyScroll';
 import styles from './UserManual.module.css';
 import { CALLOUT_TONE_RULES, accentForIndex } from '../lib/manualTheme';
 
@@ -160,12 +163,13 @@ export default function UserManual() {
       );
     },
     img: ({ src, alt, ...p }) => (
-      <img
+      <ManualImage
         {...p}
         src={src}
         alt={alt || ''}
-        loading="lazy"
-        data-testid={src?.includes('/schematics/') ? `manual-schematic-${(src.split('/').pop() || '').replace(/\.png$/, '')}` : undefined}
+        // v160.3.8.8 — Preserve schematic-image testid for
+        // existing regression tests.
+        dataTestId={src?.includes('/schematics/') ? `manual-schematic-${(src.split('/').pop() || '').replace(/\.png$/, '')}` : undefined}
       />
     ),
   }), [query]);
@@ -358,4 +362,187 @@ export function ManualPageTitle({ title, subtitle }) {
       {subtitle && <div className={styles.pageSubtitle}>{subtitle}</div>}
     </div>
   );
+}
+
+
+/**
+ * v160.3.8.9 — Zoomable manual thumbnail.
+ *
+ * Renders inline exactly like the previous plain `<img>` (styled by
+ * `.card img` in UserManual.module.css) but is now a keyboard- and
+ * click-activated button that opens `<ManualLightbox>` at full size.
+ * On close, focus returns to this thumbnail so keyboard-only users
+ * pick up where they left off. Because the lightbox is a portal to
+ * `document.body`, the underlying manual scroll position is
+ * preserved automatically — clicking through and back leaves the
+ * user exactly where they were.
+ *
+ * The thumbnail is a native `<button>` (not just role=button on a
+ * div) so screen readers announce it as clickable and Enter/Space
+ * work out of the box.
+ */
+function ManualImage({ src, alt, dataTestId, ...rest }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    // Return focus AFTER the lightbox unmounts.
+    requestAnimationFrame(() => { btnRef.current?.focus?.(); });
+  }, []);
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen(true)}
+        data-testid={dataTestId}
+        aria-label={alt ? `Enlarge image: ${alt}` : 'Enlarge manual image'}
+        // Reset native button chrome so the img inside inherits the
+        // .card img styling (rounded corners, tan border, spacing).
+        style={{
+          all: 'unset',
+          display: 'block',
+          width: '100%',
+          cursor: 'zoom-in',
+        }}
+      >
+        <img
+          {...rest}
+          src={src}
+          alt={alt || ''}
+          loading="lazy"
+          draggable={false}
+        />
+      </button>
+      {open && <ManualLightbox src={src} alt={alt} onClose={close} />}
+    </>
+  );
+}
+
+/**
+ * v160.3.8.9 — Fullscreen lightbox for one manual image.
+ *
+ * Portaled to `document.body` so the fixed-position overlay isn't
+ * clipped by the manual's `column-count` masonry container (columns
+ * establish a new stacking context that can chop overflow-visible
+ * children — a real gotcha with column layouts).
+ *
+ * Focus is trapped inside via `keydown[Tab]` cycling between the
+ * close button and the image. Esc closes. Backdrop click closes.
+ * Body scroll is locked while open (`useLockBodyScroll(true)`).
+ * Fade-in via a one-frame delayed `opacity` toggle so the transition
+ * fires on mount.
+ */
+function ManualLightbox({ src, alt, onClose }) {
+  useLockBodyScroll(true);
+  const closeBtnRef = useRef(null);
+  const imgRef = useRef(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const rafId = requestAnimationFrame(() => {
+      setVisible(true);
+      closeBtnRef.current?.focus?.();
+    });
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const els = [closeBtnRef.current, imgRef.current].filter(Boolean);
+        if (els.length === 0) return;
+        const idx = els.indexOf(document.activeElement);
+        const nextIdx = e.shiftKey
+          ? (idx <= 0 ? els.length - 1 : idx - 1)
+          : (idx === -1 ? 0 : (idx + 1) % els.length);
+        els[nextIdx].focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      cancelAnimationFrame(rafId);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [onClose]);
+
+  const overlay = (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt || 'Enlarged manual image'}
+      onClick={onClose}
+      data-testid="manual-image-lightbox"
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(20, 17, 13, 0.85)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12,
+        padding: 24,
+        zIndex: 9999,
+        opacity: visible ? 1 : 0,
+        transition: 'opacity 150ms ease',
+      }}
+    >
+      <button
+        ref={closeBtnRef}
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClose(); }}
+        aria-label="Close enlarged image"
+        data-testid="manual-image-lightbox-close"
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          width: 40, height: 40,
+          borderRadius: 999,
+          background: 'rgba(255,255,255,0.14)',
+          color: '#FBF6EC',
+          border: '1px solid rgba(255,255,255,0.35)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: 'pointer',
+        }}
+      >
+        <Dismiss24Regular />
+      </button>
+      <img
+        ref={imgRef}
+        src={src}
+        alt={alt || ''}
+        tabIndex={0}
+        onClick={(e) => e.stopPropagation()}
+        draggable={false}
+        style={{
+          maxWidth: 'min(1200px, 92vw)',
+          maxHeight: '86vh',
+          objectFit: 'contain',
+          borderRadius: 8,
+          boxShadow: '0 10px 40px rgba(0,0,0,0.45)',
+          background: '#FFFCF5',
+          outline: 'none',
+        }}
+      />
+      {alt && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            maxWidth: 'min(1200px, 92vw)',
+            padding: '6px 12px',
+            borderRadius: 8,
+            background: '#FBE6CE',
+            color: '#7A3A0F',
+            fontSize: 13,
+            fontWeight: 500,
+            textAlign: 'center',
+          }}
+        >
+          {alt}
+        </div>
+      )}
+    </div>
+  );
+
+  return createPortal(overlay, document.body);
 }

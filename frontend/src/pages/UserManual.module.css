@@ -398,4 +398,10 @@
   .toolbar, .tocBar { display: none !important; }
   .pageTitle { font-size: 28px; }
   .pageSubtitle { font-size: 12px; }
+  /* v160.3.8.9 — If an admin somehow starts a print job with the
+     lightbox open, hide the overlay so the print output stays the
+     document flow with inline images. Attribute selector isn't
+     scoped by the CSS module — it stays a global rule inside this
+     @media print block. */
+  :global([data-testid="manual-image-lightbox"]) { display: none !important; }
 }
