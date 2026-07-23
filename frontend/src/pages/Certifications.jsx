@@ -84,6 +84,49 @@ function SortHeaderBtn({ label, k, sortKey, sortDir, onClick, title, align = 'le
   );
 }
 
+// v160.3.8.6 — Discoverable toolbar dropdown for sort. Column headers
+// still work; this is the "no-hover-required" affordance for the
+// admin who never notices the caret indicators.
+//
+// Each option encodes `{key, dir}` so we can express both column-and-
+// direction without a second control. Bright default alpha-asc option
+// pinned to the top of the menu; direction toggles for the currently
+// active column live below.
+const CERT_SORT_OPTIONS = [
+  { key: 'worker',    dir: 'asc',  label: 'Name — A → Z' },
+  { key: 'worker',    dir: 'desc', label: 'Name — Z → A' },
+  { key: 'attention', dir: 'desc', label: 'Attention (highest risk first)' },
+  { key: 'total',     dir: 'desc', label: 'Total certs (most first)' },
+  { key: 'missing',   dir: 'desc', label: 'Missing (most first)' },
+  { key: 'expired',   dir: 'desc', label: 'Expired (most first)' },
+  { key: 'updated',   dir: 'desc', label: 'Recently updated' },
+];
+
+function CertSortDropdown({ sortKey, sortDir, onChange }) {
+  const current = CERT_SORT_OPTIONS.find((o) => o.key === sortKey && o.dir === sortDir);
+  const label = current?.label || `${sortKey} · ${sortDir}`;
+  return (
+    <label className="inline-flex items-center gap-2 text-sm text-slate-700"
+           data-testid="cert-toolbar-sort">
+      <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Sort</span>
+      <select
+        value={`${sortKey}:${sortDir}`}
+        onChange={(e) => {
+          const [k, d] = e.target.value.split(':');
+          onChange(k, d);
+        }}
+        aria-label={`Sort certifications: ${label}`}
+        data-testid="cert-toolbar-sort-select"
+        className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
+      >
+        {CERT_SORT_OPTIONS.map((o) => (
+          <option key={`${o.key}:${o.dir}`} value={`${o.key}:${o.dir}`}>{o.label}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 // v160.3.6f — client-side "days until expiry" derivation. Used to render
 // a compact relative-time chip next to the raw ISO date so admins can
 // eyeball urgency without doing the maths.
@@ -172,19 +215,31 @@ export default function Certifications() {
   // v160.3.7aj — Per-browser persistence in `paneltec_list_sort:certifications`.
   //   Fresh session → alpha-asc on `worker`. Explicit clicks are
   //   remembered on reload. Clearing localStorage restores the default.
+  // v160.3.8.6 — listKey migrated to `settings_certifications` to
+  //   match the page's actual route (`/settings/certifications`) and
+  //   line up with the other Settings list keys. Also added a
+  //   toolbar Sort dropdown so the affordance is discoverable
+  //   without hovering the column headers. Header clicks still work.
+  const CERT_LIST_KEY = 'settings_certifications';
   const _certSortDefault = { key: 'worker', dir: 'asc' };
-  const [sortKey, setSortKey] = useState(() => loadListSort('certifications', _certSortDefault).key);
-  const [sortDir, setSortDir] = useState(() => loadListSort('certifications', _certSortDefault).dir);
+  const [sortKey, setSortKey] = useState(() => loadListSort(CERT_LIST_KEY, _certSortDefault).key);
+  const [sortDir, setSortDir] = useState(() => loadListSort(CERT_LIST_KEY, _certSortDefault).dir);
   const toggleSort = (k) => {
     if (sortKey === k) {
       const nextDir = sortDir === 'asc' ? 'desc' : 'asc';
       setSortDir(nextDir);
-      saveListSort('certifications', k, nextDir);
+      saveListSort(CERT_LIST_KEY, k, nextDir);
     } else {
       setSortKey(k);
       setSortDir('asc');
-      saveListSort('certifications', k, 'asc');
+      saveListSort(CERT_LIST_KEY, k, 'asc');
     }
+  };
+  // v160.3.8.6 — Direct setter used by the toolbar dropdown.
+  const setSort = (k, dir) => {
+    setSortKey(k);
+    setSortDir(dir);
+    saveListSort(CERT_LIST_KEY, k, dir);
   };
   // v160.3.6g — persist expanded worker rows in ?open= so refresh keeps them.
   const [urlParams, setUrlParams] = useSearchParams();
@@ -460,6 +515,18 @@ export default function Certifications() {
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           <Download /> Export CSV
         </button>
+        {/* v160.3.8.6 — Toolbar Sort dropdown. Column headers remain
+            clickable — this is an extra discoverability affordance so
+            an admin who never notices the header carets can still
+            change the list order. Reads / writes the same
+            {sortKey, sortDir} that the header buttons use, and
+            persists via the shared listSort helper under
+            listKey `settings_certifications`. */}
+        <CertSortDropdown
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onChange={setSort}
+        />
         {/* v160.3.7ai — Bulk-clear pending review affordance.
             Only renders when there's at least one pending row so
             admins never see a no-op button. Uses a distinctive amber
