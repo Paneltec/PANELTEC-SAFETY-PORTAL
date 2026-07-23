@@ -95,6 +95,10 @@ function SortHeaderBtn({ label, k, sortKey, sortDir, onClick, title, align = 'le
 const CERT_SORT_OPTIONS = [
   { key: 'worker',    dir: 'asc',  label: 'Name — A → Z' },
   { key: 'worker',    dir: 'desc', label: 'Name — Z → A' },
+  // v160.3.8.7 — First-name sort alongside last-name. Same column,
+  // different comparator. Persisted under the same listKey.
+  { key: 'firstname', dir: 'asc',  label: 'First name — A → Z' },
+  { key: 'firstname', dir: 'desc', label: 'First name — Z → A' },
   { key: 'attention', dir: 'desc', label: 'Attention (highest risk first)' },
   { key: 'total',     dir: 'desc', label: 'Total certs (most first)' },
   { key: 'missing',   dir: 'desc', label: 'Missing (most first)' },
@@ -402,6 +406,12 @@ export default function Certifications() {
 
     const dir = sortDir === 'desc' ? -1 : 1;
     const byName = (a, b) => (`${a.last_name} ${a.first_name}`).localeCompare(`${b.last_name} ${b.first_name}`) * dir;
+    // v160.3.8.7 — First-name comparator. Locale-aware and
+    // case-insensitive (`localeCompare` handles both). Falls back
+    // to last-name so two "Daniels" don't shuffle randomly.
+    const byFirst = (a, b) =>
+      (a.first_name || '').localeCompare(b.first_name || '', undefined, { sensitivity: 'base' }) * dir
+      || (a.last_name  || '').localeCompare(b.last_name  || '', undefined, { sensitivity: 'base' }) * dir;
     if (sortKey === 'attention') {
       shaped.sort((a, b) => {
         const aw = a.counts.expired * 100 + a.counts.expiring * 10 + a.counts.missing;
@@ -409,8 +419,9 @@ export default function Certifications() {
         if (aw !== bw) return (bw - aw) * dir; // higher weight first ASCENDING
         return byName(a, b);
       });
-    } else if (sortKey === 'worker')  shaped.sort(byName);
-    else if (sortKey === 'total')     shaped.sort((a, b) => (a.counts.total - b.counts.total) * dir || byName(a, b));
+    } else if (sortKey === 'worker')    shaped.sort(byName);
+    else if (sortKey === 'firstname')   shaped.sort(byFirst);
+    else if (sortKey === 'total')       shaped.sort((a, b) => (a.counts.total - b.counts.total) * dir || byName(a, b));
     else if (sortKey === 'missing')   shaped.sort((a, b) => (a.counts.missing - b.counts.missing) * dir || byName(a, b));
     else if (sortKey === 'expired')   shaped.sort((a, b) => (a.counts.expired - b.counts.expired) * dir || byName(a, b));
     else if (sortKey === 'updated')   shaped.sort((a, b) => ((a.latest_updated_at || '').localeCompare(b.latest_updated_at || '')) * dir);
