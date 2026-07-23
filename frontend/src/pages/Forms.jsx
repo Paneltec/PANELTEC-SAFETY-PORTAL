@@ -426,8 +426,22 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
     return <input type="number" inputMode="decimal" value={value ?? ''} placeholder={field.placeholder} disabled={readOnly}
       onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
       className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
-  return <input type="text" value={value || ''} placeholder={field.placeholder} disabled={readOnly}
-    onChange={(e) => onChange(e.target.value)} data-testid={`field-${field.id}`}
+  // v160.3.9.4 — plain-text / `time` fallthrough with three opt-in configs:
+  //   config.uppercase: true   → force uppercase on every keystroke
+  //                              (vehicle rego, ID codes)
+  //   config.keyboard: 'phone-pad' → renders as <input type="tel"
+  //                              inputMode="tel"> for mobile keypad
+  //   (no config)              → identical behaviour to pre-v160.3.9.4
+  const cfg = field.config || {};
+  const inputType = cfg.keyboard === 'phone-pad' ? 'tel' : 'text';
+  const inputMode = cfg.keyboard === 'phone-pad' ? 'tel' : undefined;
+  const handleChange = (e) => {
+    let v = e.target.value;
+    if (cfg.uppercase && typeof v === 'string') v = v.toUpperCase();
+    onChange(v);
+  };
+  return <input type={inputType} inputMode={inputMode} value={value || ''} placeholder={field.placeholder} disabled={readOnly}
+    onChange={handleChange} data-testid={`field-${field.id}`}
     className="w-full px-3 py-3 min-h-[44px] border border-slate-300 rounded-xl text-sm bg-white disabled:bg-slate-50 disabled:text-slate-500" />;
 }
 
@@ -482,8 +496,13 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     const base = { ...(initialValues || {}) };
     const today = new Date();
     const isoDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    // v160.3.9.4 — `time` fields with `config.default_now: true` prefill to
+    // HH:MM at render time (visitor sign-in "Time in"). Editable — same
+    // pattern as `date.default_today`.
+    const nowTime = `${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
     (template.fields || []).forEach((f) => {
       if (f.type === 'date' && !base[f.id]) base[f.id] = isoDate;
+      if (f.type === 'time' && f.config?.default_now && !base[f.id]) base[f.id] = nowTime;
     });
     return base;
   });
@@ -1455,6 +1474,24 @@ export function SubmissionViewModal({ submissionId, onClose }) {
               )}
             </span>
           ))}
+        </div>
+      );
+    }
+    // v160.3.9.4 — Graceful chip rendering for job_picker + site_picker
+    // submission values. Visitor Register was `job_picker` before v160.3.9.4
+    // and `site_picker` after — both value shapes must render legibly on
+    // the submission viewer (not as raw JSON.stringify() blobs).
+    if (f.type === 'job_picker' || f.type === 'site_picker') {
+      if (!v || typeof v !== 'object') {
+        return <span className="text-slate-400 italic text-sm">Not selected.</span>;
+      }
+      const name = v.site_name || v.name || v.job_name || v.label || '—';
+      const sub = v.job_name && v.site_name ? v.job_name
+        : v.address || v.site_address || null;
+      return (
+        <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-100 text-sm">
+          <span className="font-medium text-slate-900">{name}</span>
+          {sub && <span className="text-slate-500">· {sub}</span>}
         </div>
       );
     }
