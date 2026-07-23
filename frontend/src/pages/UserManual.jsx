@@ -11,6 +11,11 @@ import { stashInlinePdf } from '../lib/pdfStash';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import styles from './UserManual.module.css';
 import { CALLOUT_TONE_RULES, accentForIndex } from '../lib/manualTheme';
+import { APP_FEATURE_REGISTRY } from '../lib/appFeatureRegistry';
+import { RUNNING_VERSION } from '../lib/version';
+import {
+  hotspotsFor, loadHotspotsVisible, saveHotspotsVisible, isHotspotEditMode,
+} from '../lib/manualImageHotspots';
 
 // v160.3.8.2 — Cheat-sheet redesign.
 //
@@ -209,6 +214,14 @@ export default function UserManual() {
                 {i + 1}. {s.title}
               </a>
             ))}
+            {/* v160.3.9.0 — TOC chip for the auto-generated Feature Index. */}
+            <a
+              href="#feature-index"
+              className={styles.tocChip}
+              data-testid="manual-toc-feature-index"
+            >
+              {sections.length + 1}. Feature Index
+            </a>
           </div>
         )}
       </div>
@@ -276,6 +289,19 @@ export default function UserManual() {
               </ManualSectionCard>
             );
           })}
+          {/* v160.3.9.0 — Auto-generated Feature Index card. Reads from
+              APP_FEATURE_REGISTRY (which itself pulls Settings items
+              from SETTINGS_NAV_REGISTRY) so this card regenerates on
+              every visit as devs add/remove pages, integrations, and
+              mobile captures. Numbered as `sections.length + 1` so
+              it participates in the same accent rotation as the
+              SOT-driven sections. Search + PDF export pick it up
+              automatically. */}
+          <FeatureIndexCard
+            number={sections.length + 1}
+            accent={accentForIndex(sections.length)}
+            query={query}
+          />
         </div>
       )}
     </div>
@@ -311,6 +337,91 @@ export function ManualSectionCard({ number, title, icon, slug, accent, children 
     </section>
   );
 }
+
+/**
+ * v160.3.9.0 — Feature Index card.
+ *
+ * Pulls its content live from `APP_FEATURE_REGISTRY` so devs never
+ * need to hand-edit the manual to reflect a new page or integration.
+ * Rendered as an ordinary numbered card so it participates in the
+ * accent-rotation, TOC chip listing, search highlight, and PDF export
+ * the same way as every SOT-driven section.
+ *
+ * Each group renders as an H3 followed by a two-column table. Feature
+ * labels linking to a route are anchored with `<a>` so the reader can
+ * click through — the printed version strips the underline (see the
+ * `.card a` block in UserManual.module.css handled globally).
+ */
+function FeatureIndexCard({ number, accent, query }) {
+  const slug = 'feature-index';
+  const cardStyle = { '--accent-ink': accent.ink, '--accent-wash': accent.wash };
+  return (
+    <section
+      className={styles.card}
+      id={slug}
+      data-testid="manual-feature-index-card"
+      data-accent={accent.key}
+      style={cardStyle}
+    >
+      <header className={styles.cardHeader}>
+        <span className={styles.pill} aria-hidden>{number}.</span>
+        <span className={styles.cardTitle}>{highlight('Feature Index', query)}</span>
+        <span className={styles.cardIcon} aria-hidden>🗂️</span>
+      </header>
+      <div
+        className={`${styles.callout} ${styles.calloutExample}`}
+        role="note"
+        data-testid="manual-feature-index-caption"
+      >
+        <span className={styles.calloutIcon} aria-hidden>⚙️</span>
+        <div>
+          Auto-generated from the app registry — regenerates every visit.
+          Last read: <strong>{RUNNING_VERSION}</strong>
+        </div>
+      </div>
+      {APP_FEATURE_REGISTRY.map((group) => {
+        // v160.3.9.1 — Anchor id uses the slugified group LABEL
+        // (e.g. "Main App Pages" → `main-app-pages`) so hotspot
+        // `target` strings can reference the reader-facing name
+        // rather than the internal enum id.
+        const anchorId = (group.label || group.id)
+          .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        return (
+        <div key={group.id}>
+          <h3
+            id={anchorId}
+            data-testid={`manual-feature-index-group-${group.id}`}
+          >
+            {highlight(group.label, query)}
+          </h3>
+          <table>
+            <thead>
+              <tr>
+                <th style={{ width: '38%' }}>Feature</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {group.items.map((it) => (
+                <tr key={it.key}>
+                  <td>
+                    {it.route
+                      ? <a href={it.route} style={{ color: 'var(--accent-ink, #E9782E)', fontWeight: 600, textDecoration: 'none' }}>
+                          {highlight(it.label, query)}
+                        </a>
+                      : <strong>{highlight(it.label, query)}</strong>}
+                  </td>
+                  <td>{highlight(it.description || '', query)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );})}
+    </section>
+  );
+}
+
 
 /**
  * v160.3.8.2 — Optional structured table override. Not used by the
@@ -439,6 +550,30 @@ function ManualLightbox({ src, alt, onClose }) {
   const imgRef = useRef(null);
   const [visible, setVisible] = useState(false);
 
+  // v160.3.9.1 — Hotspot layer state. Empty registry → behaves like
+  // v160.3.8.9 (no toggle, no overlays). Non-empty → shows dashed
+  // peach rectangles + a "Show hotspots" toggle.
+  const hotspots = useMemo(() => hotspotsFor(src), [src]);
+  const editMode = isHotspotEditMode();
+  const [showHotspots, setShowHotspots] = useState(loadHotspotsVisible);
+
+  const toggleHotspots = () => {
+    const nv = !showHotspots;
+    setShowHotspots(nv);
+    saveHotspotsVisible(nv);
+  };
+
+  const activateHotspot = (target) => {
+    onClose();
+    // 60ms lets React unmount the portal and detach body-scroll lock
+    // BEFORE we ask the browser to scroll — otherwise the scroll
+    // target's `scrollIntoView` competes with the portal removal.
+    setTimeout(() => {
+      const el = document.getElementById(target);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 60);
+  };
+
   useEffect(() => {
     const rafId = requestAnimationFrame(() => {
       setVisible(true);
@@ -507,23 +642,109 @@ function ManualLightbox({ src, alt, onClose }) {
       >
         <Dismiss24Regular />
       </button>
-      <img
-        ref={imgRef}
-        src={src}
-        alt={alt || ''}
-        tabIndex={0}
+      {/* v160.3.9.1 — Show-hotspots toggle. Only rendered if this
+          image has any registered hotspots. */}
+      {hotspots.length > 0 && !editMode && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); toggleHotspots(); }}
+          data-testid="manual-image-lightbox-hotspots-toggle"
+          aria-pressed={showHotspots}
+          style={{
+            position: 'absolute',
+            top: 16, left: 16,
+            padding: '6px 12px',
+            borderRadius: 999,
+            background: showHotspots ? 'rgba(233,120,46,0.85)' : 'rgba(255,255,255,0.14)',
+            color: '#FBF6EC',
+            border: '1px solid rgba(255,255,255,0.35)',
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            cursor: 'pointer',
+          }}
+        >
+          {showHotspots ? '● Hotspots on' : '○ Hotspots off'}
+        </button>
+      )}
+      {/* v160.3.9.1 — Image + hotspot overlay wrapper. Positioned
+          `relative` so absolutely-positioned hotspots inherit its
+          computed pixel size. */}
+      <div
         onClick={(e) => e.stopPropagation()}
-        draggable={false}
         style={{
+          position: 'relative',
           maxWidth: 'min(1200px, 92vw)',
           maxHeight: '86vh',
-          objectFit: 'contain',
-          borderRadius: 8,
-          boxShadow: '0 10px 40px rgba(0,0,0,0.45)',
-          background: '#FFFCF5',
-          outline: 'none',
+          display: 'inline-block',
         }}
-      />
+      >
+        <img
+          ref={imgRef}
+          src={src}
+          alt={alt || ''}
+          tabIndex={0}
+          draggable={false}
+          style={{
+            display: 'block',
+            maxWidth: 'min(1200px, 92vw)',
+            maxHeight: '86vh',
+            objectFit: 'contain',
+            borderRadius: 8,
+            boxShadow: '0 10px 40px rgba(0,0,0,0.45)',
+            background: '#FFFCF5',
+            outline: 'none',
+          }}
+        />
+        {(editMode || showHotspots) && hotspots.map((h) => (
+          <button
+            key={h.id}
+            type="button"
+            onClick={(e) => { e.stopPropagation(); activateHotspot(h.target); }}
+            aria-label={h.label}
+            title={h.label}
+            data-testid={`manual-image-hotspot-${h.id}`}
+            style={{
+              position: 'absolute',
+              left:   `${h.x}%`,
+              top:    `${h.y}%`,
+              width:  `${h.w}%`,
+              height: `${h.h}%`,
+              // v160.3.9.1 — Edit mode: solid fill + big id label so
+              // authors can eyeball coord placement. Normal mode:
+              // dashed peach outline that lights up on hover.
+              background: editMode ? 'rgba(233,120,46,0.55)' : 'rgba(233,120,46,0)',
+              border: `2px dashed rgba(233,120,46,${editMode ? 1 : 0.4})`,
+              borderRadius: 8,
+              cursor: 'pointer',
+              padding: 0,
+              transition: 'background 120ms ease, border-color 120ms ease',
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'flex-start',
+              color: '#FBF6EC',
+              fontSize: 11,
+              fontWeight: 700,
+            }}
+            onMouseEnter={(e) => {
+              if (editMode) return;
+              e.currentTarget.style.background = 'rgba(233,120,46,0.18)';
+              e.currentTarget.style.borderColor = 'rgba(233,120,46,1)';
+            }}
+            onMouseLeave={(e) => {
+              if (editMode) return;
+              e.currentTarget.style.background = 'rgba(233,120,46,0)';
+              e.currentTarget.style.borderColor = 'rgba(233,120,46,0.4)';
+            }}
+          >
+            {editMode && (
+              <span style={{ padding: '2px 6px', background: 'rgba(0,0,0,0.55)', borderRadius: 4, margin: 4 }}>
+                {h.id} → {h.target}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
       {alt && (
         <div
           onClick={(e) => e.stopPropagation()}
