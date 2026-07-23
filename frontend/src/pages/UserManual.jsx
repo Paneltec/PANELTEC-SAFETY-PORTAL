@@ -214,13 +214,15 @@ export default function UserManual() {
                 {i + 1}. {s.title}
               </a>
             ))}
-            {/* v160.3.9.0 — TOC chip for the auto-generated Feature Index. */}
+            {/* v160.3.9.2 — Feature Index now opens the manual, so
+                the chip reads as an in-page anchor rather than a
+                jump-to-bottom. */}
             <a
               href="#feature-index"
               className={styles.tocChip}
               data-testid="manual-toc-feature-index"
             >
-              {sections.length + 1}. Feature Index
+              ↑ Contents
             </a>
           </div>
         )}
@@ -268,6 +270,14 @@ export default function UserManual() {
         <div style={{ textAlign: 'center', padding: '80px 0', color: '#5A554D' }}>Loading manual…</div>
       ) : (
         <div className={styles.grid} ref={contentRef} data-testid="manual-content">
+          {/* v160.3.9.2 — Feature Index now opens the manual as an
+              unnumbered "Contents" card. Sections 1-17 keep their
+              original numbering because the Index doesn't consume
+              an accent slot in the rotation. */}
+          <FeatureIndexCard
+            accent={{ key: 'orange', ink: '#E9782E', wash: '#FBE6CE' }}
+            query={query}
+          />
           {sections.map((s, i) => {
             // v160.3.8.3 — Rotate accent colour across all 17 cards
             // by deterministic modulo. CSS custom properties pipe
@@ -289,22 +299,98 @@ export default function UserManual() {
               </ManualSectionCard>
             );
           })}
-          {/* v160.3.9.0 — Auto-generated Feature Index card. Reads from
-              APP_FEATURE_REGISTRY (which itself pulls Settings items
-              from SETTINGS_NAV_REGISTRY) so this card regenerates on
-              every visit as devs add/remove pages, integrations, and
-              mobile captures. Numbered as `sections.length + 1` so
-              it participates in the same accent rotation as the
-              SOT-driven sections. Search + PDF export pick it up
-              automatically. */}
-          <FeatureIndexCard
-            number={sections.length + 1}
-            accent={accentForIndex(sections.length)}
-            query={query}
-          />
+          {/* v160.3.9.2 — Feature Index moved to the top; see the
+              opening `<FeatureIndexCard>` above sections.map. */}
         </div>
       )}
+      <BackToIndexPill />
     </div>
+  );
+}
+
+/**
+ * v160.3.9.2 — Floating "↑ Feature Index" pill.
+ *
+ * Uses `IntersectionObserver` on `#feature-index` so the pill only
+ * appears when the reader has scrolled past the Contents card at the
+ * top. No scroll listeners = cheap. Hidden on narrow-mobile touch
+ * devices (<768px + coarse pointer) so it doesn't compete with the
+ * on-screen keyboard. Print stylesheet also hides it.
+ */
+function BackToIndexPill() {
+  const [visible, setVisible] = useState(false);
+  const [hiddenForMobile, setHiddenForMobile] = useState(false);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(pointer: coarse) and (max-width: 767px)');
+    const update = () => setHiddenForMobile(mql.matches);
+    update();
+    mql.addEventListener?.('change', update);
+    return () => mql.removeEventListener?.('change', update);
+  }, []);
+
+  useEffect(() => {
+    // The Feature Index card lives inside a CSS multi-column container,
+    // so `getBoundingClientRect` can be quirky. IntersectionObserver
+    // handles column-layouts correctly and is cheaper than scroll.
+    const target = document.getElementById('feature-index');
+    if (!target) return undefined;
+    const io = new IntersectionObserver(
+      (entries) => setVisible(!entries[0].isIntersecting),
+      { threshold: 0 },
+    );
+    io.observe(target);
+    return () => io.disconnect();
+  }, []);
+
+  if (hiddenForMobile) return null;
+
+  const scrollBack = () => {
+    const el = document.getElementById('feature-index');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={scrollBack}
+      aria-label="Return to Feature Index"
+      data-testid="manual-back-to-index-pill"
+      className={styles.backToIndexPill}
+      style={{
+        position: 'fixed',
+        bottom: 24,
+        right: 24,
+        zIndex: 40,
+        opacity: visible ? 1 : 0,
+        pointerEvents: visible ? 'auto' : 'none',
+        transition: 'opacity 200ms ease, transform 200ms ease, background 120ms ease',
+        background: '#2563EB',
+        color: '#FFFFFF',
+        border: 'none',
+        borderRadius: 999,
+        padding: '12px 16px',
+        fontSize: 13,
+        fontWeight: 700,
+        letterSpacing: '0.02em',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+        cursor: 'pointer',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 8,
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = '#1D4ED8';
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = '#2563EB';
+        e.currentTarget.style.transform = 'translateY(0)';
+      }}
+    >
+      <span aria-hidden style={{ fontSize: 15, lineHeight: 1 }}>↑</span>
+      Feature Index
+    </button>
   );
 }
 
@@ -352,7 +438,7 @@ export function ManualSectionCard({ number, title, icon, slug, accent, children 
  * click through — the printed version strips the underline (see the
  * `.card a` block in UserManual.module.css handled globally).
  */
-function FeatureIndexCard({ number, accent, query }) {
+function FeatureIndexCard({ accent, query }) {
   const slug = 'feature-index';
   const cardStyle = { '--accent-ink': accent.ink, '--accent-wash': accent.wash };
   return (
@@ -364,8 +450,9 @@ function FeatureIndexCard({ number, accent, query }) {
       style={cardStyle}
     >
       <header className={styles.cardHeader}>
-        <span className={styles.pill} aria-hidden>{number}.</span>
-        <span className={styles.cardTitle}>{highlight('Feature Index', query)}</span>
+        {/* v160.3.9.2 — Feature Index is unnumbered ("Contents"
+            card). Sections 1-17 retain their canonical numbering. */}
+        <span className={styles.cardTitle}>{highlight('Contents', query)}</span>
         <span className={styles.cardIcon} aria-hidden>🗂️</span>
       </header>
       <div

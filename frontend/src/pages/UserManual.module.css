@@ -404,4 +404,8 @@
      scoped by the CSS module — it stays a global rule inside this
      @media print block. */
   :global([data-testid="manual-image-lightbox"]) { display: none !important; }
+  /* v160.3.9.2 — Hide the floating "Back to Feature Index" pill
+     when printing. The pill is styled inline (see BackToIndexPill
+     in UserManual.jsx) so a raw attribute selector reaches it. */
+  :global([data-testid="manual-back-to-index-pill"]) { display: none !important; }
 }
