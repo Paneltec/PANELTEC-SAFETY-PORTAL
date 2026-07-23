@@ -22,10 +22,12 @@
 //                     structured, high-risk indicator)
 //   onDeleted       — id => void; parent evicts the row from state
 
-import React from 'react';
+import React, { useState } from 'react';
+import { Eye } from 'lucide-react';
 import PdfActions from './PdfActions';
 import DeleteRecordButton from './DeleteRecordButton';
 import EmailButton from './EmailButton';
+import SubmissionViewer from './SubmissionViewer';
 import { templateColor, templateShortLabel } from '../lib/templateColors';
 
 export default function CaptureCard({
@@ -47,6 +49,9 @@ export default function CaptureCard({
 
   const defaultSubject = subject || `${title} — ${dateStr}`;
   const defaultBody = body || `${title}\nOperator: ${operator || '—'}\nDate: ${dateStr || '—'}`;
+
+  // v160.3.9.10 — In-app submission viewer for the "unable to just review" bug.
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   return (
     <div
@@ -80,6 +85,16 @@ export default function CaptureCard({
             ))}
           </div>
           <div className="flex items-center gap-0 opacity-70 group-hover:opacity-100 transition-opacity -mr-1">
+            {/* v160.3.9.10 — View submission inline */}
+            <button
+              type="button"
+              onClick={() => setViewerOpen(true)}
+              title="View submission"
+              aria-label="View submission"
+              data-testid={`capture-view-${r.id}`}
+              className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+              <Eye size={13} />
+            </button>
             <PdfActions
               resourceKind={resourceKind}
               recordId={r.id}
@@ -130,6 +145,15 @@ export default function CaptureCard({
           </div>
         )}
       </div>
+      {viewerOpen && (
+        <SubmissionViewer
+          record={r}
+          resourceKind={resourceKind}
+          apiPath={apiPath}
+          onClose={() => setViewerOpen(false)}
+          onDeleted={onDeleted}
+        />
+      )}
     </div>
   );
 }
