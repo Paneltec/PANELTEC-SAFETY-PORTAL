@@ -61,7 +61,7 @@ const _SETTINGS_ITEMS = SETTINGS_NAV_REGISTRY.map((it) => ({
   key:         it.key,
   label:       it.label,
   route:       it.route,
-  description: it.description || '',
+  description: it.description || '(no description)',
 }));
 
 export const APP_FEATURE_REGISTRY = [
