@@ -117,17 +117,22 @@ def _draw_footer(canv: Canvas, doc, doc_id: Optional[str]):
 
 
 def make_doc(buffer: io.BytesIO, eyebrow: str, status: Optional[str],
-             doc_id: Optional[str] = None) -> BaseDocTemplate:
-    doc = BaseDocTemplate(buffer, pagesize=A4,
-                          leftMargin=MARGIN_LR, rightMargin=MARGIN_LR,
-                          topMargin=MARGIN_TOP, bottomMargin=MARGIN_BOT,
-                          title=eyebrow)
-    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='body',
-                  topPadding=0, bottomPadding=0, leftPadding=0, rightPadding=0)
-    def _on_page(canv, d):
-        _draw_header(canv, d, eyebrow, status)
-        _draw_footer(canv, d, doc_id)
-    doc.addPageTemplates([PageTemplate(id='ptc', frames=[frame], onPage=_on_page)])
+             doc_id: Optional[str] = None, org: Optional[dict] = None) -> BaseDocTemplate:
+    """v160.3.9.11 — Returns a `BrandedDocTemplate` so every template
+    that uses this factory (pre-starts, site diary, incidents,
+    inspections, hazards, audit-exports) automatically renders the
+    Phase 3.23 chrome (navy header band, gold accent stripe, org
+    address block, warm-tan footer, page N of M) — no per-template
+    rewrites required. The `eyebrow` + `status` + `doc_id` args are
+    preserved (thread-through) so title_block/section_label helpers
+    still emit their per-page copy.
+
+    `org` is optional; when omitted the header falls back to the plain
+    "PANELTEC / CIVIL" word-mark with no address."""
+    from pdf_chrome import BrandedDocTemplate
+    doc = BrandedDocTemplate(buffer, org=org or {},
+                             report_title=eyebrow,
+                             pagesize=A4, title=eyebrow)
     return doc
 
 

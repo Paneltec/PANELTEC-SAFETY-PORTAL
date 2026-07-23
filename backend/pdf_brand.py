@@ -43,33 +43,42 @@ GOLD_BG         = colors.HexColor('#FFF0D6')   # "Expiring" pill background (war
 GOLD_INK        = colors.HexColor('#8A5A18')   # "Expiring" pill text
 
 # ──────────────────────────────────────────────────────────────────────
-# Legacy Phase 3.22 palette — kept exported so templates that haven't
-# been refactored to the 2026 refresh still render. Do NOT reference
-# these constants in NEW code; use the Phase 3.23 tokens above.
+# Phase 3.22 → 3.23 compatibility layer.
+#
+# The 2026 refresh (v160.3.9.11) collapsed the old ORANGE/SLATE 2-colour
+# scheme into the wider warm-cream palette above. Rather than rewrite
+# every ReportLab TableStyle in the app, we re-bind the legacy constant
+# NAMES to the new tokens so any template that still references e.g.
+# `SLATE_BAND` for an alt-row background renders with `CREAM_ROW`
+# instead — a cosmetic drift, not a semantic one.
+#
+# Templates SHOULD migrate to the Phase 3.23 names (NAVY, PEACH_BAND,
+# MINT_BG, …) over time; the aliases below are DEPRECATED and will be
+# removed once every caller is on the new names.
 # ──────────────────────────────────────────────────────────────────────
-ORANGE          = colors.HexColor('#F97316')   # legacy primary accent
-ORANGE_DEEP     = colors.HexColor('#C2410C')
-ORANGE_PALE     = colors.HexColor('#FFF7ED')
-SLATE           = colors.HexColor('#1E293B')
-SLATE_INK       = colors.HexColor('#0F172A')
-SLATE_MUTED     = colors.HexColor('#64748B')
-SLATE_BORDER    = colors.HexColor('#E2E8F0')
-SLATE_BAND      = colors.HexColor('#F8FAFC')
-PAPER           = colors.HexColor('#FAFAFA')
+ORANGE          = ACCENT_GOLD   # DEPRECATED — use ACCENT_GOLD
+ORANGE_DEEP     = PEACH_INK     # DEPRECATED — use PEACH_INK
+ORANGE_PALE     = PEACH_BAND    # DEPRECATED — use PEACH_BAND
+SLATE           = NAVY_INK      # DEPRECATED — use NAVY_INK
+SLATE_INK       = BODY_INK      # DEPRECATED — use BODY_INK
+SLATE_MUTED     = MUTED_INK     # DEPRECATED — use MUTED_INK
+SLATE_BORDER    = WARM_TAN      # DEPRECATED — use WARM_TAN
+SLATE_BAND      = CREAM_ROW     # DEPRECATED — use CREAM_ROW
+PAPER           = CREAM_PAPER   # DEPRECATED — use CREAM_PAPER
 
 WHITE           = colors.white
 
 # ──────────────────────────────────────────────────────────────────────
 # Semantic accents (reserved — use ONLY for genuine warning chips, not
-# decoration). Critical = red, Warning = orange (reuses brand), OK = a
-# muted slate. Anything beyond these three is a brand violation.
+# decoration). Critical = ROSE (Phase 3.23), Warning = GOLD, OK = MINT.
+# Legacy SEV_* names retained as aliases for existing chip renderers.
 # ──────────────────────────────────────────────────────────────────────
-SEV_CRITICAL    = colors.HexColor('#DC2626')   # criticals, blockers
-SEV_CRITICAL_BG = colors.HexColor('#FEE2E2')
-SEV_WARNING     = ORANGE                       # medium/high severity
-SEV_WARNING_BG  = ORANGE_PALE
-SEV_OK          = SLATE_MUTED                  # low/info/resolved
-SEV_OK_BG       = SLATE_BAND
+SEV_CRITICAL    = ROSE_INK      # DEPRECATED — use ROSE_INK
+SEV_CRITICAL_BG = ROSE_BG       # DEPRECATED — use ROSE_BG
+SEV_WARNING     = GOLD_INK      # DEPRECATED — use GOLD_INK
+SEV_WARNING_BG  = GOLD_BG       # DEPRECATED — use GOLD_BG
+SEV_OK          = MINT_INK      # DEPRECATED — use MINT_INK
+SEV_OK_BG       = MINT_BG       # DEPRECATED — use MINT_BG
 
 
 def severity_palette(severity: str | None) -> tuple:

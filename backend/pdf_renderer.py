@@ -137,18 +137,16 @@ def _draw_footer(canv: Canvas, doc):
 
 
 def _make_doc(buffer: io.BytesIO, title: str, status: Optional[str], crumb: str):
-    doc = BaseDocTemplate(buffer, pagesize=A4,
-                          leftMargin=14 * mm, rightMargin=14 * mm,
-                          topMargin=28 * mm, bottomMargin=15 * mm)
-    frame = Frame(doc.leftMargin, doc.bottomMargin,
-                  doc.width, doc.height, id="body")
-
-    def _on_page(canv, doc):
-        _draw_header(canv, title, status, crumb)
-        _draw_footer(canv, doc)
-
-    doc.addPageTemplates([PageTemplate(id="all", frames=[frame], onPage=_on_page)])
-    return doc
+    """v160.3.9.11 — Every non-form-submission PDF (SWMS + pre-start +
+    site-diary + incident + inspection + hazard) now uses the shared
+    `BrandedDocTemplate` so it inherits the Phase 3.23 chrome (navy
+    header + gold stripe + logo/address + page N of M + warm-tan
+    footer). The local `_draw_header` / `_draw_footer` are retained
+    below for reference but no longer wired — the branded template
+    draws its own chrome on the canvas."""
+    from pdf_chrome import BrandedDocTemplate
+    return BrandedDocTemplate(buffer, org={}, report_title=title,
+                              pagesize=A4, title=title)
 
 
 def _para(text: str, style: str = "PtBody") -> Paragraph:
