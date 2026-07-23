@@ -120,6 +120,24 @@ export default function InductionCardModal({
 
   const statusMeta = STATUS[data?.status] || STATUS.unknown;
 
+  // v160.3.9.8 — Deferred-upload file staging. In add-mode the user can
+  // pick a file BEFORE the induction exists; `save()` orchestrates
+  // create → upload as a single UX flow.
+  const [stagedFile, setStagedFile] = useState(null);
+  const [savePhase, setSavePhase] = useState(null); // null | 'saving' | 'uploading'
+
+  async function _uploadFileToInduction(inductionRowId, file) {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch(`${API_BASE}/workers/${workerId}/inductions/${inductionRowId}/file`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}` },
+      body: fd,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return (await res.json()).induction;
+  }
+
   const save = async () => {
     setSaving(true);
     try {
@@ -133,12 +151,36 @@ export default function InductionCardModal({
       };
       if (mode === 'add') {
         if (!form.name.trim()) throw new Error('Name is required');
+        // Step 1 — create the induction row.
+        setSavePhase('saving');
         const { data: created } = await api.post(`/workers/${workerId}/inductions`, {
           name: form.name.trim(),
           type: form.type,
           ...payload,
         });
         setData(created);
+
+        // Step 2 — upload the staged file (if any). We keep the induction
+        // even if the upload fails so the user doesn't lose the record.
+        if (stagedFile) {
+          setSavePhase('uploading');
+          try {
+            const withDoc = await _uploadFileToInduction(created.id, stagedFile);
+            setData(withDoc);
+            setStagedFile(null);
+            toast.success('Induction added with certificate attached');
+            onSaved?.(withDoc);
+            onClose?.();
+            return;
+          } catch (uploadErr) {
+            // Do NOT delete the induction — it's valid without a file.
+            toast.error('Induction saved but the certificate upload failed — try attaching it from the record\u2019s edit view.');
+            setMode('view');
+            onSaved?.(created);
+            return; // keep modal open, file still staged for retry
+          }
+        }
+
         setMode('view');
         toast.success('Induction added');
         onSaved?.(created);
@@ -154,7 +196,10 @@ export default function InductionCardModal({
       }
     } catch (e) {
       toast.error(e?.response?.data?.detail || e.message || 'Save failed');
-    } finally { setSaving(false); }
+    } finally {
+      setSaving(false);
+      setSavePhase(null);
+    }
   };
 
   const deleteInduction = async () => {
@@ -174,8 +219,10 @@ export default function InductionCardModal({
   const onFileChosen = async (file) => {
     if (!file) return;
     const targetId = data?.id;
+    // v160.3.9.8 — In add-mode there's no induction row yet; stage the
+    // file locally and let `save()` orchestrate create + upload.
     if (!targetId) {
-      toast.error('Save the induction first, then upload the document.');
+      setStagedFile(file);
       return;
     }
     setSaving(true);
@@ -205,6 +252,14 @@ export default function InductionCardModal({
     if (f) onFileChosen(f);
   };
   const onDragOver = (e) => { if (canWrite) e.preventDefault(); };
+
+  // v160.3.9.8 — Human-readable file size for the staged-file chip.
+  const fmtBytes = (n) => {
+    if (!n && n !== 0) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   const downloadDoc = async () => {
     if (!data?.doc_file_id) return;
@@ -302,7 +357,11 @@ export default function InductionCardModal({
             <div className="px-4 py-2 border-b border-slate-200 bg-white flex items-center gap-2 text-[11px] text-slate-500">
               <FileText size={12} />
               <span className="flex-1 truncate">
-                {data?.doc_file_id ? 'Certificate document' : 'No certificate uploaded'}
+                {data?.doc_file_id
+                  ? 'Certificate document'
+                  : stagedFile
+                    ? 'Certificate ready to attach on Save'
+                    : 'No certificate uploaded'}
               </span>
               {data?.doc_file_id && (
                 <>
@@ -318,11 +377,14 @@ export default function InductionCardModal({
                   </button>
                 </>
               )}
-              {canWrite && data?.id && (
+              {/* v160.3.9.8 — Upload/browse always available for writers,
+                  including add-mode (no induction row yet). Staged files
+                  are held client-side and uploaded on Save. */}
+              {canWrite && (
                 <button onClick={() => fileInputRef.current?.click()}
                   data-testid="induction-doc-replace"
                   className="inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-medium text-[#1e4a8c] hover:bg-[#e6eff9]">
-                  <Upload size={11} /> {data?.doc_file_id ? 'Replace' : 'Upload'}
+                  <Upload size={11} /> {data?.doc_file_id ? 'Replace' : (stagedFile ? 'Change' : 'Upload')}
                 </button>
               )}
               <input ref={fileInputRef} type="file" hidden
@@ -339,7 +401,7 @@ export default function InductionCardModal({
                 <div className="absolute inset-0 grid place-items-center px-6">
                   <div className="text-center max-w-sm">
                     <AlertTriangle size={20} className="text-amber-600 mx-auto mb-2" />
-                    <div className="text-sm font-semibold text-slate-900">Couldn't load preview</div>
+                    <div className="text-sm font-semibold text-slate-900">Couldn&apos;t load preview</div>
                     <div className="text-[12px] text-slate-600 mt-1">{docErr}</div>
                   </div>
                 </div>
@@ -347,18 +409,44 @@ export default function InductionCardModal({
                 <div className="absolute inset-0 grid place-items-center">
                   <Loader2 size={20} className="text-slate-400 animate-spin" />
                 </div>
+              ) : stagedFile ? (
+                // v160.3.9.8 — Staged file preview chip (add-mode).
+                <div className="absolute inset-0 grid place-items-center px-6"
+                     data-testid="induction-doc-staged">
+                  <div className="text-center max-w-sm">
+                    <div className="inline-flex items-center gap-3 bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
+                      <FileText size={18} className="text-[#1e4a8c]" />
+                      <div className="text-left min-w-0">
+                        <div className="text-sm font-semibold text-slate-900 truncate max-w-[220px]" title={stagedFile.name}>{stagedFile.name}</div>
+                        <div className="text-[11px] text-slate-500">{fmtBytes(stagedFile.size)} · will upload on Save</div>
+                      </div>
+                      <button onClick={() => setStagedFile(null)}
+                        data-testid="induction-doc-staged-remove"
+                        title="Remove"
+                        className="ml-2 w-6 h-6 inline-flex items-center justify-center rounded-full text-slate-500 hover:bg-slate-100">
+                        <X size={12} />
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-3">
+                      Click <strong>Add induction</strong> below to save the record and attach this document.
+                    </p>
+                  </div>
+                </div>
               ) : (
+                // v160.3.9.8 — Interactive drop-zone from the start. The
+                // previous "Save the induction first" copy has been removed
+                // entirely — the file is now stage-able in one flow.
                 <div className="absolute inset-0 grid place-items-center px-6"
                      data-testid="induction-doc-dropzone">
                   <div className="text-center max-w-sm">
                     <FileText size={28} className="text-slate-300 mx-auto mb-2" />
-                    <div className="text-sm font-semibold text-slate-700">No certificate uploaded</div>
+                    <div className="text-sm font-semibold text-slate-700">
+                      {canWrite ? 'Attach a certificate' : 'No certificate uploaded'}
+                    </div>
                     <p className="text-[12px] text-slate-500 mt-1">
-                      {canWrite && data?.id
-                        ? 'Drop a PDF or image here, or click Upload above.'
-                        : canWrite
-                          ? 'Save the induction first, then upload the document.'
-                          : 'A certificate document has not been attached.'}
+                      {canWrite
+                        ? 'Drop a PDF or image here, or click Upload above. It will attach when you Save.'
+                        : 'A certificate document has not been attached.'}
                     </p>
                   </div>
                 </div>
@@ -384,7 +472,12 @@ export default function InductionCardModal({
               data-testid="induction-save-btn"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60">
               {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-              {mode === 'add' ? 'Add induction' : 'Save changes'}
+              {/* v160.3.9.8 — Two-phase label so users see the upload happening. */}
+              {mode === 'add'
+                ? (savePhase === 'uploading' ? 'Uploading…'
+                   : savePhase === 'saving'   ? 'Saving…'
+                   : 'Add induction')
+                : 'Save changes'}
             </button>
           ) : (
             <button onClick={onClose}

@@ -33,6 +33,7 @@ import TextMagicAdmin from '@/pages/TextMagicAdmin';
 import Vehicles from '@/pages/Vehicles';
 import PlantVehicles from '@/pages/PlantVehicles';
 import ScanResolver from '@/pages/ScanResolver';
+import WorkerIdCardPrint from '@/pages/print/WorkerIdCardPrint';
 import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import MyApps from '@/pages/MyApps';
@@ -98,6 +99,10 @@ function App() {
             <Route path="/scan/site/:token" element={<SiteScanResolver />} />
             <Route path="/scan/supplier/:token" element={<SupplierScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
+            {/* v160.3.9.7 — Standalone popup for Worker ID card print preview.
+                Rendered OUTSIDE AppShell so no sidebar/top-nav bleeds into
+                the popup window that Workers.jsx opens via window.open(). */}
+            <Route path="/print/worker-id-card/:workerId" element={<WorkerIdCardPrint />} />
 
             <Route path="/app" element={<MustChangePasswordGuard><AppShell /></MustChangePasswordGuard>}>
               <Route index element={<Navigate to="/app/dashboard" replace />} />

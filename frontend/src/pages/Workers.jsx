@@ -775,25 +775,42 @@ function IdCardSection({ worker, canEdit }) {
 
   const openPdf = async (action) => {
     if (!token) { toast.error('Worker has no scan token yet.'); return; }
+
+    // v160.3.9.7 — "Print preview" now opens a small centred popup window
+    // pointing at the standalone /print/worker-id-card/:workerId route so
+    // the admin gets a compact preview instead of a full browser tab.
+    // "Download" keeps the direct-blob path — no popup needed for a save.
+    if (action === 'print') {
+      const w = 520;
+      const h = 780;
+      const left = Math.max(0, Math.round((window.screen.width  - w) / 2));
+      const top  = Math.max(0, Math.round((window.screen.height - h) / 2));
+      const features = `width=${w},height=${h},left=${left},top=${top},`
+        + 'resizable=yes,scrollbars=yes,menubar=no,toolbar=no,location=no,status=no';
+      const url = `/print/worker-id-card/${worker.id}?layout=${encodeURIComponent(layout)}`;
+      const popup = window.open(url, 'paneltec_id_card_preview', features);
+      if (!popup) {
+        // Popup-blocker path — fall back to a normal new tab and tell the user.
+        window.open(url, '_blank');
+        toast.error('Popup blocked — opened in a new tab instead. Allow popups from this site for a smaller preview window.');
+      } else {
+        try { popup.focus(); } catch (_) { /* noop */ }
+      }
+      return;
+    }
+
+    // Download path — unchanged from v148 (stashed blob → anchor click).
     setPrinting(true);
     try {
       const r = await api.get(`/workers/${worker.id}/id-card.pdf`, {
         params: { layout },
         responseType: 'blob',
       });
-      // v148 — same-origin stash URL instead of blob: to bypass Chrome
-      // ad-blockers that silently reject `blob:` navigation.
       const filename = `worker-${worker.id.slice(0, 8)}-${layout}.pdf`;
       const { src } = await stashInlinePdf(r.data, filename);
-      if (action === 'download') {
-        const a = document.createElement('a');
-        a.href = src; a.download = filename;
-        document.body.appendChild(a); a.click(); a.remove();
-      } else {
-        // Open in a new tab → user can print from the browser preview.
-        const w = window.open(src, '_blank');
-        if (!w) toast.error('Pop-up blocked — use Download instead.');
-      }
+      const a = document.createElement('a');
+      a.href = src; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
     } catch (e) { toast.error(apiError(e)); }
     finally { setPrinting(false); }
   };
