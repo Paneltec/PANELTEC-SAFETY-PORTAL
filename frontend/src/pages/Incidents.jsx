@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
@@ -27,6 +28,8 @@ export default function IncidentsList() {
   // subset feeds into the toolbar; the toolbar then applies text search
   // + sort.
   const [searchFiltered, setSearchFiltered] = useState([]);
+  // v160.3.9.10a — In-app submission viewer state.
+  const [viewerRec, setViewerRec] = useState(null);
   useEffect(() => {
     api.get('/incidents')
       .then((r) => setItems(r.data))
@@ -90,6 +93,13 @@ export default function IncidentsList() {
                   <td className="px-4 py-3 text-slate-500">{(i.occurred_at || '').slice(0, 10)}</td>
                   <td className="px-4 py-3 text-right">
                     <div className="inline-flex gap-1 items-center">
+                      {/* v160.3.9.10a — In-app viewer entrypoint */}
+                      <button type="button" onClick={() => setViewerRec(i)}
+                        title="View submission"
+                        data-testid={`capture-view-${i.id}`}
+                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                        <Eye size={13} />
+                      </button>
                       <PdfActions resourceKind="incidents" recordId={i.id} source={i.source} title={i.title} size="sm" />
                       <EmailButton resourceKind="incidents" recordId={i.id} source={i.source}
                         subject={`Incident Summary: ${i.title}`}
@@ -107,6 +117,11 @@ export default function IncidentsList() {
        )}
         </TabsContent>
       </Tabs>
+      {viewerRec && (
+        <SubmissionViewer record={viewerRec} resourceKind="incidents" apiPath="incidents"
+          onClose={() => setViewerRec(null)}
+          onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+      )}
     </div>
   );
 }

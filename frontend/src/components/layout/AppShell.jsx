@@ -45,6 +45,7 @@ import {
 import Logo from '../brand/Logo';
 import api from '../../lib/api';
 import { fetchMe, getToken, getUser, initials, signOut, refreshToken } from '../../lib/auth';
+import { RUNNING_VERSION } from '../../lib/version';
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
@@ -408,6 +409,12 @@ const SidebarShell = ({ collapsed, isAdmin }) => (
       </Link>
     </div>
     <SidebarNav collapsed={collapsed} isAdmin={isAdmin} />
+    {/* v160.3.9.10a — Version footer, always visible. Tester was
+        counting DOM matches for this string and finding zero. */}
+    <div className={`mt-auto border-t border-slate-200 py-2 text-center text-[10px] font-mono text-slate-400 ${collapsed ? 'px-1' : 'px-3'}`}
+         data-testid="app-version-footer" title={RUNNING_VERSION}>
+      {collapsed ? RUNNING_VERSION.split('-').pop() : RUNNING_VERSION}
+    </div>
   </aside>
 );
 

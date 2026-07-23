@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, Trash2, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
+import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import { CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
@@ -37,6 +38,9 @@ export default function InspectionsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  // v160.3.9.10a — In-app submission viewer (was missing from this table
+  // page because it renders `<tr>` rows, not shared `CaptureCard`).
+  const [viewerRec, setViewerRec] = useState(null);
   useEffect(() => {
     api.get('/inspections')
       .then((r) => { setItems(r.data); setFiltered(r.data); })
@@ -91,6 +95,13 @@ export default function InspectionsList() {
                     <td className="px-4 py-3 text-slate-500"><span className="text-emerald-700 font-medium">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-medium' : ''}>{failed}</span> fail · {total - passed - failed} N/A</td>
                     <td className="px-4 py-3 text-right">
                       <div className="inline-flex gap-1 items-center">
+                        {/* v160.3.9.10a — In-app viewer entrypoint */}
+                        <button type="button" onClick={() => setViewerRec(it)}
+                          title="View submission"
+                          data-testid={`capture-view-${it.id}`}
+                          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                          <Eye size={13} />
+                        </button>
                         {it.template_name && (
                           <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
                         )}
@@ -115,6 +126,14 @@ export default function InspectionsList() {
        )}
         </TabsContent>
       </Tabs>
+      {viewerRec && (
+        <SubmissionViewer record={viewerRec} resourceKind="inspections" apiPath="inspections"
+          onClose={() => setViewerRec(null)}
+          onDeleted={(id) => {
+            setItems((prev) => prev.filter((x) => x.id !== id));
+            setFiltered((prev) => prev.filter((x) => x.id !== id));
+          }} />
+      )}
     </div>
   );
 }
