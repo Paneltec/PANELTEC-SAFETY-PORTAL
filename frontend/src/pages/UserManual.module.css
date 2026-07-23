@@ -77,17 +77,24 @@
 }
 .tocChip:hover { background: #FBE6CE; border-color: #E9782E; }
 
-/* --- Card grid --------------------------------------------------- */
+/* --- Card grid — v160.3.8.8 CSS multi-column masonry ------------
+   Switched from `display: grid` with `grid-auto-flow: row dense` to
+   a `columns` / column-count layout because CSS Grid can't do true
+   masonry — rows always align to the tallest cell, which leaves
+   dead space below any short card. Multi-column packs cards
+   top-to-bottom column-by-column so shorter cards' unused pixels
+   get filled by the next card in the same column. Reading order
+   becomes column-first which matches the printed cheat-sheet
+   reference. `break-inside: avoid` on `.card` (see below) keeps
+   each card intact across column boundaries. */
 .grid {
   max-width: 1400px;
   margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-  grid-auto-flow: row dense;
+  column-count: 3;
+  column-gap: 20px;
 }
-@media (min-width: 768px)  { .grid { grid-template-columns: 1fr 1fr; } }
-@media (min-width: 1280px) { .grid { grid-template-columns: 1fr 1fr 1fr; } }
+@media (max-width: 1279px) { .grid { column-count: 2; } }
+@media (max-width: 767px)  { .grid { column-count: 1; } }
 
 /* --- Section card ------------------------------------------------ */
 .card {
@@ -95,9 +102,21 @@
   border: 1px solid #EAD9C0;
   border-radius: 14px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-  padding: 16px 18px 18px;
+  /* v160.3.8.8 — Tightened padding from 16/18 → 14/16 to match the
+     denser cheat-sheet reference. Trims ~4px per card top/bottom. */
+  padding: 14px 16px 16px;
   scroll-margin-top: 100px;
-  break-inside: avoid;   /* keep cards intact when printing */
+  /* v160.3.8.8 — Column-flow requirements. `break-inside: avoid`
+     keeps each card intact when the browser tries to split it
+     across columns; `display: inline-block` + full width is the
+     standard trick to make block content flow inside a CSS
+     multi-column container. `margin-bottom` replaces the old
+     grid `gap` for vertical spacing between stacked cards. */
+  display: inline-block;
+  width: 100%;
+  margin-bottom: 20px;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
   page-break-inside: avoid;
   overflow-wrap: anywhere;
 }
@@ -105,7 +124,9 @@
   content: '';
   display: block;
   height: 4px;
-  margin: -16px -18px 12px;
+  /* v160.3.8.8 — Match tightened padding above so the accent
+     stripe still bleeds to the card edges. */
+  margin: -14px -16px 10px;
   /* v160.3.8.3 — Accent stripe pulls its colour from `--accent-ink`
      (set inline per card in UserManual.jsx). Falls back to orange
      if a card renders without the property for some reason. */
@@ -118,8 +139,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
+  /* v160.3.8.8 — Tightened from 10/8 → 8/6 to match the reference. */
+  margin-bottom: 8px;
+  padding-bottom: 6px;
   border-bottom: 1px solid #EAD9C0;
 }
 .pill {
@@ -158,6 +180,17 @@
   color: #1F1B16;
   font-weight: 500;
 }
+/* v160.3.8.8 — Kill the trailing margin/padding of a card's last
+   child so the padding-bottom of `.card` isn't double-stacked
+   against the last paragraph or list. Trims ~8px of dead space
+   at the bottom of every card. */
+.card > :last-child,
+.card p:last-child,
+.card ul:last-child,
+.card ol:last-child,
+.card pre:last-child,
+.card table:last-child,
+.card .callout:last-child { margin-bottom: 0 !important; }
 .card h1 {
   display: none;      /* the manual's leading H1 is redundant with our page title */
 }
