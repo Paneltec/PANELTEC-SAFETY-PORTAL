@@ -5,7 +5,7 @@
 // Detailed) flips to abbreviated or full-date cells. Category groups are
 // collapsible — when closed, each row shows a single "n/N current" chip
 // for that group instead of N cells.
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, X, CalendarOff, Check, AlertTriangle, Calendar, Settings2, ChevronDown, ChevronRight, Columns3, LayoutGrid, Maximize2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -14,6 +14,7 @@ import InductionImportWizard from './InductionImportWizard';
 import { stashInlinePdf } from '../lib/pdfStash';
 import PdfPreviewModal from './PdfPreviewModal';
 import InductionCardModal from './InductionCardModal';
+import ManageColumnsModal from './inductions/ManageColumnsModal';
 // v160.3.7k — Inoculation sweep: lock body scroll while either the print-
 // popover or the CellEditor modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -85,6 +86,8 @@ export default function InductionsMatrix({ onWorkerClick }) {
   // Phase 3.11h — multi-select for print.
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [printOpen, setPrintOpen] = useState(false);
+  // v160.3.9.6 — Manage-columns modal (admin-only, opens A/B/C cleanup UI).
+  const [manageOpen, setManageOpen] = useState(false);
   // v160.3.7k — lock body scroll while the print popover is open.
   useLockBodyScroll(printOpen);
   const [printOpts, setPrintOpts] = useState({
@@ -328,6 +331,17 @@ export default function InductionsMatrix({ onWorkerClick }) {
           className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50">
           <RefreshCw />
         </button>
+
+        {/* v160.3.9.6 — Manage columns (admin/HSEQ-lead only). Opens the
+            cleanup modal that drives /api/induction-columns/*. */}
+        {canEdit && (
+          <button onClick={() => setManageOpen(true)}
+            data-testid="matrix-manage-columns"
+            title="Manage columns"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-xs font-medium text-slate-700 hover:bg-slate-50">
+            <Settings2 size={12} /> Manage columns
+          </button>
+        )}
         <button onClick={downloadExport} data-testid="matrix-export" title="Export .xlsx"
           className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-slate-300 bg-white text-slate-600 hover:bg-slate-50">
           <Download />
@@ -410,8 +424,7 @@ export default function InductionsMatrix({ onWorkerClick }) {
       {empty ? (
         <EmptyMatrix canEdit={canEdit} onImport={() => setShowWizard(true)} />
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-auto max-h-[72vh]"
-             style={{ scrollbarGutter: 'stable' }}>
+        <MatrixScrollContainer>
           <table className="text-xs border-separate" style={{ borderSpacing: 0 }} data-testid="matrix-table">
             {/* category header row (group titles + collapse chevrons) */}
             <thead className="sticky top-0 z-30 bg-white">
@@ -551,8 +564,15 @@ export default function InductionsMatrix({ onWorkerClick }) {
               ))}
             </tbody>
           </table>
-        </div>
+        </MatrixScrollContainer>
       )}
+
+      {/* v160.3.9.6 — Manage columns modal (admin-only). */}
+      <ManageColumnsModal
+        open={manageOpen}
+        onClose={() => setManageOpen(false)}
+        onApplied={load}
+        columns={data?.columns || []} />
 
       {showWizard && <InductionImportWizard onClose={() => setShowWizard(false)} onCommitted={load} />}
       {editing && (
@@ -654,6 +674,77 @@ export default function InductionsMatrix({ onWorkerClick }) {
 }
 
 // ────────────────── Cell renderer (compact / comfortable / detailed) ──────────────────
+
+// v160.3.9.6 — Always-visible horizontal scroll container with a synced
+// mirror scrollbar at the top + a "← scroll to see more →" hint chip when
+// the content overflows. Fixes the "hidden scrollbar at page bottom"
+// complaint on wide matrices.
+function MatrixScrollContainer({ children }) {
+  const topRef = useRef(null);      // sticky top-mirror scroller
+  const bodyRef = useRef(null);     // real content scroller
+  const spacerRef = useRef(null);   // top-mirror inner width mirror
+  const [overflows, setOverflows] = useState(false);
+  const [chipDismissed, setChipDismissed] = useState(false);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    const spacer = spacerRef.current;
+    if (!body || !spacer) return;
+    const syncWidth = () => {
+      spacer.style.width = body.scrollWidth + 'px';
+      setOverflows(body.scrollWidth > body.clientWidth + 4);
+    };
+    syncWidth();
+    const ro = new ResizeObserver(syncWidth);
+    ro.observe(body);
+    // Re-sync when children resize (rows/cols added later).
+    for (const el of body.children) ro.observe(el);
+    window.addEventListener('resize', syncWidth);
+    return () => { ro.disconnect(); window.removeEventListener('resize', syncWidth); };
+  }, [children]);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    const top  = topRef.current;
+    if (!body || !top) return;
+    let lock = false;
+    const onBody = () => { if (lock) return; lock = true; top.scrollLeft  = body.scrollLeft; lock = false; };
+    const onTop  = () => { if (lock) return; lock = true; body.scrollLeft = top.scrollLeft;  lock = false; };
+    body.addEventListener('scroll', onBody, { passive: true });
+    top.addEventListener('scroll', onTop, { passive: true });
+    return () => { body.removeEventListener('scroll', onBody); top.removeEventListener('scroll', onTop); };
+  }, []);
+
+  return (
+    <div className="relative">
+      {/* Top mirror scrollbar — pinned so admins don't need to scroll to
+          the bottom of the page to find the horizontal scroll control. */}
+      <div ref={topRef}
+        className="matrix-scrollbar-mirror sticky top-0 z-40 bg-white border-x border-t border-slate-200 rounded-t-2xl"
+        style={{ overflowX: 'scroll', overflowY: 'hidden', height: 14 }}
+        aria-hidden="true">
+        <div ref={spacerRef} style={{ height: 1 }} />
+      </div>
+
+      {/* Content scroller — always shows its horizontal scrollbar too. */}
+      <div ref={bodyRef}
+        className="matrix-scrollbar bg-white border border-slate-200 rounded-b-2xl max-h-[72vh]"
+        style={{ overflowX: 'scroll', overflowY: 'auto', scrollbarGutter: 'stable' }}>
+        {children}
+      </div>
+
+      {/* Floating scroll hint — appears when overflow is present and the
+          user hasn't dismissed it yet. */}
+      {overflows && !chipDismissed && (
+        <button onClick={() => setChipDismissed(true)}
+          data-testid="matrix-scroll-hint"
+          className="absolute top-4 right-4 z-50 px-2.5 py-1 rounded-full bg-slate-900/85 text-white text-[10px] font-medium shadow-lg backdrop-blur-sm hover:bg-slate-900 inline-flex items-center gap-1.5">
+          ← scroll to see more →
+        </button>
+      )}
+    </div>
+  );
+}
 
 function Cell({ worker, col, cell, canEdit, density, cellW, cellH, onClick }) {
   const status = refinedStatus(cell);

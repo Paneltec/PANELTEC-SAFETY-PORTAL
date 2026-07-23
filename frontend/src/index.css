@@ -79,6 +79,19 @@ code {
     .text-brand-blue { color: #2C6BFF; }
     .bg-brand-blue { background-color: #2C6BFF; }
     .ring-brand-blue { --tw-ring-color: #2C6BFF; }
+
+    /* v160.3.9.6 — Always-visible WebKit scrollbar for the Inductions
+       Matrix scroll containers. macOS Safari hides scrollbars by default
+       for touch-like interactions; force them on so admins can see the
+       horizontal scroll affordance without having to hover / scroll first. */
+    .matrix-scrollbar::-webkit-scrollbar,
+    .matrix-scrollbar-mirror::-webkit-scrollbar { height: 12px; width: 12px; background: #f1f5f9; }
+    .matrix-scrollbar::-webkit-scrollbar-thumb,
+    .matrix-scrollbar-mirror::-webkit-scrollbar-thumb { background: rgba(30, 74, 140, 0.35); border-radius: 8px; border: 2px solid #f1f5f9; }
+    .matrix-scrollbar::-webkit-scrollbar-thumb:hover,
+    .matrix-scrollbar-mirror::-webkit-scrollbar-thumb:hover { background: rgba(30, 74, 140, 0.6); }
+    .matrix-scrollbar,
+    .matrix-scrollbar-mirror { scrollbar-color: rgba(30, 74, 140, 0.4) #f1f5f9; scrollbar-width: thin; }
 }
 
 @layer base {

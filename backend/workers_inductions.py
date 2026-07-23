@@ -490,9 +490,13 @@ async def induction_matrix(user: dict = Depends(get_current_user)):
 
     # Distinct induction columns from worker_certifications (source=induction_xlsx
     # OR rows that have a column_key set via a manual cell edit).
+    # v160.3.9.6 — Filter out rows explicitly marked `hidden_from_matrix:
+    # "inductions"` (moved to Certifications by admin cleanup). Default null
+    # is visible → no migration needed for pre-v160.3.9.6 rows.
     pipeline = [
         {"$match": {"org_id": org, "deleted_at": None,
-                    "column_key": {"$exists": True, "$ne": None}}},
+                    "column_key": {"$exists": True, "$ne": None},
+                    "hidden_from_matrix": {"$ne": "inductions"}}},
         {"$group": {"_id": {"k": "$column_key", "h": "$name", "c": "$category"}}},
         {"$sort": {"_id.c": 1, "_id.h": 1}},
     ]
@@ -508,7 +512,8 @@ async def induction_matrix(user: dict = Depends(get_current_user)):
     cells_by_worker: dict[str, dict] = {}
     async for c in db.worker_certifications.find(
         {"org_id": org, "deleted_at": None,
-         "column_key": {"$exists": True, "$ne": None}},
+         "column_key": {"$exists": True, "$ne": None},
+         "hidden_from_matrix": {"$ne": "inductions"}},
         {"_id": 0},
     ):
         cells_by_worker.setdefault(c["worker_id"], {})[c["column_key"]] = {

@@ -273,6 +273,8 @@ from workers_inductions import router as workers_inductions_router  # noqa: E402
 from workers_inductions import card_router as workers_inductions_card_router  # noqa: E402
 api.include_router(workers_inductions_router)
 api.include_router(workers_inductions_card_router)
+from induction_columns import router as induction_columns_router  # noqa: E402
+api.include_router(induction_columns_router)
 # Phase 3.16 — Session Timeout (admin-configurable).
 from session_timeout import router as session_timeout_router, admin_router as session_timeout_admin_router  # noqa: E402
 api.include_router(session_timeout_router)
