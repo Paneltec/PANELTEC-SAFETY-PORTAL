@@ -24,6 +24,10 @@ class OrgPatch(BaseModel):
     contact_phone: Optional[str] = None
     timezone: Optional[str] = None
     default_workspace_id: Optional[str] = None
+    # v160.3.9.9 — new fields consumed by the branded PDF header. Optional;
+    # the PDF chrome degrades gracefully when either is empty.
+    logo_url: Optional[str] = None
+    website: Optional[str] = None
 
 
 def _strip_mongo(d: dict) -> dict:

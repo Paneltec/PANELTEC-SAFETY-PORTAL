@@ -26,6 +26,14 @@ const CONTACT = [
   { key: 'contact_phone', label: 'Contact phone' },
 ];
 
+// v160.3.9.9 — Branded PDF chrome fields. Optional. When populated they
+// render on the header of every PDF report (Inductions, SWMS, etc.).
+const BRANDING = [
+  { key: 'website',  label: 'Website',      placeholder: 'https://paneltec.com.au' },
+  { key: 'logo_url', label: 'Logo image URL', placeholder: 'https://…/paneltec-logo.png',
+    hint: 'PNG or JPG. Renders top-left of every PDF report. Leave blank for the "PANELTEC" text word-mark.' },
+];
+
 export default function OrgSettings() {
   const me = getUser();
   const isAdmin = me?.role === 'admin';
@@ -50,6 +58,9 @@ export default function OrgSettings() {
         contact_email: data.contact_email || '',
         contact_phone: data.contact_phone || '',
         timezone: data.timezone || 'Australia/Sydney',
+        // v160.3.9.9
+        website: data.website || '',
+        logo_url: data.logo_url || '',
       });
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -153,6 +164,24 @@ export default function OrgSettings() {
                   className={inputClass}
                   value={form[f.key] || ''}
                   onChange={(e) => set(f.key, e.target.value)}
+                  disabled={!isAdmin}
+                  data-testid={`org-field-${f.key}`}
+                />
+              </Field>
+            ))}
+          </div>
+        </Section>
+
+        {/* v160.3.9.9 — PDF branding fields (logo + website). */}
+        <Section icon={<Building2 size={14} className="text-brand-blue" />} title="PDF report branding">
+          <div className="grid sm:grid-cols-2 gap-3">
+            {BRANDING.map((f) => (
+              <Field key={f.key} label={f.label} hint={f.hint}>
+                <input
+                  className={inputClass}
+                  value={form[f.key] || ''}
+                  onChange={(e) => set(f.key, e.target.value)}
+                  placeholder={f.placeholder}
                   disabled={!isAdmin}
                   data-testid={`org-field-${f.key}`}
                 />

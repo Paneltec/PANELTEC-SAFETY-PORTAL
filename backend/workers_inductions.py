@@ -684,7 +684,13 @@ _STATUS_RGB = {
 
 @router.post("/print")
 async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)):
-    """Generate a PDF for one or many workers' induction status."""
+    """v160.3.9.9 — Professional inductions PDF export.
+
+    Uses BrandedDocTemplate (Phase 3.23 palette) so every page carries the
+    NAVY header band, ACCENT_GOLD stripe, address block, WARM_TAN footer
+    rule and "Page N of M" counter. Section bands are PEACH_BAND, status
+    pills use the MINT/ROSE/NEUTRAL/GOLD trio, alt rows are CREAM_ROW.
+    """
     if user.get("role") not in {"admin", "manager", "hseq_lead"}:
         raise HTTPException(403, "Only admin/manager/HSEQ can print inductions")
     if not body.worker_ids:
@@ -693,9 +699,17 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
     from reportlab.lib.pagesizes import A4, A3, landscape
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.units import mm
-    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Table, TableStyle,
+    from reportlab.platypus import (Paragraph, Table, TableStyle,
                                     Spacer, PageBreak)
+    from pdf_brand import (
+        NAVY, NAVY_INK, PEACH_BAND, PEACH_INK, CREAM_ROW, CREAM_PAPER,
+        WARM_TAN, BODY_INK, MUTED_INK, ACCENT_GOLD,
+        MINT_BG, MINT_INK, ROSE_BG, ROSE_INK, NEUTRAL_BG, NEUTRAL_INK,
+        GOLD_BG, GOLD_INK, WHITE,
+    )
+    from pdf_chrome import BrandedDocTemplate
 
     layout = body.layout
     page_size = (
@@ -716,80 +730,128 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
     if not workers_to_print:
         raise HTTPException(404, "None of the supplied worker_ids matched")
 
+    # Fetch the live org profile — populates the header address block.
+    org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0}) or {}
+
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=page_size,
-                            leftMargin=18*mm, rightMargin=18*mm,
-                            topMargin=14*mm, bottomMargin=14*mm,
-                            title="Paneltec Civil — Inductions")
+    doc = BrandedDocTemplate(buf, org=org,
+                             report_title="Induction & competency record",
+                             pagesize=page_size)
+
     styles = getSampleStyleSheet()
-    # Phase 3.22d — Inductions print on orange + slate brand. No HexColor
-    # literals in this file; all tones come from `pdf_brand.py`.
-    from pdf_brand import ORANGE, SLATE_INK, SLATE_MUTED, SLATE_BORDER, SLATE_BAND
-    h_org = ParagraphStyle("h_org", parent=styles["Normal"],
-        fontName="Helvetica-Bold", fontSize=10, textColor=ORANGE,
-        leading=12, spaceAfter=2, tracking=1.2)
-    h_name = ParagraphStyle("h_name", parent=styles["Heading1"],
-        fontName="Helvetica-Bold", fontSize=20, leading=24, spaceAfter=2,
-        textColor=SLATE_INK)
-    sub = ParagraphStyle("sub", parent=styles["Normal"], fontSize=9,
-        textColor=SLATE_MUTED, spaceAfter=8)
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"],
-        fontName="Helvetica-Bold", fontSize=12, textColor=SLATE_INK,
-        leading=14, spaceBefore=10, spaceAfter=4)
+    h_title = ParagraphStyle("h_title", parent=styles["Heading1"],
+        fontName="Helvetica-Bold", fontSize=18, leading=22,
+        textColor=NAVY_INK, spaceAfter=2, alignment=TA_CENTER, tracking=1.5)
+    h_worker = ParagraphStyle("h_worker", parent=styles["Normal"],
+        fontName="Helvetica", fontSize=14, leading=17,
+        textColor=BODY_INK, spaceAfter=2, alignment=TA_CENTER)
+    h_meta = ParagraphStyle("h_meta", parent=styles["Normal"], fontSize=9,
+        textColor=MUTED_INK, spaceAfter=10, alignment=TA_CENTER)
+    h_section = ParagraphStyle("h_section", parent=styles["Heading2"],
+        fontName="Helvetica-Bold", fontSize=11, leading=13, tracking=2,
+        textColor=PEACH_INK, spaceBefore=4, spaceAfter=2)
+    h_pill = ParagraphStyle("h_pill", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=8, leading=10,
+        alignment=TA_CENTER, spaceBefore=0, spaceAfter=0)
+
+    def _pill(status: str) -> Paragraph:
+        # Map status → (bg, ink, label). Kept in sync with _STATUS_LABEL.
+        pmap = {
+            "current":        (MINT_BG,    MINT_INK,    "Current"),
+            "held_no_expiry": (MINT_BG,    MINT_INK,    "Held"),
+            "expiring":       (GOLD_BG,    GOLD_INK,    "Expiring"),
+            "expired":        (ROSE_BG,    ROSE_INK,    "Expired"),
+            "not_held":       (NEUTRAL_BG, NEUTRAL_INK, "Not held"),
+            "invalid_date":   (ROSE_BG,    ROSE_INK,    "Invalid"),
+            "unknown":        (NEUTRAL_BG, NEUTRAL_INK, "—"),
+        }
+        _, ink, label = pmap.get(status, pmap["unknown"])
+        return Paragraph(
+            f'<font color="#{ink.hexval()[2:]}"><b>{label}</b></font>',
+            h_pill)
+
+    def _pill_bg(status: str):
+        pmap = {
+            "current": MINT_BG, "held_no_expiry": MINT_BG,
+            "expiring": GOLD_BG,
+            "expired": ROSE_BG, "invalid_date": ROSE_BG,
+            "not_held": NEUTRAL_BG, "unknown": NEUTRAL_BG,
+        }
+        return pmap.get(status, NEUTRAL_BG)
 
     elements = []
 
     # Cover page (combined mode + opted in).
     if body.combined and body.include_cover and len(workers_to_print) > 1:
-        elements.append(Paragraph("PANELTEC CIVIL", h_org))
-        elements.append(Paragraph("Inductions Print Pack", h_name))
+        elements.append(Paragraph("INDUCTION &amp; COMPETENCY RECORD", h_title))
+        elements.append(Paragraph("Combined print pack", h_worker))
         elements.append(Paragraph(
-            f"{len(workers_to_print)} worker(s) · generated {datetime.now(timezone.utc).strftime('%d %b %Y · %H:%M UTC')}",
-            sub))
+            f"{len(workers_to_print)} worker(s) &nbsp;·&nbsp; generated "
+            f"{datetime.now(timezone.utc).strftime('%d %b %Y · %H:%M UTC')}"
+            f" &nbsp;·&nbsp; Report v160.3.9.9",
+            h_meta))
         cover_rows = [["#", "Worker", "Company", "Overall"]]
         for i, w in enumerate(workers_to_print, 1):
             cover_rows.append([str(i), w["name"], w.get("company") or "—",
                                _STATUS_LABEL.get(w.get("chip"), w.get("chip") or "—")])
-        t = Table(cover_rows, colWidths=[12*mm, 75*mm, 60*mm, 30*mm])
+        t = Table(cover_rows, colWidths=[12*mm, 75*mm, 60*mm, 30*mm], repeatRows=1)
         t.setStyle(TableStyle([
-            ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("FONTSIZE", (0,0), (-1,-1), 9),
-            ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
-            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("BACKGROUND", (0,0), (-1,0), PEACH_BAND),
+            ("TEXTCOLOR",  (0,0), (-1,0), PEACH_INK),
+            ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+            ("FONTSIZE",   (0,0), (-1,-1), 9),
+            ("TEXTCOLOR",  (0,1), (-1,-1), BODY_INK),
+            ("LINEBELOW",  (0,0), (-1,-1), 0.4, WARM_TAN),
+            ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
             ("LEFTPADDING", (0,0), (-1,-1), 6),
-            ("RIGHTPADDING", (0,0), (-1,-1), 6),
-            ("TOPPADDING", (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("RIGHTPADDING",(0,0), (-1,-1), 6),
+            ("TOPPADDING", (0,0), (-1,-1), 6),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, CREAM_ROW]),
         ]))
         elements.append(t)
         elements.append(PageBreak())
 
     # Per-worker pages.
     for idx, w in enumerate(workers_to_print):
-        elements.append(Paragraph("PANELTEC CIVIL · INDUCTIONS", h_org))
-        elements.append(Paragraph(w["name"], h_name))
+        # Title block, centred.
+        elements.append(Paragraph("INDUCTION &amp; COMPETENCY RECORD", h_title))
+        elements.append(Paragraph(w["name"], h_worker))
         elements.append(Paragraph(
-            f"{w.get('company') or '—'} · status: {_STATUS_LABEL.get(w.get('chip'), '—')}"
-            f" · printed {datetime.now(timezone.utc).strftime('%d %b %Y')}", sub))
+            f"{w.get('company') or '—'} &nbsp;·&nbsp; Status: "
+            f"{_STATUS_LABEL.get(w.get('chip'), '—')} &nbsp;·&nbsp; "
+            f"Printed {datetime.now(timezone.utc).strftime('%d %b %Y')}"
+            f" &nbsp;·&nbsp; Report v160.3.9.9",
+            h_meta))
 
         # Per-category sections.
-        cats = [("site_induction", "Site Inductions"),
-                ("competency", "Competencies"),
-                ("license", "Licences")]
+        cats = [("site_induction", "SITE INDUCTIONS"),
+                ("competency",     "COMPETENCIES"),
+                ("license",        "LICENCES")]
         any_cell = False
         for cat_key, cat_label in cats:
             cat_cols = cols_by_cat.get(cat_key, [])
             if not cat_cols:
                 continue
-            elements.append(Paragraph(cat_label, h2))
+            # Peach section band with PEACH_INK caps title.
+            band = Table([[Paragraph(cat_label, h_section)]],
+                         colWidths=[doc.width])
+            band.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), PEACH_BAND),
+                ("LEFTPADDING", (0,0), (-1,-1), 8),
+                ("RIGHTPADDING",(0,0), (-1,-1), 8),
+                ("TOPPADDING", (0,0), (-1,-1), 3),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 3),
+                ("LINEBELOW",  (0,0), (-1,-1), 0.6, ACCENT_GOLD),
+            ]))
+            elements.append(Spacer(1, 4 * mm))
+            elements.append(band)
+
             header = ["Item", "Status", "Expiry"]
-            if body.include_raw:
-                header.append("Source")
-            if body.include_last_updated:
-                header.append("Updated")
+            if body.include_raw:            header.append("Source")
+            if body.include_last_updated:   header.append("Updated")
             table_rows = [header]
-            cell_colors = []
+            pill_bgs = []
             for c in cat_cols:
                 cell = w["cells"].get(c["column_key"])
                 if cell:
@@ -801,71 +863,114 @@ async def print_inductions(body: PrintIn, user: dict = Depends(get_current_user)
                     upd = "—"
                 else:
                     status, expiry, src, upd = "unknown", "—", "—", "—"
-                row = [c["header"], _STATUS_LABEL[status], expiry]
-                if body.include_raw: row.append(src)
+                row = [c["header"], _pill(status), expiry]
+                if body.include_raw:          row.append(src)
                 if body.include_last_updated: row.append(upd)
                 table_rows.append(row)
-                cell_colors.append(_STATUS_RGB.get(status, (1, 1, 1)))
+                pill_bgs.append(_pill_bg(status))
             col_widths = [70*mm, 28*mm, 28*mm]
-            if body.include_raw: col_widths.append(28*mm)
+            if body.include_raw:          col_widths.append(28*mm)
             if body.include_last_updated: col_widths.append(28*mm)
             t = Table(table_rows, colWidths=col_widths, repeatRows=1)
             ts = TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
-                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-                ("FONTSIZE", (0,0), (-1,-1), 9),
-                ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
-                ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
-                ("LEFTPADDING", (0,0), (-1,-1), 5),
-                ("RIGHTPADDING", (0,0), (-1,-1), 5),
-                ("TOPPADDING", (0,0), (-1,-1), 4),
-                ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                # Header row
+                ("BACKGROUND", (0,0), (-1,0), CREAM_PAPER),
+                ("TEXTCOLOR",  (0,0), (-1,0), NAVY_INK),
+                ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",   (0,0), (-1,0), 8.5),
+                ("LINEBELOW",  (0,0), (-1,0), 0.6, WARM_TAN),
+                # Body rows
+                ("FONTNAME",   (0,1), (-1,-1), "Helvetica"),
+                ("FONTSIZE",   (0,1), (-1,-1), 9.5),
+                ("TEXTCOLOR",  (0,1), (-1,-1), BODY_INK),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, CREAM_ROW]),
+                ("VALIGN",     (0,0), (-1,-1), "MIDDLE"),
+                ("LEFTPADDING", (0,0), (-1,-1), 6),
+                ("RIGHTPADDING",(0,0), (-1,-1), 6),
+                ("TOPPADDING", (0,0), (-1,-1), 5),
+                ("BOTTOMPADDING",(0,0), (-1,-1), 5),
+                ("LINEBELOW",  (0,1), (-1,-1), 0.2, WARM_TAN),
             ])
-            for i, rgb in enumerate(cell_colors, start=1):
-                ts.add("BACKGROUND", (1, i), (1, i), colors.Color(*rgb))
+            # Colour each pill cell background to match the pill token.
+            for i, bg in enumerate(pill_bgs, start=1):
+                ts.add("BACKGROUND", (1, i), (1, i), bg)
             t.setStyle(ts)
             elements.append(t)
 
         # Access section.
         a = w.get("access") or {}
         if any(a.get(k) for k in ("vehicle", "building_key", "gate_key")) or a.get("extras"):
-            elements.append(Paragraph("Access", h2))
+            band = Table([[Paragraph("ACCESS", h_section)]],
+                         colWidths=[doc.width])
+            band.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), PEACH_BAND),
+                ("LEFTPADDING", (0,0), (-1,-1), 8),
+                ("TOPPADDING", (0,0), (-1,-1), 3),
+                ("BOTTOMPADDING",(0,0), (-1,-1), 3),
+                ("LINEBELOW",  (0,0), (-1,-1), 0.6, ACCENT_GOLD),
+            ]))
+            elements.append(Spacer(1, 4 * mm))
+            elements.append(band)
             ar = [["Item", "Held"]]
-            ar.append(["Vehicle", "Yes" if a.get("vehicle") else "—"])
+            ar.append(["Vehicle",      "Yes" if a.get("vehicle") else "—"])
             ar.append(["Building key", "Yes" if a.get("building_key") else "—"])
-            ar.append(["Gate key", "Yes" if a.get("gate_key") else "—"])
+            ar.append(["Gate key",     "Yes" if a.get("gate_key") else "—"])
             if a.get("extras"):
                 ar.append(["Notes", a["extras"]])
-            t = Table(ar, colWidths=[70*mm, 56*mm])
+            t = Table(ar, colWidths=[70*mm, 56*mm], repeatRows=1)
             t.setStyle(TableStyle([
-                ("BACKGROUND", (0,0), (-1,0), SLATE_BAND),
-                ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-                ("FONTSIZE", (0,0), (-1,-1), 9),
-                ("GRID", (0,0), (-1,-1), 0.3, SLATE_BORDER),
-                ("LEFTPADDING", (0,0), (-1,-1), 5), ("RIGHTPADDING", (0,0), (-1,-1), 5),
-                ("TOPPADDING", (0,0), (-1,-1), 4), ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                ("BACKGROUND", (0,0), (-1,0), CREAM_PAPER),
+                ("TEXTCOLOR",  (0,0), (-1,0), NAVY_INK),
+                ("FONTNAME",   (0,0), (-1,0), "Helvetica-Bold"),
+                ("FONTSIZE",   (0,0), (-1,-1), 9.5),
+                ("TEXTCOLOR",  (0,1), (-1,-1), BODY_INK),
+                ("ROWBACKGROUNDS", (0,1), (-1,-1), [WHITE, CREAM_ROW]),
+                ("LEFTPADDING", (0,0), (-1,-1), 6), ("RIGHTPADDING", (0,0), (-1,-1), 6),
+                ("TOPPADDING", (0,0), (-1,-1), 4),  ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                ("LINEBELOW",  (0,0), (-1,-1), 0.2, WARM_TAN),
             ]))
             elements.append(t)
 
         if not any_cell:
-            elements.append(Spacer(1, 4*mm))
+            elements.append(Spacer(1, 4 * mm))
             elements.append(Paragraph(
                 "<i>No induction records on file for this worker.</i>",
                 ParagraphStyle("empty", parent=styles["Normal"], fontSize=10,
-                               textColor=SLATE_MUTED)))
+                               textColor=MUTED_INK)))
 
-        if body.include_legend:
-            elements.append(Spacer(1, 6*mm))
-            elements.append(Paragraph(
-                "<font color='#94a3b8' size='8'>Legend: "
-                "<b>Current</b> · <b>Expiring</b> within 30 days · <b>Expired</b> past expiry · "
-                "<b>Not held</b> · <b>Held</b> (no expiry on file) · <b>Invalid</b> date format."
-                "</font>", styles["Normal"]))
+        # Boxed legend on the LAST page only (not per-worker any more).
+        is_last = idx == len(workers_to_print) - 1
+        if body.include_legend and is_last:
+            elements.append(Spacer(1, 8 * mm))
+            legend_rows = [
+                [Paragraph("<b>LEGEND</b>", ParagraphStyle(
+                    "legend_h", parent=styles["Normal"], fontName="Helvetica-Bold",
+                    fontSize=9, textColor=NAVY_INK, tracking=2))],
+                [Paragraph(
+                    "<b>Current</b> · in date and on file. "
+                    "<b>Expiring</b> · valid but within 30 days of expiry. "
+                    "<b>Expired</b> · past expiry — remediation required. "
+                    "<b>Held</b> · on file, no expiry recorded. "
+                    "<b>Not held</b> · never obtained / not on record. "
+                    "<b>Invalid</b> · unparseable expiry date.",
+                    ParagraphStyle("legend_b", parent=styles["Normal"],
+                                   fontSize=8.5, leading=12,
+                                   textColor=BODY_INK))],
+            ]
+            legend = Table(legend_rows, colWidths=[doc.width])
+            legend.setStyle(TableStyle([
+                ("BACKGROUND", (0,0), (-1,-1), CREAM_PAPER),
+                ("BOX",        (0,0), (-1,-1), 0.6, WARM_TAN),
+                ("LINEBELOW",  (0,0), (-1,0), 0.4, WARM_TAN),
+                ("LEFTPADDING", (0,0), (-1,-1), 10),
+                ("RIGHTPADDING",(0,0), (-1,-1), 10),
+                ("TOPPADDING", (0,0), (-1,-1), 6),
+                ("BOTTOMPADDING",(0,0),(-1,-1), 6),
+            ]))
+            elements.append(legend)
 
-        # Combined mode → page break between workers (except last).
-        if body.combined and idx < len(workers_to_print) - 1:
-            elements.append(PageBreak())
-        elif not body.combined and idx < len(workers_to_print) - 1:
+        # Page break between workers (except last).
+        if idx < len(workers_to_print) - 1:
             elements.append(PageBreak())
 
     doc.build(elements)
