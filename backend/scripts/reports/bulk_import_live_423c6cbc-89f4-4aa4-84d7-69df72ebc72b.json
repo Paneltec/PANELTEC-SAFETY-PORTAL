@@ -1,0 +1,23 @@
+{
+  "job": {
+    "id": "423c6cbc-89f4-4aa4-84d7-69df72ebc72b",
+    "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+    "actor_id": "808cb7de-985a-4c49-8554-9c67e5e86313",
+    "source": "url",
+    "url_input": "https://www.dropbox.com/scl/fi/k7oz7z06mwbbita7wernt/A-Barbari-2.zip?rlkey=np2jp2d01ramx44489mjk8z47&st=oih1277q&dl=1",
+    "url_final": "https://uc89aec6752d3a56bf1397acd804.dl.dropboxusercontent.com/cd/0/get/DFKhR4QAEI745mozyz22Fn4EbffId15OikYXUs2RjUvA-VrnFXz5u04lQft9yOYSViPDLB4zF_tx8WSzoPGCP83LXDkB7qyHxsVvgnZcvLh3wl9Ivxt5N671FF9pZIXKEjQXVdOgrZvpYBZv8mj2iYH8/file?dl=1#",
+    "filename": null,
+    "size_bytes": null,
+    "state": "awaiting_approval",
+    "processed": 0,
+    "failed": 0,
+    "total": 0,
+    "errors": [],
+    "template_hits": {},
+    "created_at": "2026-07-29T09:50:41.595963+00:00",
+    "mode": "dry_run",
+    "started_at": "2026-07-29T09:50:41.648412+00:00",
+    "finished_at": "2026-07-29T09:52:25.474295+00:00"
+  },
+  "dryrun_results": []
+}

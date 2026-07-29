@@ -1,0 +1,24 @@
+{
+  "job": {
+    "id": "6645b82b-e602-4f64-95b5-af45db9368e8",
+    "org_id": "3116f250-a4eb-43f3-98a5-2a3656d6cb63",
+    "actor_id": "808cb7de-985a-4c49-8554-9c67e5e86313",
+    "source": "url",
+    "url_input": "https://www.dropbox.com/scl/fi/k7oz7z06mwbbita7wernt/A-Barbari-2.zip?rlkey=np2jp2d01ramx44489mjk8z47&st=oih1277q&dl=1",
+    "url_final": "https://uc9febaabcbc16b6622b53a1664e.dl.dropboxusercontent.com/cd/0/get/DFIPr0lPQzbkFMA3eKGjd4fVIQbGrVVJ4hDo9oY5tevf_FsyzTr11C5OVNFRyTHV44vox6SGUfHRIyVVKgvxoDe1Ghu69ljl2W1cqGiG8LgfAB0r9aEUFe7KXlyF3jCKpGeQQ7NyDMrU9Dds3we3kilK/file?dl=1#",
+    "filename": null,
+    "size_bytes": null,
+    "state": "failed",
+    "processed": 0,
+    "failed": 0,
+    "total": null,
+    "errors": [],
+    "template_hits": {},
+    "created_at": "2026-07-29T10:10:17.199461+00:00",
+    "mode": "dry_run",
+    "started_at": "2026-07-29T10:10:17.216384+00:00",
+    "error": "Client error '403 Forbidden' for url 'https://uc9febaabcbc16b6622b53a1664e.dl.dropboxusercontent.com/cd/0/get/DFIPr0lPQzbkFMA3eKGjd4fVIQbGrVVJ4hDo9oY5tevf_FsyzTr11C5OVNFRyTHV44vox6SGUfHRIyVVKgvxoDe1Ghu69ljl2W1cqGiG8LgfAB0r9aEUFe7KXlyF3jCKpGeQQ7NyDMrU9Dds3we3kilK/file?dl=1#'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/403",
+    "finished_at": "2026-07-29T10:10:18.571953+00:00"
+  },
+  "dryrun_results": []
+}
