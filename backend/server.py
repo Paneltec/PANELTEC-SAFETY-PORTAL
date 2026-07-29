@@ -200,6 +200,12 @@ api.include_router(swms_admin_router)
 api.include_router(swms_phase45_router)
 api.include_router(swms_router)
 api.include_router(prestarts_router)
+# v160.3.9.12a — Bulk-import legacy pre-start PDFs (URL/zip → Claude Vision).
+from bulk_import_prestarts import (  # noqa: E402
+    router as bulk_import_prestarts_router,
+    ensure_indexes as bulk_import_ensure_indexes,
+)
+api.include_router(bulk_import_prestarts_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -325,6 +331,11 @@ install_backup(app, _mongo_db, require_roles("admin"))
 async def on_startup():
     await ensure_indexes()
     await session_history_ensure_indexes()
+    # v160.3.9.12a — Bulk-import Pre-Starts index setup.
+    try:
+        await bulk_import_ensure_indexes()
+    except Exception as e:
+        log.warning("bulk_import_prestarts index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
