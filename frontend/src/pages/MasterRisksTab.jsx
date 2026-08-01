@@ -1,21 +1,16 @@
-// v160.3.9.13 — Master Risks reference library tab.
+// v160.3.9.13a — Master Risks reference library tab.
 //
-// Read-only table for all users; admins get an "Import from XLSX" affordance
-// and inline edit/delete (edit UI deferred — this ticket ships the list +
-// import; row-level editing lives behind the /api/master-risks PATCH which
-// is already wired backend-side).
+// Reworked in .13a: all 10 populated source columns are now visible in the
+// table (Risk ID, Classification, Activity, Hazard aspect, Unwanted event,
+// Score U, Mandatory controls, Other controls, Score C, Legal refs). Long
+// prose cells clamp to 3 lines; row click expands the full-text detail
+// panel unchanged. The 11th "SWMS reference" column exists in the schema
+// but is blank on every source row, so it's hidden from the visible grid.
 //
-// Design notes:
-//   · Search + severity chips + classification dropdown all client-side so
-//     the ~168-row dataset never round-trips.
-//   · Severity pill background uses the XLSX-supplied `fill_hex` (preserves
-//     the source's colour language) with a Tailwind fallback per severity.
-//   · Text colour on the pill is auto-picked from the fill's luminance so
-//     yellow fills stay readable.
-//   · Sort persisted per browser via `paneltec_list_sort:master_risks`.
-//
-// Frontend consumer is `RiskAssessments.jsx` (mounted as a tab).
-import React, { useEffect, useMemo, useState } from 'react';
+// Wide layout uses the same mirror-scrollbar pattern as InductionsMatrix
+// (v160.3.9.6) — a synced sticky top scrollbar so admins don't have to
+// scroll to the bottom of the page to find horizontal-scroll control.
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -183,7 +178,6 @@ function DetailPanel({ row }) {
       <Field label="Mandatory controls" value={row.mandatory_controls} multiline />
       <Field label="Other controls" value={row.other_controls} multiline />
       <Field label="Legal &amp; other references" value={row.legal_references} multiline />
-      <Field label="SWMS reference" value={row.swms_reference} />
     </div>
   );
 }
@@ -212,6 +206,89 @@ function scoreSortKey(code) {
   const rank = { E: 0, H: 1, M: 2, L: 3 }[m[1].toUpperCase()];
   return [rank, -parseInt(m[2], 10)]; // Larger score first within band.
 }
+
+// v160.3.9.13a — local twin of the InductionsMatrix v160.3.9.6 mirror
+// scroll pattern. Keeps a synced sticky top scrollbar visible above the
+// wide table so admins don't need to scroll to the bottom of the page
+// to find horizontal-scroll control. Rendered inline to keep this tab
+// self-contained; if a third caller shows up, promote to a shared
+// component under components/.
+function MirrorScrollContainer({ children, maxHeight = '68vh' }) {
+  const topRef = useRef(null);
+  const bodyRef = useRef(null);
+  const spacerRef = useRef(null);
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    const spacer = spacerRef.current;
+    if (!body || !spacer) return;
+    const syncWidth = () => {
+      spacer.style.width = body.scrollWidth + 'px';
+      setOverflows(body.scrollWidth > body.clientWidth + 4);
+    };
+    syncWidth();
+    const ro = new ResizeObserver(syncWidth);
+    ro.observe(body);
+    for (const el of body.children) ro.observe(el);
+    window.addEventListener('resize', syncWidth);
+    return () => { ro.disconnect(); window.removeEventListener('resize', syncWidth); };
+  }, [children]);
+
+  useEffect(() => {
+    const body = bodyRef.current;
+    const top = topRef.current;
+    if (!body || !top) return;
+    let lock = false;
+    const onBody = () => { if (lock) return; lock = true; top.scrollLeft = body.scrollLeft; lock = false; };
+    const onTop = () => { if (lock) return; lock = true; body.scrollLeft = top.scrollLeft; lock = false; };
+    body.addEventListener('scroll', onBody, { passive: true });
+    top.addEventListener('scroll', onTop, { passive: true });
+    return () => { body.removeEventListener('scroll', onBody); top.removeEventListener('scroll', onTop); };
+  }, []);
+
+  return (
+    <div className="relative" data-testid="master-risks-scroll-wrap">
+      <div
+        ref={topRef}
+        className="sticky top-0 z-40 bg-white border-x border-t border-slate-200 rounded-t-2xl"
+        style={{ overflowX: 'scroll', overflowY: 'hidden', height: 14 }}
+        aria-hidden="true"
+      >
+        <div ref={spacerRef} style={{ height: 1 }} />
+      </div>
+      <div
+        ref={bodyRef}
+        className="bg-white border border-slate-200 rounded-b-2xl"
+        style={{ overflowX: 'scroll', overflowY: 'auto', maxHeight, scrollbarGutter: 'stable' }}
+      >
+        {children}
+      </div>
+      {overflows && (
+        <div className="absolute top-4 right-4 z-30 px-2.5 py-1 rounded-full bg-slate-900/80 text-white text-[10px] font-medium shadow-lg pointer-events-none">
+          ← scroll to see all columns →
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Column definitions. `grow` numbers are relative — sizing is fixed pixels
+// so total width is deterministic (~1900px) and mirror-scrollbar can be
+// pinned regardless of viewport.
+const COLUMNS = [
+  { key: 'risk_id',                  label: 'ID',              width: 60,  sortable: true,  align: 'left' },
+  { key: 'classification',           label: 'Classification',  width: 140, sortable: true,  align: 'left' },
+  { key: 'activity',                 label: 'Activity',        width: 180, sortable: true,  align: 'left' },
+  { key: 'hazard_aspect',            label: 'Hazard aspect',   width: 220, sortable: false, align: 'left' },
+  { key: 'unwanted_event',           label: 'Unwanted event',  width: 260, sortable: false, align: 'left' },
+  { key: 'risk_score_uncontrolled',  label: 'Score (U)',       width: 90,  sortable: true,  align: 'left', kind: 'pill_u' },
+  { key: 'mandatory_controls',       label: 'Mandatory controls', width: 300, sortable: false, align: 'left' },
+  { key: 'other_controls',           label: 'Other controls',  width: 240, sortable: false, align: 'left' },
+  { key: 'risk_score_controlled',    label: 'Score (C)',       width: 90,  sortable: true,  align: 'left', kind: 'pill_c' },
+  { key: 'legal_references',         label: 'Legal & other refs', width: 220, sortable: false, align: 'left' },
+];
+const GRID_TEMPLATE = COLUMNS.map((c) => c.width + 'px').join(' ') + ' 32px';
 
 export default function MasterRisksTab({ user }) {
   const [items, setItems] = useState([]);
@@ -349,45 +426,79 @@ export default function MasterRisksTab({ user }) {
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-slate-200 overflow-hidden">
-          <div
-            className="grid text-[11px] uppercase tracking-wider bg-slate-50 border-b border-slate-200 px-4 py-2 text-slate-600 font-semibold gap-2"
-            style={{ gridTemplateColumns: '70px 90px 1.4fr 1.8fr 90px 40px' }}
-          >
-            <button className="text-left" onClick={() => cycleSort('risk_id')} data-testid="master-risks-sort-risk_id">ID {sortIndicator('risk_id')}</button>
-            <button className="text-left" onClick={() => cycleSort('risk_score_uncontrolled')} data-testid="master-risks-sort-score_u">Score (U) {sortIndicator('risk_score_uncontrolled')}</button>
-            <button className="text-left" onClick={() => cycleSort('activity')} data-testid="master-risks-sort-activity">Activity {sortIndicator('activity')}</button>
-            <div>Hazard aspect</div>
-            <div className="text-left">Score (C)</div>
-            <div className="text-center">›</div>
-          </div>
-
-          <ul className="divide-y divide-slate-100" data-testid="master-risks-rows">
-            {filtered.map((row) => {
-              const isOpen = expanded === row.id;
-              return (
-                <li key={row.id} className="bg-white" data-testid={`master-risks-row-${row.risk_id}`}>
+        <MirrorScrollContainer>
+          {/* Grid table — width is fixed by GRID_TEMPLATE (~1900px) so the
+              mirror-scrollbar pattern works. Vertical scroll inside so
+              headers can position: sticky. */}
+          <div style={{ minWidth: 'max-content' }}>
+            {/* Sticky column headers */}
+            <div
+              className="grid text-[11px] uppercase tracking-wider bg-slate-50 border-b border-slate-200 py-2 text-slate-600 font-semibold sticky top-0 z-20 gap-2 px-3"
+              style={{ gridTemplateColumns: GRID_TEMPLATE }}
+              data-testid="master-risks-header"
+            >
+              {COLUMNS.map((col) => (
+                col.sortable ? (
                   <button
-                    className={`w-full text-left grid items-center px-4 py-2.5 hover:bg-slate-50 transition gap-2 ${isOpen ? 'bg-slate-50' : ''}`}
-                    style={{ gridTemplateColumns: '70px 90px 1.4fr 1.8fr 90px 40px' }}
-                    onClick={() => setExpanded(isOpen ? null : row.id)}
-                    aria-expanded={isOpen}
+                    key={col.key}
+                    className="text-left hover:text-slate-900"
+                    onClick={() => cycleSort(col.key)}
+                    data-testid={`master-risks-sort-${col.key}`}
+                    title={`Sort by ${col.label}`}
                   >
-                    <div className="font-mono text-xs text-slate-500">#{row.risk_id}</div>
-                    <div><SeverityPill row={row} testid={`master-risks-pill-${row.risk_id}`} /></div>
-                    <div className="text-sm text-slate-900 truncate pr-2" title={row.activity}>{row.activity || <span className="italic text-slate-400">—</span>}</div>
-                    <div className="text-xs text-slate-600 line-clamp-2 pr-2" title={row.hazard_aspect}>{row.hazard_aspect || <span className="italic text-slate-400">—</span>}</div>
-                    <div><ControlledPill row={row} testid={`master-risks-pill-c-${row.risk_id}`} /></div>
-                    <div className="text-center text-slate-400 text-xs">{isOpen ? '▾' : '▸'}</div>
+                    {col.label} {sortIndicator(col.key)}
                   </button>
-                  {isOpen && (
-                    <div className="px-4 pb-4"><DetailPanel row={row} /></div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+                ) : (
+                  <div key={col.key} className="text-left">{col.label}</div>
+                )
+              ))}
+              <div className="text-center">›</div>
+            </div>
+
+            {/* Rows */}
+            <ul className="divide-y divide-slate-100" data-testid="master-risks-rows">
+              {filtered.map((row) => {
+                const isOpen = expanded === row.id;
+                return (
+                  <li key={row.id} className="bg-white" data-testid={`master-risks-row-${row.risk_id}`}>
+                    <button
+                      className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 transition gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
+                      style={{ gridTemplateColumns: GRID_TEMPLATE }}
+                      onClick={() => setExpanded(isOpen ? null : row.id)}
+                      aria-expanded={isOpen}
+                    >
+                      {COLUMNS.map((col) => {
+                        if (col.kind === 'pill_u') {
+                          return <div key={col.key}><SeverityPill row={row} testid={`master-risks-pill-${row.risk_id}`} /></div>;
+                        }
+                        if (col.kind === 'pill_c') {
+                          return <div key={col.key}><ControlledPill row={row} testid={`master-risks-pill-c-${row.risk_id}`} /></div>;
+                        }
+                        if (col.key === 'risk_id') {
+                          return <div key={col.key} className="font-mono text-xs text-slate-500 pt-0.5">#{row.risk_id}</div>;
+                        }
+                        const v = row[col.key];
+                        return (
+                          <div
+                            key={col.key}
+                            className="text-xs text-slate-800 line-clamp-3 leading-snug"
+                            title={v || ''}
+                          >
+                            {v || <span className="italic text-slate-400">—</span>}
+                          </div>
+                        );
+                      })}
+                      <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
+                    </button>
+                    {isOpen && (
+                      <div className="px-4 pb-4"><DetailPanel row={row} /></div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </MirrorScrollContainer>
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
