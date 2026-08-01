@@ -37,6 +37,9 @@ import {
   QrCode20Regular as QrCode,
   Search20Regular as Search,
   Tag20Regular as Tag,
+  // v160.3.9.21e — Attention-row action icons.
+  Eye20Regular as EyeIcon,
+  Delete20Regular as DeleteIcon,
 } from '@fluentui/react-icons';
 
 const KIND_CHIPS = [
@@ -187,6 +190,10 @@ export default function PlantVehicles() {
   const [printIds, setPrintIds] = useState(null);
   // v160.3.9.20 — Unmatched maintenance count for the tab-header badge.
   const [pmUnmatched, setPmUnmatched] = useState(null);
+  // v160.3.9.21e — Attention-row soft-delete confirmation.
+  const [deletePending, setDeletePending] = useState(null); // { id, label } | null
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
   const [pmUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
     catch { return null; }
@@ -300,6 +307,39 @@ export default function PlantVehicles() {
   const openCreate = () => { setDrawerAsset(null); setDrawerOpen(true); };
   const openEdit = (a) => { setDrawerAsset(a); setDrawerOpen(true); };
 
+  // v160.3.9.21e — Fetch a full asset by id (attention rows carry only id +
+  // label) then open the drawer. Same for view + edit; drawer decides
+  // its mode from `isEdit = !!asset?.id`.
+  const openAttentionAsset = async (attentionRow) => {
+    if (!attentionRow?.id) return;
+    try {
+      const { data: asset } = await api.get(`/assets/${attentionRow.id}`);
+      setDrawerAsset(asset);
+      setDrawerOpen(true);
+    } catch (e) {
+      toast.error(apiError(e) || 'Failed to open asset');
+    }
+  };
+
+  // v160.3.9.21e — Soft-delete (archive) an asset via DELETE /api/assets/{id}.
+  // Backend sets status='retired', returns 204. On success refresh both
+  // the list and the dashboard's attention[] payload.
+  const confirmDelete = async () => {
+    if (!deletePending?.id) return;
+    setDeleteBusy(true);
+    try {
+      await api.delete(`/assets/${deletePending.id}`);
+      toast.success(`Archived: ${deletePending.label || deletePending.id.slice(0, 8)}`);
+      setDeletePending(null);
+      setDashboardRefreshKey((k) => k + 1);   // force ModuleDashboard remount
+      load();                                  // refresh the List tab too
+    } catch (e) {
+      toast.error(apiError(e) || 'Delete failed');
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   if (busy && !data.assets.length && !error) {
     return <div className="text-sm text-slate-500" data-testid="assets-loading">Loading register…</div>;
   }
@@ -391,13 +431,42 @@ export default function PlantVehicles() {
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="vehicles-tab-dashboard-content">
           <ModuleDashboard
+            key={dashboardRefreshKey}
             module="vehicles" title="Plant & Vehicles"
             tagline="Unified asset register — live Navixy fleet + manually-added plant, tools and containers."
             moduleColour="emerald"
             quickActions={canEdit ? [
-              { label: 'Add Asset', route: '/app/vehicles' },
+              // v160.3.9.21e — was `route: '/app/vehicles'` (same page →
+              // navigation was a no-op). Now opens the create drawer.
+              { label: 'Add Asset', onClick: openCreate },
               { label: 'Integrations', route: '/app/settings/integrations' },
             ] : []}
+            attentionActions={(row) => (
+              <>
+                <button type="button" title="View"
+                  onClick={() => openAttentionAsset(row)}
+                  data-testid={`attention-view-${row.id}`}
+                  className="p-1.5 rounded-md hover:bg-slate-200 text-slate-600 hover:text-slate-900">
+                  <EyeIcon />
+                </button>
+                {canEdit && (
+                  <button type="button" title="Edit"
+                    onClick={() => openAttentionAsset(row)}
+                    data-testid={`attention-edit-${row.id}`}
+                    className="p-1.5 rounded-md hover:bg-blue-100 text-slate-600 hover:text-blue-700">
+                    <Edit3 />
+                  </button>
+                )}
+                {canEdit && (
+                  <button type="button" title="Archive (soft-delete)"
+                    onClick={() => setDeletePending({ id: row.id, label: row.label })}
+                    data-testid={`attention-delete-${row.id}`}
+                    className="p-1.5 rounded-md hover:bg-rose-100 text-slate-600 hover:text-rose-700">
+                    <DeleteIcon />
+                  </button>
+                )}
+              </>
+            )}
           />
         </TabsContent>
         <TabsContent value="list" className="mt-4" data-testid="vehicles-tab-list-content">
@@ -596,6 +665,58 @@ export default function PlantVehicles() {
         <AssetDrawer asset={drawerAsset} onClose={() => setDrawerOpen(false)} onSaved={() => { setDrawerOpen(false); load(); }} />
       )}
       {printIds && <PrintLabelsModal assetIds={printIds} onClose={() => setPrintIds(null)} />}
+      {deletePending && (
+        <ArchiveConfirmModal
+          label={deletePending.label}
+          busy={deleteBusy}
+          onCancel={() => setDeletePending(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+    </div>
+  );
+}
+
+// v160.3.9.21e — Soft-delete confirmation modal for the Records-needing-
+// attention row actions. Archives the asset (sets status='retired')
+// instead of a hard delete; audit trail is preserved server-side.
+function ArchiveConfirmModal({ label, busy, onCancel, onConfirm }) {
+  useLockBodyScroll();
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+      data-testid="attention-delete-modal">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full mx-4 p-6">
+        <div className="flex items-start gap-3">
+          <div className="shrink-0 w-10 h-10 rounded-full bg-rose-100 text-rose-700 flex items-center justify-center">
+            <DeleteIcon />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-display font-semibold text-slate-900">
+              Archive this asset?
+            </h3>
+            <p className="mt-1 text-sm text-slate-600">
+              <span className="font-semibold text-slate-800">{label || 'This record'}</span> will be moved to the archived state (<code className="text-xs bg-slate-100 px-1 py-0.5 rounded">status=&quot;retired&quot;</code>). The asset stays in the database for audit and can be restored by an admin.
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              A row will be written to the asset audit trail with the actor and timestamp.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onCancel} disabled={busy}
+            className="px-4 py-2 text-sm rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            data-testid="attention-delete-cancel">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy}
+            className="px-4 py-2 text-sm rounded-lg bg-rose-600 text-white font-semibold hover:bg-rose-700 disabled:opacity-50 inline-flex items-center gap-2"
+            data-testid="attention-delete-confirm">
+            {busy && <Loader2 size={14} className="animate-spin" />}
+            {busy ? 'Archiving…' : 'Archive'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

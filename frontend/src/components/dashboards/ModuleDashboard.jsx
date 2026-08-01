@@ -259,7 +259,7 @@ function EmptyChart({ label }) {
   );
 }
 
-function AttentionTable({ rows }) {
+function AttentionTable({ rows, renderActions }) {
   if (!Array.isArray(rows) || rows.length === 0) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-6 text-center"
@@ -273,6 +273,7 @@ function AttentionTable({ rows }) {
       </div>
     );
   }
+  const hasActions = typeof renderActions === 'function';
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden"
          data-testid="module-dashboard-attention">
@@ -283,12 +284,11 @@ function AttentionTable({ rows }) {
         <span className="text-[11px] text-slate-400">Top {rows.length}</span>
       </div>
       <ul className="divide-y divide-slate-800">
-        {rows.map((r, i) => (
-          <li key={r.id || i}
-              data-testid={`module-dashboard-attention-row-${i}`}
-              className="px-4 py-3 hover:bg-slate-100 transition-colors">
-            <Link to={r.route || '#'}
-                  className="flex items-center gap-3 group">
+        {rows.map((r, i) => {
+          // v160.3.9.21e — Body is Link when no actions; wrapper div when
+          // actions are present so the icon buttons don't trigger navigation.
+          const Body = (
+            <div className="flex items-center gap-3 group flex-1 min-w-0">
               <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider rounded border ${SEVERITY_CHIP[r.severity] || SEVERITY_CHIP.slate}`}>
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-current" />
                 {r.severity || 'info'}
@@ -304,10 +304,28 @@ function AttentionTable({ rows }) {
                   </div>
                 )}
               </div>
-              <ChevronRight20Regular className="text-slate-400 group-hover:text-orange-400" />
-            </Link>
-          </li>
-        ))}
+              {!hasActions && <ChevronRight20Regular className="text-slate-400 group-hover:text-orange-400" />}
+            </div>
+          );
+          return (
+            <li key={r.id || i}
+                data-testid={`module-dashboard-attention-row-${i}`}
+                className="px-4 py-3 hover:bg-slate-100 transition-colors">
+              {hasActions ? (
+                <div className="flex items-center gap-2">
+                  {Body}
+                  <div className="flex items-center gap-1 shrink-0" data-testid={`module-dashboard-attention-actions-${i}`}>
+                    {renderActions(r, i)}
+                  </div>
+                </div>
+              ) : (
+                <Link to={r.route || '#'} className="flex items-center gap-3 group">
+                  {Body}
+                </Link>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -317,19 +335,31 @@ function QuickActionsRow({ actions }) {
   if (!Array.isArray(actions) || actions.length === 0) return null;
   return (
     <div className="mt-6 flex flex-wrap gap-2" data-testid="module-dashboard-quick-actions">
-      {actions.map((a, i) => (
-        <Link
-          key={i}
-          to={a.route}
-          data-testid={`module-dashboard-quick-action-${i}`}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg
-                     bg-orange-500 hover:bg-orange-600 text-slate-900 text-sm font-semibold
-                     shadow-sm transition-colors"
-        >
-          {a.icon}
-          {a.label}
-        </Link>
-      ))}
+      {actions.map((a, i) => {
+        const cls = "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-slate-900 text-sm font-semibold shadow-sm transition-colors";
+        // v160.3.9.21e — action can be a route Link OR an onClick button.
+        if (typeof a.onClick === 'function') {
+          return (
+            <button key={i} type="button" onClick={a.onClick}
+              data-testid={`module-dashboard-quick-action-${i}`}
+              className={cls}>
+              {a.icon}
+              {a.label}
+            </button>
+          );
+        }
+        return (
+          <Link
+            key={i}
+            to={a.route}
+            data-testid={`module-dashboard-quick-action-${i}`}
+            className={cls}
+          >
+            {a.icon}
+            {a.label}
+          </Link>
+        );
+      })}
     </div>
   );
 }
@@ -343,6 +373,7 @@ export default function ModuleDashboard({
   schematicSlug,
   moduleColour = 'orange',
   quickActions = [],
+  attentionActions,   // v160.3.9.21e — optional per-row action renderer
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -446,7 +477,7 @@ export default function ModuleDashboard({
             </div>
           )}
 
-          <AttentionTable rows={attention} />
+          <AttentionTable rows={attention} renderActions={attentionActions} />
         </>
       )}
 
