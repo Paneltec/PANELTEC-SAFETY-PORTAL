@@ -19,7 +19,7 @@ from auth import get_current_user
 log = logging.getLogger("paneltec.incident_root_causes")
 router = APIRouter(prefix="/incident-root-causes", tags=["incident-root-causes"])
 
-_ADMIN_ROLES = {"admin", "hseq_lead"}
+_ADMIN_ROLES = {"admin"}
 
 
 def _now_iso() -> str:

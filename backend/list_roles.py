@@ -11,7 +11,7 @@ from auth import get_current_user
 
 log = logging.getLogger("paneltec.list_roles")
 router = APIRouter(prefix="/list-roles", tags=["list-roles"])
-_ADMIN = {"admin", "hseq_lead"}
+_ADMIN = {"admin"}
 
 
 def _now(): return datetime.now(timezone.utc).isoformat()

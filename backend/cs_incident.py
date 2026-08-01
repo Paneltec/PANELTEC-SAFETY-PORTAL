@@ -12,7 +12,7 @@ from auth import get_current_user
 log = logging.getLogger("paneltec.cs_incident")
 router = APIRouter(prefix="/cs-incident", tags=["cs-incident"])
 
-_ADMIN = {"admin", "hseq_lead"}
+_ADMIN = {"admin"}
 BOOKKEEPING = {"_id", "id", "created_at", "updated_at", "imported_at",
                "imported_by", "content_hash", "deleted_at", "deleted_by"}
 
@@ -100,6 +100,34 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 class RowPatch(BaseModel):
     class Config: extra = "allow"
+
+
+@router.post("/")
+async def create_row(body: RowPatch, user: dict = Depends(get_current_user)):
+    _admin(user)
+    data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
+            if k not in BOOKKEEPING}
+    issue_number = str(data.get("issue_number") or "").strip()
+    if not issue_number:
+        raise HTTPException(400, "issue_number-required")
+    data["issue_number"] = issue_number
+    if await db.cs_incident_issues.find_one({"issue_number": issue_number}):
+        raise HTTPException(409, "issue_number-already-exists")
+    now = _now()
+    doc = {
+        "id": str(uuid.uuid4()),
+        **data,
+        "created_at": now, "updated_at": now,
+        "imported_by": user["id"], "imported_at": now,
+        "deleted_at": None,
+    }
+    await db.cs_incident_issues.insert_one(doc)
+    await db.cs_incident_issues_audit.insert_one({
+        "id": str(uuid.uuid4()), "issue_number": issue_number,
+        "action": "manual-insert", "at": now, "actor_id": user["id"],
+    })
+    doc.pop("_id", None)
+    return doc
 
 
 @router.patch("/{uid}")

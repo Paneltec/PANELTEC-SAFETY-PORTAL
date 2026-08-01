@@ -1,6 +1,6 @@
 """v160.3.9.18 — My Completed Training reference-library router."""
 from __future__ import annotations
-import logging, uuid
+import hashlib, json, logging, uuid
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
@@ -11,7 +11,7 @@ from auth import get_current_user
 
 log = logging.getLogger("paneltec.completed_training")
 router = APIRouter(prefix="/completed-training", tags=["completed-training"])
-_ADMIN = {"admin", "hseq_lead"}
+_ADMIN = {"admin"}
 BOOKKEEPING = {"_id", "id", "content_hash", "created_at", "updated_at",
                "imported_at", "imported_by", "deleted_at", "deleted_by"}
 
@@ -92,6 +92,40 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 class RowPatch(BaseModel):
     class Config: extra = "allow"
+
+
+@router.post("/")
+async def create_row(body: RowPatch, user: dict = Depends(get_current_user)):
+    _admin(user)
+    data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
+            if k not in BOOKKEEPING}
+    # Completed-training rows key on `content_hash` (deterministic from
+    # payload contents so re-imports are idempotent). Synthesise one for
+    # manual inserts so the unique index enforces "no duplicate manual
+    # entries for the same worker+course+date".
+    if not data:
+        raise HTTPException(400, "payload-required")
+    content_hash = hashlib.sha256(json.dumps(
+        {k: data.get(k) for k in sorted(data.keys())},
+        sort_keys=True, default=str).encode()).hexdigest()
+    if await db.completed_training.find_one({"content_hash": content_hash}):
+        raise HTTPException(409, "identical-record-already-exists")
+    now = _now()
+    doc = {
+        "id": str(uuid.uuid4()),
+        **data,
+        "content_hash": content_hash,
+        "created_at": now, "updated_at": now,
+        "imported_by": user["id"], "imported_at": now,
+        "deleted_at": None,
+    }
+    await db.completed_training.insert_one(doc)
+    await db.completed_training_audit.insert_one({
+        "id": str(uuid.uuid4()), "content_hash": content_hash,
+        "action": "manual-insert", "at": now, "actor_id": user["id"],
+    })
+    doc.pop("_id", None)
+    return doc
 
 
 @router.patch("/{uid}")

@@ -20,7 +20,7 @@ from auth import get_current_user
 log = logging.getLogger("paneltec.list_forms")
 router = APIRouter(prefix="/list-forms", tags=["list-forms"])
 
-_ADMIN_ROLES = {"admin", "hseq_lead"}
+_ADMIN_ROLES = {"admin"}
 
 
 def _now_iso() -> str:

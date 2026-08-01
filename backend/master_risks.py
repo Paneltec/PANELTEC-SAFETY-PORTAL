@@ -26,7 +26,7 @@ from auth import get_current_user
 log = logging.getLogger("paneltec.master_risks")
 router = APIRouter(prefix="/master-risks", tags=["master-risks"])
 
-_ADMIN_ROLES = {"admin", "hseq_lead"}
+_ADMIN_ROLES = {"admin"}
 
 
 def _now_iso() -> str:

@@ -11,7 +11,7 @@ from auth import get_current_user
 
 log = logging.getLogger("paneltec.companies")
 router = APIRouter(prefix="/companies", tags=["companies"])
-_ADMIN = {"admin", "hseq_lead"}
+_ADMIN = {"admin"}
 BOOKKEEPING = {"_id", "id", "content_hash", "created_at", "updated_at",
                "imported_at", "imported_by", "deleted_at", "deleted_by"}
 
@@ -92,6 +92,34 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 class RowPatch(BaseModel):
     class Config: extra = "allow"
+
+
+@router.post("/")
+async def create_row(body: RowPatch, user: dict = Depends(get_current_user)):
+    _admin(user)
+    data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
+            if k not in BOOKKEEPING}
+    company_id = str(data.get("company_id") or "").strip()
+    if not company_id:
+        raise HTTPException(400, "company_id-required")
+    data["company_id"] = company_id
+    if await db.companies.find_one({"company_id": company_id}):
+        raise HTTPException(409, "company_id-already-exists")
+    now = _now()
+    doc = {
+        "id": str(uuid.uuid4()),
+        **data,
+        "created_at": now, "updated_at": now,
+        "imported_by": user["id"], "imported_at": now,
+        "deleted_at": None,
+    }
+    await db.companies.insert_one(doc)
+    await db.companies_audit.insert_one({
+        "id": str(uuid.uuid4()), "company_id": company_id,
+        "action": "manual-insert", "at": now, "actor_id": user["id"],
+    })
+    doc.pop("_id", None)
+    return doc
 
 
 @router.patch("/{uid}")
