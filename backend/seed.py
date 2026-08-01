@@ -415,6 +415,11 @@ async def ensure_indexes() -> None:
     await db.assets.create_index([("org_id", 1), ("kind", 1)])
     await db.assets.create_index("navixy_device_id", sparse=True)
     await db.assets.create_index("nfc_uid", sparse=True)
+    # v160.3.9.21c — Speed up `assets.find_one({"id": ...})` join lookups
+    # from plant_maintenance/grouped (49 per call today, grows with fleet).
+    # Without this, each call is a full collection scan on `assets`.
+    await db.assets.create_index("id")
+    await db.assets.create_index("rego_serial", sparse=True)
     await db.asset_service_schedules.create_index("asset_id")
     await db.asset_service_schedules.create_index([("org_id", 1), ("status", 1)])
     await db.asset_service_schedules.create_index("next_due_at", sparse=True)
