@@ -212,6 +212,12 @@ from master_risks import (  # noqa: E402
     ensure_indexes as master_risks_ensure_indexes,
 )
 api.include_router(master_risks_router)
+# v160.3.9.14 — List Forms reference library.
+from list_forms import (  # noqa: E402
+    router as list_forms_router,
+    ensure_indexes as list_forms_ensure_indexes,
+)
+api.include_router(list_forms_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -347,6 +353,11 @@ async def on_startup():
         await master_risks_ensure_indexes()
     except Exception as e:
         log.warning("master_risks index setup failed: %s", e)
+    # v160.3.9.14 — List Forms index setup.
+    try:
+        await list_forms_ensure_indexes()
+    except Exception as e:
+        log.warning("list_forms index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires

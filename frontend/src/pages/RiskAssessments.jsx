@@ -1,6 +1,6 @@
-// Risk Assessments — Capture sub-tab. v160.3.9.13.
-// Adds a "Master Risks" tab (reference library) alongside the existing
-// "Submissions" (worker-captured risk assessments) view.
+// Risk Assessments — Capture sub-tab. v160.3.9.14.
+// Three-tab surface: Submissions (worker-captured), Master Risks (reference
+// library, v160.3.9.13), List Forms (reference library, v160.3.9.14).
 import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import { TOKEN_KEY, USER_KEY } from '../lib/api';
@@ -8,10 +8,12 @@ import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
+import ListFormsTab from './ListFormsTab';
 
 const TABS = [
   { key: 'submissions', label: 'Submissions' },
   { key: 'master',      label: 'Master Risks' },
+  { key: 'list_forms',  label: 'List Forms' },
 ];
 
 function loadUser() {
@@ -103,6 +105,7 @@ export default function RiskAssessments() {
         )}
 
         {tab === 'master' && <MasterRisksTab user={user} />}
+        {tab === 'list_forms' && <ListFormsTab user={user} />}
       </div>
     </div>
   );
