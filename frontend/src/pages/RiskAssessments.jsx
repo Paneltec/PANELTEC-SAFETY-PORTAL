@@ -11,6 +11,7 @@ import MasterRisksTab from './MasterRisksTab';
 import ListFormsTab from './ListFormsTab';
 import IncidentRootCausesTab from './IncidentRootCausesTab';
 import CsIncidentTab from './CsIncidentTab';
+import ListRolesTab from './ListRolesTab';
 
 const TABS = [
   { key: 'submissions',   label: 'Submissions' },
@@ -18,6 +19,7 @@ const TABS = [
   { key: 'list_forms',    label: 'List Forms' },
   { key: 'root_causes',   label: 'Incident Root Causes' },
   { key: 'cs_incident',   label: 'CS Incident' },
+  { key: 'list_roles',    label: 'List Roles' },
 ];
 
 function loadUser() {
@@ -112,6 +114,7 @@ export default function RiskAssessments() {
         {tab === 'list_forms' && <ListFormsTab user={user} />}
         {tab === 'root_causes' && <IncidentRootCausesTab user={user} />}
         {tab === 'cs_incident' && <CsIncidentTab user={user} />}
+        {tab === 'list_roles' && <ListRolesTab user={user} />}
       </div>
     </div>
   );

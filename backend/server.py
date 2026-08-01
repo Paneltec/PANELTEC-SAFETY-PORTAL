@@ -230,6 +230,12 @@ from cs_incident import (  # noqa: E402
     ensure_indexes as cs_incident_ensure_indexes,
 )
 api.include_router(cs_incident_router)
+# v160.3.9.17 — List Roles reference library.
+from list_roles import (  # noqa: E402
+    router as list_roles_router,
+    ensure_indexes as list_roles_ensure_indexes,
+)
+api.include_router(list_roles_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -380,6 +386,11 @@ async def on_startup():
         await cs_incident_ensure_indexes()
     except Exception as e:
         log.warning("cs_incident index setup failed: %s", e)
+    # v160.3.9.17 — List Roles index setup.
+    try:
+        await list_roles_ensure_indexes()
+    except Exception as e:
+        log.warning("list_roles index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
