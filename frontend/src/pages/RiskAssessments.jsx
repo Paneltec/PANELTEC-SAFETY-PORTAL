@@ -1,6 +1,6 @@
-// Risk Assessments — Capture sub-tab. v160.3.9.14.
-// Three-tab surface: Submissions (worker-captured), Master Risks (reference
-// library, v160.3.9.13), List Forms (reference library, v160.3.9.14).
+// Risk Assessments — Capture sub-tab. v160.3.9.15.
+// Four-tab surface: Submissions, Master Risks, List Forms, Incident Root
+// Causes.
 import React, { useEffect, useState } from 'react';
 import api from '../lib/api';
 import { TOKEN_KEY, USER_KEY } from '../lib/api';
@@ -9,11 +9,13 @@ import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/Captu
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
 import ListFormsTab from './ListFormsTab';
+import IncidentRootCausesTab from './IncidentRootCausesTab';
 
 const TABS = [
-  { key: 'submissions', label: 'Submissions' },
-  { key: 'master',      label: 'Master Risks' },
-  { key: 'list_forms',  label: 'List Forms' },
+  { key: 'submissions',   label: 'Submissions' },
+  { key: 'master',        label: 'Master Risks' },
+  { key: 'list_forms',    label: 'List Forms' },
+  { key: 'root_causes',   label: 'Incident Root Causes' },
 ];
 
 function loadUser() {
@@ -106,6 +108,7 @@ export default function RiskAssessments() {
 
         {tab === 'master' && <MasterRisksTab user={user} />}
         {tab === 'list_forms' && <ListFormsTab user={user} />}
+        {tab === 'root_causes' && <IncidentRootCausesTab user={user} />}
       </div>
     </div>
   );

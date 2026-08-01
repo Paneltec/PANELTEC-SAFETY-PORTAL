@@ -218,6 +218,12 @@ from list_forms import (  # noqa: E402
     ensure_indexes as list_forms_ensure_indexes,
 )
 api.include_router(list_forms_router)
+# v160.3.9.15 — Incident Root Causes reference library.
+from incident_root_causes import (  # noqa: E402
+    router as incident_root_causes_router,
+    ensure_indexes as incident_root_causes_ensure_indexes,
+)
+api.include_router(incident_root_causes_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -358,6 +364,11 @@ async def on_startup():
         await list_forms_ensure_indexes()
     except Exception as e:
         log.warning("list_forms index setup failed: %s", e)
+    # v160.3.9.15 — Incident Root Causes index setup.
+    try:
+        await incident_root_causes_ensure_indexes()
+    except Exception as e:
+        log.warning("incident_root_causes index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
