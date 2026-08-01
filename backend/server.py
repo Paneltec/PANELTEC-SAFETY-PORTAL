@@ -242,6 +242,12 @@ from completed_training import (  # noqa: E402
     ensure_indexes as completed_training_ensure_indexes,
 )
 api.include_router(completed_training_router)
+# v160.3.9.19 — Companies reference library.
+from companies import (  # noqa: E402
+    router as companies_router,
+    ensure_indexes as companies_ensure_indexes,
+)
+api.include_router(companies_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -402,6 +408,11 @@ async def on_startup():
         await completed_training_ensure_indexes()
     except Exception as e:
         log.warning("completed_training index setup failed: %s", e)
+    # v160.3.9.19 — Companies index setup.
+    try:
+        await companies_ensure_indexes()
+    except Exception as e:
+        log.warning("companies index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
