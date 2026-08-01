@@ -1,0 +1,7768 @@
+{
+  "source_file": "/app/backend/scripts/inputs/users_permissions_matrix.xlsx",
+  "sheet": "Worksheet",
+  "dimensions": {
+    "rows": 121,
+    "cols": 70
+  },
+  "merged_ranges_row6": [
+    {
+      "range": "H6:N6",
+      "module": "competency"
+    },
+    {
+      "range": "O6:T6",
+      "module": "induction"
+    },
+    {
+      "range": "U6:Z6",
+      "module": "hr"
+    },
+    {
+      "range": "AA6:AE6",
+      "module": "incident"
+    },
+    {
+      "range": "AF6:AJ6",
+      "module": "risk"
+    },
+    {
+      "range": "AK6:AP6",
+      "module": "inform"
+    },
+    {
+      "range": "AQ6:AT6",
+      "module": "lucidityintranet"
+    },
+    {
+      "range": "AU6:AY6",
+      "module": "permittowork"
+    },
+    {
+      "range": "AZ6:BD6",
+      "module": "contractor"
+    },
+    {
+      "range": "BE6:BJ6",
+      "module": "asset"
+    },
+    {
+      "range": "BK6:BN6",
+      "module": "onsite"
+    },
+    {
+      "range": "BO6:BQ6",
+      "module": "access"
+    }
+  ],
+  "metadata_columns": [
+    {
+      "column_index": 1,
+      "column_letter": "A",
+      "header": "Username"
+    },
+    {
+      "column_index": 2,
+      "column_letter": "B",
+      "header": "ID"
+    },
+    {
+      "column_index": 3,
+      "column_letter": "C",
+      "header": "First Name"
+    },
+    {
+      "column_index": 4,
+      "column_letter": "D",
+      "header": "Last Name"
+    },
+    {
+      "column_index": 5,
+      "column_letter": "E",
+      "header": "Email"
+    },
+    {
+      "column_index": 6,
+      "column_letter": "F",
+      "header": "Created At"
+    },
+    {
+      "column_index": 7,
+      "column_letter": "G",
+      "header": "Last Logged In"
+    }
+  ],
+  "permission_columns": [
+    {
+      "column_index": 8,
+      "column_letter": "H",
+      "module": "competency",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 9,
+      "column_letter": "I",
+      "module": "competency",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 10,
+      "column_letter": "J",
+      "module": "competency",
+      "role": "Contractor Representative"
+    },
+    {
+      "column_index": 11,
+      "column_letter": "K",
+      "module": "competency",
+      "role": "General User"
+    },
+    {
+      "column_index": 12,
+      "column_letter": "L",
+      "module": "competency",
+      "role": "General User (Training / Inductions Only)"
+    },
+    {
+      "column_index": 13,
+      "column_letter": "M",
+      "module": "competency",
+      "role": "Manager"
+    },
+    {
+      "column_index": 14,
+      "column_letter": "N",
+      "module": "competency",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 15,
+      "column_letter": "O",
+      "module": "induction",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 16,
+      "column_letter": "P",
+      "module": "induction",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 17,
+      "column_letter": "Q",
+      "module": "induction",
+      "role": "General User"
+    },
+    {
+      "column_index": 18,
+      "column_letter": "R",
+      "module": "induction",
+      "role": "Manager"
+    },
+    {
+      "column_index": 19,
+      "column_letter": "S",
+      "module": "induction",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 20,
+      "column_letter": "T",
+      "module": "induction",
+      "role": "Training / Inductions Only"
+    },
+    {
+      "column_index": 21,
+      "column_letter": "U",
+      "module": "hr",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 22,
+      "column_letter": "V",
+      "module": "hr",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 23,
+      "column_letter": "W",
+      "module": "hr",
+      "role": "Contractor Representative"
+    },
+    {
+      "column_index": 24,
+      "column_letter": "X",
+      "module": "hr",
+      "role": "General User"
+    },
+    {
+      "column_index": 25,
+      "column_letter": "Y",
+      "module": "hr",
+      "role": "Manager"
+    },
+    {
+      "column_index": 26,
+      "column_letter": "Z",
+      "module": "hr",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 27,
+      "column_letter": "AA",
+      "module": "incident",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 28,
+      "column_letter": "AB",
+      "module": "incident",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 29,
+      "column_letter": "AC",
+      "module": "incident",
+      "role": "General User"
+    },
+    {
+      "column_index": 30,
+      "column_letter": "AD",
+      "module": "incident",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 31,
+      "column_letter": "AE",
+      "module": "incident",
+      "role": "Responsible Manager"
+    },
+    {
+      "column_index": 32,
+      "column_letter": "AF",
+      "module": "risk",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 33,
+      "column_letter": "AG",
+      "module": "risk",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 34,
+      "column_letter": "AH",
+      "module": "risk",
+      "role": "Manager"
+    },
+    {
+      "column_index": 35,
+      "column_letter": "AI",
+      "module": "risk",
+      "role": "Read Only"
+    },
+    {
+      "column_index": 36,
+      "column_letter": "AJ",
+      "module": "risk",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 37,
+      "column_letter": "AK",
+      "module": "inform",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 38,
+      "column_letter": "AL",
+      "module": "inform",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 39,
+      "column_letter": "AM",
+      "module": "inform",
+      "role": "Contractor Representative"
+    },
+    {
+      "column_index": 40,
+      "column_letter": "AN",
+      "module": "inform",
+      "role": "General User"
+    },
+    {
+      "column_index": 41,
+      "column_letter": "AO",
+      "module": "inform",
+      "role": "Manager"
+    },
+    {
+      "column_index": 42,
+      "column_letter": "AP",
+      "module": "inform",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 43,
+      "column_letter": "AQ",
+      "module": "lucidityintranet",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 44,
+      "column_letter": "AR",
+      "module": "lucidityintranet",
+      "role": "Contractor Representative"
+    },
+    {
+      "column_index": 45,
+      "column_letter": "AS",
+      "module": "lucidityintranet",
+      "role": "General User"
+    },
+    {
+      "column_index": 46,
+      "column_letter": "AT",
+      "module": "lucidityintranet",
+      "role": "Manager"
+    },
+    {
+      "column_index": 47,
+      "column_letter": "AU",
+      "module": "permittowork",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 48,
+      "column_letter": "AV",
+      "module": "permittowork",
+      "role": "Approver"
+    },
+    {
+      "column_index": 49,
+      "column_letter": "AW",
+      "module": "permittowork",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 50,
+      "column_letter": "AX",
+      "module": "permittowork",
+      "role": "Manager (Creator)"
+    },
+    {
+      "column_index": 51,
+      "column_letter": "AY",
+      "module": "permittowork",
+      "role": "Read Only"
+    },
+    {
+      "column_index": 52,
+      "column_letter": "AZ",
+      "module": "contractor",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 53,
+      "column_letter": "BA",
+      "module": "contractor",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 54,
+      "column_letter": "BB",
+      "module": "contractor",
+      "role": "Contractor Representative - only submit required documents"
+    },
+    {
+      "column_index": 55,
+      "column_letter": "BC",
+      "module": "contractor",
+      "role": "Manager"
+    },
+    {
+      "column_index": 56,
+      "column_letter": "BD",
+      "module": "contractor",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 57,
+      "column_letter": "BE",
+      "module": "asset",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 58,
+      "column_letter": "BF",
+      "module": "asset",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 59,
+      "column_letter": "BG",
+      "module": "asset",
+      "role": "Contractor Representative"
+    },
+    {
+      "column_index": 60,
+      "column_letter": "BH",
+      "module": "asset",
+      "role": "Manager"
+    },
+    {
+      "column_index": 61,
+      "column_letter": "BI",
+      "module": "asset",
+      "role": "Mechanic Role"
+    },
+    {
+      "column_index": 62,
+      "column_letter": "BJ",
+      "module": "asset",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 63,
+      "column_letter": "BK",
+      "module": "onsite",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 64,
+      "column_letter": "BL",
+      "module": "onsite",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 65,
+      "column_letter": "BM",
+      "module": "onsite",
+      "role": "Manager"
+    },
+    {
+      "column_index": 66,
+      "column_letter": "BN",
+      "module": "onsite",
+      "role": "Report Emailing"
+    },
+    {
+      "column_index": 67,
+      "column_letter": "BO",
+      "module": "access",
+      "role": "Administrator"
+    },
+    {
+      "column_index": 68,
+      "column_letter": "BP",
+      "module": "access",
+      "role": "Column Configuration"
+    },
+    {
+      "column_index": 69,
+      "column_letter": "BQ",
+      "module": "access",
+      "role": "Report Emailing"
+    }
+  ],
+  "modules": {
+    "competency": [
+      "Administrator",
+      "Column Configuration",
+      "Contractor Representative",
+      "General User",
+      "General User (Training / Inductions Only)",
+      "Manager",
+      "Report Emailing"
+    ],
+    "induction": [
+      "Administrator",
+      "Column Configuration",
+      "General User",
+      "Manager",
+      "Report Emailing",
+      "Training / Inductions Only"
+    ],
+    "hr": [
+      "Administrator",
+      "Column Configuration",
+      "Contractor Representative",
+      "General User",
+      "Manager",
+      "Report Emailing"
+    ],
+    "incident": [
+      "Administrator",
+      "Column Configuration",
+      "General User",
+      "Report Emailing",
+      "Responsible Manager"
+    ],
+    "risk": [
+      "Administrator",
+      "Column Configuration",
+      "Manager",
+      "Read Only",
+      "Report Emailing"
+    ],
+    "inform": [
+      "Administrator",
+      "Column Configuration",
+      "Contractor Representative",
+      "General User",
+      "Manager",
+      "Report Emailing"
+    ],
+    "lucidityintranet": [
+      "Administrator",
+      "Contractor Representative",
+      "General User",
+      "Manager"
+    ],
+    "permittowork": [
+      "Administrator",
+      "Approver",
+      "Column Configuration",
+      "Manager (Creator)",
+      "Read Only"
+    ],
+    "contractor": [
+      "Administrator",
+      "Column Configuration",
+      "Contractor Representative - only submit required documents",
+      "Manager",
+      "Report Emailing"
+    ],
+    "asset": [
+      "Administrator",
+      "Column Configuration",
+      "Contractor Representative",
+      "Manager",
+      "Mechanic Role",
+      "Report Emailing"
+    ],
+    "onsite": [
+      "Administrator",
+      "Column Configuration",
+      "Manager",
+      "Report Emailing"
+    ],
+    "access": [
+      "Administrator",
+      "Column Configuration",
+      "Report Emailing"
+    ]
+  },
+  "users": [
+    {
+      "row": 8,
+      "username": "Craig.LARGE",
+      "id": 140,
+      "first_name": "Craig",
+      "last_name": "LARGE",
+      "email": "craig.large@aussiebb.com.au",
+      "created_at": "06/03/2025 14:08:36",
+      "last_logged_in": "28/07/2026 08:45:49",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 9,
+      "username": "Ellie.BEADLE",
+      "id": 70,
+      "first_name": "Ellie",
+      "last_name": "BEADLE",
+      "email": "ellie.beadle@icloud.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "28/07/2026 09:32:55",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 10,
+      "username": "Melinda.LINFORD",
+      "id": 35,
+      "first_name": "Melinda",
+      "last_name": "LINFORD",
+      "email": "melinda@paneltec.com.au",
+      "created_at": "20/09/2022 10:38:20",
+      "last_logged_in": "28/07/2026 13:49:45",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 11,
+      "username": "AmandaGUY",
+      "id": 34,
+      "first_name": "Amanda",
+      "last_name": "GUY",
+      "email": "amanda.guy@paneltec.com.au",
+      "created_at": "20/09/2022 10:36:52",
+      "last_logged_in": "28/07/2026 18:49:42",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 12,
+      "username": "ScottCRERAR",
+      "id": 32,
+      "first_name": "Scott",
+      "last_name": "CRERAR",
+      "email": "scott@paneltec.com.au",
+      "created_at": "20/09/2022 10:35:26",
+      "last_logged_in": "11/12/2024 12:36:18",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 13,
+      "username": "StephenGUY",
+      "id": 31,
+      "first_name": "Stephen",
+      "last_name": "GUY",
+      "email": "stephen@paneltec.com.au",
+      "created_at": "20/09/2022 10:34:35",
+      "last_logged_in": "05/07/2026 20:58:24",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 14,
+      "username": "reportemailingadministrator",
+      "id": 27,
+      "first_name": "Report Emailing",
+      "last_name": "Administrator",
+      "email": null,
+      "created_at": "13/08/2020 17:24:08",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Report Emailing",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Report Emailing",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 15,
+      "username": "ADMINISTRATOR",
+      "id": 1,
+      "first_name": "Ideagen EHS",
+      "last_name": "ADMINISTRATOR",
+      "email": "superadminlucidity+paneltec-administrator@ideagenplc.com",
+      "created_at": "01/06/2020 15:29:18",
+      "last_logged_in": "03/04/2024 16:24:15",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "competency",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Column Configuration",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "access",
+          "role": "Column Configuration",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 16,
+      "username": "Haresh.CHAUDHARI",
+      "id": 143,
+      "first_name": "Haresh",
+      "last_name": "CHAUDHARI",
+      "email": "hareshchaudhari1889@gmail.com",
+      "created_at": "10/04/2025 11:19:41",
+      "last_logged_in": "16/07/2026 08:52:04",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 17,
+      "username": "Philip.WOODS",
+      "id": 123,
+      "first_name": "Philip",
+      "last_name": "WOODS",
+      "email": "philthedragonslayer@gmail.com",
+      "created_at": "08/05/2024 10:15:11",
+      "last_logged_in": "19/05/2025 07:44:17",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 18,
+      "username": "Norman.COLE",
+      "id": 80,
+      "first_name": "Norman",
+      "last_name": "COLE",
+      "email": "norm.cole@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "03/04/2025 07:33:07",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 19,
+      "username": "Patrick.MONAGHAN",
+      "id": 62,
+      "first_name": "Patrick",
+      "last_name": "MONAGHAN",
+      "email": "patrick@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "04/06/2026 10:01:45",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 20,
+      "username": "Mathew.LOONE",
+      "id": 58,
+      "first_name": "Mathew",
+      "last_name": "LOONE",
+      "email": "mat.loone@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "17/06/2025 14:39:24",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 21,
+      "username": "Luke.GUY",
+      "id": 57,
+      "first_name": "Luke",
+      "last_name": "GUY",
+      "email": "luke@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "10/07/2026 08:52:00",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Responsible Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Manager (Creator)",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Manager",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 22,
+      "username": "Katrina.GUY",
+      "id": 55,
+      "first_name": "Katrina",
+      "last_name": "GUY",
+      "email": "katrina.guy@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Administrator",
+          "value": "Yes"
+        },
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 23,
+      "username": "onsite",
+      "id": 29,
+      "first_name": "OnSite",
+      "last_name": "Login",
+      "email": null,
+      "created_at": "03/02/2021 09:14:46",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "onsite",
+          "role": "Administrator",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 24,
+      "username": "Toby.Smith",
+      "id": 90,
+      "first_name": "Toby",
+      "last_name": "SMITH",
+      "email": "tobyasmith@hotmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Contractor Representative - only submit required documents",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 25,
+      "username": "Gregory.Jordan",
+      "id": 89,
+      "first_name": "Gregory",
+      "last_name": "JORDAN",
+      "email": "greg@gmechtas.com.au",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        },
+        {
+          "module": "contractor",
+          "role": "Contractor Representative - only submit required documents",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Contractor Representative",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 26,
+      "username": "George.CHAMBERLAIN",
+      "id": 48,
+      "first_name": "George",
+      "last_name": "CHAMBERLAIN",
+      "email": "service@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "28/07/2026 07:42:11",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "asset",
+          "role": "Mechanic Role",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 27,
+      "username": "Tony.PURTON",
+      "id": 157,
+      "first_name": "Tony",
+      "last_name": "PURTON",
+      "email": "243apurton1971@gmail.com",
+      "created_at": "10/06/2026 09:39:13",
+      "last_logged_in": "11/06/2026 09:24:08",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 28,
+      "username": "Kim.HODGE",
+      "id": 155,
+      "first_name": "Kim",
+      "last_name": "HODGE",
+      "email": "kdh.lonnie@gmail.com",
+      "created_at": "21/05/2026 11:49:32",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 29,
+      "username": "Skye.FLANIGAN",
+      "id": 154,
+      "first_name": "Skye",
+      "last_name": "FLANIGAN",
+      "email": "skye.flanigan21@gmail.com",
+      "created_at": "18/05/2026 10:40:29",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 30,
+      "username": "Aaron.FOSTER",
+      "id": 152,
+      "first_name": "Aaron",
+      "last_name": "FOSTER",
+      "email": "AARONFOSTER002@ICLOUD.COM",
+      "created_at": "23/03/2026 08:48:59",
+      "last_logged_in": "23/03/2026 09:07:06",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 31,
+      "username": "Courtney.SPIKINS",
+      "id": 150,
+      "first_name": "Courtney",
+      "last_name": "SPIKINS",
+      "email": "c.spikins2102@gmail.com",
+      "created_at": "21/01/2026 13:42:03",
+      "last_logged_in": "13/07/2026 07:27:40",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 32,
+      "username": "Toby.DALE",
+      "id": 148,
+      "first_name": "Toby",
+      "last_name": "DALE",
+      "email": "daletoby435@gmail.com",
+      "created_at": "10/09/2025 11:25:02",
+      "last_logged_in": "28/07/2026 07:33:48",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 33,
+      "username": "Ryan.SMITH",
+      "id": 147,
+      "first_name": "Ryan",
+      "last_name": "SMITH",
+      "email": "ryannsmith92@gmail.com",
+      "created_at": "01/09/2025 09:30:31",
+      "last_logged_in": "14/06/2026 19:03:34",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 34,
+      "username": "Visanti.MAKRAVA",
+      "id": 146,
+      "first_name": "Visanti",
+      "last_name": "MAKRAVA",
+      "email": "vpmakrava@gmail.com",
+      "created_at": "01/08/2025 09:24:50",
+      "last_logged_in": "24/10/2025 09:49:45",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 35,
+      "username": "Daniel.ELLIOTT",
+      "id": 145,
+      "first_name": "Daniel",
+      "last_name": "ELLIOTT",
+      "email": "djelliott13@gmail.com",
+      "created_at": "29/05/2025 13:39:38",
+      "last_logged_in": "24/07/2026 13:01:41",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 36,
+      "username": "Emma.NIPPERS",
+      "id": 142,
+      "first_name": "Emma",
+      "last_name": "NIPPERS",
+      "email": "emmanippers04@gmail.com",
+      "created_at": "28/03/2025 12:38:35",
+      "last_logged_in": "10/06/2026 15:28:42",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 37,
+      "username": "Robert.SPENCER",
+      "id": 139,
+      "first_name": "Robert",
+      "last_name": "SPENCER",
+      "email": "roodog75@hotmail.com",
+      "created_at": "05/02/2025 09:22:38",
+      "last_logged_in": "28/07/2026 07:27:45",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 38,
+      "username": "Paul.RICHARDSON",
+      "id": 138,
+      "first_name": "Paul",
+      "last_name": "RICHARDSON",
+      "email": "norm071335@gmail.com",
+      "created_at": "31/01/2025 12:37:40",
+      "last_logged_in": "28/07/2026 07:29:30",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 39,
+      "username": "Nathan.HOLMES",
+      "id": 137,
+      "first_name": "Nathan",
+      "last_name": "HOLMES",
+      "email": "nathanholmes082@gmail.com",
+      "created_at": "16/12/2024 08:16:27",
+      "last_logged_in": "28/07/2026 07:34:31",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 40,
+      "username": "Joshua.STEPHENS",
+      "id": 136,
+      "first_name": "Joshua",
+      "last_name": "STEPHENS",
+      "email": "joshstephens369@gmail.com",
+      "created_at": "11/12/2024 13:23:22",
+      "last_logged_in": "17/01/2025 13:26:46",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 41,
+      "username": "Anthony.DENARDO",
+      "id": 135,
+      "first_name": "Anthony",
+      "last_name": "DE NARDO",
+      "email": "ad23kc@gmail.com",
+      "created_at": "10/12/2024 08:18:07",
+      "last_logged_in": "12/03/2025 07:46:26",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 42,
+      "username": "James.MARSHALL",
+      "id": 134,
+      "first_name": "James",
+      "last_name": "MARSHALL",
+      "email": "james.p.marshall@outlook.com",
+      "created_at": "04/12/2024 13:35:27",
+      "last_logged_in": "23/02/2026 08:58:23",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 43,
+      "username": "Gary.WARMSLEY",
+      "id": 133,
+      "first_name": "Gary",
+      "last_name": "WARMSLEY",
+      "email": "gary.j.warmsley@gmail.com",
+      "created_at": "14/11/2024 10:38:04",
+      "last_logged_in": "28/07/2026 08:09:27",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 44,
+      "username": "Dylan.PARKER",
+      "id": 132,
+      "first_name": "Dylan",
+      "last_name": "PARKER",
+      "email": "d.j.parker6398@gmail.com",
+      "created_at": "11/11/2024 07:33:49",
+      "last_logged_in": "28/07/2026 03:37:36",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 45,
+      "username": "Melody.HENDERSON",
+      "id": 131,
+      "first_name": "Melody",
+      "last_name": "HENDERSON",
+      "email": "melodyhenderson33@gmail.com",
+      "created_at": "08/11/2024 10:30:07",
+      "last_logged_in": "09/11/2024 22:27:17",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 46,
+      "username": "Damon.WARNER",
+      "id": 130,
+      "first_name": "Damon",
+      "last_name": "WARNER",
+      "email": "damonjwarner@hotmail.com",
+      "created_at": "06/11/2024 13:15:59",
+      "last_logged_in": "28/07/2026 06:56:41",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 47,
+      "username": "Damien.JOHNSON",
+      "id": 129,
+      "first_name": "Damien",
+      "last_name": "JOHNSON",
+      "email": "dadcharlee10@gmail.com",
+      "created_at": "22/10/2024 15:29:04",
+      "last_logged_in": "19/12/2024 09:31:53",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 48,
+      "username": "Zoe.WHILEY",
+      "id": 128,
+      "first_name": "Zoe",
+      "last_name": "MCINTOSH",
+      "email": "leannezoe66@gmail.com",
+      "created_at": "22/10/2024 15:27:27",
+      "last_logged_in": "18/03/2026 09:17:44",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 49,
+      "username": "Aaron.HOLMES",
+      "id": 127,
+      "first_name": "Aaron",
+      "last_name": "HOLMES",
+      "email": "holmes2010@live.com.au",
+      "created_at": "07/10/2024 13:09:41",
+      "last_logged_in": "28/07/2026 05:52:24",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 50,
+      "username": "Jasper.KRUSHKA",
+      "id": 126,
+      "first_name": "Jasper",
+      "last_name": "KRUSHKA",
+      "email": "j.krushka6@gmail.com",
+      "created_at": "26/07/2024 12:58:04",
+      "last_logged_in": "25/06/2025 10:30:27",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 51,
+      "username": "Brodie.ELLIS",
+      "id": 125,
+      "first_name": "Brodie",
+      "last_name": "ELLIS",
+      "email": "brodieellis12@hotmail.com",
+      "created_at": "04/07/2024 13:36:56",
+      "last_logged_in": "28/02/2026 07:27:02",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 52,
+      "username": "Ashley.HINGSTON",
+      "id": 122,
+      "first_name": "Ashley",
+      "last_name": "HINGSTON",
+      "email": "hingstonashley5@gmail.com",
+      "created_at": "10/04/2024 11:49:50",
+      "last_logged_in": "21/10/2025 01:09:25",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 53,
+      "username": "Jarrod.TARGETT",
+      "id": 121,
+      "first_name": "Jarrod",
+      "last_name": "TARGETT",
+      "email": "jarrod.targett@outlook.com",
+      "created_at": "22/03/2024 10:51:53",
+      "last_logged_in": "27/07/2026 00:00:03",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 54,
+      "username": "William.BROWN",
+      "id": 120,
+      "first_name": "William",
+      "last_name": "BROWN",
+      "email": "william.g.brown.99@gmail.com",
+      "created_at": "13/03/2024 14:56:17",
+      "last_logged_in": "22/07/2026 07:55:15",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 55,
+      "username": "Brock.WATERWORTH",
+      "id": 119,
+      "first_name": "Brock",
+      "last_name": "WATERWORTH",
+      "email": "brock.w@hotmail.com",
+      "created_at": "13/03/2024 10:57:29",
+      "last_logged_in": "07/07/2026 13:51:52",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 56,
+      "username": "Brendon.BRADY",
+      "id": 118,
+      "first_name": "Brendon",
+      "last_name": "BRADY",
+      "email": "wolfdog1986@gmail.com",
+      "created_at": "12/03/2024 15:50:41",
+      "last_logged_in": "28/07/2026 06:10:21",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 57,
+      "username": "Luke.PURSEY",
+      "id": 116,
+      "first_name": "Luke",
+      "last_name": "PURSEY",
+      "email": "dragons94eva@gmail.com",
+      "created_at": "01/03/2024 14:51:14",
+      "last_logged_in": "17/06/2024 08:16:08",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 58,
+      "username": "Jack.TURNER",
+      "id": 113,
+      "first_name": "Jack",
+      "last_name": "TURNER",
+      "email": "jackalexanderturner@outlook.com",
+      "created_at": "09/02/2024 13:17:29",
+      "last_logged_in": "28/07/2026 07:32:56",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 59,
+      "username": "Renae.CARTLEDGE",
+      "id": 112,
+      "first_name": "Renae",
+      "last_name": "CARTLEDGE",
+      "email": "renaeacartledge03@gmail.com",
+      "created_at": "06/02/2024 13:15:21",
+      "last_logged_in": "25/02/2025 04:19:49",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 60,
+      "username": "Sandy.JOHNSON",
+      "id": 111,
+      "first_name": "Sandy",
+      "last_name": "JOHNSON",
+      "email": "sandybrewer78@gmail.com",
+      "created_at": "22/01/2024 14:04:03",
+      "last_logged_in": "19/08/2025 15:50:00",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 61,
+      "username": "Stephen.MORGAN",
+      "id": 110,
+      "first_name": "Stephen",
+      "last_name": "MORGAN",
+      "email": "stevejm90@gmail.com",
+      "created_at": "22/01/2024 13:54:45",
+      "last_logged_in": "22/07/2026 19:11:51",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 62,
+      "username": "Allison.FONTYN",
+      "id": 109,
+      "first_name": "Allison",
+      "last_name": "FONTYN",
+      "email": "ally.fontyn21@outlook.com",
+      "created_at": "22/01/2024 13:46:55",
+      "last_logged_in": "21/07/2026 06:10:18",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 63,
+      "username": "Phoebe.FAHEY",
+      "id": 108,
+      "first_name": "Phoebe",
+      "last_name": "FAHEY",
+      "email": "phoebe.fahey17@icloud.com",
+      "created_at": "23/11/2023 13:24:44",
+      "last_logged_in": "23/07/2026 14:32:20",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 64,
+      "username": "Ebony.BARRETT",
+      "id": 107,
+      "first_name": "Ebony",
+      "last_name": "BARRETT",
+      "email": "ebonyb137@outlook.com",
+      "created_at": "08/06/2023 11:41:34",
+      "last_logged_in": "23/04/2024 13:30:21",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 65,
+      "username": "Alex.BARBARI",
+      "id": 106,
+      "first_name": "Alex",
+      "last_name": "BARBARI",
+      "email": "albarbari1986@outlook.com",
+      "created_at": "16/05/2023 14:56:14",
+      "last_logged_in": "01/03/2026 06:58:56",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 66,
+      "username": "Matthew.WELLS",
+      "id": 104,
+      "first_name": "Matthew",
+      "last_name": "WELLS",
+      "email": "matchu_03@hotmail.com",
+      "created_at": "03/04/2023 15:17:46",
+      "last_logged_in": "28/07/2026 07:38:00",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 67,
+      "username": "Wayne.NIPPERS",
+      "id": 103,
+      "first_name": "Wayne",
+      "last_name": "NIPPERS",
+      "email": "wayne.nippers@justtelco.net.au",
+      "created_at": "30/03/2023 15:23:13",
+      "last_logged_in": "22/11/2025 11:12:55",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 68,
+      "username": "Danieka.WEST",
+      "id": 102,
+      "first_name": "Danieka",
+      "last_name": "WEST",
+      "email": "niekahall@gmail.com",
+      "created_at": "27/03/2023 10:23:04",
+      "last_logged_in": "27/07/2026 10:08:03",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 69,
+      "username": "Corey.WHEELER-MARTIN",
+      "id": 100,
+      "first_name": "Corey",
+      "last_name": "WHEELER-MARTIN",
+      "email": "coreymartin1717@gmail.com",
+      "created_at": "17/02/2023 13:26:11",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 70,
+      "username": "Todd.COATES",
+      "id": 99,
+      "first_name": "Todd",
+      "last_name": "COATES",
+      "email": "toddacoates67@gmail.com",
+      "created_at": "14/02/2023 11:45:38",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 71,
+      "username": "Matthew.SMITH",
+      "id": 98,
+      "first_name": "Matthew",
+      "last_name": "SMITH",
+      "email": "matbel52@hotmail.com",
+      "created_at": "21/12/2022 09:50:12",
+      "last_logged_in": "22/07/2026 09:48:01",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 72,
+      "username": "Richard.ANTRIM",
+      "id": 97,
+      "first_name": "Richard",
+      "last_name": "ANTRIM",
+      "email": "rikantrim@gmail.com",
+      "created_at": "05/12/2022 11:50:11",
+      "last_logged_in": "28/07/2026 07:43:06",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 73,
+      "username": "Nicholas.Price",
+      "id": 95,
+      "first_name": "Nicholas",
+      "last_name": "PRICE",
+      "email": "nick_price01@hotmail.com",
+      "created_at": "05/12/2022 10:51:25",
+      "last_logged_in": "03/10/2024 08:51:34",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 74,
+      "username": "Carmen.Marsden",
+      "id": 92,
+      "first_name": "Carmen",
+      "last_name": "MARSDEN",
+      "email": "marsden.carmen26@gmail.com",
+      "created_at": "28/09/2022 11:49:18",
+      "last_logged_in": "07/07/2025 08:15:07",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 75,
+      "username": "Terry.OATES",
+      "id": 88,
+      "first_name": "Terry",
+      "last_name": "OATES",
+      "email": "uncletoby5@icloud.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "06/06/2024 13:46:22",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 76,
+      "username": "Steve.LYONS",
+      "id": 87,
+      "first_name": "Steven",
+      "last_name": "LYONS",
+      "email": "redas0351@outlook.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "22/07/2026 07:58:10",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 77,
+      "username": "Stephen.BEADLE",
+      "id": 86,
+      "first_name": "Stephen",
+      "last_name": "BEADLE",
+      "email": "stephen.beadle65@gmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "24/07/2026 10:40:41",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 78,
+      "username": "Ross.GRAY",
+      "id": 85,
+      "first_name": "Ross",
+      "last_name": "GRAY",
+      "email": "pteradon@hotmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "24/12/2025 07:08:58",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 79,
+      "username": "Ross.BROWN",
+      "id": 84,
+      "first_name": "Ross",
+      "last_name": "BROWN",
+      "email": "1957rossbrown@gmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 80,
+      "username": "Ranvir.RANA",
+      "id": 83,
+      "first_name": "Ranvir",
+      "last_name": "RANA",
+      "email": "ranvirs158@gmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 81,
+      "username": "Peter.BAILLIE",
+      "id": 82,
+      "first_name": "Peter",
+      "last_name": "BAILLIE",
+      "email": "baip56@hotmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "16/02/2024 08:19:31",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 82,
+      "username": "Paul.ASHLIN",
+      "id": 81,
+      "first_name": "Paul",
+      "last_name": "ASHLIN",
+      "email": "paul.ashlin@icloud.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "28/07/2026 09:06:33",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 83,
+      "username": "Lisa.TAFARI",
+      "id": 79,
+      "first_name": "Lisa",
+      "last_name": "TAFARI",
+      "email": "lisafunklush@hotmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "28/07/2026 08:15:40",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 84,
+      "username": "Kylie.IRVINE",
+      "id": 78,
+      "first_name": "Kylie",
+      "last_name": "IRVINE",
+      "email": "irvine_kylie@yahoo.com.au",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "26/09/2023 13:53:02",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 85,
+      "username": "John.TAYLOR",
+      "id": 75,
+      "first_name": "John",
+      "last_name": "TAYLOR",
+      "email": "johnybeam70@gmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "12/06/2025 06:13:09",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 86,
+      "username": "Jason.PARKER",
+      "id": 74,
+      "first_name": "Jason",
+      "last_name": "PARKER",
+      "email": "fusion9975@gmail.com",
+      "created_at": "27/09/2022 13:24:12",
+      "last_logged_in": "23/07/2026 07:10:54",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 87,
+      "username": "James.ROLLBUSCH",
+      "id": 73,
+      "first_name": "James",
+      "last_name": "ROLLBUSCH",
+      "email": "rollbusch18@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "03/04/2026 13:47:44",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 88,
+      "username": "James.HOLMES",
+      "id": 72,
+      "first_name": "James",
+      "last_name": "HOLMES",
+      "email": "mrqyt001@hotmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "23/07/2026 10:03:59",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 89,
+      "username": "Ian.STUBBINGS",
+      "id": 71,
+      "first_name": "Ian",
+      "last_name": "STUBBINGS",
+      "email": "iangs1411@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "23/07/2026 08:43:29",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 90,
+      "username": "Antony.MCCALLUM",
+      "id": 69,
+      "first_name": "Antony",
+      "last_name": "MCCALLUM",
+      "email": "tony.mccallum31@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 91,
+      "username": "Adam.GARCIE",
+      "id": 68,
+      "first_name": "Adam",
+      "last_name": "GARCIE",
+      "email": "adzy.garcie72@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "28/07/2026 07:13:42",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 92,
+      "username": "Tony.WALKER",
+      "id": 67,
+      "first_name": "Tony",
+      "last_name": "WALKER",
+      "email": "brookentony@outlook.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "28/07/2026 06:46:09",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 93,
+      "username": "Tim.GUY",
+      "id": 66,
+      "first_name": "Tim",
+      "last_name": "GUY",
+      "email": "timguy.com@yahoo.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "29/05/2026 07:12:26",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 94,
+      "username": "Stuart.MANSELL",
+      "id": 65,
+      "first_name": "Stuart",
+      "last_name": "MANSELL",
+      "email": "stuart.mansell@gmx.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "27/07/2026 07:35:38",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 95,
+      "username": "Scott.CAMPBELL",
+      "id": 63,
+      "first_name": "Scott",
+      "last_name": "CAMPBELL",
+      "email": "scottcampbell76@bigpond.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "19/05/2026 11:37:31",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 96,
+      "username": "Norman.SLATER",
+      "id": 61,
+      "first_name": "Norman",
+      "last_name": "SLATER",
+      "email": "normanslater432@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "27/05/2026 07:32:27",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 97,
+      "username": "Neville.YOUNG",
+      "id": 60,
+      "first_name": "Neville",
+      "last_name": "YOUNG",
+      "email": "nevyoung12@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "28/07/2026 07:26:48",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 98,
+      "username": "Mitchell.GUY",
+      "id": 59,
+      "first_name": "Mitchell",
+      "last_name": "GUY",
+      "email": "mitchellguy44@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "03/05/2026 07:52:58",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 99,
+      "username": "Lachlan.MORICE",
+      "id": 56,
+      "first_name": "Lachlan",
+      "last_name": "MORICE",
+      "email": "lochiemorice@gmail.com",
+      "created_at": "27/09/2022 13:24:11",
+      "last_logged_in": "23/07/2026 11:36:07",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 100,
+      "username": "John.GUY",
+      "id": 54,
+      "first_name": "John",
+      "last_name": "GUY",
+      "email": "john@paneltec.com.au",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "02/05/2025 19:27:15",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 101,
+      "username": "Jeremy.JOHNSON",
+      "id": 53,
+      "first_name": "Jeremy",
+      "last_name": "JOHNSON",
+      "email": "jezzajohnson@yahoo.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "24/08/2024 14:12:59",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 102,
+      "username": "Jason.DONNELLAN",
+      "id": 52,
+      "first_name": "Jason",
+      "last_name": "DONNELLAN",
+      "email": "jasonleedonnellan@live.com.au",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "23/07/2026 18:41:40",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "Manager",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 103,
+      "username": "Jason.BIRD",
+      "id": 51,
+      "first_name": "Jason",
+      "last_name": "BIRD",
+      "email": "netrage2026@outlook.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "22/05/2026 08:14:04",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 104,
+      "username": "James.MITCHELL",
+      "id": 50,
+      "first_name": "James",
+      "last_name": "MITCHELL",
+      "email": "jamesmitchell.tas@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "22/10/2024 09:41:26",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 105,
+      "username": "Graeme.BLYTH",
+      "id": 49,
+      "first_name": "Graeme",
+      "last_name": "BLYTH",
+      "email": "boofey666@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "14/11/2024 07:37:00",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 106,
+      "username": "Emmanuel.QUEMUEL",
+      "id": 47,
+      "first_name": "Emmanuel",
+      "last_name": "QUEMUEL",
+      "email": "emie-noel@hotmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 107,
+      "username": "Dominic.GOULD",
+      "id": 46,
+      "first_name": "Dominic",
+      "last_name": "GOOLD",
+      "email": "dominiccharlesgoold@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "16/06/2026 06:35:04",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 108,
+      "username": "Dion.KING",
+      "id": 45,
+      "first_name": "Dion",
+      "last_name": "KING",
+      "email": "dion.king46@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "30/11/2023 15:55:42",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 109,
+      "username": "Danny.KIRKLAND",
+      "id": 44,
+      "first_name": "Danny",
+      "last_name": "KIRKLAND",
+      "email": "dkirkland371@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "22/07/2026 07:28:32",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 110,
+      "username": "Daniel.CARR",
+      "id": 43,
+      "first_name": "Daniel",
+      "last_name": "CARR",
+      "email": "danielcarr71@outlook.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "02/04/2026 08:35:11",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 111,
+      "username": "Daniel.BUTLER",
+      "id": 42,
+      "first_name": "Daniel",
+      "last_name": "BUTLER",
+      "email": "danielbutler564@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "26/05/2026 05:13:57",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 112,
+      "username": "Brett.JENKINS",
+      "id": 41,
+      "first_name": "Brett",
+      "last_name": "JENKINS",
+      "email": "brett.jenkins2021@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "21/01/2024 20:01:25",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 113,
+      "username": "Brendan.WALKER",
+      "id": 40,
+      "first_name": "Brendan",
+      "last_name": "WALKER",
+      "email": "bwjwalker.bw@gmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "27/07/2026 07:44:35",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 114,
+      "username": "Bobby.MCGOWAN",
+      "id": 39,
+      "first_name": "Bobby",
+      "last_name": "MCGOWAN",
+      "email": "bobbylbp@hotmail.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "28/05/2026 06:50:04",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 115,
+      "username": "Andrew.MADZIARA",
+      "id": 38,
+      "first_name": "Andrew",
+      "last_name": "MADZIARA",
+      "email": "madz@gmx.com",
+      "created_at": "27/09/2022 13:24:10",
+      "last_logged_in": "05/08/2025 09:43:53",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 116,
+      "username": "Alexander.KINGSTON",
+      "id": 37,
+      "first_name": "Alexander",
+      "last_name": "KINGSTON",
+      "email": "alexkingston@outlook.com.au",
+      "created_at": "27/09/2022 13:24:09",
+      "last_logged_in": "28/07/2026 05:26:20",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 117,
+      "username": "Alexander.BLYTH",
+      "id": 36,
+      "first_name": "Alexander",
+      "last_name": "BLYTH",
+      "email": "alexander.blyth123@gmail.com",
+      "created_at": "27/09/2022 13:24:09",
+      "last_logged_in": "31/12/2024 08:14:11",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 118,
+      "username": "Ian.McLELLAND",
+      "id": 33,
+      "first_name": "Ian",
+      "last_name": "MCLELLAND",
+      "email": "ianhmclelland@gmail.com",
+      "created_at": "20/09/2022 10:36:15",
+      "last_logged_in": "08/08/2023 15:20:31",
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "hr",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "incident",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "risk",
+          "role": "Read Only",
+          "value": "Yes"
+        },
+        {
+          "module": "inform",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "lucidityintranet",
+          "role": "General User",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Approver",
+          "value": "Yes"
+        },
+        {
+          "module": "permittowork",
+          "role": "Read Only",
+          "value": "Yes"
+        }
+      ]
+    },
+    {
+      "row": 119,
+      "username": "J.DUPUIS",
+      "id": 158,
+      "first_name": "Jim",
+      "last_name": "DUPUIS",
+      "email": "jim@wojohq.com",
+      "created_at": "15/06/2026 11:20:34",
+      "last_logged_in": null,
+      "grants": [
+        {
+          "module": "competency",
+          "role": "General User (Training / Inductions Only)",
+          "value": "Yes"
+        },
+        {
+          "module": "induction",
+          "role": "Training / Inductions Only",
+          "value": "Yes"
+        }
+      ]
+    }
+  ],
+  "tokens_per_column": {
+    "competency.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "competency.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "competency.Contractor Representative": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "competency.General User": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "competency.General User (Training / Inductions Only)": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "competency.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "competency.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "induction.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "induction.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "induction.General User": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "induction.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "induction.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "induction.Training / Inductions Only": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "hr.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "hr.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "hr.Contractor Representative": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "hr.General User": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "hr.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "hr.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "incident.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "incident.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "incident.General User": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "incident.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "incident.Responsible Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "risk.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "risk.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "risk.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "risk.Read Only": {
+      "None": 22,
+      "'Yes'": 92
+    },
+    "risk.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "inform.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "inform.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "inform.Contractor Representative": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "inform.General User": {
+      "None": 22,
+      "'Yes'": 92
+    },
+    "inform.Manager": {
+      "None": 111,
+      "'Yes'": 3
+    },
+    "inform.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "lucidityintranet.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "lucidityintranet.Contractor Representative": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "lucidityintranet.General User": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "lucidityintranet.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "permittowork.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "permittowork.Approver": {
+      "None": 21,
+      "'Yes'": 93
+    },
+    "permittowork.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "permittowork.Manager (Creator)": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "permittowork.Read Only": {
+      "None": 22,
+      "'Yes'": 92
+    },
+    "contractor.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "contractor.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "contractor.Contractor Representative - only submit required documents": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "contractor.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "contractor.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "asset.Administrator": {
+      "'Yes'": 14,
+      "None": 100
+    },
+    "asset.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "asset.Contractor Representative": {
+      "None": 112,
+      "'Yes'": 2
+    },
+    "asset.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "asset.Mechanic Role": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "asset.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "onsite.Administrator": {
+      "'Yes'": 15,
+      "None": 99
+    },
+    "onsite.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "onsite.Manager": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "onsite.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    },
+    "access.Administrator": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "access.Column Configuration": {
+      "'Yes'": 8,
+      "None": 106
+    },
+    "access.Report Emailing": {
+      "None": 113,
+      "'Yes'": 1
+    }
+  }
+}
