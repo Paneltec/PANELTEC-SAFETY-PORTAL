@@ -19,6 +19,23 @@ import openpyxl  # noqa: E402
 from db import db  # noqa: E402
 
 DEFAULT_PATH = BACKEND_ROOT / "scripts" / "data" / "plant_maintenance_source.xlsx"
+SOURCE_URL = (
+    "https://customer-assets-wrfwihn1.emergentagent.net/job_safety-pic-analyzer/"
+    "artifacts/mvig4hzg_6a6859a73a4da-spreadsheet.xlsx"
+)
+
+
+def _ensure_source_downloaded(path: Path) -> None:
+    """Download the canonical source XLSX iff not present on disk."""
+    if path.exists() and path.stat().st_size > 0:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import urllib.request
+    print(f"[import] fetching source → {path}")
+    req = urllib.request.Request(SOURCE_URL, headers={"User-Agent": "paneltec-import/1.0"})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        path.write_bytes(resp.read())
+    print(f"[import] downloaded {path.stat().st_size} bytes")
 
 COLUMN_MAP = {
     "A": "maintenance_id", "B": "type", "C": "sub_type", "D": "description",
@@ -182,6 +199,7 @@ async def upsert_rows(rows, actor_id, rego_idx, dry_run=False):
 
 async def main(args):
     path = Path(args.path).resolve()
+    _ensure_source_downloaded(path)
     if not path.exists(): print(f"[import] missing: {path}"); return 2
     print(f"[import] source={path} ({path.stat().st_size} bytes)")
     await ensure_indexes()

@@ -18,6 +18,9 @@ import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
+// v160.3.9.20 — All Maintenance sub-tab.
+import PlantMaintenanceTab from './PlantMaintenanceTab';
+import { USER_KEY } from '../lib/api';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
   DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator,
@@ -182,6 +185,19 @@ export default function PlantVehicles() {
   const [drawerAsset, setDrawerAsset] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [printIds, setPrintIds] = useState(null);
+  // v160.3.9.20 — Unmatched maintenance count for the tab-header badge.
+  const [pmUnmatched, setPmUnmatched] = useState(null);
+  const [pmUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
+    catch { return null; }
+  });
+  useEffect(() => {
+    let alive = true;
+    api.get('/plant-maintenance/unmatched').then((r) => {
+      if (alive) setPmUnmatched(r.data?.total_unmatched_rows ?? 0);
+    }).catch(() => { if (alive) setPmUnmatched(0); });
+    return () => { alive = false; };
+  }, []);
 
   const load = async () => {
     setRefreshing(true); setError('');
@@ -328,6 +344,18 @@ export default function PlantVehicles() {
           <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="vehicles-tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="vehicles-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{assets.length}</span>
+          </TabsTrigger>
+          <TabsTrigger variant="hero" emphasis="secondary" value="maintenance" data-testid="vehicles-tab-maintenance">
+            All Maintenance
+            {pmUnmatched != null && pmUnmatched > 0 && (
+              <span
+                className="ml-2 inline-flex items-center rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 text-[10px] font-semibold"
+                data-testid="vehicles-tab-maintenance-unmatched-badge"
+                title="Maintenance records whose registration does not match any asset"
+              >
+                Unmatched {pmUnmatched}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="vehicles-tab-dashboard-content">
@@ -523,6 +551,9 @@ export default function PlantVehicles() {
           </ul>
         )}
       </div>
+        </TabsContent>
+        <TabsContent value="maintenance" className="mt-4" data-testid="vehicles-tab-maintenance-content">
+          <PlantMaintenanceTab user={pmUser} />
         </TabsContent>
       </Tabs>
 

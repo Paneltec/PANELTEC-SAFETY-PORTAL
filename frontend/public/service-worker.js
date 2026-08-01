@@ -1242,7 +1242,7 @@
  *          Frontend untouched; SW bump exists solely to force
  *          browsers to see the enriched summary payload.
  */
-const CACHE_VERSION = 'paneltec-v160.3.9.19';
+const CACHE_VERSION = 'paneltec-v160.3.9.20';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

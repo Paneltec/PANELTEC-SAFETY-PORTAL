@@ -248,6 +248,14 @@ from companies import (  # noqa: E402
     ensure_indexes as companies_ensure_indexes,
 )
 api.include_router(companies_router)
+# v160.3.9.20 — Plant Maintenance reference library (joins on rego).
+from plant_maintenance import (  # noqa: E402
+    router as plant_maintenance_router,
+    plant_scoped_router as plant_maintenance_scoped_router,
+    ensure_indexes as plant_maintenance_ensure_indexes,
+)
+api.include_router(plant_maintenance_router)
+api.include_router(plant_maintenance_scoped_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -413,6 +421,11 @@ async def on_startup():
         await companies_ensure_indexes()
     except Exception as e:
         log.warning("companies index setup failed: %s", e)
+    # v160.3.9.20 — Plant Maintenance index setup.
+    try:
+        await plant_maintenance_ensure_indexes()
+    except Exception as e:
+        log.warning("plant_maintenance index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
