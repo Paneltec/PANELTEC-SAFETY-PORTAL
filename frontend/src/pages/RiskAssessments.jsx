@@ -12,6 +12,7 @@ import ListFormsTab from './ListFormsTab';
 import IncidentRootCausesTab from './IncidentRootCausesTab';
 import CsIncidentTab from './CsIncidentTab';
 import ListRolesTab from './ListRolesTab';
+import CompletedTrainingTab from './CompletedTrainingTab';
 
 const TABS = [
   { key: 'submissions',   label: 'Submissions' },
@@ -20,6 +21,7 @@ const TABS = [
   { key: 'root_causes',   label: 'Incident Root Causes' },
   { key: 'cs_incident',   label: 'CS Incident' },
   { key: 'list_roles',    label: 'List Roles' },
+  { key: 'completed_training', label: 'My Completed Training' },
 ];
 
 function loadUser() {
@@ -115,6 +117,7 @@ export default function RiskAssessments() {
         {tab === 'root_causes' && <IncidentRootCausesTab user={user} />}
         {tab === 'cs_incident' && <CsIncidentTab user={user} />}
         {tab === 'list_roles' && <ListRolesTab user={user} />}
+        {tab === 'completed_training' && <CompletedTrainingTab user={user} />}
       </div>
     </div>
   );

@@ -236,6 +236,12 @@ from list_roles import (  # noqa: E402
     ensure_indexes as list_roles_ensure_indexes,
 )
 api.include_router(list_roles_router)
+# v160.3.9.18 — My Completed Training reference library.
+from completed_training import (  # noqa: E402
+    router as completed_training_router,
+    ensure_indexes as completed_training_ensure_indexes,
+)
+api.include_router(completed_training_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -391,6 +397,11 @@ async def on_startup():
         await list_roles_ensure_indexes()
     except Exception as e:
         log.warning("list_roles index setup failed: %s", e)
+    # v160.3.9.18 — Completed Training index setup.
+    try:
+        await completed_training_ensure_indexes()
+    except Exception as e:
+        log.warning("completed_training index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
