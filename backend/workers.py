@@ -17,6 +17,7 @@ from db import db
 from models import new_id, now_iso
 
 from permissions import require_permission, resolve_team_scope, require_module
+from permissions_scope import scope_filter, can_access_record  # v160.3.9.28
 
 router = APIRouter(
     prefix="/workers", tags=["workers"],
@@ -202,21 +203,18 @@ async def list_workers(
     # ALWAYS clamped to their own worker row, regardless of `scope`. The
     # previous thin-projection directory still leaked names+roles of every
     # colleague. Supervisor keeps team-visible thin directory via team_view.
+    # v160.3.9.28 — Own-row scoping delegated to permissions_scope.
     role_key = (user.get("role") or "").lower()
     supervisor_privileged = role_key == "supervisor"
     admin_privileged = role_key in {"admin", "hseq_lead"}
     if scope == "me" or (not admin_privileged and not supervisor_privileged):
+        scope_q = scope_filter(user, "workers")
+        if scope_q.get("__scope_no_match__"):
+            return []
         me = await db.workers.find_one(
-            {"org_id": user["org_id"], "user_id": user["id"], "deleted_at": None},
+            {"org_id": user["org_id"], "deleted_at": None, **scope_q},
             {"_id": 0},
         )
-        if not me:
-            # Fall back: try matching by email (Simpro-linked workers may not
-            # carry a `user_id` link).
-            me = await db.workers.find_one(
-                {"org_id": user["org_id"], "email": (user.get("email") or "").lower(), "deleted_at": None},
-                {"_id": 0},
-            )
         return [_serialise(me, viewer=user)] if me else []
 
     cursor = db.workers.find(
@@ -235,20 +233,18 @@ async def get_worker(worker_id: str, user: dict = Depends(get_current_user)):
     # `WorkerViewModal`. admin/hseq_lead/supervisor may fetch any row;
     # non-privileged callers only see their OWN row (matched by
     # `user_id` or `email`).
-    role_key = (user.get("role") or "").lower()
-    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    # v160.3.9.28 — Own-row check delegated to permissions_scope.
     doc = await db.workers.find_one(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},
     )
     if not doc:
         raise HTTPException(404, "Worker not found")
-    if not privileged:
-        owns = (doc.get("user_id") == user["id"]) or (
-            (doc.get("email") or "").lower() == (user.get("email") or "").lower()
-            and bool(user.get("email"))
-        )
-        if not owns:
+    role_key = (user.get("role") or "").lower()
+    if role_key not in {"admin", "hseq_lead", "supervisor"}:
+        # Uses can_access_record — returns True for admin bypass, then
+        # matches user_id or email fallback for general users.
+        if not can_access_record(user, "workers", doc):
             raise HTTPException(403, "Permission denied: workers.view")
     return _serialise(doc, viewer=user)
 

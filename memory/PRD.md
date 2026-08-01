@@ -5864,3 +5864,28 @@ present on load (all without hover):
 - **Phase 3c** — Once frontend read-only gates are in place, decide whether to add `reference_library.view` on the RA GETs.
 - **Phase 4** — Admin UI (RolesAdmin, RoleMatrixEditor, UsersManagement Simpro button).
 - Investigate pre-existing pytest failures in `test_worker_leaks.py`, `test_paneltec_backend.py`, `test_auth_persistence.py` — noted as unrelated to v27 but should be triaged before Phase 5 legacy-role retirement.
+
+# 2026-08-01 — v160.3.9.28 Phase 3b — Record-level scoping helper
+
+## Landed
+- NEW `backend/permissions_scope.py` — 3 helpers (`scope_filter`, `can_access_record`, `require_scoped_access`) covering 6 resource keys (workers, contractors, documents, notifications; hr + certifications reserved but fail-closed). 54 pytests, 100% branch coverage. Side-effect-free.
+- **Wired into 3 files (of the 5 originally listed)** — the 2 skipped are documented in `08_phase3b_notes.md`:
+  - `workers.py` — inline "own row" logic extracted into `scope_filter` + `can_access_record`. Zero behaviour change.
+  - `contractors.py` — list `scope_filter`, get/patch `require_scoped_access`. Contractor_rep sees own only (dormant branch reachable when `role_id` assigned + overrides granted).
+  - `document_library.py::list_files` — `scope_filter` narrowing. Empty collection today; helper exercised by pytests.
+- **Deferred (documented in doc 08):** `hr_employees.py` (admin-only per v3.18 — helper fails closed); `worker_certifications.py` (cross-resource join through `workers.user_id` already stronger than generic helper).
+- **email_outbox.py 3 TODO sites cleaned:** L178/L205 → `scope_filter(user,"notifications")`; L259 keeps admin-OR-owner semantic with an explicit comment about why it's NOT a plain `require_permission` dep.
+- **sites_signon_v127.py migrated:** 6 write/read routes moved from `_require_admin` role-set gate → `require_permission("sites", edit|delete|view)`. Zero active prod `manager` or `hseq_lead` users, verified.
+- **Manual-site delete bug fix:** `POST /api/sites/bulk-delete` and `POST /api/sites/{sid}/restore` now match on `simpro_site_id` OR stable `id`. Manual sites (which lack simpro_site_id link) are now deletable via API.
+- **Version bump:** 3 canonical files → `paneltec-v160.3.9.28`.
+
+## Verification
+- Pytest: **224 pass** across `test_admin_guards` (147) + `test_permission_model_v26` (12) + `test_v27_guard_migration` (11) + `test_permissions_scope` (54).
+- Curl demo: contractor_rep list narrowed 6→1 on contractors, 68→0 on workers. GET-other 403 `contractors.scope`. GET-own 200.
+- Manual-site delete: created a manual site (id=e7b2a7c9-…), deleted via `POST /sites/bulk-delete` with `site_ids: [id]` → `{deleted: 1, refused: []}`; deleted_at populated in DB.
+
+## Next Action Items
+- **Phase 3c** — decide whether to add `reference_library.view` on RA GETs once the frontend read-only gates are in place.
+- **Phase 3d** — flip `is_active=True` on `contractor_rep` + `contractor_rep_submit_only`; wire admin UI to assign them.
+- **Phase 4** — Admin UI (RolesAdmin, RoleMatrixEditor, UsersManagement Simpro button, pending_activation error page).
+- **Phase 5** — Legacy `users.role` string retirement + swap `require_permission` read side to consume `roles.permission_tokens`.

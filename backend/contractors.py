@@ -18,6 +18,7 @@ from db import db
 from models import new_id, now_iso
 
 from permissions import require_permission, require_module
+from permissions_scope import scope_filter, require_scoped_access  # v160.3.9.28
 
 router = APIRouter(
     prefix="/contractors", tags=["contractors"],
@@ -91,6 +92,13 @@ async def list_contractors(
     user: dict = Depends(require_permission("contractors", "view")),
 ):
     q = {"org_id": user["org_id"], "deleted_at": None}
+    # v160.3.9.28 — record-level scoping. Returns {} for privileged/general
+    # users (org-wide view preserved) and {"id": user.company_id} for
+    # contractor_rep (dormant until Phase 3d).
+    _scope = scope_filter(user, "contractors")
+    if _scope.get("__scope_no_match__"):
+        return []
+    q.update(_scope)
     if status:
         q["status"] = status
     if trade:
@@ -136,6 +144,8 @@ async def get_contractor(cid: str, user: dict = Depends(require_permission("cont
     doc = await db.contractors.find_one({"id": cid, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")
+    # v160.3.9.28 — contractor_rep sees only their own contractor row.
+    require_scoped_access(user, "contractors", doc)
     return _decorate(doc)
 
 
@@ -152,6 +162,13 @@ async def create_contractor(body: ContractorIn, user: dict = Depends(get_current
 
 @router.patch("/{cid}")
 async def patch_contractor(cid: str, patch: dict, user: dict = Depends(get_current_user)):
+    # v160.3.9.28 — record-level scoping for contractor_rep.
+    _existing = await db.contractors.find_one(
+        {"id": cid, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "company_id": 1},
+    )
+    if _existing:
+        require_scoped_access(user, "contractors", _existing)
     patch = {k: v for k, v in (patch or {}).items() if k not in {"id", "org_id", "created_at", "documents"}}
     patch["updated_at"] = now_iso()
     res = await db.contractors.find_one_and_update(

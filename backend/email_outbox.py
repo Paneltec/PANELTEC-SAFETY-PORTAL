@@ -12,6 +12,7 @@ from auth import get_current_user, require_roles
 from db import db
 from models import new_id, now_iso
 from permissions import PERMISSIONS_SCHEMA, RESOURCES, require_permission
+from permissions_scope import scope_filter, can_access_record  # v160.3.9.28
 
 log = logging.getLogger("paneltec.email")
 router = APIRouter(prefix="/email", tags=["email"])
@@ -172,21 +173,20 @@ async def list_outbox(
     user: dict = Depends(get_current_user),
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
-    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
-    # v160.0 — non-privileged callers auto-scope to their own outbox.
-    # A worker's phone can only see emails they sent (`created_by`) OR
-    # emails addressed to them (their email in the `to` list).
+    # v160.3.9.28 — scoping delegated to permissions_scope.
+    # Privileged (admin/hseq/supervisor/hseq_manager*) → scope_filter
+    # returns {} → org-wide list. General user → returns
+    # {"$or": [{created_by: uid}, {to: email}]} → auto-clamped to own.
     privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
     if scope == "team":
         if not privileged:
             raise HTTPException(403, "Permission denied: outbox.team_view")
-    elif scope == "me" or not privileged:
-        me_email = (user.get("email") or "").lower()
-        q["$or"] = [
-            {"created_by": user["id"]},
-            {"to": me_email},
-            {"to": {"$in": [me_email]}},
-        ]
+    else:
+        _scope = scope_filter(user, "notifications") if (scope == "me" or not privileged) else {}
+        if _scope.get("__scope_no_match__"):
+            return {"items": [], "m365_connected": await _m365_connected(user["org_id"]), "count": 0}
+        if _scope:
+            q.update(_scope)
     if status:
         q["status"] = status
     if related_record_type:
@@ -201,15 +201,11 @@ async def get_outbox(email_id: str, user: dict = Depends(get_current_user)):
     doc = await db.outbound_emails.find_one({"id": email_id, "org_id": user["org_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")
-    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
-    # v160.0 — deep-link protection: a worker cannot open someone else's
-    # outbox row even if they know the id.
-    privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
-    if not privileged:
-        me_email = (user.get("email") or "").lower()
-        owns = (doc.get("created_by") == user["id"]) or (me_email and me_email in (doc.get("to") or []))
-        if not owns:
-            raise HTTPException(403, "Permission denied: outbox.team_view")
+    # v160.3.9.28 — deep-link protection via permissions_scope.
+    # Privileged callers pass through; general users must own the record
+    # (created_by or in `to` list) or a 403 with scope detail is raised.
+    if not can_access_record(user, "notifications", doc):
+        raise HTTPException(403, "Permission denied: notifications.scope")
     return doc
 
 
@@ -258,7 +254,12 @@ async def delete_outbox(email_id: str, user: dict = Depends(get_current_user)):
     )
     if not doc:
         raise HTTPException(404, "Not found")
-    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
+    # v160.3.9.28 — This endpoint intentionally allows admin OR owner
+    # (not a plain `require_permission("notifications","delete")` dep,
+    # because hseq_lead/supervisor also need to delete their own
+    # outbound emails). Retain the inline mixed check as the correct
+    # shape for owner-scoped delete. Bulk-delete (line ~285) is the
+    # admin-only variant and uses the require_permission dep.
     if user.get("role") != "admin" and doc.get("created_by") != user["id"]:
         raise HTTPException(403, "Only the sender or an admin can delete this email")
     await db.outbound_emails.update_one(

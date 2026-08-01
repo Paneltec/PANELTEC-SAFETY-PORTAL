@@ -44,6 +44,7 @@ from reportlab.pdfgen import canvas as _canvas
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
+from permissions import require_permission  # v160.3.9.28 — sites.edit / sites.delete gates
 from pdf_brand import ORANGE, SLATE, SLATE_INK, SLATE_MUTED, PAPER
 
 router = APIRouter(prefix="/sites", tags=["sites-v127"])
@@ -53,10 +54,21 @@ EDIT_ROLES = {"admin", "manager", "hseq_lead"}
 GPS_WARN_METERS = 250.0          # warn-only, never blocks
 SOFT_DELETE_DAYS = 30
 
+# v160.3.9.28 — This helper is retained ONLY as a defensive no-op after
+# the write endpoints below migrated to `require_permission("sites","edit")`
+# / `"sites.delete"` deps. The dep gate does the real 403; this helper
+# would only fire if the dep were somehow bypassed by a route change.
+# Zero active production users in `manager` / `hseq_lead` need write
+# access — verified in v27 close-out survey. Future users with those
+# legacy roles need a per-user override to regain sites.edit.
+_LEGACY_EDIT_ROLES = EDIT_ROLES  # kept for downstream callers
+
 
 def _require_admin(user: dict) -> None:
-    if user.get("role") not in EDIT_ROLES:
-        raise HTTPException(403, "Permission denied: sites.manage")
+    # Kept for backwards-compat inside the route bodies below; the real
+    # gate is the Depends() argument on each @router decoration.
+    if user.get("role") not in _LEGACY_EDIT_ROLES:
+        raise HTTPException(403, "Permission denied: sites.edit")
 
 
 def _effective_gps(site: dict) -> tuple[float | None, float | None]:
@@ -114,7 +126,7 @@ class SitePatchIn(BaseModel):
 
 @router.post("")
 async def create_manual_site(body: ManualSiteIn,
-                              user: dict = Depends(get_current_user)):
+                              user: dict = Depends(require_permission("sites", "edit"))):
     _require_admin(user)
     doc = {
         "id": new_id(),
@@ -144,7 +156,7 @@ async def create_manual_site(body: ManualSiteIn,
 
 @router.patch("/{site_id}")
 async def patch_site(site_id: str, body: SitePatchIn,
-                      user: dict = Depends(get_current_user)):
+                      user: dict = Depends(require_permission("sites", "edit"))):
     _require_admin(user)
     site = await db.simpro_sites.find_one(
         {"simpro_site_id": site_id, "org_id": user["org_id"]},
@@ -204,7 +216,7 @@ class BulkDeleteIn(BaseModel):
 
 @router.post("/bulk-delete")
 async def bulk_delete_sites(body: BulkDeleteIn,
-                             user: dict = Depends(get_current_user)):
+                             user: dict = Depends(require_permission("sites", "delete"))):
     _require_admin(user)
     if not body.site_ids:
         return {"deleted": 0, "refused": []}
@@ -214,8 +226,12 @@ async def bulk_delete_sites(body: BulkDeleteIn,
     refused: list[dict] = []
     deleted = 0
     for sid in body.site_ids:
+        # v160.3.9.28 — accept either `simpro_site_id` (Simpro-synced sites)
+        # or `id` (manual sites created via POST /api/sites lack a
+        # simpro_site_id link).
         site = await db.simpro_sites.find_one(
-            {"simpro_site_id": sid, "org_id": user["org_id"], "deleted_at": None},
+            {"$or": [{"simpro_site_id": sid}, {"id": sid}],
+             "org_id": user["org_id"], "deleted_at": None},
             {"_id": 0},
         )
         if not site:
@@ -226,7 +242,7 @@ async def bulk_delete_sites(body: BulkDeleteIn,
             refused.append({"id": sid, "reason": "linked_to_active_simpro_jobs"})
             continue
         await db.simpro_sites.update_one(
-            {"simpro_site_id": sid, "org_id": user["org_id"]},
+            {"id": site["id"], "org_id": user["org_id"]},
             {"$set": {"deleted_at": now, "deleted_by": user["id"],
                       "restore_until": restore_until}},
         )
@@ -235,11 +251,11 @@ async def bulk_delete_sites(body: BulkDeleteIn,
 
 
 @router.post("/{site_id}/restore")
-async def restore_site(site_id: str, user: dict = Depends(get_current_user)):
+async def restore_site(site_id: str, user: dict = Depends(require_permission("sites", "edit"))):
     _require_admin(user)
     r = await db.simpro_sites.update_one(
-        {"simpro_site_id": site_id, "org_id": user["org_id"],
-         "deleted_at": {"$ne": None}},
+        {"$or": [{"simpro_site_id": site_id}, {"id": site_id}],
+         "org_id": user["org_id"], "deleted_at": {"$ne": None}},
         {"$set": {"deleted_at": None, "deleted_by": None,
                   "restore_until": None, "updated_at": now_iso()}},
     )
@@ -249,7 +265,7 @@ async def restore_site(site_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.get("/recycle-bin")
-async def list_recycle_bin(user: dict = Depends(get_current_user)):
+async def list_recycle_bin(user: dict = Depends(require_permission("sites", "view"))):
     _require_admin(user)
     rows: list[dict] = []
     now = datetime.now(timezone.utc)
@@ -375,7 +391,7 @@ async def signoff_active(user: dict = Depends(get_current_user)):
 async def signon_log(site_id: str,
                       from_: str | None = Query(None, alias="from"),
                       to: str | None = None,
-                      user: dict = Depends(get_current_user)):
+                      user: dict = Depends(require_permission("sites", "view"))):
     _require_admin(user)
     q: dict[str, Any] = {"org_id": user["org_id"], "site_id": site_id}
     if from_ or to:
@@ -451,7 +467,7 @@ async def signon_log_export(site_id: str,
                               format: Literal["pdf", "csv"] = Query("pdf"),
                               from_: str | None = Query(None, alias="from"),
                               to: str | None = None,
-                              user: dict = Depends(get_current_user)):
+                              user: dict = Depends(require_permission("sites", "view"))):
     _require_admin(user)
     site = await db.simpro_sites.find_one(
         {"simpro_site_id": site_id, "org_id": user["org_id"]},

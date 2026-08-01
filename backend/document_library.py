@@ -22,6 +22,7 @@ from pymongo import ReturnDocument
 
 from auth import get_current_user
 from permissions import require_permission, require_module
+from permissions_scope import scope_filter  # v160.3.9.28
 from db import db
 from models import new_id, now_iso
 
@@ -328,8 +329,13 @@ def _stub_ai_tags(filename: str) -> List[str]:
 @router.get("/folders/{folder_id}/files")
 async def list_files(folder_id: str, user: dict = Depends(require_permission("documents", "view"))):
     await _resolve_folder(folder_id, user["org_id"])
+    # v160.3.9.28 — record-level scoping.
+    _scope = scope_filter(user, "documents")
+    if _scope.get("__scope_no_match__"):
+        return []
     cursor = db.doc_files.find(
-        {"folder_id": folder_id, "org_id": user["org_id"], "deleted_at": None},
+        {"folder_id": folder_id, "org_id": user["org_id"], "deleted_at": None,
+         **_scope},
         {"_id": 0},
     ).sort([("uploaded_at", -1)])
     files = await cursor.to_list(500)
