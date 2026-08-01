@@ -224,6 +224,12 @@ from incident_root_causes import (  # noqa: E402
     ensure_indexes as incident_root_causes_ensure_indexes,
 )
 api.include_router(incident_root_causes_router)
+# v160.3.9.16 — CS Incident reference library.
+from cs_incident import (  # noqa: E402
+    router as cs_incident_router,
+    ensure_indexes as cs_incident_ensure_indexes,
+)
+api.include_router(cs_incident_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -369,6 +375,11 @@ async def on_startup():
         await incident_root_causes_ensure_indexes()
     except Exception as e:
         log.warning("incident_root_causes index setup failed: %s", e)
+    # v160.3.9.16 — CS Incident index setup.
+    try:
+        await cs_incident_ensure_indexes()
+    except Exception as e:
+        log.warning("cs_incident index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires

@@ -10,12 +10,14 @@ import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
 import ListFormsTab from './ListFormsTab';
 import IncidentRootCausesTab from './IncidentRootCausesTab';
+import CsIncidentTab from './CsIncidentTab';
 
 const TABS = [
   { key: 'submissions',   label: 'Submissions' },
   { key: 'master',        label: 'Master Risks' },
   { key: 'list_forms',    label: 'List Forms' },
   { key: 'root_causes',   label: 'Incident Root Causes' },
+  { key: 'cs_incident',   label: 'CS Incident' },
 ];
 
 function loadUser() {
@@ -109,6 +111,7 @@ export default function RiskAssessments() {
         {tab === 'master' && <MasterRisksTab user={user} />}
         {tab === 'list_forms' && <ListFormsTab user={user} />}
         {tab === 'root_causes' && <IncidentRootCausesTab user={user} />}
+        {tab === 'cs_incident' && <CsIncidentTab user={user} />}
       </div>
     </div>
   );
