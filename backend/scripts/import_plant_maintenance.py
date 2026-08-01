@@ -153,9 +153,10 @@ async def ensure_indexes():
     await db.plant_maintenance_audit.create_index("maintenance_id")
 
 
+from _ingest_utils import merge_safe_upsert, detect_schema_shrink  # noqa: E402
+
 async def upsert_rows(rows, actor_id, rego_idx, dry_run=False):
     inserted = updated = unchanged = matched = unmatched = 0
-    now = _now()
     for row in rows:
         row["plant_id"] = rego_idx.get(row["registration_matched"])
         if row["plant_id"]: matched += 1
@@ -163,36 +164,25 @@ async def upsert_rows(rows, actor_id, rego_idx, dry_run=False):
         row["content_hash"] = _content_hash(row)
         existing = await db.plant_maintenance.find_one(
             {"maintenance_id": row["maintenance_id"]}, {"_id": 0})
-        if existing and existing.get("content_hash") == row["content_hash"]:
-            unchanged += 1; continue
-        if existing:
-            row["id"] = existing["id"]
-            row["created_at"] = existing.get("created_at", now)
-            row["imported_by"] = actor_id; row["imported_at"] = now
-            row["updated_at"] = now
-            if not dry_run:
-                await db.plant_maintenance.replace_one(
-                    {"maintenance_id": row["maintenance_id"]}, row, upsert=True)
-                await db.plant_maintenance_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "maintenance_id": row["maintenance_id"],
-                    "action": "update", "at": now, "actor_id": actor_id,
-                    "before_hash": existing.get("content_hash"),
-                    "after_hash": row["content_hash"],
-                })
-            updated += 1
-        else:
-            row["created_at"] = now
-            row["imported_by"] = actor_id; row["imported_at"] = now
-            if not dry_run:
-                await db.plant_maintenance.insert_one(row)
-                await db.plant_maintenance_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "maintenance_id": row["maintenance_id"],
-                    "action": "insert", "at": now, "actor_id": actor_id,
-                    "after_hash": row["content_hash"],
-                })
-            inserted += 1
+        if dry_run:
+            if existing and existing.get("content_hash") == row["content_hash"]:
+                unchanged += 1
+            elif existing:
+                updated += 1
+            else:
+                inserted += 1
+            continue
+        # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+        outcome = await merge_safe_upsert(
+            collection=db.plant_maintenance,
+            audit_collection=db.plant_maintenance_audit,
+            key_field="maintenance_id",
+            incoming=row, existing=existing,
+            actor_id=actor_id, content_hash=row["content_hash"],
+        )
+        if outcome == "inserted": inserted += 1
+        elif outcome == "updated": updated += 1
+        else: unchanged += 1
     return {"inserted": inserted, "updated": updated, "unchanged": unchanged,
             "matched": matched, "unmatched": unmatched}
 
@@ -208,6 +198,18 @@ async def main(args):
     rows = parse_workbook(path)
     print(f"[import] {len(rows)} rows after skipping blank-rego rows")
     actor = await _resolve_actor_id(args.actor_id)
+    # Schema-shrink guard — warn (but do not block) if the incoming
+    # export dropped columns present in the live collection.
+    dropped = await detect_schema_shrink(
+        collection=db.plant_maintenance,
+        audit_collection=db.plant_maintenance_audit,
+        incoming_rows=rows, actor_id=actor,
+        ignore_fields={"plant_id", "registration_matched"},
+    )
+    if dropped:
+        print(f"[import] ⚠ schema shrink — {len(dropped)} column(s) missing "
+              f"from this export: {dropped}")
+        print("[import] existing values will be PRESERVED (merge-safe upsert).")
     stats = await upsert_rows(rows, actor, rego_idx, dry_run=args.dry_run)
     print(f"[import] inserted={stats['inserted']} updated={stats['updated']} "
           f"unchanged={stats['unchanged']}")

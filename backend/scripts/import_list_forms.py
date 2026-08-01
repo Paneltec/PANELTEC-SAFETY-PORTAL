@@ -144,47 +144,34 @@ async def ensure_indexes() -> None:
     await db.list_forms_audit.create_index("at")
 
 
+from _ingest_utils import merge_safe_upsert, detect_schema_shrink  # noqa: E402
+
+
 async def upsert_list_forms(rows: list[dict], actor_id: str,
                              dry_run: bool = False) -> dict:
     inserted, updated, unchanged = 0, 0, 0
-    now = _now_iso()
     for row in rows:
         row["content_hash"] = _content_hash(row)
         existing = await db.list_forms.find_one(
             {"list_form_id": row["list_form_id"]}, {"_id": 0})
-        if existing and existing.get("content_hash") == row["content_hash"]:
-            unchanged += 1
+        if dry_run:
+            if existing and existing.get("content_hash") == row["content_hash"]:
+                unchanged += 1
+            elif existing:
+                updated += 1
+            else:
+                inserted += 1
             continue
-        if existing:
-            row["id"] = existing["id"]
-            row["created_at"] = existing.get("created_at", now)
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            row["updated_at"] = now
-            if not dry_run:
-                await db.list_forms.replace_one(
-                    {"list_form_id": row["list_form_id"]}, row, upsert=True)
-                await db.list_forms_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "list_form_id": row["list_form_id"],
-                    "action": "update", "at": now, "actor_id": actor_id,
-                    "before_hash": existing.get("content_hash"),
-                    "after_hash": row["content_hash"],
-                })
-            updated += 1
-        else:
-            row["created_at"] = now
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            if not dry_run:
-                await db.list_forms.insert_one(row)
-                await db.list_forms_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "list_form_id": row["list_form_id"],
-                    "action": "insert", "at": now, "actor_id": actor_id,
-                    "after_hash": row["content_hash"],
-                })
-            inserted += 1
+        # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+        outcome = await merge_safe_upsert(
+            collection=db.list_forms, audit_collection=db.list_forms_audit,
+            key_field="list_form_id",
+            incoming=row, existing=existing,
+            actor_id=actor_id, content_hash=row["content_hash"],
+        )
+        if outcome == "inserted": inserted += 1
+        elif outcome == "updated": updated += 1
+        else: unchanged += 1
     return {"inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
@@ -214,6 +201,12 @@ async def main(args) -> int:
           f"mobile={mob_yes}/{len(rows)}, asset={ast_yes}/{len(rows)}")
 
     actor_id = await _resolve_actor_id(args.actor_id)
+    dropped = await detect_schema_shrink(
+        collection=db.list_forms, audit_collection=db.list_forms_audit,
+        incoming_rows=rows, actor_id=actor_id)
+    if dropped:
+        print(f"[import] ⚠ schema shrink — {len(dropped)} column(s) missing: {dropped}")
+        print("[import] existing values will be PRESERVED (merge-safe upsert).")
     stats = await upsert_list_forms(rows, actor_id, dry_run=args.dry_run)
     print(f"[import] result → inserted={stats['inserted']}, "
           f"updated={stats['updated']}, unchanged={stats['unchanged']}")

@@ -119,44 +119,33 @@ async def ensure_indexes() -> None:
     await db.list_roles_audit.create_index("role_id")
 
 
+from _ingest_utils import merge_safe_upsert, detect_schema_shrink  # noqa: E402
+
+
 async def upsert_rows(rows, actor_id, dry_run=False):
     inserted = updated = unchanged = 0
-    now = _now()
     for row in rows:
         row["content_hash"] = _content_hash(row)
         existing = await db.list_roles.find_one(
             {"role_id": row["role_id"]}, {"_id": 0})
-        if existing and existing.get("content_hash") == row["content_hash"]:
-            unchanged += 1
+        if dry_run:
+            if existing and existing.get("content_hash") == row["content_hash"]:
+                unchanged += 1
+            elif existing:
+                updated += 1
+            else:
+                inserted += 1
             continue
-        if existing:
-            row["id"] = existing["id"]
-            row["created_at"] = existing.get("created_at", now)
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            row["updated_at"] = now
-            if not dry_run:
-                await db.list_roles.replace_one(
-                    {"role_id": row["role_id"]}, row, upsert=True)
-                await db.list_roles_audit.insert_one({
-                    "id": str(uuid.uuid4()), "role_id": row["role_id"],
-                    "action": "update", "at": now, "actor_id": actor_id,
-                    "before_hash": existing.get("content_hash"),
-                    "after_hash": row["content_hash"],
-                })
-            updated += 1
-        else:
-            row["created_at"] = now
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            if not dry_run:
-                await db.list_roles.insert_one(row)
-                await db.list_roles_audit.insert_one({
-                    "id": str(uuid.uuid4()), "role_id": row["role_id"],
-                    "action": "insert", "at": now, "actor_id": actor_id,
-                    "after_hash": row["content_hash"],
-                })
-            inserted += 1
+        # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+        outcome = await merge_safe_upsert(
+            collection=db.list_roles, audit_collection=db.list_roles_audit,
+            key_field="role_id",
+            incoming=row, existing=existing,
+            actor_id=actor_id, content_hash=row["content_hash"],
+        )
+        if outcome == "inserted": inserted += 1
+        elif outcome == "updated": updated += 1
+        else: unchanged += 1
     return {"inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
@@ -173,6 +162,12 @@ async def main(args) -> int:
     tot_ppl = sum(r["people_count"] for r in rows)
     print(f"[import] sum capabilities_count: {tot_cap}, sum people_count: {tot_ppl}")
     actor = await _resolve_actor_id(args.actor_id)
+    dropped = await detect_schema_shrink(
+        collection=db.list_roles, audit_collection=db.list_roles_audit,
+        incoming_rows=rows, actor_id=actor)
+    if dropped:
+        print(f"[import] ⚠ schema shrink — {len(dropped)} column(s) missing: {dropped}")
+        print("[import] existing values will be PRESERVED (merge-safe upsert).")
     stats = await upsert_rows(rows, actor, dry_run=args.dry_run)
     print(f"[import] inserted={stats['inserted']} updated={stats['updated']} unchanged={stats['unchanged']}")
     total = await db.list_roles.count_documents({"deleted_at": None})

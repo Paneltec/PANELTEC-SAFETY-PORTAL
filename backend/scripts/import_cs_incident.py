@@ -219,46 +219,34 @@ async def ensure_indexes() -> None:
     await db.cs_incident_issues_audit.create_index("issue_number")
 
 
+from _ingest_utils import merge_safe_upsert, detect_schema_shrink  # noqa: E402
+
+
 async def upsert_rows(rows, actor_id, dry_run=False):
     inserted = updated = unchanged = 0
-    now = _now_iso()
     for row in rows:
         row["content_hash"] = _content_hash(row)
         existing = await db.cs_incident_issues.find_one(
             {"issue_number": row["issue_number"]}, {"_id": 0})
-        if existing and existing.get("content_hash") == row["content_hash"]:
-            unchanged += 1
+        if dry_run:
+            if existing and existing.get("content_hash") == row["content_hash"]:
+                unchanged += 1
+            elif existing:
+                updated += 1
+            else:
+                inserted += 1
             continue
-        if existing:
-            row["id"] = existing["id"]
-            row["created_at"] = existing.get("created_at", now)
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            row["updated_at"] = now
-            if not dry_run:
-                await db.cs_incident_issues.replace_one(
-                    {"issue_number": row["issue_number"]}, row, upsert=True)
-                await db.cs_incident_issues_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "issue_number": row["issue_number"],
-                    "action": "update", "at": now, "actor_id": actor_id,
-                    "before_hash": existing.get("content_hash"),
-                    "after_hash": row["content_hash"],
-                })
-            updated += 1
-        else:
-            row["created_at"] = now
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            if not dry_run:
-                await db.cs_incident_issues.insert_one(row)
-                await db.cs_incident_issues_audit.insert_one({
-                    "id": str(uuid.uuid4()),
-                    "issue_number": row["issue_number"],
-                    "action": "insert", "at": now, "actor_id": actor_id,
-                    "after_hash": row["content_hash"],
-                })
-            inserted += 1
+        # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+        outcome = await merge_safe_upsert(
+            collection=db.cs_incident_issues,
+            audit_collection=db.cs_incident_issues_audit,
+            key_field="issue_number",
+            incoming=row, existing=existing,
+            actor_id=actor_id, content_hash=row["content_hash"],
+        )
+        if outcome == "inserted": inserted += 1
+        elif outcome == "updated": updated += 1
+        else: unchanged += 1
     return {"inserted": inserted, "updated": updated, "unchanged": unchanged}
 
 
@@ -273,6 +261,13 @@ async def main(args) -> int:
     if not rows:
         return 3
     actor = await _resolve_actor_id(args.actor_id)
+    dropped = await detect_schema_shrink(
+        collection=db.cs_incident_issues,
+        audit_collection=db.cs_incident_issues_audit,
+        incoming_rows=rows, actor_id=actor)
+    if dropped:
+        print(f"[import] ⚠ schema shrink — {len(dropped)} column(s) missing: {dropped}")
+        print("[import] existing values will be PRESERVED (merge-safe upsert).")
     stats = await upsert_rows(rows, actor, dry_run=args.dry_run)
     print(f"[import] inserted={stats['inserted']} updated={stats['updated']} "
           f"unchanged={stats['unchanged']}")

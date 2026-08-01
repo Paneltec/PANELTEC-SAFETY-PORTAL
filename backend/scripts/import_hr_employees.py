@@ -265,6 +265,9 @@ async def ensure_indexes():
     await db.hr_employees_audit.create_index("at")
 
 
+from _ingest_utils import merge_safe_upsert, detect_schema_shrink  # noqa: E402
+
+
 async def upsert_rows(rows: list[dict], actor_id: str,
                        security_flags: list[dict]) -> dict:
     inserted = updated = unchanged = 0
@@ -275,34 +278,17 @@ async def upsert_rows(rows: list[dict], actor_id: str,
         if not eid:
             continue
         existing = await db.hr_employees.find_one({"employee_id": eid}, {"_id": 0})
-        if existing and existing.get("content_hash") == row["content_hash"]:
-            unchanged += 1
-            continue
-        if existing:
-            row["id"] = existing["id"]
-            row["created_at"] = existing.get("created_at", now)
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            row["updated_at"] = now
-            await db.hr_employees.replace_one({"employee_id": eid}, row, upsert=True)
-            await db.hr_employees_audit.insert_one({
-                "id": str(uuid.uuid4()), "employee_id": eid,
-                "action": "ingest-update", "at": now, "actor_id": actor_id,
-                "before_hash": existing.get("content_hash"),
-                "after_hash": row["content_hash"],
-            })
-            updated += 1
-        else:
-            row["created_at"] = now
-            row["imported_by"] = actor_id
-            row["imported_at"] = now
-            await db.hr_employees.insert_one(row)
-            await db.hr_employees_audit.insert_one({
-                "id": str(uuid.uuid4()), "employee_id": eid,
-                "action": "ingest-insert", "at": now, "actor_id": actor_id,
-                "after_hash": row["content_hash"],
-            })
-            inserted += 1
+        # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+        outcome = await merge_safe_upsert(
+            collection=db.hr_employees,
+            audit_collection=db.hr_employees_audit,
+            key_field="employee_id",
+            incoming=row, existing=existing,
+            actor_id=actor_id, content_hash=row["content_hash"],
+        )
+        if outcome == "inserted": inserted += 1
+        elif outcome == "updated": updated += 1
+        else: unchanged += 1
 
     # Emit one `security_flag_detected` audit row per finding so the
     # trail is permanent regardless of what the UI displays later.
@@ -343,6 +329,13 @@ async def main(args):
             print(f"  employee_id={f['employee_id']} flag={f['flag']} "
                   f"sample={f['sample'][:80]!r}")
     actor = await _resolve_actor_id(args.actor_id)
+    dropped = await detect_schema_shrink(
+        collection=db.hr_employees, audit_collection=db.hr_employees_audit,
+        incoming_rows=rows, actor_id=actor,
+        ignore_fields={"security_flag", "archived_uuid"})
+    if dropped:
+        print(f"[import-hr] ⚠ schema shrink — {len(dropped)} column(s) missing: {dropped}")
+        print("[import-hr] existing values will be PRESERVED (merge-safe upsert).")
     stats = await upsert_rows(rows, actor, security_flags)
     print(f"[import-hr] inserted={stats['inserted']} updated={stats['updated']} "
           f"unchanged={stats['unchanged']} security_flags={stats['security_flags']}")

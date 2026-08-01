@@ -139,6 +139,10 @@ async def ensure_indexes():
 
 
 async def upsert_rows(rows, actor_id, dry_run=False):
+    # Merge-safe: incoming empties never wipe existing fields (v160.3.9.21b)
+    # This ingester is inherently merge-safe by design — records are
+    # keyed on `content_hash` so any re-run only inserts genuinely new
+    # rows. No existing document is ever mutated in place.
     inserted = updated = unchanged = 0
     now = _now()
     for row in rows:
