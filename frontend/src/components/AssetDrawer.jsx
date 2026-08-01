@@ -236,7 +236,7 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
   }, [qrSrc]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-slate-900/40 backdrop-blur-sm"
+    <div className="fixed inset-0 z-[70] flex items-stretch justify-end bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="asset-drawer">
       <aside className="w-full sm:max-w-xl h-full bg-white shadow-2xl border-l border-slate-200 overflow-hidden flex flex-col">
