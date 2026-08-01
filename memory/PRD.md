@@ -5835,3 +5835,32 @@ present on load (all without hover):
 - **Phase 3** — Migrate inline `_admin(user)` guards on 7 Risk-Assessment reference tabs + sites + help + comms to `require_permission()`. Build the record-level `company_id` scoping helper. Then flip `is_active=True` on the 2 contractor roles.
 - **Phase 4** — Frontend admin UI: RolesAdmin page, RoleMatrixEditor component, UsersManagement Simpro import button, pending_activation UX.
 - **Phase 5** — Retire legacy `users.role` string.
+
+# 2026-08-01 — v160.3.9.27 Phase 3a — Guard migration (backend only)
+
+## Landed — 10 code paths migrated from ad-hoc guards → `require_permission()`
+- 7 Risk Assessment routers (master_risks, list_forms, incident_root_causes, cs_incident, list_roles, completed_training, companies): POST/PATCH/reimport → `reference_library.edit`, DELETE → `reference_library.delete`. GETs untouched per user directive.
+- `sites_qr.py`: 3 admin-guarded GETs + DELETE + dev-seed POST → `sites.view` / `sites.delete` / `sites.edit`.
+- `comms_safe_mode.py`: PATCH `/admin/comms-safe-mode` → `notifications.edit`.
+- `email_outbox.py`: `POST /email/outbox/bulk-delete` → `notifications.delete`. TODO comments added at 3 Phase-3b scoping sites (lines 178, 205, 259).
+
+## Deferred (per stop-and-report)
+- `help_routes.py` — Option A: NO guards existed, none added. Manual stays public content. Phase 3b/4 will wire guards when admin write endpoints appear.
+- `email_outbox.py` lines 178/205/259 — inline owner-OR-admin scoping. Marked with `TODO(Phase-3b)`.
+
+## Verification (verbatim in-thread)
+- Curl matrix — 10 endpoints × 3 auth states — all correct: 401 unauthenticated, 403 with `Permission denied: <token>` detail for hseq_lead, non-403 for admin.
+- Pytest: **170 tests pass** (147 admin_guards + 12 v26 + 11 v27). Zero failures in the guarded scope.
+- Pre-existing unrelated failures in `test_worker_leaks.py`, `test_paneltec_backend.py`, `test_auth_persistence.py`, `test_v160_3_4_unmatched_triage.py` all touch resources that were NOT modified in v27 (hazards, auth persistence, unmatched triage) — flagged as tech-debt, not v27 regressions.
+
+## Files touched
+- 10 backend routers (as listed).
+- NEW `backend/tests/test_v27_guard_migration.py` — 11 tests.
+- NEW `backend/tests/conftest.py` — hoisted shared fixtures for cross-file test reuse.
+- 3 canonical version files → `paneltec-v160.3.9.27`.
+
+## Next Action Items
+- **Phase 3b** — record-level scoping helper (`company_id` / `created_by`), then activate `contractor_rep` + `contractor_rep_submit_only` roles.
+- **Phase 3c** — Once frontend read-only gates are in place, decide whether to add `reference_library.view` on the RA GETs.
+- **Phase 4** — Admin UI (RolesAdmin, RoleMatrixEditor, UsersManagement Simpro button).
+- Investigate pre-existing pytest failures in `test_worker_leaks.py`, `test_paneltec_backend.py`, `test_auth_persistence.py` — noted as unrelated to v27 but should be triaged before Phase 5 legacy-role retirement.

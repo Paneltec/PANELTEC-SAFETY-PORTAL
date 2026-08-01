@@ -22,10 +22,16 @@ from pydantic import BaseModel, Field
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission
 
 log = logging.getLogger("paneltec.master_risks")
 router = APIRouter(prefix="/master-risks", tags=["master-risks"])
 
+# v160.3.9.27 — Guard migration. The inline `_require_admin` helper is
+# retained for now (Phase 3a is behaviour-equivalent), but every write
+# route below is gated by `require_permission("reference_library", ...)`
+# via FastAPI Depends. Admin's ROLE_DEFAULTS matrix grants True on every
+# reference_library.<action>, so behaviour is unchanged.
 _ADMIN_ROLES = {"admin"}
 
 
@@ -34,6 +40,10 @@ def _now_iso() -> str:
 
 
 def _require_admin(user: dict) -> None:
+    # Retained for use inside route bodies that also need the actor dict
+    # for audit trails. The route-level `require_permission` dep does the
+    # actual 403 gating; this helper is now a defensive no-op unless the
+    # user shape somehow bypasses the dep.
     if (user or {}).get("role") not in _ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="admin-required")
 
@@ -126,7 +136,7 @@ async def get_master_risk(risk_uid: str,
 
 @router.post("/")
 async def create_master_risk(body: MasterRiskCreate,
-                              user: dict = Depends(get_current_user)):
+                              user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     existing = await db.master_risks.find_one({"risk_id": body.risk_id})
     if existing:
@@ -150,7 +160,7 @@ async def create_master_risk(body: MasterRiskCreate,
 
 @router.patch("/{risk_uid}")
 async def patch_master_risk(risk_uid: str, patch: MasterRiskPatch,
-                             user: dict = Depends(get_current_user)):
+                             user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
@@ -174,7 +184,7 @@ async def patch_master_risk(risk_uid: str, patch: MasterRiskPatch,
 
 @router.delete("/{risk_uid}")
 async def delete_master_risk(risk_uid: str,
-                              user: dict = Depends(get_current_user)):
+                              user: dict = Depends(require_permission("reference_library", "delete"))):
     _require_admin(user)
     now = _now_iso()
     r = await db.master_risks.find_one_and_update(
@@ -195,7 +205,7 @@ async def delete_master_risk(risk_uid: str,
 async def reimport_master_risks(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     """Re-run the XLSX ingestion against a fresh source.
 

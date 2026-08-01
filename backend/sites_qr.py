@@ -36,6 +36,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
 from auth import get_current_user
+from permissions import require_permission  # v160.3.9.27 — guard migration
 from db import db
 from models import new_id, now_iso
 from workers_qr import _public_app_url
@@ -338,7 +339,7 @@ async def list_sites(user: dict = Depends(get_current_user)):
 
 @sites_router.delete("/{site_id}/active-signons/{signon_id}")
 async def manual_sign_off(site_id: str, signon_id: str,
-                           user: dict = Depends(get_current_user)):
+                           user: dict = Depends(require_permission("sites", "delete"))):
     """Admin manual sign-off — physically deletes the sign-on row so the
     panel refreshes empty. We don't preserve history yet (parked: 30-day
     session-history audit log)."""
@@ -354,7 +355,7 @@ async def manual_sign_off(site_id: str, signon_id: str,
 @sites_router.get("/{site_id}/active-signons")
 async def list_active_signons(site_id: str,
                               since: str | None = Query(None),
-                              user: dict = Depends(get_current_user)):
+                              user: dict = Depends(require_permission("sites", "view"))):
     _require_site_admin(user)
     # Default to the last 24h — matches the quick-access pass expiry above.
     if not since:
@@ -390,7 +391,7 @@ async def list_active_signons(site_id: str,
 @sites_router.get("/{site_id}/scan-pdf")
 async def site_scan_pdf(site_id: str,
                         layout: str = Query("gate_sign", regex="^(gate_sign|avery)$"),
-                        user: dict = Depends(get_current_user)):
+                        user: dict = Depends(require_permission("sites", "view"))):
     _require_site_admin(user)
     site = await db.simpro_sites.find_one(
         {"simpro_site_id": site_id, "org_id": user["org_id"]}, {"_id": 0},
@@ -466,7 +467,7 @@ async def site_scan_pdf(site_id: str,
 # ────────────────── DEV helper — seed a site for testing ──────────────────
 
 @sites_router.post("/dev/seed-one")
-async def dev_seed_site(user: dict = Depends(get_current_user)):
+async def dev_seed_site(user: dict = Depends(require_permission("sites", "edit"))):
     """Idempotent dev seed: create exactly ONE Sample site if none exist in
     this org. Returns the site id+token. Admin only — would be removed in a
     production fork once real Simpro sync delivers sites."""

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission  # v160.3.9.27 — guard migration
 
 log = logging.getLogger("paneltec.list_roles")
 router = APIRouter(prefix="/list-roles", tags=["list-roles"])
@@ -87,7 +88,7 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 
 @router.post("/")
-async def create_row(body: RoleCreate, user: dict = Depends(get_current_user)):
+async def create_row(body: RoleCreate, user: dict = Depends(require_permission("reference_library", "edit"))):
     _admin(user)
     if await db.list_roles.find_one({"role_id": body.role_id}):
         raise HTTPException(409, "role_id-already-exists")
@@ -114,7 +115,7 @@ async def create_row(body: RoleCreate, user: dict = Depends(get_current_user)):
 
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: RolePatch,
-                    user: dict = Depends(get_current_user)):
+                    user: dict = Depends(require_permission("reference_library", "edit"))):
     _admin(user)
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
@@ -134,7 +135,7 @@ async def patch_row(uid: str, patch: RolePatch,
 
 
 @router.delete("/{uid}")
-async def delete_row(uid: str, user: dict = Depends(get_current_user)):
+async def delete_row(uid: str, user: dict = Depends(require_permission("reference_library", "delete"))):
     _admin(user)
     now = _now()
     r = await db.list_roles.find_one_and_update(
@@ -153,7 +154,7 @@ async def delete_row(uid: str, user: dict = Depends(get_current_user)):
 async def reimport(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     _admin(user)
     if bool(file) == bool(url):

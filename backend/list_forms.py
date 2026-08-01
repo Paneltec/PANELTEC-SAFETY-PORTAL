@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission  # v160.3.9.27 — guard migration
 
 log = logging.getLogger("paneltec.list_forms")
 router = APIRouter(prefix="/list-forms", tags=["list-forms"])
@@ -102,7 +103,7 @@ async def get_list_form(uid: str, _user: dict = Depends(get_current_user)):
 
 @router.post("/")
 async def create_list_form(body: ListFormCreate,
-                            user: dict = Depends(get_current_user)):
+                            user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     if await db.list_forms.find_one({"list_form_id": body.list_form_id}):
         raise HTTPException(409, "list_form_id-already-exists")
@@ -125,7 +126,7 @@ async def create_list_form(body: ListFormCreate,
 
 @router.patch("/{uid}")
 async def patch_list_form(uid: str, patch: ListFormPatch,
-                           user: dict = Depends(get_current_user)):
+                           user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
@@ -149,7 +150,7 @@ async def patch_list_form(uid: str, patch: ListFormPatch,
 
 @router.delete("/{uid}")
 async def delete_list_form(uid: str,
-                            user: dict = Depends(get_current_user)):
+                            user: dict = Depends(require_permission("reference_library", "delete"))):
     _require_admin(user)
     now = _now_iso()
     r = await db.list_forms.find_one_and_update(
@@ -170,7 +171,7 @@ async def delete_list_form(uid: str,
 async def reimport_list_forms(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     _require_admin(user)
     if bool(file) == bool(url):

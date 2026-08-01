@@ -84,6 +84,7 @@ async def record_blocked(
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from auth import get_current_user, require_roles  # noqa: E402
+from permissions import require_permission  # v160.3.9.27 — guard migration
 
 router = APIRouter(prefix="/admin", tags=["admin-comms-safe-mode"])
 
@@ -115,7 +116,7 @@ class SafeModeUpdate(BaseModel):
 @router.patch("/comms-safe-mode")
 async def patch_safe_mode(
     body: SafeModeUpdate,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_permission("notifications", "edit")),
 ):
     if env_is_master_on():
         raise HTTPException(

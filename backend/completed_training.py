@@ -8,6 +8,7 @@ from pydantic import BaseModel
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission  # v160.3.9.27 — guard migration
 
 log = logging.getLogger("paneltec.completed_training")
 router = APIRouter(prefix="/completed-training", tags=["completed-training"])
@@ -95,7 +96,7 @@ class RowPatch(BaseModel):
 
 
 @router.post("/")
-async def create_row(body: RowPatch, user: dict = Depends(get_current_user)):
+async def create_row(body: RowPatch, user: dict = Depends(require_permission("reference_library", "edit"))):
     _admin(user)
     data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
             if k not in BOOKKEEPING}
@@ -130,7 +131,7 @@ async def create_row(body: RowPatch, user: dict = Depends(get_current_user)):
 
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: RowPatch,
-                    user: dict = Depends(get_current_user)):
+                    user: dict = Depends(require_permission("reference_library", "edit"))):
     _admin(user)
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if k not in BOOKKEEPING}
@@ -151,7 +152,7 @@ async def patch_row(uid: str, patch: RowPatch,
 
 
 @router.delete("/{uid}")
-async def delete_row(uid: str, user: dict = Depends(get_current_user)):
+async def delete_row(uid: str, user: dict = Depends(require_permission("reference_library", "delete"))):
     _admin(user)
     now = _now()
     r = await db.completed_training.find_one_and_update(
@@ -170,7 +171,7 @@ async def delete_row(uid: str, user: dict = Depends(get_current_user)):
 async def reimport(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     _admin(user)
     if bool(file) == bool(url):

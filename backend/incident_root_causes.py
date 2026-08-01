@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission  # v160.3.9.27 — guard migration
 
 log = logging.getLogger("paneltec.incident_root_causes")
 router = APIRouter(prefix="/incident-root-causes", tags=["incident-root-causes"])
@@ -97,7 +98,7 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 @router.post("/")
 async def create_row(body: IRCCreate,
-                     user: dict = Depends(get_current_user)):
+                     user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     if await db.incident_root_causes.find_one({"question_id": body.question_id}):
         raise HTTPException(409, "question_id-already-exists")
@@ -120,7 +121,7 @@ async def create_row(body: IRCCreate,
 
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: IRCPatch,
-                    user: dict = Depends(get_current_user)):
+                    user: dict = Depends(require_permission("reference_library", "edit"))):
     _require_admin(user)
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
@@ -144,7 +145,7 @@ async def patch_row(uid: str, patch: IRCPatch,
 
 @router.delete("/{uid}")
 async def delete_row(uid: str,
-                     user: dict = Depends(get_current_user)):
+                     user: dict = Depends(require_permission("reference_library", "delete"))):
     _require_admin(user)
     now = _now_iso()
     r = await db.incident_root_causes.find_one_and_update(
@@ -165,7 +166,7 @@ async def delete_row(uid: str,
 async def reimport_rows(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("reference_library", "edit")),
 ):
     _require_admin(user)
     if bool(file) == bool(url):

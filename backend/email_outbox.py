@@ -172,6 +172,7 @@ async def list_outbox(
     user: dict = Depends(get_current_user),
 ):
     q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
+    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
     # v160.0 — non-privileged callers auto-scope to their own outbox.
     # A worker's phone can only see emails they sent (`created_by`) OR
     # emails addressed to them (their email in the `to` list).
@@ -200,6 +201,7 @@ async def get_outbox(email_id: str, user: dict = Depends(get_current_user)):
     doc = await db.outbound_emails.find_one({"id": email_id, "org_id": user["org_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(404, "Not found")
+    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
     # v160.0 — deep-link protection: a worker cannot open someone else's
     # outbox row even if they know the id.
     privileged = (user.get("role") or "").lower() in {"admin", "hseq_lead", "supervisor"}
@@ -256,6 +258,7 @@ async def delete_outbox(email_id: str, user: dict = Depends(get_current_user)):
     )
     if not doc:
         raise HTTPException(404, "Not found")
+    # TODO(Phase-3b): migrate to record-level scoping via require_permission + company_id/owner filter
     if user.get("role") != "admin" and doc.get("created_by") != user["id"]:
         raise HTTPException(403, "Only the sender or an admin can delete this email")
     await db.outbound_emails.update_one(
@@ -276,10 +279,14 @@ class BulkDeleteIn(BaseModel):
 
 @router.post("/outbox/bulk-delete")
 async def bulk_delete_outbox(body: BulkDeleteIn,
-                             user: dict = Depends(require_roles("admin"))):
+                             user: dict = Depends(require_permission("notifications", "delete"))):
     """Admin-only bulk soft-delete. Either `ids` or `filter.status` must be set.
     Never auto-deletes queued items via filter — they may still send. To delete
     a queued item, pass it explicitly by id (or cancel it first).
+
+    v160.3.9.27 — guard migrated from `require_roles("admin")` to
+    `require_permission("notifications", "delete")`. Admin still has
+    `notifications.delete=True` in ROLE_DEFAULTS, so behaviour is unchanged.
     """
     q: dict = {"org_id": user["org_id"], "deleted_at": {"$exists": False}}
     if body.ids:
