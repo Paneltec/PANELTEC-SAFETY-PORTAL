@@ -206,6 +206,12 @@ from bulk_import_prestarts import (  # noqa: E402
     ensure_indexes as bulk_import_ensure_indexes,
 )
 api.include_router(bulk_import_prestarts_router)
+# v160.3.9.13 — Master Risks reference library.
+from master_risks import (  # noqa: E402
+    router as master_risks_router,
+    ensure_indexes as master_risks_ensure_indexes,
+)
+api.include_router(master_risks_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -336,6 +342,11 @@ async def on_startup():
         await bulk_import_ensure_indexes()
     except Exception as e:
         log.warning("bulk_import_prestarts index setup failed: %s", e)
+    # v160.3.9.13 — Master Risks index setup.
+    try:
+        await master_risks_ensure_indexes()
+    except Exception as e:
+        log.warning("master_risks index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
