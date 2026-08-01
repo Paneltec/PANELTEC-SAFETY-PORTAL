@@ -339,23 +339,54 @@ export default function PlantVehicles() {
 
       <HowThisWorks schematicSlug="plant_vehicles" />
 
-      <Tabs defaultValue="list" className="mt-2" data-testid="vehicles-tabs">
-        <TabsList variant="hero">
-          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="vehicles-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="vehicles-tab-list">
-            List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{assets.length}</span>
-          </TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="secondary" value="maintenance" data-testid="vehicles-tab-maintenance">
+      <Tabs defaultValue="maintenance" className="mt-2" data-testid="vehicles-tabs">
+        {/* v160.3.9.21d — Equal-width, colour-coded, active=filled/inactive=ghost tab bar.
+            Order: All Maintenance · Unmatched · Vehicles from Navixy · Dashboard. */}
+        <TabsList className="w-full grid grid-cols-2 md:grid-cols-4 gap-2 bg-transparent p-0 h-auto rounded-none border-0 shadow-none">
+          {/* Tab 1 — All Maintenance (navy / Paneltec brand) */}
+          <TabsTrigger value="maintenance" data-testid="vehicles-tab-maintenance"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
+              border-blue-800 text-blue-800 bg-white hover:bg-blue-50
+              data-[state=active]:bg-blue-800 data-[state=active]:text-white data-[state=active]:hover:bg-blue-800
+              data-[state=active]:shadow-sm">
             All Maintenance
+          </TabsTrigger>
+
+          {/* Tab 2 — Unmatched (rose / warning) */}
+          <TabsTrigger value="unmatched" data-testid="vehicles-tab-unmatched"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
+              border-rose-500 text-rose-600 bg-white hover:bg-rose-50
+              data-[state=active]:bg-rose-500 data-[state=active]:text-white data-[state=active]:hover:bg-rose-500
+              data-[state=active]:shadow-sm">
+            Unmatched
             {pmUnmatched != null && pmUnmatched > 0 && (
-              <span
-                className="ml-2 inline-flex items-center rounded-full bg-rose-100 text-rose-700 px-1.5 py-0.5 text-[10px] font-semibold"
-                data-testid="vehicles-tab-maintenance-unmatched-badge"
-                title="Maintenance records whose registration does not match any asset"
-              >
-                Unmatched {pmUnmatched}
+              <span className="inline-flex items-center rounded-md !bg-rose-200 !text-rose-900 data-[state=active]:!bg-rose-100 data-[state=active]:!text-rose-700 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+                data-testid="vehicles-tab-unmatched-count">
+                {pmUnmatched}
               </span>
             )}
+          </TabsTrigger>
+
+          {/* Tab 3 — Vehicles from Navixy (emerald / live-data badge) */}
+          <TabsTrigger value="list" data-testid="vehicles-tab-list"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
+              border-emerald-600 text-emerald-700 bg-white hover:bg-emerald-50
+              data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:hover:bg-emerald-600
+              data-[state=active]:shadow-sm">
+            Vehicles from Navixy
+            <span className="inline-flex items-center rounded-md !bg-emerald-200 !text-emerald-900 data-[state=active]:!bg-emerald-100 data-[state=active]:!text-emerald-700 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
+              data-testid="vehicles-tab-list-count">
+              {assets.length}
+            </span>
+          </TabsTrigger>
+
+          {/* Tab 4 — Dashboard (amber / accent) */}
+          <TabsTrigger value="dashboard" data-testid="vehicles-tab-dashboard"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
+              border-amber-500 text-amber-700 bg-white hover:bg-amber-50
+              data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:hover:bg-amber-500
+              data-[state=active]:shadow-sm">
+            Dashboard
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="vehicles-tab-dashboard-content">
@@ -554,6 +585,9 @@ export default function PlantVehicles() {
         </TabsContent>
         <TabsContent value="maintenance" className="mt-4" data-testid="vehicles-tab-maintenance-content">
           <PlantMaintenanceTab user={pmUser} />
+        </TabsContent>
+        <TabsContent value="unmatched" className="mt-4" data-testid="vehicles-tab-unmatched-content">
+          <PlantMaintenanceTab user={pmUser} initialPlantFilter="unmatched" />
         </TabsContent>
       </Tabs>
 

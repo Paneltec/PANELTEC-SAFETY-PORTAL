@@ -21,12 +21,13 @@ function PlantChip({ row }) {
   </span>;
 }
 
-export default function PlantMaintenanceTab({ user }) {
+export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }) {
   const [items, setItems] = useState([]);
   const [unmatched, setUnmatched] = useState({ total_unmatched_rows: 0, distinct_regos: 0, groups: [] });
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
-  const [plantFilter, setPlantFilter] = useState('all'); // all | matched | unmatched | <plant_id>
+  // v160.3.9.21d — parent can preselect the filter (e.g. Unmatched tab).
+  const [plantFilter, setPlantFilter] = useState(initialPlantFilter); // all | matched | unmatched | <plant_id>
   const [showUnmatched, setShowUnmatched] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
