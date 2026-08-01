@@ -1,14 +1,9 @@
 // v160.3.9.14 — List Forms reference library tab.
-//
-// Mirrors the v160.3.9.13a Master Risks tab structure: sticky column
-// headers, mirror scrollbar for wide tables, client-side search / filter
-// / sort against a small (~43-row) list, expandable detail panel, and an
-// admin "Import from XLSX…" modal.
-//
-// Boolean columns render as pills (green ✓ / grey — dash). Form group
-// renders as one or two chips (Operations = blue, Administration =
-// slate). Line-clamp 2 on Description with full-text tooltip.
+// v160.3.9.25 — CRUD affordances (Add / Edit / Delete) via shared
+//               useCrudModal hook — admin-only, matching the strict
+//               `{admin}` backend RBAC on POST/PATCH/DELETE.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -255,6 +250,8 @@ export default function ListFormsTab({ user }) {
   const [importOpen, setImportOpen] = useState(false);
 
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  // v160.3.9.25 — Strict admin for CRUD, matching backend RBAC.
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -263,6 +260,8 @@ export default function ListFormsTab({ user }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'list_forms', isAdmin: canWrite, onRefresh: load });
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -376,6 +375,7 @@ export default function ListFormsTab({ user }) {
           {filtered.length} of {items.length} forms
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button
             onClick={() => setImportOpen(true)}
@@ -428,7 +428,7 @@ export default function ListFormsTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`list-forms-row-${row.list_form_id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`list-forms-row-${row.list_form_id}`}>
                     <button
                       className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 transition gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: GRID_TEMPLATE }}
@@ -458,6 +458,12 @@ export default function ListFormsTab({ user }) {
                       })}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.list_form_id}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} /></div>
                     )}
@@ -470,6 +476,7 @@ export default function ListFormsTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }

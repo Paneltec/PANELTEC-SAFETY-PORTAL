@@ -1,8 +1,7 @@
 // v160.3.9.16 — CS Incident (Issue List) reference-library tab.
-// Mirrors ListFormsTab / IncidentRootCausesTab patterns. Single section
-// today; the components are shaped so a future 2nd section can be
-// dropped in without refactoring.
+// v160.3.9.25 — CRUD affordances via shared useCrudModal hook.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import { formatDate, formatDateTime12, formatTime12 } from '../lib/timeFormat';
@@ -234,6 +233,7 @@ export default function CsIncidentTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('cs_incident', { key: 'date_of_issue', dir: 'desc' }));
   const [importOpen, setImportOpen] = useState(false);
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -246,6 +246,8 @@ export default function CsIncidentTab({ user }) {
     }).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'cs_incident', isAdmin: canWrite, onRefresh: load });
 
   const visibleCols = useMemo(() => {
     if (showAll) return populated.filter((k) => k !== 'issue_number').length
@@ -345,6 +347,7 @@ export default function CsIncidentTab({ user }) {
           {filtered.length} of {items.length} incidents
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50"
@@ -380,7 +383,7 @@ export default function CsIncidentTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`cs-incident-row-${row.issue_number}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`cs-incident-row-${row.issue_number}`}>
                     <button className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: gridTemplate }}
                       onClick={() => setExpanded(isOpen ? null : row.id)}
@@ -390,6 +393,12 @@ export default function CsIncidentTab({ user }) {
                       ))}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.issue_number}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4">
                         <DetailPanel row={row} populatedCols={populated} />
@@ -404,6 +413,7 @@ export default function CsIncidentTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }

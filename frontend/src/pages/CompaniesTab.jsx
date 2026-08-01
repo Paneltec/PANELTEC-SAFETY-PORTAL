@@ -1,8 +1,7 @@
 // v160.3.9.19 — Companies reference-library tab.
-// Sparse-schema (uses /companies/columns metadata). Chip filters skip
-// when <2 distinct values (State, Account Type, Category, Classification).
-// Archived stays as a fixed binary tri-state filter regardless of data.
+// v160.3.9.25 — CRUD affordances via shared useCrudModal hook.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -161,6 +160,7 @@ export default function CompaniesTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('companies', { key: 'company', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -173,6 +173,8 @@ export default function CompaniesTab({ user }) {
     }).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'companies', isAdmin: canWrite, onRefresh: load });
 
   const visibleCols = useMemo(
     () => ORDER.filter((k) => populated.includes(k)),
@@ -292,6 +294,7 @@ export default function CompaniesTab({ user }) {
           {filtered.length} of {items.length} companies
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50"
@@ -327,7 +330,7 @@ export default function CompaniesTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`companies-row-${row.company_id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`companies-row-${row.company_id}`}>
                     <button className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: gridTemplate }}
                       onClick={() => setExpanded(isOpen ? null : row.id)}
@@ -337,6 +340,12 @@ export default function CompaniesTab({ user }) {
                       ))}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.company_id}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} populated={populated} /></div>
                     )}
@@ -349,6 +358,7 @@ export default function CompaniesTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }

@@ -1,8 +1,7 @@
 // v160.3.9.18 — My Completed Training reference-library tab.
-// Sparse-schema pattern (CS Incident v16): visible columns come from
-// /completed-training/columns metadata so empty columns stay hidden
-// until a future import populates them.
+// v160.3.9.25 — CRUD affordances via shared useCrudModal hook.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import { formatDate, formatDateTime12 } from '../lib/timeFormat';
@@ -188,6 +187,7 @@ export default function CompletedTrainingTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('completed_training', { key: 'expiry_date', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -200,6 +200,8 @@ export default function CompletedTrainingTab({ user }) {
     }).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'completed_training', isAdmin: canWrite, onRefresh: load });
 
   const visibleCols = useMemo(
     () => COLUMN_ORDER.filter((k) => populated.includes(k)),
@@ -313,6 +315,7 @@ export default function CompletedTrainingTab({ user }) {
           {filtered.length} of {items.length} certificates
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50"
@@ -348,7 +351,7 @@ export default function CompletedTrainingTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`ct-row-${row.id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`ct-row-${row.id}`}>
                     <button className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: gridTemplate }}
                       onClick={() => setExpanded(isOpen ? null : row.id)}
@@ -358,6 +361,12 @@ export default function CompletedTrainingTab({ user }) {
                       ))}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.id}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} populated={populated} /></div>
                     )}
@@ -370,6 +379,7 @@ export default function CompletedTrainingTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }

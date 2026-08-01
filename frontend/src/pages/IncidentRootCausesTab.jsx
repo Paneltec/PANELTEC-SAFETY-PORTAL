@@ -1,16 +1,7 @@
 // v160.3.9.15 — Incident Root Causes reference library tab.
-//
-// Mirrors ListFormsTab.jsx (v160.3.9.14). 5-column sortable table with
-// sticky headers, mirror scrollbar, expandable detail. Filters: search,
-// Contributing factor multi-select (populated dynamically), tri-state
-// Has-action filter (Any / Yes / No).
-//
-// The current source snapshot has no tree hierarchy — every row is a
-// root question with `parent_question_id === null` — so the depth-
-// indent nice-to-have from the spec is not applied. When future imports
-// include children, `renderParentIndent()` below already knows how to
-// compute a depth and render the indent; wire it up then.
+// v160.3.9.25 — CRUD affordances via shared useCrudModal hook.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -236,6 +227,7 @@ export default function IncidentRootCausesTab({ user }) {
   const [importOpen, setImportOpen] = useState(false);
 
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -244,6 +236,8 @@ export default function IncidentRootCausesTab({ user }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'incident_root_causes', isAdmin: canWrite, onRefresh: load });
 
   const factorsList = useMemo(() => {
     const s = new Set();
@@ -363,6 +357,7 @@ export default function IncidentRootCausesTab({ user }) {
           {filtered.length} of {items.length} root causes
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700"
@@ -407,7 +402,7 @@ export default function IncidentRootCausesTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`irc-row-${row.question_id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`irc-row-${row.question_id}`}>
                     <button
                       className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 transition gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: GRID_TEMPLATE }}
@@ -447,6 +442,12 @@ export default function IncidentRootCausesTab({ user }) {
                       })}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.question_id}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} onJumpToParent={jumpToParent} /></div>
                     )}
@@ -459,6 +460,7 @@ export default function IncidentRootCausesTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }

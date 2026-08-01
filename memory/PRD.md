@@ -5725,3 +5725,77 @@ mid-session), the standing rule is:
 - AM/PM formatter sweep (v160.3.9.5).
 - Pre-start wizard modal (v12b).
 - v22a coloured-pill renderer for traffic-light radios (deferred by user).
+
+# 2026-02-01 — v160.3.9.25 — CRUD wired for the remaining 6 Risk Assessment tabs
+
+## Scope
+Completed the v160.3.9.24 rollout: Add / Edit / Delete affordances on the six
+Risk Assessment reference-library tabs that were still read-only after v24a.
+Master Risks (already wired in v24) untouched.
+
+## Schema reconciliation (this is the step that had blocked v24)
+Inspected each backend router's Pydantic Patch model and rewrote
+`frontend/src/components/riskAssessments/schemas.js` so form-field keys
+match verbatim. Where a router is `extra="allow"` (cs_incident, companies,
+completed_training), populated columns visible in the live collection
+were selected.
+
+| Tab | Backend model | Required create field |
+| --- | --- | --- |
+| ListForms | `ListFormPatch` (typed) | `list_form_id` |
+| IncidentRootCauses | `IRCPatch` (typed) | `question_id` |
+| CsIncident | `RowPatch` extra=allow | `issue_number` |
+| ListRoles | `RolePatch` (typed) | `role_id` |
+| CompletedTraining | `RowPatch` extra=allow | at least 1 non-bookkeeping field (`competency` marked required) |
+| Companies | `RowPatch` extra=allow | `company_id` |
+
+## Files touched
+- `frontend/src/components/riskAssessments/schemas.js` — full rewrite (7 tab schemas)
+- `frontend/src/pages/ListFormsTab.jsx`
+- `frontend/src/pages/CompaniesTab.jsx`
+- `frontend/src/pages/ListRolesTab.jsx`
+- `frontend/src/pages/IncidentRootCausesTab.jsx`
+- `frontend/src/pages/CsIncidentTab.jsx`
+- `frontend/src/pages/CompletedTrainingTab.jsx`
+- `frontend/src/lib/version.js`             — bumped to paneltec-v160.3.9.25
+- `frontend/public/service-worker.js`       — CACHE_VERSION bumped
+- `mobile/src/lib/version.ts`               — MOBILE_BUNDLE_VERSION bumped (only mobile touch)
+
+## RBAC
+`isAdmin` (existing) still gates the "Import from XLSX…" button and includes
+hseq_lead. NEW `canWrite = user.role === 'admin'` strictly gates
+Add/Edit/Delete UI, matching the backend `_admin()` guard.
+
+## Round-trip verification (verbatim curl output on file in test session)
+All 6 endpoints POST → PATCH → DELETE as admin using
+`stephen@paneltec.com.au`. Every response was 200 with the expected
+document echo. Sample outputs (abridged):
+```
+POST /list-forms/  → 200, form_group=["Operations"], public_enabled=true
+PATCH /list-forms/{id} {"description":"…","mobile_enabled":true} → 200
+DELETE /list-forms/{id} → {"deleted": true, "list_form_id": "…"}
+POST /companies/ {"company_id":"…","company":"…","state":"NSW"} → 200
+PATCH /companies/{id} {"company":"…","suburb":"Sydney"} → 200 (added suburb)
+POST /list-roles/ {"role_id":…,"role_title":…,"capabilities":["lift","scaffold"]} → 200
+POST /incident-root-causes/ {"question_id":…,"description":…,"has_action":true} → 200
+POST /cs-incident/ {"issue_number":…,"issue_type":"Near miss","status":"Open"} → 200
+POST /completed-training/ {"competency":…,"issue_date":…,"expiry_date":…} → 200
+```
+
+## UI verification (Playwright)
+Logged in as admin, walked every one of the 6 tabs. Counts of the CRUD test-ids
+present on load (all without hover):
+- list_forms:          Add=1, edit=41, delete=41
+- incident_root_causes: Add=1, edit=17, delete=17
+- cs_incident:         Add=1, edit=199, delete=199
+- list_roles:          Add=1, edit=17, delete=17
+- completed_training:  Add=1, edit=5,  delete=5
+- companies:           Add=1, edit=3,  delete=3
+
+## Next Action Items
+1. Testing sub-agent full sweep — CRUD lifecycle per tab.
+2. Resume v160.3.9.21 HR Employees register (Step 2) when user un-pauses.
+3. v160.3.9.12b — bulk import wizard modal on /app/pre-starts.
+4. Optional: extend schemas beyond the current "practical core" for the
+   two `extra="allow"` sparse-schema tabs (cs_incident, companies) once
+   admins signal which extra fields they want directly editable.

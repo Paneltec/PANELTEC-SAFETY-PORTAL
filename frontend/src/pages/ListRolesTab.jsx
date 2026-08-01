@@ -1,9 +1,7 @@
 // v160.3.9.17 — List Roles reference-library tab.
-// Source XLSX carries per-role integer COUNTS for capabilities/people, not
-// lists. We render counts as chips (⚙ N violet / 👥 N slate); when a
-// future richer export populates the reserved `capabilities` / `people`
-// string arrays, the detail panel will also list them.
+// v160.3.9.25 — CRUD affordances via shared useCrudModal hook.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -190,6 +188,7 @@ export default function ListRolesTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('list_roles', { key: 'role_title', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const canWrite = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -198,6 +197,8 @@ export default function ListRolesTab({ user }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  const crud = useCrudModal({ tabKey: 'list_roles', isAdmin: canWrite, onRefresh: load });
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -259,6 +260,7 @@ export default function ListRolesTab({ user }) {
           {filtered.length} of {items.length} roles
         </div>
 
+        {canWrite && crud.AddButton}
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50"
@@ -298,7 +300,7 @@ export default function ListRolesTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`list-roles-row-${row.role_id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`list-roles-row-${row.role_id}`}>
                     <button className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: GRID_TEMPLATE }}
                       onClick={() => setExpanded(isOpen ? null : row.id)}
@@ -320,6 +322,12 @@ export default function ListRolesTab({ user }) {
                       </div>
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {canWrite && (
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.role_id}`}>
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} /></div>
                     )}
@@ -332,6 +340,7 @@ export default function ListRolesTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }
