@@ -10,6 +10,8 @@ import { stashInlinePdf } from '../lib/pdfStash';
 // v160.3.7k — Inoculation sweep: lock body scroll while this drawer is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
+// v160.3.9.20a — Plant Maintenance history section for the AssetDrawer.
+import PlantMaintenanceHistory from './PlantMaintenanceHistory';
 import LiveCountersPanel from './LiveCountersPanel';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
@@ -96,6 +98,8 @@ const TABS = [
   { key: 'pairing', label: 'Pairing' },
   { key: 'schedules', label: 'Schedules' },
   { key: 'service_log', label: 'Service log' },
+  // v160.3.9.20a — every ingested Plant Maintenance record for this asset.
+  { key: 'maintenance_history', label: 'Maintenance history' },
   { key: 'photo', label: 'Photo' },
   { key: 'notes', label: 'Notes' },
 ];
@@ -437,6 +441,11 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
             current?.id
               ? <ServiceLogTab asset={current} canEdit />
               : <div className="text-sm text-slate-500">Save the asset first to log service or defects.</div>
+          )}
+          {tab === 'maintenance_history' && (
+            current?.id
+              ? <PlantMaintenanceHistory asset={current} />
+              : <div className="text-sm text-slate-500">Save the asset first to view its maintenance history.</div>
           )}
 
           {tab === 'photo' && (

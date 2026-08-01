@@ -104,6 +104,83 @@ async def unmatched_summary(_user: dict = Depends(get_current_user)):
             "distinct_regos": len(groups), "groups": groups}
 
 
+@router.get("/grouped")
+async def grouped_view(_user: dict = Depends(get_current_user)):
+    """v160.3.9.20a — All maintenance rows folded into one card per plant
+    (with the 346 unmatched-rego rows grouped separately at the bottom by
+    their registration_matched string). Matched groups carry the linked
+    asset's name/rego/type/kind so the frontend can render a rich header.
+    """
+    # Matched groups (real plant assets).
+    matched_pipeline = [
+        {"$match": {"plant_id": {"$ne": None}, "deleted_at": None}},
+        {"$sort": {"date_completed": -1}},
+        {"$group": {
+            "_id": "$plant_id",
+            "records": {"$push": "$$ROOT"},
+            "count": {"$sum": 1},
+            "latest_date": {"$max": "$date_completed"},
+            "sample_rego": {"$first": "$registration_no"},
+        }},
+        {"$sort": {"latest_date": -1}},
+    ]
+    matched_groups: list = []
+    async for g in db.plant_maintenance.aggregate(matched_pipeline):
+        asset = await db.assets.find_one(
+            {"id": g["_id"]},
+            {"_id": 0, "id": 1, "name": 1, "rego_serial": 1,
+             "asset_type": 1, "kind": 1, "make": 1, "model": 1, "year": 1},
+        )
+        clean_records = []
+        for r in g["records"]:
+            r.pop("_id", None)
+            clean_records.append(r)
+        matched_groups.append({
+            "plant_id": g["_id"],
+            "plant": asset,  # may be null if asset was deleted after ingest
+            "sample_rego": g.get("sample_rego"),
+            "count": g["count"],
+            "latest_date": g.get("latest_date"),
+            "records": clean_records,
+        })
+
+    # Unmatched groups (phantom vehicles — rego present, no matching asset).
+    unmatched_pipeline = [
+        {"$match": {"plant_id": None, "deleted_at": None}},
+        {"$sort": {"date_completed": -1}},
+        {"$group": {
+            "_id": "$registration_matched",
+            "records": {"$push": "$$ROOT"},
+            "count": {"$sum": 1},
+            "latest_date": {"$max": "$date_completed"},
+            "sample_description": {"$first": "$description"},
+            "sample_asset_code": {"$first": "$asset_code"},
+        }},
+        {"$sort": {"latest_date": -1}},
+    ]
+    unmatched_groups: list = []
+    async for g in db.plant_maintenance.aggregate(unmatched_pipeline):
+        clean_records = []
+        for r in g["records"]:
+            r.pop("_id", None)
+            clean_records.append(r)
+        unmatched_groups.append({
+            "rego": g["_id"],
+            "count": g["count"],
+            "latest_date": g.get("latest_date"),
+            "sample_description": g.get("sample_description"),
+            "sample_asset_code": g.get("sample_asset_code"),
+            "records": clean_records,
+        })
+
+    return {
+        "matched": matched_groups,
+        "unmatched": unmatched_groups,
+        "matched_plants": len(matched_groups),
+        "unmatched_regos": len(unmatched_groups),
+    }
+
+
 @router.get("/{uid}")
 async def get_row(uid: str, _user: dict = Depends(get_current_user)):
     doc = await db.plant_maintenance.find_one(

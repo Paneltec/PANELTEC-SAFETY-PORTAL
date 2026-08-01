@@ -30,6 +30,18 @@ export default function PlantMaintenanceTab({ user }) {
   const [showUnmatched, setShowUnmatched] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  // v160.3.9.20a — flat/grouped view toggle, persisted per-device.
+  const VIEW_KEY = 'paneltec_plant_maintenance_view';
+  const [viewMode, setViewMode] = useState(() => {
+    try { return localStorage.getItem(VIEW_KEY) === 'grouped' ? 'grouped' : 'flat'; }
+    catch { return 'flat'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(VIEW_KEY, viewMode); } catch { /* noop */ }
+  }, [viewMode]);
+  const [grouped, setGrouped] = useState(null);
+  const [groupLoading, setGroupLoading] = useState(false);
+  const [openGroup, setOpenGroup] = useState(null); // `plant:<id>` or `rego:<XXX>`
   const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
 
   const load = () => {
@@ -43,6 +55,17 @@ export default function PlantMaintenanceTab({ user }) {
     }).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+  // Lazy-load grouped payload when the user first switches to Grouped view,
+  // and refetch after imports flip `items.length`.
+  useEffect(() => {
+    if (viewMode !== 'grouped') return;
+    let alive = true;
+    setGroupLoading(true);
+    api.get('/plant-maintenance/grouped').then((r) => {
+      if (alive) setGrouped(r.data || { matched: [], unmatched: [] });
+    }).finally(() => { if (alive) setGroupLoading(false); });
+    return () => { alive = false; };
+  }, [viewMode, items.length]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -93,6 +116,20 @@ export default function PlantMaintenanceTab({ user }) {
           ))}
         </div>
 
+        {/* v160.3.9.20a — Flat / Grouped view toggle. */}
+        <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-view-toggle">
+          {[
+            { k: 'flat', label: 'Flat' },
+            { k: 'grouped', label: 'Group by vehicle' },
+          ].map((opt) => (
+            <button key={opt.k} onClick={() => setViewMode(opt.k)}
+              data-testid={`pm-view-${opt.k}`}
+              className={`px-3 py-1 text-xs font-semibold ${viewMode === opt.k ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
         {unmatched.total_unmatched_rows > 0 && (
           <button onClick={() => setShowUnmatched(!showUnmatched)}
             className="px-3 py-1.5 text-xs rounded-md bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
@@ -102,7 +139,9 @@ export default function PlantMaintenanceTab({ user }) {
         )}
 
         <div className="text-xs text-slate-500 ml-auto" data-testid="pm-count">
-          {filtered.length} of {items.length} maintenance records
+          {viewMode === 'grouped' && grouped
+            ? `${grouped.matched_plants ?? grouped.matched?.length ?? 0} vehicles · ${grouped.unmatched_regos ?? grouped.unmatched?.length ?? 0} unmatched regos`
+            : `${filtered.length} of ${items.length} maintenance records`}
         </div>
 
         {isAdmin && (
@@ -121,7 +160,7 @@ export default function PlantMaintenanceTab({ user }) {
             Unmatched maintenance regos ({unmatched.distinct_regos})
           </h4>
           <p className="text-xs text-rose-700 mb-3">
-            These regos appear in maintenance records but don't match any asset. Add them to Navixy / assets to associate history.
+            These regos appear in maintenance records but don&apos;t match any asset. Add them to Navixy / assets to associate history.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {unmatched.groups.map((g) => (
@@ -144,6 +183,10 @@ export default function PlantMaintenanceTab({ user }) {
         <div className="p-8 border border-dashed border-slate-300 rounded-lg text-center">
           <p className="font-medium">No maintenance records imported yet</p>
         </div>
+      ) : viewMode === 'grouped' ? (
+        <GroupedView data={grouped} loading={groupLoading}
+          openGroup={openGroup} setOpenGroup={setOpenGroup}
+          q={q} plantFilter={plantFilter} />
       ) : (
         <div className="rounded-2xl border border-slate-200 overflow-hidden">
           <div className="grid text-[11px] uppercase tracking-wider bg-slate-50 border-b border-slate-200 py-2 text-slate-600 font-semibold gap-2 px-3"
@@ -254,5 +297,156 @@ function PmImportBody({ onDone, submit }) {
         </button>
       </div>
     </>
+  );
+}
+
+// v160.3.9.20a — Grouped-by-vehicle view. Renders one card per plant
+// asset (sorted by latest maintenance date DESC) then a phantom-vehicle
+// section for rows whose rego doesn't match any asset.
+function GroupedView({ data, loading, openGroup, setOpenGroup, q, plantFilter }) {
+  if (loading || !data) {
+    return <div className="text-sm text-slate-500 p-6" data-testid="pm-grouped-loading">Loading grouped view…</div>;
+  }
+  const needle = (q || '').trim().toLowerCase();
+  const matchGroup = (records, headerHay) => {
+    if (plantFilter === 'unmatched') return false;  // matched groups only
+    if (!needle) return true;
+    if (headerHay.includes(needle)) return true;
+    return records.some((r) => (
+      [r.maintenance_id, r.description, r.registration_no, r.notes,
+       r.performed_by, r.company, r.maintenance_type].filter(Boolean)
+        .join(' ').toLowerCase().includes(needle)
+    ));
+  };
+  const unmatchedGroup = (records, rego) => {
+    if (plantFilter === 'matched') return false;   // unmatched groups only
+    if (!needle) return true;
+    if ((rego || '').toLowerCase().includes(needle)) return true;
+    return records.some((r) => (
+      [r.maintenance_id, r.description, r.notes, r.performed_by,
+       r.company, r.maintenance_type].filter(Boolean)
+        .join(' ').toLowerCase().includes(needle)
+    ));
+  };
+  const matched = (data.matched || []).filter((g) => matchGroup(g.records,
+    [g.plant?.name, g.plant?.rego_serial, g.sample_rego, g.plant?.asset_type,
+     g.plant?.kind, g.plant?.make, g.plant?.model].filter(Boolean).join(' ').toLowerCase()));
+  const unmatched = (data.unmatched || []).filter((g) => unmatchedGroup(g.records, g.rego));
+
+  return (
+    <div className="space-y-3" data-testid="pm-grouped">
+      {matched.length === 0 && unmatched.length === 0 && (
+        <div className="p-6 text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg text-center">
+          No maintenance groups match this filter.
+        </div>
+      )}
+      {matched.map((g) => (
+        <GroupCard key={`plant:${g.plant_id}`} groupKey={`plant:${g.plant_id}`}
+          openGroup={openGroup} setOpenGroup={setOpenGroup}
+          title={g.plant?.name || `Asset ${g.plant_id?.slice(0, 8)}`}
+          rego={g.plant?.rego_serial || g.sample_rego}
+          subtitle={[g.plant?.kind, g.plant?.asset_type, g.plant?.make, g.plant?.model, g.plant?.year]
+            .filter(Boolean).join(' · ')}
+          count={g.count} latestDate={g.latest_date}
+          records={g.records} matched />
+      ))}
+      {unmatched.length > 0 && (
+        <div className="pt-4 mt-4 border-t border-rose-200" data-testid="pm-grouped-unmatched-section">
+          <div className="mb-2 flex items-baseline justify-between">
+            <h4 className="text-sm font-semibold text-rose-800">
+              ⚠ Unknown vehicles — <span className="tabular-nums">{unmatched.length}</span> phantom rego{unmatched.length === 1 ? '' : 's'}
+            </h4>
+            <span className="text-[11px] text-rose-700">Rego present in maintenance records but no matching asset</span>
+          </div>
+          <div className="space-y-3">
+            {unmatched.map((g) => (
+              <GroupCard key={`rego:${g.rego}`} groupKey={`rego:${g.rego}`}
+                openGroup={openGroup} setOpenGroup={setOpenGroup}
+                title={`Unknown vehicle · rego ${g.rego}`}
+                rego={g.rego}
+                subtitle={g.sample_description || g.sample_asset_code || ''}
+                count={g.count} latestDate={g.latest_date}
+                records={g.records} matched={false} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupCard({ groupKey, openGroup, setOpenGroup, title, rego, subtitle,
+                    count, latestDate, records, matched }) {
+  const isOpen = openGroup === groupKey;
+  const shellCls = matched
+    ? 'border-slate-200 bg-white'
+    : 'border-rose-200 bg-rose-50/40';
+  const chipCls = matched
+    ? 'bg-blue-100 text-blue-800'
+    : 'bg-rose-100 text-rose-800';
+  return (
+    <div className={`rounded-2xl border ${shellCls} overflow-hidden`} data-testid={`pm-group-${groupKey}`}>
+      <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/60"
+        onClick={() => setOpenGroup(isOpen ? null : groupKey)}
+        aria-expanded={isOpen}
+        data-testid={`pm-group-toggle-${groupKey}`}>
+        {rego && (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-md ${chipCls} text-xs font-mono font-semibold`}>
+            {matched ? '' : '⚠ '}{rego}
+          </span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className={`text-sm font-semibold truncate ${matched ? 'text-slate-800' : 'text-rose-900'}`}>{title}</div>
+          {subtitle && <div className="text-xs text-slate-500 truncate">{subtitle}</div>}
+        </div>
+        <div className="text-right shrink-0">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">Records</div>
+          <div className="text-sm font-semibold tabular-nums text-slate-800">{count}</div>
+        </div>
+        <div className="text-right shrink-0 ml-4">
+          <div className="text-[11px] uppercase tracking-wide text-slate-500">Latest</div>
+          <div className="text-sm text-slate-700">{latestDate ? (formatDate(new Date(latestDate)) || latestDate) : '—'}</div>
+        </div>
+        <div className="text-slate-400 text-xs ml-2">{isOpen ? '▾' : '▸'}</div>
+      </button>
+      {isOpen && (
+        <div className="border-t border-slate-100 bg-slate-50/40 px-3 py-3">
+          <GroupInlineTable records={records} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupInlineTable({ records }) {
+  const cols = '70px 200px 150px 120px 110px 130px 90px';
+  return (
+    <div className="rounded-lg border border-slate-200 overflow-hidden bg-white">
+      <div className="grid text-[11px] uppercase tracking-wider bg-slate-50 border-b border-slate-200 py-2 text-slate-600 font-semibold gap-2 px-3"
+        style={{ gridTemplateColumns: cols }}>
+        <div>ID</div>
+        <div>Description</div>
+        <div>Type</div>
+        <div>Completed</div>
+        <div>Cost</div>
+        <div>Company</div>
+        <div>Status</div>
+      </div>
+      <ul className="divide-y divide-slate-100">
+        {records.map((row) => (
+          <li key={row.id} className="grid items-start py-2 gap-2 px-3"
+              style={{ gridTemplateColumns: cols }}
+              data-testid={`pm-group-row-${row.maintenance_id}`}>
+            <div className="font-mono text-xs text-slate-500">#{row.maintenance_id}</div>
+            <div className="text-xs text-slate-800 line-clamp-2 leading-snug" title={row.description || ''}>{row.description || '—'}</div>
+            <div className="text-xs text-slate-700">{row.maintenance_type || '—'}</div>
+            <div className="text-xs text-slate-700">{row.date_completed ? (formatDate(new Date(row.date_completed)) || row.date_completed) : '—'}</div>
+            <div className="text-xs text-slate-700 font-mono">{row.cost || '—'}</div>
+            <div className="text-xs text-slate-700 truncate" title={row.company || ''}>{row.company || '—'}</div>
+            <div><StatusChip v={row.maintenance_status} /></div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
