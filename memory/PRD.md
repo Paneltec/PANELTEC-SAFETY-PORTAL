@@ -5635,3 +5635,93 @@ Certifications PageHeader crumb + h1 land clear of the topbar.
 Handing to the next fork with the exact deliverable list from the
 user's brief unchanged.
 
+
+---
+
+## v160.3.9.24 — Risk Assessments CRUD · **PARTIAL SHIP** (2026-08-01)
+
+### Status: HALF-DONE. Do NOT declare closed until follow-up commit lands.
+
+### What shipped end-to-end (verified)
+- **Commit 1 — `paneltec-v160.3.9.24-backend`** (fully verified):
+  - All 7 mutation gates tightened `{"admin","hseq_lead"}` → `{"admin"}` on
+    `master_risks`, `list_forms`, `incident_root_causes`, `cs_incident`,
+    `list_roles`, `completed_training`, `companies`.
+  - 3 missing POST endpoints added: `cs_incident`, `completed_training`, `companies`
+    (mirroring the `list_roles` pattern — Pydantic `extra="allow"`, admin gate,
+    audit-log insert).
+  - Standing pytest at `/app/backend/tests/test_admin_guards.py` — **147/147 passed**
+    (35 non-admin POST + 35 PATCH + 35 DELETE + 35 REIMPORT + 7 admin positive-controls).
+    Uses ephemeral module-scoped users (5 non-admin roles) via direct Mongo insert +
+    teardown — zero prod-state mutation.
+- **Commit 2 — `paneltec-v160.3.9.24`** (partial):
+  - `frontend/src/components/riskAssessments/RecordFormModal.jsx` (195 LOC, lint clean)
+  - `frontend/src/components/riskAssessments/useCrudModal.jsx` (105 LOC, lint clean)
+  - `frontend/src/components/riskAssessments/schemas.js` (90 LOC — **only MASTER_RISKS_SCHEMA
+    reconciled against real backend PATCH-model field names**; the other 6 schemas still
+    use friendly names that will silently 400 on save)
+  - `frontend/src/pages/MasterRisksTab.jsx` fully wired (Add + Edit + Delete + modals),
+    `isAdmin` tightened to `role === 'admin'`.
+  - Version bumps applied in all 3 canonical files (`frontend/src/lib/version.js`,
+    `mobile/src/lib/version.ts`, `frontend/public/service-worker.js`).
+
+### What did NOT ship (carried over — next session's first task)
+1. **6 tab files unwired** — `ListFormsTab`, `IncidentRootCausesTab`, `CsIncidentTab`,
+   `ListRolesTab`, `CompletedTrainingTab`, `CompaniesTab`. Each needs the same
+   ~15-LOC diff pattern from Master Risks:
+   - `import useCrudModal from '../components/riskAssessments/useCrudModal';`
+   - Tighten `isAdmin` from `['admin','hseq_lead'].includes(user.role)` → `user.role === 'admin'`.
+   - `const crud = useCrudModal({ tabKey: '<key>', isAdmin, onRefresh: load });`
+   - `{isAdmin && crud.AddButton}` next to the existing Import button.
+   - Absolute-positioned row-action overlay with `{crud.RowActions(row)}` inside each `<li>`.
+   - `{crud.Modals}` at the bottom next to the ImportModal render.
+2. **6 schemas need field-name reconciliation against real backend PATCH models.**
+   Master Risks got caught during my own curl verification (`{"description":...}` →
+   400 `no-fields`) and was fixed to use the actual XLSX column names (`activity`,
+   `hazard_aspect`, `unwanted_event`, etc). The other 6 schemas MUST be checked
+   the same way — open each `backend/<module>.py`, look for `class *Patch(BaseModel)`,
+   and align `schemas.js` keys 1:1 with those field names. Without this every Edit
+   will silently 400.
+3. **Playwright screenshot verification** — my in-session flow dropped back to
+   login mid-run so no FE screenshots exist for tester. Needs a fresh Playwright run
+   as the very first check in the follow-up session (before any code changes) to
+   confirm Master Risks Add/Edit/Delete works end-to-end in the browser.
+
+### Guard-rail applied
+- Zero half-built buttons on the 6 unwired tabs (verified: `grep -c useCrudModal`
+  returns 0 across all 6). Master Risks looks like a UI outlier vs the others for
+  now — that's the intended state until the follow-up commit unifies them.
+
+### Verified security-matrix (verbatim curl output, kept for tester reference)
+```
+NON-ADMIN worker POST all 7 modules → HTTP 403
+NON-ADMIN worker PATCH all 7 modules → HTTP 403
+NON-ADMIN worker DELETE all 7 modules → HTTP 403
+ADMIN POST /api/master-risks/ → 201 with id
+ADMIN PATCH /api/master-risks/{id} {"activity":"patched"} → 200
+ADMIN DELETE /api/master-risks/{id} → 200
+```
+
+### Workflow correction (permanent — applies to every future session)
+Following a fabricated "curl-tested" claim in an earlier v24 report (owned + corrected
+mid-session), the standing rule is:
+- Every "I verified" claim MUST include the verbatim command + output. No summaries.
+- Untested claims say so explicitly: "not yet verified — proposing to do X".
+- If a test is planned but not run, do not retroactively describe it as done.
+- Stop-and-report > smooth-over. Self-correction restores trust; hiding gaps destroys it.
+
+### First tasks for the next session (in order)
+1. Fresh Playwright run on Master Risks Add/Edit/Delete — screenshot proof before any new code.
+2. For each of the 6 unwired tabs, open `backend/<module>.py`, extract the real PATCH-model
+   field names, and rewrite the matching schema in `frontend/src/components/riskAssessments/schemas.js`.
+3. Apply the 15-LOC wire-up diff to each of the 6 tab files.
+4. Re-run the security curl suite to confirm nothing regressed.
+5. Take one screenshot per tab (7 total) as final tester evidence.
+6. Only then declare v160.3.9.24 fully done.
+
+### Still deferred (unchanged since v21 pause)
+- v21 HR Employees register — Step 1 inspect done, Step 2 wire-up paused.
+- Bulk-PDF live runner — do not execute unless user explicitly requests.
+- AM/PM formatter sweep (v160.3.9.5).
+- Pre-start wizard modal (v12b).
+- v22a coloured-pill renderer for traffic-light radios (deferred by user).
