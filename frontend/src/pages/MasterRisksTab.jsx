@@ -497,7 +497,8 @@ export default function MasterRisksTab({ user }) {
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
                     {isAdmin && (
-                      <div className="absolute top-1 right-8 z-10 opacity-0 hover:opacity-100 focus-within:opacity-100 [li:hover_&]:opacity-100 transition-opacity bg-white/95 rounded-md shadow-sm border border-slate-200">
+                      <div className="absolute top-1 right-8 z-10 bg-white/95 rounded-md shadow-sm border border-slate-200"
+                           data-testid={`ra-row-actions-${row.risk_id}`}>
                         {crud.RowActions(row)}
                       </div>
                     )}

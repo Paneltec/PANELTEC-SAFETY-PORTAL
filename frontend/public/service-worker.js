@@ -1242,8 +1242,8 @@
  *          Frontend untouched; SW bump exists solely to force
  *          browsers to see the enriched summary payload.
  */
-// v160.3.9.24 — CRUD affordances + admin-only tightening.
-const CACHE_VERSION = 'paneltec-v160.3.9.24';
+// v160.3.9.24a — Row-action icons always visible for admins.
+const CACHE_VERSION = 'paneltec-v160.3.9.24a';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
