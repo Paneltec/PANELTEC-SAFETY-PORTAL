@@ -5799,3 +5799,39 @@ present on load (all without hover):
 4. Optional: extend schemas beyond the current "practical core" for the
    two `extra="allow"` sparse-schema tabs (cs_incident, companies) once
    admins signal which extra fields they want directly editable.
+
+# 2026-08-01 — v160.3.9.26 Phase 2 — Users & Permissions redesign, backend groundwork
+
+## Landed
+- **Step 0** — `approve` added to `Action` Literal + `ACTIONS` (7 → 8 actions). `_all_no_delete()` broadened to also deny approve, so hseq_lead/supervisor DO NOT silently inherit approve on every resource. Admin gets approve=True everywhere via `_all(True)`.
+- **Step 1** — 4 new resources added to `PERMISSIONS_SCHEMA`: `reference_library`, `notifications`, `help`, `sites` (all `email_supported=False`).
+- **Step 2** — 11 system roles seeded into `roles` collection (`is_system=True`). `contractor_rep` + `contractor_rep_submit_only` seeded with `is_active=False, pending_scoping_helper=True` per decision #15.
+- **Step 3** — `users` schema extended (nullable additions): `role_id`, `simpro_employee_id`, `simpro_position`, `simpro_last_synced_at`, `is_archived`, `activation_status`. Legacy `role` string preserved. Existing 34 users back-filled via migration + `_users_audit` entries.
+- **Step 4** — `/api/auth/login` now returns **403** + `X-Auth-Reason: activation-pending` for `activation_status=pending_activation` accounts.
+- **Step 5** — `POST /api/admin/simpro/import-employees` shipped. Live run: 66 employees seen, 48 created, 18 updated. Re-run: 0 created, 66 updated. **Verified idempotent.**
+- **Step 6** — `GET/PUT /api/user-prefs/table-columns/{resource}` (+ `GET /api/user-prefs/table-columns`) shipped. Storage: `user_prefs` collection with unique(user_id, resource) index.
+
+## Files touched
+- `backend/permissions.py` — Action Literal + ACTIONS + PERMISSIONS_SCHEMA + `_all_no_delete()`.
+- `backend/auth.py` — pending_activation guard in `login()`.
+- `backend/server.py` — startup wires seed + migrations + 3 new routers + 2 new indexes.
+- NEW `backend/roles_catalogue.py` — 11 role specs + seeder + `/api/admin/roles` router.
+- NEW `backend/permission_v26_migrations.py` — 3 idempotent migrations logged to `_migrations`.
+- NEW `backend/simpro_import_users.py` — `/api/admin/simpro/import-employees` router.
+- NEW `backend/user_prefs.py` — table-columns endpoints.
+- NEW `backend/tests/test_permission_model_v26.py` — 12 tests, all passing.
+- 3 canonical version files bumped to `paneltec-v160.3.9.26`.
+
+## Verification
+- 147 admin_guard tests still pass (no v25 regression).
+- 12 v26 tests pass.
+- Existing admin login round-trip verified (`stephen@paneltec.com.au`).
+- All 5 new endpoints appear in `/api/openapi.json`.
+- Simpro import curl'd twice — idempotency proven.
+- pending_activation login returns 403 with correct header.
+- `_migrations` collection logs 3 rows.
+
+## Next Action Items
+- **Phase 3** — Migrate inline `_admin(user)` guards on 7 Risk-Assessment reference tabs + sites + help + comms to `require_permission()`. Build the record-level `company_id` scoping helper. Then flip `is_active=True` on the 2 contractor roles.
+- **Phase 4** — Frontend admin UI: RolesAdmin page, RoleMatrixEditor component, UsersManagement Simpro import button, pending_activation UX.
+- **Phase 5** — Retire legacy `users.role` string.

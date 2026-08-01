@@ -207,6 +207,14 @@ async def login(body: LoginIn, request: Request):
     if user.get("status") == "disabled":
         raise HTTPException(status_code=401, detail="Account disabled — contact your administrator",
                             headers={"X-Auth-Reason": "account-disabled"})
+    # v160.3.9.26 — Simpro-created users land as `pending_activation`
+    # until an admin picks a role. Block sign-in with 403 + friendly detail
+    # so the UI can show a helpful message and won't silently 401.
+    if user.get("activation_status") == "pending_activation":
+        await record_login_attempt(email, success=False)
+        raise HTTPException(status_code=403,
+                            detail="Your account is being set up. Please contact your administrator to activate it.",
+                            headers={"X-Auth-Reason": "activation-pending"})
     await record_login_attempt(email, success=True)
     await db.users.update_one({"id": user["id"]}, {"$set": {"last_login_at": now_iso()}})
     # Phase 3.16 — embed `jti`, set absolute_hours from per-role settings,

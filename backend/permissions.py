@@ -15,8 +15,8 @@ from auth import get_current_user
 from db import db
 from models import now_iso
 
-Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use"]
-ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view", "use"]
+Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use", "approve"]
+ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view", "use", "approve"]
 
 # v159.2 — Resources subject to team-scoping: workers who lack `team_view`
 # on these resources only see records where `created_by == user.id`.
@@ -66,6 +66,16 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # `use` action gates the paid LLM endpoints; admin/hseq/supervisor grant,
     # worker/contractor deny by default.
     "ai":              {"label": "AI features",           "email_supported": False, "delete_supported": False},
+    # v160.3.9.26 — New resources introduced to fold Lucidity module
+    # groups into the matrix. Left email_supported=False by default;
+    # audit exports carry the email fan-out. Only admin picks up
+    # defaults via the `admin` comprehension below; all other seeded
+    # roles resolve to `False` for these until a role_id/override
+    # explicitly grants them (Phase 3 work).
+    "reference_library": {"label": "Reference Library",   "email_supported": False, "delete_supported": True},
+    "notifications":   {"label": "Notifications",         "email_supported": False, "delete_supported": True},
+    "help":            {"label": "Help / User Manual",    "email_supported": False, "delete_supported": True},
+    "sites":           {"label": "Sites (QR sign-on)",    "email_supported": False, "delete_supported": True},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -88,7 +98,12 @@ def _grant(**actions: bool) -> Dict[str, bool]:
 # This means an admin can grant delete to a specific HSEQ Lead via per-user
 # overrides, and the matrix matches the actual route behaviour.
 def _all_no_delete(value: bool = True) -> Dict[str, bool]:
-    return {a: (value if a != "delete" else False) for a in ACTIONS}
+    # v160.3.9.26 — Also block `approve` here. When we broadened the
+    # action set to 8, we didn't want hseq_lead/supervisor to silently
+    # inherit approve=True on every resource — approve is a permittowork-
+    # specific authority and lives in the seeded roles collection, not
+    # in legacy ROLE_DEFAULTS.
+    return {a: (value if a not in ("delete", "approve") else False) for a in ACTIONS}
 
 
 ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {

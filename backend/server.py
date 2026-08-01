@@ -280,6 +280,13 @@ api.include_router(preset_router)
 api.include_router(preset_apply_router)
 from bulk_permissions import router as bulk_permissions_router  # noqa: E402
 api.include_router(bulk_permissions_router)
+# v160.3.9.26 — Phase 2: roles catalogue + Simpro user import + user prefs
+from roles_catalogue import router as roles_catalogue_router  # noqa: E402
+api.include_router(roles_catalogue_router)
+from simpro_import_users import router as simpro_import_users_router  # noqa: E402
+api.include_router(simpro_import_users_router)
+from user_prefs import router as user_prefs_router  # noqa: E402
+api.include_router(user_prefs_router)
 # v160.1 — Document categorization backend (Phase 1). UI is Phase 2.
 from document_categories import router as document_categories_router  # noqa: E402
 api.include_router(document_categories_router)
@@ -426,6 +433,30 @@ async def on_startup():
         await plant_maintenance_ensure_indexes()
     except Exception as e:
         log.warning("plant_maintenance index setup failed: %s", e)
+    # v160.3.9.26 — Phase 2: role catalogue + permission-model migrations.
+    try:
+        from roles_catalogue import ensure_roles_indexes, seed_system_roles
+        await ensure_roles_indexes()
+        seed_res = await seed_system_roles()
+        log.info("v26 role seed: %s", seed_res)
+    except Exception as e:
+        log.warning("v26 role seed failed: %s", e)
+    try:
+        from permission_v26_migrations import run_all as run_v26_migrations
+        migs = await run_v26_migrations()
+        log.info("v26 migrations: %s", migs)
+    except Exception as e:
+        log.warning("v26 migrations failed: %s", e)
+    try:
+        from user_prefs import ensure_user_prefs_indexes
+        await ensure_user_prefs_indexes()
+    except Exception as e:
+        log.warning("user_prefs index setup failed: %s", e)
+    try:
+        from simpro_import_users import ensure_simpro_import_audit_indexes
+        await ensure_simpro_import_audit_indexes()
+    except Exception as e:
+        log.warning("simpro_import_audit index setup failed: %s", e)
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires
