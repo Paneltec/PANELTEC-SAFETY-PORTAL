@@ -158,8 +158,11 @@ async def create_manual_site(body: ManualSiteIn,
 async def patch_site(site_id: str, body: SitePatchIn,
                       user: dict = Depends(require_permission("sites", "edit"))):
     _require_admin(user)
+    # v160.3.9.28.1 — mirror the bulk-delete/restore fix: accept
+    # `simpro_site_id` OR the stable `id` (manual sites lack the former).
     site = await db.simpro_sites.find_one(
-        {"simpro_site_id": site_id, "org_id": user["org_id"]},
+        {"$or": [{"simpro_site_id": site_id}, {"id": site_id}],
+         "org_id": user["org_id"]},
         {"_id": 0},
     )
     if not site:
@@ -202,7 +205,7 @@ async def patch_site(site_id: str, body: SitePatchIn,
         return {"ok": True, "no_changes": True}
     update["updated_at"] = now_iso()
     await db.simpro_sites.update_one(
-        {"simpro_site_id": site_id, "org_id": user["org_id"]},
+        {"id": site["id"], "org_id": user["org_id"]},
         {"$set": update},
     )
     return {"ok": True, "updated_fields": sorted(update.keys())}

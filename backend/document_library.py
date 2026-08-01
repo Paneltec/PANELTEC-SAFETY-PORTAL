@@ -164,7 +164,7 @@ class FolderPatch(BaseModel):
 
 
 @router.get("/folders")
-async def list_folders(user: dict = Depends(require_permission("documents", "view"))):
+async def list_folders(user: dict = Depends(get_current_user)):
     """Top-level folders only. Per-worker subfolders (created via the
     Worker Certifications upload flow) are returned via
     `GET /folders/{id}/subfolders`."""
@@ -192,7 +192,7 @@ async def list_folders(user: dict = Depends(require_permission("documents", "vie
 
 
 @router.get("/folders/{folder_id}/subfolders")
-async def list_subfolders(folder_id: str, user: dict = Depends(require_permission("documents", "view"))):
+async def list_subfolders(folder_id: str, user: dict = Depends(get_current_user)):
     """Children of a single folder (used by the Document Library to navigate
     into per-worker certification folders)."""
     parent = await db.doc_folders.find_one(
@@ -327,9 +327,13 @@ def _stub_ai_tags(filename: str) -> List[str]:
 
 
 @router.get("/folders/{folder_id}/files")
-async def list_files(folder_id: str, user: dict = Depends(require_permission("documents", "view"))):
+async def list_files(folder_id: str, user: dict = Depends(get_current_user)):
+    # v160.3.9.28.1 — Regression fix (matches contractors list). Previously
+    # gated by `require_permission("documents","view")` which 403'd for
+    # workers (worker.documents.view=False). Per Phase 3b brief: list
+    # GETs open to authenticated users must narrow via scope_filter, not
+    # reject. Worker sees only their own uploads / assignments.
     await _resolve_folder(folder_id, user["org_id"])
-    # v160.3.9.28 — record-level scoping.
     _scope = scope_filter(user, "documents")
     if _scope.get("__scope_no_match__"):
         return []
@@ -492,7 +496,7 @@ supplier_folders_router = _AR(prefix="/suppliers", tags=["supplier-folders"])
 
 
 @supplier_folders_router.get("/{supplier_id}/folders")
-async def supplier_list_folders(supplier_id: str, user: dict = Depends(require_permission("documents", "view"))):
+async def supplier_list_folders(supplier_id: str, user: dict = Depends(get_current_user)):
     cursor = db.doc_folders.find(
         {"org_id": user["org_id"], "supplier_id": supplier_id, "deleted_at": None},
         {"_id": 0},

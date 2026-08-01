@@ -89,12 +89,14 @@ async def list_contractors(
     trade: Optional[str] = None,
     missing_renewal_link: Optional[bool] = Query(False),
     search: Optional[str] = Query(None, max_length=120),
-    user: dict = Depends(require_permission("contractors", "view")),
+    user: dict = Depends(get_current_user),
 ):
+    # v160.3.9.28.1 — Regression fix. Previously gated by
+    # `require_permission("contractors","view")` which 403'd for any
+    # role whose ROLE_DEFAULTS matrix has `contractors.view=False`
+    # (e.g. `worker`). Per Phase 3b brief: list GETs currently open
+    # to authenticated users must narrow via scope_filter, not reject.
     q = {"org_id": user["org_id"], "deleted_at": None}
-    # v160.3.9.28 — record-level scoping. Returns {} for privileged/general
-    # users (org-wide view preserved) and {"id": user.company_id} for
-    # contractor_rep (dormant until Phase 3d).
     _scope = scope_filter(user, "contractors")
     if _scope.get("__scope_no_match__"):
         return []
@@ -150,7 +152,7 @@ async def get_contractor(cid: str, user: dict = Depends(require_permission("cont
 
 
 @router.post("", status_code=201)
-async def create_contractor(body: ContractorIn, user: dict = Depends(get_current_user)):
+async def create_contractor(body: ContractorIn, user: dict = Depends(require_permission("contractors", "edit"))):
     doc = {
         "id": new_id(), "org_id": user["org_id"], "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
@@ -161,7 +163,7 @@ async def create_contractor(body: ContractorIn, user: dict = Depends(get_current
 
 
 @router.patch("/{cid}")
-async def patch_contractor(cid: str, patch: dict, user: dict = Depends(get_current_user)):
+async def patch_contractor(cid: str, patch: dict, user: dict = Depends(require_permission("contractors", "edit"))):
     # v160.3.9.28 — record-level scoping for contractor_rep.
     _existing = await db.contractors.find_one(
         {"id": cid, "org_id": user["org_id"], "deleted_at": None},
@@ -181,7 +183,7 @@ async def patch_contractor(cid: str, patch: dict, user: dict = Depends(get_curre
 
 
 @router.delete("/{cid}")
-async def delete_contractor(cid: str, user: dict = Depends(get_current_user)):
+async def delete_contractor(cid: str, user: dict = Depends(require_permission("contractors", "delete"))):
     res = await db.contractors.update_one(
         {"id": cid, "org_id": user["org_id"], "deleted_at": None},
         {"$set": {"deleted_at": now_iso()}},
@@ -199,7 +201,7 @@ async def upload_document(
     type: DocType = Form(...),
     expiry_date: Optional[str] = Form(None),
     file: UploadFile = File(...),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("contractors", "edit")),
 ):
     contractor = await db.contractors.find_one({"id": cid, "org_id": user["org_id"], "deleted_at": None})
     if not contractor:
@@ -230,7 +232,7 @@ async def upload_document(
 
 
 @router.delete("/{cid}/documents/{doc_id}")
-async def delete_document(cid: str, doc_id: str, user: dict = Depends(get_current_user)):
+async def delete_document(cid: str, doc_id: str, user: dict = Depends(require_permission("contractors", "edit"))):
     res = await db.contractors.update_one(
         {"id": cid, "org_id": user["org_id"], "deleted_at": None},
         {"$pull": {"documents": {"id": doc_id}}, "$set": {"updated_at": now_iso()}},
@@ -247,7 +249,7 @@ class ImportFromSimproIn(BaseModel):
 
 
 @router.post("/import-from-simpro")
-async def import_from_simpro(body: ImportFromSimproIn, user: dict = Depends(get_current_user)):
+async def import_from_simpro(body: ImportFromSimproIn, user: dict = Depends(require_permission("contractors", "edit"))):
     """Promote one or more cached Simpro vendors into the contractors table.
     Idempotent on `simpro_vendor_id` — a re-run updates the existing row
     rather than creating a duplicate. admin/manager only."""

@@ -50,6 +50,10 @@ SKIP_PATHS: list[re.Pattern] = [
     re.compile(r"^/api/email(/|$)"),        # email module enforces itself
     re.compile(r"^/api/ai(/|$)"),
     re.compile(r"^/api/document-library(/|$)"),  # gates writes inside the router
+    # v160.3.9.28.1 — contractors router self-enforces writes via explicit
+    # `require_permission("contractors", ...)` deps on POST/PATCH/DELETE;
+    # list GET narrows via scope_filter rather than 403'ing workers.
+    re.compile(r"^/api/contractors(/|$)"),
     # Suppliers (Simpro vendor view): readable for everyone, writes gated by
     # the route handlers themselves (`_require_write` and `require_roles`).
     re.compile(r"^/api/suppliers(/|$)"),
