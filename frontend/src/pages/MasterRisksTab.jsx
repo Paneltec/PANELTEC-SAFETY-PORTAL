@@ -11,6 +11,8 @@
 // (v160.3.9.6) — a synced sticky top scrollbar so admins don't have to
 // scroll to the bottom of the page to find horizontal-scroll control.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+// v160.3.9.24 — CRUD affordances + admin-only tightening.
+import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 
@@ -300,7 +302,7 @@ export default function MasterRisksTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('master_risks', { key: 'risk_id', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
 
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  const isAdmin = user && user.role === 'admin';
 
   const load = () => {
     setLoading(true);
@@ -309,6 +311,9 @@ export default function MasterRisksTab({ user }) {
       .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
+
+  // v160.3.9.24 — CRUD affordances (Add / Edit / Delete) via shared hook.
+  const crud = useCrudModal({ tabKey: 'master_risks', isAdmin, onRefresh: load });
 
   const classifications = useMemo(() => {
     const s = new Set();
@@ -402,6 +407,7 @@ export default function MasterRisksTab({ user }) {
           {filtered.length} of {items.length} risks
         </div>
 
+        {isAdmin && crud.AddButton}
         {isAdmin && (
           <button
             onClick={() => setImportOpen(true)}
@@ -460,7 +466,7 @@ export default function MasterRisksTab({ user }) {
               {filtered.map((row) => {
                 const isOpen = expanded === row.id;
                 return (
-                  <li key={row.id} className="bg-white" data-testid={`master-risks-row-${row.risk_id}`}>
+                  <li key={row.id} className="bg-white relative" data-testid={`master-risks-row-${row.risk_id}`}>
                     <button
                       className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 transition gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                       style={{ gridTemplateColumns: GRID_TEMPLATE }}
@@ -490,6 +496,11 @@ export default function MasterRisksTab({ user }) {
                       })}
                       <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
                     </button>
+                    {isAdmin && (
+                      <div className="absolute top-1 right-8 z-10 opacity-0 hover:opacity-100 focus-within:opacity-100 [li:hover_&]:opacity-100 transition-opacity bg-white/95 rounded-md shadow-sm border border-slate-200">
+                        {crud.RowActions(row)}
+                      </div>
+                    )}
                     {isOpen && (
                       <div className="px-4 pb-4"><DetailPanel row={row} /></div>
                     )}
@@ -502,6 +513,7 @@ export default function MasterRisksTab({ user }) {
       )}
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
+      {crud.Modals}
     </div>
   );
 }
