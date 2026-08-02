@@ -104,32 +104,38 @@ const STATUSES = ['active', 'invited', 'disabled'];
 // admin can always override; the pre-selection just saves clicks.
 // Matching is lowercase, substring-based; longest / most specific
 // keywords are checked first so "hseq manager" wins over "manager".
+//
+// IMPORTANT: every role_id below MUST exist in the seeded db.roles
+// catalogue — LEGACY_ROLES surfaces a few historical role_ids (worker,
+// supervisor, hseq_lead, auditor) which are NOT in the DB and would
+// cause POST /users/bulk-assign-role to 404. Mapping avoids those.
 const SIMPRO_POSITION_TO_ROLE_HINT = [
   // Order matters — first match wins.
   { match: 'hseq manager', role_id: 'hseq_manager' },
   { match: 'safety manager', role_id: 'hseq_manager' },
-  { match: 'safety officer', role_id: 'hseq_manager' },
-  { match: 'hseq lead', role_id: 'hseq_lead' },
+  { match: 'safety officer', role_id: 'hseq_manager_readonly' },
+  { match: 'hseq lead', role_id: 'hseq_manager_readonly' },
   { match: 'responsible manager', role_id: 'responsible_manager' },
-  { match: 'project manager', role_id: 'supervisor' },
-  { match: 'site manager', role_id: 'supervisor' },
-  { match: 'foreman', role_id: 'supervisor' },
-  { match: 'leading hand', role_id: 'supervisor' },
-  { match: 'supervisor', role_id: 'supervisor' },
+  { match: 'project manager', role_id: 'general_user' },
+  { match: 'site manager', role_id: 'general_user' },
+  { match: 'foreman', role_id: 'general_user' },
+  { match: 'leading hand', role_id: 'general_user' },
+  { match: 'supervisor', role_id: 'general_user' },
   { match: 'mechanic', role_id: 'mechanic' },
   { match: 'fitter', role_id: 'mechanic' },
-  { match: 'auditor', role_id: 'auditor' },
+  { match: 'auditor', role_id: 'hseq_manager_readonly' },
   { match: 'training', role_id: 'training_inductions_only' },
   { match: 'induction', role_id: 'training_inductions_only' },
   { match: 'traffic controller', role_id: 'general_user' },
-  { match: 'construction worker', role_id: 'worker' },
-  { match: 'labourer', role_id: 'worker' },
-  { match: 'plumber', role_id: 'worker' },
-  { match: 'plant operator', role_id: 'worker' },
-  { match: 'operator', role_id: 'worker' },
-  { match: 'carpenter', role_id: 'worker' },
-  { match: 'electrician', role_id: 'worker' },
-  { match: 'apprentice', role_id: 'worker' },
+  { match: 'construction worker', role_id: 'general_user' },
+  { match: 'labourer', role_id: 'general_user' },
+  { match: 'plumber', role_id: 'general_user' },
+  { match: 'plant operator', role_id: 'general_user' },
+  { match: 'operator', role_id: 'general_user' },
+  { match: 'carpenter', role_id: 'general_user' },
+  { match: 'electrician', role_id: 'general_user' },
+  { match: 'apprentice', role_id: 'general_user' },
+  { match: 'cleaner', role_id: 'general_user' },
   { match: 'admin', role_id: 'general_user' },
   { match: 'office', role_id: 'general_user' },
 ];
@@ -849,7 +855,12 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
   const [setAllValue, setSetAllValue] = useState('');       // "Set all to…" picker value
 
   const activeRoles = useMemo(
-    () => systemRoles.filter((r) => r.is_active !== false),
+    // v160.3.9.32-4c.3 — Filter to db-seeded, active roles only. LEGACY_ROLES
+    // fallback surfaces legacy role_ids (worker/supervisor/hseq_lead/auditor)
+    // that are NOT in db.roles — offering them here would cause POST 404s.
+    // Keep the legacy tag only if the role_id also appears in the seeded set
+    // (i.e. `source === 'seed'`).
+    () => systemRoles.filter((r) => r.is_active !== false && r.source === 'seed'),
     [systemRoles]
   );
   // Bulk-safe roles = everything except admin.
@@ -879,28 +890,46 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
       return;
     }
     setBusy(true);
-    let totalUpdated = 0, totalSkipped = 0, totalErrors = 0;
+    // v160.3.9.32-4c.3 — Promise.allSettled so a mid-batch failure (e.g.
+    // stale role_id → 404) doesn't roll back the whole toast/close/refresh
+    // flow. Users see per-role_id failure detail; succeeded rows are
+    // reflected immediately via onDone() + close.
     try {
-      for (const [roleId, rows] of byRole.entries()) {
-        const allHinted = rows.every((r) => r.hint === roleId);
-        const { data } = await api.post('/users/bulk-assign-role', {
-          user_ids: rows.map((r) => r.id),
-          role_id: roleId,
-          admin_confirmed: true,
-          hint_matched: allHinted,
-        });
-        totalUpdated += data.updated || 0;
-        totalSkipped += data.skipped || 0;
-        totalErrors += data.errors || 0;
+      const results = await Promise.allSettled(
+        Array.from(byRole.entries()).map(async ([roleId, rows]) => {
+          const allHinted = rows.every((r) => r.hint === roleId);
+          const { data } = await api.post('/users/bulk-assign-role', {
+            user_ids: rows.map((r) => r.id),
+            role_id: roleId,
+            admin_confirmed: true,
+            hint_matched: allHinted,
+          });
+          return { roleId, data };
+        })
+      );
+      let totalUpdated = 0, totalSkipped = 0, totalErrors = 0;
+      const failedRoles = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled') {
+          totalUpdated += r.value.data.updated || 0;
+          totalSkipped += r.value.data.skipped || 0;
+          totalErrors += r.value.data.errors || 0;
+        } else {
+          // Extract the role_id we tried to assign so the admin can retry.
+          const reason = r.reason;
+          failedRoles.push(apiError(reason));
+        }
       }
-      const parts = [`Assigned roles to ${totalUpdated} user${totalUpdated === 1 ? '' : 's'}`];
+      const parts = [];
+      if (totalUpdated) parts.push(`Assigned to ${totalUpdated} user${totalUpdated === 1 ? '' : 's'}`);
       if (totalSkipped) parts.push(`${totalSkipped} skipped (already had roles)`);
-      if (totalErrors) parts.push(`${totalErrors} errors`);
-      toast.success(parts.join(' · '));
+      if (totalErrors) parts.push(`${totalErrors} row errors`);
+      if (failedRoles.length) {
+        toast.error(`Some roles failed — ${failedRoles.slice(0, 2).join('; ')}${failedRoles.length > 2 ? '…' : ''}`);
+      }
+      if (parts.length) toast.success(parts.join(' · '));
       onDone?.();
-      onClose?.();
-    } catch (e) {
-      toast.error(apiError(e));
+      if (failedRoles.length === 0) onClose?.();
     } finally {
       setBusy(false);
     }
