@@ -170,7 +170,24 @@ export default function SimproImportPickerModal({ onClose, onDone }) {
             </thead>
             <tbody>
               {loading && (<tr><td colSpan={5} className="text-center py-8 text-slate-500">Loading Simpro employees…</td></tr>)}
-              {!loading && filtered.length === 0 && (<tr><td colSpan={5} className="text-center py-8 text-slate-500">No matches.</td></tr>)}
+              {!loading && filtered.length === 0 && !includeLinked && rows.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-10">
+                  <div className="text-2xl mb-1">✓</div>
+                  <div className="text-sm font-semibold text-slate-800">All Simpro employees are already in Paneltec.</div>
+                  <div className="text-xs text-slate-500 mt-1 max-w-lg mx-auto">
+                    To manage roles or permissions on existing users, close this and click a user in the list.
+                    To bring in <b>new</b> employees, add them in Simpro first, then click Sync from Simpro.
+                  </div>
+                  <button type="button" onClick={() => setIncludeLinked(true)}
+                    className="mt-3 text-xs text-blue-700 hover:underline"
+                    data-testid="simpro-picker-show-imported">
+                    Show already-imported employees anyway →
+                  </button>
+                </td></tr>
+              )}
+              {!loading && filtered.length === 0 && (includeLinked || rows.length > 0) && (
+                <tr><td colSpan={5} className="text-center py-8 text-slate-500">No matches.</td></tr>
+              )}
               {!loading && filtered.map((r) => {
                 const isLinked = r.already_in_paneltec;
                 const isSelected = selected.has(r.simpro_employee_id);

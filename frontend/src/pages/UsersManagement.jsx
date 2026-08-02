@@ -479,18 +479,34 @@ export default function UsersManagement() {
           `/app/settings/help/simpro-import` because the full inline guide
           broke this page's layout. All that remains here is a subtle text
           link pointing admins to the dedicated help page. */}
-      <div
-        className="mt-3 mb-2 text-xs text-slate-500"
-        data-testid="simpro-import-guide-link"
-      >
-        Need help importing Simpro attachments?{' '}
-        <Link
-          to="/app/settings/help/simpro-import"
-          className="text-blue-600 hover:underline"
-        >
-          See the Simpro import guide →
-        </Link>
-      </div>
+      {/* v160.3.9.32-4c.2 — Simpro attachment help note moved to /workers
+          (where the ZIP button lives). This page no longer has any ZIP
+          affordance so the note doesn't belong here. */}
+
+      {/* v160.3.9.32-4c.2 — Pending-user hint banner. Surfaces when there
+          are pending_activation users OR users without role_id. Makes the
+          "why are picker rows greyed out?" question self-answering — the
+          64 Simpro imports are already in this list waiting for a role. */}
+      {(() => {
+        const pending = users.filter((u) => u.activation_status === 'pending_activation' && !u.is_test_fixture);
+        if (pending.length === 0) return null;
+        return (
+          <div className="mt-3 mb-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 flex items-start gap-3" data-testid="pending-users-hint">
+            <div className="text-blue-700 mt-0.5">💡</div>
+            <div className="flex-1 text-sm text-slate-800">
+              <b>{pending.length}</b> imported users are waiting for role assignment. Click a user row to assign a role in the drawer.
+            </div>
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...f, status: 'invited' }))}
+              className="text-xs font-semibold text-blue-700 hover:underline whitespace-nowrap"
+              data-testid="show-pending-only"
+            >
+              Show pending users only →
+            </button>
+          </div>
+        );
+      })()}
 
       {/* v160.3.6u — Flipped to v6p hero hierarchy (LIST is the primary big
           blue capsule; Dashboard collapses to a tiny secondary text-link).
@@ -506,10 +522,10 @@ export default function UsersManagement() {
           <HowThisWorks schematicSlug="workers_access" />
           <ModuleDashboard
             module="workers" title="Users & Workers"
-            tagline="Roles, activity and access — with expiring invites and locked accounts surfaced first."
+            tagline="Roles, activity and access — Simpro-linked users and pending activations surfaced first."
             moduleColour="violet"
             quickActions={can('users', 'edit') ? [
-              { label: 'Invite user', route: '/app/settings/users' },
+              { label: 'Import from Simpro', route: '/app/settings/users' },
             ] : []}
           />
         </TabsContent>

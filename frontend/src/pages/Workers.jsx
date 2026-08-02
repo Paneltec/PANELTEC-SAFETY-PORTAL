@@ -3,7 +3,7 @@
 // Phase 2: Personal section (birth date + address), Availability scheduler,
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -1591,6 +1591,16 @@ export default function Workers() {
           </button>
         ) : null}
       />
+      {/* v160.3.9.32-4c.2 — Simpro attachment help note, moved from
+          UsersManagement.jsx (that page no longer has a ZIP affordance). */}
+      {canEdit && (
+        <div className="mt-2 text-xs text-slate-500" data-testid="simpro-import-guide-link">
+          Need help importing Simpro attachments?{' '}
+          <Link to="/app/settings/help/simpro-import" className="text-blue-600 hover:underline">
+            See the Simpro import guide →
+          </Link>
+        </div>
+      )}
 
       {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.
           v160.3.6z — Reverted to EQUAL-WEIGHT segmented pill (v6h look).
