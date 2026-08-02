@@ -11,6 +11,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import require_roles, get_current_user
+from permissions import require_permission
 from db import db
 from models import now_iso, new_id
 
@@ -113,7 +114,7 @@ async def _fetch_companies_index(c: httpx.AsyncClient, base: str, token: str) ->
 
 
 @router.post("/test-connection")
-async def simpro_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_test(user: dict = Depends(require_permission("integrations", "edit"))):
     cfg = await _cfg(user["org_id"])
     _require(cfg, "api_base_url", "api_token")
     ids = _company_ids(cfg)
@@ -522,7 +523,7 @@ async def _sync_jobs_for_company(c: httpx.AsyncClient, base: str, token: str, ci
 
 
 @router.post("/sync-jobs")
-async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_sync_jobs(user: dict = Depends(require_permission("integrations", "edit"))):
     cfg = await _cfg(user["org_id"])
     _require(cfg, "api_base_url", "api_token")
     ids = _company_ids(cfg)
@@ -566,7 +567,7 @@ async def simpro_sync_jobs(user: dict = Depends(require_roles("admin", "hseq_lea
 # ---------- Connect: test + first sync ----------
 
 @router.post("/connect")
-async def simpro_connect(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_connect(user: dict = Depends(require_permission("integrations", "edit"))):
     await simpro_test(user=user)  # raises if all companies fail
     try:
         result = await simpro_sync_jobs(user=user)
@@ -689,7 +690,7 @@ async def simpro_suppliers(user: dict = Depends(get_current_user)):
 
 
 @router.post("/suppliers/sync")
-async def simpro_suppliers_sync(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_suppliers_sync(user: dict = Depends(require_permission("integrations", "edit"))):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
@@ -788,7 +789,7 @@ def _normalise_site(raw: dict, customer_id: str, company_id: str) -> dict:
 
 @router.post("/sync-sites")
 async def simpro_sync_sites(limit: int = Query(50, ge=1, le=500),
-                            user: dict = Depends(require_roles("admin", "hseq_lead"))):
+                            user: dict = Depends(require_permission("integrations", "edit"))):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
@@ -878,7 +879,7 @@ async def simpro_last_synced(user: dict = Depends(get_current_user)):
 
 
 @router.post("/sync-customers")
-async def simpro_sync_customers(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def simpro_sync_customers(user: dict = Depends(require_permission("integrations", "edit"))):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
@@ -1132,7 +1133,7 @@ async def sync_simpro_suppliers(org_id: str) -> dict:
 
 
 @router.post("/sync-suppliers")
-async def simpro_sync_suppliers_now(user: dict = Depends(require_roles("admin"))):
+async def simpro_sync_suppliers_now(user: dict = Depends(require_permission("integrations", "edit"))):
     """Admin-only on-demand sync. Returns {imported, updated, skipped, errors}."""
     return await sync_simpro_suppliers(user["org_id"])
 

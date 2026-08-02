@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth import require_roles, get_current_user
+from permissions import require_permission
 from db import db
 from models import now_iso
 
@@ -37,7 +38,7 @@ def _auth_headers(cfg: dict) -> dict:
 
 
 @router.post("/test-connection")
-async def tm_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def tm_test(user: dict = Depends(require_permission("integrations", "edit"))):
     cfg = await _cfg(user["org_id"])
     if not cfg.get("username") or not cfg.get("api_key"):
         raise HTTPException(400, "username and api_key required — save them first.")
@@ -76,7 +77,7 @@ class SmsSendIn(BaseModel):
 
 
 @router.post("/send-sms")
-async def tm_send(body: SmsSendIn, user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def tm_send(body: SmsSendIn, user: dict = Depends(require_permission("integrations", "edit"))):
     # Phase 4.7.3 — Comms Safe Mode. Block at the boundary BEFORE the
     # TextMagic price check (which would still hit their HTTP API).
     from comms_safe_mode import is_blocked, record_blocked

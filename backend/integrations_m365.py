@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr
 
 from auth import require_roles
+from permissions import require_permission
 from db import db
 from models import now_iso
 
@@ -88,7 +89,7 @@ async def get_app_only_access_token(org_id: str) -> str:
 
 
 @router.post("/test-connection")
-async def m365_test(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def m365_test(user: dict = Depends(require_permission("integrations", "edit"))):
     """Self-test: fetch app-only token and send a self-test email via Graph."""
     cfg = await _cfg(user["org_id"])
     sender = cfg.get("sender_email")
@@ -235,7 +236,7 @@ async def graph_send_mail(org_id: str, *, to: List[str], cc: List[str], subject:
 
 
 @router.delete("")
-async def m365_disconnect(user: dict = Depends(require_roles("admin", "hseq_lead"))):
+async def m365_disconnect(user: dict = Depends(require_permission("integrations", "edit"))):
     """Wipe stored M365 credentials and status."""
     _TOKEN_CACHE.pop(user["org_id"], None)
     await db.integration_configs.update_one(

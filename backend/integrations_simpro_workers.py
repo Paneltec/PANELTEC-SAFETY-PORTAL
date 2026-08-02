@@ -32,6 +32,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from auth import require_roles
+from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
@@ -218,7 +219,7 @@ def _match_worker(detail: dict, by_simpro: dict, by_email: dict) -> tuple[Option
 @router.post("/refresh")
 async def refresh_workers(
     dry_run: int = Query(0, description="1 = plan only, no writes; 0 = execute writes"),
-    user: dict = Depends(require_roles("admin", "hseq_lead")),
+    user: dict = Depends(require_permission("integrations", "edit")),
 ):
     org_id = user["org_id"]
     cfg_doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "simpro", "status": "connected"})
@@ -473,7 +474,7 @@ async def snapshot_detail(
 @router.post("/rollback/{snapshot_id}")
 async def rollback_snapshot(
     snapshot_id: str,
-    user: dict = Depends(require_roles("admin")),
+    user: dict = Depends(require_permission("integrations", "delete")),
 ):
     s = await db.worker_import_snapshots.find_one({"id": snapshot_id, "org_id": user["org_id"]})
     if not s:

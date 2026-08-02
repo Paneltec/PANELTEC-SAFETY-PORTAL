@@ -120,8 +120,15 @@ def test_hseq_lead_role_defaults_stability():
     # inspections + incidents same story.
     for r in ("inspections", "incidents", "hazards", "risk_assessments"):
         assert ROLE_DEFAULTS["hseq_lead"][r]["approve"] is False, r
-    # 4 new resources absent:
-    for r in ("reference_library", "notifications", "help", "sites"):
+    # v160.3.9.29-2b (Phase 3c decision #5) — hseq_lead was WIDENED to
+    # include reference_library and sites so the mechanical FE gate
+    # migration doesn't narrow them for tab-page pages. `notifications`
+    # and `help` remain admin-only for now.
+    assert ROLE_DEFAULTS["hseq_lead"]["reference_library"]["edit"] is True
+    assert ROLE_DEFAULTS["hseq_lead"]["reference_library"]["delete"] is False
+    assert ROLE_DEFAULTS["hseq_lead"]["sites"]["edit"] is True
+    assert ROLE_DEFAULTS["hseq_lead"]["sites"]["delete"] is False
+    for r in ("notifications", "help"):
         assert r not in ROLE_DEFAULTS["hseq_lead"], f"hseq_lead leaked {r}"
 
 

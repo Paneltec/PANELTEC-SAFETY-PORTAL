@@ -53,9 +53,19 @@ _RA_MODULES = [
 
 @pytest.mark.parametrize("prefix,body", _RA_MODULES, ids=[m[0] for m in _RA_MODULES])
 def test_v27_ra_router_hseq_lead_gets_reference_library_token_denial(prefix, body, tokens):
-    """POST as hseq_lead → 403 with `Permission denied: reference_library.edit`."""
+    """POST as hseq_lead → 403.
+
+    v160.3.9.29-2b Phase 3c decision #5 WIDENED the hseq_lead SEED to
+    grant `reference_library.edit=True`, but the reference_library
+    BACKEND ROUTERS (companies.py, cs_incident.py, completed_training.py,
+    list_roles.py, list_forms.py, master_risks.py, incident_root_causes.py)
+    still use the legacy `_admin(user)` / `_require_admin(user)` guard.
+    Until those routers are migrated in a Blocker-E follow-up, hseq_lead
+    is denied at the router level with `admin-required`. This test
+    still passes because the BE is still admin-only; once Blocker-E
+    lands, invert this assertion (see the widening variant at HEAD).
+    """
     payload = {**body}
-    # Give every payload a unique tag so we never accidentally hit an existing row.
     tag = f"v27-{uuid.uuid4().hex[:8]}"
     for k, v in list(payload.items()):
         if isinstance(v, str) and v == "probe":
@@ -64,12 +74,7 @@ def test_v27_ra_router_hseq_lead_gets_reference_library_token_denial(prefix, bod
                       json=payload, timeout=15)
     assert r.status_code == 403, (
         f"{prefix} POST as hseq_lead → HTTP {r.status_code} "
-        f"(expected 403). Body: {r.text[:200]}"
-    )
-    detail = (r.json() or {}).get("detail", "")
-    assert "reference_library" in detail, (
-        f"{prefix} POST detail={detail!r} "
-        f"(expected 'Permission denied: reference_library.edit')"
+        f"(expected 403 — legacy BE guard). Body: {r.text[:200]}"
     )
 
 
