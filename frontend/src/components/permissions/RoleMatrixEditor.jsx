@@ -25,6 +25,7 @@ import {
   RESOURCE_LABELS,
 } from '../../lib/permissions';
 import { RESOURCE_GROUPS, PRIMARY_ACTIONS, ADVANCED_ACTIONS, bucketResources } from './groups';
+import RoleFormsPanel from './RoleFormsPanel';
 
 // Some labels are missing from the FE mirror in `permissions.js` (older
 // file). Backfill the ones the backend added post-v3.18 so rows read
@@ -65,6 +66,10 @@ export default function RoleMatrixEditor({ role, readOnly = false, onSave, onClo
   const [saving, setSaving] = useState(false);
   const [assignees, setAssignees] = useState(null);
   const [openGroups, setOpenGroups] = useState({});
+  // v160.3.9.31-4a — Tabs inside the drawer: 'matrix' (permissions grid)
+  // and 'forms' (role_forms assignments). System roles still render both
+  // tabs but the forms tab is read-only.
+  const [activeTab, setActiveTab] = useState('matrix');
 
   // v160.3.9.31-4a — refresh Impact Preview count on open.
   useEffect(() => {
@@ -180,6 +185,28 @@ export default function RoleMatrixEditor({ role, readOnly = false, onSave, onClo
           </button>
         </div>
 
+        {/* Tabs — v160.3.9.31-4a */}
+        <div className="px-6 border-b border-slate-200 bg-white flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setActiveTab('matrix')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${activeTab === 'matrix' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            data-testid="role-matrix-tab-matrix"
+          >
+            Permissions matrix
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('forms')}
+            className={`px-4 py-3 text-sm font-medium border-b-2 -mb-px ${activeTab === 'forms' ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-500 hover:text-slate-800'}`}
+            data-testid="role-matrix-tab-forms"
+          >
+            Assigned Forms
+          </button>
+        </div>
+
+        {activeTab === 'matrix' && (
+        <>
         {/* Toolbar */}
         <div className="px-6 py-3 border-b border-slate-200 flex items-center gap-3 bg-slate-50">
           <label className="inline-flex items-center gap-2 text-sm text-slate-700 select-none cursor-pointer">
@@ -272,8 +299,16 @@ export default function RoleMatrixEditor({ role, readOnly = false, onSave, onClo
             </tbody>
           </table>
         </div>
+        </>
+        )}
 
-        {/* Footer */}
+        {activeTab === 'forms' && (
+          <RoleFormsPanel role={role} readOnly={effectiveReadOnly} />
+        )}
+
+        {/* Footer — matrix tab has Save/Cancel; forms tab manages its own
+            actions inline (per-row toggle + inline Assign/Remove) so we
+            only show a plain Close on the forms tab. */}
         <div className="px-6 py-4 border-t border-slate-200 flex items-center justify-end gap-2 bg-white">
           <button
             type="button"
@@ -281,9 +316,9 @@ export default function RoleMatrixEditor({ role, readOnly = false, onSave, onClo
             className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
             data-testid="role-matrix-cancel"
           >
-            {effectiveReadOnly ? 'Close' : 'Cancel'}
+            {effectiveReadOnly || activeTab !== 'matrix' ? 'Close' : 'Cancel'}
           </button>
-          {!effectiveReadOnly && (
+          {activeTab === 'matrix' && !effectiveReadOnly && (
             <button
               type="button"
               onClick={handleSave}

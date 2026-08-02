@@ -34,6 +34,43 @@ newer system roles (contractor_rep, contractor_rep_submit_only,
 hseq_manager, etc. — keep admin + hseq_lead + supervisor as legacy
 role-string catches).
 
+## v160.3.9.31-4a addendum — Phase 6 backlog #2
+
+**Unify the three coexisting role↔form models into one canonical shape.**
+
+Phase 4a shipped a third role↔form data model (`role_forms` collection)
+without retiring the two legacy ones. All three now coexist:
+
+| Model | Where it lives | Written by | Read by |
+|-------|----------------|------------|---------|
+| A | `orgs.role_form_allowlist.<legacy_role>` (subdoc on orgs) | `PermissionPresetsAdmin` via `PUT /api/org/role-presets/{role}/forms` | mobile forms library (worker feed) |
+| B | `form_templates.applies_to.roles[]` (per-template array) | `FormAssignmentsAdmin` via `PUT /api/form-templates/{id}/applies-to` | mobile forms library (dispatch + assignment notifier) |
+| C | `role_forms` collection (org_id + role_id + form_id) | `RolesAdmin` drawer via `/api/admin/roles/{role_id}/forms` | nothing yet (catalogue only; `is_required` unenforced) |
+
+Model A keys on hardcoded legacy role strings (`worker`, `supervisor`,
+`foreman`, `contractor`, `hseq`) so it cannot represent modern `role_id`s
+(`hseq_manager`, `contractor_rep_submit_only`, `custom_*`). Model B stores
+free-form lowercase role strings on each template. Model C stores real
+`role_id`s tied to the roles catalogue.
+
+**Proposed unification (Phase 6):**
+1. Migrate Model A entries → Model C by aliasing legacy keys onto the
+   catalogue (`worker→general_user`, `hseq→hseq_manager`, etc.).
+2. Migrate Model B entries → Model C by inverting the join, aliasing
+   the free-form role strings the same way.
+3. Deprecate the two legacy endpoints; keep them as read-only shims
+   returning the projection over Model C for one release cycle.
+4. Wire the mobile forms library to Model C. Honour
+   `role_forms.is_required` as the enforcement dimension.
+5. Rewrite `RoleFormsSection.jsx` (currently mounted in
+   `PermissionPresetsAdmin`) to read from Model C keyed on `role_id`,
+   drop the hardcoded 5-role dropdown.
+
+**Owner:** whoever picks up Phase 6.
+**Estimated scope:** ~150 LOC (migration script + shim endpoints +
+mobile library rewrite + `RoleFormsSection` refactor). Data migration
+is idempotent and safe to re-run.
+
 ---
 
 ## Original phase plan (v160.3.9.26 discovery)

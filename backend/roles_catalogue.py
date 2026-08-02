@@ -348,6 +348,18 @@ async def ensure_roles_indexes() -> None:
         await db.roles.create_index("role_id", unique=True)
     except Exception:
         pass
+    # v160.3.9.31-4a — role_forms compound unique index.
+    try:
+        await db.role_forms.create_index(
+            [("org_id", 1), ("role_id", 1), ("form_id", 1)],
+            unique=True, name="role_forms_org_role_form_uniq",
+        )
+    except Exception:
+        pass
+    try:
+        await db.role_audit.create_index("role_id")
+    except Exception:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────
@@ -621,3 +633,225 @@ async def get_role_assignees_count(
     the RoleMatrixEditor's Impact Preview panel."""
     count = await db.users.count_documents({"role_id": role_id})
     return {"role_id": role_id, "count": count}
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.31-4a — Phase 4a addition: role_forms CRUD.
+#
+# Third role↔form model (see /app/memory/permissions_redesign/07_phase_plan.md
+# Phase 6 backlog entry for the eventual unification). Purely a
+# catalogue in 4a — no runtime enforcement wired yet. The mobile
+# forms library still reads from the legacy `orgs.role_form_allowlist`
+# and per-template `form_templates.applies_to.roles[]` paths.
+#
+# TODO Phase 5/6: mobile forms library should honour
+# role_forms.is_required when computing a worker's required-forms
+# feed. Right now `is_required` is metadata-only — nothing checks it.
+#
+# Endpoints all gated by `require_permission("users", "edit")`.
+# System roles are read-only: GETs work, mutations 400. Custom
+# roles have full CRUD. Every mutation writes to `role_audit`.
+# ─────────────────────────────────────────────────────────────
+
+
+async def _load_role_or_404(role_id: str) -> dict:
+    doc = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "Role not found")
+    return doc
+
+
+def _system_guard(role_doc: dict, action_label: str) -> None:
+    if role_doc.get("is_system"):
+        raise HTTPException(400, f"cannot {action_label} on system role")
+
+
+class RoleFormAssign(BaseModel):
+    form_id: str
+    is_required: bool = False
+
+
+class RoleFormPatch(BaseModel):
+    is_required: bool
+
+
+@router.get("/{role_id}/forms")
+async def list_role_forms(
+    role_id: str,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """List forms assigned to a role (joins form_templates for name +
+    category). Works on both system and custom roles."""
+    await _load_role_or_404(role_id)
+    rows = await db.role_forms.find(
+        {"org_id": user["org_id"], "role_id": role_id}, {"_id": 0},
+    ).sort("created_at", 1).to_list(500)
+    form_ids = [r["form_id"] for r in rows]
+    templates: Dict[str, dict] = {}
+    if form_ids:
+        async for t in db.form_templates.find(
+            {"org_id": user["org_id"], "id": {"$in": form_ids}, "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1, "category": 1},
+        ):
+            templates[t["id"]] = t
+    assigned = []
+    for r in rows:
+        t = templates.get(r["form_id"])
+        assigned.append({
+            "form_id": r["form_id"],
+            "name": (t or {}).get("name") or "(deleted template)",
+            "category": (t or {}).get("category") or "general",
+            "is_required": bool(r.get("is_required")),
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at"),
+        })
+    return {"count": len(assigned), "assigned": assigned}
+
+
+@router.get("/{role_id}/forms/available")
+async def list_available_forms_for_role(
+    role_id: str,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Picker helper — list form_templates in this org that are NOT
+    yet assigned to this role. Used by the '+ Assign a form' dialog."""
+    await _load_role_or_404(role_id)
+    already = set()
+    async for r in db.role_forms.find(
+        {"org_id": user["org_id"], "role_id": role_id}, {"_id": 0, "form_id": 1},
+    ):
+        already.add(r["form_id"])
+    rows = []
+    async for t in db.form_templates.find(
+        {"org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "category": 1},
+    ).sort("name", 1):
+        if t["id"] in already:
+            continue
+        rows.append({
+            "form_id": t["id"],
+            "name": t.get("name") or "Untitled",
+            "category": t.get("category") or "general",
+        })
+    return {"count": len(rows), "available": rows}
+
+
+@router.post("/{role_id}/forms", status_code=201)
+async def assign_form_to_role(
+    role_id: str,
+    payload: RoleFormAssign,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    role_doc = await _load_role_or_404(role_id)
+    _system_guard(role_doc, "assign forms")
+    # Validate the form exists in this org.
+    tpl = await db.form_templates.find_one(
+        {"id": payload.form_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "name": 1, "category": 1},
+    )
+    if not tpl:
+        raise HTTPException(404, f"form_id '{payload.form_id}' not found")
+    # 409 on duplicate.
+    dup = await db.role_forms.find_one({
+        "org_id": user["org_id"], "role_id": role_id, "form_id": payload.form_id,
+    })
+    if dup:
+        raise HTTPException(409, "form already assigned to this role")
+    now = now_iso()
+    doc = {
+        "id": new_id(),
+        "org_id": user["org_id"],
+        "role_id": role_id,
+        "form_id": payload.form_id,
+        "is_required": bool(payload.is_required),
+        "created_by": user["id"],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.role_forms.insert_one(doc)
+    doc.pop("_id", None)
+    await _write_audit(
+        role_id=role_id,
+        role_name=role_doc.get("name", role_id),
+        action="form_assigned",
+        before=None,
+        after=doc,
+        diff={"form_id": payload.form_id, "form_name": tpl.get("name"),
+              "is_required": bool(payload.is_required)},
+        actor=user,
+    )
+    return {
+        "form_id": doc["form_id"],
+        "name": tpl.get("name") or "Untitled",
+        "category": tpl.get("category") or "general",
+        "is_required": doc["is_required"],
+        "created_at": doc["created_at"],
+        "updated_at": doc["updated_at"],
+    }
+
+
+@router.patch("/{role_id}/forms/{form_id}")
+async def patch_role_form(
+    role_id: str,
+    form_id: str,
+    payload: RoleFormPatch,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    role_doc = await _load_role_or_404(role_id)
+    _system_guard(role_doc, "modify form assignments")
+    existing = await db.role_forms.find_one(
+        {"org_id": user["org_id"], "role_id": role_id, "form_id": form_id}, {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "assignment not found")
+    if bool(existing.get("is_required")) == bool(payload.is_required):
+        return existing  # no-op, no audit row.
+    now = now_iso()
+    await db.role_forms.update_one(
+        {"org_id": user["org_id"], "role_id": role_id, "form_id": form_id},
+        {"$set": {"is_required": bool(payload.is_required), "updated_at": now}},
+    )
+    after = await db.role_forms.find_one(
+        {"org_id": user["org_id"], "role_id": role_id, "form_id": form_id}, {"_id": 0},
+    )
+    await _write_audit(
+        role_id=role_id,
+        role_name=role_doc.get("name", role_id),
+        action="form_updated",
+        before=existing,
+        after=after,
+        diff={"form_id": form_id,
+              "is_required": {"before": existing.get("is_required"),
+                              "after": bool(payload.is_required)}},
+        actor=user,
+    )
+    return after
+
+
+@router.delete("/{role_id}/forms/{form_id}")
+async def unassign_form_from_role(
+    role_id: str,
+    form_id: str,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    role_doc = await _load_role_or_404(role_id)
+    _system_guard(role_doc, "unassign forms")
+    existing = await db.role_forms.find_one(
+        {"org_id": user["org_id"], "role_id": role_id, "form_id": form_id}, {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "assignment not found")
+    await db.role_forms.delete_one(
+        {"org_id": user["org_id"], "role_id": role_id, "form_id": form_id},
+    )
+    await _write_audit(
+        role_id=role_id,
+        role_name=role_doc.get("name", role_id),
+        action="form_unassigned",
+        before=existing,
+        after=None,
+        diff={"form_id": form_id},
+        actor=user,
+    )
+    return {"deleted": True, "role_id": role_id, "form_id": form_id}
+
