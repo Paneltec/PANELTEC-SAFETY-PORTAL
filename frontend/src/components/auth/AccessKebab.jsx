@@ -1,6 +1,7 @@
 // Phase 4.7.1 — shared access-actions kebab.
 //
-// Surfaces Send invite / Reset password / Generate PIN / Unlock for a given
+// Surfaces Reset password / Generate PIN / Unlock for a given
+// v160.3.9.32-4c.1 — "Send invite" removed; backend endpoint returns 410.
 // user_id. Invite + reset open a `ChannelPickerDialog` first so the admin
 // can pick email / SMS / auto — wiring matches the backend's required
 // `channel` field on `/users/{id}/invite` and `/users/{id}/reset-password`.
@@ -32,16 +33,9 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
 
   const closePicker = () => setPicker(null);
 
-  const fireInvite = async (channel) => {
-    setBusy(true);
-    try {
-      const { data } = await api.post(`/users/${userId}/invite`, { channel });
-      closePicker();
-      toast.success(`Invite sent via ${data?.channel || channel}`);
-      onAfterAction?.();
-    } catch (e) { toast.error(apiError(e)); }
-    finally { setBusy(false); }
-  };
+  // v160.3.9.32-4c.1 — fireInvite() removed. The backend endpoint returns
+  // 410 and admins now use fireReset (magic link) or the direct Set-password
+  // dialog opened from the drawer.
 
   const fireReset = async (channel) => {
     setBusy(true);
@@ -91,10 +85,9 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Access</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => setPicker({ kind: 'invite' })}
-            data-testid={`access-kebab-invite-${suffix}`}>
-            Send invite…
-          </DropdownMenuItem>
+          {/* v160.3.9.32-4c.1 — "Send invite…" removed. Backend returns
+              410 for the invite endpoint; admin uses Reset password or
+              the direct Set-password action in the drawer instead. */}
           <DropdownMenuItem onSelect={() => setPicker({ kind: 'reset' })}
             data-testid={`access-kebab-reset-${suffix}`}>
             Reset password…
@@ -112,14 +105,6 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ChannelPickerDialog
-        open={picker?.kind === 'invite'}
-        onClose={closePicker}
-        title="Send invite link"
-        description="The worker will receive a one-tap link to set their password and sign in. Choose how to deliver it."
-        onConfirm={fireInvite}
-        busy={busy}
-      />
       <ChannelPickerDialog
         open={picker?.kind === 'reset'}
         onClose={closePicker}

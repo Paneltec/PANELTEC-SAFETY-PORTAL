@@ -37,6 +37,13 @@ export default function SimproImportPickerModal({ onClose, onDone }) {
     })();
   }, [includeLinked]);
 
+  // v160.3.9.32-4c.1 — ESC-key close (backdrop click already handled).
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
     const base = t

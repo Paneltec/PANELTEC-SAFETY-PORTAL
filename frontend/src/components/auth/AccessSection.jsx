@@ -34,7 +34,8 @@ export default function AccessSection({ userId, compact = false }) {
     finally { setBusy(false); }
   };
 
-  const sendInvite = (channel) => fireChannelAction(`/users/${userId}/invite`, 'Invite', channel);
+  // v160.3.9.32-4c.1 — sendInvite removed. Admin uses sendReset (magic
+  // link) or the direct Set-password dialog in the drawer instead.
   const sendReset  = (channel) => fireChannelAction(`/users/${userId}/reset-password`, 'Reset link', channel);
   const unlock = async () => {
     setBusy(true);
@@ -75,10 +76,9 @@ export default function AccessSection({ userId, compact = false }) {
         {subline && <span className="text-xs text-slate-500">· {subline}</span>}
       </div>
       <div className="flex flex-wrap gap-2">
-        <button onClick={() => setPicker({ kind: 'invite' })} disabled={busy} data-testid="access-invite"
-          className="px-3 py-1.5 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-xs font-semibold disabled:opacity-60">
-          {status.state === 'invite_pending' ? 'Resend invite…' : 'Send invite…'}
-        </button>
+        {/* v160.3.9.32-4c.1 — "Send invite…" button removed. Backend
+            invite endpoint returns 410; admin uses Reset password or
+            the direct Set-password dialog from the drawer instead. */}
         <button onClick={genPin} disabled={busy} data-testid="access-pin"
           className="px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-xs font-semibold text-slate-700 disabled:opacity-60">
           Generate one-time PIN
@@ -94,12 +94,6 @@ export default function AccessSection({ userId, compact = false }) {
           </button>
         )}
       </div>
-      <ChannelPickerDialog
-        open={picker?.kind === 'invite'} onClose={() => setPicker(null)}
-        title="Send invite link"
-        description="The worker will receive a one-tap link to set their password and sign in."
-        onConfirm={sendInvite} busy={busy}
-      />
       <ChannelPickerDialog
         open={picker?.kind === 'reset'} onClose={() => setPicker(null)}
         title="Send reset link"

@@ -251,8 +251,13 @@ async def list_available_simpro_employees(
     details, _ = await _fetch_simpro(cfg)
     # Existing linked sids for this org.
     linked_sids: set[str] = set()
+    # v160.3.9.32-4c.1 — Only count LIVE users (deleted_at unset/null).
+    # Soft-deleted users don't hold a Simpro seat and should let admin
+    # re-import if they were reinstated in Simpro.
     async for u in db.users.find(
-        {"org_id": org_id, "simpro_employee_id": {"$exists": True, "$ne": None}},
+        {"org_id": org_id,
+         "simpro_employee_id": {"$exists": True, "$ne": None},
+         "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]},
         {"_id": 0, "simpro_employee_id": 1},
     ):
         linked_sids.add(str(u["simpro_employee_id"]))

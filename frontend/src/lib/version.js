@@ -9,4 +9,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.32-4c';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.32-4c.1';

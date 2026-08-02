@@ -230,9 +230,9 @@ export default function UsersManagement() {
   const [simproPickerOpen, setSimproPickerOpen] = useState(false);
   // v160.3.9.32-4b — Admin direct set-password dialog (drawer action).
   const [setPwdFor, setSetPwdFor] = useState(null); // user obj or null
-  const [importOpen, setImportOpen] = useState(false);
+  // v160.3.9.32-4c.1 — importOpen + refreshSimproOpen removed (legacy
+  // buttons deleted). Bulk ZIP still active for CSV/photo imports.
   const [bulkZipOpen, setBulkZipOpen] = useState(false);  // v160.3.3 — Bulk ZIP import
-  const [refreshSimproOpen, setRefreshSimproOpen] = useState(false);  // v160.3.1 — Simpro Worker Sync
   const [lastSync, setLastSync] = useState(null);                     // v160.3.2 — last sync marker
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
@@ -430,24 +430,9 @@ export default function UsersManagement() {
         }
         action={can('users', 'edit') ? (
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setImportOpen(true)}
-              disabled={!simproStatus.connected}
-              data-testid="import-from-simpro-btn"
-              title={simproStatus.connected ? 'Import employees from Simpro' : 'Connect Simpro in Settings → Integrations first'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download size={14} /> Import from Simpro
-            </button>
-            <button
-              onClick={() => setRefreshSimproOpen(true)}
-              disabled={!simproStatus.connected}
-              data-testid="refresh-from-simpro-btn"
-              title={simproStatus.connected ? 'Refresh worker profiles + licences from Simpro' : 'Connect Simpro in Settings → Integrations first'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-400 text-slate-900 text-sm font-semibold hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            >
-              <RefreshCw size={14} /> Refresh from Simpro
-            </button>
+            {/* v160.3.9.32-4c.1 — Removed legacy "Import from Simpro"
+                (yellow Download) + "Refresh from Simpro" (amber). Both
+                superseded by the Phase 4b picker + sync-linked below. */}
             {lastSync?.last_synced_at && (
               <span
                 className="text-[11px] text-slate-500"
@@ -721,17 +706,8 @@ export default function UsersManagement() {
         />
       )}
       {simproPickerOpen && <SimproImportPickerModal onClose={() => setSimproPickerOpen(false)} onDone={load} />}
-      {importOpen && <ImportFromSimproDrawer
-        companies={simproStatus.companies}
-        onClose={() => setImportOpen(false)}
-        onDone={() => { load(); }}
-      />}
-      {refreshSimproOpen && (
-        <RefreshFromSimproModal
-          onClose={() => setRefreshSimproOpen(false)}
-          onDone={() => load()}
-        />
-      )}
+      {/* v160.3.9.32-4c.1 — legacy ImportFromSimproDrawer + RefreshFromSimproModal
+          instantiations removed. The picker + sync-linked flow replaces them. */}
       {bulkZipOpen && (
         <BulkSimproZipModal
           onClose={() => setBulkZipOpen(false)}
