@@ -441,6 +441,38 @@ async def on_startup():
         log.info("v26 role seed: %s", seed_res)
     except Exception as e:
         log.warning("v26 role seed failed: %s", e)
+    # v160.3.9.33 — Phase 4d startup auto-sync of Simpro position roles.
+    # Creates any MISSING `custom_<slug>` role doc for positions present
+    # on live users. Never mutates users on startup — role assignment
+    # remains admin-triggered via bulk-assign / sync-linked endpoints.
+    # Non-blocking: failures are logged and boot continues.
+    try:
+        from db import db as _db_ref
+        from roles_catalogue import create_role_from_position
+        distinct_pipeline = [
+            {"$match": {"simpro_position": {"$exists": True, "$nin": [None, ""]},
+                        "is_archived": {"$ne": True}}},
+            {"$group": {"_id": "$simpro_position"}},
+        ]
+        rows = await _db_ref.users.aggregate(distinct_pipeline).to_list(500)
+        created_count = 0
+        skipped_count = 0
+        sys_actor = {"id": None, "email": "startup-auto-sync",
+                     "role": "system"}
+        for row in rows:
+            pos = (row.get("_id") or "").strip()
+            if not pos:
+                continue
+            res = await create_role_from_position(position=pos, actor=sys_actor)
+            if res["created"]:
+                created_count += 1
+            else:
+                skipped_count += 1
+        log.info("[startup] Simpro position roles: %d created, %d skipped.",
+                 created_count, skipped_count)
+    except Exception as e:
+        log.warning("[startup] Simpro position-role auto-sync failed "
+                    "(non-blocking): %s", e)
     try:
         from permission_v26_migrations import run_all as run_v26_migrations
         migs = await run_v26_migrations()

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -519,13 +519,13 @@ export default function UsersManagement() {
               title={simproStatus.connected ? 'Refresh linked users from Simpro' : 'Connect Simpro first'}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
-              <RefreshCw size={14} /> Sync from Simpro
+              <RefreshCw size={14} /> Refresh from Simpro
             </button>
             <button onClick={() => setSimproPickerOpen(true)} data-testid="simpro-picker-btn"
               disabled={!simproStatus.connected}
-              title={simproStatus.connected ? 'Choose Simpro employees to import' : 'Connect Simpro first'}
+              title={simproStatus.connected ? 'Choose Simpro employees to import into this workspace' : 'Connect Simpro first'}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
-              <FlPersonAdd /> Import from Simpro
+              <FlPersonAdd /> Add employees from Simpro
             </button>
           </div>) : null} />
 
@@ -617,23 +617,34 @@ export default function UsersManagement() {
               data-testid="users-bulk-clear"
               className="text-xs text-slate-500 hover:underline">Clear</button>
             {(() => {
-              // v160.3.9.32-4c.3 — Bulk Assign Role appears alongside Delete
-              // whenever ANY selected users are still pending activation
-              // (role_id empty). Disabled state when 0 pending in selection.
+              // v160.3.9.33 — Phase 4d simplification:
+              //   • ALL selected users have role_id → HIDE the button.
+              //   • SOME need a role → render as a small text-link.
+              //   • ALL need a role → render as the primary violet button.
               const pending = users.filter((u) => bulkSelected.has(u.id)
                 && !u.role_id && u.activation_status === 'pending_activation');
-              const disabled = pending.length === 0;
+              if (pending.length === 0) return null;
+              const isAllPending = pending.length === bulkSelected.size;
+              if (isAllPending) {
+                return (
+                  <button
+                    onClick={() => setAssignRoleTarget({ users: pending })}
+                    title={`Assign role to ${pending.length} pending user${pending.length === 1 ? '' : 's'}`}
+                    data-testid="users-bulk-assign-role-btn"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700"
+                  >
+                    <ShieldCheck size={13} /> Assign role ({pending.length})
+                  </button>
+                );
+              }
               return (
                 <button
-                  onClick={() => !disabled && setAssignRoleTarget({ users: pending })}
-                  disabled={disabled}
-                  title={disabled
-                    ? 'Only pending users (no role assigned) can be bulk-assigned'
-                    : `Assign role to ${pending.length} pending user${pending.length === 1 ? '' : 's'}`}
+                  onClick={() => setAssignRoleTarget({ users: pending })}
+                  title={`Assign role to the ${pending.length} pending user${pending.length === 1 ? '' : 's'} in your selection`}
                   data-testid="users-bulk-assign-role-btn"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                  className="text-xs text-violet-700 hover:text-violet-900 hover:underline font-semibold"
                 >
-                  <ShieldCheck size={13} /> Assign role{pending.length > 0 ? ` (${pending.length})` : ''}
+                  <ShieldCheck size={11} className="inline" /> Assign role to {pending.length} pending
                 </button>
               );
             })()}
@@ -1189,6 +1200,22 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
   const [savePresetOpen, setSavePresetOpen] = useState(false);
   // v160.3.9.32-4c — ResetPasswordDialog state (direct set + magic-link modes).
   const [resetPwdOpen, setResetPwdOpen] = useState(false);
+  // v160.3.9.33 — Phase 4d Option C: unlock-role confirm dialog.
+  const [unlockConfirm, setUnlockConfirm] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const runUnlock = async () => {
+    setUnlockBusy(true);
+    try {
+      await api.patch(`/users/${userRow.id}`, { role_locked: false });
+      toast.success('Role unlocked — next Simpro sync will match the position.');
+      setUnlockConfirm(false);
+      await onReload?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setUnlockBusy(false);
+    }
+  };
 
   // v160.3.7g — Lock body scroll while the drawer is open so wheel/touch
   // scrolls inside the drawer don't leak through to the page underneath.
@@ -1401,7 +1428,24 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                 <div className="text-[11px] text-rose-600 mt-1">Enter a valid email address.</div>
               )}
             </label>
-            <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Role</div>
+            <div className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1 flex items-center gap-1.5">
+              <span>Role</span>
+              {/* v160.3.9.33 — Phase 4d Option C: role_locked lock icon.
+                  Only visible when the admin has manually overridden the
+                  Simpro-position role. Click opens confirm to unlock. */}
+              {userRow.role_locked && (
+                <button
+                  type="button"
+                  onClick={() => setUnlockConfirm(true)}
+                  disabled={!canEdit}
+                  data-testid="user-role-lock-icon"
+                  title="Role is manually locked and won't change with Simpro sync. Click to unlock."
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9px] font-bold uppercase tracking-wider border border-amber-300 hover:bg-amber-200 disabled:cursor-not-allowed"
+                >
+                  <Lock size={9} /> Locked
+                </button>
+              )}
+            </div>
               <Select value={profile.role || undefined} onValueChange={(v) => setProfile({ ...profile, role: v })} disabled={!canEdit}>
                 <SelectTrigger className="w-full" data-testid="user-role"><SelectValue placeholder="Select role" /></SelectTrigger>
                 <SelectContent>
@@ -1631,6 +1675,58 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             onClose={() => setResetPwdOpen(false)}
             onDone={() => { setResetPwdOpen(false); onReload(); }}
           />
+        )}
+        {/* v160.3.9.33 — Phase 4d Option C: unlock-role confirm. */}
+        {unlockConfirm && (
+          <div
+            data-testid="unlock-role-modal"
+            className="fixed inset-0 z-[75] bg-slate-900/70 grid place-items-center p-4"
+            onClick={(e) => e.target === e.currentTarget && !unlockBusy && setUnlockConfirm(false)}
+          >
+            <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
+                <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">
+                  <Unlock size={18} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-display font-bold text-slate-900">Unlock role?</h3>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Simpro sync will then reassign this user&apos;s role based on their position.
+                  </p>
+                </div>
+              </div>
+              <div className="px-5 py-3 text-sm text-slate-700">
+                <div className="font-medium">{userRow.name || userRow.email}</div>
+                <div className="text-xs text-slate-500">
+                  Simpro position: <span className="text-slate-700">{userRow.simpro_position || '(none)'}</span>
+                </div>
+                <div className="text-xs text-slate-500 mt-1">
+                  Current role: <code className="text-slate-700">{userRow.role_id}</code>
+                </div>
+              </div>
+              <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setUnlockConfirm(false)}
+                  disabled={unlockBusy}
+                  data-testid="unlock-role-cancel"
+                  className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={runUnlock}
+                  disabled={unlockBusy}
+                  data-testid="unlock-role-confirm"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold disabled:opacity-60"
+                >
+                  {unlockBusy ? <Loader2 size={14} className="animate-spin" /> : <Unlock size={14} />}
+                  {unlockBusy ? 'Unlocking…' : 'Unlock role'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>

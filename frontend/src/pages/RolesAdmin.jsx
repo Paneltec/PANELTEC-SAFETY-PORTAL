@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
-import { Eye, Pencil, Trash2, Plus, Shield, RefreshCw, Sparkles, ChevronRight } from 'lucide-react';
+import { Eye, Pencil, Trash2, Plus, Shield, RefreshCw, Sparkles, ChevronRight, Lock } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
@@ -64,12 +64,18 @@ export default function RolesAdmin() {
   // v160.3.9.33 — Phase 4d
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
+  // v160.3.9.33 — Phase 4d Option C: position/role drift banner.
+  const [drift, setDrift] = useState({ count: 0, drift: [] });
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/admin/roles');
+      const [{ data }, { data: dr }] = await Promise.all([
+        api.get('/admin/roles'),
+        api.get('/users/role-lock-drift').catch(() => ({ data: { count: 0, drift: [] } })),
+      ]);
       setRoles(data?.roles || []);
+      setDrift(dr || { count: 0, drift: [] });
     } catch (e) {
       toast.error(apiError(e));
     } finally {
@@ -201,6 +207,33 @@ export default function RolesAdmin() {
           </div>
         }
       />
+
+      {/* v160.3.9.33 — Phase 4d Option C drift banner */}
+      {drift.count > 0 && (
+        <div
+          className="mt-4 flex items-center gap-3 rounded-2xl border-2 border-orange-300 bg-orange-50 px-4 py-3 shadow-sm"
+          data-testid="roles-admin-drift-banner"
+        >
+          <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-orange-100 text-orange-700 flex-shrink-0">
+            <Lock className="w-4 h-4" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-orange-900">
+              {drift.count} user{drift.count === 1 ? ' has' : 's have'} position/role drift.
+            </div>
+            <div className="text-xs text-orange-800/80 mt-0.5">
+              Their Simpro position no longer matches their locked role. Review each user&apos;s drawer to unlock (Simpro sync will re-match) or keep the override.
+            </div>
+          </div>
+          <a
+            href="/app/settings/users?filter=role_locked_drift"
+            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold"
+            data-testid="roles-admin-drift-review-link"
+          >
+            Review →
+          </a>
+        </div>
+      )}
 
       {/* v160.3.9.33 — Phase 4d banner: auto-roles that need permissions configured */}
       {autoWithoutTokens.length > 0 && (

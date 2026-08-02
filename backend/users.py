@@ -190,6 +190,43 @@ async def list_users(
     return out
 
 
+@router.get("/role-lock-drift")
+async def role_lock_drift_endpoint(
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """v160.3.9.33 — Phase 4d Option C: count users whose current role_id
+    differs from the role_id their `simpro_position` would produce, AND
+    who are `role_locked=True`. Surface these as a banner on RolesAdmin
+    so admins have visibility into position/role drift.
+
+    Route registered BEFORE `/{user_id}` so FastAPI matches the literal
+    path first — otherwise `role-lock-drift` gets consumed as user_id.
+    """
+    from roles_catalogue import _slugify
+    org_id = user["org_id"]
+    drift_list: List[Dict[str, Any]] = []
+    async for u in db.users.find(
+        {"org_id": org_id,
+         "role_locked": True,
+         "simpro_position": {"$exists": True, "$nin": [None, ""]},
+         "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "role_id": 1,
+         "simpro_position": 1},
+    ):
+        pos = (u.get("simpro_position") or "").strip()
+        expected = "custom_" + _slugify(pos)
+        if u.get("role_id") != expected:
+            drift_list.append({
+                "user_id": u["id"],
+                "name": u.get("name"),
+                "email": u.get("email"),
+                "current_role_id": u.get("role_id"),
+                "position_role_id": expected,
+                "simpro_position": pos,
+            })
+    return {"count": len(drift_list), "drift": drift_list}
+
+
 @router.get("/{user_id}")
 async def get_user(user_id: str, actor: dict = Depends(require_permission("users", "view"))):
     doc = await db.users.find_one({"id": user_id, "org_id": actor["org_id"]}, {"_id": 0, "password_hash": 0})
