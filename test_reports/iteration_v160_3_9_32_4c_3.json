@@ -1,0 +1,40 @@
+{
+  "summary": "Phase 4c.3 frontend Assign Role flow tested end-to-end on /app/settings/users. Row-level single-user dialog, admin-confirm sub-dialog, bulk dialog with Set-all, hinted pre-selections, mixed-selection button counts, drawer Simpro-position line, and regressions (bulk delete, row delete, Password/ResetPasswordDialog) all render correctly. CRITICAL BUG found: legacy roles (worker, supervisor, hseq_lead, auditor) are exposed by the role pickers via LEGACY_ROLES fallback but DO NOT exist in db.roles — the backend POST /api/users/bulk-assign-role returns 404 whenever the admin (or the suggestRoleHint) picks one of them. This blocks the primary use-case: 'Construction Worker Lx' Simpro positions all hint to role_id=worker → guaranteed 404 for the majority of the 39 pending Simpro imports.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/users/bulk-assign-role", "issue": "Returns 404 for role_ids that only exist in the frontend LEGACY_ROLES fallback (worker, supervisor, hseq_lead, auditor). db.roles is missing these role documents. Reproduced live: user_ids=[<pending>], role_id='worker' → 404 role_id 'worker' not found. Same bug will fire for every Construction Worker/Foreman/Leading Hand pending user because suggestRoleHint pre-selects worker/supervisor from their Simpro positions.", "priority": "CRITICAL"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "AssignRoleDialog / useSystemRoles", "issue": "LEGACY_ROLES fallback (worker/supervisor/hseq_lead/auditor) is merged into the role catalogue with is_active:true but the backend db.roles collection does not contain them. When the admin picks these (or accepts the auto-hint) the POST silently fails with 404, the dialog stays open, and no toast makes the mismatch obvious. Also SIMPRO_POSITION_TO_ROLE_HINT maps 8+ common Simpro positions to role_id='worker' — every 'Construction Worker Lx' pending user will hit the 404.", "selector": "[data-testid=\"assign-role-select-<uid>\"], [data-testid=\"assign-role-setall\"]", "priority": "HIGH"},
+      {"component": "AssignRoleDialog Set-all list", "issue": "Set-all dropdown exposes ALL merged roles including inactive-looking custom roles (e.g. custom_demo_regional_auditor) and the legacy-only ones. Recommend filtering to db-seeded, is_active roles only, matching what the backend actually accepts.", "selector": "[data-testid=\"assign-role-setall\"]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [
+      {"flow": "Bulk Assign role with multiple distinct role_ids", "issue": "If one of the N POSTs errors (e.g. 404 for legacy role_id), the whole batch aborts inside try/catch → toast.error only, dialog does NOT close and selections do NOT clear, even though earlier POSTs already succeeded. Users see stale UI with partial success not reflected until manual reload. Consider Promise.allSettled and a combined summary toast (X updated, Y failed).", "affected_selectors": ["[data-testid=\"assign-role-confirm\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_v160_3_9_32_4c_3.json"
+  ],
+  "action_items": [
+    "Seed the four missing system roles in db.roles (worker, supervisor, hseq_lead, auditor) OR remove them from LEGACY_ROLES + adjust suggestRoleHint fallbacks to only reference db-seeded role_ids (e.g. map worker→general_user or a real seeded 'field_worker' role).",
+    "Update AssignRoleDialog to defensively filter role options against the seeded /admin/roles list (drop legacy-only entries).",
+    "Improve bulk POST error handling — use Promise.allSettled so partial success is reflected in UI (dialog closes, selection clears, badges disappear for the succeeded subset) and the toast summarises per-role_id failures."
+  ],
+  "critical_code_review_comments": [
+    "UsersManagement.jsx line 48–57: LEGACY_ROLES fallback lists role_ids that no longer exist server-side (worker/supervisor/hseq_lead/auditor). This creates a client/server contract drift that is invisible until a POST is fired.",
+    "UsersManagement.jsx line 124–132 (SIMPRO_POSITION_TO_ROLE_HINT): Maps Construction Worker/Labourer/Plumber/Operator/Carpenter/Electrician/Apprentice → 'worker' and Foreman/Leading Hand → 'supervisor'; both are broken hints against the current db.roles set. This is the direct cause of the 404 bug for the majority of the 39 pending users.",
+    "UsersManagement.jsx AssignRoleDialog.runSubmit (line ~868): sequential await inside a for-loop with a single try/catch means a mid-batch failure prevents the success toast, dialog close and onDone(). Refactor to Promise.allSettled + summary."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only iteration)", "frontend": "80% (10/12 asserted flows OK, 1 CRITICAL role-mismatch bug, 1 partial-failure UX issue)"},
+  "test_credentials": "Admin stephen@paneltec.com.au / Mcgstephen50# — used and worked.",
+  "seed_data_creation": "None. Test performed 2 real role assignments in production preview: one pending user set to general_user (single dialog, worked), and one pending user set to general_user via bulk (worked). Two other pending users were selected for role_id=worker but the POST 404'd, so they remain pending. Active count went from 24 → 26; pending 39 → 37. Consider resetting via seeder if next iteration needs 39 pending.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "The AssignRoleDialog UI + testids + hints + admin-confirm + bulk-toolbar + drawer-simpro-position are all wired correctly per the review request. The blocking issue is a data/contract mismatch: FE exposes legacy role_ids not present in db.roles. After the main agent seeds the missing roles OR removes them from LEGACY_ROLES + updates suggestRoleHint, re-run the bulk flow choosing role_id='worker' and 'supervisor' to confirm 200s. Also verify Promise.allSettled behaviour on partial-failure batches. Version pill confirmed 'paneltec-v160.3.9.32-4c.3'.",
+  "rca of the issue": "Root cause: useSystemRoles() unions LEGACY_ROLES (worker/supervisor/hseq_lead/auditor, is_active:true) with /admin/roles output. db.roles only has admin, hseq_manager*, responsible_manager, contractor_rep*, mechanic, training_inductions_only, general_user, report_emailing_admin. The merged list therefore surfaces 4 role_ids the backend does not know. bulk_assign_role() in backend/users.py line 635 does `db.roles.find_one({'role_id': body.role_id})` and raises 404 when missing. Reproduction: bulk-select 2+ pending users → 'Set all to → Worker' → Assign X roles → observe 404 on POST /api/users/bulk-assign-role. Fix options (any of): (a) seed the 4 missing roles into db.roles with proper permission_tokens; (b) delete the 4 legacy entries from LEGACY_ROLES so the picker never offers them; (c) in AssignRoleDialog filter systemRoles down to entries whose source==='seed'."
+}

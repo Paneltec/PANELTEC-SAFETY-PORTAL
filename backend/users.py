@@ -91,6 +91,10 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         # v160.3.9.32-4b — Phase 4b surface fields.
         "photo_url": doc.get("photo_url"),
         "simpro_last_synced_at": doc.get("simpro_last_synced_at"),
+        # v160.3.9.32-4c.3 — surfaced for the pending-users assign-role UI.
+        "simpro_position": doc.get("simpro_position"),
+        "must_set_password": bool(doc.get("must_set_password")),
+        "role_assigned_at": doc.get("role_assigned_at"),
     }
 
 
@@ -596,3 +600,99 @@ async def import_from_simpro(
         "created_ids": created_ids,
         "skipped": skipped,
     }
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.32-4c.3 — Bulk assign role to pending users.
+# The 48 pending_activation users left over from Phase 2's bulk
+# import had role_id=None and no clear activation path except
+# Delete. This endpoint gives admins a "select N pending users →
+# apply role → activate" workflow. Idempotent — users that already
+# have a role_id are skipped (counted in `skipped`), never
+# overwritten. Every user gets a `user_audit` entry with the full
+# context per spec.
+# ─────────────────────────────────────────────────────────────
+
+_ADMIN_BULK_UNSAFE_ROLE_IDS = {"admin"}  # single-row confirm only, never bulk.
+
+
+class BulkAssignRoleIn(BaseModel):
+    user_ids: List[str]
+    role_id: str
+    admin_confirmed: bool = False  # ignored server-side except for audit.
+    hint_matched: bool = False
+
+
+@router.post("/bulk-assign-role")
+async def bulk_assign_role(
+    body: BulkAssignRoleIn,
+    actor: dict = Depends(require_permission("users", "edit")),
+):
+    if not body.user_ids:
+        raise HTTPException(400, "user_ids empty")
+    if body.role_id in _ADMIN_BULK_UNSAFE_ROLE_IDS:
+        raise HTTPException(400, "admin role must be assigned one user at a time")
+
+    role_doc = await db.roles.find_one({"role_id": body.role_id}, {"_id": 0})
+    if not role_doc:
+        raise HTTPException(404, f"role_id '{body.role_id}' not found")
+    if not role_doc.get("is_active"):
+        raise HTTPException(400, "role is not active")
+
+    # Defence in depth: reject custom roles whose token count exceeds admin's.
+    if not role_doc.get("is_system"):
+        admin_doc = await db.roles.find_one({"role_id": "admin"}, {"_id": 0})
+        admin_count = len((admin_doc or {}).get("permission_tokens") or [])
+        role_count = len(role_doc.get("permission_tokens") or [])
+        if admin_count and role_count > admin_count:
+            raise HTTPException(400, "custom role exceeds admin token budget")
+
+    now = now_iso()
+    updated: List[str] = []
+    skipped: List[Dict[str, str]] = []
+    errors: List[Dict[str, str]] = []
+    for uid in body.user_ids:
+        target = await db.users.find_one(
+            {"id": uid, "org_id": actor["org_id"]}, {"_id": 0},
+        )
+        if not target:
+            errors.append({"user_id": uid, "reason": "not_found_or_cross_org"})
+            continue
+        if target.get("role_id"):
+            skipped.append({"user_id": uid, "reason": "already_has_role_id"})
+            continue
+        has_password = bool(target.get("password_hash"))
+        set_fields: Dict[str, Any] = {
+            "role_id": body.role_id,
+            "role": role_doc.get("role_id") or body.role_id,  # legacy string mirror
+            "activation_status": "active",
+            "status": "active",
+            "role_assigned_at": now,
+            "updated_at": now,
+            "must_set_password": not has_password,
+        }
+        await db.users.update_one({"id": uid}, {"$set": set_fields})
+        await db.user_audit.insert_one({
+            "id": new_id(),
+            "user_id": uid,
+            "action": "bulk_role_assigned",
+            "before": {"role_id": target.get("role_id")},
+            "after": {"role_id": body.role_id},
+            "simpro_position": target.get("simpro_position"),
+            "hint_matched": bool(body.hint_matched),
+            "admin_confirmed": bool(body.admin_confirmed),
+            "actor_user_id": actor["id"],
+            "actor_email": actor.get("email"),
+            "at": now,
+        })
+        updated.append(uid)
+    return {
+        "role_id": body.role_id,
+        "role_name": role_doc.get("name"),
+        "updated": len(updated),
+        "skipped": len(skipped),
+        "errors": len(errors),
+        "summary": f"Assigned {role_doc.get('name')} to {len(updated)} users. "
+                   f"{len(skipped)} skipped (already had roles).",
+        "detail": {"updated": updated, "skipped": skipped, "errors": errors},
+    }
+

@@ -95,6 +95,53 @@ function useSystemRoles() {
 const ROLES = LEGACY_ROLES.map((r) => r.role_id);
 const ROLE_LABELS = Object.fromEntries(LEGACY_ROLES.map((r) => [r.role_id, r.name]));
 const STATUSES = ['active', 'invited', 'disabled'];
+
+// v160.3.9.32-4c.3 — Simpro-position → role_id heuristic. Used to pre-select
+// the role dropdown in the single- and bulk-Assign Role dialogs so an admin
+// activating 48 pending Simpro-imported users doesn't have to hand-type
+// every row. The mapping is deliberately conservative: falls back to
+// `general_user` when the position doesn't match any known keyword. The
+// admin can always override; the pre-selection just saves clicks.
+// Matching is lowercase, substring-based; longest / most specific
+// keywords are checked first so "hseq manager" wins over "manager".
+const SIMPRO_POSITION_TO_ROLE_HINT = [
+  // Order matters — first match wins.
+  { match: 'hseq manager', role_id: 'hseq_manager' },
+  { match: 'safety manager', role_id: 'hseq_manager' },
+  { match: 'safety officer', role_id: 'hseq_manager' },
+  { match: 'hseq lead', role_id: 'hseq_lead' },
+  { match: 'responsible manager', role_id: 'responsible_manager' },
+  { match: 'project manager', role_id: 'supervisor' },
+  { match: 'site manager', role_id: 'supervisor' },
+  { match: 'foreman', role_id: 'supervisor' },
+  { match: 'leading hand', role_id: 'supervisor' },
+  { match: 'supervisor', role_id: 'supervisor' },
+  { match: 'mechanic', role_id: 'mechanic' },
+  { match: 'fitter', role_id: 'mechanic' },
+  { match: 'auditor', role_id: 'auditor' },
+  { match: 'training', role_id: 'training_inductions_only' },
+  { match: 'induction', role_id: 'training_inductions_only' },
+  { match: 'traffic controller', role_id: 'general_user' },
+  { match: 'construction worker', role_id: 'worker' },
+  { match: 'labourer', role_id: 'worker' },
+  { match: 'plumber', role_id: 'worker' },
+  { match: 'plant operator', role_id: 'worker' },
+  { match: 'operator', role_id: 'worker' },
+  { match: 'carpenter', role_id: 'worker' },
+  { match: 'electrician', role_id: 'worker' },
+  { match: 'apprentice', role_id: 'worker' },
+  { match: 'admin', role_id: 'general_user' },
+  { match: 'office', role_id: 'general_user' },
+];
+
+export function suggestRoleHint(position) {
+  const p = (position || '').toLowerCase().trim();
+  if (!p) return 'general_user';
+  for (const entry of SIMPRO_POSITION_TO_ROLE_HINT) {
+    if (p.includes(entry.match)) return entry.role_id;
+  }
+  return 'general_user';
+}
 const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
@@ -238,6 +285,9 @@ export default function UsersManagement() {
   const [actionBusy, setActionBusy] = useState(false);
   const [bulkSelected, setBulkSelected] = useState(() => new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  // v160.3.9.32-4c.3 — Assign-Role dialog target. `null` = closed;
+  // otherwise `{ users: [user, ...] }` for single or bulk assignment.
+  const [assignRoleTarget, setAssignRoleTarget] = useState(null);
   // v160.3.7h — Lock body scroll for the inline bulk-delete confirm (this
   // modal lives in the parent JSX so it can't own its own useEffect).
   useLockBodyScroll(bulkConfirmOpen);
@@ -364,13 +414,27 @@ export default function UsersManagement() {
           </div>
         </div>
       </td>
-      <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
+      <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span>
+        {u.simpro_position && (
+          <div className="text-[10px] text-slate-500 mt-0.5" title="Simpro position" data-testid={`simpro-position-${u.id}`}>
+            {u.simpro_position}
+          </div>
+        )}
+      </td>
       <td className="px-4 py-3"><StatusPill user={u} /></td>
       <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
       <td className="px-4 py-3 text-xs text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
       {can('users', 'edit') && (
         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="inline-flex gap-1 items-center">
+            {!u.role_id && u.activation_status === 'pending_activation' && (
+              <button
+                title="Assign a role to activate this pending user"
+                data-testid={`assign-role-btn-${u.id}`}
+                onClick={() => setAssignRoleTarget({ users: [u] })}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"
+              >Assign role</button>
+            )}
             <AccessKebab userId={u.id} canEdit={u.id !== me?.id} onAfterAction={load} />
             <button title="Edit permissions" data-testid={`user-edit-perms-${u.id}`}
               onClick={() => { setActiveTab('permissions'); setActive(u); }}
@@ -562,6 +626,27 @@ export default function UsersManagement() {
             <button onClick={() => setBulkSelected(new Set())}
               data-testid="users-bulk-clear"
               className="text-xs text-slate-500 hover:underline">Clear</button>
+            {(() => {
+              // v160.3.9.32-4c.3 — Bulk Assign Role appears alongside Delete
+              // whenever ANY selected users are still pending activation
+              // (role_id empty). Disabled state when 0 pending in selection.
+              const pending = users.filter((u) => bulkSelected.has(u.id)
+                && !u.role_id && u.activation_status === 'pending_activation');
+              const disabled = pending.length === 0;
+              return (
+                <button
+                  onClick={() => !disabled && setAssignRoleTarget({ users: pending })}
+                  disabled={disabled}
+                  title={disabled
+                    ? 'Only pending users (no role assigned) can be bulk-assigned'
+                    : `Assign role to ${pending.length} pending user${pending.length === 1 ? '' : 's'}`}
+                  data-testid="users-bulk-assign-role-btn"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-bold hover:bg-violet-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+                >
+                  <ShieldCheck size={13} /> Assign role{pending.length > 0 ? ` (${pending.length})` : ''}
+                </button>
+              );
+            })()}
             <button onClick={() => setBulkConfirmOpen(true)}
               data-testid="users-bulk-delete-btn"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">
@@ -689,6 +774,14 @@ export default function UsersManagement() {
         </div>
       )}
       {active && <UserDrawer userRow={active} onClose={() => setActive(null)} onReload={load} canEdit={can('users', 'edit')} defaultTab={activeTab} />}
+      {assignRoleTarget && (
+        <AssignRoleDialog
+          users={assignRoleTarget.users}
+          systemRoles={systemRoles}
+          onClose={() => setAssignRoleTarget(null)}
+          onDone={() => { setBulkSelected(new Set()); load(); }}
+        />
+      )}
       {confirmAction && (
         <ConfirmActionModal
           kind={confirmAction.kind}
@@ -724,6 +817,256 @@ export default function UsersManagement() {
     </div>
   );
 }
+
+// ─────────────────────────────────────────────────────────────
+// v160.3.9.32-4c.3 — AssignRoleDialog
+// Single- and bulk-Assign Role dialog. Renders one row per user
+// with:
+//   • name + email
+//   • Simpro position (from the imported record)
+//   • role dropdown pre-selected via suggestRoleHint()
+// Bulk mode also shows a "Set all to…" convenience dropdown at
+// the top which overrides every row when a value is picked.
+// Assigning `admin` to a single user requires a second red
+// warning confirm dialog. Bulk-assigning `admin` is refused by
+// the backend (400) — we also guard client-side in the
+// "Set all to…" list by omitting it.
+// ─────────────────────────────────────────────────────────────
+function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
+  useLockBodyScroll();
+  const isBulk = users.length > 1;
+  // Per-user role selections, seeded from suggestRoleHint().
+  const [selections, setSelections] = useState(() => {
+    const out = {};
+    for (const u of users) {
+      const hint = suggestRoleHint(u.simpro_position || '');
+      out[u.id] = { role_id: hint, hint };
+    }
+    return out;
+  });
+  const [busy, setBusy] = useState(false);
+  const [adminConfirm, setAdminConfirm] = useState(null);   // user obj pending admin-confirm
+  const [setAllValue, setSetAllValue] = useState('');       // "Set all to…" picker value
+
+  const activeRoles = useMemo(
+    () => systemRoles.filter((r) => r.is_active !== false),
+    [systemRoles]
+  );
+  // Bulk-safe roles = everything except admin.
+  const bulkSafeRoles = activeRoles.filter((r) => r.role_id !== 'admin');
+
+  const applySetAll = (roleId) => {
+    setSetAllValue(roleId);
+    if (!roleId) return;
+    setSelections((s) => {
+      const next = { ...s };
+      for (const u of users) next[u.id] = { ...next[u.id], role_id: roleId };
+      return next;
+    });
+  };
+
+  const runSubmit = async () => {
+    // Group user_ids by chosen role_id so we can fire one POST per role.
+    const byRole = new Map();
+    for (const u of users) {
+      const roleId = selections[u.id]?.role_id;
+      if (!roleId) continue;
+      if (!byRole.has(roleId)) byRole.set(roleId, []);
+      byRole.get(roleId).push({ id: u.id, hint: selections[u.id]?.hint });
+    }
+    if (byRole.size === 0) {
+      toast.error('Pick a role for at least one user');
+      return;
+    }
+    setBusy(true);
+    let totalUpdated = 0, totalSkipped = 0, totalErrors = 0;
+    try {
+      for (const [roleId, rows] of byRole.entries()) {
+        const allHinted = rows.every((r) => r.hint === roleId);
+        const { data } = await api.post('/users/bulk-assign-role', {
+          user_ids: rows.map((r) => r.id),
+          role_id: roleId,
+          admin_confirmed: true,
+          hint_matched: allHinted,
+        });
+        totalUpdated += data.updated || 0;
+        totalSkipped += data.skipped || 0;
+        totalErrors += data.errors || 0;
+      }
+      const parts = [`Assigned roles to ${totalUpdated} user${totalUpdated === 1 ? '' : 's'}`];
+      if (totalSkipped) parts.push(`${totalSkipped} skipped (already had roles)`);
+      if (totalErrors) parts.push(`${totalErrors} errors`);
+      toast.success(parts.join(' · '));
+      onDone?.();
+      onClose?.();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = () => {
+    // Client-side guard: single-row admin needs its own red confirm.
+    if (!isBulk) {
+      const only = users[0];
+      const chosen = selections[only.id]?.role_id;
+      if (chosen === 'admin') {
+        setAdminConfirm(only);
+        return;
+      }
+    }
+    runSubmit();
+  };
+
+  return createPortal((
+    <div
+      data-testid="assign-role-modal"
+      className="fixed inset-0 z-[70] bg-slate-900/70 grid place-items-center p-4"
+      onClick={(e) => e.target === e.currentTarget && !busy && onClose?.()}
+    >
+      <div className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+        <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3 shrink-0">
+          <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-violet-100 text-violet-700 flex-shrink-0">
+            <ShieldCheck size={18} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-display font-bold text-slate-900">
+              {isBulk ? `Assign roles to ${users.length} users` : `Assign role to ${users[0].name || users[0].email}`}
+            </h3>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              Pre-selections come from each user&apos;s Simpro position. Assigning a role activates the account.
+            </p>
+          </div>
+        </div>
+
+        {isBulk && (
+          <div className="px-5 py-3 bg-violet-50/60 border-b border-violet-100 flex items-center gap-3 shrink-0" data-testid="assign-role-setall-row">
+            <span className="text-xs font-semibold uppercase tracking-wider text-violet-700">Set all to…</span>
+            <select
+              value={setAllValue}
+              onChange={(e) => applySetAll(e.target.value)}
+              disabled={busy}
+              data-testid="assign-role-setall"
+              className="text-sm border border-violet-300 rounded-lg px-2 py-1.5 bg-white flex-1 max-w-xs"
+            >
+              <option value="">(keep per-user hints)</option>
+              {bulkSafeRoles.map((r) => (
+                <option key={r.role_id} value={r.role_id}>{r.name}</option>
+              ))}
+            </select>
+            <span className="text-[11px] text-slate-500">
+              Admin cannot be bulk-assigned.
+            </span>
+          </div>
+        )}
+
+        <div className="flex-1 overflow-y-auto px-5 py-3">
+          <table className="w-full text-sm">
+            <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="text-left py-1.5">User</th>
+                <th className="text-left py-1.5">Simpro position</th>
+                <th className="text-left py-1.5">Role</th>
+              </tr>
+            </thead>
+            <tbody>
+              {users.map((u) => {
+                const sel = selections[u.id];
+                const rolesForRow = isBulk ? bulkSafeRoles : activeRoles;
+                const hintUnavailable = !rolesForRow.some((r) => r.role_id === sel?.role_id);
+                return (
+                  <tr key={u.id} className="border-t border-slate-100" data-testid={`assign-role-row-${u.id}`}>
+                    <td className="py-2 pr-3">
+                      <div className="font-medium text-slate-800 truncate max-w-[180px]" title={u.name}>{u.name || '—'}</div>
+                      <div className="text-[11px] text-slate-500 truncate max-w-[180px]" title={u.email}>{u.email}</div>
+                    </td>
+                    <td className="py-2 pr-3 text-xs text-slate-600" data-testid={`assign-role-position-${u.id}`}>
+                      {u.simpro_position || <span className="italic text-slate-400">(none)</span>}
+                    </td>
+                    <td className="py-2">
+                      <select
+                        value={hintUnavailable ? '' : (sel?.role_id || '')}
+                        onChange={(e) => setSelections((s) => ({ ...s, [u.id]: { ...s[u.id], role_id: e.target.value } }))}
+                        disabled={busy}
+                        data-testid={`assign-role-select-${u.id}`}
+                        className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white w-full max-w-[220px]"
+                      >
+                        <option value="">Select role…</option>
+                        {rolesForRow.map((r) => (
+                          <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                        ))}
+                      </select>
+                      {sel?.hint && sel.role_id === sel.hint && (
+                        <div className="text-[10px] text-violet-600 mt-0.5" data-testid={`assign-role-hinted-${u.id}`}>
+                          <Sparkles size={9} className="inline" /> hinted from position
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+          <button type="button" onClick={onClose} disabled={busy}
+            data-testid="assign-role-cancel"
+            className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+            Cancel
+          </button>
+          <button type="button" onClick={submit} disabled={busy}
+            data-testid="assign-role-confirm"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold disabled:opacity-60">
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <ShieldCheck size={14} />}
+            {busy ? 'Assigning…' : (isBulk ? `Assign ${users.length} roles` : 'Assign role')}
+          </button>
+        </div>
+      </div>
+
+      {adminConfirm && (
+        <div
+          data-testid="assign-role-admin-confirm"
+          className="fixed inset-0 z-[75] bg-slate-900/80 grid place-items-center p-4"
+          onClick={(e) => e.target === e.currentTarget && !busy && setAdminConfirm(null)}
+        >
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden border-2 border-rose-500">
+            <div className="px-5 py-4 border-b border-rose-200 bg-rose-50 flex items-start gap-3">
+              <div className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-rose-100 text-rose-700 flex-shrink-0">
+                <AlertTriangle size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-bold text-rose-900">Grant Admin access?</h3>
+                <p className="text-xs text-rose-800 mt-0.5">
+                  Admin has full control of this organisation. Grant only when you are certain.
+                </p>
+              </div>
+            </div>
+            <div className="px-5 py-4 text-sm text-slate-700">
+              <div className="font-medium">{adminConfirm.name || adminConfirm.email}</div>
+              <div className="text-xs text-slate-500">{adminConfirm.email}</div>
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setAdminConfirm(null)} disabled={busy}
+                data-testid="assign-role-admin-cancel"
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="button" onClick={() => { setAdminConfirm(null); runSubmit(); }} disabled={busy}
+                data-testid="assign-role-admin-confirm-btn"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-60">
+                <AlertTriangle size={14} /> Grant admin
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  ), document.body);
+}
+
+
 
 function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile' }) {
   const [tab, setTab] = useState(defaultTab);
@@ -885,6 +1228,12 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-xl truncate">{userRow.name}</h2>
                   <div className="text-sm text-slate-500 font-normal truncate">{userRow.email}</div>
+                  {userRow.simpro_position && (
+                    <div className="text-xs text-slate-500 font-normal truncate mt-0.5" data-testid="drawer-simpro-position">
+                      <span className="text-violet-600 font-semibold uppercase tracking-wider text-[10px]">Simpro position:</span>{' '}
+                      <span className="text-slate-700">{userRow.simpro_position}</span>
+                    </div>
+                  )}
                 </div>
               </div>
               {/* v160.3.9.32-4c drawer chips */}
