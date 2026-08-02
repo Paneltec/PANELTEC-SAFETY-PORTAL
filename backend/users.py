@@ -84,6 +84,9 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "activation_status": doc.get("activation_status"),
         "is_archived": bool(doc.get("is_archived")),
         "is_test_fixture": bool(doc.get("is_test_fixture") or doc.get("is_test")),
+        # v160.3.9.32-4b — Phase 4b surface fields.
+        "photo_url": doc.get("photo_url"),
+        "simpro_last_synced_at": doc.get("simpro_last_synced_at"),
     }
 
 
@@ -267,44 +270,59 @@ async def reset_permissions(user_id: str, actor: dict = Depends(require_permissi
     }
 
 
-@router.post("", status_code=201)
-async def invite_user(body: InviteUserIn, actor: dict = Depends(require_permission("users", "edit"))):
-    email = body.email.lower()
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(409, "Email already in use")
-    # Temporary password — user resets on first sign-in via the invite link.
-    temp_pwd = new_id()[:12]
-    user_id = new_id()
-    invite_token = new_id()
-    doc = {
-        "id": user_id, "email": email, "name": body.name, "role": body.role,
-        "org_id": actor["org_id"], "workspace_ids": body.workspace_ids,
-        "password_hash": hash_password(temp_pwd),
-        "status": "invited",
-        "token_version": 0,
-        "invite_token": invite_token,
-        "invited_by": actor["id"],
-        "created_at": now_iso(),
-    }
-    await db.users.insert_one(dict(doc))
+@router.post("", status_code=410)
+async def invite_user_deprecated(actor: dict = Depends(require_permission("users", "edit"))):
+    """v160.3.9.32-4b — Phase 4b removes admin-invite flow. Only path
+    into Paneltec is Simpro selective-import (`POST /admin/simpro/import-employees/selective`).
+    Return 410 Gone with a stable detail string so any legacy caller
+    surfaces a clean error instead of silently succeeding."""
+    raise HTTPException(410, "invite disabled: use Simpro import")
 
-    # Queue invitation email via outbox (bypasses normal permission check).
-    from email_outbox import queue_email_doc  # local import to avoid cycle
-    signup_path = f"/signup?invite={invite_token}"
-    body_html = (
-        f"<p>Hi {body.name},</p>"
-        f"<p>You've been invited to <strong>Paneltec Civil</strong> as a <em>{body.role}</em>.</p>"
-        f"<p>Click below to set your password and start signing in:</p>"
-        f"<p><a href='{signup_path}'>Accept invitation</a></p>"
-        f"<p>If you didn't expect this, you can ignore the email.</p>"
+
+class SetPasswordIn(BaseModel):
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/{user_id}/set-password")
+async def admin_set_password(
+    user_id: str,
+    body: SetPasswordIn,
+    actor: dict = Depends(require_permission("users", "edit")),
+):
+    """v160.3.9.32-4b — Admin directly sets a user's password. Bumps
+    token_version (revokes outstanding JWTs), flips activation_status
+    to 'active', clears must_change_password, writes user_audit."""
+    from auth_invite import validate_password_rule
+    err = validate_password_rule(body.password)
+    if err:
+        raise HTTPException(400, err)
+    target = await db.users.find_one(
+        {"id": user_id, "org_id": actor["org_id"]}, {"_id": 0},
     )
-    await queue_email_doc(
-        org_id=actor["org_id"], to=[email], subject="You've been invited to Paneltec Civil",
-        body_html=body_html, attachments=[], related_record_type="user_invite",
-        related_record_id=user_id, created_by=actor["id"], resource_kind="users",
-        bypass_provider_attempt=False,
+    if not target:
+        raise HTTPException(404, "User not found")
+    new_tv = int(target.get("token_version") or 0) + 1
+    now = now_iso()
+    await db.users.update_one(
+        {"id": user_id, "org_id": actor["org_id"]},
+        {"$set": {
+            "password_hash": hash_password(body.password),
+            "token_version": new_tv,
+            "activation_status": "active",
+            "must_change_password": False,
+            "status": "active",
+            "updated_at": now,
+        }},
     )
-    return _user_out(doc, False)
+    await db.user_audit.insert_one({
+        "id": new_id(),
+        "user_id": user_id,
+        "action": "admin_set_password",
+        "actor_user_id": actor["id"],
+        "actor_email": actor.get("email"),
+        "at": now,
+    })
+    return {"ok": True, "user_id": user_id}
 
 
 class BulkDeleteIn(BaseModel):

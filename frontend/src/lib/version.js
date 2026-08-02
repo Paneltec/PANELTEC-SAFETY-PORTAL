@@ -1,10 +1,12 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
-// v160.3.9.31-4a — Phase 4a: RolesAdmin page + shared RoleMatrixEditor
-//                  component + role mutation endpoints (POST/PATCH/DELETE)
-//                  + role_audit collection. Hot-patch: PageHeader auto-
-//                  renders a "← Back to Settings" link on every Settings
-//                  sub-page (systemic fix — UsersManagement, Presets,
-//                  RolesAdmin, Workspaces, Org, System, Assignments, etc.).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.31-4a';
+// v160.3.9.32-4b — Phase 4b: Simpro-first user provisioning.
+//                  Removed admin-invite flow (POST /users + POST /users/{id}/invite → 410).
+//                  New endpoints: /admin/simpro/employees/available,
+//                  /admin/simpro/import-employees/selective, /admin/simpro/sync-linked,
+//                  /admin/users/{id}/set-password. Selective import lands users
+//                  active (not pending). Frontend Users page: invite modals stripped,
+//                  Import from Simpro + Sync from Simpro buttons added, direct
+//                  Reset-Password dialog on the drawer.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.32-4b';

@@ -217,3 +217,220 @@ async def import_employees(
         "dry_run": body.dry_run,
         "simpro_employees_seen": len(details),
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.32-4b — Phase 4b: Simpro-first user provisioning.
+#
+# Adds picker + selective-import + sync endpoints. Invite flow is
+# gone (see users.py + auth_invite.py 410 gates). The full-import
+# endpoint above stays as-is for admin bulk seeding; selective is
+# the new default path from the RolesAdmin / Users UI.
+# ─────────────────────────────────────────────────────────────
+from permissions import require_permission  # noqa: E402
+
+
+class SelectiveImportIn(BaseModel):
+    employee_ids: List[str]
+
+
+@router.get("/employees/available")
+async def list_available_simpro_employees(
+    include_linked: bool = False,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Picker helper. Returns Simpro employees with a boolean flag for
+    whether they're already linked into a Paneltec user."""
+    org_id = user["org_id"]
+    cfg_doc = await db.integration_configs.find_one({
+        "org_id": org_id, "kind": "simpro", "status": "connected",
+    })
+    if not cfg_doc:
+        raise HTTPException(400, "Simpro integration not connected for this org")
+    cfg = cfg_doc.get("config") or {}
+    details, _ = await _fetch_simpro(cfg)
+    # Existing linked sids for this org.
+    linked_sids: set[str] = set()
+    async for u in db.users.find(
+        {"org_id": org_id, "simpro_employee_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "simpro_employee_id": 1},
+    ):
+        linked_sids.add(str(u["simpro_employee_id"]))
+    rows: List[Dict[str, Any]] = []
+    for d in details:
+        sid = str(d.get("ID") or "")
+        if not sid:
+            continue
+        is_linked = sid in linked_sids
+        if is_linked and not include_linked:
+            continue
+        first, last = _pick_name(d)
+        rows.append({
+            "simpro_employee_id": sid,
+            "name": f"{first} {last}".strip() or d.get("Name") or "",
+            "email": _pick_email(d),
+            "position": _pick_position(d),
+            "archived": bool(d.get("Archived")),
+            "already_in_paneltec": is_linked,
+            # Simpro REST does not expose a photo URL — kept as null for
+            # schema parity. See phase-plan doc for Phase 5+ photo import.
+            "photo_url": None,
+        })
+    rows.sort(key=lambda r: (r["already_in_paneltec"], (r["name"] or "").lower()))
+    return {"count": len(rows), "employees": rows}
+
+
+@router.post("/import-employees/selective")
+async def import_employees_selective(
+    body: SelectiveImportIn,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Import only the listed Simpro employee IDs. Unlike the
+    full-import endpoint (which creates everything as
+    pending_activation), selective import lands users as
+    `activation_status='active'` — admin picked them explicitly."""
+    org_id = user["org_id"]
+    wanted = set(str(x) for x in body.employee_ids)
+    if not wanted:
+        raise HTTPException(400, "employee_ids empty")
+    cfg_doc = await db.integration_configs.find_one({
+        "org_id": org_id, "kind": "simpro", "status": "connected",
+    })
+    if not cfg_doc:
+        raise HTTPException(400, "Simpro integration not connected for this org")
+    cfg = cfg_doc.get("config") or {}
+    details, _ = await _fetch_simpro(cfg)
+
+    counts = {"created": 0, "updated": 0, "archived": 0,
+              "reactivated": 0, "skipped": 0}
+    errors: List[Dict[str, Any]] = []
+    ts = now_iso()
+
+    for d in details:
+        sid = str(d.get("ID") or "")
+        if sid not in wanted:
+            continue
+        email = _pick_email(d)
+        first, last = _pick_name(d)
+        position = _pick_position(d)
+        is_archived_simpro = bool(d.get("Archived"))
+        existing = await db.users.find_one(
+            {"org_id": org_id, "simpro_employee_id": sid}, {"_id": 0},
+        )
+        if not existing and email:
+            existing = await db.users.find_one(
+                {"org_id": org_id, "email": email}, {"_id": 0},
+            )
+        if existing:
+            set_fields: Dict[str, Any] = {
+                "simpro_employee_id": sid,
+                "simpro_position": position,
+                "position": position,
+                "simpro_last_synced_at": ts,
+                # v160.3.9.32-4b — schema-parity photo_url. Simpro REST
+                # doesn't return one; kept nullable so future photo
+                # pipelines can populate.
+                "photo_url": existing.get("photo_url"),
+            }
+            if email and existing.get("email") != email:
+                set_fields["email"] = email
+            if first and not existing.get("name"):
+                set_fields["name"] = f"{first} {last}".strip()
+            was_archived = bool(existing.get("is_archived"))
+            if is_archived_simpro and not was_archived:
+                set_fields["is_archived"] = True
+                set_fields["activation_status"] = "suspended"
+                counts["archived"] += 1
+            elif not is_archived_simpro and was_archived:
+                set_fields["is_archived"] = False
+                # v160.3.9.32-4b — selective ⇒ admin picked them ⇒ active.
+                set_fields["activation_status"] = "active"
+                counts["reactivated"] += 1
+            else:
+                counts["updated"] += 1
+            await db.users.update_one({"id": existing["id"]}, {"$set": set_fields})
+            continue
+        if not email:
+            counts["skipped"] += 1
+            errors.append({"reason": "simpro_id_only_no_email", "simpro_id": sid})
+            continue
+        new_doc = {
+            "id": new_id(),
+            "org_id": org_id,
+            "email": email,
+            "name": f"{first} {last}".strip() or email.split("@")[0],
+            "password_hash": None,
+            "role": "worker",
+            "role_id": None,
+            "workspace_ids": [],
+            "token_version": 0,
+            "status": "active",
+            # v160.3.9.32-4b — selective import lands active (not pending).
+            "activation_status": "suspended" if is_archived_simpro else "active",
+            "is_archived": is_archived_simpro,
+            "simpro_employee_id": sid,
+            "simpro_position": position,
+            "position": position,
+            "photo_url": None,
+            "simpro_last_synced_at": ts,
+            "created_at": ts,
+        }
+        if is_archived_simpro:
+            counts["archived"] += 1
+        else:
+            counts["created"] += 1
+        await db.users.insert_one(new_doc)
+
+    audit_id = new_id()
+    await db.simpro_import_audit.insert_one({
+        "id": audit_id, "org_id": org_id, "actor_user_id": user["id"],
+        "ran_at": ts, "kind": "selective", "counts": counts, "errors": errors,
+        "requested_ids": sorted(wanted),
+    })
+    return {**counts, "errors": errors, "audit_id": audit_id,
+            "requested_count": len(wanted)}
+
+
+@router.post("/sync-linked")
+async def sync_linked_users(
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Refresh position + archived state for every already-linked user.
+    Doesn't create anything new. Returns per-user diff summary."""
+    org_id = user["org_id"]
+    cfg_doc = await db.integration_configs.find_one({
+        "org_id": org_id, "kind": "simpro", "status": "connected",
+    })
+    if not cfg_doc:
+        raise HTTPException(400, "Simpro integration not connected for this org")
+    cfg = cfg_doc.get("config") or {}
+    details, _ = await _fetch_simpro(cfg)
+    by_sid = {str(d.get("ID")): d for d in details if d.get("ID") is not None}
+    ts = now_iso()
+    diffs: List[Dict[str, Any]] = []
+    scanned = 0
+    changed = 0
+    async for u in db.users.find(
+        {"org_id": org_id, "simpro_employee_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "id": 1, "email": 1, "name": 1, "position": 1, "is_archived": 1,
+         "simpro_employee_id": 1, "activation_status": 1},
+    ):
+        scanned += 1
+        d = by_sid.get(str(u["simpro_employee_id"]))
+        if not d:
+            continue
+        changes: Dict[str, Any] = {}
+        new_pos = _pick_position(d)
+        if new_pos and new_pos != u.get("position"):
+            changes["position"] = new_pos
+        arch = bool(d.get("Archived"))
+        if arch != bool(u.get("is_archived")):
+            changes["is_archived"] = arch
+            changes["activation_status"] = "suspended" if arch else "active"
+        if changes:
+            changes["simpro_last_synced_at"] = ts
+            await db.users.update_one({"id": u["id"]}, {"$set": changes})
+            changed += 1
+            diffs.append({"user_id": u["id"], "email": u["email"], "changes": changes})
+    return {"scanned": scanned, "changed": changed, "diffs": diffs}
+

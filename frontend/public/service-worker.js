@@ -1243,7 +1243,7 @@
  *          browsers to see the enriched summary payload.
  */
 // v160.3.9.24a — Row-action icons always visible for admins.
-const CACHE_VERSION = 'paneltec-v160.3.9.31-4a';
+const CACHE_VERSION = 'paneltec-v160.3.9.32-4b';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

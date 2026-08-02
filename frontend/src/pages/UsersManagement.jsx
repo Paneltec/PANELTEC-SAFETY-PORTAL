@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
+import SimproImportPickerModal from '../components/simpro/SimproImportPickerModal';
 import HowThisWorks from '../components/help/HowThisWorks';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
@@ -220,6 +221,10 @@ export default function UsersManagement() {
   const [activeTab, setActiveTab] = useState('profile');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  // v160.3.9.32-4b — Phase 4b Simpro selective-import picker.
+  const [simproPickerOpen, setSimproPickerOpen] = useState(false);
+  // v160.3.9.32-4b — Admin direct set-password dialog (drawer action).
+  const [setPwdFor, setSetPwdFor] = useState(null); // user obj or null
   const [importOpen, setImportOpen] = useState(false);
   const [bulkZipOpen, setBulkZipOpen] = useState(false);  // v160.3.3 — Bulk ZIP import
   const [refreshSimproOpen, setRefreshSimproOpen] = useState(false);  // v160.3.1 — Simpro Worker Sync
@@ -387,14 +392,30 @@ export default function UsersManagement() {
             >
               <Download size={14} /> Bulk import ZIPs
             </button>
-            <button onClick={() => setBulkInviteOpen(true)} data-testid="bulk-invite-btn"
-              title="Paste multiple email addresses at once"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <FlPersonAdd /> Bulk invite
+            {/* v160.3.9.32-4b — Phase 4b replaces the invite flow. Sync
+                pulls updated position/archived from Simpro for every
+                already-linked user; picker opens the selective-import
+                modal. Both gated by users.edit via the backend. */}
+            <button
+              onClick={async () => {
+                try {
+                  const { data } = await api.post('/admin/simpro/sync-linked');
+                  toast.success(`Synced ${data.scanned} · Updated ${data.changed}`);
+                  await load();
+                } catch (e) { toast.error(apiError(e)); }
+              }}
+              data-testid="sync-from-simpro-btn"
+              disabled={!simproStatus.connected}
+              title={simproStatus.connected ? 'Refresh linked users from Simpro' : 'Connect Simpro first'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw size={14} /> Sync from Simpro
             </button>
-            <button onClick={() => setInviteOpen(true)} data-testid="invite-user-btn"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600">
-              <FlPersonAdd /> Invite user
+            <button onClick={() => setSimproPickerOpen(true)} data-testid="simpro-picker-btn"
+              disabled={!simproStatus.connected}
+              title={simproStatus.connected ? 'Choose Simpro employees to import' : 'Connect Simpro first'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-brand-blue text-white text-sm font-medium hover:bg-blue-600 disabled:opacity-50">
+              <FlPersonAdd /> Import from Simpro
             </button>
           </div>) : null} />
 
@@ -659,6 +680,7 @@ export default function UsersManagement() {
       {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
       {bulkInviteOpen && <BulkInviteModal existingEmails={users.map((u) => (u.email || '').toLowerCase())}
                                           onClose={() => setBulkInviteOpen(false)} onDone={load} />}
+      {simproPickerOpen && <SimproImportPickerModal onClose={() => setSimproPickerOpen(false)} onDone={load} />}
       {importOpen && <ImportFromSimproDrawer
         companies={simproStatus.companies}
         onClose={() => setImportOpen(false)}

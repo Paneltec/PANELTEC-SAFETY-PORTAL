@@ -85,3 +85,24 @@ close-out notes in the same directory (`08_phase3b_notes.md`,
    `asset.Report Emailing` on resources with `email_supported=False`.
 2. Doc 06 — Simpro-email matches a `workers` row but no `users` row.
 3. Simpro sync stays manual — no cron.
+
+## v160.3.9.32-4b addendum — Phase 6 backlog #3
+
+**Delete `Onboard.jsx` and 410 the public invite/redeem routes** once
+all `activation_status="pending_activation"` users have been transitioned
+to `active` (via admin set-password or magic-link reset) and every
+in-flight invite token has expired.
+
+Phase 4b removed the admin-triggered invite paths (`POST /api/users` and
+`POST /api/users/{id}/invite` both return 410 Gone). The public consumer
+side is still alive:
+- `POST /api/auth/invite/validate` (auth_invite.py:214)
+- `POST /api/auth/invite/redeem` (auth_invite.py:267)
+- Frontend page `Onboard.jsx`
+
+Invite token TTL is defined by `INVITE_TTL_HOURS` in `auth_invite.py` —
+check the constant before scheduling the cleanup so no in-flight tokens
+get stranded. Reset-password magic-link path stays alive indefinitely.
+
+**Owner:** whoever picks up Phase 6.
+**Estimated scope:** ~15 LOC (410 the 2 public routes, delete Onboard.jsx).
