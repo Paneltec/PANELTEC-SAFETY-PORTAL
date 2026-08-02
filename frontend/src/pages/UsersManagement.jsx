@@ -1332,7 +1332,11 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               <Select value={profile.role || undefined} onValueChange={(v) => setProfile({ ...profile, role: v })} disabled={!canEdit}>
                 <SelectTrigger className="w-full" data-testid="user-role"><SelectValue placeholder="Select role" /></SelectTrigger>
                 <SelectContent>
-                  {systemRoles.map((r) => (
+                  {/* v160.3.9.32-4c.3 — Filter to db-seeded roles only so legacy
+                      role_ids (worker/supervisor/hseq_lead/auditor) present in
+                      the LEGACY_ROLES fallback are never selectable from the
+                      drawer path either (they would 404 on save). */}
+                  {systemRoles.filter((r) => r.source === 'seed').map((r) => (
                     <SelectItem key={r.role_id} value={r.role_id} disabled={!r.is_active} data-testid={`role-opt-${r.role_id}`}>
                       {r.name}{!r.is_active ? ' · not yet available' : ''}
                     </SelectItem>
