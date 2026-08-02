@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import EmailButton from '../components/EmailButton';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { useWorkspace, wsParams } from '../lib/workspace';
@@ -134,7 +135,14 @@ function MissingFormatHint({ row, missing, isAdmin, onRendered }) {
 export default function AuditExports() {
   const { workspaceId } = useWorkspace();
   const user = getUser();
-  const isAdmin = user?.role === 'admin';
+  // v160.3.9.29-2b — Migrated from `user.role === 'admin'` to the
+  // audit_exports tokens. `isAdmin` gates: (a) the useEffect that
+  // fetches "missing PDF" info and (b) a "regenerate missing PDF"
+  // button. Requires BOTH view AND email — viewers alone shouldn't
+  // trigger regen; email capability implies audit-pack authority.
+  const can = useCan();
+  const isAdmin = can('audit_exports', 'view') && can('audit_exports', 'email');
+  void user;
   const [items, setItems] = useState([]);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);

@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
+import { useCan } from '../lib/permissions';
 
 function CountChip({ icon, n, kind, testid }) {
   const zero = !n || n === 0;
@@ -187,8 +188,12 @@ export default function ListRolesTab({ user }) {
   const [expanded, setExpanded] = useState(null);
   const [sort, setSort] = useState(() => loadListSort('list_roles', { key: 'role_title', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
-  const canWrite = user && user.role === 'admin';
+  // v160.3.9.29-2b — reference_library gate migration (see CompaniesTab for pattern).
+  const can = useCan();
+  const canWrite = can('reference_library', 'edit');
+  const canDelete = can('reference_library', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

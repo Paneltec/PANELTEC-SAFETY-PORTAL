@@ -12,6 +12,7 @@ import { Loader2, Save, AlertTriangle, Check, Truck, Wrench, Hammer, Box, Layout
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while the FormAssignments
 // notify-confirm modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -46,8 +47,18 @@ const fmtType = (t) => (t || '—').replace(/_/g, ' ').replace(/\b\w/g, (c) => c
 
 export default function FormAssignmentsAdmin() {
   const me = getUser();
-  const canEdit = me?.role === 'admin' || me?.role === 'manager';
-  const isLockedOut = !canEdit && me?.role !== 'hseq_lead';
+  // v160.3.9.29-2b — Migrated from `admin || manager` OR (`hseq_lead`
+  // gets a special read-only view) to the granular `forms.edit` token.
+  // Under new model, hseq_lead has `forms.edit=true` (permissions.py:134)
+  // so they now edit assignments outright — the old "read-only view
+  // for hseq_lead" branch collapses because `!canEdit` implies no
+  // forms.edit right, which implies no more special hseq_lead treatment.
+  const can = useCan();
+  const canEdit = can('forms', 'edit');
+  const canView = can('forms', 'view');
+  // Retained for JSX callsites; `isLockedOut` now means "no read either".
+  const isLockedOut = !canEdit && !canView;
+  void me;
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const focusedType = params.get('asset_type');

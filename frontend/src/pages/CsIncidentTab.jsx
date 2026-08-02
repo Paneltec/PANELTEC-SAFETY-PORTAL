@@ -5,6 +5,7 @@ import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import { formatDate, formatDateTime12, formatTime12 } from '../lib/timeFormat';
+import { useCan } from '../lib/permissions';
 
 // Contextual label overrides for columns with duplicate source headers.
 const LABEL_OVERRIDES = {
@@ -232,8 +233,15 @@ export default function CsIncidentTab({ user }) {
   const [expanded, setExpanded] = useState(null);
   const [sort, setSort] = useState(() => loadListSort('cs_incident', { key: 'date_of_issue', dir: 'desc' }));
   const [importOpen, setImportOpen] = useState(false);
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
-  const canWrite = user && user.role === 'admin';
+  // v160.3.9.29-2b — Migrated from `user.role`-based gates to the granular
+  // reference_library tokens. Per Phase 3c decision #5, hseq_lead now
+  // gains write access here (seeded in permissions.py ROLE_DEFAULTS in
+  // the same commit). `isAdmin` kept as a legacy JSX alias.
+  const can = useCan();
+  const canWrite = can('reference_library', 'edit');
+  const canDelete = can('reference_library', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

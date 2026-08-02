@@ -8,18 +8,13 @@ from pydantic import BaseModel
 
 from db import db
 from auth import get_current_user
+from permissions import require_permission
 
 log = logging.getLogger("paneltec.plant_maintenance")
 router = APIRouter(prefix="/plant-maintenance", tags=["plant-maintenance"])
-_ADMIN = {"admin", "hseq_lead"}
 
 
 def _now(): return datetime.now(timezone.utc).isoformat()
-
-
-def _admin(user):
-    if (user or {}).get("role") not in _ADMIN:
-        raise HTTPException(403, "admin-required")
 
 
 async def ensure_indexes():
@@ -195,8 +190,7 @@ class RowPatch(BaseModel):
 
 
 @router.patch("/{uid}")
-async def patch_row(uid: str, patch: RowPatch, user: dict = Depends(get_current_user)):
-    _admin(user)
+async def patch_row(uid: str, patch: RowPatch, user: dict = Depends(require_permission("assets", "edit"))):
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if k not in {"_id", "id", "content_hash"}}
     if not updates: raise HTTPException(400, "no-fields")
@@ -214,8 +208,8 @@ async def patch_row(uid: str, patch: RowPatch, user: dict = Depends(get_current_
 
 
 @router.delete("/{uid}")
-async def delete_row(uid: str, user: dict = Depends(get_current_user)):
-    _admin(user); now = _now()
+async def delete_row(uid: str, user: dict = Depends(require_permission("assets", "delete"))):
+    now = _now()
     r = await db.plant_maintenance.find_one_and_update(
         {"$or": [{"id": uid}, {"maintenance_id": uid}], "deleted_at": None},
         {"$set": {"deleted_at": now, "deleted_by": user["id"]}},
@@ -228,9 +222,8 @@ async def delete_row(uid: str, user: dict = Depends(get_current_user)):
 async def reimport(
     file: Optional[UploadFile] = File(default=None),
     url: Optional[str] = Form(default=None),
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission("assets", "edit")),
 ):
-    _admin(user)
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
     from pathlib import Path as _P

@@ -11,6 +11,7 @@ import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser, getToken } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import HowThisWorks from '../components/help/HowThisWorks';
 import {
   PageHeader, NewButton, BackButton, AiButton, PrimaryButton, GhostButton,
@@ -30,7 +31,14 @@ const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 export default function SwmsList() {
   const navigate = useNavigate();
   const user = getUser();
-  const isAdmin = user?.role === 'admin';
+  // v160.3.9.29-2b — Migrated from `user?.role === 'admin'` to swms.delete
+  // token. Gates the "Bin / Recycle" view + restore actions. hseq_lead
+  // does NOT currently carry swms.delete (permissions.py:114), so this
+  // remains admin-only behaviourally. Matches the intent of the gate
+  // (permanent-delete/restore is a destructive-audit action).
+  const can = useCan();
+  const isAdmin = can('swms', 'delete');
+  void user;
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   // Phase 4.5 — paste-to-create, bulk-delete + recycle bin.

@@ -21,6 +21,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
 // v160.3.7c — Per-row delete confirm uses shadcn AlertDialog to match the
@@ -43,6 +44,9 @@ import {
   Print20Regular as Printer,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2b — Legacy set kept for reference; consumers now go
+// through useCan('sites', 'edit') below. Will be removed once no local
+// tests import it.
 const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
 function fmtAgo(iso) {
@@ -56,9 +60,12 @@ function fmtAgo(iso) {
 
 export default function SitesAdmin() {
   const user = getUser();
-  const canEdit = EDIT_ROLES.has(user?.role);
-  // v160.3.7c — per-row delete is admin-only (stricter than canEdit).
-  const canDelete = user?.role === 'admin';
+  const canEdit = useCan()('sites', 'edit');
+  // v160.3.9.29-2b — per-row delete now gated by sites.delete (stricter
+  // than sites.edit — matches backend `require_permission` on the
+  // /api/sites/{id} DELETE route).
+  const canDelete = useCan()('sites', 'delete');
+  void user; void EDIT_ROLES;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -814,7 +821,7 @@ export function SiteDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const canEdit = EDIT_ROLES.has(user?.role);
+  const canEdit = useCan()('sites', 'edit');
   const [site, setSite] = useState(null);
   const [siteErr, setSiteErr] = useState(null);
   const [signons, setSignons] = useState([]);

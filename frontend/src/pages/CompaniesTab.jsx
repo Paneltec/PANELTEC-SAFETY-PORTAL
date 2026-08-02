@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
+import { useCan } from '../lib/permissions';
 
 const LABEL = {
   company_id: 'ID', company: 'Company', company_category: 'Category',
@@ -159,8 +160,15 @@ export default function CompaniesTab({ user }) {
   const [expanded, setExpanded] = useState(null);
   const [sort, setSort] = useState(() => loadListSort('companies', { key: 'company', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
-  const canWrite = user && user.role === 'admin';
+  // v160.3.9.29-2b — Migrated from `user.role`-based gates to the granular
+  // reference_library tokens. Per Phase 3c decision #5, hseq_lead now
+  // gains write access here (seeded in permissions.py ROLE_DEFAULTS in
+  // the same commit). `isAdmin` kept as a legacy JSX alias.
+  const can = useCan();
+  const canWrite = can('reference_library', 'edit');
+  const canDelete = can('reference_library', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

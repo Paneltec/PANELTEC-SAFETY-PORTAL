@@ -134,6 +134,13 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "forms":           {**_all_no_delete(True), "email": False},
         # v159.0 — HSEQ Lead sees all supplier data.
         "suppliers":       {**_all_no_delete(True), "email": False},
+        # v160.3.9.29-2b — Extend seed for Phase 3c decision #5.
+        # hseq_lead now writes reference libraries (Companies, CS Incident,
+        # Completed Training, List Roles, List Forms, Incident Root Causes,
+        # Master Risks) AND site QR sign-on records. Aligns FE gates with
+        # backend seeds so mechanical 2b migration doesn't narrow anyone.
+        "reference_library": {**_all_no_delete(True), "email": False},
+        "sites":             {**_all_no_delete(True), "email": False},
     },
     "supervisor": {
         "swms":            _all_no_delete(True),

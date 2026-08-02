@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
+import { useCan } from '../lib/permissions';
 
 const GROUP_CHIP = {
   Operations:     { bg: '#DBEAFE', fg: '#1E3A8A' }, // blue-100 / blue-900
@@ -249,9 +250,13 @@ export default function ListFormsTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('list_forms', { key: 'name', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
 
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
-  // v160.3.9.25 — Strict admin for CRUD, matching backend RBAC.
-  const canWrite = user && user.role === 'admin';
+  // v160.3.9.29-2b — reference_library gate migration (see CompaniesTab).
+  // Decision #5 widens hseq_lead here: they now WRITE reference forms too.
+  const can = useCan();
+  const canWrite = can('reference_library', 'edit');
+  const canDelete = can('reference_library', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

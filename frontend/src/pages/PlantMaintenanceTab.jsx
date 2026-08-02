@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import api from '../lib/api';
 import { formatDate } from '../lib/timeFormat';
+import { useCan } from '../lib/permissions';
 
 function StatusChip({ v }) {
   if (!v) return <span className="text-slate-300 text-xs">—</span>;
@@ -43,7 +44,14 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
   const [grouped, setGrouped] = useState(null);
   const [groupLoading, setGroupLoading] = useState(false);
   const [openGroup, setOpenGroup] = useState(null); // `plant:<id>` or `rego:<XXX>`
-  const isAdmin = user && ['admin', 'hseq_lead'].includes(user.role);
+  // v160.3.9.29-2b — Migrated from `user.role`-based gate to assets.edit
+  // token. Backend `plant_maintenance.py` also migrated to
+  // `require_permission("assets", "edit"/"delete")` in the same commit.
+  const can = useCan();
+  const canWrite = can('assets', 'edit');
+  const canDelete = can('assets', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

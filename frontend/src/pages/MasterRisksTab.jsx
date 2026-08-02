@@ -15,6 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
+import { useCan } from '../lib/permissions';
 
 const SEVERITY_ORDER = ['extreme', 'high', 'medium', 'low'];
 const SEVERITY_LABEL = {
@@ -302,7 +303,13 @@ export default function MasterRisksTab({ user }) {
   const [sort, setSort] = useState(() => loadListSort('master_risks', { key: 'risk_id', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
 
-  const isAdmin = user && user.role === 'admin';
+  // v160.3.9.29-2b — reference_library gate migration (see CompaniesTab).
+  // MasterRisksTab feeds the SWMS master risk library; treated as reference data.
+  const can = useCan();
+  const canWrite = can('reference_library', 'edit');
+  const canDelete = can('reference_library', 'delete');
+  const isAdmin = canWrite;
+  void user;
 
   const load = () => {
     setLoading(true);

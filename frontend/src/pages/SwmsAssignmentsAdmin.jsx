@@ -16,6 +16,7 @@ import { Loader2, Save, History, ChevronRight, X, CheckSquare, Square, AlertCirc
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 import SwmsDiffModal from '../components/swms/SwmsDiffModal';
 
@@ -47,11 +48,13 @@ const ASSET_TYPE_CHOICES = [
 ];
 
 const EMPTY_APPLIES = { roles: [], worker_ids: [], company_ids: [], asset_types: [] };
+// v160.3.9.29-2b — Legacy set kept for reference; consumer moved to useCan('swms','edit').
 const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
 export default function SwmsAssignmentsAdmin() {
   const user = getUser();
-  const canEdit = EDIT_ROLES.has(user?.role);
+  const canEdit = useCan()('swms', 'edit');
+  void user; void EDIT_ROLES;
   const [swmsList, setSwmsList] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [workers, setWorkers] = useState([]);
