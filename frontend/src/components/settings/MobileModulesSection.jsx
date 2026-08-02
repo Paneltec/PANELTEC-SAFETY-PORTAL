@@ -49,6 +49,10 @@ import {
   Open20Regular,
 } from '@fluentui/react-icons';
 
+// v160.3.9.33.3 — Legacy fallback role list. The live dropdown fetches
+// from `/api/admin/roles?is_active=true` on mount and merges in every
+// seeded + custom + Simpro-position-auto role. This static list is only
+// used until the API responds, and as an offline safety net.
 const ROLES = [
   { key: 'worker',     label: 'Worker'     },
   { key: 'supervisor', label: 'Supervisor' },
@@ -139,7 +143,34 @@ function computeExpoUrl(role, token) {
 function PhonePreview({ canEdit }) {
   const [role, setRole] = useState('worker');
   const [src, setSrc] = useState('');
+  // v160.3.9.33.3 — live-fetched roles for the "Preview as role"
+  // dropdown. Grouped in <optgroup> by source (seeded / custom /
+  // simpro_position_auto). Falls back to the static ROLES list until
+  // the fetch resolves or if it fails. Custom + auto roles rely on
+  // the v4d Option-1 fallback so the mobile preview matches the
+  // effective grants of a real user on those roles.
+  const [allRoles, setAllRoles] = useState([]);
+  useEffect(() => {
+    api.get('/admin/roles').then(({ data }) => {
+      const rs = (data?.roles || []).filter((r) => r.is_active !== false);
+      setAllRoles(rs);
+    }).catch(() => setAllRoles([]));
+  }, []);
   const iframeRef = useRef(null);
+
+  // Group + sort for the dropdown. Order: seeded → custom → auto,
+  // alphabetical within each group. Falls back to legacy ROLES when
+  // the API returned nothing (offline / cold start).
+  const seedRoles = allRoles
+    .filter((r) => (r.source || (r.is_system ? 'seed' : 'admin_created')) === 'seed')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const customRoles = allRoles
+    .filter((r) => r.source === 'admin_created')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const autoRoles = allRoles
+    .filter((r) => r.source === 'simpro_position_auto')
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const hasLive = seedRoles.length + customRoles.length + autoRoles.length > 0;
 
   // Build the src once on first render — and only rebuild when the admin
   // explicitly changes role or clicks Reload. Deliberately NOT reactive to
@@ -176,7 +207,12 @@ function PhonePreview({ canEdit }) {
             </span>
             <div>
               <div className="text-sm font-semibold text-slate-900">Live Preview</div>
-              <div className="text-[11px] text-slate-500">Saved config · {role}</div>
+              <div className="text-[11px] text-slate-500">
+                Saved config · {(() => {
+                  const match = allRoles.find((r) => r.role_id === role);
+                  return match ? match.name : role;
+                })()}
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -200,10 +236,34 @@ function PhonePreview({ canEdit }) {
             disabled={!canEdit}
             className="w-full rounded-lg border border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
           >
-            {ROLES.map((r) => (
+            {!hasLive && ROLES.map((r) => (
               <option key={r.key} value={r.key}>{r.label}</option>
             ))}
+            {hasLive && seedRoles.length > 0 && (
+              <optgroup label="Seeded roles">
+                {seedRoles.map((r) => (
+                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {hasLive && customRoles.length > 0 && (
+              <optgroup label="Custom roles">
+                {customRoles.map((r) => (
+                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                ))}
+              </optgroup>
+            )}
+            {hasLive && autoRoles.length > 0 && (
+              <optgroup label="Simpro position roles">
+                {autoRoles.map((r) => (
+                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
+          <p className="mt-1 text-[10px] text-slate-500 leading-tight">
+            Reviewing what a user with this role would see. Per-user overrides are not reflected here.
+          </p>
         </label>
 
         {/* Phone bezel — slate body, orange notch accent. CSS-only,
