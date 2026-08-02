@@ -7,6 +7,7 @@ import { useSearchParams, Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import DismissibleHint from '../components/DismissibleHint';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
@@ -1600,6 +1601,14 @@ export default function Workers() {
             See the Simpro import guide →
           </Link>
         </div>
+      )}
+      {/* v160.3.9.33.2 — photo reminder banner (mirrors the one on Users) */}
+      {canEdit && (
+        <DismissibleHint
+          storageKey="paneltec.hint.workers-zip-photos-v33_2"
+          testId="workers-photo-hint"
+          text="Missing photos on your users? A fresh Simpro ZIP export uploaded here will populate worker photos + link them to Users."
+        />
       )}
 
       {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.

@@ -14,6 +14,7 @@ import {
 } from '@fluentui/react-icons';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import DismissibleHint from '../components/DismissibleHint';
 import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import SimproImportPickerModal from '../components/simpro/SimproImportPickerModal';
@@ -425,11 +426,6 @@ export default function UsersManagement() {
           <div className="min-w-0">
             <div className="font-medium flex items-center gap-1.5 leading-tight">
               <span className="truncate">{u.name}</span>
-              {u.simpro_employee_id && (
-                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
-                  title={`Simpro-linked${u.simpro_last_synced_at ? ` · Last synced ${new Date(u.simpro_last_synced_at).toLocaleString()}` : ''}`}
-                  data-testid={`simpro-badge-${u.id}`}>Simpro</span>
-              )}
               {u.role_locked && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 inline-flex items-center gap-0.5"
                   title="Role manually locked — Simpro sync won't change it"
@@ -590,6 +586,17 @@ export default function UsersManagement() {
               <FlPersonAdd /> Add employees from Simpro
             </button>
           </div>) : null} />
+
+      {/* v160.3.9.33.2 — photo reminder banner */}
+      {can('users', 'edit') && (
+        <DismissibleHint
+          storageKey="paneltec.hint.users-zip-photos-v33_2"
+          testId="users-photo-hint"
+          text="Missing photos on some users? A fresh Simpro ZIP export uploaded via Workers will populate photos + link them to Users."
+          linkTo="/app/workers"
+          linkLabel="Go to Workers →"
+        />
+      )}
 
       {/* v160.3.7i — SimproZipImportGuide was rehomed to
           `/app/settings/help/simpro-import` because the full inline guide
