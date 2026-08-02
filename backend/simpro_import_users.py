@@ -431,7 +431,16 @@ async def sync_linked_users(
     user: dict = Depends(require_permission("users", "edit")),
 ):
     """Refresh position + archived state for every already-linked user.
-    Doesn't create anything new. Returns per-user diff summary."""
+    Doesn't create anything new. Returns per-user diff summary.
+
+    v160.3.9.33 — Phase 4d Option C: when Simpro's Position changes:
+      • `simpro_position` is always updated (position is source of truth).
+      • If `role_locked=False` → auto-create-if-missing the position role
+        + reassign the user to it. Audit both.
+      • If `role_locked=True` → position updates but role does NOT.
+        Audit a `role_lock_drift` entry so admins have visibility.
+    """
+    from roles_catalogue import create_role_from_position, _slugify
     org_id = user["org_id"]
     cfg_doc = await db.integration_configs.find_one({
         "org_id": org_id, "kind": "simpro", "status": "connected",
@@ -445,10 +454,14 @@ async def sync_linked_users(
     diffs: List[Dict[str, Any]] = []
     scanned = 0
     changed = 0
+    role_updates = 0
+    lock_drifts = 0
+    auto_created_role_ids: set = set()
     async for u in db.users.find(
         {"org_id": org_id, "simpro_employee_id": {"$exists": True, "$ne": None}},
         {"_id": 0, "id": 1, "email": 1, "name": 1, "position": 1, "is_archived": 1,
-         "simpro_employee_id": 1, "activation_status": 1},
+         "simpro_employee_id": 1, "activation_status": 1, "simpro_position": 1,
+         "role_id": 1, "role_locked": 1},
     ):
         scanned += 1
         d = by_sid.get(str(u["simpro_employee_id"]))
@@ -456,16 +469,76 @@ async def sync_linked_users(
             continue
         changes: Dict[str, Any] = {}
         new_pos = _pick_position(d)
-        if new_pos and new_pos != u.get("position"):
+        old_pos = u.get("simpro_position") or u.get("position")
+        position_changed = bool(new_pos and new_pos != old_pos)
+        if position_changed:
             changes["position"] = new_pos
+            changes["simpro_position"] = new_pos
         arch = bool(d.get("Archived"))
         if arch != bool(u.get("is_archived")):
             changes["is_archived"] = arch
             changes["activation_status"] = "suspended" if arch else "active"
+        # v160.3.9.33 — Phase 4d Option C: role sync branch.
+        role_change = None
+        if position_changed and new_pos:
+            desired_role_id = "custom_" + _slugify(new_pos)
+            current_role_id = u.get("role_id")
+            role_locked = bool(u.get("role_locked"))
+            if role_locked:
+                # Locked → keep role, audit the drift so admins can see it.
+                if current_role_id != desired_role_id:
+                    lock_drifts += 1
+                    await db.user_audit.insert_one({
+                        "id": new_id(),
+                        "user_id": u["id"],
+                        "action": "role_lock_drift",
+                        "before": {"simpro_position": old_pos,
+                                   "role_id": current_role_id},
+                        "after": {"simpro_position": new_pos,
+                                  "role_id": current_role_id,
+                                  "desired_role_id_if_unlocked": desired_role_id},
+                        "role_locked": True,
+                        "actor_user_id": user["id"],
+                        "actor_email": user.get("email"),
+                        "at": ts,
+                    })
+            else:
+                # Unlocked → create-if-missing + reassign.
+                res = await create_role_from_position(position=new_pos, actor=user)
+                new_role_id = res["role_id"]
+                if res["created"]:
+                    auto_created_role_ids.add(new_role_id)
+                if new_role_id != current_role_id:
+                    changes["role_id"] = new_role_id
+                    changes["role"] = new_role_id
+                    changes["role_assigned_at"] = ts
+                    role_updates += 1
+                    role_change = {"before": current_role_id, "after": new_role_id,
+                                   "auto_created": res["created"]}
         if changes:
             changes["simpro_last_synced_at"] = ts
             await db.users.update_one({"id": u["id"]}, {"$set": changes})
             changed += 1
-            diffs.append({"user_id": u["id"], "email": u["email"], "changes": changes})
-    return {"scanned": scanned, "changed": changed, "diffs": diffs}
+            diffs.append({"user_id": u["id"], "email": u["email"],
+                          "changes": changes, "role_change": role_change})
+            if role_change:
+                await db.user_audit.insert_one({
+                    "id": new_id(),
+                    "user_id": u["id"],
+                    "action": "role_updated_from_position",
+                    "before": {"role_id": role_change["before"],
+                               "simpro_position": old_pos},
+                    "after": {"role_id": role_change["after"],
+                              "simpro_position": new_pos,
+                              "role_auto_created": role_change["auto_created"]},
+                    "role_locked": False,
+                    "actor_user_id": user["id"],
+                    "actor_email": user.get("email"),
+                    "at": ts,
+                })
+    return {"scanned": scanned, "changed": changed,
+            "role_updates": role_updates,
+            "lock_drifts": lock_drifts,
+            "auto_created_role_ids": sorted(auto_created_role_ids),
+            "diffs": diffs}
 

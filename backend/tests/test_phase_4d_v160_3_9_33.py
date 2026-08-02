@@ -1,65 +1,127 @@
 """v160.3.9.33 — Phase 4d tests.
 
 Covers:
-  1. POST /api/admin/roles/sync-from-simpro-positions
-     - Fresh sync creates N roles, subsequent runs skip N (idempotency).
-     - Non-admin → 403.
-     - Every created role → `role_audit` entry action="create_from_simpro".
-  2. Auto-created roles land with `source="simpro_position_auto"`,
-     `permission_tokens=[]`, `is_active=True`, `is_system=False`.
-  3. bulk-assign-role with `role_id="__from_position__"` auto-creates
-     each user's position role and assigns it.
-  4. Option-1 fallback: PATCH a custom role to add tokens →
-     GET /auth/me for a user with that role → new tokens are effective.
-  5. Cache-bust invariant: mutations to `db.roles` invalidate the
-     per-process token cache so the next request sees fresh tokens.
-  6. Slug collision safety: seeded role_ids (no `custom_` prefix) never
-     collide with auto-created role_ids (always `custom_` prefix).
+  1. POST /api/admin/roles/sync-from-simpro-positions — idempotent, 403,
+     audit rows.
+  2. Auto-role shape (source, is_system=False, tokens=[]).
+  3. Slug collision safety between seeded and auto roles.
+  4. bulk-assign-role `__from_position__` sentinel.
+  5. Option-1 fallback: db.roles.permission_tokens[] drive effective
+     permissions for users on custom / auto roles.
+  6. Cache-bust invariant: PATCH-ing tokens on a role is visible on
+     the very next /auth/me for a user holding that role.
+  7. Phase 4d Option C: `role_locked` flag semantics.
+     • Manual bulk-assign to non-position-matching role → role_locked=True.
+     • Manual bulk-assign to position-matching role → role_locked=False.
+     • __from_position__ assignment → role_locked=False.
+     • PATCH /users/{id} {role_locked:false} unlocks; next Option-C
+       flow would re-sync.
+     • PATCH /users/{id} {role_id:<some>} auto-computes role_locked.
+
+HARD RULE (see conftest.py outage note): this file MUST only mutate
+`db.users` rows created inside the test itself (or via the
+`ephemeral_admin` conftest fixture). It NEVER touches real production
+accounts (paneltec.com.au domain OR admin/hseq_manager roles). Every
+seeded row is deleted at teardown.
 """
 import os
-import time
 import uuid
+import time
+
+import bcrypt
+import pytest
 import requests
 
-API = os.environ.get("PANELTEC_API_BASE", "http://localhost:8001/api")
-ADMIN_EMAIL = "stephen@paneltec.com.au"
-ADMIN_PWD = "Mcgstephen50#"
+from .conftest import (
+    API, ADMIN_EMAIL, ADMIN_PWD,
+    _login, _hash, assert_ephemeral_target,
+    EPHEMERAL_EMAIL_PREFIX,
+)
 
-
-def _login(email, pwd):
-    r = requests.post(f"{API}/auth/login", json={"email": email, "password": pwd}, timeout=10)
-    assert r.status_code == 200, r.text[:200]
-    return r.json()["access_token"]
+# Use conftest's shared API (points to REACT_APP_BACKEND_URL, i.e. the
+# preview URL). Local pytest overrides are NOT supported — the whole
+# suite talks to the same backend the frontend does.
 
 
 def _hdr(t):
     return {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
 
 
-# ─── (1) sync idempotency ─────────────────────────────────────────────
+PHASE4D_USER_PREFIX = "__phase4d_ephuser__"
 
-def test_sync_from_simpro_positions_idempotent_across_three_runs():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Run 1 — may create N (fresh) or 0 (already-run in an earlier test).
+
+@pytest.fixture
+def eph_pending_user(_mongo, ephemeral_org_id):
+    """Seed one ephemeral pending user with a fake Simpro position.
+    Yields the user doc; deletes at teardown."""
+    uid = str(uuid.uuid4())
+    email = f"{PHASE4D_USER_PREFIX}{uid[:8]}@paneltec.internal"
+    doc = {
+        "id": uid,
+        "org_id": ephemeral_org_id,
+        "email": email,
+        "name": f"Phase4D Ephemeral {uid[:8]}",
+        "role": None,
+        "role_id": None,
+        "status": "active",
+        "activation_status": "pending_activation",
+        "password_hash": None,
+        "simpro_employee_id": f"EPH-{uid[:6]}",
+        "simpro_position": "Traffic Controller",  # matches seeded auto role
+        "position": "Traffic Controller",
+        "created_at": "2026-08-01T00:00:00+00:00",
+        "created_by": "pytest",
+        "token_version": 0,
+        "workspace_ids": [],
+    }
+    _mongo.users.insert_one(doc)
+    yield doc
+    _mongo.users.delete_one({"id": uid})
+
+
+@pytest.fixture
+def eph_no_position_user(_mongo, ephemeral_org_id):
+    uid = str(uuid.uuid4())
+    email = f"{PHASE4D_USER_PREFIX}nopos_{uid[:8]}@paneltec.internal"
+    doc = {
+        "id": uid,
+        "org_id": ephemeral_org_id,
+        "email": email,
+        "name": f"Phase4D NoPos {uid[:8]}",
+        "role": None,
+        "role_id": None,
+        "status": "active",
+        "activation_status": "pending_activation",
+        "password_hash": None,
+        "created_at": "2026-08-01T00:00:00+00:00",
+        "created_by": "pytest",
+        "token_version": 0,
+        "workspace_ids": [],
+    }
+    _mongo.users.insert_one(doc)
+    yield doc
+    _mongo.users.delete_one({"id": uid})
+
+
+# ═════════════════════════════════════════════════════════════════════
+# (1) sync idempotency
+# ═════════════════════════════════════════════════════════════════════
+
+def test_sync_from_simpro_positions_idempotent_across_three_runs(ephemeral_admin):
+    tok = ephemeral_admin["token"]
     r1 = requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                        headers=_hdr(tok), timeout=15)
     assert r1.status_code == 200, r1.text[:200]
     body1 = r1.json()
-    # After run 1, every distinct simpro_position should exist as a role.
-    total_after_1 = len(body1["created"]) + len(body1["skipped"])
-    # Run 2 — should create 0 and skip the same set.
+    total = len(body1["created"]) + len(body1["skipped"])
     r2 = requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                        headers=_hdr(tok), timeout=15)
     assert r2.status_code == 200
     body2 = r2.json()
-    assert body2["created"] == [], (
-        f"Second run should create nothing; got {body2['created']}")
-    assert len(body2["skipped"]) == total_after_1, (
-        f"Second run should skip the same total; got {len(body2['skipped'])} vs {total_after_1}")
-    # Run 3 — same as run 2.
+    assert body2["created"] == []
+    assert len(body2["skipped"]) == total
     r3 = requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                        headers=_hdr(tok), timeout=15)
-    assert r3.status_code == 200
     body3 = r3.json()
     assert body3["created"] == []
     assert body3["skipped"] == body2["skipped"]
@@ -69,7 +131,6 @@ def test_sync_from_simpro_positions_non_admin_forbidden():
     try:
         wtok = _login("worker-fixture@paneltec.com.au", "WorkerFixture123!")
     except AssertionError:
-        import pytest
         pytest.skip("worker fixture unavailable")
         return
     r = requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
@@ -78,150 +139,126 @@ def test_sync_from_simpro_positions_non_admin_forbidden():
     assert "users.edit" in r.text.lower()
 
 
-# ─── (2) auto-role shape ──────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# (2) auto-role shape
+# ═════════════════════════════════════════════════════════════════════
 
-def test_auto_created_roles_have_correct_shape():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Ensure the sync has run at least once so auto roles exist.
+def test_auto_created_roles_have_correct_shape(ephemeral_admin):
+    tok = ephemeral_admin["token"]
     requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                   headers=_hdr(tok), timeout=15)
     roles = requests.get(f"{API}/admin/roles", headers=_hdr(tok), timeout=10).json()["roles"]
     auto = [r for r in roles if r.get("source") == "simpro_position_auto"]
-    assert len(auto) > 0, "expected at least one auto-created role"
+    assert len(auto) > 0
     for r in auto:
         assert r["is_system"] is False
         assert r["is_active"] is True
-        assert (r.get("permission_tokens") or []) == []  # empty by default
+        assert (r.get("permission_tokens") or []) == []
         assert r["role_id"].startswith("custom_")
 
 
-def test_slug_collision_safety_seeded_vs_auto():
-    """Seeded role_ids never carry the `custom_` prefix. Auto role_ids
-    ALWAYS carry the `custom_` prefix. Even if an admin renames a
-    seeded role to look like a Simpro position, there is no way for the
-    two to collide because the seed rows never start with custom_.
-    """
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
+def test_slug_collision_safety_seeded_vs_auto(ephemeral_admin):
+    tok = ephemeral_admin["token"]
     roles = requests.get(f"{API}/admin/roles", headers=_hdr(tok), timeout=10).json()["roles"]
     seed_ids = {r["role_id"] for r in roles if r.get("source") == "seed"}
     auto_ids = {r["role_id"] for r in roles if r.get("source") == "simpro_position_auto"}
     for sid in seed_ids:
-        assert not sid.startswith("custom_"), f"seed role {sid} must not carry custom_ prefix"
+        assert not sid.startswith("custom_")
     for aid in auto_ids:
-        assert aid.startswith("custom_"), f"auto role {aid} must carry custom_ prefix"
-    assert seed_ids.isdisjoint(auto_ids), "seed and auto role_id sets must be disjoint"
+        assert aid.startswith("custom_")
+    assert seed_ids.isdisjoint(auto_ids)
 
 
-# ─── (3) bulk-assign from position sentinel ───────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# (3) bulk-assign __from_position__
+# ═════════════════════════════════════════════════════════════════════
 
-def _find_pending_with_position(tok):
-    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
-    for u in users:
-        if (not u.get("role_id")) and u.get("simpro_position") and u.get("activation_status") == "pending_activation":
-            return u
-    return None
-
-
-def test_bulk_assign_from_position_sentinel_creates_and_assigns():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Pre-sync so no NEW roles get created here; we only exercise assignment.
+def test_bulk_assign_from_position_sentinel_creates_and_assigns(
+    ephemeral_admin, eph_pending_user
+):
+    tok = ephemeral_admin["token"]
     requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                   headers=_hdr(tok), timeout=15)
-    u = _find_pending_with_position(tok)
-    if not u:
-        import pytest
-        pytest.skip("no pending user with simpro_position to test __from_position__")
-        return
     r = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
-                      json={"user_ids": [u["id"]],
+                      json={"user_ids": [eph_pending_user["id"]],
                             "role_id": "__from_position__",
                             "admin_confirmed": True}, timeout=10)
     assert r.status_code == 200, r.text[:300]
     body = r.json()
     assert body["updated"] == 1
-    # Confirm the user now carries a custom_ role_id.
     users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
-    target = [x for x in users if x["id"] == u["id"]][0]
-    assert target["role_id"] and target["role_id"].startswith("custom_")
+    target = [x for x in users if x["id"] == eph_pending_user["id"]][0]
+    assert target["role_id"] == "custom_traffic_controller"
     assert target["activation_status"] == "active"
+    # v4d Option C: from_position → role_locked=False.
+    assert target["role_locked"] is False
 
 
-def test_bulk_assign_from_position_no_position_returns_error():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Find a user without simpro_position (should be a test fixture).
-    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
-    victim = None
-    for u in users:
-        if not u.get("simpro_position") and not u.get("role_id"):
-            victim = u; break
-    if not victim:
-        import pytest
-        pytest.skip("no user without simpro_position + without role_id available")
-        return
+def test_bulk_assign_from_position_no_position_returns_error(
+    ephemeral_admin, eph_no_position_user
+):
+    tok = ephemeral_admin["token"]
     r = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
-                      json={"user_ids": [victim["id"]],
+                      json={"user_ids": [eph_no_position_user["id"]],
                             "role_id": "__from_position__",
                             "admin_confirmed": True}, timeout=10)
-    assert r.status_code == 200  # partial-batch friendly
+    assert r.status_code == 200
     body = r.json()
     assert body["updated"] == 0
     assert body["errors"] == 1
     assert any(e.get("reason") == "no_simpro_position" for e in body["detail"]["errors"])
 
 
-# ─── (4) Option-1 fallback: DB tokens govern effective permissions ────
+# ═════════════════════════════════════════════════════════════════════
+# (4) Option-1 fallback: DB tokens govern effective permissions
+# ═════════════════════════════════════════════════════════════════════
 
-def test_option_1_fallback_db_tokens_grant_permission():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Create a fresh custom role with a unique name so we don't collide
-    # with any Simpro-position slug present in the org.
+def test_option_1_fallback_db_tokens_grant_permission(
+    _mongo, ephemeral_admin, eph_pending_user
+):
+    """Assign a custom role with tokens=[swms.view] to an ephemeral
+    pending user; log in as them; effective.swms.view MUST be True."""
+    tok = ephemeral_admin["token"]
     fresh_name = f"Fallback Test {uuid.uuid4().hex[:6]}"
     r_create = requests.post(f"{API}/admin/roles", headers=_hdr(tok),
-                             json={"name": fresh_name, "description": "phase 4d fallback",
+                             json={"name": fresh_name, "description": "phase 4d",
                                    "permission_tokens": ["swms.view"]}, timeout=10)
     assert r_create.status_code == 201, r_create.text[:200]
     role_id = r_create.json()["role_id"]
 
-    # Bulk-assign this role to a fresh pending user, then set a password.
-    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
-    victim = None
-    for u in users:
-        if (not u.get("role_id")) and u.get("simpro_position") and u.get("activation_status") == "pending_activation":
-            victim = u; break
-    if not victim:
-        import pytest
-        pytest.skip("no pending Simpro user available for fallback test")
-        return
     r_assign = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
-                             json={"user_ids": [victim["id"]], "role_id": role_id,
+                             json={"user_ids": [eph_pending_user["id"]],
+                                   "role_id": role_id,
                                    "admin_confirmed": True}, timeout=10)
-    assert r_assign.status_code == 200, r_assign.text[:200]
-    # Reset password so we can log in as them.
-    pwd = f"FbTest_{uuid.uuid4().hex[:8]}!X"
-    r_pwd = requests.post(f"{API}/users/{victim['id']}/set-password",
-                          headers=_hdr(tok), json={"password": pwd}, timeout=10)
-    assert r_pwd.status_code == 200, r_pwd.text[:200]
+    assert r_assign.status_code == 200
 
-    # Log in as victim → /auth/me.effective_permissions.swms.view must be True.
-    vtok = _login(victim["email"], pwd)
+    # Set ephemeral user's password DIRECTLY in the DB (with guard).
+    assert_ephemeral_target(_mongo, {"id": eph_pending_user["id"]})
+    pwd = f"FbTest_{uuid.uuid4().hex[:8]}!X"
+    _mongo.users.update_one({"id": eph_pending_user["id"]},
+                             {"$set": {"password_hash": _hash(pwd)}})
+
+    vtok = _login(eph_pending_user["email"], pwd)
     me = requests.get(f"{API}/auth/me", headers=_hdr(vtok), timeout=10).json()
     eff = me.get("effective_permissions", {})
     assert eff.get("swms", {}).get("view") is True, (
         f"Option-1 fallback failed — swms.view={eff.get('swms', {}).get('view')} "
         f"for role_id={me.get('role_id')} role={me.get('role')}"
     )
-    # Sanity: not granted → false.
     assert eff.get("incidents", {}).get("view") is False
 
+    # Cleanup: remove the ephemeral custom role.
+    requests.delete(f"{API}/admin/roles/{role_id}", headers=_hdr(tok), timeout=10)
 
-# ─── (5) cache-bust invariant ─────────────────────────────────────────
 
-def test_cache_bust_invariant_patch_visible_within_one_second():
-    """After PATCH-ing tokens on a custom role, the very next
-    /auth/me for a user with that role must reflect the new tokens.
-    This proves `_bust_role_cache(role_id)` fires from patch_role and
-    the token cache in permissions.py is invalidated correctly."""
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
+# ═════════════════════════════════════════════════════════════════════
+# (5) cache-bust invariant
+# ═════════════════════════════════════════════════════════════════════
+
+def test_cache_bust_invariant_patch_visible_within_one_second(
+    _mongo, ephemeral_admin, eph_pending_user
+):
+    tok = ephemeral_admin["token"]
     fresh_name = f"CacheBust {uuid.uuid4().hex[:6]}"
     r_create = requests.post(f"{API}/admin/roles", headers=_hdr(tok),
                              json={"name": fresh_name, "description": "phase 4d cache",
@@ -229,67 +266,145 @@ def test_cache_bust_invariant_patch_visible_within_one_second():
     assert r_create.status_code == 201
     role_id = r_create.json()["role_id"]
 
-    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
-    victim = None
-    for u in users:
-        if (not u.get("role_id")) and u.get("simpro_position"):
-            victim = u; break
-    if not victim:
-        import pytest
-        pytest.skip("no pending Simpro user for cache-bust test")
-        return
     r_assign = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
-                             json={"user_ids": [victim["id"]], "role_id": role_id,
+                             json={"user_ids": [eph_pending_user["id"]],
+                                   "role_id": role_id,
                                    "admin_confirmed": True}, timeout=10)
     assert r_assign.status_code == 200
-    pwd = f"CacheBust_{uuid.uuid4().hex[:8]}!X"
-    r_pwd = requests.post(f"{API}/users/{victim['id']}/set-password",
-                          headers=_hdr(tok), json={"password": pwd}, timeout=10)
-    assert r_pwd.status_code == 200
 
-    vtok = _login(victim["email"], pwd)
-    # Warm the cache — expect False initially (empty tokens).
+    assert_ephemeral_target(_mongo, {"id": eph_pending_user["id"]})
+    pwd = f"CacheBust_{uuid.uuid4().hex[:8]}!X"
+    _mongo.users.update_one({"id": eph_pending_user["id"]},
+                             {"$set": {"password_hash": _hash(pwd)}})
+
+    vtok = _login(eph_pending_user["email"], pwd)
     me0 = requests.get(f"{API}/auth/me", headers=_hdr(vtok), timeout=10).json()
     assert me0.get("effective_permissions", {}).get("hazards", {}).get("view") is False
-    # PATCH role to add hazards.view — should invalidate the cache.
+
     r_patch = requests.patch(f"{API}/admin/roles/{role_id}", headers=_hdr(tok),
                              json={"permission_tokens": ["hazards.view"]}, timeout=10)
     assert r_patch.status_code == 200
-    # Re-read /auth/me — must now be True.
     me1 = requests.get(f"{API}/auth/me", headers=_hdr(vtok), timeout=10).json()
-    assert me1.get("effective_permissions", {}).get("hazards", {}).get("view") is True, (
-        "Cache-bust regression: PATCH didn't invalidate _ROLE_TOKENS_CACHE"
-    )
-    # PATCH again to REMOVE the token — must revert.
+    assert me1.get("effective_permissions", {}).get("hazards", {}).get("view") is True
+
     r_patch2 = requests.patch(f"{API}/admin/roles/{role_id}", headers=_hdr(tok),
                               json={"permission_tokens": []}, timeout=10)
     assert r_patch2.status_code == 200
     me2 = requests.get(f"{API}/auth/me", headers=_hdr(vtok), timeout=10).json()
-    assert me2.get("effective_permissions", {}).get("hazards", {}).get("view") is False, (
-        "Cache-bust regression: PATCH-to-remove didn't invalidate _ROLE_TOKENS_CACHE"
-    )
+    assert me2.get("effective_permissions", {}).get("hazards", {}).get("view") is False
+
+    requests.delete(f"{API}/admin/roles/{role_id}", headers=_hdr(tok), timeout=10)
 
 
-# ─── (6) audit rows ───────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════
+# (6) role audit entries
+# ═════════════════════════════════════════════════════════════════════
 
-def test_sync_writes_role_audit_entries():
-    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
-    # Trigger a create via sync (may be a no-op if all positions already exist —
-    # in that case we skip). To force a create, name a fresh role first.
-    fresh = f"Simpro Audit {uuid.uuid4().hex[:6]}"
-    # We can't actually spawn a fresh Simpro position from here, so instead
-    # assert the audit table has create_from_simpro entries in general.
+def test_sync_writes_role_audit_entries(ephemeral_admin):
+    tok = ephemeral_admin["token"]
     r_sync = requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
                            headers=_hdr(tok), timeout=15)
     body = r_sync.json()
-    # For at least one auto-role, fetch its audit log & check for create_from_simpro.
-    if body["created"] or body["skipped"]:
-        sample = (body["created"] or body["skipped"])[0]
-        r_audit = requests.get(f"{API}/admin/roles/{sample}/audit",
-                               headers=_hdr(tok), timeout=10)
-        assert r_audit.status_code == 200
-        entries = r_audit.json().get("entries") or []
-        # At least one action==create_from_simpro must appear historically.
-        assert any(e.get("action") == "create_from_simpro" for e in entries), (
-            f"expected create_from_simpro action in role_audit for {sample}"
-        )
+    sample = (body["created"] or body["skipped"] or [None])[0]
+    if not sample:
+        pytest.skip("no auto roles to audit")
+        return
+    r_audit = requests.get(f"{API}/admin/roles/{sample}/audit",
+                           headers=_hdr(tok), timeout=10)
+    assert r_audit.status_code == 200
+    entries = r_audit.json().get("entries") or []
+    assert any(e.get("action") == "create_from_simpro" for e in entries)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# (7) Phase 4d Option C: role_locked semantics
+# ═════════════════════════════════════════════════════════════════════
+
+def test_option_c_bulk_assign_non_matching_role_locks(
+    ephemeral_admin, eph_pending_user
+):
+    """User has simpro_position='Traffic Controller'. Admin assigns
+    them to `general_user` (a seeded role, different from
+    custom_traffic_controller). Expect role_locked=True."""
+    tok = ephemeral_admin["token"]
+    r = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
+                      json={"user_ids": [eph_pending_user["id"]],
+                            "role_id": "general_user",
+                            "admin_confirmed": True}, timeout=10)
+    assert r.status_code == 200
+    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
+    target = [x for x in users if x["id"] == eph_pending_user["id"]][0]
+    assert target["role_id"] == "general_user"
+    assert target["role_locked"] is True
+
+
+def test_option_c_bulk_assign_matching_position_role_unlocks(
+    ephemeral_admin, eph_pending_user
+):
+    """Sync first so custom_traffic_controller exists, then bulk-assign
+    the user to that exact role. Expect role_locked=False."""
+    tok = ephemeral_admin["token"]
+    requests.post(f"{API}/admin/roles/sync-from-simpro-positions",
+                  headers=_hdr(tok), timeout=15)
+    r = requests.post(f"{API}/users/bulk-assign-role", headers=_hdr(tok),
+                      json={"user_ids": [eph_pending_user["id"]],
+                            "role_id": "custom_traffic_controller",
+                            "admin_confirmed": True}, timeout=10)
+    assert r.status_code == 200
+    users = requests.get(f"{API}/users?hide_test=false", headers=_hdr(tok), timeout=10).json()
+    target = [x for x in users if x["id"] == eph_pending_user["id"]][0]
+    assert target["role_id"] == "custom_traffic_controller"
+    assert target["role_locked"] is False
+
+
+def test_option_c_patch_role_id_auto_computes_lock(
+    _mongo, ephemeral_admin, eph_pending_user
+):
+    """PATCH /users/{id} {role_id:'general_user'} on a user whose
+    Simpro position is 'Traffic Controller' → role_locked=True.
+    Then PATCH {role_locked:false} explicitly → role_locked=False."""
+    tok = ephemeral_admin["token"]
+    r_patch = requests.patch(f"{API}/users/{eph_pending_user['id']}",
+                             headers=_hdr(tok),
+                             json={"role_id": "general_user"}, timeout=10)
+    assert r_patch.status_code == 200, r_patch.text[:200]
+    body = r_patch.json()
+    assert body["role_id"] == "general_user"
+    assert body["role_locked"] is True
+
+    r_unlock = requests.patch(f"{API}/users/{eph_pending_user['id']}",
+                              headers=_hdr(tok),
+                              json={"role_locked": False}, timeout=10)
+    assert r_unlock.status_code == 200
+    assert r_unlock.json()["role_locked"] is False
+
+
+def test_option_c_patch_unknown_role_id_returns_404(
+    ephemeral_admin, eph_pending_user
+):
+    tok = ephemeral_admin["token"]
+    r = requests.patch(f"{API}/users/{eph_pending_user['id']}",
+                       headers=_hdr(tok),
+                       json={"role_id": "role_that_does_not_exist"}, timeout=10)
+    assert r.status_code == 404
+
+
+# ═════════════════════════════════════════════════════════════════════
+# (8) Login regression — post-deploy, stephen must still authenticate.
+# ═════════════════════════════════════════════════════════════════════
+
+def test_login_regression_stephen_can_authenticate():
+    """Guardrail: after all Phase 4d changes deploy, the real admin
+    account must still authenticate with the documented credential.
+    This is READ-ONLY — we only POST /auth/login. Never mutate the
+    real user document from a test."""
+    r = requests.post(f"{API}/auth/login",
+                      json={"email": ADMIN_EMAIL, "password": ADMIN_PWD},
+                      timeout=10)
+    assert r.status_code == 200, (
+        f"REGRESSION: admin login broken. HTTP={r.status_code} body={r.text[:300]}"
+    )
+    body = r.json()
+    assert body.get("access_token")
+    assert body["user"]["email"] == ADMIN_EMAIL
+    assert body["user"]["role_id"] == "admin"

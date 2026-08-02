@@ -36,6 +36,14 @@ class UpdateUserIn(BaseModel):
     role: Optional[Role] = None
     workspace_ids: Optional[List[str]] = None
     status: Optional[Literal["active", "invited", "disabled"]] = None
+    # v160.3.9.33 — Phase 4d Option C: manual override lock. When True,
+    # subsequent Simpro sync-linked runs will refresh `simpro_position`
+    # but WILL NOT touch `role_id` — the admin's manual assignment sticks.
+    role_locked: Optional[bool] = None
+    # v160.3.9.33 — Phase 4d Option C: admin can also directly re-assign
+    # role_id via the drawer. This mirrors the row-level assign flow but
+    # goes through PATCH instead of the bulk-assign endpoint.
+    role_id: Optional[str] = None
 
 
 class PermissionsIn(BaseModel):
@@ -95,6 +103,8 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "simpro_position": doc.get("simpro_position"),
         "must_set_password": bool(doc.get("must_set_password")),
         "role_assigned_at": doc.get("role_assigned_at"),
+        # v160.3.9.33 — Phase 4d Option C: manual-role-override flag.
+        "role_locked": bool(doc.get("role_locked")),
     }
 
 
@@ -204,12 +214,41 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
         if clash:
             raise HTTPException(400, "Email already in use")
         patch["email"] = new_email
+    # v160.3.9.33 — Phase 4d Option C:
+    # (a) If admin PATCHes `role_id`, mirror it into legacy `role` and
+    #     auto-compute `role_locked`: True iff the assigned role_id
+    #     differs from what the user's simpro_position would produce.
+    # (b) If admin PATCHes `role_locked` explicitly, honour their choice
+    #     but validate: unlocking + no active position → stays locked.
+    if "role_id" in patch:
+        role_doc = await db.roles.find_one({"role_id": patch["role_id"]}, {"_id": 0})
+        if not role_doc:
+            raise HTTPException(404, f"role_id '{patch['role_id']}' not found")
+        if not role_doc.get("is_active"):
+            raise HTTPException(400, "role is not active")
+        target = await db.users.find_one(
+            {"id": user_id, "org_id": actor["org_id"]},
+            {"_id": 0, "simpro_position": 1, "role_id": 1},
+        )
+        if not target:
+            raise HTTPException(404, "User not found")
+        position = (target.get("simpro_position") or "").strip()
+        position_role_id = None
+        if position:
+            from roles_catalogue import _slugify
+            position_role_id = "custom_" + _slugify(position)
+        # If admin didn't send role_locked explicitly, derive it.
+        if "role_locked" not in patch:
+            patch["role_locked"] = (patch["role_id"] != position_role_id) if position_role_id else True
+        # Mirror role_id → legacy role string (Phase 5 will drop this).
+        patch.setdefault("role", patch["role_id"])
+        patch.setdefault("role_assigned_at", now_iso())
     patch["updated_at"] = now_iso()
     # Status / email / role changes revoke any existing JWTs for that user.
     # Only bump token_version if the value ACTUALLY changes (not on a no-op resave).
     existing = await db.users.find_one(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"_id": 0, "status": 1, "email": 1, "role": 1},
+        {"_id": 0, "status": 1, "email": 1, "role": 1, "role_id": 1, "role_locked": 1},
     )
     update_op: dict = {"$set": patch}
     if existing:
@@ -221,7 +260,7 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
             return val
         revocable_changed = any(
             k in patch and _norm(k, patch[k]) != _norm(k, existing.get(k))
-            for k in ("status", "email", "role")
+            for k in ("status", "email", "role", "role_id")
         )
         if revocable_changed:
             update_op["$inc"] = {"token_version": 1}
@@ -675,6 +714,9 @@ async def bulk_assign_role(
                 "activation_status": "active",
                 "status": "active",
                 "role_assigned_at": now,
+                # v160.3.9.33 — Phase 4d Option C: position-derived assignment
+                # is by definition NOT a manual override → role_locked=False.
+                "role_locked": False,
                 "updated_at": now,
                 "must_set_password": not has_password,
             }
@@ -731,6 +773,10 @@ async def bulk_assign_role(
         if admin_count and role_count > admin_count:
             raise HTTPException(400, "custom role exceeds admin token budget")
 
+    # v160.3.9.33 — Phase 4d Option C: import slugify to compute the
+    # user's position-role for each row. `role_locked` is True iff the
+    # admin-picked role_id differs from the user's position role.
+    from roles_catalogue import _slugify
     now = now_iso()
     updated: List[str] = []
     skipped: List[Dict[str, str]] = []
@@ -746,12 +792,16 @@ async def bulk_assign_role(
             skipped.append({"user_id": uid, "reason": "already_has_role_id"})
             continue
         has_password = bool(target.get("password_hash"))
+        position = (target.get("simpro_position") or "").strip()
+        position_role_id = ("custom_" + _slugify(position)) if position else None
+        role_locked = (body.role_id != position_role_id) if position_role_id else True
         set_fields: Dict[str, Any] = {
             "role_id": body.role_id,
             "role": role_doc.get("role_id") or body.role_id,  # legacy string mirror
             "activation_status": "active",
             "status": "active",
             "role_assigned_at": now,
+            "role_locked": role_locked,
             "updated_at": now,
             "must_set_password": not has_password,
         }
@@ -763,6 +813,8 @@ async def bulk_assign_role(
             "before": {"role_id": target.get("role_id")},
             "after": {"role_id": body.role_id},
             "simpro_position": target.get("simpro_position"),
+            "position_role_id": position_role_id,
+            "role_locked": role_locked,
             "hint_matched": bool(body.hint_matched),
             "admin_confirmed": bool(body.admin_confirmed),
             "actor_user_id": actor["id"],
