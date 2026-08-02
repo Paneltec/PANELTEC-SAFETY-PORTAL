@@ -15,11 +15,16 @@ import PlantMaintenanceHistory from './PlantMaintenanceHistory';
 import LiveCountersPanel from './LiveCountersPanel';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 
 // Phase 3.9b — Available forms (collapsible) inside the asset drawer.
 function AvailableFormsSection({ asset }) {
   const me = getUser();
-  const canManage = me?.role === 'admin' || me?.role === 'manager';
+  // v160.3.9.29-2c — Migrated from `admin || manager` to assets.edit token.
+  // Per Phase 3c decision #5 + sweep report §4 row 5, hseq_lead now gains
+  // access to asset service history (they have assets.edit=True).
+  const canManage = useCan()('assets', 'edit');
+  void me;
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [forms, setForms] = React.useState(null);

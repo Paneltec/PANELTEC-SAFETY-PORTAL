@@ -12,6 +12,7 @@ import { Check, ClipboardPaste, FileSpreadsheet, FileText, FolderOpen, Image as 
 import { toast } from 'sonner';
 import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
 import BulkRestrictModal from '../components/BulkRestrictModal';
 import {
@@ -36,6 +37,8 @@ import {
   Search20Regular as Search,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2c — Legacy sets retained until sweep-report §3 propagation
+// consumers are updated. Authoritative gates now come from useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const DELETE_FOLDER_ROLES = new Set(['admin']);
 
@@ -155,8 +158,12 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
 export default function DocumentLibrary() {
   const navigate = useNavigate();
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
-  const canDeleteFolder = DELETE_FOLDER_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES/DELETE_FOLDER_ROLES sets
+  // to the granular documents tokens.
+  const can = useCan();
+  const canEdit = can('documents', 'edit');
+  const canDeleteFolder = can('documents', 'delete');
+  void user; void WRITE_ROLES; void DELETE_FOLDER_ROLES;
 
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);

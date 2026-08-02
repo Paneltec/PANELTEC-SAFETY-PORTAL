@@ -8,6 +8,7 @@ import { formatDistanceToNow, parseISO } from 'date-fns';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
@@ -380,7 +381,9 @@ function CounterCardShell({ icon: Icon, label, value, unit, sub, accent, testid,
 // else just sees the explainer.
 function UnreliableOdoCard({ asset, onAssetUpdated }) {
   const user = getUser();
-  const canEdit = user?.role === 'admin';
+  // v160.3.9.29-2c — Migrated to users.edit (coarse identity, decision #3).
+  const canEdit = useCan()('users', 'edit');
+  void user;
   const [open, setOpen] = useState(false);
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [km, setKm] = useState('');
@@ -450,8 +453,11 @@ function UnreliableOdoCard({ asset, onAssetUpdated }) {
 }
 
 function NavixyCounters({ asset, onAssetUpdated }) {  const user = getUser();
-  const canRefresh = user?.role === 'admin';
-  const canEdit = user?.role === 'admin';
+  // v160.3.9.29-2c — Migrated to users.edit (coarse identity, decision #3).
+  const _can = useCan();
+  const canRefresh = _can('users', 'edit');
+  const canEdit = _can('users', 'edit');
+  void user;
   const [refreshing, setRefreshing] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // Phase 4.8 — tabs + meter-trends fetch.
@@ -659,7 +665,9 @@ function NavixyCounters({ asset, onAssetUpdated }) {  const user = getUser();
 
 function ManualCounters({ asset, onAssetUpdated }) {
   const user = getUser();
-  const canEdit = user?.role === 'admin';
+  // v160.3.9.29-2c — Migrated to users.edit (coarse identity, decision #3).
+  const canEdit = useCan()('users', 'edit');
+  void user;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [hours, setHours] = useState(asset.hours_meter ?? '');
   const [km, setKm] = useState(asset.odo_km ?? '');

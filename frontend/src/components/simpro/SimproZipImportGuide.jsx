@@ -28,6 +28,7 @@ import {
 } from '@fluentui/react-icons';
 import api, { apiError, API_BASE } from '../../lib/api';
 import { getUser } from '../../lib/auth';
+import { useCan } from '../../lib/permissions';
 
 const STORAGE_KEY = 'howThisWorks:simpro_zip_import_guide';
 
@@ -271,7 +272,9 @@ export default function SimproZipImportGuide() {
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
   const currentUser = getUser();
-  const isAdmin = currentUser?.role === 'admin';
+  // v160.3.9.29-2c — Migrated to integrations.edit token.
+  const isAdmin = useCan()('integrations', 'edit');
+  void currentUser;
 
   // slot -> { url, uploaded_at, size_bytes, content_type } | null
   const [slots, setSlots] = useState({

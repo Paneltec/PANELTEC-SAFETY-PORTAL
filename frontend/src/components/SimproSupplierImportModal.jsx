@@ -8,16 +8,31 @@ import { X, Loader2, RefreshCw, Check, Search, Download } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
+// v160.3.9.29-2c — Legacy set retained; single authoritative gate below.
+// PRIOR BUG (fixed here): the modal had 5 inconsistent gates:
+//   Line 14: WRITE_ROLES = ['admin','manager'] (button visibility)
+//   Line 58: user?.role !== 'admin' (submit-guard — STRICTER than button)
+//   Lines 110-112: same admin-only submit-guard for the Refresh button
+// Result: manager saw the buttons, clicked, got 403'd at confirm.
+// Fix: ONE token drives everything — visibility + disabled + confirm.
 const WRITE_ROLES = new Set(['admin', 'manager']);
 const ROW_HEIGHT = 60; // px — used for windowed scroll calculation
 
 export default function SimproSupplierImportModal({ onClose, onImported }) {
   useLockBodyScroll();
   const user = getUser();
-  const canImport = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — LIVE BUG FIX: previously visibility used
+  // `WRITE_ROLES=['admin','manager']` but confirm-guard used
+  // `user?.role !== 'admin'` (stricter). A manager saw the buttons,
+  // clicked, then got a "Admin only" toast at submit — broken UX.
+  // Now ONE token drives visibility, disabled state, AND the confirm
+  // guard, aligned with the backend's `integrations.edit` permission.
+  const canImport = useCan()('integrations', 'edit');
+  void user; void WRITE_ROLES;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -55,8 +70,8 @@ export default function SimproSupplierImportModal({ onClose, onImported }) {
   }, [rows, search]);
 
   const refresh = async () => {
-    if (user?.role !== 'admin') {
-      toast.error('Only admin can refresh from Simpro');
+    if (!canImport) {
+      toast.error('You don\u2019t have permission to refresh Simpro data');
       return;
     }
     setRefreshing(true);
@@ -107,9 +122,9 @@ export default function SimproSupplierImportModal({ onClose, onImported }) {
             <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">Simpro · vendors</div>
             <h2 className="text-lg font-bold text-slate-900">Import suppliers</h2>
           </div>
-          <button onClick={refresh} disabled={refreshing || user?.role !== 'admin'}
+          <button onClick={refresh} disabled={refreshing || !canImport}
             data-testid="simpro-supplier-refresh"
-            title={user?.role !== 'admin' ? 'Admin only' : 'Pull latest vendor list from Simpro'}
+            title={!canImport ? 'Requires integrations.edit permission' : 'Pull latest vendor list from Simpro'}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
             {refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />} Refresh from Simpro
           </button>

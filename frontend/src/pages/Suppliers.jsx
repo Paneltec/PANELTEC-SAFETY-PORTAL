@@ -16,11 +16,13 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while a Suppliers modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import SupplierDrawer from '../components/suppliers/SupplierDrawer';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const AU_STATES = ['ACT', 'NSW', 'NT', 'QLD', 'SA', 'TAS', 'VIC', 'WA'];
 
@@ -240,7 +242,10 @@ function EditModal({ supplier, allSuppliers, onClose, onSaved }) {
 
 export default function Suppliers() {
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES to suppliers.edit token.
+  const can = useCan();
+  const canEdit = can('suppliers', 'edit');
+  void user; void WRITE_ROLES;
 
   const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(true);

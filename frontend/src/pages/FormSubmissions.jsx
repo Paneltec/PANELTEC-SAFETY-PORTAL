@@ -9,6 +9,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 import { SubmissionViewModal } from './Forms';
 
@@ -20,6 +21,7 @@ const CAT_BANNER = {
   general:    { border: '#cbd5e1', bg: '#f1f5f9', fg: '#334155' },
 };
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 function StatusPill({ status }) {
@@ -45,7 +47,11 @@ export default function FormSubmissions() {
   const { templateId } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const canDelete = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES to forms.edit token.
+  // (Delete-of-a-submission = edit-of-form's audit trail semantically.)
+  const can = useCan();
+  const canDelete = can('forms', 'edit');
+  void user; void WRITE_ROLES;
 
   const [template, setTemplate] = useState(null);
   const [rows, setRows] = useState([]);

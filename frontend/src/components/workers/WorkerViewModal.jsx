@@ -7,6 +7,7 @@ import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTrian
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
+import { useCan } from '../../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
@@ -181,6 +182,14 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
   const [error, setError] = useState(null);
   const [zipOpen, setZipOpen] = useState(false);  // v160.3.2 Simpro ZIP import
   const [currentUser, setCurrentUser] = useState(null);
+  // v160.3.9.29-2c — Phase 3c decision #4: HR docs isolation moves from
+  // hardcoded `['admin','hr_lead']` FE gates to permission tokens. Read
+  // access uses documents.view; write/tab-strip uses workers.edit. HR-
+  // specific *scoping* (i.e. "only HR docs, not all docs") is deferred
+  // to the backend scope filter in Phase 3d.
+  const _can = useCan();
+  const canViewHrDocs = _can('documents', 'view');
+  const canManageWorker = _can('workers', 'edit');
   // v160.3.4 — Unmatched Documents triage tab
   const [tab, setTab] = useState(defaultTab || 'profile'); // profile | unmatched
   const [unmatchedCount, setUnmatchedCount] = useState(null);
@@ -193,22 +202,24 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
 
   // v160.3.4 — refresh unmatched count for the tab badge.
   const refreshUnmatched = React.useCallback(async () => {
-    const role = (currentUser?.role || '').toLowerCase();
-    if (!['admin', 'hseq_lead', 'hr_lead'].includes(role)) return;
+    // v160.3.9.29-2c — Migrated from role hardcoding to workers.view.
+    if (!canManageWorker) return;
     try {
       const { data } = await api.get(`/workers/${workerId}/unmatched-documents`);
       setUnmatchedCount((data?.documents || []).length);
     } catch {
       setUnmatchedCount(null);
     }
-  }, [workerId, currentUser]);
+  }, [workerId, canManageWorker]);
 
   useEffect(() => { refreshUnmatched(); }, [refreshUnmatched]);
 
   // v160.3.4b — HR docs count for the Personal-tab section badge.
   useEffect(() => {
-    const role = (currentUser?.role || '').toLowerCase();
-    if (!['admin', 'hr_lead'].includes(role)) { setHrDocCount(null); return; }
+    // v160.3.9.29-2c — Decision #4: documents.view gates the fetch; HR-scope
+    // filtering happens server-side (Phase 3d follow-up). No more hardcoded
+    // `hr_lead` checks in the FE.
+    if (!canViewHrDocs) { setHrDocCount(null); return; }
     let alive = true;
     api.get(`/workers/${workerId}/hr-documents`)
       .then((r) => { if (alive) setHrDocCount((r.data?.documents || []).length); })
@@ -284,7 +295,8 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
         </div>
 
         {/* v160.3.2 — Simpro ZIP import quick-action bar */}
-        {!loading && worker && ['admin', 'hr_lead', 'hseq_lead'].includes((currentUser?.role || '').toLowerCase()) && (
+        {/* v160.3.9.29-2c — Decision #4: workers.edit replaces role hardcoding. */}
+        {!loading && worker && canManageWorker && (
           <div className="px-6 py-2.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
             <div className="text-xs text-slate-500">
               Attach certifications + documents in bulk via a Simpro ZIP export.
@@ -299,8 +311,8 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
           </div>
         )}
 
-        {/* v160.3.4 — Tab strip (admin/hr_lead/hseq_lead only) */}
-        {!loading && worker && ['admin', 'hr_lead', 'hseq_lead'].includes((currentUser?.role || '').toLowerCase()) && (
+        {/* v160.3.4 — Tab strip (gated on workers.edit; decision #4) */}
+        {!loading && worker && canManageWorker && (
           <div className="px-6 border-b border-slate-200 bg-white flex items-center gap-1" data-testid="worker-view-tabs">
             <TabButton active={tab === 'profile'} onClick={() => setTab('profile')} testid="tab-profile">
               Profile

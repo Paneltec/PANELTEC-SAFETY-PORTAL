@@ -8,6 +8,7 @@ import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckS
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
 import { summariseCertifications, personalFilledCount } from '../lib/workerSectionSummary';
 // v160.3.7k — Inoculation sweep: lock body scroll while ClientPicker or
@@ -41,6 +42,7 @@ import {
   Tag20Regular as Tag,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 const SYNC_OPTIONS = [
   { value: 'paneltec', label: 'Paneltec only' },
@@ -1367,7 +1369,11 @@ function exportCsv(rows) {
 
 export default function Workers() {
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES to granular workers tokens.
+  const can = useCan();
+  const canEdit = can('workers', 'edit');
+  const canDelete = can('workers', 'delete');
+  void user; void WRITE_ROLES; void canDelete;
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);

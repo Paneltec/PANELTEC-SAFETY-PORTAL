@@ -14,10 +14,12 @@ import { toast } from 'sonner';
 import PdfActions from './PdfActions';
 import DeleteRecordButton from './DeleteRecordButton';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { formatDateTime12 } from '../lib/timeFormat';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
+// v160.3.9.29-2c — Legacy set retained; authoritative gate via useCan below.
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
 function _fileUrl(url) {
@@ -117,7 +119,9 @@ function FieldValue({ field }) {
 export default function SubmissionViewer({ record, resourceKind, apiPath, onClose, onDeleted }) {
   useLockBodyScroll();
   const me = getUser();
-  const canEdit = WRITE_ROLES.has(me?.role);
+  // v160.3.9.29-2c — Migrated to forms.edit token.
+  const canEdit = useCan()('forms', 'edit');
+  void me; void WRITE_ROLES;
   const [lightboxUrl, setLightboxUrl] = useState(null);
 
   // Expose a global lightbox opener so nested FieldValue can trigger it

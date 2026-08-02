@@ -12,6 +12,7 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { stashInlinePdf } from '../lib/pdfStash';
@@ -44,8 +45,11 @@ export default function InductionCardModal({
 }) {
   useLockBodyScroll();
   const user = getUser();
-  const canWrite = WRITE_ROLES.has(user?.role);
-  const canDelete = user?.role === 'admin';
+  // v160.3.9.29-2c — Migrated to inductions tokens.
+  const _can = useCan();
+  const canWrite = _can('inductions', 'edit');
+  const canDelete = _can('inductions', 'delete');
+  void user; void WRITE_ROLES;
   // In add-mode there's no induction yet — go straight into editing.
   const [mode, setMode] = useState(initialMode === 'add' ? 'add' : initialMode);
   const [data, setData] = useState(null);

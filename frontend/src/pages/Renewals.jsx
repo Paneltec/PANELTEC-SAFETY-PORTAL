@@ -11,6 +11,7 @@ import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import SimproSupplierImportModal from '../components/SimproSupplierImportModal';
 // v160.3.6w — Onboarding guide + AlertDialog for the bulk-delete confirm.
 import RenewalLinksGuide from '../components/renewals/RenewalLinksGuide';
@@ -32,6 +33,7 @@ import {
   Save20Regular,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2c — Legacy sets retained; authoritative gates via useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
 const IMPORT_ROLES = new Set(['admin', 'manager']);
 
@@ -66,8 +68,11 @@ function SortHeaderBtn({ label, k, sortKey, sortDir, onClick }) {
 
 export default function Renewals() {
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
-  const canImport = IMPORT_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated to renewals.edit token.
+  const can = useCan();
+  const canEdit = can('renewals', 'edit');
+  const canImport = can('renewals', 'edit');
+  void user; void WRITE_ROLES; void IMPORT_ROLES;
   const [items, setItems] = useState([]);
   const [contractors, setContractors] = useState([]);
   const [docTypes, setDocTypes] = useState([]);

@@ -15,15 +15,23 @@ import {
 } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import Logo from '../components/brand/Logo';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
+// NOTE: Under new model, `supervisor`/`manager` (legacy roles without
+// ROLE_DEFAULTS blocks) no longer see kiosk mode by default. Grant per-user
+// override via Users&Permissions or seed `sites.edit=true` for those roles
+// in a future Phase 3d follow-up if needed.
 const ELEVATED_ROLES = new Set(['admin', 'manager', 'hseq_lead', 'supervisor']);
 
 export default function SiteScanResolver() {
   const { token } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const isElevated = ELEVATED_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated to sites.edit token.
+  const isElevated = useCan()('sites', 'edit');
+  void user; void ELEVATED_ROLES;
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);

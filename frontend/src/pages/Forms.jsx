@@ -16,11 +16,13 @@ import {
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { categoryColor } from '../lib/templateColors';
 import TemplateBuilder from '../components/forms/TemplateBuilder';
 import AssetScanField, { buildAutofillFromAsset } from '../components/forms/AssetScanField';
 import { WorkerPicker, JobPicker, SitePicker, CustomerPicker } from '../components/forms/PickerFields';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 // Pastel pills per the new spec: tint background + ink text.
@@ -1115,7 +1117,10 @@ function TemplateCard({ t, canEdit, onPreview, onFill, onDelete, onEdit, onOpenS
 export default function Forms() {
   const user = getUser();
   const navigate = useNavigate();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES to forms.edit token.
+  const can = useCan();
+  const canEdit = can('forms', 'edit');
+  void user; void WRITE_ROLES;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
@@ -1133,8 +1138,10 @@ export default function Forms() {
     try {
       // Phase 3.9c — workers see only forms applicable to them by default.
       // Admins/managers/hseq see the full library.
-      const role = user?.role;
-      const isWorker = role && !['admin', 'manager', 'hseq_lead'].includes(role);
+      // v160.3.9.29-2c — `isWorker` was a negative gate on the admin/manager/
+      // hseq_lead write set. Under new model, "no forms.edit" replaces it
+      // exactly — no need to enumerate roles.
+      const isWorker = !canEdit;
       const params = isWorker ? { for_worker: 'me' } : {};
       const { data } = await api.get('/forms/templates', { params });
       setRows(data || []);

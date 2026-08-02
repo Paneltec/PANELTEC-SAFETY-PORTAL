@@ -12,7 +12,9 @@ import {
 } from '../ui/sheet';
 import api, { apiError } from '../../lib/api';
 import { getUser } from '../../lib/auth';
+import { useCan } from '../../lib/permissions';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 const PANEL_THEMES = {
@@ -436,7 +438,9 @@ function MemberForm({ initial, onSave, onCancel }) {
 export default function SupplierDrawer({ supplier, initialPanel, onClose, onChanged }) {
   const [panel, setPanel] = useState(initialPanel || 'tasks');
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated to suppliers.edit token.
+  const canEdit = useCan()('suppliers', 'edit');
+  void user; void WRITE_ROLES;
 
   useEffect(() => { setPanel(initialPanel || 'tasks'); }, [initialPanel]);
   if (!supplier) return null;

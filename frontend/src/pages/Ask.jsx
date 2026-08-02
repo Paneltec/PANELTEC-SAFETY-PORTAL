@@ -5,7 +5,9 @@ import api, { apiError } from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { PageHeader } from '../components/capture/Ui';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 function ProofChip({ c }) {
@@ -136,7 +138,12 @@ function SuggestionChip({ s, canEdit, onAsk, onEdit, onDelete, confirmingDelete 
 export default function Ask() {
   const { workspaceId } = useWorkspace();
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Piggyback on users.edit per Phase 3c decision #2
+  // (no dedicated `ask` resource; the Suggested-Questions curation is
+  // an admin surface). hseq_lead has users.edit=True → widens per #5.
+  const can = useCan();
+  const canEdit = can('users', 'edit');
+  void user; void WRITE_ROLES;
 
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);

@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { filesUrl } from '../lib/downloadUrl';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader } from '../components/capture/Ui';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
@@ -33,6 +34,8 @@ import {
   Search20Regular as Search,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2c — Legacy set retained until sweep-report §3 propagation
+// consumers are updated; no longer authoritative. Use useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
 const STATUS_FILTERS = [
@@ -204,8 +207,15 @@ function exportCsv(rows) {
 
 export default function Certifications() {
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
-  const isAdmin = user?.role === 'admin';
+  // v160.3.9.29-2c — Migrated from WRITE_ROLES set + isAdmin=admin to
+  // granular certifications tokens. `isAdmin` at :811 gated a destructive
+  // delete action; now correctly named `canDelete`. Backward-compat alias
+  // kept for the delete button rename below.
+  const can = useCan();
+  const canEdit = can('certifications', 'edit');
+  const canDelete = can('certifications', 'delete');
+  const isAdmin = canDelete;
+  void user; void WRITE_ROLES;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');

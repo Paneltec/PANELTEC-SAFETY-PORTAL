@@ -10,6 +10,7 @@ import { Loader2, X, CalendarOff, Check, AlertTriangle, Calendar, Settings2, Che
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import InductionImportWizard from './InductionImportWizard';
 import { stashInlinePdf } from '../lib/pdfStash';
 import PdfPreviewModal from './PdfPreviewModal';
@@ -32,6 +33,7 @@ import {
   Search20Regular as Search,
 } from '@fluentui/react-icons';
 
+// v160.3.9.29-2c — Legacy set retained; authoritative gate via useCan below.
 const WRITE_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 const API_BASE = process.env.REACT_APP_BACKEND_URL + '/api';
 
@@ -71,7 +73,9 @@ function refinedStatus(cell) {
 
 export default function InductionsMatrix({ onWorkerClick }) {
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v160.3.9.29-2c — Migrated to inductions.edit token.
+  const canEdit = useCan()('inductions', 'edit');
+  void user; void WRITE_ROLES;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
