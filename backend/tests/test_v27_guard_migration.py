@@ -52,18 +52,18 @@ _RA_MODULES = [
 
 
 @pytest.mark.parametrize("prefix,body", _RA_MODULES, ids=[m[0] for m in _RA_MODULES])
-def test_v27_ra_router_hseq_lead_gets_reference_library_token_denial(prefix, body, tokens):
-    """POST as hseq_lead → 403.
+def test_v27_ra_router_hseq_lead_now_writes_reference_library(prefix, body, tokens):
+    """v160.3.9.29 — Phase 3c decision #5 WIDENING (test flipped after
+    Blocker-E sanity check confirmed Phase 3a already migrated all 7
+    RA routers to `require_permission("reference_library", "edit")`).
 
-    v160.3.9.29-2b Phase 3c decision #5 WIDENED the hseq_lead SEED to
-    grant `reference_library.edit=True`, but the reference_library
-    BACKEND ROUTERS (companies.py, cs_incident.py, completed_training.py,
-    list_roles.py, list_forms.py, master_risks.py, incident_root_causes.py)
-    still use the legacy `_admin(user)` / `_require_admin(user)` guard.
-    Until those routers are migrated in a Blocker-E follow-up, hseq_lead
-    is denied at the router level with `admin-required`. This test
-    still passes because the BE is still admin-only; once Blocker-E
-    lands, invert this assertion (see the widening variant at HEAD).
+    hseq_lead's seed extension in permissions.py (2b) grants
+    `reference_library.edit=True`, and the pre-existing 3a router
+    guards accept that token. POST as hseq_lead now succeeds.
+
+    The worker-denied counterpart lives at the bottom of this file
+    (kept unchanged) — proves the negative gate still fires for roles
+    without `reference_library.edit`.
     """
     payload = {**body}
     tag = f"v27-{uuid.uuid4().hex[:8]}"
@@ -72,10 +72,17 @@ def test_v27_ra_router_hseq_lead_gets_reference_library_token_denial(prefix, bod
             payload[k] = f"{v}-{tag}"
     r = requests.post(f"{API}{prefix}/", headers=_hdr(tokens["hseq_lead"]),
                       json=payload, timeout=15)
-    assert r.status_code == 403, (
+    assert r.status_code in (200, 201), (
         f"{prefix} POST as hseq_lead → HTTP {r.status_code} "
-        f"(expected 403 — legacy BE guard). Body: {r.text[:200]}"
+        f"(expected 200/201 per decision #5). Body: {r.text[:200]}"
     )
+    # Clean up probe row (best-effort; some routers may not honour delete).
+    row_id_candidates = [payload.get(k) for k in ("risk_id", "list_form_id",
+        "question_id", "issue_number", "role_id", "company_id")]
+    row_id = next((c for c in row_id_candidates if c), None)
+    if row_id:
+        requests.delete(f"{API}{prefix}/{row_id}", headers=_hdr(tokens["admin"]),
+                        timeout=5)
 
 
 def test_v27_ra_master_risks_admin_still_allowed(tokens):

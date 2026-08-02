@@ -97,7 +97,7 @@ class RowPatch(BaseModel):
 
 @router.post("/")
 async def create_row(body: RowPatch, user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
             if k not in BOOKKEEPING}
     # Completed-training rows key on `content_hash` (deterministic from
@@ -132,7 +132,7 @@ async def create_row(body: RowPatch, user: dict = Depends(require_permission("re
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: RowPatch,
                     user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if k not in BOOKKEEPING}
     if not updates:
@@ -153,7 +153,7 @@ async def patch_row(uid: str, patch: RowPatch,
 
 @router.delete("/{uid}")
 async def delete_row(uid: str, user: dict = Depends(require_permission("reference_library", "delete"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     now = _now()
     r = await db.completed_training.find_one_and_update(
         {"id": uid, "deleted_at": None},
@@ -173,7 +173,7 @@ async def reimport(
     url: Optional[str] = Form(default=None),
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
     from pathlib import Path as _P

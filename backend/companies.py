@@ -97,7 +97,9 @@ class RowPatch(BaseModel):
 
 @router.post("/")
 async def create_row(body: RowPatch, user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
+    # Outer `Depends(require_permission("reference_library", ...))` on the
+    # route signature is the sole authoritative guard now.
     data = {k: v for k, v in body.model_dump(exclude_unset=True).items()
             if k not in BOOKKEEPING}
     company_id = str(data.get("company_id") or "").strip()
@@ -125,7 +127,9 @@ async def create_row(body: RowPatch, user: dict = Depends(require_permission("re
 
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: RowPatch, user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
+    # Outer `Depends(require_permission("reference_library", ...))` on the
+    # route signature is the sole authoritative guard now.
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if k not in BOOKKEEPING}
     if not updates: raise HTTPException(400, "no-fields")
@@ -144,7 +148,7 @@ async def patch_row(uid: str, patch: RowPatch, user: dict = Depends(require_perm
 
 @router.delete("/{uid}")
 async def delete_row(uid: str, user: dict = Depends(require_permission("reference_library", "delete"))):
-    _admin(user); now = _now()
+    now = _now()
     r = await db.companies.find_one_and_update(
         {"$or": [{"id": uid}, {"company_id": uid}], "deleted_at": None},
         {"$set": {"deleted_at": now, "deleted_by": user["id"]}},
@@ -163,7 +167,9 @@ async def reimport(
     url: Optional[str] = Form(default=None),
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
+    # Outer `Depends(require_permission("reference_library", ...))` on the
+    # route signature is the sole authoritative guard now.
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
     from pathlib import Path as _P

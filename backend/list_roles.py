@@ -89,7 +89,7 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 
 @router.post("/")
 async def create_row(body: RoleCreate, user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     if await db.list_roles.find_one({"role_id": body.role_id}):
         raise HTTPException(409, "role_id-already-exists")
     now = _now()
@@ -116,7 +116,7 @@ async def create_row(body: RoleCreate, user: dict = Depends(require_permission("
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: RolePatch,
                     user: dict = Depends(require_permission("reference_library", "edit"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
     if not updates:
@@ -136,7 +136,7 @@ async def patch_row(uid: str, patch: RolePatch,
 
 @router.delete("/{uid}")
 async def delete_row(uid: str, user: dict = Depends(require_permission("reference_library", "delete"))):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     now = _now()
     r = await db.list_roles.find_one_and_update(
         {"$or": [{"id": uid}, {"role_id": uid}], "deleted_at": None},
@@ -156,7 +156,7 @@ async def reimport(
     url: Optional[str] = Form(default=None),
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
-    _admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_admin(user)` removed.
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
     from pathlib import Path as _P

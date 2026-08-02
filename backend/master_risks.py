@@ -137,7 +137,7 @@ async def get_master_risk(risk_uid: str,
 @router.post("/")
 async def create_master_risk(body: MasterRiskCreate,
                               user: dict = Depends(require_permission("reference_library", "edit"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     existing = await db.master_risks.find_one({"risk_id": body.risk_id})
     if existing:
         raise HTTPException(409, "risk_id-already-exists")
@@ -161,7 +161,7 @@ async def create_master_risk(body: MasterRiskCreate,
 @router.patch("/{risk_uid}")
 async def patch_master_risk(risk_uid: str, patch: MasterRiskPatch,
                              user: dict = Depends(require_permission("reference_library", "edit"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
     if not updates:
@@ -185,7 +185,7 @@ async def patch_master_risk(risk_uid: str, patch: MasterRiskPatch,
 @router.delete("/{risk_uid}")
 async def delete_master_risk(risk_uid: str,
                               user: dict = Depends(require_permission("reference_library", "delete"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     now = _now_iso()
     r = await db.master_risks.find_one_and_update(
         {"$or": [{"id": risk_uid}, {"risk_id": risk_uid}], "deleted_at": None},
@@ -215,7 +215,7 @@ async def reimport_master_risks(
     subsequent CLI runs pick up the latest), then the ingestion is run
     inline with the current user as the actor.
     """
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
 

@@ -99,7 +99,7 @@ async def get_row(uid: str, _user: dict = Depends(get_current_user)):
 @router.post("/")
 async def create_row(body: IRCCreate,
                      user: dict = Depends(require_permission("reference_library", "edit"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     if await db.incident_root_causes.find_one({"question_id": body.question_id}):
         raise HTTPException(409, "question_id-already-exists")
     now = _now_iso()
@@ -122,7 +122,7 @@ async def create_row(body: IRCCreate,
 @router.patch("/{uid}")
 async def patch_row(uid: str, patch: IRCPatch,
                     user: dict = Depends(require_permission("reference_library", "edit"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     updates = {k: v for k, v in patch.model_dump(exclude_unset=True).items()
                if v is not None}
     if not updates:
@@ -146,7 +146,7 @@ async def patch_row(uid: str, patch: IRCPatch,
 @router.delete("/{uid}")
 async def delete_row(uid: str,
                      user: dict = Depends(require_permission("reference_library", "delete"))):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     now = _now_iso()
     r = await db.incident_root_causes.find_one_and_update(
         {"$or": [{"id": uid}, {"question_id": uid}], "deleted_at": None},
@@ -168,7 +168,7 @@ async def reimport_rows(
     url: Optional[str] = Form(default=None),
     user: dict = Depends(require_permission("reference_library", "edit")),
 ):
-    _require_admin(user)
+    # v160.3.9.29 (Blocker-E fix) — dead inline `_require_admin(user)` removed.
     if bool(file) == bool(url):
         raise HTTPException(400, "supply-exactly-one-of-file-or-url")
 

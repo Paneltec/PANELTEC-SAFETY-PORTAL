@@ -71,7 +71,13 @@ ADMIN_PWD = "Mcgstephen50#"
 EPHEMERAL_PWD = "PytestGuard-2026!"
 EPHEMERAL_EMAIL_PREFIX = "__admin_guard_test__"
 
+# v160.3.9.29 (Blocker-E close-out) — hseq_lead is widened for
+# reference_library WRITE (per Phase 3c decision #5), but still denied
+# DELETE. The full role list drives fixture creation; individual tests
+# filter it via `NON_ADMIN_EDIT_ROLES` (below) for edit-scope actions.
 NON_ADMIN_ROLES = ["hseq_lead", "worker", "supervisor", "manager", "auditor"]
+# hseq_lead excluded — has reference_library.edit=True.
+NON_ADMIN_EDIT_ROLES = ["worker", "supervisor", "manager", "auditor"]
 
 
 # One entry per module we're checking. `post_body` is a minimal payload
@@ -160,7 +166,7 @@ def tokens(ephemeral_users) -> dict[str, str]:
 
 
 # ── admin-guard tests ─────────────────────────────────────────────────
-@pytest.mark.parametrize("role", NON_ADMIN_ROLES)
+@pytest.mark.parametrize("role", NON_ADMIN_EDIT_ROLES)
 @pytest.mark.parametrize("module", MODULES, ids=[m["prefix"] for m in MODULES])
 def test_non_admin_post_forbidden(module, role, tokens):
     token = tokens[role]
@@ -172,7 +178,7 @@ def test_non_admin_post_forbidden(module, role, tokens):
         f"(expected 403). Body: {r.text[:200]}")
 
 
-@pytest.mark.parametrize("role", NON_ADMIN_ROLES)
+@pytest.mark.parametrize("role", NON_ADMIN_EDIT_ROLES)
 @pytest.mark.parametrize("module", MODULES, ids=[m["prefix"] for m in MODULES])
 def test_non_admin_patch_forbidden(module, role, tokens):
     token = tokens[role]
@@ -195,7 +201,7 @@ def test_non_admin_delete_forbidden(module, role, tokens):
         f"(expected 403). Body: {r.text[:200]}")
 
 
-@pytest.mark.parametrize("role", NON_ADMIN_ROLES)
+@pytest.mark.parametrize("role", NON_ADMIN_EDIT_ROLES)
 @pytest.mark.parametrize("module", MODULES, ids=[m["prefix"] for m in MODULES])
 def test_non_admin_reimport_forbidden(module, role, tokens):
     token = tokens[role]
