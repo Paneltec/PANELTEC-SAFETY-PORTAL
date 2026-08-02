@@ -29,7 +29,7 @@ import {
 // Phase 4.7 — admin access controls (invite / PIN / reset / unlock).
 import AccessSection from '../components/auth/AccessSection';
 import AccessKebab from '../components/auth/AccessKebab';
-import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
+// v160.3.9.32-4c.1 — BulkSimproZipModal import removed; button rehomed to /workers page header.
 // v160.3.7i — SimproZipImportGuide has been rehomed to its own page
 // (`/app/settings/help/simpro-import`). It previously rendered inline
 // here and broke the Users & Permissions layout. A subtle text link
@@ -230,9 +230,8 @@ export default function UsersManagement() {
   const [simproPickerOpen, setSimproPickerOpen] = useState(false);
   // v160.3.9.32-4b — Admin direct set-password dialog (drawer action).
   const [setPwdFor, setSetPwdFor] = useState(null); // user obj or null
-  // v160.3.9.32-4c.1 — importOpen + refreshSimproOpen removed (legacy
-  // buttons deleted). Bulk ZIP still active for CSV/photo imports.
-  const [bulkZipOpen, setBulkZipOpen] = useState(false);  // v160.3.3 — Bulk ZIP import
+  // v160.3.9.32-4c.1 — importOpen + refreshSimproOpen + bulkZipOpen removed
+  // (legacy buttons deleted / bulk-zip rehomed to /workers page header).
   const [lastSync, setLastSync] = useState(null);                     // v160.3.2 — last sync marker
   const [simproStatus, setSimproStatus] = useState({ connected: false, companies: [] });
   const [confirmAction, setConfirmAction] = useState(null); // { kind: 'delete'|'signout', user }
@@ -445,14 +444,10 @@ export default function UsersManagement() {
                 )}
               </span>
             )}
-            <button
-              onClick={() => setBulkZipOpen(true)}
-              data-testid="bulk-simpro-zip-btn"
-              title="Bulk import Simpro ZIP exports (multiple workers at once)"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm"
-            >
-              <Download size={14} /> Bulk import ZIPs
-            </button>
+            {/* v160.3.9.32-4c.1 — "Bulk import ZIPs" button rehomed to
+                /workers where the ZIP-ingested compliance data (photos,
+                certification PDFs, licences, inductions, HR docs) actually
+                lands. Users page keeps only REST-driven affordances. */}
             {/* v160.3.9.32-4b — Phase 4b replaces the invite flow. Sync
                 pulls updated position/archived from Simpro for every
                 already-linked user; picker opens the selective-import
@@ -708,12 +703,8 @@ export default function UsersManagement() {
       {simproPickerOpen && <SimproImportPickerModal onClose={() => setSimproPickerOpen(false)} onDone={load} />}
       {/* v160.3.9.32-4c.1 — legacy ImportFromSimproDrawer + RefreshFromSimproModal
           instantiations removed. The picker + sync-linked flow replaces them. */}
-      {bulkZipOpen && (
-        <BulkSimproZipModal
-          onClose={() => setBulkZipOpen(false)}
-          onDone={() => load()}
-        />
-      )}
+      {/* v160.3.9.32-4c.1 — bulkZipOpen instantiation removed; button
+          rehomed to /workers page header. */}
     </div>
   );
 }

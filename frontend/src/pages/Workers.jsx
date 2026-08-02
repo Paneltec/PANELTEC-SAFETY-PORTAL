@@ -4,7 +4,7 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -17,6 +17,9 @@ import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import { filesUrl } from '../lib/downloadUrl';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
+// v160.3.9.32-4c.1 — Rehomed from UsersManagement. This is the compliance-
+// document ingester (photos + cert/licence/induction PDFs + HR docs).
+import { BulkSimproZipModal } from '../components/workers/BulkSimproZipModal';
 import InductionsMatrix from '../components/InductionsMatrix';
 import WorkerInductionsCard from '../components/WorkerInductionsCard';
 // Phase 4.7.1 — surface password/access controls on the Workers list.
@@ -1372,6 +1375,8 @@ export default function Workers() {
   // v160.3.9.29-2c — Migrated from WRITE_ROLES to granular workers tokens.
   const can = useCan();
   const canEdit = can('workers', 'edit');
+  // v160.3.9.32-4c.1 — Rehomed BulkSimproZipModal state.
+  const [bulkZipOpen, setBulkZipOpen] = useState(false);
   const canDelete = can('workers', 'delete');
   void user; void WRITE_ROLES; void canDelete;
 
@@ -1573,7 +1578,19 @@ export default function Workers() {
   return (
     <div className="max-w-7xl mx-auto" data-testid="workers-page">
       <PageHeader crumb="Settings / Workers" title="Workers"
-        subtitle="Your field crew — synced from Simpro or added manually." />
+        subtitle="Your field crew — synced from Simpro or added manually."
+        action={canEdit ? (
+          <button
+            type="button"
+            onClick={() => setBulkZipOpen(true)}
+            title="Uploads certification tickets, licence PDFs, inductions, HR documents, and photos exported from Simpro."
+            data-testid="workers-bulk-zip-btn"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold hover:bg-emerald-800 shadow-sm"
+          >
+            <DownloadLucide size={14} /> Import Simpro worker files
+          </button>
+        ) : null}
+      />
 
       {/* Phase 3.11 — tab switcher: Directory vs Inductions Matrix.
           v160.3.6z — Reverted to EQUAL-WEIGHT segmented pill (v6h look).
@@ -1914,6 +1931,13 @@ export default function Workers() {
       {/* v160.2.2 — Read-only worker profile drawer (eye icon). */}
       {viewingId && (
         <WorkerViewModal workerId={viewingId} defaultTab={viewingDefaultTab} onClose={() => { setViewingId(null); setViewingDefaultTab(null); }} />
+      )}
+      {/* v160.3.9.32-4c.1 — BulkSimproZipModal rehomed here from UsersManagement. */}
+      {bulkZipOpen && (
+        <BulkSimproZipModal
+          onClose={() => setBulkZipOpen(false)}
+          onDone={() => { load(); setBulkZipOpen(false); }}
+        />
       )}
     </div>
   );
