@@ -16,10 +16,14 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
+import re
+
+from pydantic import BaseModel, Field
+
 from auth import require_roles
 from db import db
 from models import new_id, now_iso
-from permissions import ACTIONS, PERMISSIONS_SCHEMA, RESOURCES
+from permissions import ACTIONS, PERMISSIONS_SCHEMA, RESOURCES, require_permission
 
 
 # ─────────────────────────────────────────────────────────────
@@ -369,3 +373,251 @@ async def get_role(role_id: str, user: dict = Depends(require_roles("admin"))):
     if not doc:
         raise HTTPException(404, "Role not found")
     return doc
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.31-4a — Phase 4a: mutation endpoints + audit trail.
+#
+# Adds POST/PATCH/DELETE for the roles catalogue so the new
+# RolesAdmin UI can create custom roles, edit their tokens, and
+# soft-delete them. System roles (`is_system=True`) are guarded:
+#   · PATCH   → 400 "cannot modify system role" (except `is_active`
+#               which is allowed — this is the seam that flipped
+#               contractor_rep on in Phase 3d).
+#   · DELETE  → 400 "cannot delete system role".
+# Custom roles delete = soft (`is_active=False` + `deleted_at`).
+# Every mutation writes to `role_audit`.
+#
+# Gate: require_permission("users", "edit"). The existing GETs
+# stay on `require_roles("admin")` — GET-gate uniformity is a
+# Phase 5/6 sweep, not scope here.
+#
+# KNOWN LIMITATION (Phase 6 backlog): mutating a role's token
+# list does NOT invalidate the in-process `effective_permissions`
+# cache for existing sessions. Users may need to re-login to see
+# their new permissions. Runtime enforcement still consults
+# ROLE_DEFAULTS in `permissions.py`, not `roles.permission_tokens`
+# — so an edited *custom* role's tokens are only meaningful once
+# Phase 5 flips `effective_for()` to read from DB.
+# ─────────────────────────────────────────────────────────────
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _slugify(name: str) -> str:
+    s = _SLUG_RE.sub("_", (name or "").strip().lower()).strip("_")
+    return s or "role"
+
+
+def _validate_tokens(tokens: List[str]) -> List[str]:
+    """Reject unknown resources/actions and schema-invalid combos
+    (e.g. `email` on a resource where `email_supported=False`)."""
+    clean: list[str] = []
+    for t in tokens or []:
+        if not isinstance(t, str) or "." not in t:
+            continue
+        r, a = t.split(".", 1)
+        if r not in PERMISSIONS_SCHEMA or a not in ACTIONS:
+            continue
+        if a == "email" and not PERMISSIONS_SCHEMA[r].get("email_supported"):
+            continue
+        clean.append(f"{r}.{a}")
+    return sorted(set(clean))
+
+
+async def _write_audit(
+    *,
+    role_id: str,
+    role_name: str,
+    action: str,
+    before: Optional[dict],
+    after: Optional[dict],
+    diff: dict,
+    actor: dict,
+) -> None:
+    """Insert a `role_audit` entry mirroring the pattern used by
+    companies_audit / list_forms_audit."""
+    await db.role_audit.insert_one({
+        "id": new_id(),
+        "role_id": role_id,
+        "role_name": role_name,
+        "action": action,
+        "before": before,
+        "after": after,
+        "diff": diff,
+        "actor_user_id": actor.get("id"),
+        "actor_email": actor.get("email"),
+        "actor_role": actor.get("role"),
+        "at": now_iso(),
+    })
+
+
+class RoleCreate(BaseModel):
+    name: str = Field(..., min_length=2, max_length=80)
+    description: Optional[str] = ""
+    permission_tokens: List[str] = Field(default_factory=list)
+
+
+class RolePatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=80)
+    description: Optional[str] = None
+    permission_tokens: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+@router.post("", status_code=201)
+async def create_role(
+    payload: RoleCreate,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Create a custom (non-system) role. `role_id` is derived from
+    the slugified name; duplicates → 409."""
+    role_id = "custom_" + _slugify(payload.name)
+    if await db.roles.find_one({"role_id": role_id}):
+        raise HTTPException(409, f"role_id '{role_id}' already exists")
+    tokens = _validate_tokens(payload.permission_tokens)
+    now = now_iso()
+    doc = {
+        "id": new_id(),
+        "role_id": role_id,
+        "name": payload.name.strip(),
+        "description": (payload.description or "").strip(),
+        "permission_tokens": tokens,
+        "is_system": False,
+        "is_active": True,
+        "supersedes_role_id": None,
+        "pending_scoping_helper": False,
+        "deleted_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.roles.insert_one(doc)
+    doc.pop("_id", None)
+    await _write_audit(
+        role_id=role_id,
+        role_name=doc["name"],
+        action="create",
+        before=None,
+        after=doc,
+        diff={"created": True, "tokens_count": len(tokens)},
+        actor=user,
+    )
+    return doc
+
+
+@router.patch("/{role_id}")
+async def patch_role(
+    role_id: str,
+    payload: RolePatch,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    existing = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Role not found")
+    updates: Dict[str, Any] = {}
+    diff: Dict[str, Any] = {}
+    if payload.name is not None and payload.name.strip() != existing.get("name"):
+        updates["name"] = payload.name.strip()
+        diff["name"] = {"before": existing.get("name"), "after": updates["name"]}
+    if payload.description is not None and payload.description != existing.get("description"):
+        updates["description"] = payload.description
+        diff["description"] = {"before": existing.get("description"),
+                               "after": payload.description}
+    if payload.permission_tokens is not None:
+        new_tokens = _validate_tokens(payload.permission_tokens)
+        if set(new_tokens) != set(existing.get("permission_tokens") or []):
+            updates["permission_tokens"] = new_tokens
+            diff["permission_tokens"] = {
+                "before_count": len(existing.get("permission_tokens") or []),
+                "after_count": len(new_tokens),
+            }
+    if payload.is_active is not None and payload.is_active != existing.get("is_active"):
+        updates["is_active"] = bool(payload.is_active)
+        diff["is_active"] = {"before": existing.get("is_active"),
+                             "after": bool(payload.is_active)}
+
+    # System-role guard: block token/name/description changes.
+    # `is_active` toggles remain allowed — this is the exact seam
+    # Phase 3d used to flip contractor_rep on.
+    if existing.get("is_system"):
+        forbidden = [k for k in updates.keys() if k != "is_active"]
+        if forbidden:
+            raise HTTPException(400, "cannot modify system role")
+
+    if not updates:
+        # No-op: return current state without an audit row.
+        return existing
+
+    updates["updated_at"] = now_iso()
+    await db.roles.update_one({"role_id": role_id}, {"$set": updates})
+    after = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    audit_action = "update"
+    if "is_active" in updates and len(updates) == 2:  # is_active + updated_at only
+        audit_action = "activate" if updates["is_active"] else "deactivate"
+    await _write_audit(
+        role_id=role_id,
+        role_name=after.get("name", role_id) if after else role_id,
+        action=audit_action,
+        before=existing,
+        after=after,
+        diff=diff,
+        actor=user,
+    )
+    return after
+
+
+@router.delete("/{role_id}")
+async def delete_role(
+    role_id: str,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    existing = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    if not existing:
+        raise HTTPException(404, "Role not found")
+    if existing.get("is_system"):
+        raise HTTPException(400, "cannot delete system role")
+    # 409 if any user is currently assigned this custom role.
+    assigned = await db.users.count_documents({"role_id": role_id})
+    if assigned:
+        raise HTTPException(409, f"role is assigned to {assigned} users")
+    now = now_iso()
+    await db.roles.update_one(
+        {"role_id": role_id},
+        {"$set": {"is_active": False, "deleted_at": now, "updated_at": now}},
+    )
+    after = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    await _write_audit(
+        role_id=role_id,
+        role_name=existing.get("name", role_id),
+        action="delete",
+        before=existing,
+        after=after,
+        diff={"soft_deleted": True},
+        actor=user,
+    )
+    return {"deleted": True, "role_id": role_id, "soft": True}
+
+
+@router.get("/{role_id}/audit")
+async def get_role_audit(
+    role_id: str,
+    limit: int = 50,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Return recent audit entries for a role (newest first)."""
+    docs = await db.role_audit.find(
+        {"role_id": role_id}, {"_id": 0}
+    ).sort("at", -1).to_list(max(1, min(limit, 200)))
+    return {"count": len(docs), "entries": docs}
+
+
+@router.get("/{role_id}/assignees-count")
+async def get_role_assignees_count(
+    role_id: str,
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """How many users currently have this role_id assigned. Used by
+    the RoleMatrixEditor's Impact Preview panel."""
+    count = await db.users.count_documents({"role_id": role_id})
+    return {"role_id": role_id, "count": count}

@@ -156,7 +156,7 @@ export default function SwmsAssignmentsAdmin() {
   if (!canEdit) {
     return (
       <div className="p-8" data-testid="swms-assignments-page">
-        <PageHeader breadcrumb="Settings · SWMS Assignments" title="SWMS Assignments" />
+        <PageHeader crumb="Settings / SWMS Assignments" title="SWMS Assignments" />
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 inline-flex items-start gap-3">
           <AlertCircle size={16} className="mt-0.5" />
           <div>This page is restricted to Admin, Manager and HSEQ Lead roles.</div>
@@ -167,7 +167,7 @@ export default function SwmsAssignmentsAdmin() {
 
   return (
     <div className="p-6 lg:p-8" data-testid="swms-assignments-page">
-      <PageHeader breadcrumb="Settings · SWMS Assignments" title="SWMS Assignments" />
+      <PageHeader crumb="Settings / SWMS Assignments" title="SWMS Assignments" />
       <p className="text-sm text-slate-600 -mt-2 mb-5 max-w-3xl">
         Decide which roles, workers, companies or asset types each SWMS applies
         to. Superseded versions are hidden from the active list — open &ldquo;View

@@ -332,6 +332,9 @@ export default function FormAssignmentsAdmin() {
       {/* Sticky top toolbar */}
       <div className="px-4 sm:px-6 lg:px-8 py-4 border-b border-slate-200 bg-white flex flex-wrap items-center gap-3">
         <div className="flex-1 min-w-0">
+          <Link to="/app/settings" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 mb-1" data-testid="page-back-to-settings">
+            ← Back to Settings
+          </Link>
           <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-blue-700">Settings</div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-slate-900">Form Assignments</h1>
           <p className="text-[12px] text-slate-500">Workers see these forms when they scan a matching asset&apos;s QR code.</p>

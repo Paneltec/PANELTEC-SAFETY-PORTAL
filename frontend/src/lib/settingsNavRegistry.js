@@ -23,6 +23,7 @@ import {
   Diagram24Regular, Diagram24Filled,
   Mail24Regular, Mail24Filled,
   BookOpen24Regular, BookOpen24Filled,
+  ShieldTask24Regular, ShieldTask24Filled,
 } from '@fluentui/react-icons';
 
 // Ordered registry — keys are stable and immutable across releases.
@@ -45,6 +46,8 @@ export const SETTINGS_NAV_REGISTRY = [
   { key: 'workspaces',         label: 'Workspaces',          route: '/app/settings/workspaces',         icon: CubeMultiple24Regular,    iconActive: CubeMultiple24Filled,    testid: 'nav-settings-workspaces',                                                       description: 'Sub-workspaces for multi-brand or multi-office setups' },
   { key: 'users_permissions',  label: 'Users & Permissions', route: '/app/settings/users',              icon: PeopleSettings24Regular,  iconActive: PeopleSettings24Filled,  testid: 'nav-settings-users',              requiresCan: ['users', 'edit'],               description: 'Manage user accounts, roles, and tri-state permission matrix' },
   { key: 'permission_presets', label: 'Permission presets',  route: '/app/settings/permission-presets', icon: Trophy24Regular,          iconActive: Trophy24Filled,          testid: 'nav-settings-permission-presets', requiresCan: ['users', 'edit'],               description: 'Reusable permission templates for common roles' },
+  // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
+  { key: 'roles_admin',        label: 'Roles Admin',         route: '/app/settings/roles-admin',        icon: ShieldTask24Regular,      iconActive: ShieldTask24Filled,      testid: 'nav-settings-roles-admin',        requiresCan: ['users', 'edit'],               description: 'View system role permission matrices and manage custom roles' },
   { key: 'workers',            label: 'Workers',             route: '/app/settings/workers',            icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-settings-workers',                                                          description: 'Worker directory settings — inductions, roles, statuses' },
   { key: 'form_assignments',   label: 'Form Assignments',    route: '/app/settings/form-assignments',   icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-form-assignments',  requiresCan: ['forms', 'edit'],               description: 'Assign capture forms to workers or roles' },
   { key: 'swms_assignments',   label: 'SWMS Assignments',    route: '/app/settings/swms-assignments',   icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-swms-assignments',  requiresCan: ['swms', 'edit'],                description: 'Assign SWMS templates to sites, activities, or workers' },

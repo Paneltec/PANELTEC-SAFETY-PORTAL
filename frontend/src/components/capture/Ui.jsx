@@ -3,6 +3,26 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Loader2, Plus, Sparkles } from 'lucide-react';
 
+// v160.3.9.31-4a hot-patch — All Settings sub-pages use the shared
+// PageHeader with `crumb="Settings / …"`. Some had no way back to the
+// Settings landing except the sidebar. When the crumb starts with
+// "Settings", we now render a compact "← Back to Settings" link above
+// the eyebrow. Non-settings pages are untouched.
+function SettingsBackLink({ crumb }) {
+  if (!crumb || typeof crumb !== 'string') return null;
+  const first = crumb.split('/').map((s) => s.trim()).filter(Boolean)[0];
+  if (!first || first.toLowerCase() !== 'settings') return null;
+  return (
+    <Link
+      to="/app/settings"
+      className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 mb-2"
+      data-testid="page-back-to-settings"
+    >
+      <ArrowLeft size={12} /> Back to Settings
+    </Link>
+  );
+}
+
 // Module → pastel theme map (Thread B). Resolves a pastel theme from a crumb
 // string like "Capture / AI SWMS" or "Compliance / Contractors".
 const MODULE_PASTEL = {
@@ -51,6 +71,7 @@ export function PageHeader({ crumb, title, subtitle, action, pastel: pastelOverr
       >
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div className="min-w-0">
+            <SettingsBackLink crumb={crumb} />
             {crumb && <div className={`text-[11px] font-semibold tracking-[0.16em] uppercase mb-2 ${EMERALD_THEME.eyebrow}`}>{crumb}</div>}
             <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">{title}</h1>
             {subtitle && <p className="mt-1.5 text-sm text-slate-700 max-w-2xl">{subtitle}</p>}
@@ -73,6 +94,7 @@ export function PageHeader({ crumb, title, subtitle, action, pastel: pastelOverr
       >
         <div className="flex items-start justify-between flex-wrap gap-3">
           <div className="min-w-0">
+            <SettingsBackLink crumb={crumb} />
             {crumb && <div className={`text-[11px] font-semibold tracking-[0.16em] uppercase mb-2 ${pastel.ink}`}>{crumb}</div>}
             <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900">{title}</h1>
             {subtitle && <p className="mt-1.5 text-sm text-slate-700 max-w-2xl">{subtitle}</p>}
@@ -118,6 +140,7 @@ function renderCrumb(crumb, fallbackCls) {
   return (
     <div className="mb-6 flex items-start justify-between flex-wrap gap-3">
       <div>
+        <SettingsBackLink crumb={crumb} />
         {renderCrumb(crumb, 'text-slate-500')}
         <h1 className="font-display text-3xl sm:text-4xl font-semibold tracking-tight">{title}</h1>
         {subtitle && <p className="mt-1.5 text-sm text-slate-600 max-w-2xl">{subtitle}</p>}

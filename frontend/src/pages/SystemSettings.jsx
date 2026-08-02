@@ -11,6 +11,7 @@
 // on mount and resume the polling loop automatically — no orphan
 // spinners.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2, FileText, Settings as Cog } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -179,6 +180,9 @@ export default function SystemSettings() {
   return (
     <div className="p-6 max-w-5xl mx-auto" data-testid="system-settings">
       <header className="mb-6">
+        <Link to="/app/settings" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 mb-1" data-testid="page-back-to-settings">
+          ← Back to Settings
+        </Link>
         <div className="text-[10px] uppercase tracking-wider font-bold text-blue-600">
           Paneltec Civil · Settings
         </div>

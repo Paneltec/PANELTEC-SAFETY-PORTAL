@@ -38,6 +38,8 @@ import WorkerScanResolver from '@/pages/WorkerScanResolver';
 import UsersManagement from '@/pages/UsersManagement';
 import MyApps from '@/pages/MyApps';
 import PermissionPresetsAdmin from '@/pages/PermissionPresetsAdmin';
+// v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
+import RolesAdmin from '@/pages/RolesAdmin';
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
@@ -161,6 +163,8 @@ function App() {
               <Route path="settings/schematic" element={<ProgramSchematicPage />} />
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
+              {/* v160.3.9.31-4a — Phase 4a: Roles Admin page. */}
+              <Route path="settings/roles-admin" element={<RolesAdmin />} />
               <Route path="settings/workers" element={<Workers />} />
               <Route path="settings/form-assignments" element={<FormAssignmentsAdmin />} />
               <Route path="settings/swms-assignments" element={<SwmsAssignmentsAdmin />} />

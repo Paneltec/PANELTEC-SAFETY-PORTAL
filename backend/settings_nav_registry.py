@@ -23,6 +23,8 @@ SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     {"key": "workspaces",         "label": "Workspaces",           "route": "/app/settings/workspaces",           "admin_only": False, "resource": None},
     {"key": "users_permissions",  "label": "Users & Permissions",  "route": "/app/settings/users",                "admin_only": True,  "resource": None},
     {"key": "permission_presets", "label": "Permission presets",   "route": "/app/settings/permission-presets",   "admin_only": True,  "resource": None},
+    # v160.3.9.31-4a — Phase 4a: Roles Admin page.
+    {"key": "roles_admin",        "label": "Roles Admin",          "route": "/app/settings/roles-admin",          "admin_only": True,  "resource": None},
     {"key": "workers",            "label": "Workers",              "route": "/app/settings/workers",              "admin_only": False, "resource": None},
     {"key": "form_assignments",   "label": "Form Assignments",     "route": "/app/settings/form-assignments",     "admin_only": True,  "resource": None},
     {"key": "swms_assignments",   "label": "SWMS Assignments",     "route": "/app/settings/swms-assignments",     "admin_only": True,  "resource": None},
