@@ -1,7 +1,7 @@
 """Org user management — admins only. Permissions matrix lives in permissions.py."""
 from __future__ import annotations
 import logging
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
@@ -613,6 +613,7 @@ async def import_from_simpro(
 # ─────────────────────────────────────────────────────────────
 
 _ADMIN_BULK_UNSAFE_ROLE_IDS = {"admin"}  # single-row confirm only, never bulk.
+_FROM_POSITION_SENTINEL = "__from_position__"  # v160.3.9.33 Phase 4d
 
 
 class BulkAssignRoleIn(BaseModel):
@@ -620,6 +621,11 @@ class BulkAssignRoleIn(BaseModel):
     role_id: str
     admin_confirmed: bool = False  # ignored server-side except for audit.
     hint_matched: bool = False
+    # v160.3.9.33 — Phase 4d: when role_id == "__from_position__" the endpoint
+    # auto-creates (if missing) a `custom_<slug(simpro_position)>` role per
+    # user, then assigns it. Every user in the batch MUST have a
+    # non-empty `simpro_position` — else 400.
+    auto_create_from_position: bool = False
 
 
 @router.post("/bulk-assign-role")
@@ -629,6 +635,85 @@ async def bulk_assign_role(
 ):
     if not body.user_ids:
         raise HTTPException(400, "user_ids empty")
+
+    # v160.3.9.33 — Phase 4d "from position" branch.
+    from_position = (
+        body.role_id == _FROM_POSITION_SENTINEL
+        or body.auto_create_from_position
+    )
+    if from_position:
+        # Import lazily to avoid the circular users → roles_catalogue chain.
+        from roles_catalogue import create_role_from_position
+        now = now_iso()
+        updated: List[str] = []
+        skipped: List[Dict[str, str]] = []
+        errors: List[Dict[str, str]] = []
+        created_role_ids: List[str] = []
+        per_role_updated: Dict[str, int] = {}
+        for uid in body.user_ids:
+            target = await db.users.find_one(
+                {"id": uid, "org_id": actor["org_id"]}, {"_id": 0},
+            )
+            if not target:
+                errors.append({"user_id": uid, "reason": "not_found_or_cross_org"})
+                continue
+            if target.get("role_id"):
+                skipped.append({"user_id": uid, "reason": "already_has_role_id"})
+                continue
+            position = (target.get("simpro_position") or "").strip()
+            if not position:
+                errors.append({"user_id": uid, "reason": "no_simpro_position"})
+                continue
+            result = await create_role_from_position(position=position, actor=actor)
+            role_id = result["role_id"]
+            if result["created"]:
+                created_role_ids.append(role_id)
+            has_password = bool(target.get("password_hash"))
+            set_fields: Dict[str, Any] = {
+                "role_id": role_id,
+                "role": role_id,
+                "activation_status": "active",
+                "status": "active",
+                "role_assigned_at": now,
+                "updated_at": now,
+                "must_set_password": not has_password,
+            }
+            await db.users.update_one({"id": uid}, {"$set": set_fields})
+            await db.user_audit.insert_one({
+                "id": new_id(),
+                "user_id": uid,
+                "action": "bulk_role_assigned_from_position",
+                "before": {"role_id": None},
+                "after": {"role_id": role_id},
+                "simpro_position": position,
+                "role_source": "simpro_position_auto",
+                "role_auto_created": result["created"],
+                "hint_matched": True,   # position match is the strongest hint
+                "admin_confirmed": bool(body.admin_confirmed),
+                "actor_user_id": actor["id"],
+                "actor_email": actor.get("email"),
+                "at": now,
+            })
+            per_role_updated[role_id] = per_role_updated.get(role_id, 0) + 1
+            updated.append(uid)
+        return {
+            "role_id": _FROM_POSITION_SENTINEL,
+            "role_name": "(auto-created from Simpro positions)",
+            "updated": len(updated),
+            "skipped": len(skipped),
+            "errors": len(errors),
+            "auto_created_role_ids": sorted(set(created_role_ids)),
+            "per_role_updated": per_role_updated,
+            "summary": (
+                f"Auto-assigned {len(updated)} users into "
+                f"{len(set(per_role_updated.keys()))} position roles "
+                f"({len(set(created_role_ids))} newly created). "
+                f"{len(skipped)} skipped (already had roles). "
+                f"{len(errors)} errors."
+            ),
+            "detail": {"updated": updated, "skipped": skipped, "errors": errors},
+        }
+
     if body.role_id in _ADMIN_BULK_UNSAFE_ROLE_IDS:
         raise HTTPException(400, "admin role must be assigned one user at a time")
 

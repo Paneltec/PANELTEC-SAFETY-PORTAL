@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from auth import require_roles
 from db import db
 from models import new_id, now_iso
-from permissions import ACTIONS, PERMISSIONS_SCHEMA, RESOURCES, require_permission
+from permissions import ACTIONS, PERMISSIONS_SCHEMA, RESOURCES, require_permission, _bust_role_cache
 
 
 # ─────────────────────────────────────────────────────────────
@@ -323,6 +323,11 @@ async def seed_system_roles() -> Dict[str, Any]:
             "is_active": spec["is_active"],
             "supersedes_role_id": spec.get("supersedes_role_id"),
             "pending_scoping_helper": spec.get("pending_scoping_helper", False),
+            # v160.3.9.33 — Phase 4d: `source` classifies a role's origin.
+            #   "seed"                 → shipped in SYSTEM_ROLES (11 roles)
+            #   "admin_created"        → hand-created via POST /admin/roles
+            #   "simpro_position_auto" → auto-created from a Simpro position
+            "source": "seed",
             "updated_at": ts,
         }
         setoninsert_doc = {
@@ -339,6 +344,13 @@ async def seed_system_roles() -> Dict[str, Any]:
             counts["inserted"] += 1
         else:
             counts["updated"] += 1
+    # v160.3.9.33 — Phase 4d: backfill `source` on ANY doc missing it.
+    # Custom roles created before the source field existed get
+    # `source="admin_created"`; system rows already got "seed" above.
+    await db.roles.update_many(
+        {"source": {"$exists": False}, "is_system": {"$ne": True}},
+        {"$set": {"source": "admin_created"}},
+    )
     return {"ok": True, "counts": counts, "total": len(SYSTEM_ROLES)}
 
 
@@ -498,6 +510,10 @@ async def create_role(
         "permission_tokens": tokens,
         "is_system": False,
         "is_active": True,
+        # v160.3.9.33 — hand-created via UI. Sync-from-Simpro uses
+        # `_create_role_from_position()` below which sets
+        # `source="simpro_position_auto"` instead.
+        "source": "admin_created",
         "supersedes_role_id": None,
         "pending_scoping_helper": False,
         "deleted_at": None,
@@ -506,6 +522,7 @@ async def create_role(
     }
     await db.roles.insert_one(doc)
     doc.pop("_id", None)
+    _bust_role_cache(role_id)
     await _write_audit(
         role_id=role_id,
         role_name=doc["name"],
@@ -563,6 +580,7 @@ async def patch_role(
 
     updates["updated_at"] = now_iso()
     await db.roles.update_one({"role_id": role_id}, {"$set": updates})
+    _bust_role_cache(role_id)  # v160.3.9.33 — invalidate token cache
     after = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
     audit_action = "update"
     if "is_active" in updates and len(updates) == 2:  # is_active + updated_at only
@@ -598,6 +616,7 @@ async def delete_role(
         {"role_id": role_id},
         {"$set": {"is_active": False, "deleted_at": now, "updated_at": now}},
     )
+    _bust_role_cache(role_id)  # v160.3.9.33 — invalidate token cache
     after = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
     await _write_audit(
         role_id=role_id,
@@ -633,6 +652,120 @@ async def get_role_assignees_count(
     the RoleMatrixEditor's Impact Preview panel."""
     count = await db.users.count_documents({"role_id": role_id})
     return {"role_id": role_id, "count": count}
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.33 — Phase 4d
+# Auto-create custom roles from Simpro employee positions.
+#
+# Public helper `create_role_from_position()` is imported by
+# `users.py::bulk_assign_role` (via the __from_position__ sentinel)
+# and `simpro_import_users.py::import_employees_selective` so all
+# three call-sites share the same slugify + duplicate-safe upsert +
+# audit-emit flow.
+#
+# The endpoint below bulk-syncs the whole org at once — safe to run
+# 100 times; first run creates all N; subsequent runs create 0.
+# ─────────────────────────────────────────────────────────────
+
+async def create_role_from_position(
+    *,
+    position: str,
+    actor: dict,
+) -> Dict[str, Any]:
+    """Create (or return existing) `custom_<slug(position)>` role.
+    Returns `{"role_id": ..., "created": bool, "existing": bool}`.
+    Uses the same audit flow as `POST /admin/roles` for created rows.
+    Never mutates an existing row."""
+    slug = _slugify(position)
+    role_id = "custom_" + slug
+    existing = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+    if existing:
+        return {"role_id": role_id, "created": False, "existing": True,
+                "role_doc": existing}
+    now = now_iso()
+    doc = {
+        "id": new_id(),
+        "role_id": role_id,
+        "name": position.strip(),
+        "description": f"Auto-created from Simpro position '{position.strip()}'. Configure permissions in Roles Admin.",
+        "permission_tokens": [],
+        "is_system": False,
+        "is_active": True,
+        "source": "simpro_position_auto",
+        "supersedes_role_id": None,
+        "pending_scoping_helper": False,
+        "deleted_at": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+    try:
+        await db.roles.insert_one(doc)
+    except Exception:
+        # Race: another concurrent request already inserted. Return the winner.
+        existing = await db.roles.find_one({"role_id": role_id}, {"_id": 0})
+        if existing:
+            return {"role_id": role_id, "created": False, "existing": True,
+                    "role_doc": existing}
+        raise
+    doc.pop("_id", None)
+    _bust_role_cache(role_id)
+    await _write_audit(
+        role_id=role_id,
+        role_name=doc["name"],
+        action="create_from_simpro",
+        before=None,
+        after=doc,
+        diff={"created": True, "simpro_position": position.strip(),
+              "tokens_count": 0, "source": "simpro_position_auto"},
+        actor=actor,
+    )
+    return {"role_id": role_id, "created": True, "existing": False,
+            "role_doc": doc}
+
+
+@router.post("/sync-from-simpro-positions")
+async def sync_roles_from_simpro_positions(
+    user: dict = Depends(require_permission("users", "edit")),
+):
+    """Scan `users` in caller's org for distinct non-null `simpro_position`.
+    For each unique position, create a matching `custom_<slug>` role if it
+    doesn't exist. Idempotent — subsequent runs report 0 created.
+
+    Returns `{created: [role_ids], skipped: [role_ids],
+              user_count_per_role: {role_id: n}}`.
+    """
+    org_id = user["org_id"]
+    # Distinct positions with counts. Only consider non-archived users so
+    # positions from suspended employees don't spawn roles.
+    pipeline = [
+        {"$match": {"org_id": org_id,
+                    "simpro_position": {"$exists": True, "$nin": [None, ""]},
+                    "is_archived": {"$ne": True}}},
+        {"$group": {"_id": "$simpro_position", "count": {"$sum": 1}}},
+    ]
+    rows = await db.users.aggregate(pipeline).to_list(500)
+    created: List[str] = []
+    skipped: List[str] = []
+    per_role: Dict[str, int] = {}
+    for row in rows:
+        position = (row.get("_id") or "").strip()
+        if not position:
+            continue
+        result = await create_role_from_position(position=position, actor=user)
+        rid = result["role_id"]
+        per_role[rid] = row.get("count", 0)
+        if result["created"]:
+            created.append(rid)
+        else:
+            skipped.append(rid)
+    return {
+        "created": sorted(created),
+        "skipped": sorted(skipped),
+        "user_count_per_role": per_role,
+        "summary": f"Created {len(created)} roles, skipped {len(skipped)} that already existed.",
+    }
+
 
 
 # ─────────────────────────────────────────────────────────────

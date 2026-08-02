@@ -245,6 +245,77 @@ async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:
     return (doc or {}).get("overrides") or {}
 
 
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.33 — Phase 4d Option-1 fallback
+# `_role_default()` reads from the module-level `ROLE_DEFAULTS`
+# dict (11 seeded role_ids). Custom / auto-created roles are NOT
+# there, so a user with `role="custom_traffic_controller"` would
+# always resolve to False.
+#
+# The fallback below consults `db.roles.permission_tokens[]` for
+# any role_id that isn't in `ROLE_DEFAULTS`. Result is cached
+# process-wide until the role is mutated (`_bust_role_cache()`
+# is called from every roles-catalogue mutation).
+#
+# Phase 6 will unify this by making `_role_default()` async and
+# always read from db.roles — for now the two paths coexist and
+# ROLE_DEFAULTS wins when the role_id is known there. See
+# `07_phase_plan.md` Phase 6 item #1.
+# ─────────────────────────────────────────────────────────────
+
+_ROLE_TOKENS_CACHE: Dict[str, set] = {}
+_ROLE_TOKENS_CACHE_MISS: set = set()  # role_ids we've looked up and found empty/missing
+
+
+def _bust_role_cache(role_id: Optional[str] = None) -> None:
+    """Invalidate cached permission_tokens for one role or the whole table.
+    Called from every mutation in roles_catalogue (create/patch/delete/sync)
+    and from users bulk-assign-role when it auto-creates a role."""
+    global _ROLE_TOKENS_CACHE, _ROLE_TOKENS_CACHE_MISS
+    if role_id is None:
+        _ROLE_TOKENS_CACHE = {}
+        _ROLE_TOKENS_CACHE_MISS = set()
+        return
+    _ROLE_TOKENS_CACHE.pop(role_id, None)
+    _ROLE_TOKENS_CACHE_MISS.discard(role_id)
+
+
+async def _role_tokens(role_id: Optional[str]) -> set:
+    """Return the `permission_tokens[]` set for a role_id, cached.
+    Returns empty set for unknown / inactive / missing roles."""
+    if not role_id:
+        return set()
+    if role_id in _ROLE_TOKENS_CACHE:
+        return _ROLE_TOKENS_CACHE[role_id]
+    if role_id in _ROLE_TOKENS_CACHE_MISS:
+        return set()
+    doc = await db.roles.find_one(
+        {"role_id": role_id, "is_active": True},
+        {"_id": 0, "permission_tokens": 1},
+    )
+    if not doc:
+        _ROLE_TOKENS_CACHE_MISS.add(role_id)
+        return set()
+    tokens = set(doc.get("permission_tokens") or [])
+    _ROLE_TOKENS_CACHE[role_id] = tokens
+    return tokens
+
+
+async def _role_permits(user: dict, resource: str, action: str) -> bool:
+    """Fully resolve role-derived permission for a user.
+    First tries the legacy ROLE_DEFAULTS (11 seeded roles); if the
+    role is not in that map, falls back to `db.roles.permission_tokens[]`
+    keyed on `user.role_id` (preferred) then `user.role` (legacy mirror).
+    """
+    role_str = user.get("role")
+    if role_str in ROLE_DEFAULTS:
+        return _role_default(role_str, resource, action)
+    # Fallback path — look up tokens from db.roles.
+    lookup_id = user.get("role_id") or role_str
+    tokens = await _role_tokens(lookup_id)
+    return f"{resource}.{action}" in tokens
+
+
 def _role_default(role: str, resource: str, action: str) -> bool:
     # v160.3.9.32-4c — Reads the LEGACY `role` string, not `role_id`.
     # A user with role_id="custom_regional_auditor" and no `role` string
@@ -264,7 +335,9 @@ async def can(user: dict, resource: str, action: str) -> bool:
     res_over = overrides.get(resource) or {}
     if action in res_over:
         return bool(res_over[action])
-    return _role_default(user["role"], resource, action)
+    # v160.3.9.33 — was `_role_default(user["role"], …)`; now `_role_permits`
+    # so custom / auto-created roles resolve via `db.roles.permission_tokens[]`.
+    return await _role_permits(user, resource, action)
 
 
 async def resolve_team_scope(
@@ -304,6 +377,13 @@ async def resolve_team_scope(
 async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
     """Resolve the full matrix for a user — role defaults merged with overrides."""
     overrides = await _get_overrides(user["id"])
+    # v160.3.9.33 — pre-load token set once so the per-cell loop below stays
+    # O(resources*actions) without hitting the cache map for every action.
+    role_str = user.get("role")
+    use_db_fallback = role_str not in ROLE_DEFAULTS
+    db_tokens: set = set()
+    if use_db_fallback:
+        db_tokens = await _role_tokens(user.get("role_id") or role_str)
     out: Dict[str, Dict[str, bool]] = {}
     for resource in RESOURCES:
         out[resource] = {}
@@ -314,8 +394,10 @@ async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
             res_over = overrides.get(resource) or {}
             if action in res_over:
                 out[resource][action] = bool(res_over[action])
+            elif use_db_fallback:
+                out[resource][action] = f"{resource}.{action}" in db_tokens
             else:
-                out[resource][action] = _role_default(user["role"], resource, action)
+                out[resource][action] = _role_default(role_str, resource, action)
     return out
 
 

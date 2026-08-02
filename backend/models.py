@@ -56,7 +56,12 @@ class UserOut(BaseModel):
     id: str
     email: EmailStr
     name: str
-    role: Role
+    # v160.3.9.33 — Phase 4d: role widened from Role Literal to open str
+    # so custom / simpro_position_auto role_ids (mirrored into the legacy
+    # `role` string) don't blow up UserOut validation on login. The
+    # comment on the `Role` Literal above notes Phase 5 F-ii will drop
+    # Literal entirely — this ships a slice of that now.
+    role: str
     org_id: str
     workspace_ids: List[str] = Field(default_factory=list)
     created_at: str

@@ -68,11 +68,17 @@ function useSystemRoles() {
     let alive = true;
     api.get('/admin/roles').then(({ data }) => {
       if (!alive) return;
+      // v160.3.9.33 — Phase 4d: pass through `source` verbatim from the
+      // backend. DB rows now carry one of "seed" / "admin_created" /
+      // "simpro_position_auto" (see roles_catalogue.py). Fallback to
+      // "admin_created" for legacy custom rows still missing the field.
       const seeded = (data?.roles || []).map((r) => ({
         role_id: r.role_id,
         name: r.name || r.role_id,
         is_active: r.is_active !== false,
-        source: 'seed',
+        source: r.source || (r.is_system ? 'seed' : 'admin_created'),
+        is_system: !!r.is_system,
+        permission_tokens_count: (r.permission_tokens || []).length,
       }));
       const byId = new Map();
       for (const r of LEGACY_ROLES) byId.set(r.role_id, r);
@@ -90,63 +96,41 @@ function useSystemRoles() {
   return { roles, loading };
 }
 
+// v160.3.9.33 — Bust the module-level cache after any role mutation so
+// sibling components pick up the change without a full page reload.
+export function bustRolesCache() {
+  _rolesCache = null;
+}
+
 // Kept for backward compat while sub-phase 2b/2c files still reference
 // these arrays. Prefer `useSystemRoles()` for anything new.
 const ROLES = LEGACY_ROLES.map((r) => r.role_id);
 const ROLE_LABELS = Object.fromEntries(LEGACY_ROLES.map((r) => [r.role_id, r.name]));
 const STATUSES = ['active', 'invited', 'disabled'];
 
-// v160.3.9.32-4c.3 — Simpro-position → role_id heuristic. Used to pre-select
-// the role dropdown in the single- and bulk-Assign Role dialogs so an admin
-// activating 48 pending Simpro-imported users doesn't have to hand-type
-// every row. The mapping is deliberately conservative: falls back to
-// `general_user` when the position doesn't match any known keyword. The
-// admin can always override; the pre-selection just saves clicks.
-// Matching is lowercase, substring-based; longest / most specific
-// keywords are checked first so "hseq manager" wins over "manager".
-//
-// IMPORTANT: every role_id below MUST exist in the seeded db.roles
-// catalogue — LEGACY_ROLES surfaces a few historical role_ids (worker,
-// supervisor, hseq_lead, auditor) which are NOT in the DB and would
-// cause POST /users/bulk-assign-role to 404. Mapping avoids those.
-const SIMPRO_POSITION_TO_ROLE_HINT = [
-  // Order matters — first match wins.
-  { match: 'hseq manager', role_id: 'hseq_manager' },
-  { match: 'safety manager', role_id: 'hseq_manager' },
-  { match: 'safety officer', role_id: 'hseq_manager_readonly' },
-  { match: 'hseq lead', role_id: 'hseq_manager_readonly' },
-  { match: 'responsible manager', role_id: 'responsible_manager' },
-  { match: 'project manager', role_id: 'general_user' },
-  { match: 'site manager', role_id: 'general_user' },
-  { match: 'foreman', role_id: 'general_user' },
-  { match: 'leading hand', role_id: 'general_user' },
-  { match: 'supervisor', role_id: 'general_user' },
-  { match: 'mechanic', role_id: 'mechanic' },
-  { match: 'fitter', role_id: 'mechanic' },
-  { match: 'auditor', role_id: 'hseq_manager_readonly' },
-  { match: 'training', role_id: 'training_inductions_only' },
-  { match: 'induction', role_id: 'training_inductions_only' },
-  { match: 'traffic controller', role_id: 'general_user' },
-  { match: 'construction worker', role_id: 'general_user' },
-  { match: 'labourer', role_id: 'general_user' },
-  { match: 'plumber', role_id: 'general_user' },
-  { match: 'plant operator', role_id: 'general_user' },
-  { match: 'operator', role_id: 'general_user' },
-  { match: 'carpenter', role_id: 'general_user' },
-  { match: 'electrician', role_id: 'general_user' },
-  { match: 'apprentice', role_id: 'general_user' },
-  { match: 'cleaner', role_id: 'general_user' },
-  { match: 'admin', role_id: 'general_user' },
-  { match: 'office', role_id: 'general_user' },
-];
+// v160.3.9.33 — Phase 4d — position → role slug.
+// Each unique Simpro position IS a Paneltec role (`custom_<slug>`),
+// auto-created on Simpro import + selectable manually via the bulk
+// dialog's "Create '<position>' role" affordance. Slug rules must
+// match `_slugify()` in backend/roles_catalogue.py exactly: lowercase
+// alphanumerics separated by underscores, everything else collapsed.
+function slugifyPosition(position) {
+  const p = (position || '').trim().toLowerCase();
+  if (!p) return '';
+  return p.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'role';
+}
 
-export function suggestRoleHint(position) {
-  const p = (position || '').toLowerCase().trim();
-  if (!p) return 'general_user';
-  for (const entry of SIMPRO_POSITION_TO_ROLE_HINT) {
-    if (p.includes(entry.match)) return entry.role_id;
-  }
-  return 'general_user';
+// Returns the role_id that matches this position, or a special
+// synthetic role_id `__create_from_position__` if the position is
+// set but no matching role exists yet. Returns null when the user
+// has no simpro_position (falls back to manual pick from seed list).
+function positionRoleFor(user, systemRoles) {
+  const pos = user?.simpro_position || '';
+  if (!pos) return null;
+  const slug = 'custom_' + slugifyPosition(pos);
+  const found = systemRoles.find((r) => r.role_id === slug && r.is_active !== false);
+  if (found) return found.role_id;
+  return '__create_from_position__';
 }
 const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
@@ -841,12 +825,17 @@ export default function UsersManagement() {
 function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
   useLockBodyScroll();
   const isBulk = users.length > 1;
-  // Per-user role selections, seeded from suggestRoleHint().
+  // v160.3.9.33 — Phase 4d: pre-select each row's role by matching the
+  // user's Simpro position to the auto-created `custom_<slug>` role. If
+  // that role doesn't exist yet, pre-select the special sentinel
+  // `__create_from_position__` which submits via the __from_position__
+  // backend flow (auto-creates the role, then assigns). Users without a
+  // Simpro position get no pre-selection — admin must pick manually.
   const [selections, setSelections] = useState(() => {
     const out = {};
     for (const u of users) {
-      const hint = suggestRoleHint(u.simpro_position || '');
-      out[u.id] = { role_id: hint, hint };
+      const roleId = positionRoleFor(u, systemRoles);
+      out[u.id] = { role_id: roleId || '', from_position: !!roleId };
     }
     return out;
   });
@@ -855,12 +844,10 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
   const [setAllValue, setSetAllValue] = useState('');       // "Set all to…" picker value
 
   const activeRoles = useMemo(
-    // v160.3.9.32-4c.3 — Filter to db-seeded, active roles only. LEGACY_ROLES
-    // fallback surfaces legacy role_ids (worker/supervisor/hseq_lead/auditor)
-    // that are NOT in db.roles — offering them here would cause POST 404s.
-    // Keep the legacy tag only if the role_id also appears in the seeded set
-    // (i.e. `source === 'seed'`).
-    () => systemRoles.filter((r) => r.is_active !== false && r.source === 'seed'),
+    // v160.3.9.33 — Phase 4d: allow seed + admin_created + simpro_position_auto.
+    // Only exclude legacy fallback entries (source === 'legacy') that don't
+    // exist in db.roles — those would 404 the assignment.
+    () => systemRoles.filter((r) => r.is_active !== false && r.source !== 'legacy'),
     [systemRoles]
   );
   // Bulk-safe roles = everything except admin.
@@ -877,57 +864,84 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
   };
 
   const runSubmit = async () => {
-    // Group user_ids by chosen role_id so we can fire one POST per role.
+    // v160.3.9.33 — Phase 4d: split selections into two groups:
+    //   • fromPositionIds — users whose selected value is the special
+    //     `__create_from_position__` sentinel. These get bundled into
+    //     ONE call with role_id="__from_position__" so the backend
+    //     auto-creates each unique position role and assigns per-user.
+    //   • byRole — standard {role_id -> [user_id]} grouping for the
+    //     remaining users who picked a concrete role_id.
+    const fromPositionIds = [];
     const byRole = new Map();
     for (const u of users) {
       const roleId = selections[u.id]?.role_id;
       if (!roleId) continue;
+      if (roleId === '__create_from_position__') {
+        fromPositionIds.push(u.id);
+        continue;
+      }
       if (!byRole.has(roleId)) byRole.set(roleId, []);
-      byRole.get(roleId).push({ id: u.id, hint: selections[u.id]?.hint });
+      byRole.get(roleId).push({ id: u.id, from_position: !!selections[u.id]?.from_position });
     }
-    if (byRole.size === 0) {
+    if (byRole.size === 0 && fromPositionIds.length === 0) {
       toast.error('Pick a role for at least one user');
       return;
     }
     setBusy(true);
-    // v160.3.9.32-4c.3 — Promise.allSettled so a mid-batch failure (e.g.
-    // stale role_id → 404) doesn't roll back the whole toast/close/refresh
-    // flow. Users see per-role_id failure detail; succeeded rows are
-    // reflected immediately via onDone() + close.
+    // Promise.allSettled so a mid-batch failure doesn't roll back the
+    // whole toast/close/refresh flow. Users see per-role_id failure
+    // detail; succeeded rows are reflected immediately via onDone().
     try {
-      const results = await Promise.allSettled(
-        Array.from(byRole.entries()).map(async ([roleId, rows]) => {
-          const allHinted = rows.every((r) => r.hint === roleId);
-          const { data } = await api.post('/users/bulk-assign-role', {
+      const calls = [];
+      if (fromPositionIds.length) {
+        calls.push(
+          api.post('/users/bulk-assign-role', {
+            user_ids: fromPositionIds,
+            role_id: '__from_position__',
+            auto_create_from_position: true,
+            admin_confirmed: true,
+            hint_matched: true,
+          }).then(({ data }) => ({ roleId: '__from_position__', data }))
+        );
+      }
+      for (const [roleId, rows] of byRole.entries()) {
+        const allFromPosition = rows.every((r) => r.from_position);
+        calls.push(
+          api.post('/users/bulk-assign-role', {
             user_ids: rows.map((r) => r.id),
             role_id: roleId,
             admin_confirmed: true,
-            hint_matched: allHinted,
-          });
-          return { roleId, data };
-        })
-      );
+            hint_matched: allFromPosition,
+          }).then(({ data }) => ({ roleId, data }))
+        );
+      }
+      const results = await Promise.allSettled(calls);
       let totalUpdated = 0, totalSkipped = 0, totalErrors = 0;
+      const autoCreated = [];
       const failedRoles = [];
       for (const r of results) {
         if (r.status === 'fulfilled') {
           totalUpdated += r.value.data.updated || 0;
           totalSkipped += r.value.data.skipped || 0;
           totalErrors += r.value.data.errors || 0;
+          for (const rid of (r.value.data.auto_created_role_ids || [])) {
+            autoCreated.push(rid);
+          }
         } else {
-          // Extract the role_id we tried to assign so the admin can retry.
-          const reason = r.reason;
-          failedRoles.push(apiError(reason));
+          failedRoles.push(apiError(r.reason));
         }
       }
       const parts = [];
       if (totalUpdated) parts.push(`Assigned to ${totalUpdated} user${totalUpdated === 1 ? '' : 's'}`);
+      if (autoCreated.length) parts.push(`${autoCreated.length} new position role${autoCreated.length === 1 ? '' : 's'} created`);
       if (totalSkipped) parts.push(`${totalSkipped} skipped (already had roles)`);
       if (totalErrors) parts.push(`${totalErrors} row errors`);
       if (failedRoles.length) {
         toast.error(`Some roles failed — ${failedRoles.slice(0, 2).join('; ')}${failedRoles.length > 2 ? '…' : ''}`);
       }
       if (parts.length) toast.success(parts.join(' · '));
+      // Any auto-create bumps the roles catalogue → bust the module cache.
+      if (autoCreated.length) bustRolesCache();
       onDone?.();
       if (failedRoles.length === 0) onClose?.();
     } finally {
@@ -1003,7 +1017,15 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
               {users.map((u) => {
                 const sel = selections[u.id];
                 const rolesForRow = isBulk ? bulkSafeRoles : activeRoles;
-                const hintUnavailable = !rolesForRow.some((r) => r.role_id === sel?.role_id);
+                const positionRoleId = positionRoleFor(u, systemRoles);
+                const hasPosition = !!(u.simpro_position || '').trim();
+                const needsAutoCreate = positionRoleId === '__create_from_position__';
+                const currentPositionRole = positionRoleId && positionRoleId !== '__create_from_position__'
+                  ? rolesForRow.find((r) => r.role_id === positionRoleId)
+                  : null;
+                const selectValue = sel?.role_id || '';
+                const valueIsAvailable = selectValue === '__create_from_position__'
+                  || rolesForRow.some((r) => r.role_id === selectValue);
                 return (
                   <tr key={u.id} className="border-t border-slate-100" data-testid={`assign-role-row-${u.id}`}>
                     <td className="py-2 pr-3">
@@ -1015,20 +1037,71 @@ function AssignRoleDialog({ users, systemRoles, onClose, onDone }) {
                     </td>
                     <td className="py-2">
                       <select
-                        value={hintUnavailable ? '' : (sel?.role_id || '')}
-                        onChange={(e) => setSelections((s) => ({ ...s, [u.id]: { ...s[u.id], role_id: e.target.value } }))}
+                        value={valueIsAvailable ? selectValue : ''}
+                        onChange={(e) => setSelections((s) => ({
+                          ...s,
+                          [u.id]: {
+                            role_id: e.target.value,
+                            from_position: e.target.value === '__create_from_position__' || e.target.value === positionRoleId,
+                          },
+                        }))}
                         disabled={busy}
                         data-testid={`assign-role-select-${u.id}`}
-                        className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white w-full max-w-[220px]"
+                        className="text-sm border border-slate-300 rounded-lg px-2 py-1.5 bg-white w-full max-w-[240px]"
                       >
                         <option value="">Select role…</option>
-                        {rolesForRow.map((r) => (
-                          <option key={r.role_id} value={r.role_id}>{r.name}</option>
-                        ))}
+                        {/* v160.3.9.33 — Phase 4d: synthetic "Create '<pos>' role"
+                            option surfaces when the user has a simpro_position
+                            but no matching auto-role has been created yet.
+                            Greyed-out when the user has no position at all. */}
+                        {hasPosition ? (
+                          needsAutoCreate ? (
+                            <option value="__create_from_position__" data-testid={`assign-role-create-opt-${u.id}`}>
+                              ✨ Create + assign &quot;{u.simpro_position}&quot; role
+                            </option>
+                          ) : (
+                            currentPositionRole && (
+                              <option value={currentPositionRole.role_id} data-testid={`assign-role-position-opt-${u.id}`}>
+                                {currentPositionRole.name} (from position)
+                              </option>
+                            )
+                          )
+                        ) : (
+                          <option value="" disabled data-testid={`assign-role-no-position-${u.id}`}>
+                            (no Simpro position — pick manually)
+                          </option>
+                        )}
+                        <optgroup label="Seeded roles">
+                          {rolesForRow.filter((r) => r.source === 'seed').map((r) => (
+                            <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                          ))}
+                        </optgroup>
+                        {rolesForRow.some((r) => r.source === 'admin_created') && (
+                          <optgroup label="Custom roles">
+                            {rolesForRow.filter((r) => r.source === 'admin_created').map((r) => (
+                              <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {rolesForRow.some((r) => r.source === 'simpro_position_auto' && r.role_id !== positionRoleId) && (
+                          <optgroup label="Other position roles">
+                            {rolesForRow.filter((r) => r.source === 'simpro_position_auto' && r.role_id !== positionRoleId).map((r) => (
+                              <option key={r.role_id} value={r.role_id}>{r.name}</option>
+                            ))}
+                          </optgroup>
+                        )}
                       </select>
-                      {sel?.hint && sel.role_id === sel.hint && (
+                      {!hasPosition && (
+                        <div className="text-[10px] text-slate-500 mt-0.5" data-testid={`assign-role-no-position-help-${u.id}`}>
+                          This user has no Simpro position — pick a role manually.
+                        </div>
+                      )}
+                      {sel?.from_position && sel.role_id && (
                         <div className="text-[10px] text-violet-600 mt-0.5" data-testid={`assign-role-hinted-${u.id}`}>
-                          <Sparkles size={9} className="inline" /> hinted from position
+                          <Sparkles size={9} className="inline" />{' '}
+                          {sel.role_id === '__create_from_position__'
+                            ? 'will create this position role on save'
+                            : 'matched to Simpro position'}
                         </div>
                       )}
                     </td>
@@ -1332,11 +1405,11 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               <Select value={profile.role || undefined} onValueChange={(v) => setProfile({ ...profile, role: v })} disabled={!canEdit}>
                 <SelectTrigger className="w-full" data-testid="user-role"><SelectValue placeholder="Select role" /></SelectTrigger>
                 <SelectContent>
-                  {/* v160.3.9.32-4c.3 — Filter to db-seeded roles only so legacy
-                      role_ids (worker/supervisor/hseq_lead/auditor) present in
-                      the LEGACY_ROLES fallback are never selectable from the
-                      drawer path either (they would 404 on save). */}
-                  {systemRoles.filter((r) => r.source === 'seed').map((r) => (
+                  {/* v160.3.9.33 — Phase 4d: allow all non-legacy sources
+                      (seed / admin_created / simpro_position_auto). Legacy
+                      fallback entries (worker/supervisor/hseq_lead/auditor)
+                      that don't exist in db.roles are still filtered out. */}
+                  {systemRoles.filter((r) => r.source !== 'legacy').map((r) => (
                     <SelectItem key={r.role_id} value={r.role_id} disabled={!r.is_active} data-testid={`role-opt-${r.role_id}`}>
                       {r.name}{!r.is_active ? ' · not yet available' : ''}
                     </SelectItem>

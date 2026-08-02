@@ -17,7 +17,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from auth import JWT_ALGORITHM, _secret
 from db import db
-from permissions import _get_overrides, _role_default, PERMISSIONS_SCHEMA
+from permissions import _get_overrides, _role_default, _role_permits, PERMISSIONS_SCHEMA
 
 # Map URL prefixes (under /api) to permission resource keys.
 PATH_RESOURCE: list[tuple[re.Pattern, str]] = [
@@ -105,7 +105,9 @@ class PermissionsMiddleware(BaseHTTPMiddleware):
         if action in res_over:
             allowed = bool(res_over[action])
         else:
-            allowed = _role_default(user["role"], resource, action)
+            # v160.3.9.33 — was `_role_default(user["role"], …)`; now
+            # `_role_permits` so custom/auto roles resolve via db.roles.
+            allowed = await _role_permits(user, resource, action)
         if action == "email" and not PERMISSIONS_SCHEMA[resource]["email_supported"]:
             allowed = False
         if not allowed:

@@ -309,6 +309,13 @@ async def import_employees_selective(
     counts = {"created": 0, "updated": 0, "archived": 0,
               "reactivated": 0, "skipped": 0}
     errors: List[Dict[str, Any]] = []
+    # v160.3.9.33 — Phase 4d: track auto-created position roles across
+    # the whole selective import so the response tells the admin exactly
+    # which new roles to configure in Roles Admin.
+    auto_created_role_ids: set = set()
+    # Local import — the roles_catalogue module imports from permissions/db;
+    # module-level import here would risk a cycle via `crud.py`.
+    from roles_catalogue import create_role_from_position
     ts = now_iso()
 
     for d in details:
@@ -337,6 +344,15 @@ async def import_employees_selective(
                 # pipelines can populate.
                 "photo_url": existing.get("photo_url"),
             }
+            # v160.3.9.33 — Phase 4d: auto-create role from position if
+            # this Simpro-linked user still has no role_id.
+            if position and not existing.get("role_id"):
+                res = await create_role_from_position(position=position, actor=user)
+                set_fields["role_id"] = res["role_id"]
+                set_fields["role"] = res["role_id"]
+                set_fields["role_assigned_at"] = ts
+                if res["created"]:
+                    auto_created_role_ids.add(res["role_id"])
             if email and existing.get("email") != email:
                 set_fields["email"] = email
             if first and not existing.get("name"):
@@ -359,19 +375,30 @@ async def import_employees_selective(
             counts["skipped"] += 1
             errors.append({"reason": "simpro_id_only_no_email", "simpro_id": sid})
             continue
+        # v160.3.9.33 — Phase 4d: auto-create the position role on
+        # brand-new imports so the user lands with a role_id set
+        # instead of role_id=None + pending_activation.
+        new_role_id: Optional[str] = None
+        if position:
+            res = await create_role_from_position(position=position, actor=user)
+            new_role_id = res["role_id"]
+            if res["created"]:
+                auto_created_role_ids.add(new_role_id)
         new_doc = {
             "id": new_id(),
             "org_id": org_id,
             "email": email,
             "name": f"{first} {last}".strip() or email.split("@")[0],
             "password_hash": None,
-            "role": "worker",
-            "role_id": None,
+            "role": new_role_id or "worker",
+            "role_id": new_role_id,
             "workspace_ids": [],
             "token_version": 0,
             "status": "active",
             # v160.3.9.32-4b — selective import lands active (not pending).
             "activation_status": "suspended" if is_archived_simpro else "active",
+            "role_assigned_at": ts if new_role_id else None,
+            "must_set_password": True,
             "is_archived": is_archived_simpro,
             "simpro_employee_id": sid,
             "simpro_position": position,
@@ -391,9 +418,12 @@ async def import_employees_selective(
         "id": audit_id, "org_id": org_id, "actor_user_id": user["id"],
         "ran_at": ts, "kind": "selective", "counts": counts, "errors": errors,
         "requested_ids": sorted(wanted),
+        # v160.3.9.33 — Phase 4d: preserve the newly-spawned position roles.
+        "auto_created_role_ids": sorted(auto_created_role_ids),
     })
     return {**counts, "errors": errors, "audit_id": audit_id,
-            "requested_count": len(wanted)}
+            "requested_count": len(wanted),
+            "auto_created_role_ids": sorted(auto_created_role_ids)}
 
 
 @router.post("/sync-linked")
