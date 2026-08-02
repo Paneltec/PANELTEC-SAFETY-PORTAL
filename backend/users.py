@@ -105,6 +105,9 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "role_assigned_at": doc.get("role_assigned_at"),
         # v160.3.9.33 — Phase 4d Option C: manual-role-override flag.
         "role_locked": bool(doc.get("role_locked")),
+        # v160.3.9.33 — surface the modern role_id so the FE grouping-by-role
+        # in UsersManagement can key off it. Kept nullable for pre-4c users.
+        "role_id": doc.get("role_id"),
     }
 
 
