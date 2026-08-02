@@ -149,10 +149,16 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
     # `require_permission()` gates against. See catalogue §7 & §8.
     "contractor_rep": {
         "contractors":     _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False, approve=False),
-        "workers":         _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+        # v160.3.9.30 drift-guard reconcile — `workers` + `documents` have
+        # `email_supported=False` in PERMISSIONS_SCHEMA (email is force-denied
+        # server-side + filtered out by roles_catalogue `_t()` helper).
+        # Catalogue §7 draft said "email on all 5" but schema is the hard
+        # rule (hseq_lead already models this — see lines 130/133). Drop
+        # `email=True` here so ROLE_DEFAULTS matches published SYSTEM_ROLES.
+        "workers":         _grant(open=True, view=True, edit=True,  delete=False, email=False, team_view=False),
         "certifications":  _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
         "inductions":      _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
-        "documents":       _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+        "documents":       _grant(open=True, view=True, edit=True,  delete=False, email=False, team_view=False),
     },
     "contractor_rep_submit_only": {
         "contractors":     _grant(open=False, view=True,  edit=False, delete=False, email=False, team_view=False),
