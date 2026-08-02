@@ -104,12 +104,19 @@ overrides. This redesign **keeps that**, and introduces named
 
 ### 8. `contractor_rep_submit_only` — Contractor Representative (Submit-Only) (system)
 
+> **v160.3.9.30 amendment:** `forms.edit` granted (open/view/edit) because
+> the whole purpose of this role is submitting compliance forms
+> (renewals, inductions, PPE declarations). Without it the "submit-only"
+> persona has no way to actually submit anything and becomes an
+> unshippable ghost role. The token was omitted from the original v26
+> draft; this amendment brings the catalogue and `ROLE_DEFAULTS` +
+> `roles_catalogue._tokens_contractor_rep_submit_only()` back in sync.
+
 - **Description.** Narrowest external role. Can only submit required
-  documents. Cannot see the contractor register at large. Mirrors the
-  awkwardly-named `contractor.Contractor Representative - only submit required documents` column (2 grants).
+  documents + compliance forms. Cannot see the contractor register at large.
 - **Persona.** Casual subcontractors invited to upload PPE/insurance and
-  nothing else.
-- **Tokens.** `contractors.view` (own org only), `documents.{open,view,edit}` (own submissions), `certifications.{view,edit}` (own submissions).
+  submit renewal forms — nothing else.
+- **Tokens.** `contractors.view` (own org only), `documents.{open,view,edit}` (own submissions), `certifications.{view,edit}` (own submissions), `forms.{open,view,edit}` (submit compliance forms).
 - **Migration.** New. Assign via renewal-link workflow.
 
 ### 9. `mechanic` — Mechanic (system)

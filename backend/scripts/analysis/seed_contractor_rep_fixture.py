@@ -37,6 +37,14 @@ async def main() -> None:
     pw_hash = bcrypt.hashpw(FIXTURE_PASSWORD.encode(), bcrypt.gensalt()).decode()
 
     existing = await db.users.find_one({"email": FIXTURE_EMAIL})
+    # v160.3.9.30 (G1 fix) — Purge any stale user_permissions overrides
+    # for this fixture's user_id. A prior admin session had written
+    # explicit False overrides on contractors/workers/documents which
+    # were merging on top of ROLE_DEFAULTS via effective_for() and
+    # neutering the whole role. Idempotent purge keeps this seeder
+    # self-healing.
+    if existing:
+        await db.user_permissions.delete_many({"user_id": existing.get("id")})
     doc = {
         "email": FIXTURE_EMAIL,
         "name": "Contractor Rep Fixture",

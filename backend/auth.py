@@ -54,7 +54,9 @@ def create_access_token(user_id: str, email: str, token_version: int = 0,
 
 
 def _to_user_out(doc: dict) -> dict:
-    """Strip Mongo _id and password_hash, return JSON-safe user."""
+    """Strip Mongo _id and password_hash, return JSON-safe user.
+    v160.3.9.30 (G2 fix) — surface company_id + role_id + activation_status
+    so FE + tests can read the scope-context of contractor_rep users."""
     return {
         "id": doc["id"],
         "email": doc["email"],
@@ -62,6 +64,9 @@ def _to_user_out(doc: dict) -> dict:
         "role": doc["role"],
         "org_id": doc["org_id"],
         "workspace_ids": doc.get("workspace_ids", []),
+        "company_id": doc.get("company_id"),
+        "role_id": doc.get("role_id"),
+        "activation_status": doc.get("activation_status"),
         "created_at": doc["created_at"],
     }
 

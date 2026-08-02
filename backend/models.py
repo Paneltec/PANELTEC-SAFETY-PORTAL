@@ -60,6 +60,12 @@ class UserOut(BaseModel):
     org_id: str
     workspace_ids: List[str] = Field(default_factory=list)
     created_at: str
+    # v160.3.9.30 (G2 fix) — surface company_id so contractor_rep users
+    # (and any future company-scoped role) can render their scoped
+    # context in the FE topbar + drive local useCan checks.
+    company_id: Optional[str] = None
+    role_id: Optional[str] = None
+    activation_status: Optional[str] = None
 
 
 # ---------- AI request/response ----------

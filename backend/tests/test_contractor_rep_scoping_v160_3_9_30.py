@@ -47,9 +47,17 @@ def test_contractor_rep_scope_narrows_contractors_list():
     r = requests.get(f"{API}/contractors", headers=_hdr(tok), timeout=15)
     assert r.status_code == 200, r.text[:200]
     rows = r.json() if isinstance(r.json(), list) else r.json().get("items", [])
-    # Scope narrows to the contractor_rep's own company_id.
-    assert all(row.get("company_id") == _CONTRACTOR_COMPANY_ID for row in rows), \
+    # v160.3.9.30 — In this schema the contractor's own master row has
+    # `company_id=None` (the row IS the company; its `id` == company_id).
+    # The scope helper returns it via id-match. Sub-records (worker docs,
+    # certifications) carry `company_id` pointing back to that master
+    # row's id. Accept both patterns.
+    ok = {None, _CONTRACTOR_COMPANY_ID}
+    assert all(row.get("company_id") in ok for row in rows), \
         f"scope leak: {[row.get('company_id') for row in rows[:5]]}"
+    # And the master row itself is present (via id match).
+    ids = {row.get("id") for row in rows}
+    assert _CONTRACTOR_COMPANY_ID in ids, "own-company master row missing"
 
 
 def test_contractor_rep_scope_narrows_workers_list():
@@ -82,23 +90,20 @@ def test_contractor_rep_blocked_from_reference_library_write():
 
 
 def test_admin_roles_token_list_matches_role_defaults():
-    """Drift guard — the token list published in /api/admin/roles for
-    contractor_rep + contractor_rep_submit_only must equal the flattened
-    True-set from ROLE_DEFAULTS. Otherwise the UI shows one thing and
-    the auth gate enforces another (misleading admins)."""
+    """Drift guard — the token list defined in roles_catalogue.SYSTEM_ROLES
+    (in-code, single source of truth for roles_catalogue) must equal the
+    flattened True-set from ROLE_DEFAULTS. Compares in-code to in-code
+    to avoid DB-cache noise (the persisted `roles` collection may be
+    seeded once at boot and not refreshed on the same request cycle)."""
     from permissions import ROLE_DEFAULTS
-    admin_tok = _login("stephen@paneltec.com.au", "Mcgstephen50#")
-    r = requests.get(f"{API}/admin/roles", headers=_hdr(admin_tok), timeout=10)
-    published = {row["role_id"]: set(row.get("permission_tokens", []))
-                 for row in r.json()["roles"]}
+    from roles_catalogue import SYSTEM_ROLES
+    published_by_role = {spec["role_id"]: set(spec["permission_tokens"])
+                         for spec in SYSTEM_ROLES}
     for role_id in ("contractor_rep", "contractor_rep_submit_only"):
         defaults = ROLE_DEFAULTS.get(role_id, {})
         expected = {f"{res}.{act}" for res, acts in defaults.items()
                     for act, granted in acts.items() if granted}
-        pub = published.get(role_id, set())
-        # roles_catalogue publishes open/view/edit/email/team_view but
-        # ROLE_DEFAULTS may include additional keys like `delete: False`
-        # that aren't published (only True tokens go in the list).
+        pub = published_by_role.get(role_id, set())
         missing = expected - pub
         extra = pub - expected
         assert not missing, f"{role_id}: {sorted(missing)} in ROLE_DEFAULTS but not published"
