@@ -348,18 +348,38 @@ async def upsert_overrides(user_id: str, org_id: str, overrides: dict,
             clean[resource] = sub
     # v160.3.9.32-4c — Reasons sidecar. Keys are "resource.action" strings
     # matching entries in `clean`. Drop reasons whose override no longer
-    # exists (idempotent cleanup on remove). Enforce 3-200 char length —
-    # short reasons carry no weight, long ones bloat the doc.
+    # exists (idempotent cleanup on remove). HARD-REJECT invalid non-empty
+    # reasons with 422 — silent drop was a compliance gap (audit said
+    # "override applied, no reason recorded" and admin had no signal).
+    # Empty string "" is treated as "explicitly no reason" and passes.
+    # Whitespace-only (e.g. "   ") is rejected — admin typed something,
+    # they intended to say something, and it was blank.
     clean_reasons: Dict[str, str] = {}
     for k, v in (reasons or {}).items():
         if not isinstance(k, str) or "." not in k:
             continue
         r, a = k.split(".", 1)
         if r not in clean or a not in clean[r]:
-            continue
-        s = (v or "").strip()
-        if 3 <= len(s) <= 200:
-            clean_reasons[k] = s
+            continue  # orphan — override cell doesn't exist; drop silently.
+        raw = v if isinstance(v, str) else ""
+        stripped = raw.strip()
+        if raw == "":
+            continue  # explicit empty — no reason recorded, no error.
+        if stripped == "":
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "reason_length_invalid",
+                        "reason": "whitespace_only",
+                        "min": 3, "max": 200, "key": k},
+            )
+        if len(stripped) < 3 or len(stripped) > 200:
+            raise HTTPException(
+                status_code=422,
+                detail={"error": "reason_length_invalid",
+                        "min": 3, "max": 200, "key": k,
+                        "actual_length": len(stripped)},
+            )
+        clean_reasons[k] = stripped
     doc = {
         "user_id": user_id, "org_id": org_id, "overrides": clean,
         "reasons": clean_reasons,

@@ -79,7 +79,40 @@ def test_put_overrides_persists_reasons_and_writes_audit():
     requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
 
 
-def test_short_and_long_reasons_dropped():
+def test_short_and_long_reasons_hard_reject_422():
+    """v160.3.9.32-4c — hard-reject invalid non-empty reasons with 422.
+    Silent drop was a compliance gap."""
+    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
+    uid = _pick_target(tok)
+    requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
+    # 2-char reason → 422 (min length 3).
+    r_short = requests.put(
+        f"{API}/users/{uid}/permissions",
+        headers=_hdr(tok),
+        json={
+            "overrides": {"swms": {"view": True}},
+            "reasons": {"swms.view": "ok"},
+        }, timeout=10,
+    )
+    assert r_short.status_code == 422, r_short.text[:200]
+    detail = r_short.json().get("detail") or {}
+    assert detail.get("error") == "reason_length_invalid"
+    assert detail.get("key") == "swms.view"
+    # 201-char reason → 422 (max length 200).
+    r_long = requests.put(
+        f"{API}/users/{uid}/permissions",
+        headers=_hdr(tok),
+        json={
+            "overrides": {"hazards": {"view": True}},
+            "reasons": {"hazards.view": "x" * 201},
+        }, timeout=10,
+    )
+    assert r_long.status_code == 422, r_long.text[:200]
+    requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
+
+
+def test_empty_string_reason_succeeds_no_reason_recorded():
+    """Empty string is the "no reason for this override" opt-out — must succeed."""
     tok = _login(ADMIN_EMAIL, ADMIN_PWD)
     uid = _pick_target(tok)
     requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
@@ -87,20 +120,34 @@ def test_short_and_long_reasons_dropped():
         f"{API}/users/{uid}/permissions",
         headers=_hdr(tok),
         json={
-            "overrides": {"swms": {"view": True}, "hazards": {"view": True},
-                          "incidents": {"view": True}},
-            "reasons": {
-                "swms.view": "ok",       # 2 chars → drop
-                "hazards.view": "x" * 250,  # too long → drop
-                "incidents.view": "valid reason here",  # keep
-            },
+            "overrides": {"swms": {"view": True}},
+            "reasons": {"swms.view": ""},
         }, timeout=10,
     )
     assert r.status_code == 200, r.text[:200]
-    reasons = r.json()["reasons"]
-    assert "swms.view" not in reasons
-    assert "hazards.view" not in reasons
-    assert reasons["incidents.view"] == "valid reason here"
+    body = r.json()
+    assert body["overrides"]["swms"]["view"] is True
+    assert "swms.view" not in body["reasons"]
+    requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
+
+
+def test_whitespace_only_reason_rejected_422():
+    """Whitespace-only reason → 422. Admin typed nothing meaningful."""
+    tok = _login(ADMIN_EMAIL, ADMIN_PWD)
+    uid = _pick_target(tok)
+    requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
+    r = requests.put(
+        f"{API}/users/{uid}/permissions",
+        headers=_hdr(tok),
+        json={
+            "overrides": {"swms": {"view": True}},
+            "reasons": {"swms.view": "   "},
+        }, timeout=10,
+    )
+    assert r.status_code == 422, r.text[:200]
+    detail = r.json().get("detail") or {}
+    assert detail.get("error") == "reason_length_invalid"
+    assert detail.get("reason") == "whitespace_only"
     requests.post(f"{API}/users/{uid}/permissions/reset", headers=_hdr(tok), timeout=10)
 
 
