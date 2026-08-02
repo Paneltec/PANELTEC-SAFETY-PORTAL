@@ -31,14 +31,15 @@ def _hdr(t: str) -> dict:
 
 
 def _pick_form_id(tok: str) -> str:
-    """Grab any live form_template.id from this org."""
+    """Grab any live form_template.id from this org.
+    `/form-templates/assignments` returns
+    {templates: [...], asset_type_columns, roles, companies}."""
     r = requests.get(f"{API}/form-templates/assignments", headers=_hdr(tok), timeout=10)
     assert r.status_code == 200, r.text[:200]
-    rows = r.json().get("rows") or r.json().get("items") or r.json()
-    if isinstance(rows, dict):
-        rows = rows.get("rows") or rows.get("items") or []
-    assert rows, "no form templates available for test"
-    return rows[0]["id"]
+    body = r.json()
+    templates = body.get("templates") if isinstance(body, dict) else body
+    assert templates, "no form templates available for test"
+    return templates[0]["id"]
 
 
 def _create_custom_role(tok: str) -> str:

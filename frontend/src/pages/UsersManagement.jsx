@@ -234,7 +234,18 @@ export default function UsersManagement() {
   useLockBodyScroll(bulkConfirmOpen);
   const me = getUser();
 
-  const load = async () => { try { const { data } = await api.get('/users'); setUsers(data); } catch (e) { toast.error(apiError(e)); } };
+  const [showTest, setShowTest] = useState(false);
+  const load = async () => {
+    try {
+      // v160.3.9.31-4a — Backend hides test fixtures + soft-deleted by
+      // default. Pass hide_test=false only when the "show test" toggle
+      // is on. `include_deleted=true` is admin-only (future restore
+      // flow) — leave off for now.
+      const params = showTest ? '?hide_test=false' : '';
+      const { data } = await api.get(`/users${params}`);
+      setUsers(data);
+    } catch (e) { toast.error(apiError(e)); }
+  };
   const loadSimpro = async () => {
     try {
       const { data } = await api.get('/integrations/simpro');
@@ -250,7 +261,27 @@ export default function UsersManagement() {
     } catch { /* silent */ }
   };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); loadSimpro(); loadLastSync(); }, []);
+  useEffect(() => { load(); loadSimpro(); loadLastSync(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [showTest]);
+
+  // v160.3.9.31-4a — Segmented header buckets. `active` = activation_status
+  // 'active' (or unset, for legacy pre-Simpro users). `pending` = imported
+  // via Simpro but haven't accepted the invite. `archived` = suspended OR
+  // explicitly is_archived — from an admin's POV both are "gone from
+  // day-to-day." `testHidden` counts fixture rows that are hidden by
+  // default and only shown when the user flips the toggle.
+  // MUST live above the `!can('users','view')` early return so hooks fire
+  // in the same order on every render.
+  const segments = useMemo(() => {
+    let active = 0, pending = 0, archived = 0, testHidden = 0;
+    for (const u of users) {
+      if (u.is_test_fixture) { testHidden += 1; continue; }
+      const s = u.activation_status;
+      if (s === 'pending_activation') pending += 1;
+      else if (s === 'suspended' || u.is_archived) archived += 1;
+      else active += 1;
+    }
+    return { active, pending, archived, testHidden };
+  }, [users]);
 
   if (!can('users', 'view')) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
@@ -281,7 +312,41 @@ export default function UsersManagement() {
   return (
     <div className="max-w-6xl mx-auto" data-testid="users-page">
       <PageHeader crumb="Settings / Users" title="Users &amp; permissions"
-        subtitle={`${users.length} users in your org`}
+        subtitle={
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600" data-testid="users-header-segments">
+            <span data-testid="users-seg-active"><b className="text-slate-900">{segments.active}</b> active</span>
+            <span className="text-slate-300">·</span>
+            <span data-testid="users-seg-pending"><b className="text-slate-900">{segments.pending}</b> pending activation</span>
+            <span className="text-slate-300">·</span>
+            <span data-testid="users-seg-archived"><b className="text-slate-900">{segments.archived}</b> archived</span>
+            {showTest ? (
+              <>
+                <span className="text-slate-300">·</span>
+                <span data-testid="users-seg-test-shown"><b className="text-slate-900">{segments.testHidden}</b> test fixtures visible</span>
+                <button
+                  type="button"
+                  onClick={() => setShowTest(false)}
+                  className="text-xs text-blue-600 hover:underline"
+                  data-testid="users-hide-test"
+                >
+                  (hide)
+                </button>
+              </>
+            ) : (
+              <>
+                <span className="text-slate-300">·</span>
+                <button
+                  type="button"
+                  onClick={() => setShowTest(true)}
+                  className="text-xs text-slate-500 hover:text-slate-900 hover:underline"
+                  data-testid="users-show-test"
+                >
+                  test fixtures hidden (show)
+                </button>
+              </>
+            )}
+          </span>
+        }
         action={can('users', 'edit') ? (
           <div className="flex items-center gap-2">
             <button
@@ -455,6 +520,13 @@ export default function UsersManagement() {
                           title={`Imported from Simpro${u.simpro_company_name ? ` · ${u.simpro_company_name}` : ''}${u.created_at ? ` · ${new Date(u.created_at).toLocaleDateString()}` : ''}`}
                           data-testid={`simpro-badge-${u.id}`}
                         >Simpro</span>
+                      )}
+                      {u.is_test_fixture && (
+                        <span
+                          className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                          title="Test fixture — hidden from admin lists by default"
+                          data-testid={`test-fixture-badge-${u.id}`}
+                        >Test</span>
                       )}
                     </div>
                     <div className="text-xs text-slate-500">{u.email}</div>

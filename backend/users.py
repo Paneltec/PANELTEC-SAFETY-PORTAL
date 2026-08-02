@@ -76,6 +76,14 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
         "position": doc.get("position"),
         "invite_pending": invite_pending,
         "is_locked": is_locked,
+        # v160.3.9.31-4a — surfaced so the Users page header can compute
+        # segmented buckets (active / pending / archived / test) without
+        # a second round-trip. `is_test_fixture` is the canonical flag
+        # written by scripts/analysis/tag_test_fixtures.py; legacy
+        # `is_test` is honoured too.
+        "activation_status": doc.get("activation_status"),
+        "is_archived": bool(doc.get("is_archived")),
+        "is_test_fixture": bool(doc.get("is_test_fixture") or doc.get("is_test")),
     }
 
 
@@ -111,6 +119,10 @@ _TEST_ACCOUNT_OR = [
     # don't backfill this on real users). Set by the `POST /users`
     # test-fixture helper. Safe: unset means "not a test account".
     {"is_test": True},
+    # v160.3.9.31-4a — New canonical flag written by
+    # `scripts/analysis/tag_test_fixtures.py`. Kept alongside legacy
+    # `is_test` so both mean the same thing for _TEST_ACCOUNT_OR.
+    {"is_test_fixture": True},
     # v160.3.7n — `worker_stephen@paneltec.com.au` is the seeded
     # "Test Worker (Stephen Org)" account. Match it explicitly rather
     # than pattern-matching so real Stephen family members aren't hit.
@@ -120,16 +132,29 @@ _TEST_ACCOUNT_OR = [
 
 @router.get("")
 async def list_users(
-    hide_test: bool = False,
+    hide_test: bool = True,
+    include_deleted: bool = False,
     user: dict = Depends(require_permission("users", "view")),
 ):
-    # v160.3.7n — `hide_test=true` filters out seeded demo accounts + fake
-    # `@example.com` disposables. Off by default so /settings/users keeps
-    # showing everything (admins need to be able to find seed rows to
-    # delete them). Modals that pick real people (Doc Library restrict,
-    # form assignees, SWMS assignees) opt in.
+    # v160.3.9.31-4a — Defaults tightened after "80 vs 60ish" audit:
+    #   · `hide_test` defaults to True (inverted). Test fixtures /
+    #     warmup / example.com / is_test / is_test_fixture rows drop
+    #     from admin lists by default. Opt-out with `?hide_test=false`.
+    #   · `include_deleted` defaults to False. Soft-deleted rows
+    #     (`deleted_at != null`) were leaking into the count/list.
+    #     Opt-in with `?include_deleted=true` for a future restore-user
+    #     flow.
+    # v160.3.7n — original comment retained below.
+    #   `hide_test=true` filters out seeded demo accounts + fake
+    #   `@example.com` disposables. Off by default so /settings/users keeps
+    #   showing everything (admins need to be able to find seed rows to
+    #   delete them). Modals that pick real people (Doc Library restrict,
+    #   form assignees, SWMS assignees) opt in.
     q: dict = {"org_id": user["org_id"]}
+    if not include_deleted:
+        q["$or"] = [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]
     if hide_test:
+        # $nor coexists with $or above — Mongo ANDs top-level operators.
         q["$nor"] = _TEST_ACCOUNT_OR
     docs = await db.users.find(
         q,
