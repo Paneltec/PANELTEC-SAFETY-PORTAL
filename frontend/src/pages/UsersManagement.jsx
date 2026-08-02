@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
@@ -38,8 +39,57 @@ import { Link } from 'react-router-dom';
 // this page so scrolling inside a modal never leaks to the page beneath.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
-const ROLES = ['admin', 'hseq_lead', 'supervisor', 'worker', 'auditor'];
-const ROLE_LABELS = { admin: 'Admin', hseq_lead: 'HSEQ Lead', supervisor: 'Supervisor', worker: 'Worker', auditor: 'Auditor' };
+// v160.3.9.29-2a — Live-fetched system role catalogue replaces the
+// hard-coded ROLES array. See Phase 3c sub-phase 2a scope in
+// `/app/memory/permissions_redesign/09_frontend_gate_sweep.md` §4 row 8.
+// LEGACY_ROLES stays as a fallback so this page keeps functioning if
+// `/api/admin/roles` is unavailable — the 5 originals stayed assignable.
+const LEGACY_ROLES = [
+  { role_id: 'admin',      name: 'Admin',      is_active: true, source: 'legacy' },
+  { role_id: 'hseq_lead',  name: 'HSEQ Lead',  is_active: true, source: 'legacy' },
+  { role_id: 'supervisor', name: 'Supervisor', is_active: true, source: 'legacy' },
+  { role_id: 'worker',     name: 'Worker',     is_active: true, source: 'legacy' },
+  { role_id: 'auditor',    name: 'Auditor',    is_active: true, source: 'legacy' },
+];
+
+// Module-level cache so parallel <useSystemRoles> calls in sibling
+// components share one HTTP round-trip (drawer + invite panel + bulk
+// modal all mount on the same page).
+let _rolesCache = null;
+function useSystemRoles() {
+  const [roles, setRoles] = useState(_rolesCache || LEGACY_ROLES);
+  const [loading, setLoading] = useState(!_rolesCache);
+  useEffect(() => {
+    if (_rolesCache) return;
+    let alive = true;
+    api.get('/admin/roles').then(({ data }) => {
+      if (!alive) return;
+      const seeded = (data?.roles || []).map((r) => ({
+        role_id: r.role_id,
+        name: r.name || r.role_id,
+        is_active: r.is_active !== false,
+        source: 'seed',
+      }));
+      const byId = new Map();
+      for (const r of LEGACY_ROLES) byId.set(r.role_id, r);
+      for (const r of seeded) byId.set(r.role_id, r);   // seed wins on collision
+      const merged = Array.from(byId.values()).sort((a, b) => a.role_id.localeCompare(b.role_id));
+      _rolesCache = merged;
+      setRoles(merged);
+      setLoading(false);
+    }).catch(() => {
+      if (!alive) return;
+      setLoading(false);   // silent fallback to LEGACY_ROLES
+    });
+    return () => { alive = false; };
+  }, []);
+  return { roles, loading };
+}
+
+// Kept for backward compat while sub-phase 2b/2c files still reference
+// these arrays. Prefer `useSystemRoles()` for anything new.
+const ROLES = LEGACY_ROLES.map((r) => r.role_id);
+const ROLE_LABELS = Object.fromEntries(LEGACY_ROLES.map((r) => [r.role_id, r.name]));
 const STATUSES = ['active', 'invited', 'disabled'];
 const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
@@ -153,6 +203,14 @@ function ConfirmActionModal({ kind, user, busy, onConfirm, onClose }) {
 
 export default function UsersManagement() {
   const can = useCan();
+  // v160.3.9.29-2a — Live-fetch system roles for every picker on this
+  // page. See `useSystemRoles()` above for the merged legacy+seeded
+  // list. This surfaces the 6 new Phase 2 roles (hseq_manager,
+  // hseq_manager_readonly, general_user, mechanic, responsible_manager,
+  // training_inductions_only, report_emailing_admin, hseq_manager_creator)
+  // in every dropdown, and keeps the 2 inactive contractor_rep roles
+  // visible-but-disabled with an "· Not yet available" tail label.
+  const { roles: systemRoles } = useSystemRoles();
   const [users, setUsers] = useState([]);
   const [filters, setFilters] = useState({ role: '', status: 'active' });
   const [active, setActive] = useState(null);
@@ -319,8 +377,13 @@ export default function UsersManagement() {
       )}
 
       <div className="flex gap-2 mb-4 items-center">
-        <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5">
-          <option value="">All roles</option>{ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+        <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5" data-testid="users-role-filter">
+          <option value="">All roles</option>
+          {systemRoles.map((r) => (
+            <option key={r.role_id} value={r.role_id}>
+              {r.name}{!r.is_active ? ' · not yet available' : ''}
+            </option>
+          ))}
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5" data-testid="users-status-filter">
           <option value="">All statuses</option>{['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}
@@ -544,6 +607,9 @@ export default function UsersManagement() {
 
 function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile' }) {
   const [tab, setTab] = useState(defaultTab);
+  // v160.3.9.29-2a — Live-fetched role catalogue for the drawer's role
+  // Select. See useSystemRoles() at module scope.
+  const { roles: systemRoles } = useSystemRoles();
   const [detail, setDetail] = useState(null);
   const [perms, setPerms] = useState(null);
   const [profile, setProfile] = useState({ name: '', email: '', role: '', status: '', workspace_ids: [] });
@@ -671,8 +737,15 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
     catch (e) { toast.error(apiError(e)); }
   };
 
-  return (
-    <div className="fixed inset-0 bg-black/40 z-40 flex justify-end" onClick={onClose}>
+  return createPortal((
+    // v160.3.9.29-2a HOT-PATCH — Wrapped the drawer in a React Portal to
+    // `document.body` so its `fixed inset-0` is truly viewport-relative.
+    // A prior regression in the AppShell content-column stacking context
+    // was causing the drawer's top edge to clip below the topbar (user
+    // report: "the top of the popup has been cut off and i cant see how
+    // to go back"). Portalling out is the robust fix — no ancestor can
+    // create a containing block for the fixed backdrop.
+    <div className="fixed inset-0 bg-black/40 z-[60] flex justify-end" onClick={onClose}>
       {/* v160.3.7g — Drawer structural rebuild:
           • outer panel: fixed height (h-full) + flex-col + overflow-hidden
           • sticky header (name + close X) — stays visible while scrolling
@@ -681,11 +754,27 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             the content. Wheel/touch scrolls now stay inside the drawer.
           Previously `overflow-auto` on the whole panel + no scroll lock
           made the background page scroll instead of the drawer contents. */}
-      <div className="bg-white w-full sm:max-w-2xl h-full flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()} data-testid="user-drawer">
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 pt-6 pb-3 shrink-0">
-          <div className="flex items-start justify-between">
-            <h2 className="font-display text-xl">{userRow.name}<div className="text-sm text-slate-500 font-normal">{userRow.email}</div></h2>
-            <button onClick={onClose} className="text-2xl text-slate-400 leading-none" data-testid="user-drawer-close">&times;</button>
+      <div className="bg-white w-full sm:max-w-2xl h-full flex flex-col overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()} data-testid="user-drawer">
+        <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 pt-5 pb-3 shrink-0">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-display text-xl truncate">{userRow.name}</h2>
+              <div className="text-sm text-slate-500 font-normal truncate">{userRow.email}</div>
+            </div>
+            {/* v160.3.9.29-2a HOT-PATCH — Enlarged, higher-contrast close
+                button. Previous 2xl bare `&times;` was hard to spot when
+                the drawer's top edge clipped. Now a proper 32×32 pill
+                with hover + focus rings + aria-label so keyboard + screen
+                reader users can dismiss reliably. */}
+            <button
+              onClick={onClose}
+              aria-label="Close user drawer"
+              title="Close (Esc)"
+              data-testid="user-drawer-close"
+              className="shrink-0 inline-flex items-center justify-center w-9 h-9 rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-100 hover:text-slate-900 hover:border-slate-300 focus:outline-none focus:ring-2 focus:ring-brand-blue/40 transition-colors"
+            >
+              <XIcon size={18} />
+            </button>
           </div>
           <div className="mt-4 flex gap-4">
             {['profile', 'permissions', 'sessions'].map((t) => (
@@ -716,8 +805,10 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               <Select value={profile.role || undefined} onValueChange={(v) => setProfile({ ...profile, role: v })} disabled={!canEdit}>
                 <SelectTrigger className="w-full" data-testid="user-role"><SelectValue placeholder="Select role" /></SelectTrigger>
                 <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r} value={r} data-testid={`role-opt-${r}`}>{ROLE_LABELS[r]}</SelectItem>
+                  {systemRoles.map((r) => (
+                    <SelectItem key={r.role_id} value={r.role_id} disabled={!r.is_active} data-testid={`role-opt-${r.role_id}`}>
+                      {r.name}{!r.is_active ? ' · not yet available' : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -928,7 +1019,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
         )}
       </div>
     </div>
-  );
+  ), document.body);
 }
 
 function SavePresetModal({ overrides, onClose, onCreated }) {
@@ -998,6 +1089,11 @@ function SavePresetModal({ overrides, onClose, onCreated }) {
 function InviteModal({ onClose, onDone }) {
   const [form, setForm] = useState({ email: '', name: '', role: 'worker', workspace_ids: [] });
   const [busy, setBusy] = useState(false);
+  // v160.3.9.29-2a — Only ASSIGNABLE roles here (is_active=true). Inactive
+  // roles are hidden entirely from Invite — you can't invite someone into
+  // a role that isn't yet supported by the backend.
+  const { roles: systemRoles } = useSystemRoles();
+  const assignableRoles = systemRoles.filter((r) => r.is_active);
   const submit = async () => {
     setBusy(true);
     try { await api.post('/users', form); toast.success('Invite queued', { description: 'M365 not connected — message waits in outbox.' }); onDone(); onClose(); }
@@ -1014,7 +1110,7 @@ function InviteModal({ onClose, onDone }) {
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="invite-name" /></label>
         <label className="block mb-5"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Role</div>
           <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="invite-role">
-            {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}</select></label>
+            {assignableRoles.map((r) => <option key={r.role_id} value={r.role_id}>{r.name}</option>)}</select></label>
         <div className="flex gap-2 justify-end"><button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm">Cancel</button>
           <button onClick={submit} disabled={busy || !form.email || !form.name} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm" data-testid="invite-submit">Send invite</button></div>
       </div>
@@ -1037,6 +1133,10 @@ function BulkInviteModal({ existingEmails, onClose, onDone }) {
   const [parsed, setParsed] = useState(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null); // {done, total, results: [{email, status, error?}]}
+  // v160.3.9.29-2a — Only ASSIGNABLE roles surface in the bulk invite
+  // default-role picker (see InviteModal for the same treatment).
+  const { roles: systemRoles } = useSystemRoles();
+  const assignableRoles = systemRoles.filter((r) => r.is_active);
 
   const parse = () => {
     // Split on commas, whitespace, semicolons, newlines. Trim, lowercase for
@@ -1735,7 +1835,6 @@ function RefreshFromSimproModal({ onClose, onDone }) {
     </div>
   );
 }
-
 
 
 

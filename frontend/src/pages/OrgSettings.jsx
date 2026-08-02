@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Save, Building2, MapPin, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, Field, inputClass } from '../components/capture/Ui';
 
 const FIELDS = [
@@ -35,8 +35,10 @@ const BRANDING = [
 ];
 
 export default function OrgSettings() {
-  const me = getUser();
-  const isAdmin = me?.role === 'admin';
+  // v160.3.9.29-2a — Migrated from `me?.role === 'admin'` to the
+  // granular users.edit token via useCan.
+  const can = useCan();
+  const isAdmin = can('users', 'edit');
   const [doc, setDoc] = useState(null);
   const [form, setForm] = useState({});
   const [busy, setBusy] = useState(false);

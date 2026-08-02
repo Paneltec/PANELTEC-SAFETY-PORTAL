@@ -386,7 +386,7 @@ export function UserDropdownCard({ user, onChangePassword, onSignOut, onNavigate
       <div className="py-2">
         <QuickRow icon={<KeyMultiple20Regular />} label="Change password" onClick={onChangePassword} testid="menu-change-password" />
         <QuickRow icon={<Person20Regular />}      label="My apps"          onClick={() => onNavigate('/app/settings/my-apps')} testid="menu-my-apps" />
-        {(user?.role === 'admin') && (
+        {(user?.effective_permissions?.users?.edit) && (
           <QuickRow icon={<People20Regular />}    label="Users & permissions" onClick={() => onNavigate('/app/settings/users')} testid="menu-users" />
         )}
         <QuickRow icon={<Broom20Regular />}       label="Clear cache & reload" onClick={clearCache} testid="menu-clear-cache" />

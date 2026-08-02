@@ -25,7 +25,11 @@ const ROLES = [
 // every admin-category template.
 const CATEGORY_ORDER = ['general', 'pre_start', 'inspection', 'near_miss', 'incident', 'toolbox', 'admin'];
 
-export default function RoleFormsSection({ canEdit }) {
+export default function RoleFormsSection({ canEdit, can }) {
+  // v160.3.9.29-2a — Dual-prop shim during the sub-phase 2a→2b/2c
+  // migration. New consumers should pass `can={...}`; legacy consumers
+  // (`canEdit={...}`) continue to work unchanged.
+  const gate = (can !== undefined) ? can : canEdit;
   const [role, setRole] = useState('worker');
   const [data, setData] = useState(null);         // full API response
   const [loading, setLoading] = useState(true);
@@ -67,7 +71,7 @@ export default function RoleFormsSection({ canEdit }) {
   }, [role]);
 
   const flip = (formId) => {
-    if (!canEdit) return;
+    if (!gate) return;
     setData((prev) => {
       if (!prev) return prev;
       const next = {
@@ -177,7 +181,7 @@ export default function RoleFormsSection({ canEdit }) {
                               className="peer sr-only"
                               checked={f.enabled}
                               onChange={() => flip(f.id)}
-                              disabled={!canEdit}
+                              disabled={!gate}
                               data-testid={`form-switch-${f.id}`}
                             />
                             <span

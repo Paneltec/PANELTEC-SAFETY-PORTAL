@@ -80,7 +80,7 @@ const NAV = [
     // v160.3.0-adjust-20b — Drag-drop import entry point. Opens the
     // shared <PdfImportModal>. Admin/HSEQ-lead only. Renders as a
     // button (not a NavLink) so it doesn't try to navigate.
-    { action: 'open-import', label: 'Import PDFs', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-import-pdfs', adminOnly: true, pastel: 'sky' },
+    { action: 'open-import', label: 'Import PDFs', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-import-pdfs', requiresCan: ['workers', 'edit'], pastel: 'sky' },
   ]},
   { section: 'Compliance', items: [
     { to: '/app/suppliers', label: 'Suppliers', icon: People24Regular, iconActive: People24Filled, testid: 'nav-suppliers', pastel: 'sage' },
@@ -88,22 +88,22 @@ const NAV = [
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: ArrowDownload24Regular, iconActive: ArrowDownload24Filled, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
     { to: '/app/vehicles', label: 'Plant & Vehicles', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-vehicles', resource: 'assets', pastel: 'sky' },
-    { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', adminOnly: true, pastel: 'lavender' },
+    { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },
     { to: '/app/settings/workspaces', label: 'Workspaces', icon: CubeMultiple24Regular, iconActive: CubeMultiple24Filled, testid: 'nav-settings-workspaces', pastel: 'slate' },
-    { to: '/app/settings/users', label: 'Users & Permissions', icon: PeopleSettings24Regular, iconActive: PeopleSettings24Filled, testid: 'nav-settings-users', adminOnly: true, pastel: 'slate' },
-    { to: '/app/settings/permission-presets', label: 'Permission presets', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-permission-presets', adminOnly: true, pastel: 'slate' },
+    { to: '/app/settings/users', label: 'Users & Permissions', icon: PeopleSettings24Regular, iconActive: PeopleSettings24Filled, testid: 'nav-settings-users', requiresCan: ['users', 'edit'], pastel: 'slate' },
+    { to: '/app/settings/permission-presets', label: 'Permission presets', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-permission-presets', requiresCan: ['users', 'edit'], pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-settings-workers', pastel: 'sky' },
-    { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-form-assignments', adminOnly: true, pastel: 'sky' },
-    { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-swms-assignments', adminOnly: true, pastel: 'sky' },
+    { to: '/app/settings/form-assignments', label: 'Form Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-form-assignments', requiresCan: ['forms', 'edit'], pastel: 'sky' },
+    { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-swms-assignments', requiresCan: ['swms', 'edit'], pastel: 'sky' },
     { to: '/app/settings/integrations', label: 'Integrations', icon: PlugConnected24Regular, iconActive: PlugConnected24Filled, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
-    { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', adminOnly: true, pastel: 'slate' },
+    { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', requiresCan: ['users', 'edit'], pastel: 'slate' },
     { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
-    { to: '/app/settings/backup', label: 'Backup & Restore', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-settings-backup', adminOnly: true, pastel: 'slate' },
-    // v160.3.7q — Bird's-eye program schematic (adminOnly since it links out to every admin surface).
-    { to: '/app/settings/schematic', label: 'Program Schematic', icon: Diagram24Regular, iconActive: Diagram24Filled, testid: 'nav-settings-schematic', adminOnly: true, pastel: 'lavender' },
+    { to: '/app/settings/backup', label: 'Backup & Restore', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-settings-backup', requiresCan: ['users', 'edit'], pastel: 'slate' },
+    // v160.3.7q — Bird's-eye program schematic (admin-oriented since it links out to every admin surface).
+    { to: '/app/settings/schematic', label: 'Program Schematic', icon: Diagram24Regular, iconActive: Diagram24Filled, testid: 'nav-settings-schematic', requiresCan: ['users', 'edit'], pastel: 'lavender' },
     { to: '/app/outbox', label: 'Email outbox', icon: Mail24Regular, iconActive: Mail24Filled, testid: 'nav-outbox', pastel: 'slate' },
     // Phase 4.11 (v121) — top-level Help entry so the user manual is
     // discoverable from anywhere in the app, not just the dashboard
@@ -129,7 +129,7 @@ const SECTION_TINTS = {
   Settings:   { idle: 'text-slate-500',   hover: 'group-hover:text-slate-700' },
 };
 
-const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
+const SidebarNav = ({ collapsed, onItemClick, canAdminNav }) => {
   const can = useCan();
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
@@ -138,7 +138,7 @@ const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
         // drag/drop layout + folders). Delegate to <SettingsNav />
         // instead of the flat visible-item loop below. Non-admins
         // see the same layout read-only; the component internally
-        // filters by adminOnly / resource gates using the same
+        // filters by requiresCan / resource gates using the same
         // registry the backend seeds from.
         if (group.section === 'Settings') {
           return (
@@ -146,12 +146,16 @@ const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
               key={group.section}
               collapsed={collapsed}
               onItemClick={onItemClick}
-              isAdmin={isAdmin}
+              canAdminNav={canAdminNav}
             />
           );
         }
         const visible = group.items.filter((it) => {
-          if (it.adminOnly && !isAdmin) return false;
+          // v160.3.9.29-2a — `requiresCan: [resource, action]` supersedes
+          // the legacy `adminOnly: true` flag. Both branches supported
+          // during the migration; new entries should ONLY use requiresCan.
+          if (it.requiresCan && !can(...it.requiresCan)) return false;
+          if (it.adminOnly && !canAdminNav) return false;
           if (it.resource && !can(it.resource, 'open')) return false;
           return true;
         });
@@ -223,7 +227,12 @@ const SidebarNav = ({ collapsed, onItemClick, isAdmin }) => {
 function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   // v160.3.0-adjust-19 — Drag-drop PDF import.
   const [importOpen, setImportOpen] = useState(false);
-  const canImport = ['admin', 'hseq_lead'].includes((user?.role || '').toLowerCase());
+  // v160.3.9.29-2a — `canImport` now driven by the granular workers.edit
+  // token via useCan(), matching the backend guard on /api/imports/pdf.
+  // Previously hard-coded to ['admin','hseq_lead'] which duplicated the
+  // legacy _admin() check.
+  const can = useCan();
+  const canImport = can('workers', 'edit');
   // v160.3.0-adjust-20b — Sidebar "Import PDFs" nav item dispatches
   // this custom event; the TopBar owns the modal state so a single
   // modal instance is reused across both entry points.
@@ -399,7 +408,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   );
 }
 
-const SidebarShell = ({ collapsed, isAdmin }) => (
+const SidebarShell = ({ collapsed, canAdminNav }) => (
   <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen z-20 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
     <div className={`h-16 flex items-center border-b border-slate-200 bg-white ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
@@ -408,7 +417,7 @@ const SidebarShell = ({ collapsed, isAdmin }) => (
           : <Logo size="sm" />}
       </Link>
     </div>
-    <SidebarNav collapsed={collapsed} isAdmin={isAdmin} />
+    <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} />
     {/* v160.3.9.10a — Version footer, always visible. Tester was
         counting DOM matches for this string and finding zero. */}
     <div className={`mt-auto border-t border-slate-200 py-2 text-center text-[10px] font-mono text-slate-400 ${collapsed ? 'px-1' : 'px-3'}`}
@@ -457,15 +466,19 @@ export default function AppShell() {
     effective: user?.effective_permissions || {},
     role: user?.role || null,
   };
-  // v160.3.0-adjust-20b — Sidebar admin-only items (Import PDFs) key
-  // off the same role check that gates the backend `/api/imports/pdf`
-  // endpoint.
-  const isAdmin = ['admin', 'hseq_lead'].includes((user?.role || '').toLowerCase());
+  // v160.3.9.29-2a — Global admin-nav gate now derived from the granular
+  // `users.edit` permission (per Phase 3c decision #3 — coarse "admin
+  // identity" derived from users.edit rather than hardcoding a role
+  // string). Reads directly off `effective_permissions` so we don't
+  // need to be inside <PermissionsProvider> to compute it. Any legacy
+  // consumer that still calls this `isAdmin` receives the equivalent
+  // boolean (admin + hseq_lead both carry users.edit=true in the seed).
+  const canAdminNav = !!user?.effective_permissions?.users?.edit;
 
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} isAdmin={isAdmin} />
+      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
@@ -473,7 +486,7 @@ export default function AppShell() {
             <Logo size="sm" />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2"><X size={18} /></button>
           </div>
-          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} isAdmin={isAdmin} />
+          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} />
         </SheetContent>
       </Sheet>
 

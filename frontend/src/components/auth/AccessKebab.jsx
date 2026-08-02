@@ -18,7 +18,12 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ChannelPickerDialog, PinRevealModal } from '@/components/auth/AuthBundle';
 
-export default function AccessKebab({ userId, canEdit = true, onAfterAction, testIdSuffix }) {
+export default function AccessKebab({ userId, canEdit, can, onAfterAction, testIdSuffix }) {
+  // v160.3.9.29-2a — Dual-prop shim during the sub-phase 2a→2b/2c
+  // migration. New consumers should pass `can={...}`; legacy consumers
+  // (`canEdit={...}`) continue to work unchanged. Default is `true`
+  // to preserve the pre-shim behaviour when neither is supplied.
+  const gate = (can !== undefined) ? can : (canEdit !== undefined ? canEdit : true);
   // `picker` is null | { kind: 'invite' | 'reset' }
   const [picker, setPicker] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -69,7 +74,7 @@ export default function AccessKebab({ userId, canEdit = true, onAfterAction, tes
     finally { setBusy(false); }
   };
 
-  if (!canEdit) return null;
+  if (!gate) return null;
 
   return (
     <>

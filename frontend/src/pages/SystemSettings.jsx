@@ -15,6 +15,7 @@ import { CheckCircle2, XCircle, Loader2, FileText, Settings as Cog } from 'lucid
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import SessionTimeoutCard from '../components/settings/SessionTimeoutCard';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
@@ -34,7 +35,11 @@ const AUTO_POLL_CEILING_MS = 5 * 60 * 1000; // v152 — 5 min cap for auto-poll 
 
 export default function SystemSettings() {
   const me = getUser();
-  const canInstall = me?.role === 'admin';
+  // v160.3.9.29-2a — Migrated from `me?.role === 'admin'` (identity)
+  // to the granular users.edit token. `me` retained for other uses.
+  const can = useCan();
+  const canInstall = can('users', 'edit');
+  void me;
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [installing, setInstalling] = useState(false);

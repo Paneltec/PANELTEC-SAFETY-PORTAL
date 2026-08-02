@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Loader2, ShieldCheck, Users2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import { getUser } from '../lib/auth';
+import { useCan } from '../lib/permissions';
 import { PageHeader, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -25,8 +25,10 @@ import {
 const EMPTY = { name: '', description: '', address: '', default_for_org: false };
 
 export default function Workspaces() {
-  const me = getUser();
-  const isAdmin = me?.role === 'admin';
+  // v160.3.9.29-2a — Migrated from `me?.role === 'admin'` to the
+  // granular users.edit token via useCan.
+  const can = useCan();
+  const isAdmin = can('users', 'edit');
   const [items, setItems] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);

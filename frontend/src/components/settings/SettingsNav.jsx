@@ -96,8 +96,12 @@ function insertAtIndex(layout, targetPath, node) {
   return copy;
 }
 
-export default function SettingsNav({ collapsed: navCollapsed, onItemClick, isAdmin }) {
+export default function SettingsNav({ collapsed: navCollapsed, onItemClick, canAdminNav }) {
   const can = useCan();
+  // v160.3.9.29-2a — Prop renamed from `isAdmin` to `canAdminNav` to
+  // reflect the new semantic (users.edit-derived, not the literal
+  // `admin` role). Behaviour unchanged for admin + hseq_lead.
+  const isAdmin = canAdminNav;
   const [layout, setLayout] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [folderCollapsed, setFolderCollapsed] = useState(loadCollapsed);
@@ -271,6 +275,10 @@ export default function SettingsNav({ collapsed: navCollapsed, onItemClick, isAd
     if (n.type !== 'item') return true;
     const reg = SETTINGS_NAV_BY_KEY[n.key];
     if (!reg) return false;
+    // v160.3.9.29-2a — `requiresCan: [resource, action]` supersedes the
+    // legacy `adminOnly: true` flag. Both branches supported during
+    // the sub-phase 2a → 2b/2c migration.
+    if (reg.requiresCan && !can(...reg.requiresCan)) return false;
     if (reg.adminOnly && !isAdmin) return false;
     if (reg.resource && !can(reg.resource, 'open')) return false;
     return true;
