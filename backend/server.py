@@ -285,8 +285,9 @@ from roles_catalogue import router as roles_catalogue_router  # noqa: E402
 api.include_router(roles_catalogue_router)
 from simpro_import_users import router as simpro_import_users_router  # noqa: E402
 api.include_router(simpro_import_users_router)
-from user_prefs import router as user_prefs_router  # noqa: E402
+from user_prefs import router as user_prefs_router, section_order_router as user_prefs_section_order_router  # noqa: E402
 api.include_router(user_prefs_router)
+api.include_router(user_prefs_section_order_router)
 # v160.1 — Document categorization backend (Phase 1). UI is Phase 2.
 from document_categories import router as document_categories_router  # noqa: E402
 api.include_router(document_categories_router)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -22,7 +22,7 @@ import HowThisWorks from '../components/help/HowThisWorks';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import { RESOURCE_LABELS, EMAIL_SUPPORTED, TEAM_VIEW_SUPPORTED, useCan } from '../lib/permissions';
-import { Avatar, AvatarFallback } from '../components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '../components/ui/select';
@@ -132,6 +132,36 @@ function positionRoleFor(user, systemRoles) {
   if (found) return found.role_id;
   return '__create_from_position__';
 }
+
+// v160.3.9.33.1 — Deterministic role → colour hash. 12 accessible pastels
+// mapped by role_id string hash. Special-cases: `admin` = warm rose
+// (attention), `general_user` = neutral slate, HSEQ family = compliance
+// blue. All bg/fg pairs pass WCAG AA on section-header text size.
+const ROLE_COLOUR_PALETTE = [
+  { bg: 'bg-emerald-50',  border: 'border-emerald-200', fg: 'text-emerald-800', accent: 'bg-emerald-500' },
+  { bg: 'bg-sky-50',      border: 'border-sky-200',     fg: 'text-sky-800',     accent: 'bg-sky-500' },
+  { bg: 'bg-amber-50',    border: 'border-amber-200',   fg: 'text-amber-800',   accent: 'bg-amber-500' },
+  { bg: 'bg-cyan-50',     border: 'border-cyan-200',    fg: 'text-cyan-800',    accent: 'bg-cyan-500' },
+  { bg: 'bg-teal-50',     border: 'border-teal-200',    fg: 'text-teal-800',    accent: 'bg-teal-500' },
+  { bg: 'bg-indigo-50',   border: 'border-indigo-200',  fg: 'text-indigo-800',  accent: 'bg-indigo-500' },
+  { bg: 'bg-pink-50',     border: 'border-pink-200',    fg: 'text-pink-800',    accent: 'bg-pink-500' },
+  { bg: 'bg-lime-50',     border: 'border-lime-200',    fg: 'text-lime-800',    accent: 'bg-lime-600' },
+  { bg: 'bg-violet-50',   border: 'border-violet-200',  fg: 'text-violet-800',  accent: 'bg-violet-500' },
+  { bg: 'bg-orange-50',   border: 'border-orange-200',  fg: 'text-orange-800',  accent: 'bg-orange-500' },
+  { bg: 'bg-fuchsia-50',  border: 'border-fuchsia-200', fg: 'text-fuchsia-800', accent: 'bg-fuchsia-500' },
+  { bg: 'bg-yellow-50',   border: 'border-yellow-200',  fg: 'text-yellow-800',  accent: 'bg-yellow-500' },
+];
+export function roleColour(role_id) {
+  if (!role_id) return { bg: 'bg-slate-100', border: 'border-slate-200', fg: 'text-slate-700', accent: 'bg-slate-400' };
+  if (role_id === 'admin') return { bg: 'bg-rose-50', border: 'border-rose-200', fg: 'text-rose-800', accent: 'bg-rose-500' };
+  if (role_id === 'general_user') return { bg: 'bg-slate-50', border: 'border-slate-200', fg: 'text-slate-700', accent: 'bg-slate-400' };
+  if (role_id.startsWith('hseq_')) return { bg: 'bg-blue-50', border: 'border-blue-200', fg: 'text-blue-800', accent: 'bg-blue-600' };
+  let h = 0;
+  for (let i = 0; i < role_id.length; i++) h = ((h << 5) - h) + role_id.charCodeAt(i);
+  return ROLE_COLOUR_PALETTE[Math.abs(h) % ROLE_COLOUR_PALETTE.length];
+}
+
+
 const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
@@ -260,6 +290,13 @@ export default function UsersManagement() {
   // (URL persistence is a later polish).
   const [sectionOpen, setSectionOpen] = useState({});
   const [sectionSort, setSectionSort] = useState({});
+  // v160.3.9.33.1 — Persisted section order from /user-prefs/section-order/users
+  const [sectionOrder, setSectionOrder] = useState([]);
+  useEffect(() => {
+    api.get('/user-prefs/section-order/users')
+      .then(({ data }) => setSectionOrder(data?.section_order || []))
+      .catch(() => setSectionOrder([]));
+  }, []);
   // v160.3.9.32-4c — Phase 4c housekeeping: InviteModal + BulkInviteModal
   // removed (backend returns 410 anyway). Simpro selective-import is the
   // only user-creation path — see setSimproPickerOpen below.
@@ -364,7 +401,7 @@ export default function UsersManagement() {
   const renderUserRow = (u) => (
     <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
       {can('users', 'edit') && (
-        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+        <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
           {u.id !== me?.id && (
             <input type="checkbox"
               checked={bulkSelected.has(u.id)}
@@ -374,46 +411,71 @@ export default function UsersManagement() {
           )}
         </td>
       )}
-      <td className="px-4 py-3">
+      <td className="px-4 py-1.5">
         <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(u.name || u.email || '?')[0]}</AvatarFallback></Avatar>
-          <div>
-            <div className="font-medium flex items-center gap-1.5">{u.name}
+          {/* v160.3.9.33.1 — Photo thumbnail when available, initial fallback otherwise. */}
+          <Avatar className="h-7 w-7">
+            {u.photo_url ? (
+              <AvatarImage src={u.photo_url} alt={u.name || u.email || ''}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                data-testid={`user-photo-${u.id}`} />
+            ) : null}
+            <AvatarFallback className="text-xs">{(u.name || u.email || '?')[0]}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <div className="font-medium flex items-center gap-1.5 leading-tight">
+              <span className="truncate">{u.name}</span>
               {u.simpro_employee_id && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
                   title={`Simpro-linked${u.simpro_last_synced_at ? ` · Last synced ${new Date(u.simpro_last_synced_at).toLocaleString()}` : ''}`}
                   data-testid={`simpro-badge-${u.id}`}>Simpro</span>
               )}
+              {u.role_locked && (
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 inline-flex items-center gap-0.5"
+                  title="Role manually locked — Simpro sync won't change it"
+                  data-testid={`locked-badge-${u.id}`}><Lock size={8} /> Locked</span>
+              )}
               {u.is_test_fixture && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
-                  title="Test fixture — hidden from admin lists by default"
+                  title="Test fixture"
                   data-testid={`test-fixture-badge-${u.id}`}>Test</span>
               )}
               {u.activation_status === 'pending_activation' && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200"
-                  title="User has not activated yet — admin can Set password"
+                  title="Pending activation"
                   data-testid={`pending-badge-${u.id}`}>Pending</span>
               )}
               {u.is_archived && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 border border-slate-300"
-                  title="Archived — no active access"
+                  title="Archived"
                   data-testid={`archived-badge-${u.id}`}>Archived</span>
               )}
             </div>
-            <div className="text-xs text-slate-500">{u.email}</div>
+            <div className="text-[11px] text-slate-500 truncate">{u.email}</div>
           </div>
         </div>
       </td>
-      <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span>
-        {u.simpro_position && (
-          <div className="text-[10px] text-slate-500 mt-0.5" title="Simpro position" data-testid={`simpro-position-${u.id}`}>
-            {u.simpro_position}
-          </div>
+      <td className="px-4 py-1.5">
+        {/* v160.3.9.33.1 — Show role NAME (never the raw custom_ slug). */}
+        <span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium" data-testid={`role-chip-${u.id}`}>
+          {(() => {
+            const key = u.role_id || u.role;
+            const sys = systemRoles.find((r) => r.role_id === key);
+            if (sys) return sys.name;
+            if (key && key.startsWith('custom_')) {
+              return key.replace(/^custom_/, '').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+            }
+            return key || '—';
+          })()}
+        </span>
+        {u.has_permission_overrides && (
+          <span className="ml-1.5 text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200"
+            title="This user has permission overrides on top of their role defaults"
+            data-testid={`overrides-badge-${u.id}`}>+ Overrides</span>
         )}
       </td>
-      <td className="px-4 py-3"><StatusPill user={u} /></td>
-      <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
-      <td className="px-4 py-3 text-xs text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+      <td className="px-4 py-1.5"><StatusPill user={u} /></td>
+      <td className="px-4 py-1.5 text-[11px] text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
       {can('users', 'edit') && (
         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="inline-flex gap-1 items-center">
@@ -671,7 +733,7 @@ export default function UsersManagement() {
                 </th>
               )}
               <th className="text-left px-4 py-2.5">User</th><th className="text-left px-4 py-2.5">Role</th>
-              <th className="text-left px-4 py-2.5">Status</th><th className="text-left px-4 py-2.5">Permissions</th>
+              <th className="text-left px-4 py-2.5">Status</th>
               <th className="text-left px-4 py-2.5">Created</th>
               {can('users', 'edit') && <th className="text-right px-4 py-2.5">Actions</th>}
             </tr>
@@ -701,25 +763,80 @@ export default function UsersManagement() {
                 else s.sort((a,b) => (a.name || '').localeCompare(b.name || ''));
                 return s;
               };
-              const ordered = Array.from(groups.values()).sort((a,b) => roleLabel(a.key).localeCompare(roleLabel(b.key)));
-              const colCount = can('users', 'edit') ? 7 : 6;
-              return ordered.flatMap((g) => {
+              // v160.3.9.33.1 — Apply user's saved section-order pref if
+              // present. Groups not in the saved order fall to the tail,
+              // still sorted alphabetically. Unknown role_ids gracefully
+              // ignored (roles may have been deleted since prefs saved).
+              const orderKey = (k) => {
+                const idx = sectionOrder.indexOf(k);
+                return idx === -1 ? 10000 : idx;
+              };
+              const ordered = Array.from(groups.values()).sort((a, b) => {
+                const oa = orderKey(a.key), ob = orderKey(b.key);
+                if (oa !== ob) return oa - ob;
+                return roleLabel(a.key).localeCompare(roleLabel(b.key));
+              });
+              const moveSection = (key, dir) => {
+                const cur = ordered.map((g) => g.key);
+                const from = cur.indexOf(key);
+                if (from < 0) return;
+                const to = dir === 'up' ? from - 1 : from + 1;
+                if (to < 0 || to >= cur.length) return;
+                const next = [...cur];
+                [next[from], next[to]] = [next[to], next[from]];
+                setSectionOrder(next);
+                api.put('/user-prefs/section-order/users', { section_order: next })
+                  .catch(() => toast.error('Could not save order'));
+              };
+              const resetOrder = () => {
+                setSectionOrder([]);
+                api.delete('/user-prefs/section-order/users').catch(() => {});
+              };
+              const colCount = can('users', 'edit') ? 6 : 5;
+              return ordered.flatMap((g, gi) => {
                 const open = sectionOpen[g.key] !== false;
                 const sort = sectionSort[g.key] || 'name_asc';
+                const colour = roleColour(g.key);
                 const rows = [
-                  <tr key={`sec-${g.key}`} className="bg-slate-100/70 border-t border-slate-200" data-testid={`role-section-${g.key}`}>
-                    <td colSpan={colCount} className="px-3 py-2">
-                      <div className="flex items-center gap-3">
+                  <tr key={`sec-${g.key}`}
+                    className={`${colour.bg} border-t-2 ${colour.border}`}
+                    data-testid={`role-section-${g.key}`}>
+                    <td colSpan={colCount} className="px-3 py-1.5">
+                      <div className="flex items-center gap-2">
+                        {can('users', 'edit') && (
+                          <div className="inline-flex items-center flex-shrink-0" data-testid={`role-section-reorder-${g.key}`}>
+                            <button type="button" disabled={gi === 0} onClick={() => moveSection(g.key, 'up')}
+                              className="p-0.5 rounded hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move section up"
+                              data-testid={`role-section-up-${g.key}`}>
+                              <ArrowUp size={11} className={colour.fg} />
+                            </button>
+                            <button type="button" disabled={gi === ordered.length - 1} onClick={() => moveSection(g.key, 'down')}
+                              className="p-0.5 rounded hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move section down"
+                              data-testid={`role-section-down-${g.key}`}>
+                              <ArrowDown size={11} className={colour.fg} />
+                            </button>
+                          </div>
+                        )}
+                        <span className={`inline-block w-2 h-2 rounded-full ${colour.accent}`} />
                         <button type="button" onClick={() => setSectionOpen((s) => ({ ...s, [g.key]: !open }))}
-                          className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest font-semibold text-slate-700 hover:text-slate-900"
+                          className={`inline-flex items-center gap-1.5 text-xs uppercase tracking-widest font-bold ${colour.fg} hover:opacity-80`}
                           data-testid={`role-section-toggle-${g.key}`}>
-                          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                           {roleLabel(g.key)}
-                          <span className="text-slate-500 font-normal normal-case tracking-normal">· {g.users.length}</span>
+                          <span className={`${colour.fg} opacity-70 font-normal normal-case tracking-normal`}>· {g.users.length}</span>
                         </button>
+                        {gi === 0 && sectionOrder.length > 0 && can('users', 'edit') && (
+                          <button type="button" onClick={resetOrder}
+                            className="ml-2 text-[10px] text-slate-600 hover:text-slate-900 hover:underline"
+                            data-testid="role-section-reset-order">
+                            Reset order
+                          </button>
+                        )}
                         <div className="ml-auto">
                           <select value={sort} onChange={(e) => setSectionSort((s) => ({ ...s, [g.key]: e.target.value }))}
-                            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white"
+                            className="text-[11px] border border-slate-300 rounded-md px-2 py-0.5 bg-white/80"
                             data-testid={`role-section-sort-${g.key}`}>
                             <option value="name_asc">Name A-Z</option>
                             <option value="name_desc">Name Z-A</option>

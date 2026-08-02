@@ -100,3 +100,64 @@ async def list_all_prefs(user: dict = Depends(get_current_user)):
         {"user_id": user["id"]}, {"_id": 0},
     ).sort("resource", 1).to_list(200)
     return {"count": len(docs), "prefs": docs}
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.33.1 — Section-order preference.
+# Stored in the same `user_prefs` collection under a distinct
+# `kind` discriminator so it doesn't clash with `table-columns`
+# docs. Per-admin, per-resource. Used by the Users & Permissions
+# grouped-by-role list to remember the admin's chosen order.
+# ─────────────────────────────────────────────────────────────
+
+section_order_router = APIRouter(
+    prefix="/user-prefs/section-order",
+    tags=["user-prefs"],
+)
+
+
+class SectionOrderIn(BaseModel):
+    section_order: List[str] = Field(
+        default_factory=list,
+        description="Ordered list of section keys (role_ids) as picked by the admin.",
+    )
+
+
+@section_order_router.get("/{resource}")
+async def get_section_order(resource: str, user: dict = Depends(get_current_user)):
+    _validate_resource(resource)
+    doc = await db.user_prefs.find_one(
+        {"user_id": user["id"], "resource": resource, "kind": "section_order"},
+        {"_id": 0},
+    )
+    return {
+        "resource": resource,
+        "section_order": (doc or {}).get("section_order", []),
+        "updated_at": (doc or {}).get("updated_at"),
+    }
+
+
+@section_order_router.put("/{resource}")
+async def set_section_order(resource: str, body: SectionOrderIn,
+                             user: dict = Depends(get_current_user)):
+    _validate_resource(resource)
+    order = [s.strip() for s in (body.section_order or [])
+             if isinstance(s, str) and s.strip()]
+    ts = now_iso()
+    await db.user_prefs.update_one(
+        {"user_id": user["id"], "resource": resource, "kind": "section_order"},
+        {"$set": {"section_order": order, "updated_at": ts},
+         "$setOnInsert": {"user_id": user["id"], "resource": resource,
+                          "kind": "section_order", "created_at": ts}},
+        upsert=True,
+    )
+    return {"resource": resource, "section_order": order, "updated_at": ts}
+
+
+@section_order_router.delete("/{resource}")
+async def reset_section_order(resource: str, user: dict = Depends(get_current_user)):
+    _validate_resource(resource)
+    await db.user_prefs.delete_one(
+        {"user_id": user["id"], "resource": resource, "kind": "section_order"},
+    )
+    return {"resource": resource, "section_order": [], "reset": True}

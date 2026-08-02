@@ -184,9 +184,51 @@ async def list_users(
         q,
         {"_id": 0, "password_hash": 0},
     ).sort("created_at", 1).to_list(500)
+    # v160.3.9.33.1 — Photo enrichment: single $in query over `workers`
+    # by (simpro_employee_id, email) to avoid N+1. Same-org scope only —
+    # cross-tenant photo leaks would be a compliance breach. Two-tier
+    # match: simpro_employee_id first (11/13 hit rate observed), email
+    # fallback second (1/13 additional). Users with no matching worker
+    # keep photo_url=None → FE falls back to initial-avatar.
+    sids = [d.get("simpro_employee_id") for d in docs if d.get("simpro_employee_id")]
+    emails = [(d.get("email") or "").lower().strip() for d in docs if d.get("email")]
+    photo_by_sid: Dict[str, str] = {}
+    photo_by_email: Dict[str, str] = {}
+    if sids or emails:
+        worker_q: Dict[str, Any] = {
+            "org_id": user["org_id"],
+            "photo_url": {"$exists": True, "$nin": [None, ""]},
+            "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
+        }
+        or_clauses: List[Dict[str, Any]] = []
+        if sids:
+            or_clauses.append({"simpro_employee_id": {"$in": sids}})
+        if emails:
+            or_clauses.append({"email": {"$in": emails}})
+        if or_clauses:
+            worker_q["$and"] = [{"$or": or_clauses}]
+        async for w in db.workers.find(
+            worker_q,
+            {"_id": 0, "simpro_employee_id": 1, "email": 1, "photo_url": 1},
+        ):
+            if w.get("simpro_employee_id"):
+                photo_by_sid[str(w["simpro_employee_id"])] = w["photo_url"]
+            em = (w.get("email") or "").lower().strip()
+            if em:
+                photo_by_email.setdefault(em, w["photo_url"])
     out = []
     for d in docs:
-        out.append(_user_out(d, await has_any_overrides(d["id"])))
+        rendered = _user_out(d, await has_any_overrides(d["id"]))
+        # Prefer sid match; fall back to email; keep None on miss.
+        if not rendered.get("photo_url"):
+            sid = d.get("simpro_employee_id")
+            if sid and str(sid) in photo_by_sid:
+                rendered["photo_url"] = photo_by_sid[str(sid)]
+            else:
+                em = (d.get("email") or "").lower().strip()
+                if em in photo_by_email:
+                    rendered["photo_url"] = photo_by_email[em]
+        out.append(rendered)
     return out
 
 
