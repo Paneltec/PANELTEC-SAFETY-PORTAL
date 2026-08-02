@@ -246,6 +246,12 @@ async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:
 
 
 def _role_default(role: str, resource: str, action: str) -> bool:
+    # v160.3.9.32-4c — Reads the LEGACY `role` string, not `role_id`.
+    # A user with role_id="custom_regional_auditor" and no `role` string
+    # gets ROLE_DEFAULTS.get(None, {}) → zero permissions from role
+    # default. Overrides still layer correctly on top. Phase 6 backlog
+    # item #1 (07_phase_plan.md) tracks the migration to read from
+    # `roles.permission_tokens[]` keyed on `role_id`.
     return bool(ROLE_DEFAULTS.get(role, {}).get(resource, {}).get(action, False))
 
 
@@ -325,7 +331,8 @@ def require_permission(resource: str, action: str):
     return dep
 
 
-async def upsert_overrides(user_id: str, org_id: str, overrides: dict, updated_by: str) -> dict:
+async def upsert_overrides(user_id: str, org_id: str, overrides: dict,
+                           updated_by: str, reasons: Optional[dict] = None) -> dict:
     # Validate: only allow known resources/actions, coerce to bool.
     clean: Dict[str, Dict[str, bool]] = {}
     for resource, actions in (overrides or {}).items():
@@ -339,8 +346,23 @@ async def upsert_overrides(user_id: str, org_id: str, overrides: dict, updated_b
                 sub[action] = bool(val)
         if sub:
             clean[resource] = sub
+    # v160.3.9.32-4c — Reasons sidecar. Keys are "resource.action" strings
+    # matching entries in `clean`. Drop reasons whose override no longer
+    # exists (idempotent cleanup on remove). Enforce 3-200 char length —
+    # short reasons carry no weight, long ones bloat the doc.
+    clean_reasons: Dict[str, str] = {}
+    for k, v in (reasons or {}).items():
+        if not isinstance(k, str) or "." not in k:
+            continue
+        r, a = k.split(".", 1)
+        if r not in clean or a not in clean[r]:
+            continue
+        s = (v or "").strip()
+        if 3 <= len(s) <= 200:
+            clean_reasons[k] = s
     doc = {
         "user_id": user_id, "org_id": org_id, "overrides": clean,
+        "reasons": clean_reasons,
         "updated_at": now_iso(), "updated_by": updated_by,
     }
     await db.user_permissions.update_one({"user_id": user_id}, {"$set": doc}, upsert=True)

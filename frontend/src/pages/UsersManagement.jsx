@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -219,8 +219,13 @@ export default function UsersManagement() {
   const [filters, setFilters] = useState({ role: '', status: 'active' });
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
-  const [inviteOpen, setInviteOpen] = useState(false);
-  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
+  // (URL persistence is a later polish).
+  const [sectionOpen, setSectionOpen] = useState({});
+  const [sectionSort, setSectionSort] = useState({});
+  // v160.3.9.32-4c — Phase 4c housekeeping: InviteModal + BulkInviteModal
+  // removed (backend returns 410 anyway). Simpro selective-import is the
+  // only user-creation path — see setSimproPickerOpen below.
   // v160.3.9.32-4b — Phase 4b Simpro selective-import picker.
   const [simproPickerOpen, setSimproPickerOpen] = useState(false);
   // v160.3.9.32-4b — Admin direct set-password dialog (drawer action).
@@ -313,6 +318,77 @@ export default function UsersManagement() {
     } catch (e) { toast.error(apiError(e)); }
     finally { setActionBusy(false); }
   };
+
+  // v160.3.9.32-4c — Phase 4c: user-row renderer factored out so both the
+  // legacy flat map and the new group-by-role sections can share the same
+  // row markup. Uses closure over the surrounding component state.
+  const renderUserRow = (u) => (
+    <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
+      {can('users', 'edit') && (
+        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+          {u.id !== me?.id && (
+            <input type="checkbox"
+              checked={bulkSelected.has(u.id)}
+              onChange={() => toggleBulk(u.id)}
+              data-testid={`user-checkbox-${u.id}`}
+              className="h-4 w-4 accent-rose-600" />
+          )}
+        </td>
+      )}
+      <td className="px-4 py-3">
+        <div className="flex items-center gap-2">
+          <Avatar className="h-8 w-8"><AvatarFallback className="text-xs">{(u.name || u.email || '?')[0]}</AvatarFallback></Avatar>
+          <div>
+            <div className="font-medium flex items-center gap-1.5">{u.name}
+              {u.simpro_employee_id && (
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
+                  title={`Simpro-linked${u.simpro_last_synced_at ? ` · Last synced ${new Date(u.simpro_last_synced_at).toLocaleString()}` : ''}`}
+                  data-testid={`simpro-badge-${u.id}`}>Simpro</span>
+              )}
+              {u.is_test_fixture && (
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                  title="Test fixture — hidden from admin lists by default"
+                  data-testid={`test-fixture-badge-${u.id}`}>Test</span>
+              )}
+              {u.activation_status === 'pending_activation' && (
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                  title="User has not activated yet — admin can Set password"
+                  data-testid={`pending-badge-${u.id}`}>Pending</span>
+              )}
+              {u.is_archived && (
+                <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 border border-slate-300"
+                  title="Archived — no active access"
+                  data-testid={`archived-badge-${u.id}`}>Archived</span>
+              )}
+            </div>
+            <div className="text-xs text-slate-500">{u.email}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
+      <td className="px-4 py-3"><StatusPill user={u} /></td>
+      <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
+      <td className="px-4 py-3 text-xs text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+      {can('users', 'edit') && (
+        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+          <div className="inline-flex gap-1 items-center">
+            <AccessKebab userId={u.id} canEdit={u.id !== me?.id} onAfterAction={load} />
+            <button title="Edit permissions" data-testid={`user-edit-perms-${u.id}`}
+              onClick={() => { setActiveTab('permissions'); setActive(u); }}
+              className="inline-flex items-center justify-center w-7 h-7 rounded bg-violet-100 text-violet-700 hover:bg-violet-200"><FlKey /></button>
+            <button title="Edit user" data-testid={`user-edit-${u.id}`}
+              onClick={() => { setActiveTab('profile'); setActive(u); }}
+              className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><FlEdit /></button>
+            {u.id !== me?.id && (
+              <button title="Delete user (soft)" data-testid={`delete-user-${u.id}`}
+                onClick={() => setConfirmAction({ kind: 'delete', user: u })}
+                className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]"><FlDelete /></button>
+            )}
+          </div>
+        </td>
+      )}
+    </tr>
+  );
 
   return (
     <div className="max-w-6xl mx-auto" data-testid="users-page">
@@ -519,99 +595,66 @@ export default function UsersManagement() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map((u) => (
-              <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
-                {can('users', 'edit') && (
-                  <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                    {u.id !== me?.id && (
-                      <input type="checkbox"
-                        checked={bulkSelected.has(u.id)}
-                        onChange={() => toggleBulk(u.id)}
-                        data-testid={`user-checkbox-${u.id}`}
-                        className="h-4 w-4 accent-rose-600" />
-                    )}
-                  </td>
-                )}
-                <td className="px-4 py-3"><div className="flex items-center gap-2"><Avatar className="h-7 w-7"><AvatarFallback className="text-xs">{(u.name || u.email)[0]}</AvatarFallback></Avatar>
-                  <div>
-                    <div className="font-medium flex items-center gap-1.5">{u.name}
-                      {u.imported_from === 'simpro' && (
-                        <span
-                          className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
-                          title={`Imported from Simpro${u.simpro_company_name ? ` · ${u.simpro_company_name}` : ''}${u.created_at ? ` · ${new Date(u.created_at).toLocaleDateString()}` : ''}`}
-                          data-testid={`simpro-badge-${u.id}`}
-                        >Simpro</span>
-                      )}
-                      {u.is_test_fixture && (
-                        <span
-                          className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
-                          title="Test fixture — hidden from admin lists by default"
-                          data-testid={`test-fixture-badge-${u.id}`}
-                        >Test</span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-500">{u.email}</div>
-                  </div>
-                </div></td>
-                <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium">{u.role}</span></td>
-                <td className="px-4 py-3"><StatusPill user={u} /></td>
-                <td className="px-4 py-3 text-xs">{u.has_permission_overrides ? <span className="text-brand-violet font-medium">Custom</span> : <span className="text-slate-500">Role default</span>}</td>
-                <td className="px-4 py-3 text-xs text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <span>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</span>
-                    {u.status === 'invited' && (
-                      <a
-                        href={inviteMailtoHref(u)}
-                        onClick={(e) => e.stopPropagation()}
-                        title="Send via your email client"
-                        aria-label={`Email invite to ${u.email}`}
-                        data-testid={`mailto-invite-${u.id}`}
-                        className="inline-flex items-center justify-center w-6 h-6 rounded border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:border-amber-300"
-                      >
-                        <FlMail />
-                      </a>
-                    )}
-                  </div>
-                </td>
-                {can('users', 'edit') && (
-                  <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="inline-flex gap-1 items-center">
-                      <AccessKebab userId={u.id} canEdit={u.id !== me?.id} onAfterAction={load} />
-                      <button
-                        title="Edit permissions"
-                        data-testid={`user-edit-perms-${u.id}`}
-                        onClick={() => { setActiveTab('permissions'); setActive(u); }}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-violet-100 text-violet-700 hover:bg-violet-200">
-                        <FlKey />
-                      </button>
-                      <button
-                        title="Edit user"
-                        data-testid={`user-edit-${u.id}`}
-                        onClick={() => { setActiveTab('profile'); setActive(u); }}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200">
-                        <FlEdit />
-                      </button>
-                      <button
-                        title="Force sign-out everywhere"
-                        data-testid={`force-signout-${u.id}`}
-                        onClick={() => setConfirmAction({ kind: 'signout', user: u })}
-                        className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbf3df] text-[#8c6a1a] hover:bg-[#f7eed1]">
-                        <FlSignOut />
-                      </button>
-                      {u.id !== me?.id && (
-                        <button
-                          title="Delete user (soft)"
-                          data-testid={`delete-user-${u.id}`}
-                          onClick={() => setConfirmAction({ kind: 'delete', user: u })}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fbe4e7] text-[#7a1f33] hover:bg-[#f4c7cd]">
-                          <FlDelete />
+            {(() => {
+              // v160.3.9.32-4c — Phase 4c: group users by role (role_id if
+              // set, else legacy role string). Collapsible per-section, per-
+              // section sort. Preserves the segmented header buckets above.
+              const groups = new Map();
+              for (const u of filtered) {
+                const key = u.role_id || u.role || '__unassigned__';
+                if (!groups.has(key)) groups.set(key, { key, users: [] });
+                groups.get(key).users.push(u);
+              }
+              const roleLabel = (key) => {
+                if (key === '__unassigned__') return 'Unassigned role';
+                const sys = systemRoles.find((r) => r.role_id === key);
+                if (sys) return sys.name;
+                return key.replace(/^custom_/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              };
+              const sortUsers = (arr, mode) => {
+                const s = [...arr];
+                if (mode === 'name_desc') s.sort((a,b) => (b.name || '').localeCompare(a.name || ''));
+                else if (mode === 'last_login') s.sort((a,b) => (b.last_login_at || '').localeCompare(a.last_login_at || ''));
+                else if (mode === 'created') s.sort((a,b) => (b.created_at || '').localeCompare(a.created_at || ''));
+                else s.sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+                return s;
+              };
+              const ordered = Array.from(groups.values()).sort((a,b) => roleLabel(a.key).localeCompare(roleLabel(b.key)));
+              const colCount = can('users', 'edit') ? 7 : 6;
+              return ordered.flatMap((g) => {
+                const open = sectionOpen[g.key] !== false;
+                const sort = sectionSort[g.key] || 'name_asc';
+                const rows = [
+                  <tr key={`sec-${g.key}`} className="bg-slate-100/70 border-t border-slate-200" data-testid={`role-section-${g.key}`}>
+                    <td colSpan={colCount} className="px-3 py-2">
+                      <div className="flex items-center gap-3">
+                        <button type="button" onClick={() => setSectionOpen((s) => ({ ...s, [g.key]: !open }))}
+                          className="inline-flex items-center gap-1.5 text-xs uppercase tracking-widest font-semibold text-slate-700 hover:text-slate-900"
+                          data-testid={`role-section-toggle-${g.key}`}>
+                          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          {roleLabel(g.key)}
+                          <span className="text-slate-500 font-normal normal-case tracking-normal">· {g.users.length}</span>
                         </button>
-                      )}
-                    </div>
-                  </td>
-                )}
-              </tr>
-            ))}
+                        <div className="ml-auto">
+                          <select value={sort} onChange={(e) => setSectionSort((s) => ({ ...s, [g.key]: e.target.value }))}
+                            className="text-xs border border-slate-300 rounded-md px-2 py-1 bg-white"
+                            data-testid={`role-section-sort-${g.key}`}>
+                            <option value="name_asc">Name A-Z</option>
+                            <option value="name_desc">Name Z-A</option>
+                            <option value="last_login">Last login</option>
+                            <option value="created">Date created</option>
+                          </select>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ];
+                if (open) {
+                  for (const u of sortUsers(g.users, sort)) rows.push(renderUserRow(u));
+                }
+                return rows;
+              });
+            })()}
           </tbody>
         </table>
       </div>
@@ -677,9 +720,6 @@ export default function UsersManagement() {
           }}
         />
       )}
-      {inviteOpen && <InviteModal onClose={() => setInviteOpen(false)} onDone={load} />}
-      {bulkInviteOpen && <BulkInviteModal existingEmails={users.map((u) => (u.email || '').toLowerCase())}
-                                          onClose={() => setBulkInviteOpen(false)} onDone={load} />}
       {simproPickerOpen && <SimproImportPickerModal onClose={() => setSimproPickerOpen(false)} onDone={load} />}
       {importOpen && <ImportFromSimproDrawer
         companies={simproStatus.companies}
@@ -719,6 +759,8 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [appliedPreset, setAppliedPreset] = useState(null);
   const [savePresetOpen, setSavePresetOpen] = useState(false);
+  // v160.3.9.32-4c — ResetPasswordDialog state (direct set + magic-link modes).
+  const [resetPwdOpen, setResetPwdOpen] = useState(false);
 
   // v160.3.7g — Lock body scroll while the drawer is open so wheel/touch
   // scrolls inside the drawer don't leak through to the page underneath.
@@ -788,7 +830,7 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
 
   const savePerms = async () => {
     setBusy(true);
-    try { await api.put(`/users/${userRow.id}/permissions`, { overrides: perms.overrides }); toast.success('Permissions saved'); onReload(); load(); setAppliedPreset(null); }
+    try { await api.put(`/users/${userRow.id}/permissions`, { overrides: perms.overrides, reasons: perms.reasons || {} }); toast.success('Permissions saved'); onReload(); load(); setAppliedPreset(null); }
     catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
@@ -855,8 +897,35 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
         <div className="sticky top-0 z-10 bg-white border-b border-slate-200 px-6 pt-5 pb-3 shrink-0">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="font-display text-xl truncate">{userRow.name}</h2>
-              <div className="text-sm text-slate-500 font-normal truncate">{userRow.email}</div>
+              <div className="flex items-center gap-2">
+                <Avatar className="h-11 w-11"><AvatarFallback className="text-sm">{(userRow.name || userRow.email || '?')[0]}</AvatarFallback></Avatar>
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-xl truncate">{userRow.name}</h2>
+                  <div className="text-sm text-slate-500 font-normal truncate">{userRow.email}</div>
+                </div>
+              </div>
+              {/* v160.3.9.32-4c drawer chips */}
+              <div className="mt-2 flex flex-wrap gap-1.5" data-testid="user-drawer-chips">
+                {userRow.simpro_employee_id && (
+                  <span
+                    className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 border border-violet-200"
+                    title={userRow.simpro_last_synced_at ? `Last synced ${new Date(userRow.simpro_last_synced_at).toLocaleString()}` : 'Simpro-linked'}
+                    data-testid="drawer-chip-simpro"
+                  >Simpro-linked</span>
+                )}
+                {userRow.is_test_fixture && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200"
+                    data-testid="drawer-chip-test">Test</span>
+                )}
+                {userRow.activation_status === 'pending_activation' && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-orange-100 text-orange-800 border border-orange-200"
+                    data-testid="drawer-chip-pending">Pending activation</span>
+                )}
+                {userRow.is_archived && (
+                  <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-slate-200 text-slate-700 border border-slate-300"
+                    data-testid="drawer-chip-archived">Archived</span>
+                )}
+              </div>
             </div>
             {/* v160.3.9.29-2a HOT-PATCH — Enlarged, higher-contrast close
                 button. Previous 2xl bare `&times;` was hard to spot when
@@ -947,6 +1016,10 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
               <div className="flex gap-2 pt-2 flex-wrap"><button onClick={saveProfile} disabled={busy} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="save-profile"><Save size={13} /> Save changes</button>
                 {profile.status === 'active' && <button onClick={() => setConfirmDelete(true)} className="px-4 py-2 border border-red-300 text-red-700 rounded-lg text-sm" data-testid="disable-user">Disable user</button>}
                 {profile.status === 'disabled' && <button onClick={() => { setProfile({ ...profile, status: 'active' }); setTimeout(saveProfile, 0); }} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm" data-testid="reactivate-user">Reactivate</button>}
+                {/* v160.3.9.32-4c — Password action opens ResetPasswordDialog with two modes. */}
+                <button onClick={() => setResetPwdOpen(true)} className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm inline-flex items-center gap-1.5" data-testid="password-btn">
+                  <KeyRound size={13} /> Password
+                </button>
               </div>
             )}
           </div>
@@ -1114,6 +1187,13 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
             onCreated={(c) => { setSavePresetOpen(false); handlePresetCreated(c); }}
           />
         )}
+        {resetPwdOpen && (
+          <ResetPasswordDialog
+            user={userRow}
+            onClose={() => setResetPwdOpen(false)}
+            onDone={() => { setResetPwdOpen(false); onReload(); }}
+          />
+        )}
       </div>
     </div>
   ), document.body);
@@ -1183,269 +1263,95 @@ function SavePresetModal({ overrides, onClose, onCreated }) {
   );
 }
 
-function InviteModal({ onClose, onDone }) {
-  const [form, setForm] = useState({ email: '', name: '', role: 'worker', workspace_ids: [] });
+
+// v160.3.9.32-4c — InviteModal + BulkInviteModal removed (Phase 4c housekeeping).
+// Backend returns 410 for both invite endpoints; Simpro selective-import is the
+// only user-creation path. See SimproImportPickerModal.
+
+
+// v160.3.9.32-4c — ResetPasswordDialog with two modes.
+//   · "Set password directly" → POST /users/{id}/set-password with an
+//     admin-chosen password. Bumps token_version → force logout.
+//   · "Email reset link" → POST /users/{id}/reset-password (existing
+//     magic-link flow). No password chosen; user sets their own.
+function ResetPasswordDialog({ user, onClose, onDone }) {
+  useLockBodyScroll();
+  const [mode, setMode] = useState('direct');
+  const [pwd, setPwd] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
-  // v160.3.9.29-2a — Only ASSIGNABLE roles here (is_active=true). Inactive
-  // roles are hidden entirely from Invite — you can't invite someone into
-  // a role that isn't yet supported by the backend.
-  const { roles: systemRoles } = useSystemRoles();
-  const assignableRoles = systemRoles.filter((r) => r.is_active);
-  const submit = async () => {
+  const submitDirect = async () => {
+    if (pwd !== confirm) { toast.error('Passwords do not match'); return; }
+    if (pwd.length < 8) { toast.error('Password must be at least 8 characters'); return; }
     setBusy(true);
-    try { await api.post('/users', form); toast.success('Invite queued', { description: 'M365 not connected — message waits in outbox.' }); onDone(); onClose(); }
-    catch (e) { toast.error(apiError(e)); }
+    try {
+      await api.post(`/users/${user.id}/set-password`, { password: pwd });
+      toast.success(`Password set for ${user.email}. They have been logged out of all sessions.`);
+      onDone?.();
+    } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
-  return (
-    <div className="fixed inset-0 bg-black/40 z-40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()} data-testid="invite-modal">
-        <h2 className="font-display text-xl mb-4">Invite a user</h2>
-        <label className="block mb-3"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Email</div>
-          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="invite-email" /></label>
-        <label className="block mb-3"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Name</div>
-          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="invite-name" /></label>
-        <label className="block mb-5"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Role</div>
-          <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="invite-role">
-            {assignableRoles.map((r) => <option key={r.role_id} value={r.role_id}>{r.name}</option>)}</select></label>
-        <div className="flex gap-2 justify-end"><button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm">Cancel</button>
-          <button onClick={submit} disabled={busy || !form.email || !form.name} className="px-4 py-2 bg-brand-blue text-white rounded-lg text-sm" data-testid="invite-submit">Send invite</button></div>
-      </div>
-    </div>
-  );
-}
-
-// Phase 4.18 (v137) — Bulk invite modal. Paste any number of emails, hit
-// "Parse" to dedupe / validate / cross-reference against existing users,
-// then "Send" to loop the standard POST /users endpoint one email at a time.
-// Server-side notifications route through the normal outbox (COMMS_SAFE_MODE
-// captures them if outbound comms are blocked — surfaced by the toast).
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function BulkInviteModal({ existingEmails, onClose, onDone }) {
-  useLockBodyScroll();
-  const [rawText, setRawText] = useState('');
-  const [channel, setChannel] = useState('auto'); // auto | email | sms — informational for now
-  const [role, setRole] = useState('worker');
-  const [parsed, setParsed] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(null); // {done, total, results: [{email, status, error?}]}
-  // v160.3.9.29-2a — Only ASSIGNABLE roles surface in the bulk invite
-  // default-role picker (see InviteModal for the same treatment).
-  const { roles: systemRoles } = useSystemRoles();
-  const assignableRoles = systemRoles.filter((r) => r.is_active);
-
-  const parse = () => {
-    // Split on commas, whitespace, semicolons, newlines. Trim, lowercase for
-    // dedupe. Preserve display-cased original in `email`.
-    const parts = rawText.split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
-    const seen = new Set();
-    const existing = new Set(existingEmails || []);
-    const rows = [];
-    for (const p of parts) {
-      const lower = p.toLowerCase();
-      if (seen.has(lower)) continue;
-      seen.add(lower);
-      const ok = EMAIL_RE.test(p);
-      let state = 'new';
-      if (!ok) state = 'invalid';
-      else if (existing.has(lower)) state = 'exists';
-      rows.push({ email: p, state });
-    }
-    setParsed(rows);
-    setProgress(null);
-  };
-
-  const sendable = (parsed || []).filter((r) => r.state === 'new');
-
-  const submit = async () => {
-    if (sendable.length === 0) { toast.error('Nothing to send'); return; }
+  const submitMagicLink = async () => {
     setBusy(true);
-    setProgress({ done: 0, total: sendable.length, results: [] });
-
-    let done = 0;
-    const results = [];
-    for (const row of sendable) {
-      try {
-        // Reuse the standard user-create endpoint — this both creates the
-        // record and queues the invite email via M365 (respects safe mode).
-        await api.post('/users', {
-          email: row.email,
-          name: row.email.split('@')[0],
-          role,
-          workspace_ids: [],
-        });
-        results.push({ email: row.email, status: 'ok' });
-      } catch (e) {
-        results.push({ email: row.email, status: 'error', error: apiError(e) });
-      }
-      done += 1;
-      setProgress({ done, total: sendable.length, results: [...results] });
-    }
-
-    const okCount = results.filter((r) => r.status === 'ok').length;
-    const failCount = results.length - okCount;
-    if (failCount === 0) {
-      toast.success(`${okCount} invite${okCount === 1 ? '' : 's'} queued`, {
-        description: 'Delivery follows the org comms settings (COMMS_SAFE_MODE aware).',
-      });
-    } else {
-      toast.warning(`${okCount} sent · ${failCount} failed`, {
-        description: 'Check the per-row status below for details.',
-      });
-    }
-    setBusy(false);
-    onDone();
+    try {
+      await api.post(`/users/${user.id}/reset-password`, { channel: 'email' });
+      toast.success(`Reset link sent to ${user.email}`);
+      onDone?.();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
   };
-
-  const summary = parsed
-    ? {
-        total: parsed.length,
-        neu: parsed.filter((r) => r.state === 'new').length,
-        exists: parsed.filter((r) => r.state === 'exists').length,
-        invalid: parsed.filter((r) => r.state === 'invalid').length,
-      }
-    : null;
-
-  const stateBadge = (state) => {
-    if (state === 'new') return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-100 text-emerald-800">New</span>;
-    if (state === 'exists') return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-slate-200 text-slate-600">Already exists</span>;
-    return <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase bg-amber-100 text-amber-800">Invalid</span>;
-  };
-
-  const rowStatusBadge = (email) => {
-    if (!progress) return null;
-    const hit = progress.results.find((r) => r.email === email);
-    if (!hit) return <span className="text-[10px] text-slate-400">…</span>;
-    if (hit.status === 'ok') return <span className="text-[10px] font-semibold text-emerald-600" title="Sent">✓ sent</span>;
-    return <span className="text-[10px] font-semibold text-rose-600" title={hit.error || 'failed'}>✗ {hit.error?.slice(0, 40) || 'failed'}</span>;
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/50 z-40 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()} data-testid="bulk-invite-modal">
-        <div className="px-6 pt-5 pb-3 border-b border-slate-100">
-          <h2 className="font-display text-xl">Bulk invite users</h2>
-          <p className="text-xs text-slate-500 mt-1">Paste emails (comma / newline / whitespace-separated). We'll dedupe, validate, and send one invite per new address.</p>
+  return createPortal((
+    <div className="fixed inset-0 z-[80] bg-slate-900/60 grid place-items-center p-4" onClick={(e) => e.target === e.currentTarget && !busy && onClose()} data-testid="reset-password-dialog">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200">
+          <h3 className="font-display font-bold text-slate-900 text-lg">Reset password for {user.name}</h3>
+          <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
         </div>
-
-        <div className="px-6 py-4 overflow-y-auto flex-1">
-          {!parsed && (
-            <>
-              <label className="block mb-3">
-                <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Emails</div>
-                <textarea rows={7} value={rawText} onChange={(e) => setRawText(e.target.value)}
-                  placeholder="ali@company.com, jane@company.com&#10;stephen@paneltec.com.au"
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
-                  data-testid="bulk-invite-emails" />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Default role</div>
-                  <select value={role} onChange={(e) => setRole(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    data-testid="bulk-invite-role">
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </label>
-                <label className="block">
-                  <div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Channel</div>
-                  <select value={channel} onChange={(e) => setChannel(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    data-testid="bulk-invite-channel">
-                    <option value="auto">Auto (email if provided)</option>
-                    <option value="email">Email only</option>
-                    <option value="sms">SMS only</option>
-                  </select>
-                </label>
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex gap-2" role="tablist">
+            <button type="button" onClick={() => setMode('direct')}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm border ${mode === 'direct' ? 'border-brand-blue bg-blue-50 text-brand-blue font-semibold' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+              data-testid="reset-mode-direct">Set password directly</button>
+            <button type="button" onClick={() => setMode('magic')}
+              className={`flex-1 px-3 py-2 rounded-lg text-sm border ${mode === 'magic' ? 'border-brand-blue bg-blue-50 text-brand-blue font-semibold' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+              data-testid="reset-mode-magic">Email reset link</button>
+          </div>
+          {mode === 'direct' ? (
+            <div className="space-y-2">
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+                Warning — user will be logged out of every device. Communicate the new password securely.
               </div>
-              <div className="mt-3 text-[11px] text-slate-500">
-                Comms Safe Mode is respected — blocked messages will land in the outbox instead of being delivered.
-              </div>
-            </>
-          )}
-
-          {parsed && summary && (
-            <>
-              <div className="flex flex-wrap gap-2 mb-3" data-testid="bulk-invite-summary">
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-slate-100 text-slate-700">Total: {summary.total}</span>
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-emerald-100 text-emerald-800">New: {summary.neu}</span>
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-slate-200 text-slate-600">Already exists: {summary.exists}</span>
-                <span className="text-[11px] font-semibold px-2 py-1 rounded-md bg-amber-100 text-amber-800">Invalid: {summary.invalid}</span>
-              </div>
-
-              {progress && (
-                <div className="mb-3" data-testid="bulk-invite-progress">
-                  <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-brand-blue transition-all"
-                         style={{ width: `${Math.round(progress.done / progress.total * 100)}%` }} />
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-1">{progress.done} / {progress.total} processed</div>
-                </div>
-              )}
-
-              <div className="border border-slate-200 rounded-lg overflow-hidden">
-                <table className="zebra-list w-full text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">Email</th>
-                      <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">State</th>
-                      {progress && <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider font-semibold text-slate-600">Result</th>}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {parsed.map((r) => (
-                      <tr key={r.email} data-testid={`bulk-invite-row-${r.email}`}>
-                        <td className="px-3 py-1.5 font-mono text-[12px] text-slate-700">{r.email}</td>
-                        <td className="px-3 py-1.5">{stateBadge(r.state)}</td>
-                        {progress && (
-                          <td className="px-3 py-1.5">
-                            {r.state === 'new' ? rowStatusBadge(r.email) : <span className="text-[10px] text-slate-400">skipped</span>}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
+              <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">New password</div>
+                <input type="password" value={pwd} onChange={(e) => setPwd(e.target.value)} minLength={8}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="reset-direct-pwd" autoFocus /></label>
+              <label className="block"><div className="text-xs uppercase tracking-wider font-semibold text-slate-500 mb-1">Confirm</div>
+                <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" data-testid="reset-direct-confirm" /></label>
+            </div>
+          ) : (
+            <div className="text-sm text-slate-700 space-y-2">
+              <div>Send a one-time magic link to <b>{user.email}</b>. The user picks their own password.</div>
+              <div className="text-xs text-slate-500">The link is valid for a limited time. If email delivery is blocked, use &ldquo;Set directly&rdquo; instead.</div>
+            </div>
           )}
         </div>
-
-        <div className="px-6 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
-          {!parsed && (
-            <>
-              <button onClick={onClose} className="px-4 py-2 border border-slate-300 rounded-lg text-sm" data-testid="bulk-invite-cancel">Cancel</button>
-              <button onClick={parse} disabled={!rawText.trim()}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-slate-900 text-white disabled:opacity-50"
-                      data-testid="bulk-invite-parse">Parse</button>
-            </>
-          )}
-          {parsed && !busy && (progress === null || progress.done < progress.total) && (
-            <>
-              <button onClick={() => { setParsed(null); setProgress(null); }} className="px-4 py-2 border border-slate-300 rounded-lg text-sm" data-testid="bulk-invite-edit">Edit list</button>
-              <button onClick={submit} disabled={busy || sendable.length === 0}
-                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-brand-blue text-white disabled:opacity-50"
-                      data-testid="bulk-invite-send">
-                Send {sendable.length} invite{sendable.length === 1 ? '' : 's'}
-              </button>
-            </>
-          )}
-          {busy && (
-            <button disabled className="px-4 py-2 rounded-lg text-sm font-semibold bg-brand-blue/70 text-white inline-flex items-center gap-2" data-testid="bulk-invite-busy">
-              Sending…
-            </button>
-          )}
-          {progress && !busy && progress.done === progress.total && (
-            <button onClick={onClose}
-                    className="px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-600 text-white"
-                    data-testid="bulk-invite-close">Done</button>
+        <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-end gap-2 bg-slate-50">
+          <button type="button" onClick={onClose} disabled={busy} className="px-3 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50">Cancel</button>
+          {mode === 'direct' ? (
+            <button type="button" onClick={submitDirect} disabled={busy || pwd.length < 8}
+              className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-40"
+              data-testid="reset-direct-submit">{busy ? 'Setting…' : 'Set password'}</button>
+          ) : (
+            <button type="button" onClick={submitMagicLink} disabled={busy}
+              className="px-3 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-40"
+              data-testid="reset-magic-submit">{busy ? 'Sending…' : 'Send reset link'}</button>
           )}
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 }
+
 
 function ImportStatusBadge({ row }) {
   if (row.is_already_imported) {

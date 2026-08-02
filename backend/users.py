@@ -40,6 +40,10 @@ class UpdateUserIn(BaseModel):
 
 class PermissionsIn(BaseModel):
     overrides: dict = Field(default_factory=dict)
+    # v160.3.9.32-4c — Sidecar map keyed "resource.action" → reason string.
+    # Enforced 3-200 chars in upsert_overrides(). Entries whose override
+    # cell no longer exists are dropped automatically.
+    reasons: dict = Field(default_factory=dict)
 
 
 def _user_out(doc: dict, has_overrides: bool = False) -> dict:
@@ -239,6 +243,8 @@ async def get_permissions(user_id: str, actor: dict = Depends(require_permission
         "role": target["role"],
         "role_defaults": ROLE_DEFAULTS.get(target["role"], {}),
         "overrides": (override_doc or {}).get("overrides", {}),
+        # v160.3.9.32-4c — Reasons sidecar surfaced to FE.
+        "reasons": (override_doc or {}).get("reasons", {}),
         "effective": await effective_for(target),
         "schema": PERMISSIONS_SCHEMA,
     }
@@ -249,10 +255,46 @@ async def put_permissions(user_id: str, body: PermissionsIn, actor: dict = Depen
     target = await db.users.find_one({"id": user_id, "org_id": actor["org_id"]}, {"_id": 0, "password_hash": 0})
     if not target:
         raise HTTPException(404, "User not found")
-    saved = await upsert_overrides(user_id, actor["org_id"], body.overrides, actor["id"])
+    # v160.3.9.32-4c — capture before-state so the audit diff can compute
+    # added/removed/changed tokens.
+    before_doc = await db.user_permissions.find_one({"user_id": user_id}, {"_id": 0})
+    before_overrides = (before_doc or {}).get("overrides", {}) or {}
+    saved = await upsert_overrides(user_id, actor["org_id"], body.overrides,
+                                   actor["id"], reasons=body.reasons)
+    after_overrides = saved.get("overrides", {}) or {}
+    after_reasons = saved.get("reasons", {}) or {}
+
+    # Flatten to {resource.action: bool} sets for cheap diffing.
+    def _flatten(m):
+        out = {}
+        for r, actions in (m or {}).items():
+            for a, v in (actions or {}).items():
+                out[f"{r}.{a}"] = bool(v)
+        return out
+    b_flat, a_flat = _flatten(before_overrides), _flatten(after_overrides)
+    added = sorted(k for k in a_flat if k not in b_flat)
+    removed = sorted(k for k in b_flat if k not in a_flat)
+    changed = sorted(k for k in a_flat if k in b_flat and a_flat[k] != b_flat[k])
+    if added or removed or changed:
+        await db.user_audit.insert_one({
+            "id": new_id(),
+            "user_id": user_id,
+            "action": "permissions_updated",
+            "diff": {
+                "added": [{"token": t, "grant": a_flat[t],
+                           "reason": after_reasons.get(t)} for t in added],
+                "removed": removed,
+                "changed": [{"token": t, "before": b_flat[t], "after": a_flat[t],
+                             "reason": after_reasons.get(t)} for t in changed],
+            },
+            "actor_user_id": actor["id"],
+            "actor_email": actor.get("email"),
+            "at": now_iso(),
+        })
     return {
         "user_id": user_id,
-        "overrides": saved.get("overrides", {}),
+        "overrides": after_overrides,
+        "reasons": after_reasons,
         "effective": await effective_for(target),
     }
 
