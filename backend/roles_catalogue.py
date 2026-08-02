@@ -129,20 +129,28 @@ def _tokens_responsible_manager() -> List[str]:
 
 def _tokens_contractor_rep() -> List[str]:
     """External contractor coordinator. Effective enforcement of
-    company_id scoping lives in the Phase 3 scoping helper — until
-    then this role is seeded with `is_active=False`."""
+    company_id scoping lives in the Phase 3 scoping helper
+    (`permissions_scope.py`). v160.3.9.30 — reconciled with the
+    ROLE_DEFAULTS entry in `permissions.py` per Blocker-F Option B:
+    open/view/edit/email on all 5 resources (was missing `open` on
+    contractors + missing `email` everywhere except contractors)."""
     out: list[str] = []
     for r in ["contractors", "workers", "certifications",
               "inductions", "documents"]:
-        out += _t(r, _VIEW_EDIT_EMAIL_TEAM if r in ("contractors",) else _OPEN_VIEW_EDIT)
+        out += _t(r, ["open", "view", "edit", "email"])
     return sorted(set(out))
 
 
 def _tokens_contractor_rep_submit_only() -> List[str]:
+    """v160.3.9.30 — reconciled with the ROLE_DEFAULTS entry in
+    `permissions.py` per Blocker-F Option B. Added `forms.edit` so the
+    submit-only persona can actually submit compliance forms (amendment
+    to catalogue §8)."""
     out: list[str] = []
     out += _t("contractors", ["view"])
-    out += _t("documents", _OPEN_VIEW_EDIT)
+    out += _t("documents", ["open", "view", "edit"])
     out += _t("certifications", ["view", "edit"])
+    out += _t("forms", ["open", "view", "edit"])
     return sorted(set(out))
 
 
@@ -244,10 +252,10 @@ SYSTEM_ROLES: List[Dict[str, Any]] = [
         "description": "External contractor coordinator (org-scoped).",
         "permission_tokens": _tokens_contractor_rep(),
         "is_system": True,
-        # v160.3.9.26 — Held inactive until Phase 3 ships the record-level
-        # company_id scoping helper (decision #15).
-        "is_active": False,
-        "pending_scoping_helper": True,
+        # v160.3.9.30 — Phase 3d activated. ROLE_DEFAULTS entry seeded in
+        # permissions.py + scope_filter (permissions_scope.py) enforces
+        # per-user company_id narrowing.
+        "is_active": True,
         "supersedes_role_id": None,
     },
     {
@@ -256,9 +264,8 @@ SYSTEM_ROLES: List[Dict[str, Any]] = [
         "description": "External submitter — only required documents.",
         "permission_tokens": _tokens_contractor_rep_submit_only(),
         "is_system": True,
-        # Same reason as contractor_rep.
-        "is_active": False,
-        "pending_scoping_helper": True,
+        # v160.3.9.30 — Phase 3d activated (see contractor_rep above).
+        "is_active": True,
         "supersedes_role_id": None,
     },
     {

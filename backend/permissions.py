@@ -142,6 +142,28 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         "reference_library": {**_all_no_delete(True), "email": False},
         "sites":             {**_all_no_delete(True), "email": False},
     },
+    # v160.3.9.30 — Phase 3d: contractor role activation. ROLE_DEFAULTS
+    # entries added per Blocker-F resolution (F-i + Option B). Effective
+    # enforcement of `company_id` scoping happens via permissions_scope.py
+    # (Phase 3b); this dict only sets the base action matrix that
+    # `require_permission()` gates against. See catalogue §7 & §8.
+    "contractor_rep": {
+        "contractors":     _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False, approve=False),
+        "workers":         _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+        "certifications":  _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+        "inductions":      _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+        "documents":       _grant(open=True, view=True, edit=True,  delete=False, email=True,  team_view=False),
+    },
+    "contractor_rep_submit_only": {
+        "contractors":     _grant(open=False, view=True,  edit=False, delete=False, email=False, team_view=False),
+        "documents":       _grant(open=True,  view=True,  edit=True,  delete=False, email=False, team_view=False),
+        "certifications":  _grant(open=False, view=True,  edit=True,  delete=False, email=False, team_view=False),
+        # v160.3.9.30 amendment to catalogue §8 — `forms.edit` added so the
+        # "submit-only" persona can actually submit compliance forms
+        # (upload PPE/insurance + submit renewal form). Without this the
+        # role is neutered.
+        "forms":           _grant(open=True,  view=True,  edit=True,  delete=False, email=False, team_view=False),
+    },
     "supervisor": {
         "swms":            _all_no_delete(True),
         "pre_starts":      _all_no_delete(True),

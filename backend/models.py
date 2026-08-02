@@ -9,7 +9,11 @@ from typing import Any, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 import uuid
 
-Role = Literal["worker", "supervisor", "hseq_lead", "auditor", "manager", "admin"]
+# v160.3.9.30 — Phase 3d contractor roles added. Kept as an open enum
+# rather than growing every time a system role lands; future refactor
+# (Phase 5 F-ii) will drop Literal for role_id-based lookup.
+Role = Literal["worker", "supervisor", "hseq_lead", "auditor", "manager", "admin",
+               "contractor_rep", "contractor_rep_submit_only"]
 SwmsStatus = Literal["draft", "submitted", "approved", "rejected", "changes_requested"]
 HazardStatus = Literal["open", "in_progress", "closed"]
 HazardSeverity = Literal["low", "medium", "high", "critical"]

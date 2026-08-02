@@ -45,11 +45,14 @@ import useLockBodyScroll from '../lib/useLockBodyScroll';
 // LEGACY_ROLES stays as a fallback so this page keeps functioning if
 // `/api/admin/roles` is unavailable — the 5 originals stayed assignable.
 const LEGACY_ROLES = [
-  { role_id: 'admin',      name: 'Admin',      is_active: true, source: 'legacy' },
-  { role_id: 'hseq_lead',  name: 'HSEQ Lead',  is_active: true, source: 'legacy' },
-  { role_id: 'supervisor', name: 'Supervisor', is_active: true, source: 'legacy' },
-  { role_id: 'worker',     name: 'Worker',     is_active: true, source: 'legacy' },
-  { role_id: 'auditor',    name: 'Auditor',    is_active: true, source: 'legacy' },
+    // v160.3.9.30 — Phase 3d: contractor roles activated. LEGACY_ROLES
+    // fallback still uses names without "not yet available"; the live
+    // fetch merges the seeded roles which now carry `is_active=true`.
+    { role_id: 'admin',      name: 'Admin',      is_active: true, source: 'legacy' },
+    { role_id: 'hseq_lead',  name: 'HSEQ Lead',  is_active: true, source: 'legacy' },
+    { role_id: 'supervisor', name: 'Supervisor', is_active: true, source: 'legacy' },
+    { role_id: 'worker',     name: 'Worker',     is_active: true, source: 'legacy' },
+    { role_id: 'auditor',    name: 'Auditor',    is_active: true, source: 'legacy' },
 ];
 
 // Module-level cache so parallel <useSystemRoles> calls in sibling
