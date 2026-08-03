@@ -1,6 +1,20 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.34.4 — Fix: ID Card section now opens on the first tap on
+//                  touch devices. Previously the section (last child of
+//                  the modal's scrollable body) sat at the scroll
+//                  boundary, so iOS Safari's 300ms tap-delay + tap-vs-
+//                  scroll ambiguity swallowed the first tap and the
+//                  section only opened on the second attempt. Bespoke
+//                  header for `IdCardSection` — mirrors the shared
+//                  `<Section>` visual pattern (same chevron animation,
+//                  same badge slot, same open/close transition) but
+//                  adds `touch-action: manipulation` +
+//                  `-webkit-tap-highlight-color: transparent` +
+//                  `scroll-margin-block-end` so single-tap toggles
+//                  identically to the sibling sections above. No other
+//                  section touched.
 // v160.3.9.34.3 — Explicit "Upload Photo" button on the Edit worker
 //                  modal header and the read-only view drawer. The
 //                  previous versions only surfaced a clickable avatar
@@ -39,4 +53,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.34.3';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.34.4';

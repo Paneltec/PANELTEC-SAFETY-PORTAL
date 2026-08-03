@@ -990,21 +990,53 @@ function IdCardSection({ worker, canEdit }) {
     finally { setSavingNfc(false); }
   };
 
+  // v160.3.9.34.4 — Bespoke collapsible header for the ID Card section.
+  // Mirrors the shared `<Section>` visual pattern (same header row, same
+  // chevron rotation, same badge slot, same open/closed transition) but
+  // adds `touch-action: manipulation` to the header row so the FIRST
+  // tap registers on touch devices. Rationale: the ID Card section is
+  // the last section in the modal, so its collapsed header sits at the
+  // scroll boundary of the modal's `overflow-y-auto` body. iOS Safari
+  // introduces a 300ms tap-delay + tap-vs-scroll ambiguity for
+  // `role="button"` divs at that boundary, so the first tap is often
+  // consumed as an inertia-scroll and the section refuses to open until
+  // a second tap. `touch-action: manipulation` disables the delay and
+  // eliminates the ambiguity, so a single tap toggles the section
+  // identically to the siblings above it. No other section is touched.
+  const [open, setOpen] = React.useState(false);
+  const toggle = () => setOpen((v) => !v);
+
   return (
-    <Section
-      icon={QrCode}
-      title="ID Card"
-      testid="section-id-card"
-      badges={
-        token
+    <div
+      className="border border-slate-200 rounded-xl overflow-hidden bg-white"
+      style={{ scrollMarginBlockEnd: '96px' }}
+      data-testid="section-id-card"
+    >
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={toggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+        }}
+        aria-expanded={open}
+        style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'transparent' }}
+        className="w-full flex items-center gap-2 px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-left flex-wrap cursor-pointer select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1e4a8c]/40"
+        data-testid="section-id-card-toggle"
+      >
+        <QrCode size={14} className="text-slate-500" />
+        <span className="text-sm font-semibold text-slate-800 mr-1">ID Card</span>
+        {token
           ? <EditSummaryPill testid="id-card-token-pill" title={`Full token: ${token}`}>
               Token {token.slice(0, 6)}…
             </EditSummaryPill>
           : <EditSummaryPill tone="manual" testid="id-card-token-pending">
               Awaiting token
-            </EditSummaryPill>
-      }
-      defaultOpen={false}>
+            </EditSummaryPill>}
+        <ChevronDown size={14} className={`text-slate-400 transition-transform ml-auto ${open ? 'rotate-180' : ''}`} />
+      </div>
+      {open && (
+      <div className="px-4 py-4 border-t border-slate-200">
       <div className="grid md:grid-cols-[160px_160px_1fr] gap-4">
         {/* v160.3.5a — printable-ID look: worker photo on the left, QR on the right */}
         {/* v160.3.9.34.2 — Photo tile now tap-to-expand into a lightbox */}
@@ -1149,7 +1181,9 @@ function IdCardSection({ worker, canEdit }) {
         title={expand?.title}
         onClose={closeExpand}
       />
-    </Section>
+      </div>
+      )}
+    </div>
   );
 }
 
