@@ -106,3 +106,39 @@ get stranded. Reset-password magic-link path stays alive indefinitely.
 
 **Owner:** whoever picks up Phase 6.
 **Estimated scope:** ~15 LOC (410 the 2 public routes, delete Onboard.jsx).
+
+
+---
+
+## Phase 6 backlog — Mobile "Add worker" affordance orphan (v160.3.9.34.1)
+
+`v160.3.9.34.1` 410'd `POST /api/workers` and removed the manual
+"Add worker" affordance from the web `Workers.jsx` page. Mobile was
+intentionally NOT modified in this ticket (strict "do not touch
+`/app/mobile/` except for the version bump" rule).
+
+**Orphan reference:** `mobile/src/components/WorkerEditModal.tsx:199`
+```ts
+if (isNew) {
+  await api.post('/workers', f);
+  Alert.alert('Success', 'Worker added');
+}
+```
+Any upstream "Add worker" affordance in the mobile app that opens
+`WorkerEditModal` in `isNew` mode will now silently surface the generic
+`apiError(e)` toast when the user taps save (endpoint returns 410).
+
+**Follow-up work (before next mobile beta cycle):**
+1. Hide the mobile "Add worker" button wherever it launches
+   `WorkerEditModal` with an empty worker object.
+2. Replace the modal's `isNew` branch with an informational sheet:
+   *"Workers come from Simpro. Contact your admin."*
+3. Optionally delete the `isNew` branch of `submit()` in
+   `WorkerEditModal.tsx` once the button is gone.
+
+Not urgent — the endpoint returns 410 gracefully — but should ship
+before the next mobile beta so the UX stops promising a create it
+can't fulfil.
+
+**Owner:** whoever picks up Phase 6 (mobile track).
+**Estimated scope:** ~10 LOC in `mobile/`.

@@ -1695,25 +1695,19 @@ export default function Workers() {
           </div>
         )}
         <div className="flex-1" />
-        {canEdit && (
-          <button onClick={() => setEditing({})} data-testid="add-worker"
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-semibold uppercase tracking-wider hover:bg-[#143263]">
-            <Plus /> Add worker
-          </button>
-        )}
+        {/* v160.3.9.34.1 — Manual "Add worker" affordance removed. Workers now
+            come exclusively from Simpro (ZIP import + delta sync). The
+            public `POST /api/workers` endpoint returns 410 Gone. */}
       </div>
 
       {loading ? (
         <div className="text-sm text-slate-500 inline-flex items-center gap-2"><Loader2 size={14} className="animate-spin" /> Loading workers…</div>
       ) : filtered.length === 0 ? (
         <EmptyState title={search ? 'No workers match' : 'No workers yet'}
-          body={search ? 'Try a different search term.' : 'Sync from Simpro or add a worker manually to get started.'}
-          action={canEdit && !search ? (
-            <button onClick={() => setEditing({})} data-testid="empty-add"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#1e4a8c] text-white text-sm font-medium">
-              <Plus /> Add worker
-            </button>
-          ) : null} />
+          body={search
+            ? 'Try a different search term.'
+            : 'Workers come from Simpro. Upload the ZIP export via "Import Simpro worker files" above.'}
+          action={null} />
       ) : (
         // v160.3.6e — Card-row grid layout. The previous <table> was
         // overflowing (STATUS clipped to "AC...", ACTION icons ghosting

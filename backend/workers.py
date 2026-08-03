@@ -255,24 +255,17 @@ async def get_worker(worker_id: str, user: dict = Depends(get_current_user)):
     return _serialise(doc, viewer=user)
 
 
-@router.post("", status_code=201)
-async def create_worker(body: WorkerIn, user: dict = Depends(get_current_user)):
-    _require_write(user)
-    payload = body.model_dump()
-    payload["availability"] = _validate_availability(payload.get("availability"))
-    doc = {
-        "id": new_id(), "org_id": user["org_id"],
-        "simpro_employee_id": None, "simpro_company_id": None,
-        "source": "manual",
-        **payload,
-        # Default country to Australia when absent.
-        "country": payload.get("country") or "Australia",
-        "client_ids": payload.get("client_ids") or [],
-        "created_by": user["id"],
-        "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
-    }
-    await db.workers.insert_one(doc)
-    return _serialise(doc, viewer=user)
+@router.post("", status_code=410)
+async def create_worker_deprecated(
+    actor: dict = Depends(require_permission("workers", "edit")),
+):
+    """v160.3.9.34.1 — Phase 4b parity. Manual worker creation is
+    disabled; the only path into `db.workers` is the Simpro ZIP
+    importer (`POST /api/integrations/simpro/workers/bulk-zip-import`)
+    and the delta refresh (`POST /api/integrations/simpro/workers/refresh`).
+    Auth gate is preserved — unauth callers still see 401, non-admin
+    callers still see 403, only privileged callers reach the 410."""
+    raise HTTPException(410, "worker create disabled: use Simpro ZIP import")
 
 
 @router.patch("/{worker_id}")
