@@ -63,6 +63,8 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 
+from cryptography.fernet import Fernet, InvalidToken
+
 from fastapi import APIRouter, Depends, HTTPException, Header, Query, UploadFile, File
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
@@ -85,6 +87,113 @@ def _now_iso() -> str:
 
 def _hash_token(t: str) -> str:
     return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.38 — SMB destination password at-rest encryption.
+#
+# BEFORE this patch the SMB password for LAN backup destinations was
+# stored plaintext on `bk_destinations.password`, projected out of API
+# responses but readable at rest to anyone with Mongo access, and
+# copied verbatim into every backup snapshot ZIP. That is
+# credentials-at-rest exposure — worse when the operator (as in the
+# 2026-08-03 Paneltec deployment) uses their own app-admin
+# credentials for the SMB share.
+#
+# This block adds Fernet AES-128-CBC + HMAC symmetric encryption. The
+# key comes from env var `BACKUP_DEST_ENC_KEY` (32-byte urlsafe
+# base64, mint via `Fernet.generate_key()`). Ciphertext lives on
+# `bk_destinations.password_encrypted`. `password_set` remains the
+# public boolean the UI reads. The GET endpoints continue to project
+# BOTH secret fields out of responses. `agent/pending` decrypts at
+# read time so the LAN agent contract is unchanged — it still sees a
+# `password` string field.
+#
+# Fail-fast import-time guard: if the env var is missing AND
+# `BACKUP_DEST_ENC_KEY_ALLOW_MISSING != "1"`, log a clear message and
+# leave the module in degraded mode (writes will 500, reads still
+# work). Existing tests that don't touch the destinations endpoint
+# continue to run.
+# ─────────────────────────────────────────────────────────────
+
+_ENC_KEY_ENV = "BACKUP_DEST_ENC_KEY"
+_DEGRADED_MSG = (
+    "BACKUP_DEST_ENC_KEY missing — destination-password writes will 500. "
+    "Mint a key with `python -c 'from cryptography.fernet import Fernet; "
+    "print(Fernet.generate_key().decode())'` and add it to backend/.env."
+)
+
+try:
+    _ENC_RAW = os.environ.get(_ENC_KEY_ENV, "").strip()
+    if _ENC_RAW:
+        _FERNET: Optional[Fernet] = Fernet(_ENC_RAW.encode("utf-8"))
+    elif os.environ.get("BACKUP_DEST_ENC_KEY_ALLOW_MISSING") == "1":
+        _FERNET = None
+        logger.warning("[v38] %s (degraded-mode allow flag set)", _DEGRADED_MSG)
+    else:
+        _FERNET = None
+        logger.error("[v38] %s", _DEGRADED_MSG)
+except Exception as e:
+    _FERNET = None
+    logger.exception("[v38] Fernet init failed: %s", e)
+
+
+def _encrypt_dest_password(plaintext: str) -> str:
+    """Return Fernet ciphertext. Raises 500-mapped RuntimeError if the
+    module is running degraded (missing/invalid key)."""
+    if not _FERNET:
+        raise RuntimeError("destination-password encryption unavailable — "
+                           "BACKUP_DEST_ENC_KEY not configured")
+    return _FERNET.encrypt(plaintext.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_dest_password(ciphertext: str) -> str:
+    """Inverse of _encrypt_dest_password. Raises `InvalidToken` on
+    tamper/corruption — callers must decide 500 vs skip-and-log."""
+    if not _FERNET:
+        raise RuntimeError("destination-password decryption unavailable — "
+                           "BACKUP_DEST_ENC_KEY not configured")
+    return _FERNET.decrypt(ciphertext.encode("ascii")).decode("utf-8")
+
+
+async def _migrate_plaintext_dest_passwords(db_) -> Dict[str, int]:
+    """Walk bk_destinations, encrypt any surviving plaintext `password`
+    field, move it to `password_encrypted`, unset the plaintext key.
+    Idempotent — safe to re-run. Returns a summary count dict.
+
+    Reconciliation policy: if BOTH `password` and `password_encrypted`
+    exist on a doc, keep `password_encrypted` (already migrated by an
+    earlier run) and simply unset the surviving plaintext key. If only
+    plaintext exists, encrypt it. If neither exists, no-op."""
+    if not _FERNET:
+        return {"migrated": 0, "already_encrypted_unset_plaintext": 0,
+                "skipped_no_key": 1}
+    migrated = 0
+    reconciled = 0
+    async for doc in db_.bk_destinations.find(
+        {"password": {"$exists": True, "$nin": [None, ""]}},
+        {"_id": 0, "id": 1, "password": 1, "password_encrypted": 1},
+    ):
+        did = doc["id"]
+        if doc.get("password_encrypted"):
+            # Both present → keep encrypted, drop plaintext.
+            await db_.bk_destinations.update_one(
+                {"id": did},
+                {"$unset": {"password": ""}},
+            )
+            reconciled += 1
+        else:
+            ct = _encrypt_dest_password(doc["password"])
+            await db_.bk_destinations.update_one(
+                {"id": did},
+                {"$set": {"password_encrypted": ct, "password_set": True},
+                 "$unset": {"password": ""}},
+            )
+            migrated += 1
+    logger.info("[v38] destination password migration: migrated=%d "
+                "reconciled=%d", migrated, reconciled)
+    return {"migrated": migrated,
+            "already_encrypted_unset_plaintext": reconciled}
 
 
 # Collections we DON'T want in the snapshot — too noisy, too big, or
@@ -351,6 +460,35 @@ def install(app, db, require_admin):
     # Expose the bucket on app.state so background tasks in server.py
     # (e.g. the retention scheduler) can reach it without re-importing.
     app.state.bk_fs = fs
+
+    # v160.3.9.38 — Auto-run the plaintext-password migration ONCE at
+    # startup, guarded by a marker doc in `bk_migrations`. Manual
+    # re-run available at `POST /api/backup/admin/migrate-destination-
+    # passwords`. Wrapped in try/except so a migration blip never
+    # blocks backend boot.
+    @app.on_event("startup")
+    async def _v38_destination_password_migration():
+        try:
+            marker = await db.bk_migrations.find_one(
+                {"id": "v160_3_9_38_dest_password_encryption"},
+                {"_id": 0, "id": 1, "completed_at": 1},
+            )
+            if marker and marker.get("completed_at"):
+                # Migration already ran successfully. Skip silently.
+                return
+            if not _FERNET:
+                logger.warning("[v38] Skipping startup destination-password "
+                               "migration — BACKUP_DEST_ENC_KEY not set.")
+                return
+            summary = await _migrate_plaintext_dest_passwords(db)
+            await db.bk_migrations.update_one(
+                {"id": "v160_3_9_38_dest_password_encryption"},
+                {"$set": {"completed_at": _now_iso(), **summary}},
+                upsert=True,
+            )
+        except Exception as e:
+            logger.exception("[v38] destination-password migration failed "
+                             "at startup: %s", e)
 
     # ------------------------------------------------------------
     # SNAPSHOT  — admin: trigger; agent: list & download.
@@ -922,8 +1060,11 @@ def install(app, db, require_admin):
     # ------------------------------------------------------------
     @api_router.get("/destinations", dependencies=[Depends(require_admin)])
     async def list_destinations():
+        # v160.3.9.38 — never expose either the legacy plaintext
+        # `password` field NOR the encrypted `password_encrypted`
+        # blob to the UI. `password_set` is the public signal.
         rows = await db.bk_destinations.find(
-            {}, {"_id": 0, "password": 0}
+            {}, {"_id": 0, "password": 0, "password_encrypted": 0}
         ).to_list(100)
         return rows
 
@@ -931,24 +1072,32 @@ def install(app, db, require_admin):
     async def create_destination(d: BackupDestination,
                                  password: Optional[str] = Query(None)):
         doc = d.model_dump()
-        # Stash password separately so the snapshot agent token bundle
-        # can fetch it on its first poll. UI never reads it back.
+        # v160.3.9.38 — Password is now stored encrypted at rest
+        # under `password_encrypted`. The plaintext key is never
+        # written. `_encrypt_dest_password()` raises RuntimeError if
+        # the module is running in degraded mode (missing key) — map
+        # to a 500 so the operator sees the failure immediately
+        # instead of silently storing plaintext.
         if password:
-            doc["password"] = password
+            try:
+                doc["password_encrypted"] = _encrypt_dest_password(password)
+            except RuntimeError as e:
+                raise HTTPException(500, str(e))
             doc["password_set"] = True
         await db.bk_destinations.insert_one(doc)
+        doc.pop("_id", None)
         doc.pop("password", None)
+        doc.pop("password_encrypted", None)
         return doc
 
     @api_router.put("/destinations/{did}", dependencies=[Depends(require_admin)])
     async def update_destination(did: str,
                                  d: BackupDestination,
                                  password: Optional[str] = Query(None)):
-        """Partial edit for an existing destination. Useful when the
-        operator typed the wrong SMB username/password and needs to
-        correct it without deleting + re-adding the row (which would
-        wipe the destination history). Password is only overwritten
-        when explicitly re-entered."""
+        """Partial edit for an existing destination. Password is only
+        overwritten when explicitly re-entered. v160.3.9.38 — password
+        is encrypted at rest under `password_encrypted`; the legacy
+        plaintext key is $unset on every write path."""
         existing = await db.bk_destinations.find_one({"id": did}, {"_id": 0})
         if not existing:
             raise HTTPException(404, "destination not found")
@@ -959,17 +1108,33 @@ def install(app, db, require_admin):
         # Preserve runtime telemetry written by the agent.
         payload["last_seen_at"] = existing.get("last_seen_at")
         payload["last_written_at"] = existing.get("last_written_at")
-        # Preserve password unless explicitly re-entered.
+        # Preserve nas_disk_usage (v37 forward-compat field).
+        if "nas_disk_usage" in existing:
+            payload["nas_disk_usage"] = existing["nas_disk_usage"]
+            payload["nas_disk_usage_at"] = existing.get("nas_disk_usage_at")
         if password:
-            payload["password"] = password
+            try:
+                payload["password_encrypted"] = _encrypt_dest_password(password)
+            except RuntimeError as e:
+                raise HTTPException(500, str(e))
             payload["password_set"] = True
         else:
-            # Keep the saved password.
-            if "password" in existing:
-                payload["password"] = existing["password"]
-            payload["password_set"] = bool(existing.get("password_set"))
+            # Preserve the saved encrypted blob if the operator did
+            # not re-enter the password.
+            if existing.get("password_encrypted"):
+                payload["password_encrypted"] = existing["password_encrypted"]
+            payload["password_set"] = bool(
+                existing.get("password_set")
+                or existing.get("password_encrypted")
+            )
+        # Always $unset the legacy plaintext key on any write so a
+        # migration miss doesn't linger.
         await db.bk_destinations.replace_one({"id": did}, payload)
+        await db.bk_destinations.update_one(
+            {"id": did}, {"$unset": {"password": ""}}
+        )
         payload.pop("password", None)
+        payload.pop("password_encrypted", None)
         return payload
 
     @api_router.delete("/destinations/{did}", dependencies=[Depends(require_admin)])
@@ -1007,6 +1172,16 @@ def install(app, db, require_admin):
         r = await db.bk_agents.delete_one({"id": aid})
         return {"ok": True, "deleted": r.deleted_count}
 
+    @api_router.post("/admin/migrate-destination-passwords",
+                     dependencies=[Depends(require_admin)])
+    async def migrate_destination_passwords_route():
+        """v160.3.9.38 — Manual re-trigger for the plaintext →
+        Fernet-encrypted password migration. Idempotent. Also runs
+        once automatically at backend startup (guarded by a marker
+        doc in `bk_migrations`)."""
+        summary = await _migrate_plaintext_dest_passwords(db)
+        return {"ok": True, **summary}
+
     # ------------------------------------------------------------
     # AGENT-FACING (no admin guard — auth via Agent token only)
     # ------------------------------------------------------------
@@ -1035,9 +1210,36 @@ def install(app, db, require_admin):
         )
         # All enabled destinations + credentials (one-time leak; the
         # agent caches them locally and only re-fetches on rotation).
+        # v160.3.9.38 — decrypt `password_encrypted` at read time so
+        # the LAN agent still sees a `password` string field (its
+        # contract is unchanged). We swallow InvalidToken per-doc so
+        # one corrupt row can't blackhole every other destination —
+        # log the id and skip the field, agent will just fail to
+        # authenticate to that one target and surface a
+        # Connection-refused / auth-error like today.
         dests = await db.bk_destinations.find(
             {"enabled": True}, {"_id": 0},
         ).to_list(100)
+        for d in dests:
+            ct = d.pop("password_encrypted", None)
+            # Belt: even if a legacy plaintext key survived a migration
+            # miss, strip it before decrypt+re-emit.
+            legacy_plain = d.pop("password", None)
+            if ct:
+                try:
+                    d["password"] = _decrypt_dest_password(ct)
+                except (InvalidToken, RuntimeError) as e:
+                    logger.warning("[v38] destination %s password decrypt "
+                                   "failed: %s", d.get("id"), type(e).__name__)
+                    d["password"] = ""
+            elif legacy_plain:
+                # Not migrated yet — pass through so the agent still
+                # works during rollout. Startup migration should have
+                # cleaned this up; log so we notice stragglers.
+                logger.warning("[v38] destination %s carrying legacy "
+                               "plaintext password — startup migration "
+                               "did not sweep it", d.get("id"))
+                d["password"] = legacy_plain
         return {
             "snapshot": latest,
             "destinations": dests,

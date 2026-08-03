@@ -1,6 +1,20 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.38 — SMB destination password at-rest encryption.
+//                  BEFORE: `bk_destinations.password` stored in
+//                  plaintext, readable via mongodump, snapshot ZIPs,
+//                  and any DB-level access. AFTER: Fernet
+//                  (AES-128-CBC + HMAC) ciphertext stored on
+//                  `password_encrypted`, keyed by `BACKUP_DEST_ENC_KEY`
+//                  env var. `agent/pending` decrypts at read time so
+//                  the LAN agent contract is unchanged. Idempotent
+//                  startup migration sweeps legacy plaintext rows
+//                  into ciphertext (guarded by
+//                  `bk_migrations.v160_3_9_38_dest_password_encryption`
+//                  marker). Manual re-run at
+//                  `POST /api/backup/admin/migrate-destination-passwords`.
+//                  Backend-only patch — no FE changes required.
 // v160.3.9.37 — Backup dashboard clarity fix.
 //                  1. Relabelled the "NAS disk" gauge to "Backup
 //                     agent disk" — the numbers come from the
@@ -125,4 +139,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.37';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.38';
