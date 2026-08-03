@@ -206,18 +206,31 @@ function WorkerPhoto({ worker, canEdit, onChanged }) {
         <input
           ref={fileRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept="image/*"
           onChange={onFileChange}
           data-testid="worker-avatar-file-input"
           className="hidden"
         />
       )}
-      {/* v160.3.9.34.2 — Camera capture entry. Only rendered when the
-          browser exposes `mediaDevices.getUserMedia` AND the viewer has
-          edit permission. Clicking opens the reusable CameraCaptureModal;
-          on "Use this photo" the returned File flows through the existing
-          `doUpload()` (same server-side validation + zero-orphan). */}
-      {canEdit && hasCamera && (
+      {/* v160.3.9.34.3 — Explicit "Upload Photo" button. Previously the
+          only affordance was clicking the avatar itself, which users
+          could not find. This is a clearly labeled button so the upload
+          path is obvious. */}
+      {canEdit && (
+        <button
+          type="button"
+          onClick={() => fileRef.current?.click()}
+          disabled={busy}
+          data-testid="worker-avatar-upload-btn"
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#1e4a8c] text-white text-[11px] font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60"
+        >
+          <Upload size={13} /> Upload Photo
+        </button>
+      )}
+      {/* v160.3.9.34.3 — Camera capture temporarily hidden per user
+          request. Kept in tree behind a false-gated conditional so the
+          wiring stays intact for a future toggle. */}
+      {false && canEdit && hasCamera && (
         <button
           type="button"
           onClick={() => setCameraOpen(true)}

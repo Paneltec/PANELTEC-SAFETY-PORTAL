@@ -226,35 +226,116 @@ function EditSummaryPill({ tone = 'neutral', children, testid, title }) {
 
 // v160.3.4c — Photo for the EditModal header. Mirrors WorkerViewModal.WorkerPhoto
 // so both entry points render the same headshot. Falls back to a monogram tile.
+// v160.3.9.34.3 — Edit-modal avatar tile with a clearly labeled
+// "Upload Photo" button. Previously this was a display-only 56×56
+// thumbnail with no upload affordance — users couldn't find how to
+// add a worker photo from the Edit modal. This is now a self-
+// contained uploader: avatar preview + <input type="file"> styled as
+// an obvious button. Uploads through POST /api/workers/{id}/photo
+// (same endpoint as the view drawer). On success the local state
+// updates so the avatar refreshes immediately without closing the
+// modal.
 function EditWorkerPhoto({ worker }) {
+  const can = useCan();
+  const canEdit = can('workers', 'edit');
+  // Local overrides so we can refresh the avatar without waiting for
+  // the parent modal to refetch.
+  const [photoUrl, setPhotoUrl] = React.useState(worker?.photo_url || null);
+  const [photoGridfsId, setPhotoGridfsId] = React.useState(worker?.photo_gridfs_id || null);
   const [src, setSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const fileRef = React.useRef(null);
+
+  // Reload the download-token URL whenever the effective photo changes.
   React.useEffect(() => {
     let alive = true;
-    if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
-    filesUrl(worker.photo_url)
+    setBroken(false);
+    if (!photoUrl) { setSrc(null); return () => { alive = false; }; }
+    const bust = photoGridfsId ? `?v=${photoGridfsId}` : '';
+    filesUrl(`${photoUrl}${bust}`)
       .then((u) => { if (alive) setSrc(u); })
       .catch(() => { if (alive) setBroken(true); });
     return () => { alive = false; };
-  }, [worker?.photo_url]);
-  if (!worker?.photo_url || broken) {
-    return (
-      <div
-        className="w-14 h-14 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-base shrink-0"
-        data-testid="worker-edit-photo-placeholder"
-      >
-        {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
-      </div>
-    );
-  }
+  }, [photoUrl, photoGridfsId]);
+
+  const doUpload = async (file) => {
+    if (!file || busy || !worker?.id) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image too large — max 10MB'); return;
+    }
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type || '')) {
+      toast.error('Please upload a JPEG, PNG or WebP image');
+      return;
+    }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/workers/${worker.id}/photo`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPhotoUrl(data.photo_url || null);
+      setPhotoGridfsId(data.photo_gridfs_id || null);
+      toast.success('Photo updated');
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setBusy(false); }
+  };
+
+  const onFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) doUpload(f);
+    // Reset so the same file can be re-picked after an error.
+    e.target.value = '';
+  };
+
+  const hasPhoto = !!photoUrl && !broken;
+
   return (
-    <img
-      src={src || ''}
-      alt=""
-      onError={() => setBroken(true)}
-      className="w-14 h-14 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
-      data-testid="worker-edit-photo"
-    />
+    <div className="flex flex-col items-center gap-1.5 shrink-0" data-testid="worker-edit-photo-block">
+      {hasPhoto ? (
+        <img
+          src={src || ''}
+          alt=""
+          onError={() => setBroken(true)}
+          className="w-14 h-14 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
+          data-testid="worker-edit-photo"
+        />
+      ) : (
+        <div
+          className="w-14 h-14 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-base shrink-0"
+          data-testid="worker-edit-photo-placeholder"
+        >
+          {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
+        </div>
+      )}
+      {canEdit && (
+        <>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            onChange={onFileChange}
+            data-testid="worker-edit-photo-file-input"
+            className="hidden"
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={busy}
+            data-testid="worker-edit-upload-photo-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e4a8c] text-white text-[11px] font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60"
+          >
+            {busy ? (
+              <><Loader2 size={12} className="animate-spin" /> Uploading…</>
+            ) : (
+              <><Upload size={12} /> Upload Photo</>
+            )}
+          </button>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -785,6 +866,47 @@ function IdCardSection({ worker, canEdit }) {
   // `expand.src` is the image URL, `expand.title` populates the caption.
   const [expand, setExpand] = useState(null);
   const closeExpand = () => setExpand(null);
+  // v160.3.9.34.3 — Inline "Upload Photo" button beneath the ID card
+  // photo tile. Local override state so the tile refreshes immediately
+  // on successful upload without waiting for the parent modal to
+  // refetch. Reuses the same POST /workers/{id}/photo endpoint as the
+  // edit-modal header uploader.
+  const [photoUrlOverride, setPhotoUrlOverride] = useState(null);
+  const [photoGridfsIdOverride, setPhotoGridfsIdOverride] = useState(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoFileRef = React.useRef(null);
+  const effectiveWorker = {
+    ...worker,
+    photo_url: photoUrlOverride ?? worker.photo_url,
+    photo_gridfs_id: photoGridfsIdOverride ?? worker.photo_gridfs_id,
+  };
+  const uploadIdCardPhoto = async (file) => {
+    if (!file || photoUploading || !worker?.id) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image too large — max 10MB'); return;
+    }
+    if (!/^image\/(jpeg|jpg|png|webp)$/i.test(file.type || '')) {
+      toast.error('Please upload a JPEG, PNG or WebP image'); return;
+    }
+    setPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/workers/${worker.id}/photo`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setPhotoUrlOverride(data.photo_url || null);
+      setPhotoGridfsIdOverride(data.photo_gridfs_id || null);
+      toast.success('Photo updated');
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setPhotoUploading(false); }
+  };
+  const onIdCardPhotoFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) uploadIdCardPhoto(f);
+    e.target.value = '';
+  };
   // scan_token is server-seeded; the list endpoint returns it. Lazy backfill
   // in the PDF endpoint covers any edge case where a worker has no token yet.
   const token = worker.scan_token || '';
@@ -886,10 +1008,11 @@ function IdCardSection({ worker, canEdit }) {
       <div className="grid md:grid-cols-[160px_160px_1fr] gap-4">
         {/* v160.3.5a — printable-ID look: worker photo on the left, QR on the right */}
         {/* v160.3.9.34.2 — Photo tile now tap-to-expand into a lightbox */}
+        {/* v160.3.9.34.3 — Inline "Upload Photo" button under the photo tile */}
         <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
              data-testid="id-card-photo">
           <IdCardPhoto
-            worker={worker}
+            worker={effectiveWorker}
             onExpand={(src) => setExpand({
               src,
               alt: `${[worker.first_name, worker.last_name].filter(Boolean).join(' ') || 'Worker'} photo`,
@@ -901,6 +1024,31 @@ function IdCardSection({ worker, canEdit }) {
                title={[worker.first_name, worker.last_name].filter(Boolean).join(' ')}>
             {[worker.first_name, worker.last_name].filter(Boolean).join(' ') || '—'}
           </div>
+          {canEdit && (
+            <>
+              <input
+                ref={photoFileRef}
+                type="file"
+                accept="image/*"
+                onChange={onIdCardPhotoFileChange}
+                data-testid="id-card-photo-file-input"
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => photoFileRef.current?.click()}
+                disabled={photoUploading}
+                data-testid="id-card-upload-photo-btn"
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#1e4a8c] text-white text-[10px] font-semibold uppercase tracking-wider hover:bg-[#143263] disabled:opacity-60"
+              >
+                {photoUploading ? (
+                  <><Loader2 size={11} className="animate-spin" /> Uploading…</>
+                ) : (
+                  <><Upload size={11} /> Upload Photo</>
+                )}
+              </button>
+            </>
+          )}
         </div>
         {/* QR preview tile — v160.3.9.34.2 tap-to-expand */}
         <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"

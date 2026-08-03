@@ -487,7 +487,13 @@ def _sniff_mime(head: bytes) -> Optional[str]:
 
 
 def _fs_bucket() -> AsyncIOMotorGridFSBucket:
-    return AsyncIOMotorGridFSBucket(db.client[db.name])
+    # v160.3.9.34.3 — Must match the reader bucket in
+    # `simpro_zip_import.py::_fs_bucket()` (`bucket_name="bk_fs"`).
+    # Previously we wrote to the default `fs` bucket, so blobs uploaded
+    # via `POST /workers/{id}/photo` were unreachable via
+    # `GET /workers/{id}/photo/{gridfs_id}` and the avatar 404'd after
+    # every upload.
+    return AsyncIOMotorGridFSBucket(db.client[db.name], bucket_name="bk_fs")
 
 
 def _canonicalise_image(raw: bytes) -> tuple[bytes, str, dict]:

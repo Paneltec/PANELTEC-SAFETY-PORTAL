@@ -1,6 +1,19 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.34.3 — Explicit "Upload Photo" button on the Edit worker
+//                  modal header and the read-only view drawer. The
+//                  previous versions only surfaced a clickable avatar
+//                  (view drawer) or no upload UI at all (edit modal),
+//                  so users could not find how to add a photo. New
+//                  self-contained `<EditWorkerPhoto>` uploader lives
+//                  in `Workers.jsx` — plain `<input type="file"
+//                  accept="image/*">` styled as a labeled button, no
+//                  feature detection, no conditional hiding. Wired to
+//                  the existing POST /api/workers/{id}/photo endpoint.
+//                  On success the avatar refreshes immediately without
+//                  closing the modal. Camera button hidden in-tree
+//                  behind a false-gated conditional per user request.
 // v160.3.9.34.2 — Camera capture for the worker avatar uploader + ID Card
 //                  tap-to-expand. New `<CameraCaptureModal>` (getUserMedia →
 //                  live preview → Capture/Retake/Switch/Close → JPEG File
@@ -26,4 +39,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.34.2';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.34.3';
