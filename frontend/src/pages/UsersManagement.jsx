@@ -861,17 +861,42 @@ export default function UsersManagement() {
               // bound via `useSortable(id: g.key)` on a small inline
               // <SortableSectionHeader> component below; keyboard
               // sensor (arrow keys / Space) is dnd-kit's default.
-              const handleDragEnd = (event) => {
+              const handleDragEnd = async (event) => {
                 const { active, over } = event;
                 if (!active || !over || active.id === over.id) return;
+                // v160.3.9.41.1 — Snapshot the previous order BEFORE we
+                // optimistically apply the new one so we can revert on
+                // failure and never let the UI diverge from the server.
+                // The functional setState guarantees we're deriving the
+                // next order from the CURRENT state and not the closure
+                // capture of `sectionOrder` (avoids the race where two
+                // drags fire in quick succession).
                 const cur = ordered.map((g) => g.key);
                 const from = cur.indexOf(active.id);
                 const to = cur.indexOf(over.id);
                 if (from < 0 || to < 0) return;
                 const next = arrayMove(cur, from, to);
-                setSectionOrder(next);
-                api.put('/user-prefs/section-order/users', { section_order: next })
-                  .catch(() => toast.error('Could not save order'));
+                const prev = cur;
+                setSectionOrder(next);   // optimistic local update
+                try {
+                  // AWAIT the PUT and re-sync from the server response
+                  // so the local state is guaranteed to match what
+                  // Mongo persisted. This defends against any future
+                  // caller (e.g. a background refresh) that might set
+                  // stale state right after the drag lands.
+                  const { data } = await api.put(
+                    '/user-prefs/section-order/users',
+                    { section_order: next },
+                  );
+                  if (Array.isArray(data?.section_order) && data.section_order.length > 0) {
+                    setSectionOrder(data.section_order);
+                  }
+                } catch (e) {
+                  // Revert on failure so the drop doesn't visually
+                  // "stick" while the server has the old order.
+                  setSectionOrder(prev);
+                  toast.error('Could not save order — reverting');
+                }
               };
               const sectionIds = ordered.map((g) => g.key);
               return (

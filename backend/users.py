@@ -190,36 +190,94 @@ async def list_users(
     # match: simpro_employee_id first (11/13 hit rate observed), email
     # fallback second (1/13 additional). Users with no matching worker
     # keep photo_url=None → FE falls back to initial-avatar.
+    #
+    # v160.3.9.41.1 — NAME fallback added when neither sid nor email
+    # produce a hit. Some orgs (e.g. the current admin org) sync users
+    # with generic role-based email addresses while workers keep their
+    # personal-name email, so the sid + email path returns 0 links.
+    # The name path normalises both sides (lowercase, punctuation
+    # stripped, whitespace collapsed) and accepts both "First Last"
+    # and "Last First" orderings — Simpro exports frequently arrive
+    # `LASTNAME Firstname`. Ambiguity guard: if a normalised user
+    # name matches 2+ workers, DO NOT link (leaving photo_url null is
+    # always safer than attaching the wrong photo). Cross-org
+    # isolation preserved — the same `org_id` filter applies.
     sids = [d.get("simpro_employee_id") for d in docs if d.get("simpro_employee_id")]
     emails = [(d.get("email") or "").lower().strip() for d in docs if d.get("email")]
+
+    def _norm_name(*parts: Optional[str]) -> str:
+        raw = " ".join(str(p or "") for p in parts).strip().lower()
+        # Strip common name punctuation.
+        for ch in (".", ",", "'", "`"):
+            raw = raw.replace(ch, "")
+        # Collapse internal whitespace.
+        return " ".join(raw.split())
+
+    def _user_name_keys(u: dict) -> tuple[str, str]:
+        """Return two candidate normalised keys per user: 'first last'
+        and 'last first' so the match tolerates Simpro's LAST FIRST
+        capitalisation. Returns ('', '') if the user has no useful
+        name fields."""
+        fn = (u.get("first_name") or "").strip()
+        ln = (u.get("last_name") or "").strip()
+        if fn or ln:
+            return (_norm_name(fn, ln), _norm_name(ln, fn))
+        # Fall back to a single "name" / "full_name" field. Best-effort
+        # split into first/last on the first whitespace so the reversed
+        # key still works.
+        full = (u.get("name") or u.get("full_name") or "").strip()
+        if not full:
+            return ("", "")
+        tokens = full.split()
+        if len(tokens) < 2:
+            return (_norm_name(full), _norm_name(full))
+        return (_norm_name(*tokens), _norm_name(*reversed(tokens)))
+
     photo_by_sid: Dict[str, str] = {}
     photo_by_email: Dict[str, str] = {}
-    if sids or emails:
+    photo_by_name: Dict[str, str] = {}      # unique-name → photo_url
+    # v41.1 — Ambiguity guard: track the SET of distinct worker ids per
+    # normalised name key. A key with more than one distinct worker id
+    # is ambiguous and must NOT auto-link (safer to show no avatar
+    # than the wrong one). Counting distinct workers (not raw hits)
+    # avoids off-by-one bugs where a single worker's forward + reversed
+    # keys inflate the count.
+    _workers_by_name: Dict[str, set] = {}
+    if sids or emails or any(_user_name_keys(d)[0] for d in docs):
+        # Now the worker fetch has to include names too, and can no
+        # longer restrict on the (sid, email) OR — pulling the full
+        # in-org workers-with-photos set is still cheap (< 200 rows
+        # per org observed) and lets us compute the name index
+        # in Python without a second round-trip.
         worker_q: Dict[str, Any] = {
             "org_id": user["org_id"],
             "photo_url": {"$exists": True, "$nin": [None, ""]},
             "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
         }
-        or_clauses: List[Dict[str, Any]] = []
-        if sids:
-            or_clauses.append({"simpro_employee_id": {"$in": sids}})
-        if emails:
-            or_clauses.append({"email": {"$in": emails}})
-        if or_clauses:
-            worker_q["$and"] = [{"$or": or_clauses}]
         async for w in db.workers.find(
             worker_q,
-            {"_id": 0, "simpro_employee_id": 1, "email": 1, "photo_url": 1},
+            {"_id": 0, "id": 1, "simpro_employee_id": 1, "email": 1,
+             "photo_url": 1, "first_name": 1, "last_name": 1},
         ):
             if w.get("simpro_employee_id"):
                 photo_by_sid[str(w["simpro_employee_id"])] = w["photo_url"]
             em = (w.get("email") or "").lower().strip()
             if em:
                 photo_by_email.setdefault(em, w["photo_url"])
+            # Name index: both orderings share the same worker.
+            fn = (w.get("first_name") or "").strip()
+            ln = (w.get("last_name") or "").strip()
+            wid = w.get("id") or w.get("simpro_employee_id") or w.get("photo_url")
+            if fn or ln:
+                for key in (_norm_name(fn, ln), _norm_name(ln, fn)):
+                    if not key:
+                        continue
+                    _workers_by_name.setdefault(key, set()).add(wid)
+                    photo_by_name.setdefault(key, w["photo_url"])
     out = []
     for d in docs:
         rendered = _user_out(d, await has_any_overrides(d["id"]))
-        # Prefer sid match; fall back to email; keep None on miss.
+        # Prefer sid match; fall back to email; then name; else None.
         if not rendered.get("photo_url"):
             sid = d.get("simpro_employee_id")
             if sid and str(sid) in photo_by_sid:
@@ -228,6 +286,36 @@ async def list_users(
                 em = (d.get("email") or "").lower().strip()
                 if em in photo_by_email:
                     rendered["photo_url"] = photo_by_email[em]
+                else:
+                    # v41.1 — name fallback. Try "First Last" first,
+                    # then "Last First". Ambiguity guard: only link
+                    # when the normalised key matches EXACTLY ONE
+                    # worker (counted per key across both orderings,
+                    # but the SAME worker contributes 2 counts so the
+                    # threshold is "<= 2 hits with the same worker").
+                    # We keep it simple by capping the count at 2
+                    # (self+reversed) and rejecting >2.
+                    keys = _user_name_keys(d)
+                    matched = None
+                    for k in keys:
+                        if not k:
+                            continue
+                        # Ambiguity guard: count DISTINCT worker ids for
+                        # this normalised key (a single worker still
+                        # gets 1 even though it contributes both its
+                        # forward and reversed key form).
+                        distinct = len(_workers_by_name.get(k, set()))
+                        if distinct > 1:
+                            log.warning(
+                                "[v41.1] name enrichment SKIPPED — "
+                                "ambiguous key=%r matches %d workers "
+                                "(user=%s)", k, distinct, d.get("id"))
+                            matched = None
+                            break
+                        if k in photo_by_name and matched is None:
+                            matched = photo_by_name[k]
+                    if matched:
+                        rendered["photo_url"] = matched
         out.append(rendered)
     return out
 
