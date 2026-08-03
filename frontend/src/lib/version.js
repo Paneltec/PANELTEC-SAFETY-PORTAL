@@ -1,6 +1,51 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.39 — Introduce `local_agent` backup destination kind.
+//                  When the LAN backup agent runs INSIDE the NAS's
+//                  own Docker environment, the SMB mirror step
+//                  is redundant AND was failing on `Connection
+//                  refused` (UGREEN SMB service off). New
+//                  `kind: "local_agent"` + `local_path` (default
+//                  `/data`) on `bk_destinations`. Backend:
+//                  `GET /api/backup/agent/pending` omits SMB
+//                  fields for local_agent rows and returns
+//                  `mode: "local"` + `local_path` instead.
+//                  `POST /api/backup/agent/report` only bumps
+//                  `last_written_at` when the reported
+//                  `target_path` actually starts with the
+//                  configured `local_path`. Create/update
+//                  destination endpoints REJECT SMB fields on a
+//                  local_agent row with HTTP 400 for a clean
+//                  contract. Idempotent startup migration
+//                  converts destination
+//                  `5e6a5346-2207-409d-ab11-c702651223fa`
+//                  (Office UGREEN tower) to local_agent and
+//                  clears any stale SMB mirror telemetry
+//                  (last_mirror_status, last_mirror_error).
+//                  Frontend `<MirrorStatusCards>` gains a
+//                  fourth state — "DELIVERED (LOCAL MOUNT)"
+//                  in calm blue-green — with an
+//                  "Awaiting first write" amber sibling. SMB
+//                  failure surface suppressed for local_agent
+//                  rows.
+//                Bundled fixes (same version bump — spotted in
+//                the same screenshot):
+//                  • Refresh button on LAST LAN DELIVERY was
+//                    firing `load` but had no tactile feedback;
+//                    now wired through a `handleRefreshClick`
+//                    that adds an `isRefreshing` state, disables
+//                    the button, spins the icon, and enforces a
+//                    500ms visible floor so a fast round-trip
+//                    still registers as a click.
+//                  • "Reported NaN d ago" subline under the
+//                    Backup agent disk gauge — the local
+//                    `fmtAge(min)` was being fed an ISO
+//                    timestamp. New module-level
+//                    `safeRelativeTime(iso)` helper returns
+//                    "—" on any parse failure and is now used
+//                    everywhere in BackupTab.jsx that renders a
+//                    relative time. "NaN" can no longer surface.
 // v160.3.9.38 — SMB destination password at-rest encryption.
 //                  BEFORE: `bk_destinations.password` stored in
 //                  plaintext, readable via mongodump, snapshot ZIPs,
@@ -139,4 +184,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.38';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.39';

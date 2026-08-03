@@ -397,15 +397,26 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
 class BackupDestination(BaseModel):
     """A target the operator has configured to RECEIVE snapshots.
     For UGREEN/Synology/QNAP we store the SMB-mount info that the
-    AGENT will use; the cloud backend itself never connects."""
+    AGENT will use; the cloud backend itself never connects.
+
+    v160.3.9.39 — new `local_agent` kind. When the LAN agent is
+    running INSIDE the NAS's own Docker environment, the SMB mirror
+    step is redundant (the agent's `/data` is already the target
+    filesystem). For `kind="local_agent"` the destination carries
+    `local_path` (default `/data`) instead of `host/share/username/
+    password_encrypted`, and the agent contract switches to
+    `mode: "local"` — see `agent_pending` below."""
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     name: str                                      # e.g. "Office UGREEN tower"
-    kind: str = "smb_lan"                          # smb_lan | s3 | b2 | gdrive | local
+    kind: str = "smb_lan"                          # smb_lan | local_agent | s3 | b2 | gdrive | local
     host: Optional[str] = None                     # 192.168.15.165
     share: Optional[str] = None                    # e.g. "Backups"
     path_prefix: Optional[str] = "/paneltec-hub"   # subfolder on share
     username: Optional[str] = None
+    # v160.3.9.39 — target directory on the agent's own filesystem
+    # when kind == "local_agent". `None` for every other kind.
+    local_path: Optional[str] = None               # e.g. "/data"
     # Password is never returned to the UI after first save.
     password_set: bool = False
     enabled: bool = True
@@ -489,6 +500,90 @@ def install(app, db, require_admin):
         except Exception as e:
             logger.exception("[v38] destination-password migration failed "
                              "at startup: %s", e)
+
+    # ─────────────────────────────────────────────────────────
+    # v160.3.9.39 — One-shot migration: convert the "Office UGREEN
+    # tower" destination (id `5e6a5346-2207-409d-ab11-c702651223fa`)
+    # from `smb_lan` to `local_agent`. The LAN agent is running
+    # inside the NAS's own Docker environment, so the SMB mirror
+    # step is redundant AND failing on "Connection refused"
+    # (UGREEN SMB service off). This migration:
+    #   • sets kind → "local_agent", local_path → "/data"
+    #   • $unset SMB fields: host, share, username,
+    #                        password_encrypted, password, password_set
+    #   • clears any stale mirror-error fields
+    #     (last_mirror_status, last_mirror_error) so the UI
+    #     doesn't ghost the old "Connection refused" text
+    #   • idempotent via a `bk_migrations` marker
+    # ─────────────────────────────────────────────────────────
+    _V39_LOCAL_AGENT_DEST_ID = "5e6a5346-2207-409d-ab11-c702651223fa"
+
+    @app.on_event("startup")
+    async def _v39_local_agent_destination_migration():
+        try:
+            marker = await db.bk_migrations.find_one(
+                {"id": "v160_3_9_39_local_agent_dest_migration"},
+                {"_id": 0, "id": 1, "completed_at": 1},
+            )
+            if marker and marker.get("completed_at"):
+                return
+            dest = await db.bk_destinations.find_one(
+                {"id": _V39_LOCAL_AGENT_DEST_ID}, {"_id": 0, "id": 1, "kind": 1},
+            )
+            if not dest:
+                # Nothing to migrate on this environment. Record the
+                # marker so we don't keep polling every boot.
+                await db.bk_migrations.update_one(
+                    {"id": "v160_3_9_39_local_agent_dest_migration"},
+                    {"$set": {"completed_at": _now_iso(),
+                              "outcome": "target_dest_absent"}},
+                    upsert=True,
+                )
+                return
+            if dest.get("kind") == "local_agent":
+                # Already migrated by a prior run.
+                await db.bk_migrations.update_one(
+                    {"id": "v160_3_9_39_local_agent_dest_migration"},
+                    {"$set": {"completed_at": _now_iso(),
+                              "outcome": "already_local_agent"}},
+                    upsert=True,
+                )
+                return
+            await db.bk_destinations.update_one(
+                {"id": _V39_LOCAL_AGENT_DEST_ID},
+                {
+                    "$set": {
+                        "kind": "local_agent",
+                        "local_path": "/data",
+                    },
+                    "$unset": {
+                        "host": "",
+                        "share": "",
+                        "username": "",
+                        "password_encrypted": "",
+                        "password": "",
+                        "password_set": "",
+                        # Clear any stale SMB mirror telemetry so the
+                        # UI doesn't render a ghost "Connection
+                        # refused" error next to a green local-mount
+                        # card.
+                        "last_mirror_status": "",
+                        "last_mirror_error": "",
+                    },
+                },
+            )
+            await db.bk_migrations.update_one(
+                {"id": "v160_3_9_39_local_agent_dest_migration"},
+                {"$set": {"completed_at": _now_iso(),
+                          "outcome": "converted",
+                          "dest_id": _V39_LOCAL_AGENT_DEST_ID}},
+                upsert=True,
+            )
+            logger.info("[v39] destination %s converted to local_agent "
+                        "(local_path=/data)", _V39_LOCAL_AGENT_DEST_ID)
+        except Exception as e:
+            logger.exception("[v39] local_agent destination migration "
+                             "failed at startup: %s", e)
 
     # ------------------------------------------------------------
     # SNAPSHOT  — admin: trigger; agent: list & download.
@@ -1068,10 +1163,46 @@ def install(app, db, require_admin):
         ).to_list(100)
         return rows
 
+    # ─────────────────────────────────────────────────────────
+    # v160.3.9.39 — validators for the new `local_agent` kind.
+    # A local_agent destination bypasses the SMB mirror step (the
+    # LAN agent writes to its own `/data` mount instead), so its
+    # shape MUST be different from smb_lan. We reject any incoming
+    # SMB field on a local_agent destination with 400 rather than
+    # silently ignoring it, so future admins get a clear error
+    # instead of a mysteriously-inert config field.
+    # ─────────────────────────────────────────────────────────
+    _SMB_ONLY_FIELDS = ("host", "share", "username")
+
+    def _validate_local_agent_shape(payload: Dict[str, Any],
+                                    password: Optional[str]) -> None:
+        """Raise HTTPException(400) if a local_agent destination carries
+        any SMB-only field or a password. Called from both
+        POST /destinations and PUT /destinations/{did}."""
+        if payload.get("kind") != "local_agent":
+            return
+        bad: List[str] = []
+        for k in _SMB_ONLY_FIELDS:
+            if payload.get(k) not in (None, ""):
+                bad.append(k)
+        if password:
+            bad.append("password")
+        if bad:
+            raise HTTPException(
+                400,
+                "local_agent destinations must not carry SMB fields; "
+                f"remove: {', '.join(bad)}",
+            )
+        # Default the local_path so the agent doesn't have to.
+        if not payload.get("local_path"):
+            payload["local_path"] = "/data"
+
     @api_router.post("/destinations", dependencies=[Depends(require_admin)])
     async def create_destination(d: BackupDestination,
                                  password: Optional[str] = Query(None)):
         doc = d.model_dump()
+        # v160.3.9.39 — enforce local_agent shape before touching Mongo.
+        _validate_local_agent_shape(doc, password)
         # v160.3.9.38 — Password is now stored encrypted at rest
         # under `password_encrypted`. The plaintext key is never
         # written. `_encrypt_dest_password()` raises RuntimeError if
@@ -1102,6 +1233,9 @@ def install(app, db, require_admin):
         if not existing:
             raise HTTPException(404, "destination not found")
         payload = d.model_dump()
+        # v160.3.9.39 — enforce local_agent shape (rejects SMB fields
+        # + password with 400 before we touch Mongo).
+        _validate_local_agent_shape(payload, password)
         # Preserve immutables.
         payload["id"] = existing["id"]
         payload["created_at"] = existing.get("created_at") or _now_iso()
@@ -1221,6 +1355,19 @@ def install(app, db, require_admin):
             {"enabled": True}, {"_id": 0},
         ).to_list(100)
         for d in dests:
+            # v160.3.9.39 — for `local_agent` destinations the agent
+            # writes to its OWN filesystem, so we strip every SMB
+            # field (defensive: they should never be present on a
+            # local_agent row, but a mid-migration row might still
+            # carry them) and switch the contract to `mode: "local"`
+            # + `local_path`. The agent code branches on `mode`.
+            if d.get("kind") == "local_agent":
+                for _smb_k in ("host", "share", "username",
+                               "password", "password_encrypted"):
+                    d.pop(_smb_k, None)
+                d["mode"] = "local"
+                d.setdefault("local_path", "/data")
+                continue
             ct = d.pop("password_encrypted", None)
             # Belt: even if a legacy plaintext key survived a migration
             # miss, strip it before decrypt+re-emit.
@@ -1240,6 +1387,7 @@ def install(app, db, require_admin):
                                "plaintext password — startup migration "
                                "did not sweep it", d.get("id"))
                 d["password"] = legacy_plain
+            d["mode"] = "smb"
         return {
             "snapshot": latest,
             "destinations": dests,
@@ -1291,11 +1439,34 @@ def install(app, db, require_admin):
                 }},
             )
         # Update destination ship status.
+        # v160.3.9.39 — For `local_agent` destinations, the agent
+        # writes into its own `local_path`. Only bump
+        # `last_written_at` when `target_path` actually starts with
+        # that configured prefix — protects against a
+        # mis-configured agent silently reporting "delivered" for a
+        # path outside the intended target. SMB destinations keep
+        # the previous behaviour (any ok report → bump).
         if report.destination_id and report.status == "ok":
-            await db.bk_destinations.update_one(
+            _dest = await db.bk_destinations.find_one(
                 {"id": report.destination_id},
-                {"$set": {"last_written_at": _now_iso()}},
+                {"_id": 0, "kind": 1, "local_path": 1},
             )
+            _should_bump = True
+            if _dest and _dest.get("kind") == "local_agent":
+                _lp = _dest.get("local_path") or "/data"
+                _tp = report.target_path or ""
+                _should_bump = bool(_tp) and _tp.startswith(_lp)
+                if not _should_bump:
+                    logger.info(
+                        "[v39] local_agent report from dest=%s ignored — "
+                        "target_path=%r does not start with local_path=%r",
+                        report.destination_id, _tp, _lp,
+                    )
+            if _should_bump:
+                await db.bk_destinations.update_one(
+                    {"id": report.destination_id},
+                    {"$set": {"last_written_at": _now_iso()}},
+                )
         return {"ok": True}
 
     @api_router.get("/agent-logs", dependencies=[Depends(require_admin)])
@@ -1579,7 +1750,11 @@ def install(app, db, require_admin):
             {"enabled": True},
             {"_id": 0, "id": 1, "name": 1, "kind": 1, "host": 1,
              "share": 1, "path_prefix": 1, "last_written_at": 1,
-             "nas_disk_usage": 1, "nas_disk_usage_at": 1},
+             "nas_disk_usage": 1, "nas_disk_usage_at": 1,
+             # v160.3.9.39 — expose local_path so the FE's
+             # <MirrorStatusCards> can label the "DELIVERED (local
+             # mount)" chip with the actual target directory.
+             "local_path": 1},
         ).to_list(50)
 
         now = datetime.now(timezone.utc)

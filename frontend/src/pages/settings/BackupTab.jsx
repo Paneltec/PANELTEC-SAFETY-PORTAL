@@ -71,6 +71,26 @@ const fmtAge = (iso) => {
   return `${Math.floor(ms / 86400_000)}d ago`;
 };
 
+// v160.3.9.39 — Belt-and-braces relative-time helper. Returns "—" on
+// any parse failure (null / undefined / non-ISO string / invalid
+// Date). Fixes the "Reported NaN d ago" render regression in
+// <DiskGauge> below, where a local `fmtAge(min)` was accidentally
+// being fed an ISO timestamp. Use this everywhere in this file when
+// rendering "N min/h/d ago" from a possibly-absent timestamp so a
+// future field-name rename can never surface "NaN" to the operator.
+const safeRelativeTime = (iso) => {
+  if (iso == null || iso === "") return "—";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "—";
+  const ms = Date.now() - t;
+  if (!Number.isFinite(ms)) return "—";
+  if (ms < 0) return "just now";
+  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+};
+
 export default function BackupTab() {
   const [snapshots, setSnapshots] = useState([]);
   const [destinations, setDestinations] = useState([]);
@@ -754,6 +774,10 @@ function LanDeliveryCard() {
   const LAN_API = (process.env.REACT_APP_BACKEND_URL || "") + "/api/backup/lan-status";
   const [s, setS] = useState(null);
   const [err, setErr] = useState("");
+  // v160.3.9.39 — tactile feedback for the Refresh pill. Disable +
+  // spin the icon while a fetch is in flight, with a 500 ms floor
+  // so a fast round-trip still registers as a click to the eye.
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -764,6 +788,27 @@ function LanDeliveryCard() {
       setErr(e?.response?.data?.detail || e.message);
     }
   }, [LAN_API]);
+
+  // v160.3.9.39 — user-facing wrapper for the Refresh button. Guarantees
+  // a minimum 500 ms "busy" window so the click always feels tactile,
+  // even when the backend responds in <50 ms on a warm cache.
+  const handleRefreshClick = useCallback(async () => {
+    if (isRefreshing) return;   // debounce double-clicks
+    setIsRefreshing(true);
+    const started = Date.now();
+    try {
+      await load();
+    } finally {
+      const elapsed = Date.now() - started;
+      const remaining = Math.max(0, 500 - elapsed);
+      if (remaining > 0) {
+        setTimeout(() => setIsRefreshing(false), remaining);
+      } else {
+        setIsRefreshing(false);
+      }
+    }
+  }, [isRefreshing, load]);
+
   useEffect(() => {
     load();
     const t = setInterval(load, 30000);
@@ -808,9 +853,20 @@ function LanDeliveryCard() {
     <Section title="Last LAN delivery"
       icon={<Server className="w-4 h-4"/>}
       action={
-        <button type="button" onClick={load} style={btn(ACCENT)}
-          data-testid="backup-lan-refresh">
-          <RefreshCw className="w-3.5 h-3.5"/>Refresh
+        <button
+          type="button"
+          onClick={handleRefreshClick}
+          disabled={isRefreshing}
+          aria-busy={isRefreshing}
+          style={{
+            ...btn(ACCENT),
+            opacity: isRefreshing ? 0.6 : 1,
+            cursor: isRefreshing ? "wait" : "pointer",
+          }}
+          data-testid="backup-lan-refresh"
+          data-refreshing={isRefreshing ? "true" : "false"}>
+          <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? "animate-spin" : ""}`}/>
+          {isRefreshing ? "Refreshing…" : "Refresh"}
         </button>
       }>
       <div
@@ -916,6 +972,16 @@ function LanDeliveryCard() {
 //   • red    "Mirror failing"    — last_failure fresher than last_delivery
 //                                  on an SMB destination
 //   • amber  "Never mirrored"    — no last_delivery matches destination_id
+//
+// v160.3.9.39 — fourth state for `kind === "local_agent"` destinations.
+// The LAN agent runs INSIDE the NAS Docker environment and writes into
+// its own `/data` mount, so there is no SMB mirror step:
+//   • blue-green "Delivered (local mount)" — dest.kind === "local_agent"
+//                                            AND last_written_at is set
+//   • amber      "Awaiting first write"    — dest.kind === "local_agent"
+//                                            AND last_written_at absent
+// SMB failure surface is suppressed for local_agent rows entirely — a
+// stale SMB Connection-refused row would just confuse the operator.
 function MirrorStatusCards({ destinations, lastDelivery, lastFailure }) {
   if (!destinations?.length) return null;
   const parseTs = (iso) => (iso ? Date.parse(iso) || 0 : 0);
@@ -927,41 +993,59 @@ function MirrorStatusCards({ destinations, lastDelivery, lastFailure }) {
     <div style={{ marginTop: 12, display: "grid", gap: 10 }} data-testid="backup-mirror-cards">
       {destinations.map((d) => {
         const isSmb = d.kind === "smb_lan";
-        const targetPath = `//${d.host || "?"}/${d.share || "?"}${d.path_prefix || ""}`;
-        const deliveryMatches = (
-          lastDelivery
-          && lastDelivery.destination_id === d.id
-          // Older deliveries were sometimes stored with destination_id=null.
-          // Fall back to matching by target_path prefix so an SMB delivery
-          // to this destination still counts.
-        ) || (
-          lastDelivery
-          && !lastDelivery.destination_id
-          && lastDelivery.target_path?.startsWith(`//${d.host}/`)
-        );
-        const failureMatches = (
-          lastFailure
-          && lastFailure.destination_id === d.id
-        );
-        let state; // "ok" | "fail" | "never"
-        if (failureMatches
-            && parseTs(lastFailure.received_at) > parseTs(lastDelivery?.received_at)) {
-          state = "fail";
-        } else if (deliveryMatches) {
-          state = "ok";
+        const isLocalAgent = d.kind === "local_agent";
+        const targetPath = isLocalAgent
+          ? (d.local_path || "/data")
+          : `//${d.host || "?"}/${d.share || "?"}${d.path_prefix || ""}`;
+        // v160.3.9.39 — local_agent destinations short-circuit the
+        // SMB-oriented state machine below and get their own two-state
+        // (delivered / awaiting-first-write) treatment.
+        let state; // "ok" | "fail" | "never" | "local" | "local_pending"
+        if (isLocalAgent) {
+          state = d.last_written_at ? "local" : "local_pending";
         } else {
-          state = "never";
+          const deliveryMatches = (
+            lastDelivery
+            && lastDelivery.destination_id === d.id
+            // Older deliveries were sometimes stored with destination_id=null.
+            // Fall back to matching by target_path prefix so an SMB delivery
+            // to this destination still counts.
+          ) || (
+            lastDelivery
+            && !lastDelivery.destination_id
+            && lastDelivery.target_path?.startsWith(`//${d.host}/`)
+          );
+          const failureMatches = (
+            lastFailure
+            && lastFailure.destination_id === d.id
+          );
+          if (failureMatches
+              && parseTs(lastFailure.received_at) > parseTs(lastDelivery?.received_at)) {
+            state = "fail";
+          } else if (deliveryMatches) {
+            state = "ok";
+          } else {
+            state = "never";
+          }
         }
         const palette = {
-          ok:    { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "#fff", label: "MIRRORING OK" },
-          fail:  { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "#fff", label: "MIRROR FAILING" },
-          never: { bg: "#fffbeb", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "#fff", label: "NEVER MIRRORED" },
+          ok:            { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "#fff", label: "MIRRORING OK" },
+          fail:          { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "#fff", label: "MIRROR FAILING" },
+          never:         { bg: "#fffbeb", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "#fff", label: "NEVER MIRRORED" },
+          // v160.3.9.39 — calm blue-green tone for the local-mount
+          // "delivered" state. Distinct from the SMB green so an
+          // operator scanning the tab can see at a glance that this
+          // row is a *different kind of destination*, not just a
+          // second SMB mirror.
+          local:         { bg: "#ecfeff", border: "#0891b2", fg: "#164e63", chip: "#0891b2", chipFg: "#fff", label: "DELIVERED (LOCAL MOUNT)" },
+          local_pending: { bg: "#fffbeb", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "#fff", label: "AWAITING FIRST WRITE" },
         }[state];
         const hasNas = d.nas_disk_usage && Number(d.nas_disk_usage.total) > 0;
         return (
           <div key={d.id}
                data-testid={`mirror-card-${d.id}`}
                data-mirror-state={state}
+               data-dest-kind={d.kind || ""}
                style={{
                  background: palette.bg, borderLeft: `4px solid ${palette.border}`,
                  padding: "12px 14px", borderRadius: 8, color: palette.fg,
@@ -974,13 +1058,28 @@ function MirrorStatusCards({ destinations, lastDelivery, lastFailure }) {
                 fontSize: 9, fontWeight: 900, letterSpacing: "0.16em",
               }}>{palette.label}</span>
               <strong>NAS destination · {d.name}</strong>
-              {isSmb && (
+              {(isSmb || isLocalAgent) && (
                 <span style={{ opacity: 0.75 }}>{targetPath}</span>
               )}
             </div>
             {state === "ok" && d.last_written_at && (
               <div style={{ marginTop: 6 }}>
                 Last mirrored: {new Date(d.last_written_at).toLocaleString()}
+              </div>
+            )}
+            {state === "local" && d.last_written_at && (
+              <div style={{ marginTop: 6 }} data-testid={`mirror-local-written-${d.id}`}>
+                Last write on agent&rsquo;s local mount:{" "}
+                {new Date(d.last_written_at).toLocaleString()}
+                {" · "}
+                <span style={{ opacity: 0.8 }}>{safeRelativeTime(d.last_written_at)}</span>
+              </div>
+            )}
+            {state === "local_pending" && (
+              <div style={{ marginTop: 6, opacity: 0.85 }}>
+                The backup agent runs inside this NAS&rsquo;s Docker environment
+                and writes directly to <code>{targetPath}</code>. Waiting for
+                the first snapshot to be written.
               </div>
             )}
             {state === "fail" && (
@@ -1143,15 +1242,21 @@ function DiskGauge({ usage, reportedAt, agentName, agentLastSeenAgeMin }) {
         }}/>
       </div>
       {reportedAt && !unavailable && (
-        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.5)", marginTop: 2 }}>
-          Reported {fmtAge(reportedAt)}
+        <div style={{ fontSize: 10, color: "rgba(0,0,0,0.5)", marginTop: 2 }}
+             data-testid="backup-disk-reported-at">
+          {/* v160.3.9.39 — was previously calling the local
+              `fmtAge(min)` with an ISO string, which produced
+              "Reported NaN d ago". Use the module-level
+              `safeRelativeTime(iso)` helper — returns "—" on any
+              parse failure so "NaN" can never render. */}
+          Reported {safeRelativeTime(reportedAt)}
         </div>
       )}
       {unavailable && (
         <div style={{ fontSize: 10, color: "#b45309", marginTop: 2 }}
              data-testid="backup-disk-unavailable-hint">
           {reportedAt
-            ? <>Last successful reading {fmtAge(reportedAt)} · hover the label for causes.</>
+            ? <>Last successful reading {safeRelativeTime(reportedAt)} · hover the label for causes.</>
             : <>Agent has not reported a disk reading yet · hover the label for causes.</>}
         </div>
       )}
