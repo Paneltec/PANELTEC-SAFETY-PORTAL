@@ -72,7 +72,7 @@ import { CSS as DndCSS } from '@dnd-kit/utilities';
 // URL 401s server-side and the browser silently falls back to the
 // initials tile — the exact failure the v41.1 diagnostic caught
 // (13 users enriched by backend, 0 <img> avatars visible in DOM).
-function UserAvatarImage({ rawSrc, alt, testId }) {
+function UserAvatarImage({ rawSrc, alt, testId, className }) {
   const [resolvedSrc, setResolvedSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
   React.useEffect(() => {
@@ -86,10 +86,13 @@ function UserAvatarImage({ rawSrc, alt, testId }) {
   }, [rawSrc]);
   if (!resolvedSrc || broken) return null;
   return (
-    <AvatarImage
+    <img
       src={resolvedSrc}
       alt={alt}
+      loading="lazy"
+      decoding="async"
       onError={() => setBroken(true)}
+      className={className || "w-14 h-14 rounded-full object-cover border border-slate-200 bg-white shrink-0"}
       data-testid={testId}
     />
   );
@@ -377,7 +380,9 @@ export default function UsersManagement() {
   // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
   // (URL persistence is a later polish).
   const [sectionOpen, setSectionOpen] = useState({});
-  const [sectionSort, setSectionSort] = useState({});
+  // v160.3.9.42.1 — `sectionSort` state retired with the dropdown. Users
+  // & Permissions rows now render in alphabetical (A-Z) order in every
+  // section, per user request.
   // v160.3.9.33.1 — Persisted section order from /user-prefs/section-order/users
   const [sectionOrder, setSectionOrder] = useState([]);  useEffect(() => {
     api.get('/user-prefs/section-order/users')
@@ -509,23 +514,29 @@ export default function UsersManagement() {
       )}
       <td className="px-4 py-1.5">
         <div className="flex items-center gap-2">
-          {/* v160.3.9.33.1 — Photo thumbnail when available, initial fallback otherwise.
-              v160.3.9.41.2 — Route the src through <UserAvatarImage> so it goes
-              through `filesUrl()` (adds the ?token=... signed-download JWT that
-              v40 SEC-004 now requires on files and worker-photo endpoints.
-              Rendering `u.photo_url` directly would 401 on every request and
-              silently fall back to initials — which is exactly what the v41.1
-              diagnostic caught.
-              v160.3.9.42 — Enlarged from h-7 w-7 (28px) to h-14 w-14 (56px) so
-              the photo is legible at row density; initials fallback bumped to
-              text-lg to match. Row vertical padding lift in the parent <tr>
-              accommodates the bigger avatar without pushing columns around. */}
-          <Avatar className="h-14 w-14">
-            {u.photo_url ? (
-              <UserAvatarImage rawSrc={u.photo_url} alt={u.name || u.email || ''} testId={`user-photo-${u.id}`} />
-            ) : null}
-            <AvatarFallback className="text-lg">{(u.name || u.email || '?')[0]}</AvatarFallback>
-          </Avatar>
+          {/* v160.3.9.42.1 — Match the Workers-portal avatar exactly.
+              Shadcn <Avatar> + <AvatarImage> used `aspect-square h-full w-full`
+              WITHOUT `object-cover`, so browsers defaulted to `object-fit: fill`
+              which stretches non-1:1 photos and produces the skew + soft look
+              the user flagged. Workers renders a bare `<img w-10 h-10 rounded-full
+              object-cover border ...>` — no Radix wrapper. We do the same here
+              at 56 px (h-14) so the photo is legible AND crisp. Initials
+              fallback uses the identical square-round + object-cover discipline
+              via a plain <div>. */}
+          {u.photo_url ? (
+            <UserAvatarImage
+              rawSrc={u.photo_url}
+              alt={u.name || u.email || ''}
+              testId={`user-photo-${u.id}`}
+              className="w-14 h-14 rounded-full object-cover border border-slate-200 bg-white shrink-0"
+            />
+          ) : (
+            <div
+              className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-lg font-semibold text-slate-600 shrink-0"
+              data-testid={`user-photo-fallback-${u.id}`}>
+              {(u.name || u.email || '?')[0]}
+            </div>
+          )}
           <div className="min-w-0">
             <div className="font-medium flex items-center gap-1.5 leading-tight">
               <span className="truncate">{u.name}</span>
@@ -865,12 +876,14 @@ export default function UsersManagement() {
                 if (sys) return sys.name;
                 return key.replace(/^custom_/, '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
               };
-              const sortUsers = (arr, mode) => {
+              // v160.3.9.42.1 — Per-section sort dropdown removed. Users
+              // asked for a single deterministic ordering everywhere so
+              // admins don't have to remember which section is on which
+              // mode. Alphabetical A-Z on `name` is the only sort now.
+              // Case-insensitive via `localeCompare` default options.
+              const sortUsers = (arr) => {
                 const s = [...arr];
-                if (mode === 'name_desc') s.sort((a,b) => (b.name || '').localeCompare(a.name || ''));
-                else if (mode === 'last_login') s.sort((a,b) => (b.last_login_at || '').localeCompare(a.last_login_at || ''));
-                else if (mode === 'created') s.sort((a,b) => (b.created_at || '').localeCompare(a.created_at || ''));
-                else s.sort((a,b) => (a.name || '').localeCompare(b.name || ''));
+                s.sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }));
                 return s;
               };
               // v160.3.9.33.1 — Apply user's saved section-order pref if
@@ -948,7 +961,6 @@ export default function UsersManagement() {
                   <SortableContext items={sectionIds} strategy={verticalListSortingStrategy}>
                     {ordered.flatMap((g, gi) => {
                 const open = sectionOpen[g.key] !== false;
-                const sort = sectionSort[g.key] || 'name_asc';
                 const colour = roleColour(g.key);
                 const rows = [
                   <SortableSectionHeaderTr key={`sec-${g.key}`}
@@ -983,22 +995,14 @@ export default function UsersManagement() {
                             Reset order
                           </button>
                         )}
-                        <div className="ml-auto">
-                          <select value={sort} onChange={(e) => setSectionSort((s) => ({ ...s, [g.key]: e.target.value }))}
-                            className="text-[11px] border border-slate-300 rounded-md px-2 py-0.5 bg-white/80"
-                            data-testid={`role-section-sort-${g.key}`}>
-                            <option value="name_asc">Name A-Z</option>
-                            <option value="name_desc">Name Z-A</option>
-                            <option value="last_login">Last login</option>
-                            <option value="created">Date created</option>
-                          </select>
-                        </div>
+                        {/* v160.3.9.42.1 — per-section sort <select> removed.
+                            Alphabetical A-Z is now the single source of truth. */}
                       </div>
                     )}
                   </SortableSectionHeaderTr>
                 ];
                 if (open) {
-                  for (const u of sortUsers(g.users, sort)) rows.push(renderUserRow(u));
+                  for (const u of sortUsers(g.users)) rows.push(renderUserRow(u));
                 }
                 return rows;
               })}

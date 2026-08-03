@@ -265,4 +265,40 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.42';
+// v160.3.9.42.1 — Users & Permissions UX patch (two bugs, one version).
+//                  Bug 1 — Skewed / soft avatars on the Users table:
+//                    Root cause was Shadcn `<AvatarImage>` rendering
+//                    `aspect-square h-full w-full` WITHOUT
+//                    `object-cover`, so the browser defaulted to
+//                    `object-fit: fill` and stretched non-1:1 photos.
+//                    Users.jsx now renders a bare `<img>` at 56 px
+//                    (h-14 w-14) with `rounded-full object-cover
+//                    border border-slate-200 bg-white` — identical
+//                    styling discipline to the Workers portal row
+//                    photo, just larger. Initials fallback follows
+//                    the same square-round + object-cover pattern
+//                    via a plain `<div>`. `UserAvatarImage` wrapper
+//                    from v41.2 preserved (still resolves through
+//                    `filesUrl()` so SEC-004 signed-download JWT
+//                    ships with every request).
+//                  Bug 2 — Per-section sort dropdown removed:
+//                    Every role section now sorts alphabetically
+//                    (A-Z on `name`) as the single deterministic
+//                    order. `sortUsers()` collapsed to one
+//                    `localeCompare({sensitivity:'base'})` pass;
+//                    the four-option `<select>` (Name A-Z / Name
+//                    Z-A / Last login / Date created) and its
+//                    `sectionSort` state are deleted from
+//                    UsersManagement.jsx. Drag-handle section
+//                    reorder (v41) is UNCHANGED — this only
+//                    touches row-within-section ordering.
+// v160.3.9.42 — Users & Permissions polish (v41 follow-up).
+//                  Enlarged user-row avatars from 40 px → 56 px so
+//                  the Simpro-linked photos are legible at glance.
+//                  Also added a defensive `<AuthedImage>` sweep on
+//                  Hazards + SubmissionViewer photo lists — any
+//                  `<img>` pointing at `/api/files/*` or `/api/
+//                  workers/*/photo/*` now flows through the shared
+//                  fetch-with-Bearer + blob URL helper so nothing
+//                  silently 401s post-SEC-004.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.42.1';
