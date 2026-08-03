@@ -874,17 +874,171 @@ function LanDeliveryCard() {
               transient 502 just looks alarming. */}
         </div>
 
-        {/* NAS disk usage gauge — reported by the agent on every
-            poll. Coloured: green <70%, amber 70-90%, red >90%.
-            v160.3.7ah — Always render, even when disk_usage is
-            missing or zero. Silent hiding used to leave admins
-            wondering why "some sites have a gauge and mine doesn't",
-            and a null/zero payload from the agent now surfaces as
-            an explicit "Unavailable" state instead of "0 MB free
-            of 0 MB". */}
-        <DiskGauge usage={s.disk_usage} reportedAt={s.disk_usage_at}/>
+        {/* v160.3.9.37 — NAS destination status card. Renders per
+            enabled destination and conveys the *mirror* state (green
+            OK / red failing / amber never-mirrored) which is a
+            separate concern from the agent's local free space below.
+            Fixes the "0 MB free of 0 MB" confusion by explicitly
+            surfacing the SMB Connection-refused failure verbatim,
+            with a "What to check" collapsible pointing at the four
+            usual customer-side causes. */}
+        <MirrorStatusCards
+          destinations={s.destinations || []}
+          lastDelivery={s.last_delivery}
+          lastFailure={s.last_failure}
+        />
+
+        {/* Backup-agent local disk gauge — reported by the agent on
+            every poll. Renamed in v160.3.9.37 from "NAS disk" to
+            "Backup agent disk" because the numbers come from the
+            agent's OWN filesystem (Raspberry Pi SD/SSD in the
+            reference deployment), NOT the SMB NAS tower. Coloured:
+            green <70%, amber 70-90%, red >90%.
+            v160.3.7ah defensive fallback preserved — `!usage ||
+            total===0` still surfaces the amber "Unavailable" chip. */}
+        <DiskGauge
+          usage={s.disk_usage}
+          reportedAt={s.disk_usage_at}
+          agentName={s.agent?.name}
+          agentLastSeenAgeMin={s.agent_last_seen_age_min}
+        />
       </div>
     </Section>
+  );
+}
+
+
+// v160.3.9.37 — NAS destination status card (one per enabled SMB
+// destination). Renders above the Backup-agent-disk gauge inside the
+// LAN delivery card. Three visual states:
+//   • green  "Mirroring OK"      — last_delivery.target_path is SMB AND
+//                                  last_delivery is fresher than last_failure
+//   • red    "Mirror failing"    — last_failure fresher than last_delivery
+//                                  on an SMB destination
+//   • amber  "Never mirrored"    — no last_delivery matches destination_id
+function MirrorStatusCards({ destinations, lastDelivery, lastFailure }) {
+  if (!destinations?.length) return null;
+  const parseTs = (iso) => (iso ? Date.parse(iso) || 0 : 0);
+  const fmtGB = (b) =>
+    b >= 1024 ** 4 ? `${(b / 1024 ** 4).toFixed(2)} TB` :
+    b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` :
+                     `${(b / 1024 ** 2).toFixed(0)} MB`;
+  return (
+    <div style={{ marginTop: 12, display: "grid", gap: 10 }} data-testid="backup-mirror-cards">
+      {destinations.map((d) => {
+        const isSmb = d.kind === "smb_lan";
+        const targetPath = `//${d.host || "?"}/${d.share || "?"}${d.path_prefix || ""}`;
+        const deliveryMatches = (
+          lastDelivery
+          && lastDelivery.destination_id === d.id
+          // Older deliveries were sometimes stored with destination_id=null.
+          // Fall back to matching by target_path prefix so an SMB delivery
+          // to this destination still counts.
+        ) || (
+          lastDelivery
+          && !lastDelivery.destination_id
+          && lastDelivery.target_path?.startsWith(`//${d.host}/`)
+        );
+        const failureMatches = (
+          lastFailure
+          && lastFailure.destination_id === d.id
+        );
+        let state; // "ok" | "fail" | "never"
+        if (failureMatches
+            && parseTs(lastFailure.received_at) > parseTs(lastDelivery?.received_at)) {
+          state = "fail";
+        } else if (deliveryMatches) {
+          state = "ok";
+        } else {
+          state = "never";
+        }
+        const palette = {
+          ok:    { bg: "#ecfdf5", border: "#10b981", fg: "#065f46", chip: "#10b981", chipFg: "#fff", label: "MIRRORING OK" },
+          fail:  { bg: "#fef2f2", border: "#ef4444", fg: "#7f1d1d", chip: "#ef4444", chipFg: "#fff", label: "MIRROR FAILING" },
+          never: { bg: "#fffbeb", border: "#f59e0b", fg: "#7c2d12", chip: "#f59e0b", chipFg: "#fff", label: "NEVER MIRRORED" },
+        }[state];
+        const hasNas = d.nas_disk_usage && Number(d.nas_disk_usage.total) > 0;
+        return (
+          <div key={d.id}
+               data-testid={`mirror-card-${d.id}`}
+               data-mirror-state={state}
+               style={{
+                 background: palette.bg, borderLeft: `4px solid ${palette.border}`,
+                 padding: "12px 14px", borderRadius: 8, color: palette.fg,
+                 fontSize: 12, fontFamily: "monospace",
+               }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{
+                background: palette.chip, color: palette.chipFg,
+                padding: "2px 8px", borderRadius: 999,
+                fontSize: 9, fontWeight: 900, letterSpacing: "0.16em",
+              }}>{palette.label}</span>
+              <strong>NAS destination · {d.name}</strong>
+              {isSmb && (
+                <span style={{ opacity: 0.75 }}>{targetPath}</span>
+              )}
+            </div>
+            {state === "ok" && d.last_written_at && (
+              <div style={{ marginTop: 6 }}>
+                Last mirrored: {new Date(d.last_written_at).toLocaleString()}
+              </div>
+            )}
+            {state === "fail" && (
+              <div style={{ marginTop: 6 }}>
+                <div><strong>Error:</strong> {lastFailure.error || "(no detail)"}</div>
+                {lastFailure.target_path && (
+                  <div><strong>Target:</strong> {lastFailure.target_path}</div>
+                )}
+                <details style={{ marginTop: 8 }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 700 }}
+                           data-testid="mirror-what-to-check">
+                    What to check
+                  </summary>
+                  <ul style={{ margin: "6px 0 0 16px", padding: 0, listStyle: "disc" }}>
+                    <li>UGREEN SMB service running and listening on port 445</li>
+                    <li>SMB credentials current on the destination (Settings → Backup → Destinations → edit)</li>
+                    <li>Guest-write enabled on the share, OR username/password set</li>
+                    <li>UGREEN firewall allows the backup agent&rsquo;s IP</li>
+                  </ul>
+                </details>
+              </div>
+            )}
+            {state === "never" && (
+              <div style={{ marginTop: 6, opacity: 0.85 }}>
+                No snapshot has been mirrored to this destination yet.
+              </div>
+            )}
+            {/* Optional: NAS tower disk gauge — rendered ONLY when the
+                agent posts `nas_disk_usage`. Otherwise we do not
+                invent numbers (guardrail from v37 spec). */}
+            {hasNas && (() => {
+              const total = Number(d.nas_disk_usage.total) || 0;
+              const used  = Number(d.nas_disk_usage.used)  || 0;
+              const free  = Number(d.nas_disk_usage.free)  || 0;
+              const pct   = total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+              return (
+                <div style={{ marginTop: 8, paddingTop: 8,
+                              borderTop: "1px dashed rgba(0,0,0,0.12)" }}
+                     data-testid={`nas-tower-gauge-${d.id}`}>
+                  <div style={{ display: "flex", justifyContent: "space-between",
+                                marginBottom: 4 }}>
+                    <span><strong>NAS tower disk</strong></span>
+                    <span style={{ fontWeight: 700 }}>
+                      {fmtGB(free)} free of {fmtGB(total)} · {pct}% used
+                    </span>
+                  </div>
+                  <div style={{ background: "rgba(0,0,0,0.08)", height: 6,
+                                borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ background: palette.chip, height: "100%",
+                                  width: `${pct}%` }}/>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -899,7 +1053,7 @@ function LanDeliveryCard() {
 // of 0 MB" (misleading), the gauge now surfaces an amber
 // `Unavailable — NAS mount not reachable from server` chip with a
 // title-attr tooltip explaining what the operator should check.
-function DiskGauge({ usage, reportedAt }) {
+function DiskGauge({ usage, reportedAt, agentName, agentLastSeenAgeMin }) {
   const u     = usage || {};
   const total = Number(u.total_bytes ?? u.total) || 0;
   const used  = Number(u.used_bytes  ?? u.used)  || 0;
@@ -921,12 +1075,25 @@ function DiskGauge({ usage, reportedAt }) {
     b >= 1024 ** 4 ? `${(b / 1024 ** 4).toFixed(2)} TB` :
     b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` :
                      `${(b / 1024 ** 2).toFixed(0)} MB`;
+  // v160.3.9.37 — Tooltip explains that this gauge reports the AGENT's
+  // filesystem, not the NAS tower's. Prevents the "0 MB free of 0 MB"
+  // ticket recurring as a mental-model mismatch.
+  const gaugeTip =
+    "This is the free space on the backup agent that receives snapshots " +
+    "before mirroring to the NAS. Not the NAS tower's own disk — the " +
+    "NAS destination card above carries the mirror-state signal.";
   const unavailableTip =
-    "The NAS mount is not reachable from the backup agent. " +
-    "Common causes: NAS powered off, SMB share credentials changed, " +
-    "network route dropped, or the agent's mount point moved. " +
-    "Snapshots continue to be written to the Hub — LAN mirroring " +
-    "resumes automatically once the mount is back online.";
+    "The backup agent has not reported a disk-usage figure yet, or its " +
+    "own filesystem probe failed. Common causes: agent freshly installed " +
+    "and mid-first-poll, or agent-side statvfs error.";
+  // Format the "N min ago / N h ago" hint for the agent heartbeat.
+  const fmtAge = (min) => {
+    if (min == null) return "—";
+    if (min < 1) return "just now";
+    if (min < 60) return `${Math.round(min)} min ago`;
+    if (min < 60 * 24) return `${(min / 60).toFixed(1)} h ago`;
+    return `${(min / (60 * 24)).toFixed(1)} d ago`;
+  };
   return (
     <div data-testid="backup-disk-gauge"
       style={{
@@ -935,17 +1102,35 @@ function DiskGauge({ usage, reportedAt }) {
       }}>
       <div style={{ display: "flex", justifyContent: "space-between",
                     marginBottom: 4 }}>
-        <span><strong>NAS disk{path ? ` · ${path}` : ""}</strong></span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <strong>Backup agent disk{path ? ` · ${path}` : ""}</strong>
+          <span
+            title={gaugeTip}
+            data-testid="backup-agent-disk-info"
+            style={{
+              cursor: "help",
+              width: 14, height: 14, borderRadius: 999,
+              background: "rgba(0,0,0,0.15)", color: "#fff",
+              fontSize: 10, fontWeight: 900, textAlign: "center",
+              lineHeight: "14px", userSelect: "none",
+            }}
+          >i</span>
+        </span>
         <span
           style={{ color: colour, fontWeight: 800, cursor: unavailable ? "help" : "default" }}
           title={unavailable ? unavailableTip : undefined}
           data-testid={unavailable ? "backup-disk-unavailable" : "backup-disk-available"}
         >
           {unavailable
-            ? "Unavailable — mount not reachable"
+            ? "Unavailable — agent not reporting"
             : <>{fmtGB(free)} free of {fmtGB(total)} · {pct}% used</>}
         </span>
       </div>
+      {agentName && (
+        <div style={{ opacity: 0.75, marginBottom: 6 }}>
+          {agentName} · heartbeat {fmtAge(agentLastSeenAgeMin)}
+        </div>
+      )}
       <div style={{
         background: "rgba(0,0,0,0.08)", height: 8, borderRadius: 4,
         overflow: "hidden",

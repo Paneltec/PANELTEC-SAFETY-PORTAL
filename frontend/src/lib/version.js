@@ -1,6 +1,32 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.37 — Backup dashboard clarity fix.
+//                  1. Relabelled the "NAS disk" gauge to "Backup
+//                     agent disk" — the numbers come from the
+//                     LAN agent's OWN filesystem (Raspberry Pi
+//                     SD/SSD in the reference deployment), NOT
+//                     the SMB NAS tower. Added agent name +
+//                     heartbeat age subline + tooltip explainer.
+//                  2. New `<MirrorStatusCards>` renders per-
+//                     destination mirror-state: green Mirroring
+//                     OK / red Mirror failing (with verbatim
+//                     error + "What to check" collapsible) /
+//                     amber Never mirrored. Fixes the "0 MB free
+//                     of 0 MB" confusion by giving the SMB
+//                     Connection-refused signal its own surface.
+//                  3. Backend: `POST /api/backup/agent/report`
+//                     now accepts an optional `nas_disk_usage`
+//                     payload (same shape as `disk_usage`, but
+//                     covering the SMB target). Stashed on the
+//                     destination doc + relayed in
+//                     `/api/backup/lan-status` as
+//                     `destinations[].nas_disk_usage`. FE hides
+//                     the NAS-tower gauge until the agent code
+//                     starts posting it — no invented numbers.
+//                  Preserves the v160.3.7ah defensive fallback
+//                  in `DiskGauge` (`!usage || total===0` → amber
+//                  "Unavailable — agent not reporting" chip).
 // v160.3.9.36 — Phase 5: legacy `role`-string retirement (shim).
 //                  New `auth.py::_derive_legacy_role()` mapper +
 //                  `get_current_user()` shim make `user.role` an
@@ -99,4 +125,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.36';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.37';

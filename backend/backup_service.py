@@ -325,6 +325,14 @@ class AgentReport(BaseModel):
     # can show "147 GB free of 4 TB" without the operator needing to
     # SSH into the NAS. All values in bytes.
     disk_usage: Optional[Dict[str, Any]] = None
+    # v160.3.9.37 — Optional second disk-usage payload, this time
+    # covering the NAS TOWER itself (the SMB target the agent mirrors
+    # TO). Shape mirrors `disk_usage`: `{total, used, free}` in bytes.
+    # Agent code has to opt-in to reporting it (e.g. by running a
+    # `statvfs` on its already-mounted `//host/share` path). Absent
+    # when the agent hasn't been updated to post it — the Hub UI
+    # gracefully hides the second gauge in that case.
+    nas_disk_usage: Optional[Dict[str, Any]] = None
 
 
 # ============================================================
@@ -1069,6 +1077,17 @@ def install(app, db, require_admin):
             {"id": agent["id"]},
             {"$set": agent_update},
         )
+        # v160.3.9.37 — Forward-compat NAS-tower disk usage.
+        # Stashed on the DESTINATION (not the agent) because a single
+        # agent can mirror to multiple NAS targets. Latest wins.
+        if report.destination_id and report.nas_disk_usage:
+            await db.bk_destinations.update_one(
+                {"id": report.destination_id},
+                {"$set": {
+                    "nas_disk_usage":    report.nas_disk_usage,
+                    "nas_disk_usage_at": _now_iso(),
+                }},
+            )
         # Update destination ship status.
         if report.destination_id and report.status == "ok":
             await db.bk_destinations.update_one(
@@ -1350,6 +1369,17 @@ def install(app, db, require_admin):
                     or a["last_seen_at"] > freshest_agent["last_seen_at"]):
                 freshest_agent = a
 
+        # v160.3.9.37 — Fetch the enabled destinations so the FE can
+        # render a "Mirror failing / Mirror OK / Never mirrored"
+        # status card per destination WITHOUT extra round-trips.
+        # Password_hash intentionally excluded via projection.
+        destinations = await db.bk_destinations.find(
+            {"enabled": True},
+            {"_id": 0, "id": 1, "name": 1, "kind": 1, "host": 1,
+             "share": 1, "path_prefix": 1, "last_written_at": 1,
+             "nas_disk_usage": 1, "nas_disk_usage_at": 1},
+        ).to_list(50)
+
         now = datetime.now(timezone.utc)
 
         def _age_min(iso: Optional[str]) -> Optional[float]:
@@ -1414,6 +1444,12 @@ def install(app, db, require_admin):
             # agent — drives the "147 GB free of 4 TB" gauge.
             "disk_usage": (freshest_agent or {}).get("disk_usage"),
             "disk_usage_at": (freshest_agent or {}).get("disk_usage_at"),
+            # v160.3.9.37 — Full destination list so the FE can render
+            # a mirror-state card per SMB target (green OK / red
+            # failing / amber never-mirrored). `nas_disk_usage` on
+            # each entry is populated when the agent posts it —
+            # otherwise absent and the FE hides the second gauge.
+            "destinations": destinations,
         }
 
 
