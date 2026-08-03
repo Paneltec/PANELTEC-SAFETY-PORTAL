@@ -1,6 +1,16 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.34.2 — Camera capture for the worker avatar uploader + ID Card
+//                  tap-to-expand. New `<CameraCaptureModal>` (getUserMedia →
+//                  live preview → Capture/Retake/Switch/Close → JPEG File
+//                  @ 0.85 quality) wired into `<WorkerPhoto>` in the read-
+//                  only view drawer. Feature-detected: button hidden on
+//                  browsers without `mediaDevices.getUserMedia`. Zero-leak
+//                  stream release on every exit path. Plus new
+//                  `<ImageLightbox>`: the ID Card photo tile and QR tile
+//                  are now tap-to-expand with hover ring + magnifier
+//                  overlay, ESC / X / click-outside to close.
 // v160.3.9.34.1 — Phase 4b parity for workers. Removed manual
 //                  "Add worker" affordance from the Workers page
 //                  (top-of-page CTA + empty-state CTA + copy). The
@@ -16,4 +26,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.34.1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.34.2';

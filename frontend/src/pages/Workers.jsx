@@ -4,7 +4,7 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import DismissibleHint from '../components/DismissibleHint';
@@ -27,6 +27,7 @@ import WorkerInductionsCard from '../components/WorkerInductionsCard';
 import AccessKebab from '../components/auth/AccessKebab';
 // v160.2.2 — Read-only worker profile drawer (eye icon).
 import WorkerViewModal from '../components/workers/WorkerViewModal';
+import ImageLightbox from '../components/ImageLightbox';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -717,7 +718,10 @@ const LAYOUTS = [
 // v160.3.5a — Larger photo tile scoped to the ID Card section. Same
 // download-token + fallback logic as EditWorkerPhoto but sized for a
 // printable-card feel (128×128).
-function IdCardPhoto({ worker }) {
+// v160.3.9.34.2 — Accepts optional `onExpand(src)` prop. When set AND
+// a photo is resolved, the image becomes tap-to-expand with hover ring
+// + magnifier overlay.
+function IdCardPhoto({ worker, onExpand }) {
   const [src, setSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
   React.useEffect(() => {
@@ -739,14 +743,32 @@ function IdCardPhoto({ worker }) {
       </div>
     );
   }
+  const canExpand = !!(onExpand && src);
   return (
-    <img
-      src={src || ''}
-      alt=""
-      onError={() => setBroken(true)}
-      className="w-32 h-32 rounded-lg object-cover border border-slate-200 bg-white"
-      data-testid="id-card-photo-img"
-    />
+    <button
+      type="button"
+      onClick={canExpand ? () => onExpand(src) : undefined}
+      disabled={!canExpand}
+      data-testid="id-card-photo-expand-btn"
+      title={canExpand ? 'Click to expand' : undefined}
+      className={`relative group block p-0 border-0 bg-transparent ${canExpand ? 'cursor-pointer' : 'cursor-default'}`}
+    >
+      <img
+        src={src || ''}
+        alt=""
+        onError={() => setBroken(true)}
+        className={`w-32 h-32 rounded-lg object-cover border border-slate-200 bg-white transition ${canExpand ? 'group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95' : ''}`}
+        data-testid="id-card-photo-img"
+      />
+      {canExpand && (
+        <span
+          aria-hidden="true"
+          className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-slate-900/70 text-white grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <ZoomIn size={12} />
+        </span>
+      )}
+    </button>
   );
 }
 
@@ -759,6 +781,10 @@ function IdCardSection({ worker, canEdit }) {
   const [nfc, setNfc] = useState(worker.nfc_uid || '');
   const [savingNfc, setSavingNfc] = useState(false);
   const [paired, setPaired] = useState(!!worker.nfc_uid);
+  // v160.3.9.34.2 — Shared lightbox for the ID Card visual tiles (photo + QR).
+  // `expand.src` is the image URL, `expand.title` populates the caption.
+  const [expand, setExpand] = useState(null);
+  const closeExpand = () => setExpand(null);
   // scan_token is server-seeded; the list endpoint returns it. Lazy backfill
   // in the PDF endpoint covers any edge case where a worker has no token yet.
   const token = worker.scan_token || '';
@@ -859,21 +885,48 @@ function IdCardSection({ worker, canEdit }) {
       defaultOpen={false}>
       <div className="grid md:grid-cols-[160px_160px_1fr] gap-4">
         {/* v160.3.5a — printable-ID look: worker photo on the left, QR on the right */}
+        {/* v160.3.9.34.2 — Photo tile now tap-to-expand into a lightbox */}
         <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
              data-testid="id-card-photo">
-          <IdCardPhoto worker={worker} />
+          <IdCardPhoto
+            worker={worker}
+            onExpand={(src) => setExpand({
+              src,
+              alt: `${[worker.first_name, worker.last_name].filter(Boolean).join(' ') || 'Worker'} photo`,
+              title: `${[worker.first_name, worker.last_name].filter(Boolean).join(' ') || 'Worker'} · ID card photo`,
+            })}
+          />
           <div className="text-[10px] uppercase tracking-wider text-slate-400">Photo</div>
           <div className="text-[10px] text-slate-600 font-semibold text-center truncate max-w-[8rem]"
                title={[worker.first_name, worker.last_name].filter(Boolean).join(' ')}>
             {[worker.first_name, worker.last_name].filter(Boolean).join(' ') || '—'}
           </div>
         </div>
-        {/* QR preview tile */}
+        {/* QR preview tile — v160.3.9.34.2 tap-to-expand */}
         <div className="rounded-xl bg-white border border-slate-200 p-3 flex flex-col items-center justify-center gap-1.5"
           data-testid="id-card-qr">
-          {qrUrl
-            ? <img src={qrUrl} alt="Worker QR" className="w-32 h-32" />
-            : <div className="w-32 h-32 grid place-items-center text-slate-300"><QrCode /></div>}
+          {qrUrl ? (
+            <button
+              type="button"
+              onClick={() => setExpand({
+                src: qrUrl,
+                alt: 'Worker QR code',
+                title: `${[worker.first_name, worker.last_name].filter(Boolean).join(' ') || 'Worker'} · QR code`,
+              })}
+              data-testid="id-card-qr-expand-btn"
+              title="Click to expand"
+              className="relative group p-0 border-0 bg-transparent cursor-pointer"
+            >
+              <img src={qrUrl} alt="Worker QR"
+                   className="w-32 h-32 transition group-hover:ring-2 group-hover:ring-[#1e4a8c]/50 group-hover:brightness-95 rounded-md" />
+              <span aria-hidden="true"
+                    className="absolute bottom-1 right-1 w-6 h-6 rounded-full bg-slate-900/70 text-white grid place-items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <ZoomIn size={12} />
+              </span>
+            </button>
+          ) : (
+            <div className="w-32 h-32 grid place-items-center text-slate-300"><QrCode /></div>
+          )}
           <div className="text-[10px] uppercase tracking-wider text-slate-400">Worker QR</div>
           <div className="text-[10px] font-mono text-slate-500">{token || '—'}</div>
         </div>
@@ -940,6 +993,14 @@ function IdCardSection({ worker, canEdit }) {
           )}
         </div>
       </div>
+      {/* v160.3.9.34.2 — Tap-to-expand lightbox for the photo + QR tiles. */}
+      <ImageLightbox
+        open={!!expand}
+        src={expand?.src}
+        alt={expand?.alt}
+        title={expand?.title}
+        onClose={closeExpand}
+      />
     </Section>
   );
 }

@@ -3,7 +3,7 @@
 // `GET /api/workers/{id}` and displays identity, contact, personal,
 // availability, clients and certifications with expiring/expired highlights.
 import React, { useEffect, useState } from 'react';
-import { Award, Calendar, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText } from 'lucide-react';
+import { Award, Calendar, Camera, HardHat, Loader2, MapPin, Upload, Users, X, AlertTriangle, Trash2, Archive, ExternalLink, FileText } from 'lucide-react';
 import api, { apiError } from '../../lib/api';
 import { filesUrl } from '../../lib/downloadUrl';
 import { summariseCertifications, personalFilledCount } from '../../lib/workerSectionSummary';
@@ -11,6 +11,7 @@ import { useCan } from '../../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
+import CameraCaptureModal from '../CameraCaptureModal';
 import { toast } from 'sonner';
 
 const DAYS = [
@@ -80,6 +81,16 @@ function WorkerPhoto({ worker, canEdit, onChanged }) {
   const [busy, setBusy] = React.useState(false);
   const [confirmDelete, setConfirmDelete] = React.useState(false);
   const [hover, setHover] = React.useState(false);
+  // v160.3.9.34.2 — Camera capture wiring. Feature-detected once at mount
+  // so browsers without `mediaDevices` never render the entry button.
+  const [cameraOpen, setCameraOpen] = React.useState(false);
+  const [hasCamera, setHasCamera] = React.useState(false);
+  React.useEffect(() => {
+    setHasCamera(
+      typeof navigator !== 'undefined' &&
+      !!navigator.mediaDevices?.getUserMedia,
+    );
+  }, []);
   const fileRef = React.useRef(null);
   React.useEffect(() => {
     let alive = true;
@@ -201,6 +212,31 @@ function WorkerPhoto({ worker, canEdit, onChanged }) {
           className="hidden"
         />
       )}
+      {/* v160.3.9.34.2 — Camera capture entry. Only rendered when the
+          browser exposes `mediaDevices.getUserMedia` AND the viewer has
+          edit permission. Clicking opens the reusable CameraCaptureModal;
+          on "Use this photo" the returned File flows through the existing
+          `doUpload()` (same server-side validation + zero-orphan). */}
+      {canEdit && hasCamera && (
+        <button
+          type="button"
+          onClick={() => setCameraOpen(true)}
+          disabled={busy}
+          data-testid="worker-avatar-camera-btn"
+          title="Take a photo with the device camera"
+          className="mt-2 w-full inline-flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg border border-slate-300 bg-white/80 text-[10px] uppercase tracking-wider font-semibold text-[#1e4a8c] hover:bg-white hover:border-[#1e4a8c]/40 disabled:opacity-50"
+        >
+          <Camera size={12} /> Use camera
+        </button>
+      )}
+      <CameraCaptureModal
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onCapture={async (file) => {
+          setCameraOpen(false);
+          await doUpload(file);
+        }}
+      />
       {confirmDelete && (
         <div className="fixed inset-0 z-[80] bg-slate-900/70 grid place-items-center p-4" data-testid="worker-avatar-remove-confirm"
           onClick={(e) => e.target === e.currentTarget && !busy && setConfirmDelete(false)}
