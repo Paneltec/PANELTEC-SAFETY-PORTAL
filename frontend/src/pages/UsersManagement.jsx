@@ -39,6 +39,7 @@ import AccessKebab from '../components/auth/AccessKebab';
 import { Link } from 'react-router-dom';
 // v160.3.7h — Shared body-scroll-lock hook. Applied to every overlay on
 // this page so scrolling inside a modal never leaks to the page beneath.
+import { filesUrl } from '../lib/downloadUrl';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
 // v160.3.9.41 — @dnd-kit sortable for the role-section reorder handle.
@@ -61,6 +62,38 @@ import {
   arrayMove, useSortable, sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
 import { CSS as DndCSS } from '@dnd-kit/utilities';
+
+// v160.3.9.41.2 — <AvatarImage> wrapper that resolves the raw
+// `photo_url` string returned by `GET /api/users` (e.g.
+// `/api/workers/{id}/photo/{gid}` or `/api/files/document_library/…`)
+// through `filesUrl()`. This appends the short-lived signed-download
+// JWT that v40 SEC-004 now requires on every `/api/files/*` and
+// `/api/workers/*/photo/*` endpoint. Without this wrapper the raw
+// URL 401s server-side and the browser silently falls back to the
+// initials tile — the exact failure the v41.1 diagnostic caught
+// (13 users enriched by backend, 0 <img> avatars visible in DOM).
+function UserAvatarImage({ rawSrc, alt, testId }) {
+  const [resolvedSrc, setResolvedSrc] = React.useState(null);
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    setBroken(false);
+    if (!rawSrc) { setResolvedSrc(null); return () => { alive = false; }; }
+    filesUrl(rawSrc)
+      .then((url) => { if (alive) setResolvedSrc(url); })
+      .catch(() => { if (alive) { setResolvedSrc(null); setBroken(true); } });
+    return () => { alive = false; };
+  }, [rawSrc]);
+  if (!resolvedSrc || broken) return null;
+  return (
+    <AvatarImage
+      src={resolvedSrc}
+      alt={alt}
+      onError={() => setBroken(true)}
+      data-testid={testId}
+    />
+  );
+}
 
 // v160.3.9.41 — Sortable section-header row for the Users & Permissions
 // table. Wraps a `<tr>` in dnd-kit's `useSortable`. Applies the
@@ -476,12 +509,16 @@ export default function UsersManagement() {
       )}
       <td className="px-4 py-1.5">
         <div className="flex items-center gap-2">
-          {/* v160.3.9.33.1 — Photo thumbnail when available, initial fallback otherwise. */}
+          {/* v160.3.9.33.1 — Photo thumbnail when available, initial fallback otherwise.
+              v160.3.9.41.2 — Route the src through <UserAvatarImage> so it goes
+              through `filesUrl()` (adds the ?token=... signed-download JWT that
+              v40 SEC-004 now requires on files and worker-photo endpoints.
+              Rendering `u.photo_url` directly would 401 on every request and
+              silently fall back to initials — which is exactly what the v41.1
+              diagnostic caught. */}
           <Avatar className="h-7 w-7">
             {u.photo_url ? (
-              <AvatarImage src={u.photo_url} alt={u.name || u.email || ''}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                data-testid={`user-photo-${u.id}`} />
+              <UserAvatarImage rawSrc={u.photo_url} alt={u.name || u.email || ''} testId={`user-photo-${u.id}`} />
             ) : null}
             <AvatarFallback className="text-xs">{(u.name || u.email || '?')[0]}</AvatarFallback>
           </Avatar>
