@@ -99,6 +99,35 @@ def _mongo():
     client.close()
 
 
+# v160.3.9.36 — Shared session-scope event loop for tests that drive
+# `permissions.py` / `auth.py` async helpers directly via
+# `loop.run_until_complete(...)`. Without a shared loop each test
+# module creates its own, then Motor's `AsyncIOMotorClient` (bound
+# to whichever loop first executed a DB call) starts throwing
+# `RuntimeError: Event loop is closed` on the second module's tests.
+# Import and reuse via `from tests.conftest import async_loop`
+# or the shorthand `run_async(coro)` helper below.
+import asyncio as _asyncio
+
+_ASYNC_LOOP = _asyncio.new_event_loop()
+_asyncio.set_event_loop(_ASYNC_LOOP)
+
+
+def run_async(coro):
+    """Run a coroutine on the shared test-session event loop."""
+    return _ASYNC_LOOP.run_until_complete(coro)
+
+
+@pytest.fixture(scope="session")
+def async_loop():
+    """Session-scope event loop. Tests that need to await coroutines
+    should call `loop.run_until_complete(coro)` on this instead of
+    `asyncio.run(...)` (which creates + closes a fresh loop each
+    call and orphans Motor)."""
+    return _ASYNC_LOOP
+
+
+
 @pytest.fixture(scope="module")
 def ephemeral_users(_mongo) -> Dict[str, str]:
     """Insert one user per non-admin role, yield the role → email map,

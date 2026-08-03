@@ -25,22 +25,13 @@ Guardrails:
 """
 from __future__ import annotations
 
-import asyncio
 import uuid
 import pytest
 
-# One event loop for the whole module. `_run()` closes the loop
-# on each call, which orphans Motor's `AsyncIOMotorClient` bound to
-# the loop created at first `db.py` import — subsequent `asyncio.run`
-# invocations then raise `RuntimeError: Event loop is closed`. We
-# work around that by driving every coroutine through a persistent
-# loop we own for the lifetime of this test module.
-_LOOP = asyncio.new_event_loop()
-asyncio.set_event_loop(_LOOP)
-
-
-def _run(coro):
-    return _LOOP.run_until_complete(coro)
+# v160.3.9.36 — Share the session-scope event loop with the rest of
+# the test suite (defined in `tests/conftest.py::_ASYNC_LOOP`) so
+# Motor stays bound to a single loop across every test module.
+from .conftest import run_async as _run
 
 
 # Import lazily so pytest collection doesn't trigger the auth chain.

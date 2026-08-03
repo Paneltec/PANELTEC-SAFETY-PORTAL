@@ -1,6 +1,23 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.36 — Phase 5: legacy `role`-string retirement (shim).
+//                  New `auth.py::_derive_legacy_role()` mapper +
+//                  `get_current_user()` shim make `user.role` an
+//                  authoritative derivative of `user.role_id` on
+//                  every request. The ~65 Bucket-A legacy
+//                  `user.role`-string gates scattered across the
+//                  backend now read a value sourced from the DB's
+//                  authoritative `role_id`, eliminating drift.
+//                  Bucket B (display) auto-fixed by the shim.
+//                  Bucket C: Simpro import dual-writes role +
+//                  role_id using the mapper (data-hygiene).
+//                  FE: `MobileModulesSection.jsx` row-key
+//                  parameter renamed `role` → `role_id`.
+//                  Per-site Bucket-A migration is now backlog
+//                  work — see phase5b_bucket_a_backlog.md.
+//                  `require_roles()` deprecated but kept live for
+//                  the ~20 Simpro endpoints still using it.
 // v160.3.9.35 — Phase 6: permissions token unification.
 //                  Backend `_role_default()` in `permissions.py` is
 //                  now ALWAYS DB-first for every role (seeded +
@@ -82,4 +99,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.35';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.36';

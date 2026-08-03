@@ -336,17 +336,22 @@ export default function MobileModulesSection({ canEdit }) {
 
   const dirty = useMemo(() => matrix && original && !deepEq(matrix, original), [matrix, original]);
 
-  const toggle = (role, mod) => {
-    if (role === 'admin') return;          // locked
+  const toggle = (role_id, mod) => {
+    // v160.3.9.36 (Phase 5) — Row-key renamed from `role` → `role_id`
+    // to align with the token-permission nomenclature. The mobile-
+    // modules matrix is keyed by role_id (values happen to match
+    // legacy role strings for seeded roles like `admin` / `worker`),
+    // so the lock behaviour is identical to the pre-shim implementation.
+    if (role_id === 'admin') return;          // admin row locked
     if (!canEdit) return;
-    setMatrix((m) => ({ ...m, [role]: { ...m[role], [mod]: !m[role][mod] } }));
+    setMatrix((m) => ({ ...m, [role_id]: { ...m[role_id], [mod]: !m[role_id][mod] } }));
   };
 
-  const setAllInRole = (role, value) => {
-    if (role === 'admin' || !canEdit) return;
+  const setAllInRole = (role_id, value) => {
+    if (role_id === 'admin' || !canEdit) return;
     setMatrix((m) => ({
       ...m,
-      [role]: Object.fromEntries(MODULES.map((mo) => [mo.key, value])),
+      [role_id]: Object.fromEntries(MODULES.map((mo) => [mo.key, value])),
     }));
   };
 

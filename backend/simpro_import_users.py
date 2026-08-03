@@ -384,13 +384,23 @@ async def import_employees_selective(
             new_role_id = res["role_id"]
             if res["created"]:
                 auto_created_role_ids.add(new_role_id)
+        # v160.3.9.36 (Phase 5) — Dual-write `role` + `role_id`. Legacy
+        # `role` string is now derived from the mapper in `auth.py` so
+        # the value stored at rest is the closest legacy allow-list
+        # token (admin/hseq_lead/worker/etc.), not the raw role_id
+        # (e.g. `custom_construction_worker`). Runtime auth still
+        # re-derives on every request via the shim, so this dual-write
+        # is a data-hygiene measure — it prevents surprises in tools
+        # that read the DB directly (audit exports, migration reports).
+        from auth import _derive_legacy_role  # local import — avoid circular
+        legacy_role = await _derive_legacy_role(new_role_id) if new_role_id else "worker"
         new_doc = {
             "id": new_id(),
             "org_id": org_id,
             "email": email,
             "name": f"{first} {last}".strip() or email.split("@")[0],
             "password_hash": None,
-            "role": new_role_id or "worker",
+            "role": legacy_role,
             "role_id": new_role_id,
             "workspace_ids": [],
             "token_version": 0,

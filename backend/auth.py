@@ -1,5 +1,7 @@
 """JWT + bcrypt auth — Bearer tokens in Authorization header."""
+import logging
 import os
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -17,6 +19,109 @@ JWT_EXP_DAYS = 30
 
 bearer_scheme = HTTPBearer(auto_error=False)
 router = APIRouter(prefix="/auth", tags=["auth"])
+_log = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.36 (Phase 5) — Legacy role-string derivation shim.
+#
+# Phase 5's goal is to make `role_id` + Phase-6 token layer the
+# ONLY authoritative source for authorisation, while keeping
+# `user["role"]` populated so the ~65 legacy `user.role`-string
+# gates scattered across the codebase (audited in
+# `phase5b_bucket_a_backlog.md`) continue to work as safe
+# redundancies behind `require_permission()`.
+#
+# `get_current_user()` calls `_derive_legacy_role(role_id)` after
+# hydrating the user from Mongo and OVERWRITES `user["role"]` with
+# the derived value. Any drift between the stored `role` string
+# and the authoritative `role_id` is therefore corrected on every
+# request. Downstream code that reads `user["role"]` reads a
+# value that came from `role_id`, not the DB's raw legacy field.
+#
+# Mapping rules:
+#   • Seeded role_ids that ARE legacy strings (admin, worker,
+#     supervisor, hseq_lead, auditor, contractor_rep, …) →
+#     identity mapping.
+#   • DB-seeded role_ids that DO NOT have a legacy-string twin
+#     (hseq_manager, responsible_manager, general_user, …) →
+#     mapped to the closest legacy string (hseq_lead / manager /
+#     worker) so legacy allow-lists still fire correctly.
+#   • Dynamic `custom_*` role_ids → look up `legacy_role_alias`
+#     from the roles doc if set, else fall back to "worker"
+#     (least privilege).
+#   • None role_id → return None (legacy straggler; caller must
+#     leave any existing `user["role"]` untouched).
+#
+# TTL-cached (30s) so we don't hit Mongo for `custom_*` lookups
+# on every request. Cache is cleared on any roles-catalogue
+# mutation via `bust_legacy_role_cache()`.
+# ─────────────────────────────────────────────────────────────
+
+# Direct role_id → legacy-string map. Covers everything that was
+# in ROLE_DEFAULTS + everything currently seeded in db.roles as
+# `source="seed"` (verified 2026-08-03).
+_LEGACY_SEEDED_MAP: dict[str, str] = {
+    # Identity — role_id already matches a legacy allow-list string
+    "admin":                     "admin",
+    "worker":                    "worker",
+    "supervisor":                "supervisor",
+    "hseq_lead":                 "hseq_lead",
+    "auditor":                   "auditor",
+    "contractor_rep":            "contractor_rep",
+    "contractor_rep_submit_only":"contractor_rep_submit_only",
+    "manager":                   "manager",
+    "hr_lead":                   "hr_lead",
+    "owner":                     "owner",
+    # DB-only role_ids → closest legacy string
+    "hseq_manager":              "hseq_lead",
+    "hseq_manager_creator":      "hseq_lead",
+    "hseq_manager_readonly":     "hseq_lead",
+    "responsible_manager":       "manager",
+    "report_emailing_admin":     "manager",
+    "training_inductions_only":  "worker",
+    "general_user":              "worker",
+    "mechanic":                  "worker",
+}
+
+_LEGACY_ROLE_CACHE: dict[str, tuple[float, str]] = {}
+_LEGACY_ROLE_CACHE_TTL = 30.0  # seconds
+
+
+def bust_legacy_role_cache(role_id: Optional[str] = None) -> None:
+    """Invalidate the TTL cache. Called from roles_catalogue mutations
+    so a freshly-created / updated custom_* role's legacy alias flows
+    through immediately. Passing role_id=None clears the whole cache."""
+    global _LEGACY_ROLE_CACHE
+    if role_id is None:
+        _LEGACY_ROLE_CACHE = {}
+    else:
+        _LEGACY_ROLE_CACHE.pop(role_id, None)
+
+
+async def _derive_legacy_role(role_id: Optional[str]) -> Optional[str]:
+    """Map a `role_id` to its legacy `role`-string equivalent.
+    See module-level shim comment for the mapping rules."""
+    if not role_id:
+        return None
+    hit = _LEGACY_SEEDED_MAP.get(role_id)
+    if hit is not None:
+        return hit
+    # Custom or otherwise unknown role_id → check cache then DB.
+    now = time.monotonic()
+    cached = _LEGACY_ROLE_CACHE.get(role_id)
+    if cached and (now - cached[0] < _LEGACY_ROLE_CACHE_TTL):
+        return cached[1]
+    try:
+        doc = await db.roles.find_one(
+            {"role_id": role_id, "is_active": True},
+            {"_id": 0, "legacy_role_alias": 1},
+        )
+    except Exception:  # never break auth on a Mongo blip
+        return "worker"
+    alias = (doc or {}).get("legacy_role_alias") or "worker"
+    _LEGACY_ROLE_CACHE[role_id] = (now, alias)
+    return alias
 
 
 def _secret() -> str:
@@ -151,10 +256,45 @@ async def get_current_user(
             raise
         except Exception:
             pass  # never break auth on a tracking blip
+
+    # v160.3.9.36 (Phase 5) — Legacy role-string derivation shim.
+    # `user["role"]` is now an authoritative *derivative* of
+    # `user["role_id"]`. Every legacy `user.role`-string gate in the
+    # codebase thereby reads a value that was itself sourced from
+    # the DB's authoritative `role_id`, eliminating drift.
+    # See the shim block near the top of this file for the full
+    # mapping rules. Backlog for per-site migration lives at
+    # /app/memory/permissions_redesign/phase5b_bucket_a_backlog.md.
+    role_id = user.get("role_id")
+    if role_id:
+        derived = await _derive_legacy_role(role_id)
+        if derived is not None:
+            if derived != user.get("role"):
+                user["role"] = derived
+        user["_legacy_role_derived"] = True
+    else:
+        # Legacy straggler: no role_id set. Leave `user["role"]`
+        # untouched (backwards-compat for pre-migration accounts)
+        # and log at WARN so ops can find and fix them.
+        legacy = user.get("role")
+        if legacy:
+            _log.warning(
+                "phase5.straggler user_id=%s email=%s role=%r role_id=<missing>",
+                user.get("id"), user.get("email"), legacy,
+            )
     return user
 
 
 def require_roles(*roles: str):
+    """DEPRECATED (Phase 5 · v160.3.9.36). Prefer
+    `permissions.require_permission(resource, action)` — this legacy
+    dep gates on the derived `user["role"]` string, which is fine
+    for backwards compat (the Phase-5 shim keeps `user["role"]` in
+    sync with `role_id`) but does not participate in the token
+    permission matrix. Kept live for the ~20 endpoints in
+    `integrations_simpro.py` and `simpro_zip_import.py` that still
+    depend on it; per-site migration is tracked in
+    `phase5b_bucket_a_backlog.md`."""
     async def _checker(user: dict = Depends(get_current_user)) -> dict:
         if user["role"] not in roles and user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Insufficient role")
