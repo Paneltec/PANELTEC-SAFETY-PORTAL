@@ -141,7 +141,9 @@ async def _fetch_tracks(org_id: str, tracker_id: int, frm: str, to: str) -> list
     )
     if not cfg_doc:
         return []
-    c = cfg_doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    c = hydrate_integration_config(cfg_doc)
     base = (c.get("api_base_url") or "").rstrip("/")
     h = c.get("session_hash")
     if not base or not h:

@@ -1,9 +1,22 @@
 """Email send + outbox. M365 isn't wired yet — everything queues into
 `outbound_emails` with a clear `Pending M365 connection` note.
+
+v160.3.9.40 (SEC-002) — Stored HTML bodies are now server-side
+sanitised via `bleach` before they hit Mongo. Allowlist below permits
+just the tags/attributes needed for normal email formatting:
+`p, br, strong, em, u, ul, ol, li, a, h1-h4, blockquote, hr, span,
+img, table, thead, tbody, tr, td, th`. Anything with an event handler
+(`on*`), a `<script>` block, an `<iframe>`, or a `javascript:` /
+`data:` URL that isn't a PNG/JPEG is stripped. `dangerouslySetInnerHTML`
+on the Outbox page renders the SERVER-sanitised value only; there is
+no client-side sanitizer because the server is authoritative.
 """
 from __future__ import annotations
 import logging
 from typing import List, Literal, Optional
+
+import bleach
+from bleach.css_sanitizer import CSSSanitizer
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, EmailStr, Field
@@ -16,6 +29,144 @@ from permissions_scope import scope_filter, can_access_record  # v160.3.9.28
 
 log = logging.getLogger("paneltec.email")
 router = APIRouter(prefix="/email", tags=["email"])
+
+# ─────────────────────────────────────────────────────────
+# v160.3.9.40 (SEC-002) — Bleach allowlist for `body_html`.
+# Tag/attribute set matches the "normal formatting" spec approved
+# with the security wave. Attribute allowlist is strict — `<a>` only
+# allows `href` and `title`, `<img>` only allows `src, alt, title,
+# width, height`. URL protocols allowed: `http, https, mailto` for
+# hyperlinks; `http, https` plus `data:` for images (data-URLs are
+# additionally filtered by `_data_url_ok` below so only base64 PNG
+# and JPEG survive).
+# ─────────────────────────────────────────────────────────
+_ALLOWED_TAGS: set[str] = {
+    "p", "br", "strong", "em", "u", "ul", "ol", "li",
+    "a", "h1", "h2", "h3", "h4",
+    "blockquote", "hr", "span",
+    "img",
+    "table", "thead", "tbody", "tr", "td", "th",
+}
+_ALLOWED_ATTRIBUTES: dict[str, list[str]] = {
+    "a":     ["href", "title"],
+    "img":   ["src", "alt", "title", "width", "height"],
+    "span":  ["style"],
+    "table": ["border", "cellpadding", "cellspacing"],
+    "td":    ["colspan", "rowspan"],
+    "th":    ["colspan", "rowspan"],
+}
+_ALLOWED_ANCHOR_PROTOCOLS: list[str] = ["http", "https", "mailto"]
+_ALLOWED_IMG_PROTOCOLS: list[str] = ["http", "https", "data"]
+
+# Bleach's CSS sanitizer restricts inline `style` attribute to the
+# properties we allow — colour and weight only. Anything else (e.g.
+# `expression(...)`, `position: fixed`, `background-image: url(...)`)
+# is dropped before render.
+_CSS_SANITIZER = CSSSanitizer(allowed_css_properties=[
+    "color", "font-weight",
+])
+
+
+def _data_url_ok(url: str) -> bool:
+    """`data:` URLs are dangerous by default. Accept ONLY inline
+    base64 PNG or JPEG so a legitimate embedded image (e.g. a signature
+    thumbnail) still works but `data:text/html,...` XSS vectors do not.
+    """
+    if not url.startswith("data:"):
+        return False
+    lower = url[:64].lower()
+    return (lower.startswith("data:image/png;base64,")
+            or lower.startswith("data:image/jpeg;base64,")
+            or lower.startswith("data:image/jpg;base64,"))
+
+
+def _attribute_filter(tag: str, name: str, value: str) -> bool:
+    """Per-attribute value validator. Runs AFTER the tag/attribute
+    allowlist. Blocks event handlers, `javascript:` URLs, and any
+    `data:` URL that isn't a PNG/JPEG base64 payload."""
+    if not value:
+        return True
+    v = value.strip().lower()
+    if name.startswith("on"):
+        # Belt: `on*` handlers already blocked by attribute allowlist,
+        # but keep this here so future allowlist changes don't reopen
+        # the hole.
+        return False
+    if name == "href":
+        # Bleach's built-in protocol filter already runs on `href`,
+        # but data-URLs on anchors are always trouble.
+        if v.startswith("data:"):
+            return False
+        if v.startswith("javascript:"):
+            return False
+        return True
+    if name == "src":
+        if v.startswith("data:"):
+            return _data_url_ok(value)
+        if v.startswith("javascript:"):
+            return False
+        # Allow http(s) src only.
+        return v.startswith("http://") or v.startswith("https://")
+    return True
+
+
+import re as _re
+
+# `<script>...</script>` and `<style>...</style>` sanitisation needs
+# CONTENT stripped as well as the tags. Bleach's `strip=True` only
+# removes the outer tag but preserves the inner text (which for
+# `<script>` is executable JS text — safe once no <script> wrapper
+# survives, but still messy). Pre-remove these entire blocks with a
+# non-greedy regex so the visible output is clean.
+_KILLBLOCK_RE = _re.compile(
+    r"<\s*(script|style|iframe|object|embed|noscript|template)\b[^>]*>.*?"
+    r"<\s*/\s*\1\s*>",
+    flags=_re.IGNORECASE | _re.DOTALL,
+)
+# Self-closing / stray hostile tag removals (e.g. `<script/>`).
+_KILL_SELFCLOSE_RE = _re.compile(
+    r"<\s*(script|style|iframe|object|embed|noscript)\b[^>]*/?\s*>",
+    flags=_re.IGNORECASE,
+)
+
+
+def sanitize_email_body_html(raw: str) -> str:
+    """Server-side, authoritative sanitizer for `body_html`. Idempotent
+    (re-running on already-sanitised HTML is a no-op modulo whitespace).
+    Returns an empty string on empty / non-string input."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    # 1) Pre-strip whole `<script>` / `<style>` blocks INCLUDING their
+    #    inner text — a plain `strip=True` in bleach would preserve
+    #    `alert(1)` as visible text.
+    pre = _KILLBLOCK_RE.sub("", raw)
+    pre = _KILL_SELFCLOSE_RE.sub("", pre)
+    # 2) Standard bleach sweep for everything else. We temporarily
+    #    combine anchor + img protocol allowlists (bleach applies the
+    #    protocols list to every URL-carrying attribute); `data:` is
+    #    only safe on `<img src>` because `_attribute_filter` below
+    #    additionally requires PNG/JPEG base64.
+    protocols = list(set(_ALLOWED_ANCHOR_PROTOCOLS) | set(_ALLOWED_IMG_PROTOCOLS))
+    # Use the callable-attribute form so `_attribute_filter` actually
+    # runs. Signature: (tag: str, name: str, value: str) -> bool.
+    def _attrs_filter(tag: str, name: str, value: str) -> bool:
+        # First check tag-level allowlist
+        allowed = _ALLOWED_ATTRIBUTES.get(tag, []) + _ALLOWED_ATTRIBUTES.get("*", [])
+        if name not in allowed:
+            return False
+        # Then per-value guard
+        return _attribute_filter(tag, name, value)
+
+    return bleach.clean(
+        pre,
+        tags=_ALLOWED_TAGS,
+        attributes=_attrs_filter,
+        protocols=protocols,
+        css_sanitizer=_CSS_SANITIZER,
+        strip=True,           # strip disallowed tags (content already
+                              # scrubbed for <script>/<style> above)
+        strip_comments=True,
+    )
 
 # ---- PDF attachment helper ----
 from pdf_renderer import RENDERERS, persist_pdf, filename_for  # noqa: E402
@@ -70,6 +221,11 @@ async def queue_email_doc(
     """Persist + (if M365 connected) mark as sent. Used by /email/send AND by
     convenience routes + user-invite flow.
     """
+    # v160.3.9.40 (SEC-002) — Every write path funnels through this
+    # helper. Sanitize `body_html` HERE so no caller can accidentally
+    # bypass it, and so the internal convenience routes (record-scoped
+    # send helpers below) are protected too — not just POST /send.
+    body_html = sanitize_email_body_html(body_html)
     # Phase 4.7.3 — Comms Safe Mode kill switch. Intercepts at the boundary so
     # neither Graph API nor the queued-then-cron flow can fire while safe mode
     # is on. We still persist the row in `outbound_emails` (status="blocked")

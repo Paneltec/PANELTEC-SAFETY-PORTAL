@@ -225,7 +225,9 @@ async def refresh_workers(
     cfg_doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "simpro", "status": "connected"})
     if not cfg_doc:
         raise HTTPException(400, "Simpro integration not connected for this org")
-    cfg = cfg_doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    cfg = hydrate_integration_config(cfg_doc)
     if not cfg.get("api_token"):
         raise HTTPException(400, "Simpro api_token missing")
 

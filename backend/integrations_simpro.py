@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from auth import require_roles, get_current_user
 from permissions import require_permission
 from db import db
+from integrations import hydrate_integration_config  # v40 SEC-003 — decrypt secrets at read time.
 from models import now_iso, new_id
 
 log = logging.getLogger("paneltec.simpro")
@@ -25,7 +26,9 @@ async def _cfg(org_id: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "simpro"})
     if not doc or not doc.get("config"):
         raise HTTPException(400, "Simpro not configured")
-    return doc["config"]
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    return hydrate_integration_config(doc)
 
 
 def _require(cfg: dict, *keys: str) -> None:
@@ -305,7 +308,7 @@ async def simpro_employees(
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
 
     configured = _company_ids(cfg)
@@ -385,7 +388,7 @@ async def simpro_staff(user: dict = Depends(get_current_user)):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
     ids = _company_ids(cfg)
     if not ids:
@@ -657,7 +660,7 @@ async def simpro_suppliers(user: dict = Depends(get_current_user)):
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         return {"count": 0, "suppliers": [], "connected": False, "cached_at": None}
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
     ids = _company_ids(cfg)
     if not ids:
@@ -694,7 +697,7 @@ async def simpro_suppliers_sync(user: dict = Depends(require_permission("integra
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
     ids = _company_ids(cfg)
     if not ids:
@@ -793,7 +796,7 @@ async def simpro_sync_sites(limit: int = Query(50, ge=1, le=500),
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
     token = cfg["api_token"]
     base = cfg["api_base_url"].rstrip("/")
@@ -883,7 +886,7 @@ async def simpro_sync_customers(user: dict = Depends(require_permission("integra
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "simpro"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro not connected")
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
     customers = await _refresh_customers_cache(cfg, ["2", "3"], cfg["api_token"])
     await db.integration_configs.update_one(
@@ -992,7 +995,7 @@ async def simpro_customers(
     )
     if not doc or doc.get("status") != "connected":
         return {"count": 0, "customers": [], "connected": False, "cached_at": None}
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     _require(cfg, "api_base_url", "api_token")
 
     company_map = {"paneltec": "2", "viatec": "3"}
@@ -1106,7 +1109,7 @@ async def sync_simpro_suppliers(org_id: str) -> dict:
     if not doc or doc.get("status") != "connected":
         return {"imported": 0, "updated": 0, "skipped": 0, "errors": 0,
                 "fetched": 0, "synced_at": None, "note": "simpro not connected"}
-    cfg = doc.get("config") or {}
+    cfg = hydrate_integration_config(doc)
     try:
         _require(cfg, "api_base_url", "api_token")
     except HTTPException:

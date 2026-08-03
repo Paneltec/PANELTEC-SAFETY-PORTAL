@@ -41,7 +41,9 @@ async def _navixy_cfg(org_id: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "navixy"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Navixy not connected")
-    return doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    return hydrate_integration_config(doc)
 
 
 def _parse_dt(s: Optional[str]) -> Optional[datetime]:

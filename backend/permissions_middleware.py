@@ -44,7 +44,14 @@ SKIP_PATHS: list[re.Pattern] = [
     re.compile(r"^/api/renew/"),            # public renewal page
     re.compile(r"^/api/assets/scan/"),      # public QR scan resolver
     re.compile(r"^/api/scan/worker/[^/]+$"),  # Phase 4.1 — public worker scan resolver (GET only; site-signin is JWT'd)
-    re.compile(r"^/api/files/"),            # public uploads
+    # v160.3.9.40 (SEC-004) — `/api/files/*` skip REMOVED.
+    # File-serving handlers now individually gate with `get_current_user`
+    # (which accepts the short-lived download-JWT via `?token=` query so
+    # the existing `<img src>` / `<a href>` FE pattern still works).
+    # The one exception is `/api/files/renewals/{token}/...` which
+    # authenticates via its own share-link token — see
+    # `dashboard.py::serve_renewal`.
+    re.compile(r"^/api/files/renewals/"),  # public share-link path (share-token in URL)
     re.compile(r"^/api/ask(/|$)"),          # ask intelligence (own checks)
     re.compile(r"^/api/dashboard(/|$)"),    # metrics — open to any logged-in user
     re.compile(r"^/api/email(/|$)"),        # email module enforces itself

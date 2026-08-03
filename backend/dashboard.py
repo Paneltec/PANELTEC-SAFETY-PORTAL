@@ -144,6 +144,49 @@ async def metrics(
 
 
 # ---------- File serving ----------
+#
+# v160.3.9.40 (SEC-004) — Every handler below now gates on
+# `Depends(get_current_user)`, which accepts EITHER a bearer JWT OR
+# the short-lived download-scoped JWT via `?token=<jwt>` in the query
+# string. The FE `filesUrl()` helper (`frontend/src/lib/downloadUrl.js`)
+# already fetches that token and appends it, so `<img src>` and
+# `<a href>` calls continue to work without any FE change.
+# The only handler that stays unauthenticated is `/renewals/{token}/…`,
+# which authenticates via its own share-link token (verified out of
+# band before serving); it lives under the middleware's SKIP_PATHS
+# regex `^/api/files/renewals/` (see permissions_middleware.py).
+#
+# Org-scoping: for handlers whose parent resource has an org_id in DB
+# (`document_library`, `form_photos`), the org must match
+# `user["org_id"]` — otherwise 404 (not 403; do not confirm existence).
+# Other handlers (`hazards`, `contractor_docs`, `pdfs`, `swms_scans`,
+# `exports`) currently rely on the UUID-in-filename un-guessability
+# plus caller-side auth; per-file org-scoping is a follow-up on the
+# Wave 3 backlog (see security audit SEC-004 recommendation).
+
+
+async def _org_scope_document_library(folder_id: str, user: dict) -> None:
+    """404 if the document_library folder is not in the caller's org."""
+    folder = await db.document_library_folders.find_one(
+        {"id": folder_id},
+        {"_id": 0, "org_id": 1},
+    )
+    # If the folder metadata is missing we still 404 — the file might
+    # be an orphan write from before the folder registry existed, and
+    # we cannot prove ownership.
+    if not folder or folder.get("org_id") != user.get("org_id"):
+        raise HTTPException(status_code=404, detail="Not found")
+
+
+async def _org_scope_form_photo(submission_id: str, user: dict) -> None:
+    """404 if the form submission is not in the caller's org."""
+    sub = await db.form_submissions.find_one(
+        {"id": submission_id},
+        {"_id": 0, "org_id": 1},
+    )
+    if not sub or sub.get("org_id") != user.get("org_id"):
+        raise HTTPException(status_code=404, detail="Not found")
+
 
 def _serve(*parts: str):
     for p in parts:
@@ -157,43 +200,54 @@ def _serve(*parts: str):
 
 
 @files_router.get("/hazards/{name}")
-async def serve_hazard(name: str):
+async def serve_hazard(name: str, user: dict = Depends(get_current_user)):
     return _serve("hazards", name)
 
 
 @files_router.get("/contractor_docs/{name}")
-async def serve_contractor_doc(name: str):
+async def serve_contractor_doc(name: str, user: dict = Depends(get_current_user)):
     return _serve("contractor_docs", name)
 
 
 @files_router.get("/renewals/{token}/{name}")
 async def serve_renewal(token: str, name: str):
+    # PUBLIC share-link path — auth is the `token` in the URL, which
+    # was minted by the renewal-email flow and is scope-limited to a
+    # single renewal record. Kept unauthenticated intentionally.
     return _serve("renewals", token, name)
 
 
 @files_router.get("/exports/{name}")
-async def serve_export(name: str):
+async def serve_export(name: str, user: dict = Depends(get_current_user)):
     return _serve("exports", name)
 
 
 @files_router.get("/pdfs/{name}")
-async def serve_pdf(name: str):
+async def serve_pdf(name: str, user: dict = Depends(get_current_user)):
     return _serve("pdfs", name)
 
 
 @files_router.get("/document_library/{folder_id}/{name}")
-async def serve_document_library(folder_id: str, name: str):
+async def serve_document_library(
+    folder_id: str, name: str,
+    user: dict = Depends(get_current_user),
+):
+    await _org_scope_document_library(folder_id, user)
     return _serve("document_library", folder_id, name)
 
 
 @files_router.get("/form_photos/{submission_id}/{name}")
-async def serve_form_photo(submission_id: str, name: str):
+async def serve_form_photo(
+    submission_id: str, name: str,
+    user: dict = Depends(get_current_user),
+):
+    await _org_scope_form_photo(submission_id, user)
     return _serve("form_photos", submission_id, name)
 
 
 # Phase 4.6 — signed-evidence SWMS scans (PDF + JPG/PNG).
 @files_router.get("/swms_scans/{name}")
-async def serve_swms_scan(name: str):
+async def serve_swms_scan(name: str, user: dict = Depends(get_current_user)):
     return _serve("swms_scans", name)
 
 

@@ -490,6 +490,71 @@ async def on_startup():
         await ensure_simpro_import_audit_indexes()
     except Exception as e:
         log.warning("simpro_import_audit index setup failed: %s", e)
+
+    # v160.3.9.40 (SEC-003) — Encrypt any plaintext integration secrets
+    # in place. Idempotent + marker-guarded, mirrors the v38 backup
+    # destination migration. Non-blocking: failures are logged and boot
+    # continues. Manual re-run via
+    # POST /api/admin/migrate-integration-secrets.
+    try:
+        from integrations import _migrate_plaintext_integration_secrets, _FERNET
+        from db import db as _db_ref
+        marker = await _db_ref.bk_migrations.find_one(
+            {"id": "v160_3_9_40_integrations_encryption"},
+            {"_id": 0, "id": 1, "completed_at": 1},
+        )
+        if not (marker and marker.get("completed_at")):
+            if _FERNET:
+                summary = await _migrate_plaintext_integration_secrets(_db_ref)
+                await _db_ref.bk_migrations.update_one(
+                    {"id": "v160_3_9_40_integrations_encryption"},
+                    {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
+                              **summary}},
+                    upsert=True,
+                )
+                log.info("[v40] integrations secrets encryption migration: %s", summary)
+            else:
+                log.warning("[v40] Skipped integrations secrets migration — "
+                            "INTEGRATIONS_ENC_KEY not configured.")
+    except Exception as e:
+        log.warning("[v40] integrations secrets migration failed at startup: %s", e)
+
+    # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
+    # rows whose `body_html` contains dangerous markup. Idempotent —
+    # bleach is a no-op on already-safe HTML. Marker-guarded so we don't
+    # re-scan the whole outbox every boot.
+    try:
+        from email_outbox import sanitize_email_body_html
+        from db import db as _db_ref
+        marker = await _db_ref.bk_migrations.find_one(
+            {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
+            {"_id": 0, "id": 1, "completed_at": 1},
+        )
+        if not (marker and marker.get("completed_at")):
+            scanned = 0
+            rewritten = 0
+            cursor = _db_ref.outbound_emails.find({}, {"_id": 0, "id": 1, "body_html": 1})
+            async for row in cursor:
+                scanned += 1
+                raw = row.get("body_html") or ""
+                sanitized = sanitize_email_body_html(raw)
+                if sanitized != raw:
+                    await _db_ref.outbound_emails.update_one(
+                        {"id": row["id"]},
+                        {"$set": {"body_html": sanitized}},
+                    )
+                    rewritten += 1
+            await _db_ref.bk_migrations.update_one(
+                {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
+                {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
+                          "scanned": scanned, "rewritten": rewritten}},
+                upsert=True,
+            )
+            log.info("[v40] email_outbox sanitize backfill: scanned=%d rewritten=%d",
+                     scanned, rewritten)
+    except Exception as e:
+        log.warning("[v40] email_outbox sanitize backfill failed at startup: %s", e)
+
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
     # Daily reminder scan — runs once at startup for now (true cron requires

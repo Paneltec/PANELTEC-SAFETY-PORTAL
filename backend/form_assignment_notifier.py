@@ -120,7 +120,9 @@ async def _send_one(worker: dict, template: dict, org_id: str, deep_link: str) -
             {"org_id": org_id, "kind": "textmagic"},
             {"config": 1, "status": 1},
         )
-        tm_cfg = (tm or {}).get("config") or {}
+        # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+        from integrations import hydrate_integration_config
+        tm_cfg = hydrate_integration_config(tm)
         mobile = worker.get("phone") or worker.get("mobile")
         if tm_cfg.get("username") and tm_cfg.get("api_key") and mobile:
             text = (

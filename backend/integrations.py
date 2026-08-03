@@ -2,6 +2,18 @@
 
 Phase A: Navixy is real (live HTTP). The other three are placeholders so the
 existing Integrations UI keeps working.
+
+v160.3.9.40 (SEC-003) — Integration secrets at rest are now encrypted
+with Fernet, keyed off env var `INTEGRATIONS_ENC_KEY`. The
+`integration_configs.<kind>.config.<field>` plaintext keys are moved to
+`<field>_encrypted` on write. `hydrate_integration_config(doc)` decrypts
+on read — callers that used to do `cfg = doc.get("config") or {}` now
+do `cfg = hydrate_integration_config(doc)` and get plaintext-in-memory
+for the sync/HTTP call. Cross-scope safety: the Fernet key is DISTINCT
+from the v38 `BACKUP_DEST_ENC_KEY`; a ciphertext produced with either
+key cannot be decrypted with the other. `GET /integrations/*` responses
+never return plaintext OR ciphertext — the pre-existing `_mask()` helper
+still applies masked-last-4 previews for the UI.
 """
 from __future__ import annotations
 import logging
@@ -10,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
 import httpx
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, EmailStr, Field
 
@@ -47,27 +60,208 @@ SECRETS_BY_KIND: dict[str, list[str]] = {
     "textmagic": ["api_key"],
 }
 
+# ─────────────────────────────────────────────────────────
+# v160.3.9.40 (SEC-003) — Fernet encryption for integration secrets.
+# ─────────────────────────────────────────────────────────
+_ENC_KEY_ENV = "INTEGRATIONS_ENC_KEY"
+_ENC_KEY_MISSING_MSG = (
+    f"{_ENC_KEY_ENV} missing — integration secret writes will 500. "
+    "Set a 32-byte urlsafe base64 Fernet key in backend/.env, or set "
+    "INTEGRATIONS_ENC_KEY_ALLOW_MISSING=1 to boot in degraded mode "
+    "(reads pass through unchanged; NEW writes rejected)."
+)
+
+def _load_fernet() -> Optional[Fernet]:
+    raw = os.environ.get(_ENC_KEY_ENV)
+    if raw:
+        try:
+            return Fernet(raw.encode("utf-8"))
+        except Exception as e:
+            log.error("[v40] %s value is not a valid Fernet key: %s",
+                      _ENC_KEY_ENV, type(e).__name__)
+            return None
+    if os.environ.get("INTEGRATIONS_ENC_KEY_ALLOW_MISSING") == "1":
+        log.warning("[v40] %s not set — degraded mode (writes disabled).",
+                    _ENC_KEY_ENV)
+        return None
+    log.error("[v40] %s", _ENC_KEY_MISSING_MSG)
+    return None
+
+_FERNET: Optional[Fernet] = _load_fernet()
+
+
+def _encrypt_integration_secret(plaintext: str) -> str:
+    if not _FERNET:
+        raise RuntimeError("integration secret encryption unavailable — "
+                           f"{_ENC_KEY_ENV} not configured")
+    return _FERNET.encrypt(plaintext.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_integration_secret(ciphertext: str) -> str:
+    """Inverse of `_encrypt_integration_secret`. Raises `InvalidToken`
+    on a value produced with a different key (including the v38 backup
+    dest key — cross-scope isolation is intentional)."""
+    if not _FERNET:
+        raise RuntimeError("integration secret decryption unavailable — "
+                           f"{_ENC_KEY_ENV} not configured")
+    return _FERNET.decrypt(ciphertext.encode("ascii")).decode("utf-8")
+
+
+def _all_secret_fields() -> set[str]:
+    out: set[str] = set()
+    for fields in SECRETS_BY_KIND.values():
+        out.update(fields)
+    return out
+
+
+def hydrate_integration_config(doc: Optional[dict]) -> dict:
+    """v40 (SEC-003) — Return the integration doc's `config` dict as a
+    shallow copy with encrypted-at-rest secrets decrypted in-memory.
+    Callers that used to do `cfg = doc.get("config") or {}` should
+    now do `cfg = hydrate_integration_config(doc)` and get plaintext
+    for the sync/HTTP call. Safe with `doc=None`.
+    """
+    if not doc:
+        return {}
+    cfg = dict(doc.get("config") or {})
+    for field in _all_secret_fields():
+        enc_key = f"{field}_encrypted"
+        if cfg.get(enc_key) and not cfg.get(field):
+            try:
+                cfg[field] = _decrypt_integration_secret(cfg[enc_key])
+            except InvalidToken:
+                # Wrong key or tampered ciphertext — do NOT crash the
+                # caller, but do log with enough detail to triage.
+                log.warning("[v40] integration secret decrypt InvalidToken "
+                            "for field=%s (org=%s kind=%s)", field,
+                            doc.get("org_id"), doc.get("kind"))
+                cfg[field] = ""
+            except RuntimeError as e:
+                log.warning("[v40] integration secret decrypt unavailable "
+                            "for field=%s: %s", field, e)
+                cfg[field] = ""
+        # Clear the ciphertext key from the in-memory view so the caller
+        # can't accidentally use it as if it were plaintext.
+        cfg.pop(enc_key, None)
+    return cfg
+
+
+def _encrypt_secrets_for_storage(kind: str, config: dict) -> dict:
+    """Prepare a config dict for storage: encrypt secret fields into
+    `<field>_encrypted` and drop the plaintext key. Non-secret fields
+    pass through unchanged. Raises RuntimeError if a secret needs to
+    be written but Fernet is unavailable — do NOT silently store
+    plaintext."""
+    if not config:
+        return {}
+    out = dict(config)
+    for field in SECRETS_BY_KIND.get(kind, []):
+        v = out.get(field)
+        if v is None or v == "":
+            # Nothing to encrypt. Preserve any existing ciphertext.
+            out.pop(field, None)
+            continue
+        if not _FERNET:
+            raise HTTPException(
+                503,
+                f"Cannot store secret {field!r}: {_ENC_KEY_ENV} not "
+                "configured on this backend. Ask an admin to set the key.",
+            )
+        out[f"{field}_encrypted"] = _encrypt_integration_secret(str(v))
+        out.pop(field, None)
+    return out
+
+
+async def _migrate_plaintext_integration_secrets(db_) -> Dict[str, int]:
+    """v40 — one-shot: encrypt every plaintext secret field found in
+    `integration_configs`, moving the value under `<field>_encrypted`
+    and unsetting the plaintext key. Idempotent — a row already fully
+    ciphertext is a no-op. Never touches non-secret fields."""
+    if not _FERNET:
+        log.warning("[v40] migration skipped — %s not set.", _ENC_KEY_ENV)
+        return {"scanned": 0, "encrypted": 0, "skipped_no_fernet": 1}
+    scanned = 0
+    encrypted_fields = 0
+    encrypted_rows = 0
+    cursor = db_.integration_configs.find({}, {"_id": 0, "id": 1, "kind": 1,
+                                               "org_id": 1, "config": 1})
+    async for doc in cursor:
+        scanned += 1
+        kind = doc.get("kind")
+        cfg = doc.get("config") or {}
+        secret_fields = SECRETS_BY_KIND.get(kind, [])
+        set_ops: dict = {}
+        unset_ops: dict = {}
+        for field in secret_fields:
+            v = cfg.get(field)
+            if v is None or v == "":
+                continue
+            # Value present in plaintext → encrypt.
+            try:
+                ct = _encrypt_integration_secret(str(v))
+            except RuntimeError:
+                # Shouldn't happen because _FERNET check above passed.
+                continue
+            set_ops[f"config.{field}_encrypted"] = ct
+            unset_ops[f"config.{field}"] = ""
+            encrypted_fields += 1
+        if set_ops or unset_ops:
+            update: dict = {}
+            if set_ops:
+                update["$set"] = set_ops
+            if unset_ops:
+                update["$unset"] = unset_ops
+            await db_.integration_configs.update_one(
+                {"org_id": doc.get("org_id"), "kind": kind},
+                update,
+            )
+            encrypted_rows += 1
+    return {
+        "scanned": scanned,
+        "rows_encrypted": encrypted_rows,
+        "fields_encrypted": encrypted_fields,
+    }
+
 
 def _mask(kind: str, cfg: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(cfg)
     for secret_key in SECRETS_BY_KIND.get(kind, []):
         if out.get(secret_key):
             out[secret_key] = _last4(out[secret_key])
+        # v160.3.9.40 (SEC-003) — Never leak the ciphertext to the
+        # UI either. If the stored value is under `<field>_encrypted`,
+        # show a masked placeholder derived from a decrypt (best-effort)
+        # so admins still see the "••••1234" hint.
+        enc_key = f"{secret_key}_encrypted"
+        if enc_key in out:
+            try:
+                pt = _decrypt_integration_secret(out[enc_key])
+                out[secret_key] = _last4(pt)
+            except Exception:
+                out[secret_key] = "••••"
+            out.pop(enc_key, None)
     return out
 
 
 def _mask_preserve(kind: str, existing: dict, incoming: dict) -> dict:
     """Merge incoming config with existing, preserving stored secrets when the
-    incoming value is masked or empty. Returns the merged config dict.
+    incoming value is masked or empty. Returns the merged config dict with
+    plaintext secrets (ready for _encrypt_secrets_for_storage on the way to
+    Mongo).
     """
-    merged = {**(existing or {}), **(incoming or {})}
+    # v160.3.9.40 (SEC-003) — Existing may have ciphertext under
+    # `<field>_encrypted` — hydrate to plaintext for the merge, then
+    # the caller re-encrypts before storage.
+    existing_hydrated = hydrate_integration_config({"config": existing or {},
+                                                    "kind": kind}) if existing else {}
+    merged = {**(existing_hydrated or {}), **(incoming or {})}
     for secret_key in SECRETS_BY_KIND.get(kind, []):
         v = (incoming or {}).get(secret_key)
         if v is None:
-            merged[secret_key] = (existing or {}).get(secret_key)
+            merged[secret_key] = (existing_hydrated or {}).get(secret_key)
         elif isinstance(v, str) and (v.startswith("••••") or v.startswith("****") or v.strip() == ""):
             log.info("%s PUT: keeping stored %s (incoming was masked/empty)", kind, secret_key)
-            merged[secret_key] = (existing or {}).get(secret_key)
+            merged[secret_key] = (existing_hydrated or {}).get(secret_key)
     return merged
 
 
@@ -75,8 +269,7 @@ async def _get_or_default(org_id: str, kind: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": kind}, {"_id": 0})
     if doc:
         return doc
-    return {
-        "id": None, "org_id": org_id, "kind": kind,
+    return {        "id": None, "org_id": org_id, "kind": kind,
         "config": {} if kind != "navixy" else NavixyConfig().model_dump(),
         "status": "not_connected", "last_tested_at": None,
         "last_error": None, "created_at": None, "updated_at": None,
@@ -114,6 +307,11 @@ async def put_integration(kind: Kind, body: dict, user: dict = Depends(require_r
     else:
         config = merged
 
+    # v160.3.9.40 (SEC-003) — encrypt every secret field before storage.
+    # Raises 503 if INTEGRATIONS_ENC_KEY is missing (fail-closed; do NOT
+    # silently write plaintext).
+    config = _encrypt_secrets_for_storage(kind, config)
+
     doc = {
         "org_id": user["org_id"], "kind": kind, "config": config,
         "updated_at": now_iso(),
@@ -134,7 +332,8 @@ async def _navixy_cfg(org_id: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "navixy"})
     if not doc or not doc.get("config"):
         raise HTTPException(400, "Navixy not configured")
-    return doc["config"]
+    # v160.3.9.40 (SEC-003) — return plaintext view for HTTP calls.
+    return hydrate_integration_config(doc)
 
 
 @router.post("/navixy/get-hash")
@@ -157,9 +356,12 @@ async def navixy_get_hash(user: dict = Depends(require_roles("admin", "hseq_lead
         )
         raise HTTPException(400, f"Navixy auth failed: {msg}")
     new_hash = data["hash"]
+    # v160.3.9.40 (SEC-003) — session_hash is a secret; store encrypted.
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "navixy"},
-        {"$set": {"config.session_hash": new_hash, "last_error": None, "updated_at": now_iso()}},
+        {"$set": {"config.session_hash_encrypted": _encrypt_integration_secret(new_hash),
+                  "last_error": None, "updated_at": now_iso()},
+         "$unset": {"config.session_hash": ""}},
     )
     return {"hash_last4": _last4(new_hash), "fetched_at": now_iso()}
 
@@ -418,3 +620,19 @@ async def navixy_vehicles(
         })
     return {"count": len(out), "total": len(out), "vehicles": out,
             "fetched_at": now_iso(), "filter_tag_ids": sorted(selected_tag_ids)}
+
+
+
+# v160.3.9.40 (SEC-003) — Manual re-run of the secrets encryption
+# migration. Same pattern as v38's
+# /api/backup/admin/migrate-destination-passwords. Idempotent; safe to
+# call any time. Admin-only. Never returns any secret material —
+# response only carries counts.
+@router.post("/admin/migrate-integration-secrets")
+async def migrate_integration_secrets(user: dict = Depends(require_roles("admin"))):
+    summary = await _migrate_plaintext_integration_secrets(db)
+    return {
+        "ok": True,
+        "at": now_iso(),
+        **summary,
+    }

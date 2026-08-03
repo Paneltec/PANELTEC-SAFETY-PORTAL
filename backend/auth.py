@@ -580,12 +580,13 @@ async def login_with_simpro(body: LoginWithSimproIn) -> TokenOut:
 
     # Verify against live Simpro using the org's saved config.
     from integrations_simpro import _company_ids, _refresh_staff_cache  # local to avoid cycle
+    from integrations import hydrate_integration_config  # v40 SEC-003
     cfg_doc = await db.integration_configs.find_one(
         {"org_id": user["org_id"], "kind": "simpro"},
     )
     if not cfg_doc or cfg_doc.get("status") != "connected":
         raise HTTPException(503, "Simpro is not connected for this organisation — sign in with email/password.")
-    cfg = cfg_doc.get("config") or {}
+    cfg = hydrate_integration_config(cfg_doc)   # decrypt secrets on read
     ids = _company_ids(cfg)
     if not ids or not cfg.get("api_token") or not cfg.get("api_base_url"):
         raise HTTPException(503, "Simpro is not fully configured — sign in with email/password.")

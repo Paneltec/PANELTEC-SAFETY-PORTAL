@@ -402,7 +402,16 @@ export default function Outbox() {
             <h3 className="font-display text-xl mt-3">{active.subject}</h3>
             <div className="mt-2 text-xs text-slate-500"><Mail size={11} className="inline -mt-0.5 mr-1" /> {(active.to || []).join(', ')}</div>
             {active.cc?.length > 0 && <div className="text-xs text-slate-500">CC: {active.cc.join(', ')}</div>}
-            <div className="mt-4 border border-slate-200 rounded-lg p-3 prose prose-sm max-w-none text-sm" dangerouslySetInnerHTML={{ __html: active.body_html || '' }} />
+            {/* v160.3.9.40 (SEC-002) — `body_html` is now server-side sanitised
+                via `bleach` before storage (see backend/email_outbox.py
+                `sanitize_email_body_html`). No client-side sanitizer here — the
+                server value is authoritative. The `data-sanitized="true"`
+                attribute is a probe marker so security tests can assert this
+                render path was taken. */}
+            <div className="mt-4 border border-slate-200 rounded-lg p-3 prose prose-sm max-w-none text-sm"
+                 data-sanitized="true"
+                 data-testid="outbox-body-html"
+                 dangerouslySetInnerHTML={{ __html: active.body_html || '' }} />
             {active.attachments?.length > 0 && (
               <div className="mt-3"><div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Attachments</div>
                 <ul className="text-sm space-y-1">{active.attachments.map((a, i) => (

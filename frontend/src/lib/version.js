@@ -1,6 +1,63 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.40 — Security Wave 2. Bundled:
+//                  • SEC-002 (Stored XSS in email Outbox): server-side
+//                    `bleach` sanitizer on the `body_html` WRITE path in
+//                    `email_outbox.py`, keyed off a strict tag/attribute
+//                    allowlist (`p, br, strong, em, u, ul, ol, li, a,
+//                    h1-h4, blockquote, hr, span, img, table, thead,
+//                    tbody, tr, td, th`). `<script>`, `on*` handlers,
+//                    `<iframe>`, `javascript:` URLs, and non-image
+//                    `data:` URLs are stripped. Idempotent startup
+//                    backfill sanitises historical `outbound_emails`
+//                    rows and records a marker doc in
+//                    `bk_migrations.v160_3_9_40_email_outbox_sanitize_backfill`.
+//                    Outbox.jsx keeps `dangerouslySetInnerHTML` — server
+//                    is authoritative. New `data-sanitized="true"`
+//                    probe marker on that div.
+//                  • SEC-003 (Integration secrets plaintext at rest):
+//                    new Fernet key `INTEGRATIONS_ENC_KEY` (distinct
+//                    from the v38 backup key — cross-scope isolation).
+//                    Secret fields under
+//                    `integration_configs.<kind>.config.<field>` for
+//                    Simpro (`api_token`), Navixy (`password`,
+//                    `session_hash`), M365 (`client_secret`,
+//                    `access_token`, `refresh_token`), TextMagic
+//                    (`api_key`) are encrypted at rest — ciphertext
+//                    lives under `<field>_encrypted` and the plaintext
+//                    key is `$unset`. Idempotent startup migration
+//                    guarded by
+//                    `bk_migrations.v160_3_9_40_integrations_encryption`.
+//                    Manual re-run: `POST /api/integrations/admin/
+//                    migrate-integration-secrets`. New helper
+//                    `hydrate_integration_config(doc)` returns a
+//                    shallow-copy config with plaintext hydrated —
+//                    every consumer site
+//                    (`auth.py` Simpro login, `integrations_simpro`
+//                    `_cfg`, `integrations_m365._cfg`,
+//                    `integrations_simpro_workers`, `asset_navixy_*`,
+//                    `asset_service`, `asset_trip_summary`,
+//                    `form_assignment_notifier`) now flows through it.
+//                    API responses continue to return only the
+//                    masked-last-4 preview — never plaintext OR
+//                    ciphertext.
+//                  • SEC-004 (Unauthenticated /api/files/*):
+//                    `permissions_middleware.py` skip for
+//                    `^/api/files/` REMOVED. Every handler under
+//                    `dashboard.py::files_router` now depends on
+//                    `Depends(get_current_user)` which accepts the
+//                    short-lived download-scoped JWT via `?token=`
+//                    query — the existing `filesUrl()` helper on the
+//                    FE already sends this so no FE change was
+//                    needed. `document_library` and `form_photos`
+//                    are additionally org-scoped: the parent
+//                    folder/submission's `org_id` must match the
+//                    caller. Mismatch returns 404 (existence not
+//                    confirmed). `/api/files/renewals/{token}/{name}`
+//                    stays public — auth via the share-link token
+//                    in the URL — and is now the only entry in the
+//                    middleware `/api/files/` skip list.
 // v160.3.9.39 — Introduce `local_agent` backup destination kind.
 //                  When the LAN backup agent runs INSIDE the NAS's
 //                  own Docker environment, the SMB mirror step
@@ -184,4 +241,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.39';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.40';

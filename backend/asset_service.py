@@ -973,7 +973,9 @@ async def scan_reminders(user: dict = Depends(get_current_user)):
         # SMS
         try:
             tm = await db.integration_configs.find_one({"org_id": org_id, "kind": "textmagic"})
-            tm_cfg = (tm or {}).get("config") or {}
+            # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+            from integrations import hydrate_integration_config
+            tm_cfg = hydrate_integration_config(tm)
             if tm_cfg.get("username") and tm_cfg.get("api_key"):
                 import httpx
                 mobiles = []

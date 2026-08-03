@@ -303,7 +303,9 @@ async def _sync_org(org_id: str) -> dict:
     if not cfg_doc or cfg_doc.get("status") != "connected":
         return {"org_id": org_id, "updated": 0, "skipped": 0, "errors": 0, "note": "navixy_not_connected"}
 
-    cfg = cfg_doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    cfg = hydrate_integration_config(cfg_doc)
     base = (cfg.get("api_base_url") or "").rstrip("/")
     h = cfg.get("session_hash")
     if not base or not h:
@@ -842,7 +844,9 @@ async def _repair_paradoxical_lifetimes_for_org(org_id: str) -> dict:
     if not cfg_doc:
         return {"checked": 0, "fixed_report": 0, "fixed_tracks": 0,
                 "unreliable": 0, "note": "navixy_not_connected"}
-    c = cfg_doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    c = hydrate_integration_config(cfg_doc)
     base = (c.get("api_base_url") or "").rstrip("/")
     h = c.get("session_hash")
     if not base or not h:
@@ -958,7 +962,9 @@ async def sync_single_asset_now(asset: dict) -> dict:
     cfg_doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "navixy"})
     if not cfg_doc or cfg_doc.get("status") != "connected":
         return {"updated": 0, "skipped": 1, "note": "navixy_not_connected"}
-    cfg = cfg_doc.get("config") or {}
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    cfg = hydrate_integration_config(cfg_doc)
     base = (cfg.get("api_base_url") or "").rstrip("/")
     h = cfg.get("session_hash")
     if not base or not h:

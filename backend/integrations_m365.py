@@ -41,7 +41,9 @@ async def _cfg(org_id: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "microsoft365"})
     if not doc or not doc.get("config"):
         raise HTTPException(400, "Microsoft 365 not configured")
-    return doc["config"]
+    # v160.3.9.40 (SEC-003) — decrypt secrets on read.
+    from integrations import hydrate_integration_config
+    return hydrate_integration_config(doc)
 
 
 async def get_app_only_access_token(org_id: str) -> str:
