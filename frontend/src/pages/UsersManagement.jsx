@@ -515,12 +515,16 @@ export default function UsersManagement() {
               v40 SEC-004 now requires on files and worker-photo endpoints.
               Rendering `u.photo_url` directly would 401 on every request and
               silently fall back to initials — which is exactly what the v41.1
-              diagnostic caught. */}
-          <Avatar className="h-7 w-7">
+              diagnostic caught.
+              v160.3.9.42 — Enlarged from h-7 w-7 (28px) to h-14 w-14 (56px) so
+              the photo is legible at row density; initials fallback bumped to
+              text-lg to match. Row vertical padding lift in the parent <tr>
+              accommodates the bigger avatar without pushing columns around. */}
+          <Avatar className="h-14 w-14">
             {u.photo_url ? (
               <UserAvatarImage rawSrc={u.photo_url} alt={u.name || u.email || ''} testId={`user-photo-${u.id}`} />
             ) : null}
-            <AvatarFallback className="text-xs">{(u.name || u.email || '?')[0]}</AvatarFallback>
+            <AvatarFallback className="text-lg">{(u.name || u.email || '?')[0]}</AvatarFallback>
           </Avatar>
           <div className="min-w-0">
             <div className="font-medium flex items-center gap-1.5 leading-tight">

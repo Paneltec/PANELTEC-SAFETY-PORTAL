@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom';
 import { X, Loader2, Download, Trash2, Edit3, MapPin, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import PdfActions from './PdfActions';
+import AuthedImage from './AuthedImage'; // v42 · SEC-004 image wrapper
 import DeleteRecordButton from './DeleteRecordButton';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
@@ -180,7 +181,7 @@ export default function SubmissionViewer({ record, resourceKind, apiPath, onClos
               <button type="button" onClick={() => setLightboxUrl(_fileUrl(r.photo_url))}
                 data-testid="submission-viewer-primary-photo"
                 className="block w-full max-w-md rounded-xl overflow-hidden border border-slate-200 hover:border-brand-blue focus:outline-none focus:ring-2 focus:ring-brand-blue">
-                <img src={_fileUrl(r.photo_url)} alt="Primary" className="w-full h-56 object-cover" />
+                <AuthedImage rawSrc={r.photo_url} alt="Primary" className="w-full h-56 object-cover" />
               </button>
             </div>
           )}

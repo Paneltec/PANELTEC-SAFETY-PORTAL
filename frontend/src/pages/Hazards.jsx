@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Camera, Loader2, Plus, Trash2, UploadCloud } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { API_BASE, apiError } from '../lib/api';
+import AuthedImage from '../components/AuthedImage'; // v42 · SEC-004 image wrapper
 import EmailButton from '../components/EmailButton';
 import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
@@ -68,8 +69,8 @@ export default function HazardsList() {
                 return (
                   <div key={h.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden" data-testid={`hazard-card-photo-${h.id}`}>
                     <div className="aspect-video bg-slate-100">
-                      <img
-                        src={h.photo_url.startsWith('http') ? h.photo_url : `${BACKEND}${h.photo_url}`}
+                      <AuthedImage
+                        rawSrc={h.photo_url}
                         alt={h.title}
                         className="w-full h-full object-cover"
                       />
