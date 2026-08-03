@@ -72,35 +72,160 @@ function CompanyChip({ label }) {
 // v160.3.4b — Worker profile photo. Loads via a short-lived download JWT
 // so `<img src>` works despite the backend requiring auth. Silently hides
 // when no photo is set OR when the token/blob fetch fails.
-function WorkerPhoto({ worker }) {
+// v160.3.9.34 — Interactive avatar: click / drag-drop to upload, hover
+// trash to remove. Gated by canEdit (admin + hseq_lead).
+function WorkerPhoto({ worker, canEdit, onChanged }) {
   const [src, setSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
+  const [hover, setHover] = React.useState(false);
+  const fileRef = React.useRef(null);
   React.useEffect(() => {
     let alive = true;
+    setBroken(false);
     if (!worker?.photo_url) { setSrc(null); return () => { alive = false; }; }
-    filesUrl(worker.photo_url)
+    // v33.4 cache-bust: append gridfs_id so the browser fetches fresh.
+    const bust = worker.photo_gridfs_id ? `?v=${worker.photo_gridfs_id}` : '';
+    filesUrl(`${worker.photo_url}${bust}`)
       .then((u) => { if (alive) setSrc(u); })
       .catch(() => { if (alive) setBroken(true); });
     return () => { alive = false; };
-  }, [worker?.photo_url]);
-  if (!worker?.photo_url || broken) {
-    return (
-      <div
-        className="w-16 h-16 rounded-xl bg-white/60 border border-white/70 shadow-sm flex items-center justify-center text-[#1e4a8c] font-display font-semibold text-lg shrink-0"
-        data-testid="worker-view-photo-placeholder"
-      >
-        {(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}
-      </div>
-    );
-  }
+  }, [worker?.photo_url, worker?.photo_gridfs_id]);
+
+  const doUpload = async (file) => {
+    if (!file || busy) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('Image too large — max 10MB'); return;
+    }
+    if (!/^image\/(jpeg|png|webp)$/i.test(file.type || '')) {
+      toast.error('Please upload JPEG, PNG, or WebP (iPhone HEIC not supported — convert first)');
+      return;
+    }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/workers/${worker.id}/photo`, fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success('Photo updated');
+      onChanged?.(data);
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setBusy(false); }
+  };
+
+  const doDelete = async () => {
+    setBusy(true);
+    try {
+      const { data } = await api.delete(`/workers/${worker.id}/photo`);
+      toast.success('Photo removed');
+      onChanged?.(data);
+      setConfirmDelete(false);
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally { setBusy(false); }
+  };
+
+  const onFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) doUpload(f);
+    e.target.value = '';
+  };
+  const onDrop = (e) => {
+    e.preventDefault();
+    if (!canEdit) return;
+    const f = e.dataTransfer.files?.[0];
+    if (f) doUpload(f);
+  };
+
+  const hasPhoto = !!worker?.photo_url && !broken;
   return (
-    <img
-      src={src || ''}
-      alt=""
-      onError={() => setBroken(true)}
-      className="w-16 h-16 rounded-xl object-cover shadow-sm border border-white/70 shrink-0 bg-white"
-      data-testid="worker-view-photo"
-    />
+    <div
+      className="relative shrink-0 group"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onDragOver={(e) => { if (canEdit) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+      onDrop={onDrop}
+      data-testid="worker-avatar-uploader"
+    >
+      {hasPhoto ? (
+        <img
+          src={src || ''}
+          alt=""
+          onError={() => setBroken(true)}
+          onClick={() => canEdit && fileRef.current?.click()}
+          className={`w-24 h-24 rounded-2xl object-cover shadow border-2 border-white/70 bg-white ${canEdit ? 'cursor-pointer hover:brightness-90' : ''}`}
+          data-testid="worker-view-photo"
+        />
+      ) : (
+        <div
+          onClick={() => canEdit && fileRef.current?.click()}
+          className={`w-24 h-24 rounded-2xl bg-white/60 border-2 ${canEdit ? 'border-dashed border-[#1e4a8c]/40 hover:bg-white cursor-pointer' : 'border-white/70'} shadow-sm flex flex-col items-center justify-center text-[#1e4a8c] font-display font-semibold`}
+          data-testid={canEdit ? 'worker-avatar-empty-clickable' : 'worker-view-photo-placeholder'}
+        >
+          {busy ? (
+            <div className="w-6 h-6 border-2 border-[#1e4a8c] border-t-transparent rounded-full animate-spin" data-testid="worker-avatar-spinner" />
+          ) : (
+            <>
+              <span className="text-lg leading-tight">{(worker?.first_name?.[0] || '?')}{(worker?.last_name?.[0] || '')}</span>
+              {canEdit && <span className="text-[9px] uppercase tracking-wider mt-0.5 opacity-60">Click to add</span>}
+            </>
+          )}
+        </div>
+      )}
+      {busy && hasPhoto && (
+        <div className="absolute inset-0 rounded-2xl bg-black/40 flex items-center justify-center" data-testid="worker-avatar-spinner">
+          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      {canEdit && hasPhoto && hover && !busy && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+          title="Remove photo"
+          data-testid="worker-avatar-remove-btn"
+          className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-rose-600 text-white shadow flex items-center justify-center hover:bg-rose-700"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        </button>
+      )}
+      {canEdit && (
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={onFileChange}
+          data-testid="worker-avatar-file-input"
+          className="hidden"
+        />
+      )}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-[80] bg-slate-900/70 grid place-items-center p-4" data-testid="worker-avatar-remove-confirm"
+          onClick={(e) => e.target === e.currentTarget && !busy && setConfirmDelete(false)}
+        >
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-200">
+              <h3 className="font-display font-bold text-slate-900">Remove worker photo?</h3>
+              <p className="text-xs text-slate-500 mt-1">The image will be permanently deleted.</p>
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button type="button" onClick={() => setConfirmDelete(false)} disabled={busy}
+                data-testid="worker-avatar-remove-cancel"
+                className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                Cancel
+              </button>
+              <button type="button" onClick={doDelete} disabled={busy}
+                data-testid="worker-avatar-remove-confirm-btn"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-sm font-bold disabled:opacity-60">
+                {busy ? 'Removing…' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -275,7 +400,13 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
         <div className="px-6 py-4 border-b border-slate-200 bg-[#e6eff9] flex items-start justify-between gap-4">
           <div className="flex items-start gap-4 min-w-0 flex-1">
             {/* v160.3.4b — worker photo. Loads via short-lived download JWT. */}
-            {worker && <WorkerPhoto worker={worker} />}
+            {worker && (
+              <WorkerPhoto
+                worker={worker}
+                canEdit={canManageWorker}
+                onChanged={(updated) => setWorker((cur) => ({ ...(cur || {}), ...updated }))}
+              />
+            )}
             <div className="min-w-0 flex-1">
               <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-[#1e4a8c]">Worker profile · Read only</div>
               <h2 className="font-display text-xl font-semibold text-slate-900 mt-0.5" data-testid="worker-view-name">

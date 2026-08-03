@@ -7,9 +7,15 @@ from __future__ import annotations
 import re
 from typing import Optional, Literal, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+import io
+import logging
+
+log = logging.getLogger("paneltec.workers")
 
 from auth import get_current_user
 from permissions import require_permission
@@ -447,3 +453,192 @@ async def get_my_worker_profile(user: dict = Depends(get_current_user)):
         "certifications": [_serialise_cert(c, today) for c in certs],
         "clients": clients,
     }
+
+
+# ─────────────────────────────────────────────────────────────
+# v160.3.9.34 — Worker avatar upload / delete.
+#
+# `POST /api/workers/{worker_id}/photo` accepts a multipart image
+# (jpeg/png/webp) up to 10MB. Server-side canonicalisation via
+# Pillow: centre-crop → 512×512 → re-encode JPEG q=85 (typical
+# output ~150KB). Old GridFS blob is deleted BEFORE the new one
+# is registered — zero-orphan invariant. If Pillow raises on a
+# malformed image, falls back to storing the raw upload with a
+# warning log (still MIME + size validated).
+#
+# `DELETE /api/workers/{worker_id}/photo` hard-deletes the blob
+# and unsets both `photo_url` and `photo_gridfs_id`.
+#
+# Both gated via `_require_write` (admin + hseq_lead). Both
+# scoped to the caller's org_id. Both emit a `worker_audit` row.
+# ─────────────────────────────────────────────────────────────
+
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024   # 10 MB pre-resize cap.
+_MIME_MAGIC = [
+    (b"\xff\xd8\xff",           "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n",      "image/png"),
+    (b"RIFF",                    "image/webp"),  # partial; matched below.
+]
+
+
+def _sniff_mime(head: bytes) -> Optional[str]:
+    for magic, mime in _MIME_MAGIC:
+        if head.startswith(magic):
+            if mime == "image/webp":
+                # RIFF….WEBP — check bytes 8-12.
+                if head[8:12] == b"WEBP":
+                    return "image/webp"
+                return None
+            return mime
+    return None
+
+
+def _fs_bucket() -> AsyncIOMotorGridFSBucket:
+    return AsyncIOMotorGridFSBucket(db.client[db.name])
+
+
+def _canonicalise_image(raw: bytes) -> tuple[bytes, str, dict]:
+    """Return (blob, mime, meta). Falls back to (raw, sniffed_mime, {})
+    if Pillow fails — never raises."""
+    meta = {}
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(raw))
+        img.load()
+        # EXIF orientation → apply.
+        try:
+            from PIL import ImageOps
+            img = ImageOps.exif_transpose(img)
+        except Exception:
+            pass
+        # Convert to RGB for JPEG (drop alpha).
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        # Centre-crop square → 512x512.
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top = (h - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+        img = img.resize((512, 512))
+        out = io.BytesIO()
+        img.save(out, format="JPEG", quality=85, optimize=True)
+        blob = out.getvalue()
+        meta = {"resized_to": "512x512", "out_size": len(blob),
+                "resized_by": "Pillow"}
+        return blob, "image/jpeg", meta
+    except Exception as e:
+        log.warning("workers.photo Pillow-resize failed, storing raw: %s", e)
+        return raw, _sniff_mime(raw[:16]) or "application/octet-stream", {
+            "resized_to": None, "out_size": len(raw), "fallback_reason": str(e),
+        }
+
+
+@router.post("/{worker_id}/photo")
+async def upload_worker_photo(
+    worker_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user, action="edit")
+    worker = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+
+    raw = await file.read()
+    if len(raw) == 0:
+        raise HTTPException(400, "Empty upload")
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, f"Image too large (max {_MAX_UPLOAD_BYTES//1024//1024}MB)")
+    mime = _sniff_mime(raw[:16])
+    if mime is None:
+        # Reject HEIC and everything unrecognised with a clear message.
+        raise HTTPException(415,
+            "Unsupported image format — please upload JPEG, PNG, or WebP. "
+            "iPhone photos default to HEIC; convert to JPEG first.")
+
+    canonical_blob, canonical_mime, meta = _canonicalise_image(raw)
+
+    fs = _fs_bucket()
+    # Delete OLD GridFS blob first — zero-orphan invariant.
+    old_gid = worker.get("photo_gridfs_id")
+    if old_gid:
+        try:
+            await fs.delete(ObjectId(old_gid))
+        except Exception as e:
+            log.warning("workers.photo old-blob delete failed (may already be gone): %s", e)
+
+    new_gid = await fs.upload_from_stream(
+        f"{worker_id}.jpg",
+        canonical_blob,
+        metadata={"kind": "worker_photo", "worker_id": worker_id,
+                  "org_id": user["org_id"], "mime": canonical_mime,
+                  "orig_size": len(raw), "orig_mime": mime, **meta},
+    )
+    ts = now_iso()
+    photo_url = f"/api/workers/{worker_id}/photo/{new_gid}"
+    updated = await db.workers.find_one_and_update(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"$set": {"photo_url": photo_url,
+                  "photo_gridfs_id": str(new_gid),
+                  "updated_at": ts}},
+        return_document=ReturnDocument.AFTER,
+    )
+    await db.worker_audit.insert_one({
+        "id": new_id(),
+        "worker_id": worker_id,
+        "org_id": user["org_id"],
+        "action": "photo_uploaded",
+        "actor_user_id": user["id"],
+        "actor_email": user.get("email"),
+        "diff": {"orig_bytes": len(raw), "orig_mime": mime,
+                 "stored_bytes": len(canonical_blob),
+                 "stored_mime": canonical_mime,
+                 "gridfs_id": str(new_gid),
+                 "old_gridfs_id": old_gid, **meta},
+        "at": ts,
+    })
+    return _serialise(updated, viewer=user)
+
+
+@router.delete("/{worker_id}/photo")
+async def delete_worker_photo(
+    worker_id: str,
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user, action="edit")
+    worker = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    old_gid = worker.get("photo_gridfs_id")
+    if old_gid:
+        fs = _fs_bucket()
+        try:
+            await fs.delete(ObjectId(old_gid))
+        except Exception as e:
+            log.warning("workers.photo delete blob failed: %s", e)
+    ts = now_iso()
+    updated = await db.workers.find_one_and_update(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"$set": {"photo_url": None, "photo_gridfs_id": None,
+                  "updated_at": ts}},
+        return_document=ReturnDocument.AFTER,
+    )
+    await db.worker_audit.insert_one({
+        "id": new_id(),
+        "worker_id": worker_id,
+        "org_id": user["org_id"],
+        "action": "photo_deleted",
+        "actor_user_id": user["id"],
+        "actor_email": user.get("email"),
+        "diff": {"old_gridfs_id": old_gid, "hard_deleted": True},
+        "at": ts,
+    })
+    return _serialise(updated, viewer=user)
+
