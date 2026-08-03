@@ -391,3 +391,20 @@
   - `/app/frontend/src/lib/version.js` (version bump)
   - `/app/frontend/public/service-worker.js` (version bump)
 - **Verified**: Crane Lift crew card renders, company toggle propagates, non-crew forms unaffected
+
+
+## Iteration 18 — v160.3.9.35 Remove Add Worker affordance
+- **Commit**: 8b3435df2a397b3fc6869b04652014d3c7c4fa5b
+- **Date**: 2026-08-03T08:16:00Z
+- **Changes**:
+  - Removed "Add" button from Workers toolbar and empty state
+  - Added Simpro info banner in Workers list: "Workers come from Simpro. Contact your admin to add a new worker."
+  - WorkerEditModal: `isNew` path now shows deprecation notice instead of rendering create form
+  - Removed `api.post('/workers')` call — the deprecated HTTP 410 endpoint
+  - Header/button always show "EDIT WORKER" / "Update", Certifications section always visible
+  - Version bumped to `paneltec-v160.3.9.35` (mobile only)
+- **Files modified**:
+  - `/app/mobile/app/workers.tsx`
+  - `/app/mobile/src/components/WorkerEditModal.tsx`
+  - `/app/mobile/src/lib/version.ts`
+- **Verified**: No `POST /workers` callers remain, info banner visible, edit modal works for existing workers

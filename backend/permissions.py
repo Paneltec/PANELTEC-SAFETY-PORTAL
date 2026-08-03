@@ -428,13 +428,14 @@ async def resolve_team_scope(
 async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
     """Resolve the full matrix for a user — role defaults merged with overrides."""
     overrides = await _get_overrides(user["id"])
-    # v160.3.9.33 — pre-load token set once so the per-cell loop below stays
-    # O(resources*actions) without hitting the cache map for every action.
+    # v160.3.9.35 (Phase 6) — DB-first for every role. Load the token
+    # set once so the per-cell loop stays O(resources*actions) without
+    # hitting Mongo per action. When the DB has no active doc for the
+    # user's role_id, `db_tokens` is `None` and each cell falls back
+    # to the hardcoded ROLE_DEFAULTS map (boot-strap safety).
     role_str = user.get("role")
-    use_db_fallback = role_str not in ROLE_DEFAULTS
-    db_tokens: set = set()
-    if use_db_fallback:
-        db_tokens = await _role_tokens(user.get("role_id") or role_str)
+    lookup_id = user.get("role_id") or role_str
+    db_tokens = await _role_tokens(lookup_id)
     out: Dict[str, Dict[str, bool]] = {}
     for resource in RESOURCES:
         out[resource] = {}
@@ -445,10 +446,10 @@ async def effective_for(user: dict) -> Dict[str, Dict[str, bool]]:
             res_over = overrides.get(resource) or {}
             if action in res_over:
                 out[resource][action] = bool(res_over[action])
-            elif use_db_fallback:
+            elif db_tokens is not None:
                 out[resource][action] = f"{resource}.{action}" in db_tokens
             else:
-                out[resource][action] = _role_default(role_str, resource, action)
+                out[resource][action] = _role_default_hardcoded(role_str, resource, action)
     return out
 
 
