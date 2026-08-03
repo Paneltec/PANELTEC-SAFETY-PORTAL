@@ -1,6 +1,22 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.35 — Phase 6: permissions token unification.
+//                  Backend `_role_default()` in `permissions.py` is
+//                  now ALWAYS DB-first for every role (seeded +
+//                  custom). It reads `roles.permission_tokens[]`
+//                  from Mongo keyed on `role_id` and only falls
+//                  back to the hardcoded `ROLE_DEFAULTS` map when
+//                  the DB has no active doc for that role_id
+//                  (first-run / pre-seed safety). Fixes the silent-
+//                  ignore bug where an admin editing seeded roles
+//                  via the Roles Matrix UI would see their changes
+//                  ignored at runtime. Empty `permission_tokens: []`
+//                  is now respected as an explicit "no permissions"
+//                  choice — not a fallback trigger. Full matrix
+//                  (`effective_for`) inherits the same semantics.
+//                  Legacy `_role_permits` alias preserved for
+//                  backwards-compat middleware import.
 // v160.3.9.34.5 — Fix: expanded ID Card content is no longer hidden
 //                  behind the sticky Save/Cancel footer. Two changes,
 //                  both in the Edit modal: (1) `pb-24` (96px) padding-
@@ -66,4 +82,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.34.5';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.35';
