@@ -246,21 +246,27 @@ async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:
 
 
 # ─────────────────────────────────────────────────────────────
-# v160.3.9.33 — Phase 4d Option-1 fallback
-# `_role_default()` reads from the module-level `ROLE_DEFAULTS`
-# dict (11 seeded role_ids). Custom / auto-created roles are NOT
-# there, so a user with `role="custom_traffic_controller"` would
-# always resolve to False.
+# v160.3.9.35 — Phase 6: Token unification.
+# `_role_default()` is now ALWAYS DB-first for both seeded and
+# custom roles. It consults `roles.permission_tokens[]` in Mongo
+# keyed on the user's `role_id` (or legacy `role` string) and only
+# falls back to the hardcoded `ROLE_DEFAULTS` map when NO active
+# role doc exists for that role_id (first-run/pre-seed).
 #
-# The fallback below consults `db.roles.permission_tokens[]` for
-# any role_id that isn't in `ROLE_DEFAULTS`. Result is cached
-# process-wide until the role is mutated (`_bust_role_cache()`
-# is called from every roles-catalogue mutation).
+# Previously (`v160.3.9.33` Phase 4d Option-1) `_role_default()`
+# read only from the hardcoded map, which silently defeated the
+# Roles Matrix UI for the 11 seeded roles — an admin could edit
+# `permission_tokens[]` and the change would be ignored at runtime.
+# This unification makes DB the source of truth for every role
+# while preserving the hardcoded fallback for boot-strap safety.
 #
-# Phase 6 will unify this by making `_role_default()` async and
-# always read from db.roles — for now the two paths coexist and
-# ROLE_DEFAULTS wins when the role_id is known there. See
-# `07_phase_plan.md` Phase 6 item #1.
+# Cache semantics are unchanged: `_ROLE_TOKENS_CACHE` still holds
+# per-role_id token sets and is invalidated via `_bust_role_cache()`
+# on every mutation in roles_catalogue / bulk-assign-role.
+# `_ROLE_TOKENS_CACHE_MISS` now serves a stronger purpose: it
+# records role_ids we've verified DO NOT have an active DB doc,
+# so those callers correctly fall through to ROLE_DEFAULTS on
+# subsequent hits without a repeat Mongo probe.
 # ─────────────────────────────────────────────────────────────
 
 _ROLE_TOKENS_CACHE: Dict[str, set] = {}
@@ -280,50 +286,95 @@ def _bust_role_cache(role_id: Optional[str] = None) -> None:
     _ROLE_TOKENS_CACHE_MISS.discard(role_id)
 
 
-async def _role_tokens(role_id: Optional[str]) -> set:
-    """Return the `permission_tokens[]` set for a role_id, cached.
-    Returns empty set for unknown / inactive / missing roles."""
+async def _role_tokens(role_id: Optional[str]) -> Optional[set]:
+    """Return the `permission_tokens[]` set for a role_id from Mongo.
+
+    v160.3.9.35 (Phase 6) — signature widened to distinguish two
+    outcomes so callers can decide whether to fall back:
+      • `None`           → no active role doc exists for this role_id
+                            (signal to fall back to ROLE_DEFAULTS).
+      • `set(...)`       → an active doc exists; use these tokens
+                            EVEN IF the set is empty (empty is an
+                            explicit admin choice and must be
+                            respected — not a fallback trigger).
+
+    Cached per-role_id; misses recorded in `_ROLE_TOKENS_CACHE_MISS`
+    so subsequent hits don't repeat the Mongo probe.
+    """
     if not role_id:
-        return set()
+        return None
     if role_id in _ROLE_TOKENS_CACHE:
         return _ROLE_TOKENS_CACHE[role_id]
     if role_id in _ROLE_TOKENS_CACHE_MISS:
-        return set()
+        return None
     doc = await db.roles.find_one(
         {"role_id": role_id, "is_active": True},
         {"_id": 0, "permission_tokens": 1},
     )
     if not doc:
         _ROLE_TOKENS_CACHE_MISS.add(role_id)
-        return set()
+        return None
     tokens = set(doc.get("permission_tokens") or [])
     _ROLE_TOKENS_CACHE[role_id] = tokens
     return tokens
 
 
-async def _role_permits(user: dict, resource: str, action: str) -> bool:
-    """Fully resolve role-derived permission for a user.
-    First tries the legacy ROLE_DEFAULTS (11 seeded roles); if the
-    role is not in that map, falls back to `db.roles.permission_tokens[]`
-    keyed on `user.role_id` (preferred) then `user.role` (legacy mirror).
+def _role_default_hardcoded(role: Optional[str], resource: str, action: str) -> bool:
+    """Sync fallback — reads the module-level `ROLE_DEFAULTS` map.
+    Called by the async `_role_default()` only when no active role
+    doc exists in Mongo for the caller's role_id. Kept as a helper
+    so the hardcoded semantics remain independently unit-testable."""
+    return bool(ROLE_DEFAULTS.get(role, {}).get(resource, {}).get(action, False))
+
+
+async def _role_default(
+    user_or_role,
+    resource: str,
+    action: str,
+) -> bool:
+    """v160.3.9.35 (Phase 6) — Resolve role-derived permission,
+    DB-first for both seeded and custom roles.
+
+    Accepts either:
+      • a `user` dict — `role_id` (preferred) then `role` string are
+        used to look up DB tokens; `role` string drives the hardcoded
+        fallback if the DB lookup misses.
+      • a role string — for legacy callers; used for both the DB
+        lookup and the hardcoded fallback key.
+
+    Resolution order (per-cell):
+      1. `roles.permission_tokens[]` from Mongo keyed on role_id
+         (or legacy `role` if role_id is absent). Doc exists →
+         token membership is authoritative, including the empty-set
+         case ("admin has explicitly granted no permissions").
+      2. Hardcoded `ROLE_DEFAULTS[role][resource][action]` — ONLY
+         when the DB has no active doc for that role_id
+         (first-run / pre-seed / dev boot-strap).
+
+    Per-user overrides (`user_permissions.overrides[resource][action]`)
+    are layered on top by `can()` — not the responsibility of this
+    function.
     """
-    role_str = user.get("role")
-    if role_str in ROLE_DEFAULTS:
-        return _role_default(role_str, resource, action)
-    # Fallback path — look up tokens from db.roles.
-    lookup_id = user.get("role_id") or role_str
+    if isinstance(user_or_role, dict):
+        role_str = user_or_role.get("role")
+        lookup_id = user_or_role.get("role_id") or role_str
+    else:
+        role_str = user_or_role
+        lookup_id = user_or_role
     tokens = await _role_tokens(lookup_id)
+    if tokens is None:
+        # DB has no active role doc — fall back to the hardcoded map.
+        return _role_default_hardcoded(role_str, resource, action)
     return f"{resource}.{action}" in tokens
 
 
-def _role_default(role: str, resource: str, action: str) -> bool:
-    # v160.3.9.32-4c — Reads the LEGACY `role` string, not `role_id`.
-    # A user with role_id="custom_regional_auditor" and no `role` string
-    # gets ROLE_DEFAULTS.get(None, {}) → zero permissions from role
-    # default. Overrides still layer correctly on top. Phase 6 backlog
-    # item #1 (07_phase_plan.md) tracks the migration to read from
-    # `roles.permission_tokens[]` keyed on `role_id`.
-    return bool(ROLE_DEFAULTS.get(role, {}).get(resource, {}).get(action, False))
+# Backwards-compat alias. Historically two names were used
+# (`_role_default` = hardcoded map, `_role_permits` = DB-first with
+# hardcoded fallback for custom roles). Phase 6 collapses them into
+# `_role_default`. Keeping the old symbol exported so
+# `permissions_middleware.py` and any external importer continue to
+# work; both names resolve to the same coroutine.
+_role_permits = _role_default
 
 
 async def can(user: dict, resource: str, action: str) -> bool:
@@ -335,9 +386,9 @@ async def can(user: dict, resource: str, action: str) -> bool:
     res_over = overrides.get(resource) or {}
     if action in res_over:
         return bool(res_over[action])
-    # v160.3.9.33 — was `_role_default(user["role"], …)`; now `_role_permits`
-    # so custom / auto-created roles resolve via `db.roles.permission_tokens[]`.
-    return await _role_permits(user, resource, action)
+    # v160.3.9.35 — DB-first for every role (seeded + custom); hardcoded
+    # ROLE_DEFAULTS only if no active DB doc exists for role_id.
+    return await _role_default(user, resource, action)
 
 
 async def resolve_team_scope(

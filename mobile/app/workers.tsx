@@ -109,7 +109,7 @@ function WorkersScreenInner() {
         <View style={{ flex: 1 }}>
           <Text style={s.overline}>SETTINGS</Text>
           <Text style={s.heading}>Workers</Text>
-          <Text style={s.subtitle}>Your field crew — synced from Simpro or added manually.</Text>
+          <Text style={s.subtitle}>Your field crew — synced from Simpro.</Text>
         </View>
       </View>
 
@@ -147,16 +147,7 @@ function WorkersScreenInner() {
               <Text style={s.syncBtnText}>Sync</Text>
             </TouchableOpacity>
           )}
-          {canEdit && (
-            <TouchableOpacity
-              testID="add-worker-btn"
-              style={s.addBtn}
-              onPress={() => setEditing({})}
-            >
-              <Ionicons name="add" size={14} color={Colors.imSurface} />
-              <Text style={s.addBtnText}>Add</Text>
-            </TouchableOpacity>
-          )}
+          {/* Add-worker removed v160.3.9.35 — POST /api/workers is HTTP 410 */}
         </View>
       </View>
 
@@ -171,14 +162,8 @@ function WorkersScreenInner() {
           <Ionicons name="people" size={36} color={Colors.textTertiary} />
           <Text style={s.emptyTitle}>{search ? 'No workers match' : 'No workers yet'}</Text>
           <Text style={s.emptyBody}>
-            {search ? 'Try a different search term.' : 'Sync from Simpro or add a worker manually.'}
+            {search ? 'Try a different search term.' : 'Workers come from Simpro. Contact your admin to add a new worker.'}
           </Text>
-          {canEdit && !search && (
-            <TouchableOpacity testID="empty-add-worker" style={[s.addBtn, { marginTop: 12 }]} onPress={() => setEditing({})}>
-              <Ionicons name="add" size={14} color={Colors.imSurface} />
-              <Text style={s.addBtnText}>Add worker</Text>
-            </TouchableOpacity>
-          )}
         </View>
       ) : (
         <ScrollView
@@ -187,6 +172,11 @@ function WorkersScreenInner() {
           contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.paneltecBlue} />}
         >
+          {/* Simpro-only info banner — v160.3.9.35 */}
+          <View testID="simpro-info-banner" style={s.infoBanner}>
+            <Ionicons name="information-circle" size={14} color={Colors.paneltecBlue} />
+            <Text style={s.infoBannerText}>Workers come from Simpro. Contact your admin to add a new worker.</Text>
+          </View>
           <Text style={s.countLabel}>{filtered.length} worker{filtered.length === 1 ? '' : 's'}</Text>
           {filtered.map((w) => (
             <TouchableOpacity
@@ -303,6 +293,12 @@ const s = StyleSheet.create({
   emptyWrap: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32, gap: 8 },
   emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.ink },
   emptyBody: { fontSize: 13, color: Colors.textSecondary, textAlign: 'center' },
+  infoBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.surfaceLight, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 10,
+  },
+  infoBannerText: { fontSize: 12, color: Colors.textSecondary, flex: 1, lineHeight: 17 },
   countLabel: { fontSize: 11, fontWeight: '600', color: Colors.textTertiary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.8 },
   workerCard: {
     flexDirection: 'row', alignItems: 'center', gap: 10,

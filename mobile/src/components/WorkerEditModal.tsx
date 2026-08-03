@@ -136,6 +136,28 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
   const isNew = !worker.id;
   const isSimpro = worker.source === 'simpro';
 
+  // v160.3.9.35 — POST /api/workers is HTTP 410.
+  // If somehow opened with no worker.id, show deprecation and bail.
+  if (isNew) {
+    return (
+      <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: Colors.bg, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+          <Ionicons name="information-circle" size={40} color={Colors.paneltecBlue} />
+          <Text style={{ fontSize: 16, fontWeight: '700', color: Colors.ink, marginTop: 12, textAlign: 'center' }}>
+            Workers come from Simpro
+          </Text>
+          <Text style={{ fontSize: 13, color: Colors.textSecondary, marginTop: 8, textAlign: 'center', lineHeight: 20 }}>
+            Manual worker creation has been removed. Contact your admin to add a new worker via Simpro.
+          </Text>
+          <TouchableOpacity testID="deprecated-add-close" onPress={onClose}
+            style={{ marginTop: 20, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10, backgroundColor: Colors.paneltecBlue }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: Colors.imSurface }}>OK</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
   const [f, setF] = useState({
     first_name: worker.first_name || '',
     last_name:  worker.last_name  || '',
@@ -195,13 +217,8 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
     if (f.postal_code && !/^\d{4}$/.test(f.postal_code)) { Alert.alert('Validation', 'Postal code must be 4 digits'); return; }
     setSaving(true);
     try {
-      if (isNew) {
-        await api.post('/workers', f);
-        Alert.alert('Success', 'Worker added');
-      } else {
-        await api.patch(`/workers/${worker.id}`, f);
-        Alert.alert('Success', 'Worker updated');
-      }
+      await api.patch(`/workers/${worker.id}`, f);
+      Alert.alert('Success', 'Worker updated');
       onSaved();
     } catch (e: any) { Alert.alert('Error', apiError(e)); }
     finally { setSaving(false); }
@@ -214,9 +231,9 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
           {/* Header */}
           <View testID="worker-edit-header" style={cs.header}>
             <View style={{ flex: 1 }}>
-              <Text style={cs.headerOverline}>{isNew ? 'NEW WORKER' : 'EDIT WORKER'}</Text>
-              <Text style={cs.headerTitle}>{isNew ? 'Add worker' : fullName(worker)}</Text>
-              {!isNew && <Text style={cs.headerSubtitle}>Manage identity, address, availability, client assignments and certifications. Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.</Text>}
+              <Text style={cs.headerOverline}>EDIT WORKER</Text>
+              <Text style={cs.headerTitle}>{fullName(worker)}</Text>
+              <Text style={cs.headerSubtitle}>Manage identity, address, availability, client assignments and certifications. Personal details and cert files are safe to edit here — Simpro-synced fields refresh on next sync.</Text>
             </View>
             <TouchableOpacity testID="worker-edit-close" onPress={onClose} style={{ padding: 6 }}>
               <Ionicons name="close" size={22} color={Colors.textTertiary} />
@@ -445,11 +462,9 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
             </Section>
 
             {/* 5. Certifications */}
-            {!isNew && (
-              <Section icon="ribbon" title="Certifications" testid="section-certifications" defaultOpen={false}>
+            <Section icon="ribbon" title="Certifications" testid="section-certifications" defaultOpen={false}>
                 <WorkerCertsSection workerId={worker.id} canEdit={canEdit} />
               </Section>
-            )}
           </ScrollView>
 
           {/* Save footer */}
@@ -463,7 +478,7 @@ export default function WorkerEditModal({ worker, canEdit, onClose, onSaved }: {
                 <TouchableOpacity testID="modal-save" style={[cs.saveBtn, (saving || !!availabilityError) && { opacity: 0.6 }]}
                   onPress={submit} disabled={saving || !!availabilityError}>
                   {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : (
-                    <Text style={cs.saveBtnText}>{isNew ? 'Create' : 'Update'}</Text>
+                    <Text style={cs.saveBtnText}>Update</Text>
                   )}
                 </TouchableOpacity>
               </View>
