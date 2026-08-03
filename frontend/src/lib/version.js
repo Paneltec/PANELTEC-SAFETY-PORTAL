@@ -1,6 +1,19 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.34.5 — Fix: expanded ID Card content is no longer hidden
+//                  behind the sticky Save/Cancel footer. Two changes,
+//                  both in the Edit modal: (1) `pb-24` (96px) padding-
+//                  bottom on the modal's `overflow-y-auto` scroll
+//                  container so any last-child section has room to
+//                  scroll fully above the footer; (2) `useEffect` in
+//                  `IdCardSection` that fires
+//                  `scrollIntoView({block:'start', behavior:'smooth'})`
+//                  on the section wrapper whenever `open` flips true,
+//                  placing the header near the top of the visible
+//                  scroll area with the newly-revealed content
+//                  visible below it, footer no longer overlapping.
+//                  No other section touched.
 // v160.3.9.34.4 — Fix: ID Card section now opens on the first tap on
 //                  touch devices. Previously the section (last child of
 //                  the modal's scrollable body) sat at the scroll
@@ -53,4 +66,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.34.4';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.34.5';

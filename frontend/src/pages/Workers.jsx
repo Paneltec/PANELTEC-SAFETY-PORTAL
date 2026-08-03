@@ -1005,9 +1005,29 @@ function IdCardSection({ worker, canEdit }) {
   // identically to the siblings above it. No other section is touched.
   const [open, setOpen] = React.useState(false);
   const toggle = () => setOpen((v) => !v);
+  // v160.3.9.34.5 — Auto-scroll on expand. When the section transitions
+  // from collapsed → open, place the section header near the top of the
+  // modal's scroll area so the revealed content (photo, QR, Upload
+  // Photo, Print layout, NFC) is visible above the sticky footer.
+  // Coupled with the extra `pb-24` on the modal scroll container this
+  // guarantees the last-child section is never hidden behind the
+  // Save/Cancel bar regardless of viewport height.
+  const wrapRef = React.useRef(null);
+  React.useEffect(() => {
+    if (!open || !wrapRef.current) return;
+    // Defer to next tick so the expanded content has actually rendered
+    // and its height is measurable before we scroll.
+    const t = setTimeout(() => {
+      try {
+        wrapRef.current.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      } catch { /* older browsers ignore options — fall through */ }
+    }, 50);
+    return () => clearTimeout(t);
+  }, [open]);
 
   return (
     <div
+      ref={wrapRef}
       className="border border-slate-200 rounded-xl overflow-hidden bg-white"
       style={{ scrollMarginBlockEnd: '96px' }}
       data-testid="section-id-card"
@@ -1441,7 +1461,19 @@ function EditModal({ worker, onClose, onSaved }) {
           </div>
         )}
 
-        <div className="px-6 py-4 overflow-y-auto space-y-3 text-sm flex-1">
+        {/* v160.3.9.34.5 — Extra bottom padding on the modal's scroll
+            container so the LAST collapsible section (ID Card) can
+            fully scroll into view above the sticky footer. Previous
+            `scroll-margin-block-end: 96px` on the section alone was
+            insufficient — the browser would honour it during focus
+            scroll but not during our own auto-scroll on expand.
+            Combined with the new `scrollIntoView` effect in
+            `IdCardSection`, this guarantees photo + QR + Upload Photo
+            + Print layout are all revealed above the footer. */}
+        <div
+          className="px-6 py-4 pb-24 overflow-y-auto space-y-3 text-sm flex-1"
+          data-testid="worker-edit-modal-scroll"
+        >
           {/* Identity — always-on */}
           <div className="border border-slate-200 rounded-xl px-4 py-4 bg-white" data-testid="section-identity">
             <div className="flex items-center gap-2 mb-3 text-slate-800 font-semibold text-sm"><HardHat size={14} className="text-slate-500" /> Identity & contact</div>
@@ -1572,7 +1604,7 @@ function EditModal({ worker, onClose, onSaved }) {
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-2 bg-slate-50">
+        <div className="px-6 py-4 border-t border-slate-200 flex justify-between items-center gap-2 bg-slate-50" data-testid="worker-edit-modal-footer">
           <div className="text-[11px] text-slate-400">{availabilityError ? availabilityError : ''}</div>
           <div className="flex gap-2">
             <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100" data-testid="modal-cancel">Cancel</button>
