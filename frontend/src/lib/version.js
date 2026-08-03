@@ -1,6 +1,30 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.41 — Users & Permissions UX polish.
+//                  Part A — Drag-handle reorder for role sections.
+//                    Replaces the up/down ArrowUp/ArrowDown buttons on
+//                    each role-section header with a `⋮⋮`
+//                    GripVertical drag handle powered by `@dnd-kit/
+//                    core` + `@dnd-kit/sortable`. Section rows drag
+//                    up/down; drop persists via the SAME endpoint
+//                    (`PUT /api/user-prefs/section-order/users` with
+//                    `{section_order: [...]}`) and preserves the SAME
+//                    per-viewer semantic — every logged-in admin has
+//                    their own saved order. Keyboard sensor: arrow
+//                    keys with focus on the grip, Space to lift /
+//                    drop. Per-user row sort dropdown for name /
+//                    last-login / date-created preserved.
+//                  Part B — Auto-linked worker avatars on Users
+//                    rows. ALREADY IMPLEMENTED in v160.3.9.33.1 at
+//                    `backend/users.py:187-231` — no code change
+//                    needed. GET /api/users enriches each row with
+//                    `photo_url` at read time by looking up the
+//                    matching worker via `simpro_employee_id` (primary)
+//                    or case-insensitive `email` (fallback). Verified
+//                    live: 4/N rows on Stephen's admin view render an
+//                    `<img>` avatar today (rest use the initials
+//                    fallback).
 // v160.3.9.40 — Security Wave 2. Bundled:
 //                  • SEC-002 (Stored XSS in email Outbox): server-side
 //                    `bleach` sanitizer on the `body_html` WRITE path in
@@ -241,4 +265,4 @@
 //                  Archived). Permissions tab in the user drawer reading
 //                  GET /users/{id}/permissions and PUT-back with reasons.
 //                  Housekeeping: InviteModal + BulkInviteModal removed.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.40';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.41';

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical, ArrowUp, ArrowDown } from 'lucide-react';
+import { UserPlus, Check, X as XIcon, Minus, RotateCcw, ShieldCheck, Save, Mail, Download, Loader2, AlertCircle, Search as SearchIcon, LogOut, Trash2, KeyRound, AlertTriangle, Pencil, Sparkles, Wand2, RefreshCw, ChevronDown, ChevronRight, Lock, Unlock, GripVertical } from 'lucide-react';
 // Phase 3.20 Wave 1 — row-action + toolbar icons migrated to Fluent.
 // 20-pixel Regular variant for actions, matching the spec.
 import {
@@ -40,6 +40,60 @@ import { Link } from 'react-router-dom';
 // v160.3.7h — Shared body-scroll-lock hook. Applied to every overlay on
 // this page so scrolling inside a modal never leaks to the page beneath.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
+
+// v160.3.9.41 — @dnd-kit sortable for the role-section reorder handle.
+// Replaces the pair of up/down ArrowUp/ArrowDown buttons that used to
+// live on each role-section header (see git blame: v160.3.9.33.1).
+// The persistence contract is UNCHANGED — we still PUT to
+// `/api/user-prefs/section-order/users` with `{section_order: [...]}`
+// (per-viewer preference; every logged-in admin has their own saved
+// order for their own view of the Users page). The keyboard sensor is
+// dnd-kit's default (arrow keys with focus on the grip; Space to
+// lift / drop). Individual user rows below each header retain their
+// existing per-section sort dropdown (name/last-login/created).
+import {
+  DndContext, PointerSensor, KeyboardSensor,
+  useSensor, useSensors, closestCenter,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  SortableContext, verticalListSortingStrategy,
+  arrayMove, useSortable, sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable';
+import { CSS as DndCSS } from '@dnd-kit/utilities';
+
+// v160.3.9.41 — Sortable section-header row for the Users & Permissions
+// table. Wraps a `<tr>` in dnd-kit's `useSortable`. Applies the
+// transform + transition styles from the hook so a lift-and-drop
+// animates the underlying row. The children render prop receives
+// `(listeners, attributes, isDragging)` so callers can bind them to
+// their own grip button — keeps the drag-target scoped to the grip
+// instead of the whole row (users can still click "Toggle section"
+// / "Sort dropdown" without kicking off a drag).
+function SortableSectionHeaderTr({ id, colour, colCount, canEdit, children }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id, disabled: !canEdit });
+  const style = {
+    transform: DndCSS.Transform.toString(transform),
+    transition,
+    // Slightly lift + shadow the dragged row so the user can see it move.
+    zIndex: isDragging ? 20 : undefined,
+    position: isDragging ? 'relative' : undefined,
+    boxShadow: isDragging ? '0 6px 16px -4px rgba(0,0,0,0.18)' : undefined,
+  };
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={`${colour.bg} border-t-2 ${colour.border}`}
+      data-testid={`role-section-${id}`}
+      data-dragging={isDragging ? 'true' : 'false'}>
+      <td colSpan={colCount} className="px-3 py-1.5">
+        {children(listeners, attributes, isDragging)}
+      </td>
+    </tr>
+  );
+}
 
 // v160.3.9.29-2a — Live-fetched system role catalogue replaces the
 // hard-coded ROLES array. See Phase 3c sub-phase 2a scope in
@@ -292,12 +346,20 @@ export default function UsersManagement() {
   const [sectionOpen, setSectionOpen] = useState({});
   const [sectionSort, setSectionSort] = useState({});
   // v160.3.9.33.1 — Persisted section order from /user-prefs/section-order/users
-  const [sectionOrder, setSectionOrder] = useState([]);
-  useEffect(() => {
+  const [sectionOrder, setSectionOrder] = useState([]);  useEffect(() => {
     api.get('/user-prefs/section-order/users')
       .then(({ data }) => setSectionOrder(data?.section_order || []))
       .catch(() => setSectionOrder([]));
   }, []);
+
+  // v160.3.9.41 — dnd-kit sensors: pointer for mouse/touch, keyboard for a11y.
+  // 8-px activation distance on the pointer sensor prevents accidental drags
+  // when the user just meant to click the grip's tooltip.
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   // v160.3.9.32-4c — Phase 4c housekeeping: InviteModal + BulkInviteModal
   // removed (backend returns 410 anyway). Simpro selective-import is the
   // only user-creation path — see setSimproPickerOpen below.
@@ -783,48 +845,62 @@ export default function UsersManagement() {
                 if (oa !== ob) return oa - ob;
                 return roleLabel(a.key).localeCompare(roleLabel(b.key));
               });
-              const moveSection = (key, dir) => {
-                const cur = ordered.map((g) => g.key);
-                const from = cur.indexOf(key);
-                if (from < 0) return;
-                const to = dir === 'up' ? from - 1 : from + 1;
-                if (to < 0 || to >= cur.length) return;
-                const next = [...cur];
-                [next[from], next[to]] = [next[to], next[from]];
-                setSectionOrder(next);
-                api.put('/user-prefs/section-order/users', { section_order: next })
-                  .catch(() => toast.error('Could not save order'));
-              };
+              // v160.3.9.41 — legacy `moveSection` (up/down arrow variant)
+              // removed; @dnd-kit's `handleDragEnd` below handles reorder.
               const resetOrder = () => {
                 setSectionOrder([]);
                 api.delete('/user-prefs/section-order/users').catch(() => {});
               };
               const colCount = can('users', 'edit') ? 6 : 5;
-              return ordered.flatMap((g, gi) => {
+              // v160.3.9.41 — @dnd-kit sortable reorder. Replaces the
+              // former up/down ArrowUp/ArrowDown buttons on each role-
+              // section header with a `⋮⋮` grip. Persistence
+              // contract UNCHANGED — still writes to
+              // `PUT /api/user-prefs/section-order/users` with
+              // `{section_order: [...]}`, per-viewer semantic. Grip is
+              // bound via `useSortable(id: g.key)` on a small inline
+              // <SortableSectionHeader> component below; keyboard
+              // sensor (arrow keys / Space) is dnd-kit's default.
+              const handleDragEnd = (event) => {
+                const { active, over } = event;
+                if (!active || !over || active.id === over.id) return;
+                const cur = ordered.map((g) => g.key);
+                const from = cur.indexOf(active.id);
+                const to = cur.indexOf(over.id);
+                if (from < 0 || to < 0) return;
+                const next = arrayMove(cur, from, to);
+                setSectionOrder(next);
+                api.put('/user-prefs/section-order/users', { section_order: next })
+                  .catch(() => toast.error('Could not save order'));
+              };
+              const sectionIds = ordered.map((g) => g.key);
+              return (
+                <DndContext
+                  sensors={dndSensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}>
+                  <SortableContext items={sectionIds} strategy={verticalListSortingStrategy}>
+                    {ordered.flatMap((g, gi) => {
                 const open = sectionOpen[g.key] !== false;
                 const sort = sectionSort[g.key] || 'name_asc';
                 const colour = roleColour(g.key);
                 const rows = [
-                  <tr key={`sec-${g.key}`}
-                    className={`${colour.bg} border-t-2 ${colour.border}`}
-                    data-testid={`role-section-${g.key}`}>
-                    <td colSpan={colCount} className="px-3 py-1.5">
+                  <SortableSectionHeaderTr key={`sec-${g.key}`}
+                    id={g.key} colour={colour} colCount={colCount}
+                    canEdit={can('users', 'edit')}>
+                    {(dragListeners, dragAttributes, isDragging) => (
                       <div className="flex items-center gap-2">
                         {can('users', 'edit') && (
-                          <div className="inline-flex items-center flex-shrink-0" data-testid={`role-section-reorder-${g.key}`}>
-                            <button type="button" disabled={gi === 0} onClick={() => moveSection(g.key, 'up')}
-                              className="p-0.5 rounded hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Move section up"
-                              data-testid={`role-section-up-${g.key}`}>
-                              <ArrowUp size={11} className={colour.fg} />
-                            </button>
-                            <button type="button" disabled={gi === ordered.length - 1} onClick={() => moveSection(g.key, 'down')}
-                              className="p-0.5 rounded hover:bg-white/60 disabled:opacity-30 disabled:cursor-not-allowed"
-                              title="Move section down"
-                              data-testid={`role-section-down-${g.key}`}>
-                              <ArrowDown size={11} className={colour.fg} />
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            {...dragListeners}
+                            {...dragAttributes}
+                            className={`p-0.5 rounded hover:bg-white/60 cursor-grab active:cursor-grabbing ${isDragging ? 'opacity-40' : ''}`}
+                            title="Drag to reorder section (arrow keys to move via keyboard)"
+                            aria-label={`Reorder role section: ${roleLabel(g.key)}`}
+                            data-testid={`role-section-grip-${g.key}`}>
+                            <GripVertical size={13} className={colour.fg} />
+                          </button>
                         )}
                         <span className={`inline-block w-2 h-2 rounded-full ${colour.accent}`} />
                         <button type="button" onClick={() => setSectionOpen((s) => ({ ...s, [g.key]: !open }))}
@@ -852,14 +928,17 @@ export default function UsersManagement() {
                           </select>
                         </div>
                       </div>
-                    </td>
-                  </tr>
+                    )}
+                  </SortableSectionHeaderTr>
                 ];
                 if (open) {
                   for (const u of sortUsers(g.users, sort)) rows.push(renderUserRow(u));
                 }
                 return rows;
-              });
+              })}
+                  </SortableContext>
+                </DndContext>
+              );
             })()}
           </tbody>
         </table>
