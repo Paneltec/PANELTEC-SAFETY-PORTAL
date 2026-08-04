@@ -23,7 +23,7 @@ from db import db
 from models import new_id, now_iso
 
 from permissions import require_permission, resolve_team_scope, require_module
-from permissions_scope import scope_filter, can_access_record  # v160.3.9.28
+from permissions_scope import scope_filter, can_access_record, require_scoped_access  # v160.3.9.28 + v43.2
 
 router = APIRouter(
     prefix="/workers", tags=["workers"],
@@ -271,6 +271,20 @@ async def create_worker_deprecated(
 @router.patch("/{worker_id}")
 async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(get_current_user)):
     _require_write(user)
+    # v160.3.9.44 (P0-IDOR) — Record-level scoping. `_require_write`'s
+    # inner allowlist currently blocks contractor_rep, but the token
+    # model still exposes `workers.edit`. Add an explicit
+    # `require_scoped_access` so contractor_rep-with-workers.edit can
+    # only patch their OWN contractor's workers — independent of the
+    # legacy WRITE_ROLES allowlist. 404 (not 403) on scope-fail to
+    # match SEC-004's existence-leak-avoidance pattern.
+    existing = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Worker not found")
+    require_scoped_access(user, "workers", existing)
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(400, "No fields supplied")
@@ -294,6 +308,14 @@ async def delete_worker(
     user: dict = Depends(require_permission("workers", "delete")),
 ):
     # Phase 3.18 — auth now flows through the permissions matrix.
+    # v160.3.9.44 (P0-IDOR) — explicit contractor-scope gate.
+    existing = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Worker not found")
+    require_scoped_access(user, "workers", existing)
     ts = now_iso()
     result = await db.workers.update_one(
         {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},

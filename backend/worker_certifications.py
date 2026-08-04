@@ -29,6 +29,7 @@ from document_library import (
 
 log = logging.getLogger("paneltec.worker_certs")
 from permissions import require_permission, resolve_team_scope, require_module
+from permissions_scope import require_scoped_access  # v160.3.9.44 (P0-IDOR)
 
 router = APIRouter(
     prefix="/workers", tags=["worker-certifications"],
@@ -316,6 +317,21 @@ async def update_cert(
     cert_id: str, body: CertPatch, user: dict = Depends(get_current_user),
 ):
     _require_write(user)
+    # v160.3.9.44 (P0-IDOR) — explicit contractor-scope gate.
+    # Cert docs don't carry `company_id` directly; look up the parent
+    # worker and pass THAT to `require_scoped_access`. Fail with 404
+    # on scope-mismatch to avoid an existence leak.
+    existing = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Certification not found")
+    parent_worker = await db.workers.find_one(
+        {"id": existing.get("worker_id"), "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "company_id": 1, "user_id": 1, "email": 1},
+    )
+    require_scoped_access(user, "workers", parent_worker)
     payload = {k: v for k, v in body.model_dump(exclude_unset=True).items()}
     if not payload:
         raise HTTPException(400, "No fields supplied")
@@ -343,6 +359,19 @@ async def delete_cert(
     # Phase 3.18 — auth now flows through the permissions matrix so admins can
     # delegate cert-delete to specific HSEQ Leads via per-user override
     # without changing role membership.
+    # v160.3.9.44 (P0-IDOR) — explicit contractor-scope gate.
+    existing = await db.worker_certifications.find_one(
+        {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Certification not found")
+    parent_worker = await db.workers.find_one(
+        {"id": existing.get("worker_id"), "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "company_id": 1, "user_id": 1, "email": 1},
+    )
+    from permissions_scope import require_scoped_access
+    require_scoped_access(user, "workers", parent_worker)
     existing = await db.worker_certifications.find_one(
         {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},

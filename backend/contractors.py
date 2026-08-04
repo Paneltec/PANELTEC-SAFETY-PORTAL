@@ -184,6 +184,17 @@ async def patch_contractor(cid: str, patch: dict, user: dict = Depends(require_p
 
 @router.delete("/{cid}")
 async def delete_contractor(cid: str, user: dict = Depends(require_permission("contractors", "delete"))):
+    # v160.3.9.44 (P0-IDOR) — explicit contractor-scope gate. A
+    # contractor_rep with a hypothetical `contractors.delete` token
+    # must only be able to delete their OWN contractor row, not
+    # arbitrary contractors across the org.
+    existing = await db.contractors.find_one(
+        {"id": cid, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1, "company_id": 1},
+    )
+    if not existing:
+        raise HTTPException(404, "Not found")
+    require_scoped_access(user, "contractors", existing)
     res = await db.contractors.update_one(
         {"id": cid, "org_id": user["org_id"], "deleted_at": None},
         {"$set": {"deleted_at": now_iso()}},

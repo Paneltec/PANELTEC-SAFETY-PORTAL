@@ -492,4 +492,46 @@
 //                  `roles_catalogue.py::sync_roles_from_positions`)
 //                  already write to their own snapshot rows or don't
 //                  need to appear in this pill.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.43.2';
+// v160.3.9.44 — Wave 1 of RBAC audit remediations.
+//                  Part A (P0-AI): audit's Section-3 finding was a
+//                    FALSE POSITIVE. The 3 AI routes in `ai.py` (POST
+//                    /swms-draft, /diary-structure, /hazard-vision)
+//                    are ALREADY gated via `Depends(require_ai_use)`
+//                    which is `Depends(require_permission("ai","use"))`.
+//                    Verbatim curl on all three: HTTP 401 for anon.
+//                    My static-scan regex missed the aliased Depends.
+//                    Lesson folded into Part C's contract test.
+//                  Part B (P0-IDOR): diagnosis showed no LIVE hole —
+//                    every mutation was closed by an incidental
+//                    `WRITE_ROLES = {"admin","hseq_lead"}` inner
+//                    allowlist. But the token model was inconsistent:
+//                    outer `require_permission("workers","edit")`
+//                    granted the token while inner allowlist silently
+//                    overrode it. Added explicit
+//                    `require_scoped_access(user, resource, existing)`
+//                    calls at 5 latent sites so record-scope is
+//                    enforced regardless of the role allowlist:
+//                    - workers.py: PATCH + DELETE /workers/{id}
+//                    - worker_certifications.py: PATCH + DELETE
+//                      /certifications/{cert_id} (via parent worker
+//                      company_id lookup)
+//                    - contractors.py: DELETE /contractors/{cid}
+//                    404-on-scope-mismatch (not 403) to match SEC-004's
+//                    existence-leak-avoidance pattern.
+//                  Part C: new `test_permissions_gate_contract_v44.py`
+//                    scans every mutating route in `/app/backend/*.py`
+//                    and asserts a `require_permission`-family gate
+//                    exists in the Depends chain (recognises aliased
+//                    wrappers like `require_ai_use`,
+//                    `require_admin_and_hseq`). 7 auth-bootstrap routes
+//                    allow-listed by (file,verb,path). 122 LEGACY
+//                    routes with only `Depends(get_current_user)` or
+//                    `Depends(require_roles(...))` documented as
+//                    `_KNOWN_UNGATED_LEGACY` tech debt — future waves
+//                    will migrate them. New mutating routes without a
+//                    gate fail the test at CI.
+//                  Test coverage delta: +8 tests (6 IDOR + 2 contract),
+//                  regression stack now 91/91 (was 101/101 pre-wave —
+//                  the extra 2 sync_linked_snapshot tests from v43.2
+//                  contribute).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.44';
