@@ -339,15 +339,25 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       </DropdownMenu>
 
       <div className="hidden md:flex flex-1 max-w-md ml-2 relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input type="text" placeholder="Search records, contractors, SWMS…" data-testid="topbar-search"
-          className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue" />
+        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" aria-hidden="true" />
+        <input
+          type="search"
+          placeholder={'Try: "john smith", "swms-042", "sydney site 3"…  (⌘K)'}
+          data-testid="topbar-search"
+          title={'Global search\nFind any worker, site, SWMS, contractor, certification, or HR record across the whole platform. Full search UI queued for v54.'}
+          aria-label="Global search — find workers, sites, SWMS, contractors, certifications, or HR records"
+          className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue"
+        />
       </div>
       <div className="flex-1 md:hidden" />
 
-      <button className="relative p-2 rounded-md hover:bg-slate-100 text-slate-500" data-testid="notifications-bell" aria-label="Notifications">
+      <button
+        className="relative p-2 rounded-md hover:bg-slate-100 text-slate-500"
+        data-testid="notifications-bell"
+        title={'Notifications\nUnread alerts — expiring certifications, failed syncs, and things needing your attention. Click to open the list (endpoint launching in v54).'}
+        aria-label="Notifications — unread alerts and things needing attention"
+      >
         <Bell size={18} />
-        <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-brand-red text-white text-[10px] font-semibold flex items-center justify-center">3</span>
       </button>
       <OutboxBell />
 
@@ -355,7 +365,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       {canImport && (
         <button
           onClick={() => setImportOpen(true)}
-          title="Import legacy PDFs"
+          title={'Import PDFs\nUpload signed forms, certificates, or supplier documents to attach them to the right worker or site.'}
           data-testid="topbar-import-pdfs"
           className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-semibold uppercase tracking-wider hover:bg-blue-100 transition-colors"
         >
@@ -371,7 +381,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       {safeMode?.effective === 'on' && (
         <Link
           to="/app/settings/comms-safe-mode"
-          title="Outbound email/SMS are being captured but not delivered. Click to view Settings."
+          title={'Comms Safe Mode\nWhen ON, outgoing SMS/email are held in the Outbox instead of sending — useful for testing without spamming real people. Click to open Settings.'}
           data-testid="comms-safe-mode-chip"
           className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-semibold uppercase tracking-wider hover:bg-amber-200 transition-colors">
           <Zap size={12} className="fill-amber-500 text-amber-600" />
@@ -381,7 +391,12 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 ml-1 pl-1 pr-2 py-0.5 rounded-full hover:bg-slate-100" data-testid="user-menu-trigger">
+          <button
+            className="flex items-center gap-2 ml-1 pl-1 pr-2 py-0.5 rounded-full hover:bg-slate-100"
+            data-testid="user-menu-trigger"
+            title={'Account\nYour profile, session settings, and sign out.'}
+            aria-label="Account and settings menu"
+          >
             <span className="grid place-items-center w-8 h-8 rounded-full bg-orange-500 text-white text-xs font-bold shadow-sm">
               {initials(user)}
             </span>

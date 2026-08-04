@@ -135,6 +135,41 @@ export default function HrEmployeesPage() {
         }
       />
 
+      {/* v53 Piece D — Collapsible "how does data get here" note for
+          non-technical staff. Default collapsed; expands to 5 plain-
+          English bullets covering ingest / refresh / manual / linkage /
+          PII behaviour. */}
+      <details className="mb-4 rounded-lg border border-slate-200 bg-slate-50 open:bg-white open:shadow-sm"
+               data-testid="hr-info-banner">
+        <summary className="cursor-pointer select-none px-4 py-2.5 text-sm text-slate-700 hover:text-slate-900 flex items-center gap-2">
+          <span aria-hidden className="text-sky-600">ⓘ</span>
+          <span className="font-semibold">How does data get here?</span>
+          <span className="text-xs text-slate-500 ml-2">(tap to expand)</span>
+        </summary>
+        <div className="px-4 pb-4 pt-1 text-sm text-slate-700 space-y-1.5" data-testid="hr-info-banner-body">
+          <div>
+            • <b>Initial 121 rows</b> — seeded at first boot from
+            <code className="mx-1 px-1 rounded bg-slate-100 text-[12px]">/app/backend/scripts/data/hr_employees_source.xlsx</code>
+            via the v48 ingest migration
+            (<code className="mx-1 px-1 rounded bg-slate-100 text-[12px]">import_hr_employees.py</code>).
+          </div>
+          <div>
+            • <b>Ongoing refresh</b> — the <i>Refresh from Simpro</i> button (top-right) calls
+            <code className="mx-1 px-1 rounded bg-slate-100 text-[12px]">POST /api/hr/employees/refresh-from-source</code>;
+            it re-parses the same XLSX and does a <b>merge-safe <code>$set</code></b> per row (existing fields you edited in the drawer stay; source columns overwrite). Rows removed at the source are <b>NOT</b> auto-deleted here — offboarding is manual.
+          </div>
+          <div>
+            • <b>Manual entry</b> — no in-app "Add employee" form yet; new hires enter via the XLSX + refresh. Ask an admin if you need a row created ad-hoc.
+          </div>
+          <div>
+            • <b>Worker linkage</b> — the <code className="px-1 rounded bg-slate-100 text-[12px]">linked_worker_id</code> field is reserved on the schema; the Employee ↔ Worker linker UI is queued as a follow-up.
+          </div>
+          <div>
+            • <b>PII &amp; delete</b> — every <i>Reveal DOB / Address / Next-of-kin</i> click writes an audit row (actor, IP, timestamp). Delete is <b>soft-delete</b> only — the row hides from lists but the audit trail is preserved.
+          </div>
+        </div>
+      </details>
+
       {flagCount > 0 && (
         <div
           className="mb-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-900 flex items-start gap-3"

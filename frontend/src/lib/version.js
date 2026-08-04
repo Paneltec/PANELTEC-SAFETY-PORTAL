@@ -776,4 +776,62 @@
 //        · `onDownload()` unchanged — PDF export continues to hit
 //          `/help/manual.pdf` server-side, so the current on-screen
 //          filter never leaks into the exported document.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.51';
+// v160.3.9.52 — Header a11y & mystery-badge cleanup (Item 4 partial ship).
+//                    - Removed the hardcoded "3" red badge on the header
+//                      bell in `AppShell.jsx`. Confirmed via source audit
+//                      (`Bell size={18}` → `<span>3</span>` literal) that
+//                      the number was NEVER wired to a real notifications
+//                      count; it was a v133-era mock that shipped and
+//                      never got hooked up. Rendering a mystery number
+//                      was exactly the bug flagged in the user's ticket.
+//                      The bell now shows a plain icon with a clear
+//                      hover/aria title "Notifications (endpoint pending
+//                      — no unread items to show)". Once a real
+//                      /api/notifications endpoint lands, the badge
+//                      returns.
+//                    - Search input now has proper `type="search"`,
+//                      a real hover `title` + `aria-label` explaining
+//                      that the ⌘K / Ctrl+K global-search UI is queued
+//                      for v53 (the input previously carried no
+//                      handlers, so clicking or typing did nothing —
+//                      also exactly what the user flagged).
+//                    - Full header uniform-styling pass + Cloud Notes
+//                      button + Search modal + User popover redesign
+//                      DEFERRED to v53 pending user answers on scope
+//                      questions raised in the v52 ship report.
+// v160.3.9.53 — v53 header + schematic + HR ship.
+//   PIECE A (rich hover tooltips): every top-nav icon/pill now carries
+//     a 2-line `title` (title-line + one-sentence description) that a
+//     non-technical staff member can read in one hover. Sizing kept
+//     as-is (existing pills already share consistent geometry). Search
+//     placeholder now shows example queries: "Try: john smith,
+//     swms-042, sydney site 3… (⌘K)" — addresses the user's "the
+//     magnifying doesn't have a question field to look for what".
+//   PIECE B (bell click panel): DEFERRED to v54. Requires a new
+//     `GET /api/notifications` endpoint fanning out to renewals /
+//     certs / integration-sync failures / pending approvals with
+//     per-category permission gates. Bell button now carries the
+//     descriptive title only; click still no-op until v54 lands.
+//   PIECE C (schematic overlap): user's mobile screenshot showed
+//     sub-cluster labels "ACCESS" and "DATA & AUTOMATION" being
+//     clipped by the top-arc curved labels of the first-row circles
+//     below them. Root cause: sub-cluster label y-coords (810/1090)
+//     fell inside the top-arc letter y-band (row_y - 76 - 16 ≈
+//     798/1078) of the "Organisation"/"Certifications" nodes. Fix:
+//     relaxed every cluster + sub-cluster labelPos y-value by ~25-40
+//     units so labels sit well outside every top-arc letter box:
+//       Overview      y=100 → 60   (clears Overview row @ y=200)
+//       Capture       y=275 → 235  (clears Capture   row @ y=395)
+//       Compliance    y=830 → 790  (clears Compliance row @ y=930)
+//       Settings      y=760 → 725  (parent chip well above sub-labels)
+//       Integrations  y=275 → 235  (clears Integrations row @ y=395)
+//       Register      y=1470 → 1490 (bottom-only cluster, moved down)
+//       Access        y=810 → 780  (clears Organisation top-arc @ y=798)
+//       Data & Auto   y=1090 → 1060 (clears Certifications top-arc @ y=1078)
+//   PIECE D (HR info banner): collapsible <details> above the HR
+//     table titled "ⓘ How does data get here?" — 5 plain-English
+//     bullets covering XLSX seed / refresh / manual / linked_worker_id
+//     status / PII+delete behaviour. Default collapsed. Same
+//     component can be dropped onto Workers / Certifications /
+//     Suppliers pages in a future pass — DEFERRED to v54.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.53';

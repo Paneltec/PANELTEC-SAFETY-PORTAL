@@ -14,6 +14,13 @@
 //   Settings     Violet   #8B5CF6  (11 nodes, split Access + Data)
 //   Integrations Amber    #F59E0B  (4 nodes)
 
+// v53 — Locked spacing per user feedback: v50's curved labels caused
+// visual overlap at the outer arc edge. Two mitigations landed in
+// this file's SCHEMATIC_NODES tuning: (1) reduce arc radius in the
+// render component from `TILE/2 + 12` to `TILE/2 + 4` so labels
+// sit tighter against the halo. (2) node positions themselves stay
+// as-is since the arc-radius shrink alone reclaims ~16 px of
+// vertical clearance per row.
 export const CANVAS_W = 1800;
 export const CANVAS_H = 1500;
 
@@ -27,17 +34,24 @@ export const SCHEMATIC_HUB = {
 };
 
 export const SCHEMATIC_CLUSTERS = [
-  { key: 'overview',     label: 'Overview',     color: '#0EA5E9', anchor: { x: 950,  y: 305 },  labelPos: { x: 950,  y: 100  } },
-  { key: 'capture',      label: 'Capture',      color: '#F97316', anchor: { x: 1400, y: 495 },  labelPos: { x: 1610, y: 275  } },
-  { key: 'compliance',   label: 'Compliance',   color: '#10B981', anchor: { x: 1400, y: 1050 }, labelPos: { x: 1610, y: 830  } },
-  { key: 'register',     label: 'Register',     color: '#6366F1', anchor: { x: 950,  y: 1265 }, labelPos: { x: 950,  y: 1470 } },
-  { key: 'settings',     label: 'Settings',     color: '#8B5CF6', anchor: { x: 525,  y: 1105 }, labelPos: { x: 255,  y: 760  } },
-  { key: 'integrations', label: 'Integrations', color: '#F59E0B', anchor: { x: 450,  y: 470 },  labelPos: { x: 335,  y: 275  } },
+  // v53 — labelPos y-values relaxed by ~30 units so cluster label
+  // chips clear the top-arc curved labels of the first-row nodes
+  // below them (top-arc letters extend up to y = node.y - 76 - 16).
+  { key: 'overview',     label: 'Overview',     color: '#0EA5E9', anchor: { x: 950,  y: 305 },  labelPos: { x: 950,  y: 60   } },
+  { key: 'capture',      label: 'Capture',      color: '#F97316', anchor: { x: 1400, y: 495 },  labelPos: { x: 1610, y: 235  } },
+  { key: 'compliance',   label: 'Compliance',   color: '#10B981', anchor: { x: 1400, y: 1050 }, labelPos: { x: 1610, y: 790  } },
+  { key: 'register',     label: 'Register',     color: '#6366F1', anchor: { x: 950,  y: 1265 }, labelPos: { x: 950,  y: 1490 } },
+  { key: 'settings',     label: 'Settings',     color: '#8B5CF6', anchor: { x: 525,  y: 1105 }, labelPos: { x: 255,  y: 725  } },
+  { key: 'integrations', label: 'Integrations', color: '#F59E0B', anchor: { x: 450,  y: 470 },  labelPos: { x: 335,  y: 235  } },
 ];
 
 export const SCHEMATIC_SUB_CLUSTERS = [
-  { key: 'settings-access', parent: 'settings', label: 'Access',            x: 95, y: 810 },
-  { key: 'settings-data',   parent: 'settings', label: 'Data & Automation', x: 95, y: 1090 },
+  // v53 — sub-cluster labels pushed up out of the top-arc y-band of
+  // the row directly below (Access above Organisation row @ y=890,
+  // Data above Certifications row @ y=1170). +25 units clearance
+  // each, well outside the letters' top edge (y = 890/1170 - 76 - 16).
+  { key: 'settings-access', parent: 'settings', label: 'Access',            x: 95, y: 780 },
+  { key: 'settings-data',   parent: 'settings', label: 'Data & Automation', x: 95, y: 1060 },
 ];
 
 // (x, y) is the CENTRE of each 128×128 icon tile.
