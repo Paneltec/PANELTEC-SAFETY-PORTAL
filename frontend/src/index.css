@@ -1,3 +1,14 @@
+/* v160.3.9.57 — Program Schematic tile grid.
+ * Explicit breakpoint-driven column counts so narrow-viewport (≤479px)
+ * gets exactly 1 full-width column instead of the auto-fill algorithm
+ * cramming 2 tiny tiles side-by-side, and desktop is capped at 4
+ * columns even on very wide monitors. */
+.schematic-tile-grid { grid-template-columns: 1fr; }
+@media (min-width: 480px)  { .schematic-tile-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 768px)  { .schematic-tile-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .schematic-tile-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
 @tailwind base;

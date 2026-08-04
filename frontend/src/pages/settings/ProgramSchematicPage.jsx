@@ -119,10 +119,7 @@ function ClusterGroup({ cluster, nodes, onNavigate }) {
 
       {!hasSubs ? (
         <div
-          className="grid gap-3"
-          style={{
-            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-          }}
+          className="schematic-tile-grid grid gap-3"
           data-testid={`schematic-cluster-grid-${cluster.key}`}
         >
           {nodes.map((n) => (
@@ -150,12 +147,7 @@ function ClusterGroup({ cluster, nodes, onNavigate }) {
               >
                 {sub.label}
               </h3>
-              <div
-                className="grid gap-3"
-                style={{
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
-                }}
-              >
+              <div className="schematic-tile-grid grid gap-3">
                 {subNodes.map((n) => (
                   <IconTile
                     key={n.id}

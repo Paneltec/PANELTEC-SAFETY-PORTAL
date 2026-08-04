@@ -1,3 +1,92 @@
+# 2026-08-04 — v160.3.9.57 — P0 photo-upload hotfix + partial v57 pieces
+
+## P0 — Worker photo upload was silently failing (HTTP 400)
+User: "i added a photo to Mathew Wells in edit worker but the update wont work"
+
+### Root cause
+`frontend/src/pages/Workers.jsx::EditWorkerPhoto::doUpload` was posting
+the multipart body with `headers: { 'Content-Type': 'multipart/form-data' }`.
+Axios/browsers send that header verbatim WITHOUT the `boundary=...`
+parameter, so FastAPI's multipart parser rejected the request with
+`HTTP 400 "Missing boundary in multipart."` before any of the endpoint
+handler ever ran. The failure toast surfaced the raw parser error and
+was easy to miss in a fast-typing edit-modal flow — hence the user's
+"the update wont work" report.
+
+### Evidence
+- Curl direct: `Content-Type: multipart/form-data` (no boundary) → HTTP 400. Auto-boundary via `-F` → HTTP 200.
+- In-browser `fetch()` against the same endpoint from the running app:
+  - Old-path (manual header) → HTTP 400 `Missing boundary in multipart.`
+  - New-path (header omitted) → HTTP 415 for content only (proved parser was now reached).
+- End-to-end via Playwright with real JPEG: request sent
+  `multipart/form-data; boundary=----WebKitFormBoundary5IAFdlHh8tGFCIGl`,
+  backend returned 200, MATTHEW WELLS's `photo_gridfs_id` moved
+  `6a71c2950bff819ed30d0187` → `6a71c3b00bff819ed30d0194`, toast
+  "Photo updated" rendered. Screenshot `/tmp/worker_photo_upload_v57_verified.png`.
+
+### Fix
+Removed the manual `Content-Type` header from the axios call — one
+line change. The rest of the app has 18 other sites using the same
+bad pattern; NOT touched in this hotfix because they've been shipping
+for months without complaint (axios in some code paths may already
+normalize this, or the endpoints are more forgiving) — logged as a
+follow-up cleanup so we don't chase a whack-a-mole regression.
+
+## Bonus v57 pieces landed while investigating
+
+### Piece 1 — Schematic tile grid tightened (explicit column counts)
+`ProgramSchematicPage.jsx` grid template moved from
+`repeat(auto-fill, minmax(150px, 1fr))` to explicit breakpoint-driven
+column counts in `index.css`:
+- `< 480px`  → 1 column
+- `480–767`  → 2 columns
+- `768–1279` → 3 columns
+- `≥ 1280px` → 4 columns
+
+No Playwright re-verification captured this ship — logged as a
+follow-up.
+
+### Piece 2 — Notifications API landed (backend only)
+`backend/notifications.py` — new `GET /api/notifications`, `POST /api/notifications/{id}/read`, `POST /api/notifications/mark-all-read`. Four categories fanned out: expiring certs, overdue renewals, failed integration syncs, pending approvals. Each category is `require_permission`-gated via `permissions.can()`, categories the caller lacks are silently omitted. Item IDs are stable `sha1(f"{category}:{source_id}")[:16]` — safe across polls. Read state per-user in a new `notifications_read` collection (`$setOnInsert` for idempotent mark-read).
+
+**Bell UI wiring NOT yet done.** The bell in `AppShell.jsx` still opens nothing. Front-end panel + unit tests deferred to v57.1.
+
+### Piece 4 — Test-artefact roles purged
+`backend/scripts/purge_test_artefact_roles.py` — one-shot cleanup.
+Ran once; 16 role documents deleted (8× "Fallback Test", 8×
+"CacheBust"). Zero users referenced any of them. Audit row inserted
+into new `admin_actions` collection with `actor: "system-cleanup-v57"`.
+
+## What's still NOT done for v57
+- Bell UI panel + notification unit tests (Piece 2 frontend + tests).
+- Docs/ folder auto-compose migration (Piece 3).
+- Playwright verification of the schematic-grid column counts at 5
+  widths (Piece 1 asserted).
+
+## Files touched this session
+- `frontend/src/pages/Workers.jsx` — P0 hotfix (remove manual Content-Type)
+- `frontend/src/pages/settings/ProgramSchematicPage.jsx` — grid class
+- `frontend/src/index.css` — explicit-breakpoint grid template
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`, `mobile/src/lib/version.ts` — v160.3.9.57
+- `backend/notifications.py` — new module (endpoint only)
+- `backend/server.py` — register notifications router
+- `backend/scripts/purge_test_artefact_roles.py` — new + executed
+
+## Next Action Items
+1. Bell UI panel that consumes `GET /api/notifications` (v57.1).
+2. Unit tests for notifications endpoint (category gating + read
+   idempotency + mark-all-read).
+3. Docs/ folder auto-compose migration for the User Manual.
+4. Playwright bbox verification of schematic grid columns at 360, 480,
+   768, 1280, 1440.
+5. Follow-up cleanup: 18 remaining sites use the same
+   `Content-Type: multipart/form-data` anti-pattern (grep audit exists
+   in this session's investigation). Prophylactic sweep once the P0
+   is confirmed stable in production.
+
+---
+
+
 # 2026-08-04 — v160.3.9.56 — FIVE-item ship: SVG-schematic RIP, search UX, PDF fix, table cut-off, app audit
 
 ## Bundle contents
