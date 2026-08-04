@@ -1,4 +1,13 @@
-// v160.3.9.47.1 — Program Schematic topology registry.
+// v160.3.9.56 — Program Schematic topology registry (grid-only).
+//
+// The SVG topology in `pages/settings/ProgramSchematicPage.jsx` was
+// retired in v56 in favour of a responsive CSS grid. The `anchor`,
+// `labelPos`, and per-node `x` / `y` fields below are legacy geometry
+// no longer read by any renderer — they remain in the file only so
+// the historical schematic diff is legible and so downstream tests
+// (`test_program_schematic_routes_v47.py`) that already tolerate the
+// fields keep passing. If you need to reintroduce an SVG topology
+// later, everything you need is still here.
 //
 // Layout enlarged (v47.1): viewBox 1800×1500 (was 1600×1300), tile
 // diameter 128 (was 88), icon 56 (was 34), node label 16 (was 11),

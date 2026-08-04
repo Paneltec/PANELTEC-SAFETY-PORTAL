@@ -101,20 +101,41 @@ def _styles() -> dict:
     }
 
 
-_INLINE = [
+_INLINE_BOLD_ITALIC = [
     (re.compile(r"\*\*(.+?)\*\*"), r"<b>\1</b>"),
-    (re.compile(r"`([^`]+)`"),     r'<font face="Courier">\1</font>'),
     (re.compile(r"\*([^*]+)\*"),   r"<i>\1</i>"),
-    (re.compile(r"_([^_]+)_"),     r"<i>\1</i>"),
+    (re.compile(r"(?<![a-zA-Z0-9])_([^_\n]+)_(?![a-zA-Z0-9])"), r"<i>\1</i>"),
 ]
+_CODESPAN_RE = re.compile(r"`([^`]+)`")
 
 
 def _md_inline(text: str) -> str:
     """Translate the tiny inline-markdown subset the manual uses
-    (bold/italics/inline-code) into ReportLab's mini-HTML."""
+    (bold/italics/inline-code) into ReportLab's mini-HTML.
+
+    v55.5 fix — codespans are extracted BEFORE bold/italic passes and
+    reinstated after, so identifier-style strings like
+    ``BACKUP_DEST_ENC_KEY`` no longer get their internal underscores
+    italicised into malformed <font><i>...</i></font> tags. The
+    italic-underscore rule is also tightened to require a non-word
+    boundary on either side so mid-word underscores stay literal.
+    """
     text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    for rx, repl in _INLINE:
+    # Extract codespans → placeholder tokens.
+    codes: list[str] = []
+    def _stash_code(m: re.Match) -> str:
+        codes.append(m.group(1))
+        return f"\x00CODE{len(codes) - 1}\x00"
+    text = _CODESPAN_RE.sub(_stash_code, text)
+    # Bold + italic passes on the safe (non-code) text only.
+    for rx, repl in _INLINE_BOLD_ITALIC:
         text = rx.sub(repl, text)
+    # Reinsert codespans as ReportLab <font face="Courier">.
+    for i, raw in enumerate(codes):
+        text = text.replace(
+            f"\x00CODE{i}\x00",
+            f'<font face="Courier">{raw}</font>',
+        )
     return text
 
 

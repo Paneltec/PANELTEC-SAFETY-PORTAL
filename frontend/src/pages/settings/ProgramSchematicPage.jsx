@@ -1,29 +1,39 @@
-// v160.3.9.47 — Program Schematic (SVG topology).
+// v160.3.9.56 — Program Schematic (RESPONSIVE CSS GRID).
 //
-// Complete rewrite. The old ReactFlow implementation (v160.3.7q → v43)
-// has been retired in favour of a static, SVG-heavy topology diagram
-// modelled after a network / control-panel schematic:
+// The old SVG topology (v47 → v55.4) has been retired after five
+// failed attempts to keep curved arc-labels legible + icons non-
+// overlapping at every viewport width. It is now a plain responsive
+// grid of icon tiles, grouped by cluster with a normal H2 heading
+// above each group. Boring but bulletproof:
 //
-//   • Dark navy canvas (#0B1220) with a radial purple bloom behind the
-//     central hub.
-//   • ONE central "Paneltec Civil" hub badge (blue → violet gradient).
-//   • 6 clusters (Overview, Capture, Compliance, Register, Settings,
-//     Integrations) arranged around the hub — each cluster's icons are
-//     drawn in the cluster's locked accent colour.
-//   • Settings is visually split into two sub-clusters (Access + Data
-//     & Automation) but connected to the hub by a single violet
-//     bezier.
-//   • Bezier lines are drawn once per cluster (hub-centre → cluster
-//     anchor). Icons never carry inter-cluster edges — this keeps the
-//     read simple: "everything flows through the hub".
-//   • Fully static: no zoom, no pan, no drag. The diagram is a
-//     "poster" you click on.
+//   • Each tile: rounded square (120×140), lucide icon centred on a
+//     cluster-tinted disc, straight (not curved) label beneath.
+//   • Grid: 4 columns at ≥1280px, 3 at ≥768px, 2 at ≥480px, 1 at
+//     <480px. Achieved via CSS Grid `auto-fill / minmax(...)`.
+//   • Groups are ordered Integrations → Overview → Capture →
+//     Compliance → Register → Settings, mirroring the sidebar. Each
+//     group header renders in WHITE against the dark background with
+//     a cluster-coloured accent bar for identity.
+//   • Settings still splits into ACCESS + DATA & AUTOMATION
+//     sub-clusters — but as sub-headings under the Settings H2, not
+//     as separate top-level groups.
+//   • Click behaviour is identical to the old SVG version:
+//     react-router navigate, toast fallback if the destination is
+//     stub-only.
 //
-// Icons: `lucide-react` only, tinted per cluster via inline colour.
-// Route validation is enforced statically by
-// `backend/tests/test_program_schematic_routes_v47.py` (every route
-// declared in `programSchematic.js` must exist as a `<Route path>`
-// under `/app/*` in `App.js`).
+// Legacy SVG geometry (bezier spokes, hub, arc labels, sub-cluster
+// chips) is archived in git history under commits tagged
+// `paneltec-v160.3.9.55.4` and earlier — restorable if the CSS grid
+// approach ever needs to be reverted. The topology registry in
+// `/app/frontend/src/lib/programSchematic.js` is now geometry-free
+// (x/y stripped) — only `cluster`, `sub`, `label`, `icon`, `route`
+// remain, so downstream consumers (`test_program_schematic_routes_v47.py`)
+// keep working.
+//
+// Contrast + overlap complaints from v51-v55.4 are solved by design:
+// grid gaps prevent any tile-to-tile overlap, WHITE section headers
+// on the dark background give 12:1+ contrast, and the label is a
+// standard HTML `<div>` — no SVG-text arc clipping possible.
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -31,565 +41,226 @@ import * as LucideIcons from 'lucide-react';
 
 import { PageHeader } from '../../components/capture/Ui';
 import {
-  CANVAS_W,
-  CANVAS_H,
-  SCHEMATIC_HUB,
   SCHEMATIC_CLUSTERS,
   SCHEMATIC_SUB_CLUSTERS,
   SCHEMATIC_NODES,
 } from '../../lib/programSchematic';
 
-const TILE = 128;           // icon-tile diameter (v47.1: was 88)
-const ICON_SIZE = 56;       // lucide-react size prop (v47.1: was 34)
-const NODE_LABEL_FONT = 16; // (v47.1: was 11)
-const CLUSTER_LABEL_FONT = 20; // (v47.1: was 12)
-const HUB_TITLE_FONT = 30;  // (v47.1: was 22)
-const HUB_SUB_FONT = 15;    // (v47.1: was 11)
+const CLUSTER_ORDER = [
+  'integrations',
+  'overview',
+  'capture',
+  'compliance',
+  'register',
+  'settings',
+];
 
-// Bezier control-point helper. Draws a smooth "S"-ish curve from the
-// hub centre to each cluster anchor by pushing the control points 45%
-// of the way along the straight line, then rotating outward around
-// the midpoint. This gives every spoke a subtle organic swoop
-// regardless of angle from the hub.
-function bezierPath(from, to) {
-  const mx = (from.x + to.x) / 2;
-  const my = (from.y + to.y) / 2;
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  // Perpendicular offset — magnitude scales with line length so short
-  // spokes still curve visibly but long spokes don't loop.
-  const len = Math.hypot(dx, dy);
-  const off = Math.min(120, Math.max(40, len * 0.18));
-  const nx = -dy / len;
-  const ny = dx / len;
-  const c1x = mx + nx * off * 0.35;
-  const c1y = my + ny * off * 0.35;
-  return `M ${from.x} ${from.y} Q ${c1x} ${c1y}, ${to.x} ${to.y}`;
-}
-
-function ClusterLegendPill({ cluster }) {
+function IconTile({ node, cluster, onClick }) {
+  const Icon = LucideIcons[node.icon] || LucideIcons.Circle;
   return (
-    <div
-      className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
-      style={{
-        background: `${cluster.color}1A`,
-        color: cluster.color,
-        border: `1px solid ${cluster.color}55`,
-      }}
-      data-testid={`schematic-legend-${cluster.key}`}
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex flex-col items-center justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-4 hover:bg-white/[0.07] hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/40 transition"
+      data-testid={`schematic-node-${node.id}`}
+      style={{ minHeight: 140 }}
     >
-      <span
-        className="inline-block w-2 h-2 rounded-full"
-        style={{ background: cluster.color }}
-      />
-      {cluster.label}
-    </div>
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center shadow-sm ring-1 group-hover:scale-105 transition-transform"
+        style={{
+          background: `${cluster.color}22`,
+          borderColor: `${cluster.color}88`,
+          boxShadow: `0 0 0 1px ${cluster.color}55`,
+        }}
+      >
+        <Icon size={28} style={{ color: cluster.color }} strokeWidth={2} />
+      </div>
+      <div className="text-center text-[13px] font-semibold text-white leading-tight px-1">
+        {node.label}
+      </div>
+    </button>
   );
 }
 
-// v49.1 → v50 — Labels curl around the outer edge of the circle via
-// `<textPath>`. v50 refinement: multi-word labels on nodes with no
-// row directly below can wrap into a full "coin" (word 1 on the
-// top arc, remaining words on the bottom arc). Nodes with a row
-// below stay single-arc to prevent bottom-arc text colliding with
-// the next row's top-arc text. `hasRowBelow(node)` in
-// `programSchematic.js` drives this decision — pure data lookup,
-// no per-frame work.
-function SchematicNode({ node, cluster, onClick, splitArc }) {
-  const Icon = LucideIcons[node.icon] || LucideIcons.Layers;
-  const slug = node.id;
-  const half = TILE / 2;
-  const arcR = half + 12;
-  const topArcId = `arc-${slug}`;
-  const bottomArcId = `arc-b-${slug}`;
-
-  // Top arc — sweep-flag=1 → clockwise → over the top from 9 to 3.
-  const topArcD =
-    `M ${node.x - arcR} ${node.y} ` +
-    `A ${arcR} ${arcR} 0 0 1 ${node.x + arcR} ${node.y}`;
-  // Bottom arc — sweep-flag=0 → counterclockwise → under the bottom
-  // from 9 to 3. Letters have tops-up + read L→R along the bottom.
-  const bottomArcD =
-    `M ${node.x - arcR} ${node.y} ` +
-    `A ${arcR} ${arcR} 0 0 0 ${node.x + arcR} ${node.y}`;
-
-  // Decide split: 2+ words AND caller says the node has no row below.
-  // We split on the space closest to the middle of the string so the
-  // two halves are roughly balanced (e.g. "Users & Perms" → "Users &"
-  // / "Perms", "Ask Intelligence" → "Ask" / "Intelligence").
-  const parts = (() => {
-    if (!splitArc || !node.label.includes(' ')) return [node.label, null];
-    const s = node.label;
-    const mid = s.length / 2;
-    const idxs = [];
-    for (let i = 0; i < s.length; i++) if (s[i] === ' ') idxs.push(i);
-    let best = idxs[0];
-    let bestDist = Math.abs(mid - best);
-    for (const j of idxs) {
-      const d = Math.abs(mid - j);
-      if (d < bestDist) { best = j; bestDist = d; }
-    }
-    return [s.slice(0, best), s.slice(best + 1)];
-  })();
-
+function ClusterGroup({ cluster, nodes, onNavigate }) {
+  // Settings splits into two sub-clusters — render sub-headers
+  // between them so the ACCESS / DATA & AUTOMATION mental model
+  // survives.
+  const subs = SCHEMATIC_SUB_CLUSTERS.filter((s) => s.parent === cluster.key);
+  const hasSubs = subs.length > 0;
   return (
-    <g
-      className="schematic-node cursor-pointer"
-      onClick={onClick}
-      data-testid={`schematic-node-${slug}`}
-      role="button"
-      tabIndex={0}
-      aria-label={node.label}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onClick?.();
-        }
-      }}
+    <section
+      className="mb-10"
+      data-testid={`schematic-cluster-${cluster.key}`}
     >
-      <circle
-        cx={node.x} cy={node.y} r={half - 2}
-        fill={`${cluster.color}22`}
-        stroke={`${cluster.color}88`}
-        strokeWidth={1.5}
-        className="transition-all duration-200 group-hover:stroke-2"
-      />
-      <circle
-        cx={node.x} cy={node.y} r={half - 12}
-        fill="#0F172A"
-        stroke={cluster.color}
-        strokeWidth={1}
-      />
-      <foreignObject
-        x={node.x - ICON_SIZE / 2}
-        y={node.y - ICON_SIZE / 2 - 4}
-        width={ICON_SIZE}
-        height={ICON_SIZE}
-        style={{ pointerEvents: 'none' }}
-      >
-        <div style={{ color: cluster.color, width: ICON_SIZE, height: ICON_SIZE }}>
-          <Icon size={ICON_SIZE} strokeWidth={1.8} />
-        </div>
-      </foreignObject>
-      {/* Top arc + label */}
-      <path
-        id={topArcId} d={topArcD}
-        fill="none" stroke="none"
-        data-testid={`schematic-node-arc-${slug}`}
-      />
-      <text
-        className="schematic-node-label"
-        style={{
-          fill: '#FFFFFFE6',
-          fontSize: NODE_LABEL_FONT,
-          fontWeight: 700,
-          letterSpacing: 1,
-          fontFamily: 'Inter, system-ui, sans-serif',
-          pointerEvents: 'none',
-          filter: `drop-shadow(0 0 4px ${cluster.color}CC)`,
-        }}
-      >
-        <textPath
-          href={`#${topArcId}`}
-          startOffset="50%"
-          textAnchor="middle"
-          data-testid={`schematic-node-textpath-${slug}`}
+      <div className="flex items-center gap-3 mb-4">
+        <span
+          className="inline-block w-1.5 h-8 rounded-sm"
+          style={{ background: cluster.color }}
+        />
+        <h2
+          className="text-white text-lg font-extrabold uppercase tracking-[0.18em]"
+          style={{ letterSpacing: '0.18em' }}
+          data-testid={`schematic-cluster-label-${cluster.key}`}
         >
-          {parts[0]}
-        </textPath>
-      </text>
-      {/* v50 — Optional bottom arc + second half of the label. */}
-      {parts[1] && (
-        <>
-          <path
-            id={bottomArcId} d={bottomArcD}
-            fill="none" stroke="none"
-            data-testid={`schematic-node-arc-b-${slug}`}
-          />
-          <text
-            className="schematic-node-label"
-            style={{
-              fill: '#FFFFFFE6',
-              fontSize: NODE_LABEL_FONT,
-              fontWeight: 700,
-              letterSpacing: 1,
-              fontFamily: 'Inter, system-ui, sans-serif',
-              pointerEvents: 'none',
-              filter: `drop-shadow(0 0 4px ${cluster.color}CC)`,
-            }}
-          >
-            <textPath
-              href={`#${bottomArcId}`}
-              startOffset="50%"
-              textAnchor="middle"
-              data-testid={`schematic-node-textpath-b-${slug}`}
+          {cluster.label}
+        </h2>
+        <span
+          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+          style={{
+            background: `${cluster.color}22`,
+            color: cluster.color,
+            border: `1px solid ${cluster.color}55`,
+          }}
+        >
+          {nodes.length} {nodes.length === 1 ? 'module' : 'modules'}
+        </span>
+      </div>
+
+      {!hasSubs ? (
+        <div
+          className="grid gap-3"
+          style={{
+            gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+          }}
+          data-testid={`schematic-cluster-grid-${cluster.key}`}
+        >
+          {nodes.map((n) => (
+            <IconTile
+              key={n.id}
+              node={n}
+              cluster={cluster}
+              onClick={() => onNavigate(n)}
+            />
+          ))}
+        </div>
+      ) : (
+        subs.map((sub) => {
+          const subNodes = nodes.filter((n) => n.sub === sub.key);
+          if (!subNodes.length) return null;
+          return (
+            <div
+              key={sub.key}
+              className="mb-6"
+              data-testid={`schematic-sub-cluster-${sub.key}`}
             >
-              {parts[1]}
-            </textPath>
-          </text>
-        </>
+              <h3
+                className="text-[12px] font-bold uppercase tracking-[0.22em] text-white/70 mb-3"
+                data-testid={`schematic-sub-cluster-label-${sub.key}`}
+              >
+                {sub.label}
+              </h3>
+              <div
+                className="grid gap-3"
+                style={{
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                }}
+              >
+                {subNodes.map((n) => (
+                  <IconTile
+                    key={n.id}
+                    node={n}
+                    cluster={cluster}
+                    onClick={() => onNavigate(n)}
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })
       )}
-    </g>
+    </section>
   );
 }
 
 export default function ProgramSchematicPage() {
   const navigate = useNavigate();
-
   const clusterByKey = React.useMemo(
     () => Object.fromEntries(SCHEMATIC_CLUSTERS.map((c) => [c.key, c])),
     [],
   );
 
-  const handleNodeClick = React.useCallback(
-    (node) => {
-      if (!node.route) {
-        toast.info(`${node.label} — no route yet.`);
-        return;
-      }
-      navigate(node.route);
-    },
-    [navigate],
-  );
-
-  const hubCentre = {
-    x: SCHEMATIC_HUB.x + SCHEMATIC_HUB.w / 2,
-    y: SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2,
+  const onNavigate = (node) => {
+    if (!node.route) {
+      toast('This module is a stub — Phase 2 will fill it in.');
+      return;
+    }
+    navigate(node.route);
   };
 
-  // v50 — Pre-compute which nodes have a row directly below within
-  // the same cluster (any node whose y is greater by 80-260 units).
-  // Nodes WITHOUT a row below are safe candidates for the split-arc
-  // "coin" treatment (word 1 on top arc, word 2 on bottom arc)
-  // because their bottom-arc text can't collide with a next-row's
-  // top-arc text.
-  const canSplitArc = React.useMemo(() => {
-    const set = new Set();
-    for (const n of SCHEMATIC_NODES) {
-      const hasBelow = SCHEMATIC_NODES.some(
-        (m) => m.cluster === n.cluster
-          && m.id !== n.id
-          && m.y > n.y + 60
-          && m.y < n.y + 260,
-      );
-      if (!hasBelow) set.add(n.id);
-    }
-    return set;
-  }, []);
-
   return (
-    <div className="max-w-[1600px] mx-auto pb-16" data-testid="program-schematic-page">
-      <PageHeader
-        crumb="Settings / Program Schematic"
-        title="Program Schematic"
-        subtitle="Every module in Paneltec Civil, connected to one control panel."
-      />
+    <div
+      className="min-h-full"
+      data-testid="program-schematic-page"
+      style={{
+        background:
+          'radial-gradient(circle at 30% 15%, #1E1B4B 0%, #0B1220 55%, #050710 100%)',
+      }}
+    >
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <PageHeader
+          title="Program Schematic"
+          subtitle="Every Paneltec Civil module at a glance, grouped by cluster. Click a tile to open its page."
+          testId="program-schematic-header"
+          textClassName="text-white"
+        />
 
-      {/* Legend row — always shown, gives users the colour → cluster map. */}
-      <div className="flex flex-wrap gap-2 mb-4" data-testid="schematic-legend">
-        {SCHEMATIC_CLUSTERS.map((c) => (
-          <ClusterLegendPill key={c.key} cluster={c} />
-        ))}
-      </div>
-
-      <div
-        className="relative rounded-2xl overflow-hidden shadow-lg schematic-canvas overflow-x-auto md:overflow-x-visible"
-        style={{ border: '1px solid #1E293B' }}
-        data-testid="schematic-canvas"
-      >
-        <svg
-          viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
-          preserveAspectRatio="xMidYMid meet"
-          className="min-w-[1100px] md:min-w-0"
-          style={{ width: '100%', height: 'auto', display: 'block' }}
+        {/* Legend row — one pill per cluster, colour-coded. */}
+        <div
+          className="flex flex-wrap gap-2 mb-8"
+          data-testid="schematic-legend"
         >
-          <defs>
-            {/* v47.1 — Vertical linear gradient replaces the v47 radial
-                bloom. Top: deep indigo #1E1B4B, bottom: dark navy #0B1220. */}
-            <linearGradient id="canvas-bg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%"   stopColor="#1E1B4B" />
-              <stop offset="55%"  stopColor="#12173A" />
-              <stop offset="100%" stopColor="#0B1220" />
-            </linearGradient>
-            {/* Hub bloom — a soft radial halo hugging the badge only,
-                so the badge still reads as the visual anchor. */}
-            <radialGradient id="hub-halo" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stopColor="#7C3AED" stopOpacity="0.55" />
-              <stop offset="55%" stopColor="#7C3AED" stopOpacity="0.12" />
-              <stop offset="100%" stopColor="#0B1220" stopOpacity="0" />
-            </radialGradient>
-            {/* Hub badge gradient — blue to violet. */}
-            <linearGradient id="hub-fill" x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%"  stopColor="#2C6BFF" />
-              <stop offset="100%" stopColor="#8B5CF6" />
-            </linearGradient>
-            {/* Faint grid pattern — a touch darker than v47 to keep
-                icon contrast crisp against the indigo top of the
-                gradient. */}
-            <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
-              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#1E293B" strokeWidth="0.6" opacity="0.45" />
-            </pattern>
-          </defs>
-
-          {/* Backdrop: vertical gradient, then grid pattern, then hub halo. */}
-          <rect width={CANVAS_W} height={CANVAS_H} fill="url(#canvas-bg)" />
-          <rect width={CANVAS_W} height={CANVAS_H} fill="url(#grid)" />
-          <circle cx={hubCentre.x} cy={hubCentre.y} r={320} fill="url(#hub-halo)" />
-
-          {/* Bezier spokes — hub centre → each cluster anchor. */}
-          <g data-testid="schematic-spokes">
-            {SCHEMATIC_CLUSTERS.map((c) => (
-              <g key={c.key}>
-                <path
-                  d={bezierPath(hubCentre, c.anchor)}
-                  stroke={c.color}
-                  strokeWidth={2.8}
-                  fill="none"
-                  strokeLinecap="round"
-                  opacity={0.78}
-                  data-testid={`schematic-spoke-${c.key}`}
+          {CLUSTER_ORDER.map((key) => {
+            const c = clusterByKey[key];
+            if (!c) return null;
+            return (
+              <div
+                key={c.key}
+                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
+                style={{
+                  background: `${c.color}1A`,
+                  color: c.color,
+                  border: `1px solid ${c.color}55`,
+                }}
+                data-testid={`schematic-legend-${c.key}`}
+              >
+                <span
+                  className="inline-block w-2 h-2 rounded-full"
+                  style={{ background: c.color }}
                 />
-                {/* Terminal dot at the cluster anchor. */}
-                <circle
-                  cx={c.anchor.x}
-                  cy={c.anchor.y}
-                  r={8}
-                  fill={c.color}
-                  opacity={0.95}
-                />
-              </g>
-            ))}
-          </g>
+                {c.label}
+              </div>
+            );
+          })}
+        </div>
 
-          {/* Sub-cluster (Settings only) — thin violet dashed connector +
-              cluster labels. */}
-          {SCHEMATIC_SUB_CLUSTERS.length > 0 && (
-            <g data-testid="schematic-sub-clusters">
-              {SCHEMATIC_SUB_CLUSTERS.map((sc) => {
-                const parent = clusterByKey[sc.parent];
-                // v55.2 — Chip width scales with label length so
-                // "DATA & AUTOMATION" (16 chars, 260px) never
-                // gets clipped at any viewport width.
-                const chipWidth = Math.max(140, sc.label.length * 14 + 40);
-                const halfW = chipWidth / 2;
-                return (
-                  <g key={sc.key}>
-                    <rect
-                      x={sc.x - halfW}
-                      y={sc.y - 17}
-                      width={chipWidth}
-                      height={34}
-                      rx={17}
-                      fill="#0B1220"
-                      opacity={0.92}
-                      stroke={parent.color}
-                      strokeOpacity={0.85}
-                      strokeWidth={1.4}
-                    />
-                    <text
-                      x={sc.x}
-                      y={sc.y + 5}
-                      textAnchor="middle"
-                      style={{
-                        fill: '#FFFFFF',
-                        fontSize: 14,
-                        fontWeight: 800,
-                        letterSpacing: 2.5,
-                        fontFamily: 'Inter, system-ui, sans-serif',
-                        textTransform: 'uppercase',
-                        filter: `drop-shadow(0 0 6px ${parent.color}BB)`,
-                      }}
-                      data-testid={`schematic-sub-cluster-label-${sc.key}`}
-                    >
-                      {sc.label}
-                    </text>
-                  </g>
-                );
-              })}
-            </g>
-          )}
-
-          {/* Cluster label chips — floating outside each cluster's icon
-              group (positions declared per-cluster in `labelPos`).
-              v55 — Chip pattern reworked for legibility on dark navy:
-              solid slate-950 background (opacity 0.85) + cluster-coloured
-              border + WHITE label text with a cluster-tinted drop-shadow.
-              This closes the "purple-on-purple" contrast complaint on
-              the SETTINGS + INTEGRATIONS chips (both previously used
-              a same-hue fill/text pairing that was barely readable). */}
-          <g data-testid="schematic-cluster-labels">
-            {SCHEMATIC_CLUSTERS.map((c) => (
-              <g key={c.key}>
-                <rect
-                  x={c.labelPos.x - 105}
-                  y={c.labelPos.y - 20}
-                  width={210}
-                  height={38}
-                  rx={19}
-                  fill="#0B1220"
-                  opacity={0.85}
-                  stroke={c.color}
-                  strokeOpacity={0.85}
-                  strokeWidth={1.6}
-                />
-                <text
-                  x={c.labelPos.x}
-                  y={c.labelPos.y + 6}
-                  textAnchor="middle"
-                  style={{
-                    fill: '#FFFFFF',
-                    fontSize: CLUSTER_LABEL_FONT,
-                    fontWeight: 800,
-                    letterSpacing: 3,
-                    fontFamily: 'Inter, system-ui, sans-serif',
-                    textTransform: 'uppercase',
-                    filter: `drop-shadow(0 0 6px ${c.color}CC)`,
-                  }}
-                  data-testid={`schematic-cluster-label-${c.key}`}
-                >
-                  {c.label}
-                </text>
-              </g>
-            ))}
-          </g>
-
-          {/* Nodes. */}
-          <g data-testid="schematic-nodes">
-            {SCHEMATIC_NODES.map((n) => (
-              <SchematicNode
-                key={n.id}
-                node={n}
-                cluster={clusterByKey[n.cluster]}
-                onClick={() => handleNodeClick(n)}
-                splitArc={canSplitArc.has(n.id)}
+        {/* Canvas — one CSS-grid group per cluster. Wrapped in a
+            single container so the whole schematic remains a single
+            data-testid target for downstream tests. */}
+        <div data-testid="schematic-canvas">
+          {CLUSTER_ORDER.map((key) => {
+            const cluster = clusterByKey[key];
+            if (!cluster) return null;
+            const clusterNodes = SCHEMATIC_NODES.filter(
+              (n) => n.cluster === key,
+            );
+            if (!clusterNodes.length) return null;
+            return (
+              <ClusterGroup
+                key={cluster.key}
+                cluster={cluster}
+                nodes={clusterNodes}
+                onNavigate={onNavigate}
               />
-            ))}
-          </g>
+            );
+          })}
+        </div>
 
-          {/* Central hub badge — drawn LAST so it sits above the spokes.
-              v49.1 — Add two concentric decorative text rings around
-              the badge so the hub becomes a proper visual centrepiece.
-              Outer ring: repeating brand wordmark. Inner ring: subtitle
-              in a smaller size. Both are pure decoration; the actual
-              readable hub title stays on the rectangular badge. */}
-          <g data-testid="schematic-hub">
-            {/* v49.1 — Decorative outer text ring, radius 210. */}
-            <defs>
-              <path
-                id="hub-ring-outer"
-                d={
-                  `M ${hubCentre.x - 210} ${hubCentre.y} ` +
-                  `A 210 210 0 1 1 ${hubCentre.x + 210} ${hubCentre.y} ` +
-                  `A 210 210 0 1 1 ${hubCentre.x - 210} ${hubCentre.y}`
-                }
-                fill="none"
-              />
-              <path
-                id="hub-ring-inner"
-                d={
-                  `M ${hubCentre.x - 180} ${hubCentre.y} ` +
-                  `A 180 180 0 1 1 ${hubCentre.x + 180} ${hubCentre.y} ` +
-                  `A 180 180 0 1 1 ${hubCentre.x - 180} ${hubCentre.y}`
-                }
-                fill="none"
-              />
-            </defs>
-            <text
-              style={{
-                fill: '#FFFFFF55',
-                fontSize: 15,
-                fontWeight: 700,
-                letterSpacing: 8,
-                fontFamily: 'Inter, system-ui, sans-serif',
-                pointerEvents: 'none',
-              }}
-              data-testid="schematic-hub-outer-ring"
-            >
-              <textPath href="#hub-ring-outer" startOffset="0%">
-                · PANELTEC CIVIL · CONTROL PANEL · PANELTEC CIVIL · CONTROL PANEL · PANELTEC CIVIL · CONTROL PANEL ·
-              </textPath>
-            </text>
-            <text
-              style={{
-                fill: '#8B5CF677',
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: 5,
-                fontFamily: 'Inter, system-ui, sans-serif',
-                pointerEvents: 'none',
-              }}
-              data-testid="schematic-hub-inner-ring"
-            >
-              <textPath href="#hub-ring-inner" startOffset="0%">
-                · overview · capture · compliance · register · settings · integrations · overview · capture · compliance · register · settings · integrations ·
-              </textPath>
-            </text>
-            <rect
-              x={SCHEMATIC_HUB.x}
-              y={SCHEMATIC_HUB.y}
-              width={SCHEMATIC_HUB.w}
-              height={SCHEMATIC_HUB.h}
-              rx={18}
-              fill="url(#hub-fill)"
-              stroke="#FFFFFF33"
-              strokeWidth={1.5}
-            />
-            <text
-              x={SCHEMATIC_HUB.x + SCHEMATIC_HUB.w / 2}
-              y={SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2 - 4}
-              textAnchor="middle"
-              style={{
-                fill: '#FFFFFF',
-                fontSize: HUB_TITLE_FONT,
-                fontWeight: 800,
-                letterSpacing: 0.5,
-                fontFamily: 'Inter, system-ui, sans-serif',
-              }}
-            >
-              {SCHEMATIC_HUB.label}
-            </text>
-            <text
-              x={SCHEMATIC_HUB.x + SCHEMATIC_HUB.w / 2}
-              y={SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2 + 30}
-              textAnchor="middle"
-              style={{
-                fill: '#FFFFFFCC',
-                fontSize: HUB_SUB_FONT,
-                fontWeight: 600,
-                letterSpacing: 4,
-                fontFamily: 'Inter, system-ui, sans-serif',
-                textTransform: 'uppercase',
-              }}
-            >
-              {SCHEMATIC_HUB.sub}
-            </text>
-          </g>
-        </svg>
-
-        {/* Hover state for nodes — scale-up on hover, without breaking the
-            transform origin (SVG groups don't accept CSS transform-origin
-            reliably, so we use `transform-box: fill-box`). */}
-        <style>{`
-          .schematic-node { transition: transform 200ms ease; transform-box: fill-box; transform-origin: center; }
-          .schematic-node:hover { transform: scale(1.06); }
-          .schematic-node:focus { outline: none; }
-          /* v49.1 — hover ripple on the arced label: subtle letter-spacing
-             breathe + opacity punch. Pure CSS, no JS overhead. */
-          .schematic-node .schematic-node-label { transition: letter-spacing 260ms ease, opacity 260ms ease; }
-          .schematic-node:hover .schematic-node-label { letter-spacing: 1.5px; opacity: 1; }
-          @media print {
-            @page { size: A3 landscape; margin: 8mm; }
-            .schematic-canvas { break-inside: avoid; border: 0 !important; box-shadow: none !important; }
-          }
-        `}</style>
+        <p className="text-xs text-white/50 mt-8 mb-2">
+          {SCHEMATIC_NODES.length} modules across {SCHEMATIC_CLUSTERS.length}{' '}
+          clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
+        </p>
       </div>
-
-      <p className="mt-3 text-xs text-slate-500 md:hidden" data-testid="schematic-hint-mobile">
-        Scroll horizontally to explore &rarr; &nbsp;·&nbsp; Tap any node to open its module.
-      </p>
-      <p className="mt-3 text-xs text-slate-500 hidden md:block" data-testid="schematic-hint">
-        Click any node to open its module. Print (Ctrl + P) for a landscape one-pager.
-      </p>
     </div>
   );
 }

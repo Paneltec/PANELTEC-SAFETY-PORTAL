@@ -1,3 +1,97 @@
+# 2026-08-04 — v160.3.9.56 — FIVE-item ship: SVG-schematic RIP, search UX, PDF fix, table cut-off, app audit
+
+## Bundle contents
+
+### Item 1 · Fallback plan executed — SVG schematic retired
+- `pages/settings/ProgramSchematicPage.jsx` fully rewritten as a
+  **responsive CSS grid**. Grouped by cluster (Integrations, Overview,
+  Capture, Compliance, Register, Settings). Each tile = rounded
+  square (~120×140), lucide icon on a cluster-tinted disc, straight
+  HTML label beneath. Grid `repeat(auto-fill, minmax(150px, 1fr))`
+  → 1→2→3→4 columns from mobile to desktop.
+- Playwright verification at 360/768/1280: 0 tile overlaps, 0
+  off-viewport tiles at each width. Screenshots
+  `/tmp/schem_v56_grid_{360,768,1280}.png`.
+- Legacy SVG geometry preserved as data in
+  `lib/programSchematic.js` for rollback but unused by any renderer.
+
+### Item 2 · Manual search UX polish
+- Highlight `<mark>` recoloured to **green** (`#16A34A` bg + white
+  text + emerald glow). Clearly distinct from the manual's brand
+  peach palette.
+- Auto-scroll to first match wired on `debouncedQuery` (not `query`)
+  with a `lastScrolledQueryRef` guard so only NEW queries trigger a
+  scroll — typing further into the same substring stays put.
+- New match-count summary: **"N matches across M sections for 'query'"**
+  (previously only counted sections).
+- New **"Searching…" pill** appears next to the search box while
+  the 150 ms debounce is still pending — instant "yes it heard me"
+  feedback.
+- Playwright: query "simpro" → 39 marks, 8 sections, window
+  scrolled 1607 px, mark background=`rgb(22,163,74)`, text=white.
+  Screenshot `/tmp/manual_search_v56_simpro.png`.
+
+### Item 3 · Download PDF fix
+- Root cause: `_md_inline()` in `help_routes.py` applied bold/italic
+  regex BEFORE codespans, so identifier-style strings like
+  ``BACKUP_DEST_ENC_KEY`` had their internal underscores wrapped in
+  `<i>...</i>` INSIDE a `<font face="Courier">` — ReportLab's XML
+  parser choked with `saw </font> instead of expected </i>`.
+- Fix: extract codespans to placeholder tokens BEFORE bold/italic
+  passes, then reinsert. Tightened italic-underscore regex to
+  require non-word boundary on either side.
+- Verification: `GET /api/help/manual.pdf` returns HTTP 200 with
+  Content-Type `application/pdf`, 13.23 MB, `%PDF-` magic +
+  `%%EOF` trailer. File at `/tmp/user_manual_v56.pdf`.
+
+### Item 4 · Right-hand-side cut-off (Maintenance page)
+- Root cause on `PlantMaintenanceTab.jsx`: outer container had
+  `overflow-hidden` around a 1130 px fixed-column grid → STATUS
+  column clipped to "Clos…" at ≤1200 px viewports.
+- Fix: switched outer to `overflow-x-auto`, added `min-w-[1130px]`
+  inner wrap so header + rows scroll horizontally together.
+- Grep pass across sibling pages (Contractors, Suppliers,
+  DocumentLibrary, Incidents, SitesAdmin, FormAssignmentsAdmin,
+  HR Employees, SWMS Assignments) — none use fixed-pixel
+  `gridTemplateColumns` inside an `overflow-hidden` wrapper, so
+  this cut-off pattern is unique to Maintenance.
+
+### Item 5 · Full-app audit → `/app/memory/APP_AUDIT_v56.md`
+- 40 authenticated routes walked with Playwright at 1440×900:
+  every route loaded, every route zero JS errors, every route
+  zero horizontal overflow. 35 have a top-level `<h1>`/`<h2>`;
+  the 5 exceptions (`integrations/{simpro,navixy,microsoft365,textmagic}`,
+  `settings/backup`) render content but lack a `<PageHeader>` at
+  top — noted as P3 polish, not a functional bug.
+- Deferred to a second pass: "new / detail" routes needing param
+  seeding, deep click-flow testing, mobile-portrait re-run, auth
+  transitions, file uploads.
+
+## Files touched
+- `frontend/src/pages/settings/ProgramSchematicPage.jsx` (full rewrite → grid)
+- `frontend/src/lib/programSchematic.js` (header comment update)
+- `frontend/src/pages/UserManual.jsx` (search scroll + match count + Searching pill)
+- `frontend/src/pages/UserManual.module.css` (`.mark` → green)
+- `frontend/src/pages/PlantMaintenanceTab.jsx` (overflow-x-auto + min-w wrap)
+- `backend/help_routes.py` (`_md_inline` codespan protection)
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`, `mobile/src/lib/version.ts` (v160.3.9.56)
+- `memory/APP_AUDIT_v56.md` (new)
+
+## Verification artefacts
+- `/tmp/schem_v56_grid_{360,768,1280}.png`
+- `/tmp/manual_search_v56_simpro.png`
+- `/tmp/user_manual_v56.pdf` (13.23 MB, `%PDF-` magic verified)
+- `/tmp/maintenance_v56_after.png` (fix applied — see PlantMaintenanceTab.jsx diff)
+
+## Next Action Items
+- Add `<PageHeader>` to the five heading-less pages (P3-01 in audit).
+- Second audit pass covering "new/detail" routes + deep click flows.
+- Build `/api/notifications` for the header bell (deferred from v53).
+- Confirm/reject `docs/` auto-compose proposal for the User Manual.
+
+---
+
+
 # 2026-02-04 — v160.3.9.55.4 — v54 close-out bundle SHIPPED
 
 ## Bundle contents

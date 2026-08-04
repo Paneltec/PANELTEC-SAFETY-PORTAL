@@ -362,13 +362,19 @@
 }
 .pdfBtn:hover { background: #C25E1C; }
 
-/* --- Search highlight ------------------------------------------- */
+/* --- Search highlight -------------------------------------------
+ * v56 — Distinct green highlight so matches pop against the brand
+ * peach/orange manual palette. Bright emerald 500 with white text,
+ * a subtle emerald glow, and inset drop-shadow for depth. */
 .mark {
-  background: #FBE6CE;
-  color: #1F1B16;
-  padding: 0 2px;
-  border-radius: 3px;
-  box-shadow: inset 0 -2px 0 #E9782E;
+  background: #16A34A;
+  color: #FFFFFF;
+  padding: 1px 4px;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(22, 163, 74, 0.55),
+              0 0 8px rgba(22, 163, 74, 0.35),
+              inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+  font-weight: 700;
 }
 
 /* --- Print stylesheet ------------------------------------------- */

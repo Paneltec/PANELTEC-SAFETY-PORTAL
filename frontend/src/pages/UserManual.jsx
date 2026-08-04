@@ -137,11 +137,19 @@ export default function UserManual() {
   // still fire on the raw `query` so the mark-wrap happens in step
   // with keystrokes; filtering just waits a beat.
   const [debouncedQuery, setDebouncedQuery] = useState('');
+  // v56 — Track whether we're mid-debounce so a "Searching…" pill can
+  // render next to the input while the 150 ms timer settles.
+  const [isDebouncing, setIsDebouncing] = useState(false);
   useEffect(() => {
+    setIsDebouncing(query !== debouncedQuery);
     const t = setTimeout(() => setDebouncedQuery(query), 150);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, debouncedQuery]);
   const contentRef = useRef(null);
+  // v56 — Remember the last query we auto-scrolled for so a match at
+  // the top of the manual doesn't jump back to the top on every
+  // keystroke *after* the initial reveal.
+  const lastScrolledQueryRef = useRef('');
 
   useEffect(() => {
     (async () => {
@@ -171,12 +179,37 @@ export default function UserManual() {
     [visibleSections],
   );
 
-  // Scroll to the first match after a query change.
+  // v56 — Scroll to the first match once the debounced query settles.
+  // Fires on `debouncedQuery` (not `query`) so the DOM has actually
+  // rendered the fresh <mark>s before we look them up, and only when
+  // the query text actually changes (typing further into the SAME
+  // starting substring shouldn't yank the page back to the top).
   useEffect(() => {
-    if (!query || !contentRef.current) return;
-    const mark = contentRef.current.querySelector('mark');
-    if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [query]);
+    if (!debouncedQuery || !debouncedQuery.trim()) {
+      lastScrolledQueryRef.current = '';
+      return;
+    }
+    if (lastScrolledQueryRef.current === debouncedQuery) return;
+    lastScrolledQueryRef.current = debouncedQuery;
+    // Defer one tick so react-markdown has committed the new <mark>s.
+    const t = setTimeout(() => {
+      const root = contentRef.current || document;
+      const mark = root.querySelector('mark');
+      if (mark) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 60);
+    return () => clearTimeout(t);
+  }, [debouncedQuery]);
+
+  // v56 — Live count of every <mark> in the rendered content, for
+  // the match-summary line. Recomputed after each debounce settle.
+  const [markCount, setMarkCount] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const root = contentRef.current || document;
+      setMarkCount(root.querySelectorAll('mark').length);
+    }, 80);
+    return () => clearTimeout(t);
+  }, [debouncedQuery, visibleSections]);
 
   // react-markdown component overrides. NOTE: only in-card renderers
   // — the outer page title / preamble use plain <h1>/<p> in the layout.
@@ -297,7 +330,38 @@ export default function UserManual() {
               <Dismiss16Regular />
             </button>
           )}
+          {/* v56 — Debounce activity pill. Sits INSIDE the search
+              wrapper below the input as an inline-status caption. */}
         </div>
+        {isDebouncing && query && (
+          <span
+            data-testid="manual-search-debouncing"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              background: '#16A34A',
+              color: '#FFFFFF',
+              padding: '4px 10px',
+              borderRadius: 999,
+              boxShadow: '0 0 8px rgba(22,163,74,0.35)',
+            }}
+          >
+            <span
+              style={{
+                width: 8, height: 8, borderRadius: 999,
+                background: '#FFFFFF',
+                animation: 'pulse 1s ease-in-out infinite',
+              }}
+              aria-hidden
+            />
+            Searching…
+          </span>
+        )}
         <button onClick={onDownload} data-testid="manual-download-pdf" className={styles.pdfBtn}>
           <ArrowDownload24Regular style={{ width: 16, height: 16 }} />
           Download PDF
@@ -318,7 +382,10 @@ export default function UserManual() {
           {visibleSections.length > 0 ? (
             <>
               <span data-testid="manual-search-count">
-                {visibleSections.length} section{visibleSections.length === 1 ? '' : 's'} match “{debouncedQuery}”
+                <strong style={{ color: '#0F5132' }}>{markCount}</strong>{' '}
+                match{markCount === 1 ? '' : 'es'} across{' '}
+                <strong style={{ color: '#0F5132' }}>{visibleSections.length}</strong>{' '}
+                section{visibleSections.length === 1 ? '' : 's'} for “{debouncedQuery}”
               </span>
               <span aria-hidden style={{ opacity: 0.4 }}>·</span>
               <span style={{ color: '#8B857A' }}>

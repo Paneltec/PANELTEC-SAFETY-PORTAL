@@ -197,7 +197,14 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           openGroup={openGroup} setOpenGroup={setOpenGroup}
           q={q} plantFilter={plantFilter} />
       ) : (
-        <div className="rounded-2xl border border-slate-200 overflow-hidden">
+        <div className="rounded-2xl border border-slate-200 overflow-x-auto">
+          {/* v56 — Fixed-width grid (1130px total) was clipping the
+              right-most STATUS column on ≤1200px viewports because the
+              parent had `overflow-hidden`. Switched to `overflow-x-auto`
+              and set a `min-w-[1130px]` inner wrap so the header + rows
+              scroll together horizontally when the viewport is narrower
+              than the columns need. */}
+          <div className="min-w-[1130px]">
           <div className="grid text-[11px] uppercase tracking-wider bg-slate-50 border-b border-slate-200 py-2 text-slate-600 font-semibold gap-2 px-3"
             style={{ gridTemplateColumns: '70px 120px 200px 160px 130px 130px 140px 100px 40px' }}
             data-testid="pm-header">
@@ -253,6 +260,7 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
               );
             })}
           </ul>
+          </div>
         </div>
       )}
 
