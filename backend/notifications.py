@@ -65,6 +65,12 @@ class NotificationItem(BaseModel):
 class NotificationsResponse(BaseModel):
     items: list[NotificationItem]
     unread_count: int
+    # v57.4 — Per-category unread counts so the bell panel header can
+    # show a "{N} certs · {N} renewals · …" pill row and filter to
+    # one category client-side without a re-fetch. Zero-filled for
+    # every canonical category so the shape is stable even when a
+    # category has no unread items.
+    per_category_unread: dict[str, int] = {}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -258,7 +264,23 @@ async def list_notifications(user: dict = Depends(get_current_user)) -> Notifica
     items.sort(key=lambda x: (x.read,))  # unread bucket first
 
     unread_count = sum(1 for x in items if not x.read)
-    return NotificationsResponse(items=items, unread_count=unread_count)
+    # v57.4 — per-category unread counts. Zero-filled for every
+    # canonical category so the frontend can render a stable pill row
+    # ("0 approvals" is hidden — the UI shows only >0 pills).
+    per_category_unread = {
+        "expiring_certs": 0,
+        "overdue_renewals": 0,
+        "failed_integrations": 0,
+        "pending_approvals": 0,
+    }
+    for it in items:
+        if not it.read and it.category in per_category_unread:
+            per_category_unread[it.category] += 1
+    return NotificationsResponse(
+        items=items,
+        unread_count=unread_count,
+        per_category_unread=per_category_unread,
+    )
 
 
 class MarkReadBody(BaseModel):

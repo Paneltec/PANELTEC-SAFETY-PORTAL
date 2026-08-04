@@ -42,6 +42,11 @@ export default function NotificationsBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const [unreadCount, setUnread] = useState(0);
+  // v57.4 — per-category unread counts from the same GET response;
+  // enables the pill row in the header and a client-side category
+  // filter without a re-fetch.
+  const [perCategory, setPerCategory] = useState({});
+  const [categoryFilter, setCategoryFilter] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const panelRef = useRef(null);
@@ -54,6 +59,7 @@ export default function NotificationsBell() {
       const { data } = await api.get('/notifications');
       setItems(data.items || []);
       setUnread(data.unread_count || 0);
+      setPerCategory(data.per_category_unread || {});
     } catch (e) {
       setError('Unable to load notifications.');
     } finally {
@@ -109,8 +115,12 @@ export default function NotificationsBell() {
     try { await api.post('/notifications/mark-all-read'); } catch { fetchNow(); }
   };
 
-  // Group items by category, preserving unread-first order.
-  const grouped = items.reduce((acc, it) => {
+  // Group items by category, preserving unread-first order. When a
+  // category filter is active, only that category's items render.
+  const filteredItems = categoryFilter
+    ? items.filter((it) => it.category === categoryFilter)
+    : items;
+  const grouped = filteredItems.reduce((acc, it) => {
     (acc[it.category] = acc[it.category] || []).push(it);
     return acc;
   }, {});
@@ -143,13 +153,58 @@ export default function NotificationsBell() {
           style={{ maxHeight: '60vh', display: 'flex', flexDirection: 'column' }}
         >
           <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-2">
-            <div>
+            <div className="flex-1 min-w-0">
               <div className="text-sm font-bold text-slate-800" data-testid="notifications-panel-title">
                 Notifications — {unreadCount} unread
               </div>
               <div className="text-[11px] text-slate-500 leading-snug mt-0.5">
                 Live signals that need your attention. Click an item to jump to it.
               </div>
+              {/* v57.4 — per-category pill row. Only categories with >0
+                  unread render. Click a pill → filter to that category.
+                  "All" chip clears the filter. */}
+              {(() => {
+                const catShorts = {
+                  expiring_certs:      { label: 'certs', pill: '#f59e0b' },
+                  overdue_renewals:    { label: 'renewals', pill: '#ef4444' },
+                  failed_integrations: { label: 'integrations', pill: '#7c3aed' },
+                  pending_approvals:   { label: 'approvals', pill: '#0ea5e9' },
+                };
+                const activeCats = Object.entries(perCategory).filter(([, n]) => n > 0);
+                if (activeCats.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1 mt-2" data-testid="notifications-category-pills">
+                    {categoryFilter && (
+                      <button
+                        onClick={() => setCategoryFilter(null)}
+                        className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-900 text-white"
+                        data-testid="notifications-pill-all"
+                      >
+                        Show all
+                      </button>
+                    )}
+                    {activeCats.map(([cat, n]) => {
+                      const meta = catShorts[cat] || { label: cat, pill: '#94a3b8' };
+                      const isActive = categoryFilter === cat;
+                      return (
+                        <button
+                          key={cat}
+                          onClick={() => setCategoryFilter(isActive ? null : cat)}
+                          data-testid={`notifications-pill-${cat}`}
+                          className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full transition"
+                          style={{
+                            background: isActive ? meta.pill : `${meta.pill}22`,
+                            color: isActive ? '#FFFFFF' : meta.pill,
+                            border: `1px solid ${meta.pill}55`,
+                          }}
+                        >
+                          {n} {meta.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             </div>
             <button
               onClick={() => setOpen(false)}

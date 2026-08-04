@@ -171,3 +171,34 @@ def test_5_stable_id_hash():
     ids1 = {it["id"] for it in r1.json()["items"]}
     ids2 = {it["id"] for it in r2.json()["items"]}
     assert ids1 == ids2, f"id set drifted across polls: {ids1 ^ ids2}"
+
+
+# ── Test 6 — per_category_unread sums to unread_count ────────────────
+def test_6_per_category_unread_sum_matches_total():
+    """v57.4 — the new `per_category_unread` map must (a) contain
+    every canonical category zero-filled, (b) sum to `unread_count`
+    minus any items whose category is outside the canonical set."""
+    token = _admin()
+    r = requests.get(f"{API}/notifications", headers=_hdr(token), timeout=15)
+    assert r.status_code == 200
+    payload = r.json()
+    canonical = {"expiring_certs", "overdue_renewals",
+                 "failed_integrations", "pending_approvals"}
+    pcu = payload.get("per_category_unread") or {}
+    # Every canonical category present, integer-valued.
+    for k in canonical:
+        assert k in pcu, f"missing category {k!r}"
+        assert isinstance(pcu[k], int)
+    # Sum of per_category_unread equals the count of unread items
+    # whose category is canonical.
+    live_unread_canonical = sum(
+        1 for it in payload["items"]
+        if not it["read"] and it["category"] in canonical
+    )
+    assert sum(pcu.values()) == live_unread_canonical, (
+        f"per_category_unread total {sum(pcu.values())} != "
+        f"live unread canonical {live_unread_canonical}"
+    )
+    # And that total is <= unread_count (unread_count counts ALL
+    # unread items across every category, canonical or otherwise).
+    assert sum(pcu.values()) <= payload["unread_count"]

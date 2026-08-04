@@ -494,6 +494,38 @@ export default function UsersManagement() {
     const t = setTimeout(() => setDebouncedSearch(search), 150);
     return () => clearTimeout(t);
   }, [search]);
+
+  // v57.4 — Saved views (localStorage-only, no backend). Built-in
+  // "default" views live alongside user-created ones. Storage limit
+  // 20 user views; guard against private-mode localStorage failures
+  // by treating any thrown Error as "storage unavailable" and hiding
+  // the Save button (chip row still works with in-memory defaults).
+  const DEFAULT_VIEWS = React.useMemo(() => ([
+    { id: 'built-in-active',   name: 'All active',        builtin: true, config: { search: '', filters: { role: '', status: 'active' } } },
+    { id: 'built-in-pending',  name: 'Pending inductees', builtin: true, config: { search: '', filters: { role: '', status: 'pending_activation' } } },
+    { id: 'built-in-archived', name: 'Archived only',     builtin: true, config: { search: '', filters: { role: '', status: 'archived' } } },
+  ]), []);
+  const [savedViews, setSavedViews] = useState([]);
+  const [storageAvailable, setStorageAvailable] = useState(true);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('paneltec_users_saved_views');
+      setSavedViews(raw ? (JSON.parse(raw) || []) : []);
+      setStorageAvailable(true);
+    } catch { setStorageAvailable(false); setSavedViews([]); }
+  }, []);
+  const persistViews = React.useCallback((next) => {
+    setSavedViews(next);
+    try { window.localStorage.setItem('paneltec_users_saved_views', JSON.stringify(next)); }
+    catch { /* private mode — silently degrade */ }
+  }, []);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [saveDialogName, setSaveDialogName] = useState('');
+  const applyView = React.useCallback((view) => {
+    const cfg = view.config || {};
+    setSearch(cfg.search || '');
+    setFilters(cfg.filters || { role: '', status: 'active' });
+  }, []);
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
   // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
@@ -1054,6 +1086,36 @@ export default function UsersManagement() {
         )}
       </div>
 
+      {/* v57.4 — Saved-views chip row. Rendered above the search
+          input. Built-in views are uneditable and non-deletable;
+          user-created chips get an inline × delete affordance. */}
+      <div className="mb-2 flex flex-wrap items-center gap-1.5" data-testid="users-saved-views">
+        {[...DEFAULT_VIEWS, ...savedViews].map((v) => (
+          <span key={v.id} className="inline-flex items-center gap-1 group">
+            <button
+              type="button"
+              onClick={() => applyView(v)}
+              data-testid={`users-view-${v.id}`}
+              className={`text-[11px] font-semibold px-2.5 py-1 rounded-full border transition ${v.builtin ? 'bg-slate-100 border-slate-300 text-slate-700 hover:bg-slate-200' : 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'}`}
+            >
+              {v.name}
+            </button>
+            {!v.builtin && (
+              <button
+                type="button"
+                onClick={() => persistViews(savedViews.filter((s) => s.id !== v.id))}
+                className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-600 text-xs"
+                data-testid={`users-view-delete-${v.id}`}
+                aria-label={`Delete saved view ${v.name}`}
+                title="Delete this view"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
+
       {/* v57.3 — Search bar above the users table. Debounced client-side
           filter across name / email / role / role_id / simpro_position /
           activation_status. Clear via ×, Esc, or emptying the input. */}
@@ -1087,7 +1149,62 @@ export default function UsersManagement() {
             <b className="text-slate-800">{filtered.length}</b> match{filtered.length === 1 ? '' : 'es'}
           </span>
         )}
+        {/* v57.4 — Save-as-view button. Hidden if localStorage is
+            unavailable (private browsing). */}
+        {storageAvailable && (search.trim() || filters.status !== 'active' || filters.role) && (
+          <button
+            type="button"
+            onClick={() => { setSaveDialogName(search.trim() || 'My view'); setSaveDialogOpen(true); }}
+            className="text-[11px] font-semibold px-2.5 py-1 rounded-md border border-slate-300 text-slate-700 hover:bg-slate-50"
+            data-testid="users-save-view-btn"
+          >
+            Save as view
+          </button>
+        )}
       </div>
+
+      {/* v57.4 — Inline save-view dialog (localStorage-only). */}
+      {saveDialogOpen && (
+        <div className="mb-3 flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2" data-testid="users-save-view-dialog">
+          <span className="text-xs font-semibold text-slate-600">Save view as:</span>
+          <input
+            autoFocus
+            value={saveDialogName}
+            onChange={(e) => setSaveDialogName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSaveDialogOpen(false); }}
+            className="flex-1 max-w-xs px-2 py-1 text-sm border border-slate-300 rounded"
+            data-testid="users-save-view-name"
+            placeholder="Give the view a name…"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const name = saveDialogName.trim();
+              if (!name) return;
+              if (savedViews.length >= 20) {
+                toast.error('You have 20 saved views — delete one before creating a new one.');
+                return;
+              }
+              const next = [...savedViews, { id: `view-${Date.now()}`, name, config: { search, filters } }];
+              persistViews(next);
+              setSaveDialogOpen(false);
+              toast.success(`Saved view “${name}”`);
+            }}
+            className="text-[11px] font-bold px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700"
+            data-testid="users-save-view-confirm"
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            onClick={() => setSaveDialogOpen(false)}
+            className="text-[11px] font-semibold px-3 py-1 rounded text-slate-500 hover:bg-slate-100"
+            data-testid="users-save-view-cancel"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* v57.3 — Empty state when search yields nothing. Sits above the
           table so the header/segments stay visible for context. */}
