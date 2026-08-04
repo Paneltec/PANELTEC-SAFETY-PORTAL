@@ -320,4 +320,53 @@
 //                  default `vertical-align: middle` on `<td>` but
 //                  makes future refactors safe against a Tailwind
 //                  reset that might change the default.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.42.2';
+// v160.3.9.42.3 — Bundle: three bugs on Users & Permissions.
+//                  Bug 1 (Aaron Foster purple circle):
+//                    Aaron's Simpro-imported photo was a 512×512 solid-
+//                    purple placeholder PNG (11.9 KB, fetch HTTP 200 —
+//                    the image itself IS junk, no fallback fires
+//                    because from React's POV the load succeeded). New
+//                    `isMonoColorImage()` decodes the image into a 4×4
+//                    canvas and computes channel-wise variance; scores
+//                    < 500 are treated as broken → render the initials
+//                    fallback. Live calibration on 12 real users: mono
+//                    Aaron scored 114.93, LOWEST real photo (Dominic
+//                    Goold) scored 1,608, HIGHEST (Craig Large) 14,884
+//                    → 500 is 4.4× above the mono ceiling and 3.2×
+//                    below the real-photo floor. `getInitials(name, email)` now returns
+//                    proper 2-char initials (e.g. "AF" for Aaron Foster)
+//                    instead of the previous single-letter fallback.
+//                    New reusable `<InitialsAvatar>` component owns the
+//                    fallback tile styling. `<img crossOrigin="anonymous">`
+//                    so the canvas readback isn't tainted by CORS.
+//                  Bug 2 ("← Back to Settings" too close to breadcrumb):
+//                    Shared component `capture/Ui.jsx::SettingsBackLink`
+//                    was `inline-flex` and the sibling `renderCrumb`
+//                    also returned an `inline-flex` div — both inline-
+//                    level, so they collapsed onto the same line as
+//                    "← Back to SettingsSETTINGS / Users". Wrapped the
+//                    back-link in a block-level `<div className="mb-2">`
+//                    so it lays out ABOVE the crumb on every page that
+//                    uses PageHeader (~24 pages: Users, Workers, Roles,
+//                    Contractors, Certs, Vehicles, Sites, Audit Exports,
+//                    Ask, Outbox, etc.). Single-file fix.
+//                  Bug 3 ("Refresh from Simpro" button did nothing):
+//                    Root cause was BACKEND — `simpro_import_users.py::
+//                    sync_linked_users` (and 3 sibling call sites in the
+//                    same file) still read `cfg_doc.get("config") or {}`
+//                    to hand the raw doc to `_fetch_simpro`, which
+//                    expects plaintext `api_token`. v40 SEC-003 moved
+//                    every Simpro secret to `<field>_encrypted` at rest,
+//                    but this file was missed in the audit. Result:
+//                    HTTP 500 KeyError: 'api_token' in 98ms — endpoint
+//                    never reached the Simpro API. All 4 call sites now
+//                    flow through `hydrate_integration_config(cfg_doc)`.
+//                    Verified via curl: HTTP 200 · scanned=64 · changed=0
+//                    · 31.9s wall-time (real API round-trip).
+//                    FE polish (same version): button gains
+//                    `isRefreshingSimpro` state + spinner + "Refreshing…"
+//                    copy + `data-refreshing` probe attribute + 500ms
+//                    min-visible floor. testid renamed
+//                    `sync-from-simpro-btn` → `refresh-from-simpro-btn`
+//                    to match the user-facing label.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.42.3';

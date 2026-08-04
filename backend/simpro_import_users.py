@@ -40,6 +40,15 @@ from pydantic import BaseModel
 from auth import require_roles
 from db import db
 from integrations_simpro_workers import _fetch_simpro, _lower, _split_name
+# v160.3.9.42.3 — SEC-003 SWEEP GAP CLOSED. Every call site below used to
+# read `cfg_doc.get("config") or {}` directly, which no longer contains
+# the plaintext `api_token` — v40 encrypts secrets at rest under
+# `<field>_encrypted`. Missed by the original v40 audit for this file,
+# surfaced as HTTP 500 KeyError: 'api_token' when a user clicked
+# "Refresh from Simpro" on /app/settings/users. `hydrate_integration_config`
+# is the shared v40 helper that returns a shallow-copy config with
+# plaintext hydrated in memory only.
+from integrations import hydrate_integration_config
 from models import new_id, now_iso
 
 
@@ -94,7 +103,7 @@ async def import_employees(
     })
     if not cfg_doc:
         raise HTTPException(400, "Simpro integration not connected for this org")
-    cfg = cfg_doc.get("config") or {}
+    cfg = hydrate_integration_config(cfg_doc)
     if not cfg.get("api_token"):
         raise HTTPException(400, "Simpro api_token missing")
 
@@ -247,7 +256,7 @@ async def list_available_simpro_employees(
     })
     if not cfg_doc:
         raise HTTPException(400, "Simpro integration not connected for this org")
-    cfg = cfg_doc.get("config") or {}
+    cfg = hydrate_integration_config(cfg_doc)
     details, _ = await _fetch_simpro(cfg)
     # Existing linked sids for this org.
     linked_sids: set[str] = set()
@@ -303,7 +312,7 @@ async def import_employees_selective(
     })
     if not cfg_doc:
         raise HTTPException(400, "Simpro integration not connected for this org")
-    cfg = cfg_doc.get("config") or {}
+    cfg = hydrate_integration_config(cfg_doc)
     details, _ = await _fetch_simpro(cfg)
 
     counts = {"created": 0, "updated": 0, "archived": 0,
@@ -457,7 +466,7 @@ async def sync_linked_users(
     })
     if not cfg_doc:
         raise HTTPException(400, "Simpro integration not connected for this org")
-    cfg = cfg_doc.get("config") or {}
+    cfg = hydrate_integration_config(cfg_doc)
     details, _ = await _fetch_simpro(cfg)
     by_sid = {str(d.get("ID")): d for d in details if d.get("ID") is not None}
     ts = now_iso()

@@ -12,14 +12,20 @@ function SettingsBackLink({ crumb }) {
   if (!crumb || typeof crumb !== 'string') return null;
   const first = crumb.split('/').map((s) => s.trim()).filter(Boolean)[0];
   if (!first || first.toLowerCase() !== 'settings') return null;
+  // v160.3.9.42.3 — Wrap the back-link in a block-level <div> so it lays
+  // out ABOVE the crumb (renderCrumb returns an inline-flex div; without
+  // this wrapper both were inline-level and collapsed onto one line —
+  // rendering as "← Back to SettingsSETTINGS / Users" with no gap).
   return (
-    <Link
-      to="/app/settings"
-      className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 mb-2"
-      data-testid="page-back-to-settings"
-    >
-      <ArrowLeft size={12} /> Back to Settings
-    </Link>
+    <div className="mb-2" data-testid="page-back-to-settings-wrapper">
+      <Link
+        to="/app/settings"
+        className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900"
+        data-testid="page-back-to-settings"
+      >
+        <ArrowLeft size={12} /> Back to Settings
+      </Link>
+    </div>
   );
 }
 

@@ -63,6 +63,82 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS as DndCSS } from '@dnd-kit/utilities';
 
+// v160.3.9.42.3 — Bug 1: Aaron Foster's Simpro-imported photo was a
+// 512×512 solid-purple placeholder PNG (11,881 bytes, fetch HTTP 200,
+// image loads fine, `object-cover` renders it correctly — but the
+// SOURCE is junk). User asked to fall back to initials for cases
+// like this. Detection: after `onLoad`, draw the image into a 4×4
+// canvas and compute channel-wise variance. Real photos score >>100;
+// mono-color placeholders score ~0. Threshold 30 catches solid
+// blocks + heavily-JPEG-artefacted single-colour tiles without false-
+// positiving muted-but-real photos.
+function getInitials(name, email) {
+  const src = (name || '').trim();
+  if (src) {
+    const tokens = src.split(/\s+/).filter(Boolean);
+    if (tokens.length >= 2) return (tokens[0][0] + tokens[tokens.length - 1][0]).toUpperCase();
+    if (tokens.length === 1) return tokens[0].slice(0, 2).toUpperCase();
+  }
+  const e = (email || '').trim();
+  if (e) {
+    const [local, domain] = e.split('@');
+    const two = ((local && local[0]) || '') + ((domain && domain[0]) || '');
+    if (two) return two.toUpperCase();
+  }
+  return '?';
+}
+
+// v160.3.9.42.3 — Bug 1: Aaron Foster's Simpro-imported photo was a
+// 512×512 solid-purple placeholder PNG (11,881 bytes, fetch HTTP 200,
+// image loads fine, `object-cover` renders it correctly — but the
+// SOURCE is junk). User asked to fall back to initials for cases
+// like this. Detection: after `img.decode()`, draw the image into a
+// 4×4 canvas and compute channel-wise variance. Live calibration on
+// 12 users (v42.3 diagnostic): mono-purple Aaron scored 114.93,
+// LOWEST real photo (Dominic Goold) scored 1,608. Threshold 500 is
+// 4.4× above the mono-placeholder ceiling and 3.2× below the real-
+// photo floor — comfortable margin either way. Same-origin URL
+// (…/api/…?token=…) so canvas readback is not CORS-tainted; no
+// `crossOrigin` attribute needed and adding one would BREAK the
+// probe by forcing strict CORS on requests that don't need it.
+function isMonoColorImage(imgEl) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = 4; c.height = 4;
+    const ctx = c.getContext('2d');
+    if (!ctx) return false;
+    ctx.drawImage(imgEl, 0, 0, 4, 4);
+    const data = ctx.getImageData(0, 0, 4, 4).data;
+    const sums = [0, 0, 0], sumSq = [0, 0, 0];
+    for (let i = 0; i < 16; i++) {
+      for (let ch = 0; ch < 3; ch++) {
+        const v = data[i * 4 + ch];
+        sums[ch] += v;
+        sumSq[ch] += v * v;
+      }
+    }
+    let totalVar = 0;
+    for (let ch = 0; ch < 3; ch++) {
+      const mean = sums[ch] / 16;
+      totalVar += (sumSq[ch] / 16) - (mean * mean);
+    }
+    return totalVar < 500;
+  } catch (_) {
+    return false;
+  }
+}
+
+function InitialsAvatar({ initials, testId, className }) {
+  return (
+    <div
+      className={className || "w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-sm font-semibold text-slate-600 shrink-0 select-none"}
+      data-testid={testId}
+      aria-label={`Avatar initials ${initials}`}>
+      {initials}
+    </div>
+  );
+}
+
 // v160.3.9.41.2 — <AvatarImage> wrapper that resolves the raw
 // `photo_url` string returned by `GET /api/users` (e.g.
 // `/api/workers/{id}/photo/{gid}` or `/api/files/document_library/…`)
@@ -72,9 +148,14 @@ import { CSS as DndCSS } from '@dnd-kit/utilities';
 // URL 401s server-side and the browser silently falls back to the
 // initials tile — the exact failure the v41.1 diagnostic caught
 // (13 users enriched by backend, 0 <img> avatars visible in DOM).
-function UserAvatarImage({ rawSrc, alt, testId, className }) {
+// v160.3.9.42.3 — Bug 1: on `onLoad` we now also probe the decoded
+// pixels for mono-colour placeholders (see `isMonoColorImage`). If
+// the source is a solid block, we treat it as broken and render the
+// initials fallback instead. Callers pass `initials` + `fallbackTestId`.
+function UserAvatarImage({ rawSrc, alt, testId, className, initials, fallbackTestId }) {
   const [resolvedSrc, setResolvedSrc] = React.useState(null);
   const [broken, setBroken] = React.useState(false);
+  const imgRef = React.useRef(null);
   React.useEffect(() => {
     let alive = true;
     setBroken(false);
@@ -84,13 +165,40 @@ function UserAvatarImage({ rawSrc, alt, testId, className }) {
       .catch(() => { if (alive) { setResolvedSrc(null); setBroken(true); } });
     return () => { alive = false; };
   }, [rawSrc]);
-  if (!resolvedSrc || broken) return null;
+  // v160.3.9.42.3 — Run the mono-colour probe AFTER `resolvedSrc` lands.
+  // `<img crossOrigin>` is intentionally omitted because the photo URL is
+  // same-origin (…/api/workers/…?token=…) — adding crossOrigin forces
+  // strict CORS on a request that never needed it and taints the canvas.
+  // We use `img.decode()` when available so we know the pixels are ready
+  // before drawing; onLoad-only would miss cached hits on some browsers.
+  React.useEffect(() => {
+    if (!resolvedSrc) return;
+    let alive = true;
+    const el = imgRef.current;
+    if (!el) return;
+    const check = () => {
+      if (!alive) return;
+      if (isMonoColorImage(el)) setBroken(true);
+    };
+    if (el.complete && el.naturalWidth > 0) {
+      // Cached hit — canvas is ready right now.
+      queueMicrotask(check);
+    } else if (typeof el.decode === 'function') {
+      el.decode().then(check).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [resolvedSrc]);
+  if (!resolvedSrc || broken) {
+    return <InitialsAvatar initials={initials || '?'} testId={fallbackTestId} />;
+  }
   return (
     <img
+      ref={imgRef}
       src={resolvedSrc}
       alt={alt}
       loading="lazy"
       decoding="async"
+      onLoad={(e) => { if (isMonoColorImage(e.target)) setBroken(true); }}
       onError={() => setBroken(true)}
       className={className || "w-14 h-14 rounded-full object-cover border border-slate-200 bg-white shrink-0"}
       data-testid={testId}
@@ -380,6 +488,8 @@ export default function UsersManagement() {
   // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
   // (URL persistence is a later polish).
   const [sectionOpen, setSectionOpen] = useState({});
+  // v160.3.9.42.3 — Bug 3: "Refresh from Simpro" tactile-feedback state.
+  const [isRefreshingSimpro, setIsRefreshingSimpro] = useState(false);
   // v160.3.9.42.1 — `sectionSort` state retired with the dropdown. Users
   // & Permissions rows now render in alphabetical (A-Z) order in every
   // section, per user request.
@@ -528,14 +638,15 @@ export default function UsersManagement() {
               rawSrc={u.photo_url}
               alt={u.name || u.email || ''}
               testId={`user-photo-${u.id}`}
+              initials={getInitials(u.name, u.email)}
+              fallbackTestId={`user-photo-fallback-${u.id}`}
               className="w-14 h-14 rounded-full object-cover border border-slate-200 bg-white shrink-0"
             />
           ) : (
-            <div
-              className="w-14 h-14 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-lg font-semibold text-slate-600 shrink-0"
-              data-testid={`user-photo-fallback-${u.id}`}>
-              {(u.name || u.email || '?')[0]}
-            </div>
+            <InitialsAvatar
+              initials={getInitials(u.name, u.email)}
+              testId={`user-photo-fallback-${u.id}`}
+            />
           )}
           <div className="min-w-0">
             <div className="font-medium flex items-center gap-1.5 leading-tight">
@@ -658,6 +769,12 @@ export default function UsersManagement() {
             {/* v160.3.9.32-4c.1 — Removed legacy "Import from Simpro"
                 (yellow Download) + "Refresh from Simpro" (amber). Both
                 superseded by the Phase 4b picker + sync-linked below. */}
+            {/* v160.3.9.42.3 — Refresh button now surfaces an in-flight
+                affordance. `POST /admin/simpro/sync-linked` typically
+                takes 25-40s (real Simpro API round-trip), so the previous
+                no-feedback UX gave the (correct) impression the button
+                did nothing. `isRefreshingSimpro` state + spinner + 500ms
+                min-visible floor mirrors the Backup dashboard fix in v39. */}
             {lastSync?.last_synced_at && (
               <span
                 className="text-[11px] text-slate-500"
@@ -680,18 +797,29 @@ export default function UsersManagement() {
                 modal. Both gated by users.edit via the backend. */}
             <button
               onClick={async () => {
+                if (isRefreshingSimpro) return;
+                setIsRefreshingSimpro(true);
+                const started = Date.now();
                 try {
                   const { data } = await api.post('/admin/simpro/sync-linked');
                   toast.success(`Synced ${data.scanned} · Updated ${data.changed}`);
                   await load();
-                } catch (e) { toast.error(apiError(e)); }
+                } catch (e) {
+                  toast.error(apiError(e));
+                } finally {
+                  const elapsed = Date.now() - started;
+                  const remaining = Math.max(0, 500 - elapsed);
+                  setTimeout(() => setIsRefreshingSimpro(false), remaining);
+                }
               }}
-              data-testid="sync-from-simpro-btn"
-              disabled={!simproStatus.connected}
+              data-testid="refresh-from-simpro-btn"
+              data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
+              disabled={!simproStatus.connected || isRefreshingSimpro}
               title={simproStatus.connected ? 'Refresh linked users from Simpro' : 'Connect Simpro first'}
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
-              <RefreshCw size={14} /> Refresh from Simpro
+              <RefreshCw size={14} className={isRefreshingSimpro ? 'animate-spin' : ''} />
+              {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}
             </button>
             <button onClick={() => setSimproPickerOpen(true)} data-testid="simpro-picker-btn"
               disabled={!simproStatus.connected}
