@@ -161,6 +161,8 @@ function App() {
               <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />
               {/* v160.3.7q — Program-wide visual schematic diagram. */}
               <Route path="settings/schematic" element={<ProgramSchematicPage />} />
+              {/* v160.3.9.47 — Legacy redirect for the pre-rewrite URL. */}
+              <Route path="settings/program-schematic" element={<Navigate to="/app/settings/schematic" replace />} />
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
               {/* v160.3.9.31-4a — Phase 4a: Roles Admin page. */}

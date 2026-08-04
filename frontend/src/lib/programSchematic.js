@@ -1,171 +1,116 @@
-// v160.3.7q — Program Schematic node + edge registry.
+// v160.3.9.47 — Program Schematic topology registry.
 //
-// Static description of every module rendered on `/settings/schematic`.
-// Nodes are grouped into zones (each zone is a soft pastel band); each
-// node declares its own {icon, label, route, stat-key, description}.
-// Edges declare labelled Bezier connectors between zones.
+// Complete rewrite. The Program Schematic is now a static SVG-heavy
+// topology diagram (hub-and-spoke), NOT a react-flow canvas. This
+// registry exposes:
 //
-// Layout coordinates are hand-tuned once and then honoured by react-flow.
-// If you rearrange zones, remember to update both the node `x`/`y` AND
-// the enclosing zone rectangle in `SCHEMATIC_ZONES` below.
+//   • SCHEMATIC_CLUSTERS — the 6 locked clusters (colour + anchor).
+//   • SCHEMATIC_NODES    — every node (id, cluster, label, route,
+//                          icon key, absolute x/y for the SVG layout).
+//   • SCHEMATIC_HUB      — the central "Paneltec Civil" badge.
+//   • CANVAS_W / CANVAS_H — poster dimensions used by the SVG viewBox.
+//
+// Locked palette (approved pre-compaction, do NOT drift):
+//   Overview     Sky      #0EA5E9  (4 nodes)
+//   Capture      Orange   #F97316  (6 nodes)
+//   Compliance   Emerald  #10B981  (5 nodes)
+//   Register     Indigo   #6366F1  (4 nodes)
+//   Settings     Violet   #8B5CF6  (11 nodes, split Access + Data)
+//   Integrations Amber    #F59E0B  (4 nodes)
+//
+// The old ReactFlow structures (SCHEMATIC_ZONES / SCHEMATIC_EDGES /
+// _RAW_EDGES) have been deleted — the topology renders directly in
+// `pages/settings/ProgramSchematicPage.jsx` using bezier `<path>`
+// elements per (hub → cluster anchor) pair. Nothing else in the app
+// consumed those exports (verified via grep).
 
-/**
- * Zone → semantic Doc Library colour group. Reuses v7p taxonomy so the
- * whole app tells one visual story: "the same pastel = the same concept
- * class".
- *   Intelligence   → lilac    (Legal & Procedures — reads as "strategic")
- *   Capture        → butter   (Policies & Incidents — reads as "operational")
- *   Compliance     → sky      (Health & Hazards — reads as "core WHS")
- *   Fleet          → peach    (Audits & Manuals — reads as "assets")
- *   People         → sage     (Quality & Site Ops — reads as "team")
- *   Integrations   → mint     (Environmental & Risk — reads as "external")
- */
-// v160.3.7t — Compact frameless layout: nodes are icon-only 128×128
-// illustrations arranged in organic clusters per zone rather than a
-// rigid grid. Zone bands are the only large pastel surfaces; the tiles
-// themselves are transparent so the illustration reads as the "tile".
-// Coordinates recomputed for a 1200 × 1200 canvas.
-export const SCHEMATIC_ZONES = [
-  { key: 'intelligence', label: 'Intelligence',  color: 'lilac',  x:  460, y:    0, w:  760, h:  190 },
-  { key: 'capture',      label: 'Capture',       color: 'butter', x:    0, y:  200, w:  440, h:  790 },
-  { key: 'compliance',   label: 'Compliance',    color: 'sky',    x:  460, y:  200, w:  440, h:  520 },
-  { key: 'fleet',        label: 'Fleet',         color: 'peach',  x:  920, y:  200, w:  300, h:  310 },
-  { key: 'people',       label: 'People',        color: 'sage',   x:  920, y:  530, w:  300, h:  460 },
-  { key: 'integrations', label: 'Integrations',  color: 'mint',   x:  460, y:  740, w:  440, h:  250 },
+export const CANVAS_W = 1600;
+export const CANVAS_H = 1300;
+
+export const SCHEMATIC_HUB = {
+  x: 800,
+  y: 650,
+  w: 260,
+  h: 110,
+  label: 'Paneltec Civil',
+  sub: 'Control panel',
+};
+
+// Cluster anchors are the point each bezier line terminates at (the
+// "landing pad" side of the cluster, closest to the hub). This keeps
+// lines from crossing icons.
+export const SCHEMATIC_CLUSTERS = [
+  // `anchor` = terminus point for the bezier spoke from the hub.
+  // `labelPos` = fixed (x, y) for the uppercase cluster label chip,
+  // deliberately placed outside the icon group so it never overlaps
+  // a node. Icons themselves live at the coordinates declared in
+  // `SCHEMATIC_NODES` below.
+  { key: 'overview',     label: 'Overview',     color: '#0EA5E9', anchor: { x: 800,  y: 245 }, labelPos: { x: 800,  y: 80  } },
+  { key: 'capture',      label: 'Capture',      color: '#F97316', anchor: { x: 1200, y: 435 }, labelPos: { x: 1385, y: 240 } },
+  { key: 'compliance',   label: 'Compliance',   color: '#10B981', anchor: { x: 1200, y: 895 }, labelPos: { x: 1385, y: 720 } },
+  { key: 'register',     label: 'Register',     color: '#6366F1', anchor: { x: 800,  y: 1075 }, labelPos: { x: 800,  y: 1260 } },
+  { key: 'settings',     label: 'Settings',     color: '#8B5CF6', anchor: { x: 465,  y: 940 }, labelPos: { x: 220,  y: 680 } },
+  { key: 'integrations', label: 'Integrations', color: '#F59E0B', anchor: { x: 400,  y: 395 }, labelPos: { x: 285,  y: 240 } },
 ];
 
-/**
- * All schematic nodes. `stat` is a key into the `/api/dashboard/module-stats`
- * `counts` object — chips render `<n>` when present. `route` is the URL
- * that receives a click; must match an actual `<Route path>` in App.js —
- * unknown paths fall through to the catch-all `<Navigate to="/">` and
- * boot the user to the Cover page (that was the v7s crash bug).
- * v160.3.7t — Routes corrected to real App.js paths. `image` (optional)
- * points at `/img/schematic/nodes/{slug}.png`.
- */
-const NODE_W = 128;
-const NODE_H = 128;
+// Sub-cluster label positions (Settings only — Access + Data & Automation).
+export const SCHEMATIC_SUB_CLUSTERS = [
+  { key: 'settings-access', parent: 'settings', label: 'Access',             x: 220, y: 720 },
+  { key: 'settings-data',   parent: 'settings', label: 'Data & Automation',  x: 220, y: 950 },
+];
 
+// Each node: absolute (x, y) is the CENTRE of the icon tile.
+// Tile size is standardised at 88 × 88 (drawn in the page component).
+// `icon` is a lucide-react component name (import at render time).
+// `route` MUST match an actual `<Route path>` under `/app/*` in App.js —
+// the smoke-test pytest `test_program_schematic_routes_v47.py` asserts
+// this contract at CI time.
 export const SCHEMATIC_NODES = [
-  // — Intelligence (top band, 3 horizontally-centred nodes) —
-  { id: 'intel-centre',   zone: 'intelligence', label: 'Intelligence Centre', image: 'intelligence_centre',       route: '/app/dashboard', x:  520, y:  35, w: NODE_W, h: NODE_H, hint: 'Live compliance dashboard — headline KPIs across the org.' },
-  { id: 'ask-intel',      zone: 'intelligence', label: 'Ask Intelligence',    image: 'ask_intelligence',           route: '/app/ask',       x:  800, y:  35, w: NODE_W, h: NODE_H, hint: 'Natural-language search over every archive with RAG citations.' },
-  { id: 'live-dashboard', zone: 'intelligence', label: 'Live Dashboard',      image: 'live_compliance_dashboard',  route: '/app/dashboard', x: 1080, y:  35, w: NODE_W, h: NODE_H, hint: 'Real-time compliance signal with drill-through to source records.' },
+  // ── OVERVIEW (top centre — 4 nodes in a horizontal row) ────────────
+  { id: 'overview-dashboard', cluster: 'overview', label: 'Dashboard',        icon: 'LayoutDashboard', route: '/app/dashboard',        x: 620, y: 155 },
+  { id: 'overview-ask',       cluster: 'overview', label: 'Ask Intelligence', icon: 'Sparkles',        route: '/app/ask',              x: 740, y: 155 },
+  { id: 'overview-doclib',    cluster: 'overview', label: 'Document Library', icon: 'FolderOpen',      route: '/app/document-library', x: 860, y: 155 },
+  { id: 'overview-outbox',    cluster: 'overview', label: 'Outbox',           icon: 'Inbox',           route: '/app/outbox',           x: 980, y: 155 },
 
-  // — Capture (left band, organic 2-column offset cluster) —
-  { id: 'ai-swms',        zone: 'capture', label: 'AI SWMS',            image: 'ai_swms',          route: '/app/swms',              x:   40, y: 260, w: NODE_W, h: NODE_H, stat: 'swms',             hint: 'AI-drafted Safe Work Method Statements with peer review.' },
-  { id: 'prestarts',      zone: 'capture', label: 'Daily Pre-Starts',   image: 'daily_prestarts',  route: '/app/pre-starts',        x:  240, y: 300, w: NODE_W, h: NODE_H, stat: 'prestarts',        hint: 'Morning fitness-for-work + plant check-in on mobile.' },
-  { id: 'site-diary',     zone: 'capture', label: 'Site Diary',         image: 'site_diary',       route: '/app/site-diary',        x:   40, y: 440, w: NODE_W, h: NODE_H, stat: 'diary_entries',    hint: 'Voice/photo daily log; AI summariser rolls up weekly.' },
-  { id: 'hazards',        zone: 'capture', label: 'Hazard Reports',     image: 'hazard_reports',   route: '/app/hazards',           x:  240, y: 480, w: NODE_W, h: NODE_H, stat: 'hazards',          hint: 'Snap-and-tag hazards from the field; auto-routes to reviewer.' },
-  { id: 'incidents',      zone: 'capture', label: 'Incident Reports',   image: 'incident_reports', route: '/app/incidents',         x:   40, y: 620, w: NODE_W, h: NODE_H, stat: 'incidents',        hint: 'ICAM-aligned incident capture + investigation workflow.' },
-  { id: 'inspections',    zone: 'capture', label: 'Inspection Reports', image: 'inspection_reports', route: '/app/inspections',     x:  240, y: 660, w: NODE_W, h: NODE_H, stat: 'inspections',      hint: 'Site-walk inspections with photo evidence and CAPA.' },
-  { id: 'risk-assess',    zone: 'capture', label: 'Risk Assessments',   image: 'risk_assessments', route: '/app/risk-assessments',  x:   40, y: 800, w: NODE_W, h: NODE_H, stat: 'risk_assessments', hint: 'JSEA / risk matrices linked to task, site, and SWMS.' },
-  { id: 'forms',          zone: 'capture', label: 'Forms',              image: 'forms',            route: '/app/forms',             x:  240, y: 840, w: NODE_W, h: NODE_H, stat: 'form_submissions', hint: 'AI-built forms + submissions from mobile crew.' },
-  // Import PDFs has no dedicated route — soft-fallback to forms (that's where imported PDFs land as submissions).
-  { id: 'import-pdfs',    zone: 'capture', label: 'Import PDFs',        image: 'import_pdfs',      route: '/app/forms',             x:  140, y: 970, w: NODE_W, h: NODE_H, hint: 'Bulk-ingest legacy PDFs; AI classifies to the right archive.' },
+  // ── CAPTURE (top-right — 6 nodes 3×2 grid) ─────────────────────────
+  { id: 'capture-swms',       cluster: 'capture', label: 'AI SWMS',         icon: 'FileText',        route: '/app/swms',        x: 1265, y: 320 },
+  { id: 'capture-prestarts',  cluster: 'capture', label: 'Pre-Starts',      icon: 'CheckCircle2',    route: '/app/pre-starts',  x: 1385, y: 320 },
+  { id: 'capture-diary',      cluster: 'capture', label: 'Site Diary',      icon: 'BookOpen',        route: '/app/site-diary',  x: 1505, y: 320 },
+  { id: 'capture-hazards',    cluster: 'capture', label: 'Hazards',         icon: 'AlertTriangle',   route: '/app/hazards',     x: 1265, y: 460 },
+  { id: 'capture-incidents',  cluster: 'capture', label: 'Incidents',       icon: 'Siren',           route: '/app/incidents',   x: 1385, y: 460 },
+  { id: 'capture-inspections',cluster: 'capture', label: 'Inspections',     icon: 'ClipboardCheck',  route: '/app/inspections', x: 1505, y: 460 },
 
-  // — Compliance (centre band, 3×2 mini-grid) —
-  { id: 'suppliers',      zone: 'compliance', label: 'Suppliers',        image: 'suppliers',        route: '/app/suppliers',       x:  500, y: 260, w: NODE_W, h: NODE_H, stat: 'contractors',      hint: 'Contractor register with SWMS + insurance + licence tracking.' },
-  { id: 'renewal-links',  zone: 'compliance', label: 'Renewal Links',    image: 'renewal_links',    route: '/app/renewals',        x:  720, y: 260, w: NODE_W, h: NODE_H, stat: 'renewals',         hint: 'Public renewal links so subbies self-serve doc uploads.' },
-  { id: 'doc-library',    zone: 'compliance', label: 'Document Library', image: 'document_library', route: '/app/document-library', x:  500, y: 420, w: NODE_W, h: NODE_H, stat: 'doc_folders',      hint: 'AI-tagged doc archive grouped by 9 semantic colour groups.' },
-  { id: 'audit-exports',  zone: 'compliance', label: 'Audit Exports',    image: 'audit_exports',    route: '/app/audit-exports',   x:  720, y: 420, w: NODE_W, h: NODE_H, hint: 'One-click auditor bundle: PDFs + JSON + evidence chain.' },
-  { id: 'certifications', zone: 'compliance', label: 'Certifications',   image: 'certifications',   route: '/app/settings/certifications', x:  500, y: 580, w: NODE_W, h: NODE_H, stat: 'certifications',   hint: 'Worker card matrix — expiring soon, missing types, custody chain.' },
-  { id: 'backup',         zone: 'compliance', label: 'Backup & Restore', image: 'backup_restore',   route: '/app/settings/backup',         x:  720, y: 580, w: NODE_W, h: NODE_H, stat: 'bk_snapshots',     hint: '6-hourly snapshots to LAN NAS + Hub. Watchdog auto-recovers cron.' },
+  // ── COMPLIANCE (bottom-right — 5 nodes 3+2) ───────────────────────
+  { id: 'compliance-risk',        cluster: 'compliance', label: 'Risk Assess',    icon: 'ShieldAlert',   route: '/app/risk-assessments', x: 1265, y: 800 },
+  { id: 'compliance-contractors', cluster: 'compliance', label: 'Contractors',    icon: 'Building2',     route: '/app/contractors',      x: 1385, y: 800 },
+  { id: 'compliance-suppliers',   cluster: 'compliance', label: 'Suppliers',      icon: 'Truck',         route: '/app/suppliers',        x: 1505, y: 800 },
+  { id: 'compliance-renewals',    cluster: 'compliance', label: 'Renewals',       icon: 'RefreshCw',     route: '/app/renewals',         x: 1325, y: 940 },
+  { id: 'compliance-audit',       cluster: 'compliance', label: 'Audit Exports',  icon: 'PackageCheck',  route: '/app/audit-exports',    x: 1445, y: 940 },
 
-  // — Fleet (right upper cluster) —
-  { id: 'plant',          zone: 'fleet', label: 'Plant & Vehicles',     image: 'plant_vehicles',   route: '/app/vehicles',          x:  970, y: 250, w: NODE_W, h: NODE_H, stat: 'assets',           hint: 'Rego, services, defects, Navixy telematics live feed.' },
-  { id: 'sites',          zone: 'fleet', label: 'Sites',                image: 'sites',            route: '/app/sites',             x: 1130, y: 350, w: NODE_W, h: NODE_H, stat: 'sites',            hint: 'Job sites synced from Simpro; QR check-ins, deleted-log.' },
+  // ── REGISTER (bottom centre — 4 nodes in a horizontal row) ─────────
+  { id: 'register-workers',  cluster: 'register', label: 'Workers',   icon: 'HardHat',    route: '/app/settings/workers', x: 620, y: 1180 },
+  { id: 'register-vehicles', cluster: 'register', label: 'Vehicles',  icon: 'Car',        route: '/app/vehicles',         x: 740, y: 1180 },
+  { id: 'register-sites',    cluster: 'register', label: 'Sites',     icon: 'MapPin',     route: '/app/sites',            x: 860, y: 1180 },
+  { id: 'register-forms',    cluster: 'register', label: 'Forms',     icon: 'FilePlus',   route: '/app/forms',            x: 980, y: 1180 },
 
-  // — People (right middle cluster) —
-  { id: 'workers',        zone: 'people', label: 'Workers',             image: 'workers',            route: '/app/settings/workers',  x:  970, y: 570, w: NODE_W, h: NODE_H, stat: 'workers',          hint: 'WHS worker directory (Simpro-imported + manual).' },
-  { id: 'users-perms',    zone: 'people', label: 'Users & Perms',       image: 'users_permissions',  route: '/app/settings/users',    x: 1130, y: 660, w: NODE_W, h: NODE_H, stat: 'users',            hint: 'App login accounts, roles, permission overrides.' },
-  { id: 'sessions',       zone: 'people', label: 'Active Sessions',     image: 'active_sessions',    route: '/app/settings/system',   x:  970, y: 830, w: NODE_W, h: NODE_H, stat: 'active_sessions',  hint: 'Live JWT sessions with per-session delete + inactive purge.' },
+  // ── SETTINGS · ACCESS (bottom-left upper — 6 nodes 3×2) ────────────
+  { id: 'settings-org',       cluster: 'settings', sub: 'settings-access', label: 'Organisation',      icon: 'Building',   route: '/app/settings/org',                x: 90,  y: 780 },
+  { id: 'settings-workspaces',cluster: 'settings', sub: 'settings-access', label: 'Workspaces',        icon: 'Layers',     route: '/app/settings/workspaces',         x: 220, y: 780 },
+  { id: 'settings-users',     cluster: 'settings', sub: 'settings-access', label: 'Users & Perms',     icon: 'Users',      route: '/app/settings/users',              x: 350, y: 780 },
+  { id: 'settings-roles',     cluster: 'settings', sub: 'settings-access', label: 'Roles Admin',       icon: 'UserCog',    route: '/app/settings/roles-admin',        x: 90,  y: 880 },
+  { id: 'settings-presets',   cluster: 'settings', sub: 'settings-access', label: 'Perm Presets',      icon: 'KeyRound',   route: '/app/settings/permission-presets', x: 220, y: 880 },
+  { id: 'settings-system',    cluster: 'settings', sub: 'settings-access', label: 'System',            icon: 'Server',     route: '/app/settings/system',             x: 350, y: 880 },
 
-  // — Integrations (bottom-centre 2×2 mini-grid) —
-  { id: 'simpro',         zone: 'integrations', label: 'Simpro',         image: 'simpro',        route: '/app/settings/integrations/simpro',      x:  490, y: 780, w: NODE_W, h: NODE_H, hint: 'Users, workers, sites, and attachment ZIPs sync from Simpro.' },
-  { id: 'navixy',         zone: 'integrations', label: 'Navixy',         image: 'navixy',        route: '/app/settings/integrations/navixy',      x:  730, y: 780, w: NODE_W, h: NODE_H, hint: 'Vehicle GPS, engine hours, trip summaries.' },
-  { id: 'm365',           zone: 'integrations', label: 'Microsoft 365',  image: 'microsoft_365', route: '/app/settings/integrations/microsoft365', x:  490, y: 920, w: NODE_W, h: NODE_H, hint: 'Send renewal reminders + reports from your org email.' },
-  { id: 'emergent-llm',   zone: 'integrations', label: 'Emergent LLM',   image: 'emergent_llm',  route: '/app/settings/integrations',              x:  730, y: 920, w: NODE_W, h: NODE_H, hint: 'GPT / Claude / Gemini via a single universal key.' },
+  // ── SETTINGS · DATA & AUTOMATION (bottom-left lower — 5 nodes 3+2) ─
+  { id: 'settings-certs',     cluster: 'settings', sub: 'settings-data', label: 'Certifications', icon: 'BadgeCheck',   route: '/app/settings/certifications',    x: 90,  y: 1010 },
+  { id: 'settings-formasg',   cluster: 'settings', sub: 'settings-data', label: 'Form Assign',    icon: 'ClipboardList',route: '/app/settings/form-assignments',  x: 220, y: 1010 },
+  { id: 'settings-swmsasg',   cluster: 'settings', sub: 'settings-data', label: 'SWMS Assign',    icon: 'FileCheck',    route: '/app/settings/swms-assignments',  x: 350, y: 1010 },
+  { id: 'settings-backup',    cluster: 'settings', sub: 'settings-data', label: 'Backup',         icon: 'Database',     route: '/app/settings/backup',            x: 155, y: 1110 },
+  { id: 'settings-comms',     cluster: 'settings', sub: 'settings-data', label: 'Comms Safe',     icon: 'ShieldOff',    route: '/app/settings/comms-safe-mode',   x: 285, y: 1110 },
+
+  // ── INTEGRATIONS (top-left — 4 nodes 2×2) ──────────────────────────
+  { id: 'integrations-simpro',    cluster: 'integrations', label: 'Simpro',        icon: 'Plug',           route: '/app/settings/integrations/simpro',        x: 220, y: 320 },
+  { id: 'integrations-navixy',    cluster: 'integrations', label: 'Navixy',        icon: 'Radar',          route: '/app/settings/integrations/navixy',        x: 350, y: 320 },
+  { id: 'integrations-m365',      cluster: 'integrations', label: 'Microsoft 365', icon: 'Mail',           route: '/app/settings/integrations/microsoft365',  x: 220, y: 460 },
+  { id: 'integrations-textmagic', cluster: 'integrations', label: 'TextMagic',     icon: 'MessageSquare',  route: '/app/settings/integrations/textmagic',     x: 350, y: 460 },
 ];
-
-/**
- * Labelled data-flow edges. v160.3.7af rewires the entire connector set
- * around the platform's real operational story so a new admin can trace
- * "worker signs on → capture → analysis → dashboard → audit" without a
- * legend. Story arc:
- *   1. Identity backbone  (labelled)  — users-perms → workers → certs → renewals
- *   2. External sync      (dashed)    — Simpro pulls workers/sites/suppliers,
- *                                       Navixy pulls plant
- *   3. AI funnel          (labelled)  — 6 field-capture surfaces feed
- *                                       Intelligence Centre
- *   4. Intel fanout                    — Intelligence Centre → Ask + Live
- *   5. Governance output               — Live Dashboard → Audit; Intel → DocLib
- *   6. Vendor links                    — Suppliers ↔ Sites + Plant
- *   7. Comms outbound     (labelled)  — Microsoft 365 → Renewal Links
- *   8. AI backend         (dashed)    — Emergent LLM → AI SWMS + Ask
- *   9. Infra sinks        (dashed)    — DocLib / Certs / Audit → Backup
- * Labels reserved for 5 headline edges only (identity, expiry watch, JWT,
- * analysis, reminders) so the visual is dominated by connections rather
- * than text. Every edge carries a black arrowhead on the TARGET end so
- * direction reads at a glance. `smoothstep` routing (set in
- * `ProgramSchematicPage.jsx`) gives the industrial control-board vibe.
- * `animated: true` marks live pipelines; `strokeDasharray` marks
- * dashed reference / infra edges.
- */
-const _ARROW = { type: 'arrowclosed', color: '#0f172a', width: 18, height: 18 };
-const _DASHED = { strokeDasharray: '4 3' };
-const _DASHED_LIVE = { strokeDasharray: '6 4' };
-
-const _RAW_EDGES = [
-  // Identity backbone ---------------------------------------------------------
-  { id: 'e-users-workers',  source: 'users-perms',    target: 'workers',        label: 'identity' },
-  { id: 'e-workers-certs',  source: 'workers',        target: 'certifications', label: 'expiry watch' },
-  { id: 'e-certs-renewals', source: 'certifications', target: 'renewal-links' },
-  { id: 'e-users-sessions', source: 'users-perms',    target: 'sessions',       label: 'JWT' },
-
-  // External sync (dashed animated) ------------------------------------------
-  { id: 'e-simpro-workers',   source: 'simpro', target: 'workers',   animated: true, style: _DASHED_LIVE },
-  { id: 'e-simpro-sites',     source: 'simpro', target: 'sites',     animated: true, style: _DASHED_LIVE },
-  { id: 'e-simpro-suppliers', source: 'simpro', target: 'suppliers', animated: true, style: _DASHED_LIVE },
-  { id: 'e-navixy-plant',     source: 'navixy', target: 'plant',     animated: true, style: _DASHED_LIVE },
-
-  // Capture → Intelligence Centre (the AI funnel) ----------------------------
-  { id: 'e-swms-intel',        source: 'ai-swms',     target: 'intel-centre', label: 'analysis' },
-  { id: 'e-diary-intel',       source: 'site-diary',  target: 'intel-centre' },
-  { id: 'e-hazards-intel',     source: 'hazards',     target: 'intel-centre' },
-  { id: 'e-incidents-intel',   source: 'incidents',   target: 'intel-centre' },
-  { id: 'e-inspections-intel', source: 'inspections', target: 'intel-centre' },
-  { id: 'e-prestarts-intel',   source: 'prestarts',   target: 'intel-centre' },
-
-  // Local capture links ------------------------------------------------------
-  { id: 'e-hazards-risk',   source: 'hazards',     target: 'risk-assess' },
-  { id: 'e-incidents-risk', source: 'incidents',   target: 'risk-assess' },
-  { id: 'e-forms-doclib',   source: 'forms',       target: 'doc-library' },
-  { id: 'e-imports-doclib', source: 'import-pdfs', target: 'doc-library' },
-
-  // Intelligence fanout ------------------------------------------------------
-  { id: 'e-intel-ask',  source: 'intel-centre', target: 'ask-intel' },
-  { id: 'e-intel-live', source: 'intel-centre', target: 'live-dashboard' },
-
-  // Governance / output ------------------------------------------------------
-  { id: 'e-live-audit',   source: 'live-dashboard', target: 'audit-exports' },
-  { id: 'e-intel-doclib', source: 'intel-centre',   target: 'doc-library' },
-
-  // Vendor links -------------------------------------------------------------
-  { id: 'e-suppliers-sites', source: 'suppliers', target: 'sites' },
-  { id: 'e-suppliers-plant', source: 'suppliers', target: 'plant' },
-
-  // Comms outbound -----------------------------------------------------------
-  { id: 'e-m365-renewals', source: 'm365', target: 'renewal-links', label: 'reminders' },
-
-  // AI backend (dashed) ------------------------------------------------------
-  { id: 'e-llm-swms', source: 'emergent-llm', target: 'ai-swms',   style: _DASHED },
-  { id: 'e-llm-ask',  source: 'emergent-llm', target: 'ask-intel', style: _DASHED },
-
-  // Infra sinks — Backup (dashed) --------------------------------------------
-  { id: 'e-doclib-backup', source: 'doc-library',    target: 'backup', style: _DASHED },
-  { id: 'e-certs-backup',  source: 'certifications', target: 'backup', style: _DASHED },
-  { id: 'e-audit-backup',  source: 'audit-exports',  target: 'backup', style: _DASHED },
-];
-
-export const SCHEMATIC_EDGES = _RAW_EDGES.map((e) => ({ ...e, markerEnd: _ARROW }));

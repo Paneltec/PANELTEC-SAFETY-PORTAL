@@ -560,4 +560,35 @@
 //                  cross-contractor writes anywhere" invariant across
 //                  every scoped resource (workers, hr, certifications,
 //                  documents, contractors).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.46';
+// v160.3.9.47 — Program Schematic redesign (SVG topology).
+//                  Complete rewrite of `pages/settings/ProgramSchematicPage.jsx`
+//                  and `lib/programSchematic.js`. ReactFlow retired in
+//                  favour of a static SVG hub-and-spoke poster on a
+//                  dark-navy canvas with a radial purple bloom behind
+//                  a blue→violet gradient central hub badge.
+//                  6 clusters, locked palette (do NOT drift):
+//                    Overview     Sky      #0EA5E9  (4 icons)
+//                    Capture      Orange   #F97316  (6 icons)
+//                    Compliance   Emerald  #10B981  (5 icons)
+//                    Register     Indigo   #6366F1  (4 icons)
+//                    Settings     Violet   #8B5CF6  (11 icons — split into
+//                                                    Access + Data & Automation)
+//                    Integrations Amber    #F59E0B  (4 icons)
+//                  Lucide-react icons only, tinted per cluster. Each
+//                  cluster connects to the hub via ONE quadratic bezier
+//                  path — no inter-cluster edges. Static (no zoom /
+//                  pan / drag). Icons are clickable and keyboard-
+//                  focusable; Enter/Space navigate to the module.
+//                  Legacy `/app/settings/program-schematic` route added
+//                  as a client-side `<Navigate>` redirect to
+//                  `/app/settings/schematic`.
+//                  Route contract enforced by new backend pytest
+//                  `test_program_schematic_routes_v47.py` — every route
+//                  declared in `programSchematic.js` must exist as a
+//                  `<Route path>` under `/app/*` in `App.js`.
+//                  `lib/programSchematic.js`: `_RAW_EDGES`,
+//                  `SCHEMATIC_ZONES`, `SCHEMATIC_EDGES` deleted (dead
+//                  after the react-flow retirement; verified via grep
+//                  no other file imported them).
+// v160.3.9.46 — placeholder marker (pre-schematic session).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.47';
