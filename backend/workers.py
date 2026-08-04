@@ -317,7 +317,11 @@ async def sync_from_simpro(body: SyncRequest, user: dict = Depends(get_current_u
     )
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "Simpro is not connected for this organisation")
-    cfg = doc.get("config") or {}
+    # v160.3.9.43 — SEC-003 sweep: hydrate encrypted secrets on read.
+    # `api_token` and `api_base_url` are now stored as `<field>_encrypted`
+    # under v40; the raw `doc["config"]` no longer contains plaintext.
+    from integrations import hydrate_integration_config
+    cfg = hydrate_integration_config(doc)
     if not cfg.get("api_base_url") or not cfg.get("api_token"):
         raise HTTPException(400, "Simpro is missing api_base_url or api_token")
 

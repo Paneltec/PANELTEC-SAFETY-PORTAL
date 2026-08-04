@@ -369,4 +369,46 @@
 //                    min-visible floor. testid renamed
 //                    `sync-from-simpro-btn` → `refresh-from-simpro-btn`
 //                    to match the user-facing label.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.42.3';
+// v160.3.9.43 — SEC-003 SWEEP CONTINUATION HOTFIX.
+//                  v42.3 patched `simpro_import_users.py` after the
+//                  "Refresh from Simpro" button crashed with
+//                  `KeyError: 'api_token'`. That was one of NINE latent
+//                  gaps in the v40 SEC-003 migration. This version
+//                  closes the remaining EIGHT across four files:
+//                    • asset_meter_history.py (2 sites — Navixy 30-day
+//                      backfill and track-based backfill, both read
+//                      `session_hash` on raw doc).
+//                    • integrations_textmagic.py (2 sites — `_cfg()`
+//                      helper returned raw `doc["config"]`; `tm_send`
+//                      also read the raw config directly. Every SMS
+//                      send would have 4xx'd with the encrypted
+//                      Mongo doc).
+//                    • worker_certifications.py (1 site — cert
+//                      expiry reminder cron/manual endpoint read
+//                      TextMagic credentials from the raw doc; SMS
+//                      would have silently dropped without error).
+//                    • workers.py (1 site — `POST /workers/sync-from-
+//                      simpro` read `cfg["api_token"]` directly to
+//                      call `_refresh_staff_cache`; would 500 on
+//                      first click).
+//                    • health_extras.py (3 sites — Simpro / Navixy /
+//                      TextMagic health checks used
+//                      `(cfg.get("config") or {}).get("api_token")`
+//                      to detect presence. On v40-encrypted rows the
+//                      plaintext no longer exists, so every health
+//                      pill reported "Not connected" even when the
+//                      integration was fully functional. Fixed by
+//                      accepting plaintext OR `<field>_encrypted` for
+//                      the presence check — actual auth still goes
+//                      through `hydrate_integration_config` in the
+//                      real request path).
+//                  Every consumer now flows through
+//                  `hydrate_integration_config(cfg_doc)` — the shared
+//                  v40 helper that returns a shallow-copy config with
+//                  plaintext hydrated in memory only.
+//                  Test coverage: `test_integrations_encryption_v40`
+//                  extended with per-file regression fixtures that
+//                  seed an encrypted config, call each of the eight
+//                  fixed code paths, and assert no `KeyError` and
+//                  no fallback-to-empty-cfg behaviour.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.43';

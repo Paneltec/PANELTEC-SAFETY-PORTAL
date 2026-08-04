@@ -682,7 +682,10 @@ async def _send_one_reminder(
     tm = await db.integration_configs.find_one(
         {"org_id": org_id, "kind": "textmagic"}, {"_id": 0},
     )
-    tm_cfg = (tm.get("config") if tm and tm.get("status") == "connected" else None) or {}
+    # v160.3.9.43 — SEC-003 sweep: hydrate encrypted secrets on read
+    # (TextMagic api_key + username are encrypted at rest under v40).
+    from integrations import hydrate_integration_config
+    tm_cfg = (hydrate_integration_config(tm) if tm and tm.get("status") == "connected" else None) or {}
     tm_ready = bool(tm_cfg.get("username") and tm_cfg.get("api_key"))
 
     async def _send_sms(mobiles: list[str], sms_text: str) -> tuple[list[str], Optional[str]]:

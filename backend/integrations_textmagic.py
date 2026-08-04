@@ -11,6 +11,8 @@ from auth import require_roles, get_current_user
 from permissions import require_permission
 from db import db
 from models import now_iso
+# v160.3.9.43 — SEC-003 sweep: decrypt api_key/username on read.
+from integrations import hydrate_integration_config
 
 log = logging.getLogger("paneltec.textmagic")
 router = APIRouter(prefix="/integrations/textmagic", tags=["integrations-textmagic"])
@@ -30,7 +32,10 @@ async def _cfg(org_id: str) -> dict:
     doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "textmagic"})
     if not doc or not doc.get("config"):
         raise HTTPException(400, "TextMagic not configured")
-    return doc["config"]
+    # v160.3.9.43 — SEC-003 sweep: return decrypted config (api_key,
+    # username plaintext are needed for the TextMagic X-TM-* auth
+    # headers). Ciphertext lives only in Mongo.
+    return hydrate_integration_config(doc)
 
 
 def _auth_headers(cfg: dict) -> dict:
@@ -96,7 +101,8 @@ async def tm_send(body: SmsSendIn, user: dict = Depends(require_permission("inte
     doc = await db.integration_configs.find_one({"org_id": user["org_id"], "kind": "textmagic"})
     if not doc or doc.get("status") != "connected":
         raise HTTPException(400, "TextMagic not connected")
-    cfg = doc["config"]
+    # v160.3.9.43 — SEC-003 sweep: hydrate encrypted secrets on read.
+    cfg = hydrate_integration_config(doc)
     phones = ",".join(body.to)
     sender = cfg.get("default_sender_id")
     # 1. Price-check first

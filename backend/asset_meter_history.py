@@ -154,7 +154,9 @@ async def backfill_30d() -> dict:
         {"kind": "navixy", "status": "connected"},
         {"_id": 0, "org_id": 1, "config": 1},
     ):
-        c = cfg.get("config") or {}
+        # v160.3.9.43 — SEC-003 sweep: hydrate encrypted secrets on read.
+        from integrations import hydrate_integration_config
+        c = hydrate_integration_config(cfg)
         base = (c.get("api_base_url") or "").rstrip("/")
         h = c.get("session_hash")
         if not base or not h:
@@ -293,7 +295,9 @@ async def backfill_tracks_30d() -> dict:
         {"kind": "navixy", "status": "connected"},
         {"_id": 0, "org_id": 1, "config": 1},
     ):
-        c = cfg.get("config") or {}
+        # v160.3.9.43 — SEC-003 sweep: hydrate encrypted secrets on read.
+        from integrations import hydrate_integration_config
+        c = hydrate_integration_config(cfg)
         base = (c.get("api_base_url") or "").rstrip("/")
         h = c.get("session_hash")
         if not base or not h:

@@ -96,7 +96,11 @@ def _check_simpro(cfg: dict | None) -> dict:
     - Red if credentials missing, OR the last error is > 24h old with no
       successful call since (implies the integration is genuinely broken).
     """
-    if not cfg or not (cfg.get("config") or {}).get("api_token"):
+    # v160.3.9.43 — SEC-003 sweep: presence check uses `api_token_encrypted`
+    # OR plaintext `api_token` so orgs configured before v40 keep working
+    # and orgs configured under v40 stop reporting a false-negative "down".
+    conf = (cfg or {}).get("config") or {}
+    if not cfg or not (conf.get("api_token") or conf.get("api_token_encrypted")):
         return {"status": "down", "detail": "Not connected"}
 
     status_field = (cfg.get("status") or "").lower()
@@ -136,7 +140,13 @@ async def _check_navixy(cfg: dict | None, org_id: str) -> dict:
     least one asset has a Navixy timestamp within 60m. Amber if credentials
     are there but assets haven't updated recently. Red only if missing."""
     conf = (cfg or {}).get("config") or {}
-    has_creds = bool(conf.get("session_hash") or conf.get("password") or conf.get("api_token"))
+    # v160.3.9.43 — SEC-003 sweep: accept either plaintext OR the encrypted
+    # counterpart of the credential fields for the presence check.
+    has_creds = bool(
+        conf.get("session_hash") or conf.get("session_hash_encrypted")
+        or conf.get("password") or conf.get("password_encrypted")
+        or conf.get("api_token") or conf.get("api_token_encrypted")
+    )
     if not has_creds:
         return {"status": "down", "detail": "Not connected"}
 
@@ -191,9 +201,13 @@ def _check_m365(cfg: dict | None, safe_mode_on: bool) -> dict:
     if not cfg:
         return {"status": "down", "detail": "Not connected"}
     conf = cfg.get("config") or {}
-    has_client_creds = bool(conf.get("client_id") and conf.get("client_secret"))
-    has_access = bool(conf.get("access_token"))
-    has_refresh = bool(conf.get("refresh_token"))
+    # v160.3.9.43 — SEC-003 sweep: accept plaintext OR encrypted counterparts.
+    has_client_creds = bool(
+        conf.get("client_id")
+        and (conf.get("client_secret") or conf.get("client_secret_encrypted"))
+    )
+    has_access = bool(conf.get("access_token") or conf.get("access_token_encrypted"))
+    has_refresh = bool(conf.get("refresh_token") or conf.get("refresh_token_encrypted"))
     status_field = (cfg.get("status") or "").lower()
     tested = _parse_dt(cfg.get("last_tested_at"))
 
@@ -228,7 +242,9 @@ def _check_textmagic(cfg: dict | None, safe_mode_on: bool) -> dict:
     Comms Safe Mode is OFF. Red if:
       • no API key, OR
       • **COMMS_SAFE_MODE is ON** — deliberate disarm."""
-    if not cfg or not (cfg.get("config") or {}).get("api_key"):
+    # v160.3.9.43 — SEC-003 sweep: accept plaintext OR encrypted counterpart.
+    conf = (cfg or {}).get("config") or {}
+    if not cfg or not (conf.get("api_key") or conf.get("api_key_encrypted")):
         return {"status": "down", "detail": "Not connected"}
     tested = _parse_dt(cfg.get("last_tested_at"))
 
