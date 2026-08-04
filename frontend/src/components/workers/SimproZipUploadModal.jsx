@@ -40,8 +40,7 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
       fd.append('file', file);
       const { data } = await api.post(
         `/workers/${worker.id}/simpro-zip-import?dry_run=1`,
-        fd,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        fd
       );
       setPreview(data);
       // v160.3.4 — seed accept-checkbox state from auto_accept_default.
@@ -82,8 +81,7 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
       fd.append('file', rawFile);
       const { data } = await api.post(
         `/workers/${worker.id}/simpro-zip-import?dry_run=1`,
-        fd,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        fd
       );
       setPreview(data);
       const seed = {};
@@ -108,8 +106,7 @@ export function SimproZipUploadModal({ worker, onClose, onDone }) {
       fd.append('file', rawFile);
       const { data } = await api.post(
         `/workers/${worker.id}/simpro-zip-import?dry_run=0`,
-        fd,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
+        fd
       );
       setResult(data);
       setPhase('done');

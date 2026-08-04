@@ -1249,7 +1249,7 @@
 //                clients off the stale precache). Backup pill tooltip
 //                title-line and Simpro brand-blue buttons re-verified
 //                as already correct from v54.
-const CACHE_VERSION = 'paneltec-v160.3.9.57';
+const CACHE_VERSION = 'paneltec-v160.3.9.57.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

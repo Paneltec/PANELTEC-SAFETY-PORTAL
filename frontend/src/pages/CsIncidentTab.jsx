@@ -185,7 +185,7 @@ function ImportModal({ open, onClose, onDone }) {
     try {
       let resp;
       const fd = new FormData();
-      if (file) { fd.append('file', file); resp = await api.post('/cs-incident/reimport', fd, { headers: { 'Content-Type': 'multipart/form-data' } }); }
+      if (file) { fd.append('file', file); resp = await api.post('/cs-incident/reimport', fd); }
       else if (url.trim()) { fd.append('url', url.trim()); resp = await api.post('/cs-incident/reimport', fd); }
       else { setMsg('Provide a file OR a URL.'); setBusy(false); return; }
       setMsg(`Imported → new: ${resp.data.inserted}, updated: ${resp.data.updated}, unchanged: ${resp.data.unchanged}. Live rows: ${resp.data.live_total}.`);

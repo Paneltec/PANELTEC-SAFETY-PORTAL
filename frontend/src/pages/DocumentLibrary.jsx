@@ -648,7 +648,6 @@ export function DocumentLibraryFolder() {
       const { data } = await api.post(
         `/document-library/folders/${folderId}/files`,
         form,
-        { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       const okCount = (data.saved || []).length;
       const rejected = data.rejected || [];

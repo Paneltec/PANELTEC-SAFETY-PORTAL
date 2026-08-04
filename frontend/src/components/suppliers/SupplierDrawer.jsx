@@ -694,8 +694,7 @@ function FolderFiles({ folder, canEdit, onBack }) {
     const form = new FormData();
     for (const f of fileList) form.append('files', f);
     try {
-      const { data } = await api.post(`/document-library/folders/${folder.id}/files`, form,
-        { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post(`/document-library/folders/${folder.id}/files`, form);
       const ok = (data.saved || []).length;
       if (ok) toast.success(`${ok} file${ok === 1 ? '' : 's'} uploaded`);
       (data.rejected || []).forEach((r) => toast.error(`${r.filename}: ${r.reason}`));

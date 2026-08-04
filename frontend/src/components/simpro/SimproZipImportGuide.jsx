@@ -314,9 +314,7 @@ export default function SimproZipImportGuide() {
     form.append('slot', slot);
     form.append('file', file);
     try {
-      await api.post('/help/reference-images/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await api.post('/help/reference-images/upload', form);
       toast.success('Reference screenshot uploaded.');
       await refresh();
     } catch (e) {

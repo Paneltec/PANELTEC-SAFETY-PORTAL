@@ -45,9 +45,7 @@ export function BulkSimproZipModal({ onClose, onDone }) {
       try {
         const fd = new FormData();
         fd.append('file', f);
-        const { data } = await api.post('/integrations/simpro/workers/identify-zip', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        const { data } = await api.post('/integrations/simpro/workers/identify-zip', fd);
         identified.push({ file: f, name: f.name, ...data, override_worker_id: data.matched_worker?.id || '' });
       } catch (e) {
         identified.push({ file: f, name: f.name, error: apiError(e) });
@@ -70,8 +68,7 @@ export function BulkSimproZipModal({ onClose, onDone }) {
         fd.append('file', z.file);
         const { data } = await api.post(
           `/workers/${wid}/simpro-zip-import?dry_run=1`,
-          fd,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
+          fd
         );
         (data.unmatched_groups || []).forEach((g) => {
           const key = g.suggested_slug || '__no_suggestion__';
@@ -145,8 +142,7 @@ export function BulkSimproZipModal({ onClose, onDone }) {
         fd.append('file', z.file);
         const { data } = await api.post(
           `/workers/${wid}/simpro-zip-import?dry_run=0`,
-          fd,
-          { headers: { 'Content-Type': 'multipart/form-data' } }
+          fd
         );
         out.push({ zip: z.name, worker: workers.find((w) => w.id === wid), ok: true, result: data.result });
       } catch (e) {

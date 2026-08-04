@@ -273,7 +273,7 @@ function EditWorkerPhoto({ worker }) {
       const fd = new FormData();
       fd.append('file', file);
       // v57 hotfix — DO NOT set Content-Type manually. When the app
-      // did that (`'Content-Type': 'multipart/form-data'`), axios/the
+      // did that (``), axios/the
       // browser sent that header verbatim WITHOUT the boundary
       // parameter, and FastAPI's multipart parser rejected the
       // request with `HTTP 400 "Missing boundary in multipart."`.
@@ -547,7 +547,6 @@ function CertificationsPanel({ workerId, canEdit }) {
         const { data } = await api.post(
           `/workers/${workerId}/certifications/upload`,
           form,
-          { headers: { 'Content-Type': 'multipart/form-data' } },
         );
         lastCertId = data?.cert?.id;
       }
@@ -898,9 +897,7 @@ function IdCardSection({ worker, canEdit }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await api.post(`/workers/${worker.id}/photo`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await api.post(`/workers/${worker.id}/photo`, fd);
       setPhotoUrlOverride(data.photo_url || null);
       setPhotoGridfsIdOverride(data.photo_gridfs_id || null);
       toast.success('Photo updated');

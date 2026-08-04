@@ -1,3 +1,81 @@
+# 2026-08-04 — v160.3.9.57.1 — P0 Users & Permissions crash healed
+
+## Symptom
+User: "this portal has crashed Settings/Users — Users & permissions"
+- Page shell renders but the table body is empty; segment counts show 0/0/0.
+- `GET /api/users` returns **HTTP 500** with `Internal Server Error`.
+
+## Backend traceback
+```
+File "/app/backend/users.py", line 279, in list_users
+    rendered = _user_out(d, await has_any_overrides(d["id"]))
+File "/app/backend/users.py", line 75, in _user_out
+    "name": doc["name"],
+             ~~~^^^^^^^^
+KeyError: 'name'
+```
+
+## Root cause (one paragraph)
+`backend/users.py::_user_out` accessed `doc["name"]` unguarded. Thirteen
+ephemeral fixture-user rows leaked into the live `users` collection
+from earlier v57.1 pytest iterations that predated the fixture-name
+fix — none of them had a `name` field. `_user_out` blew up on the
+first orphan row, and because `list_users` renders in a comprehension
+one bad row 500'd the whole response. The v57 role-purge script was
+NOT implicated; the orphaned-`role_id` audit script was still needed
+as a belt-and-braces sweep and turned up 4 legacy null-role_id rows
+(pre-existing accounts, unrelated to the purge) that were also healed.
+
+## Fixes shipped
+
+### Defensive — `_user_out` never crashes on shape drift
+Every core identity field now falls back:
+- `id` → `doc.get("id") or str(doc.get("_id") or "")`
+- `email` → `doc.get("email") or "(no email)"`
+- `name` → `doc.get("name") or <email-prefix> or "(unnamed)"`
+- `role` → `doc.get("role") or doc.get("role_id") or "unknown"`
+- `org_id` → `doc.get("org_id") or ""`
+
+### Corrective — one-shot cleanups
+1. **13 leaked fixture users purged** — filter
+   `email ^= 'nt-' AND (domain in {fixture.test, notifications-fixture.example.com}) AND name missing`.
+   Audit row `admin_actions.action = purge_leaked_notifications_test_users`.
+2. **`backend/scripts/heal_orphaned_role_ids.py` written + executed.**
+   Found 4 users with `role_id=None`
+   (`audit@paneltec.com`, `david@appzoola.com`,
+   `pending-activation-fixture@paneltec.com.au`, `admin@paneltec.com`)
+   — all reassigned to `general_user`. Audit row
+   `admin_actions.action = heal_orphaned_role_ids`.
+   Stephen was NOT flagged. Protected-admin guard is in place should a
+   future orphan point at his account.
+
+## Verification
+Playwright as `stephen@paneltec.com.au` → `/app/settings/users` →
+row count = 76, active segment = "63 active", zero 4xx/5xx on API
+calls, no runtime pageerror. Screenshot
+`/tmp/users_perms_healed_v57_1.png` shows the healed table (Director /
+Admin groups populated with real users).
+
+## Files changed
+- `backend/users.py` — defensive `_user_out` (5 fallback fields)
+- `backend/scripts/heal_orphaned_role_ids.py` — new + executed
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`, `mobile/src/lib/version.ts` — v160.3.9.57.1
+
+## What's still parked (v57.1 in-flight)
+- Piece 1 — Bell UI panel
+- Piece 2 — Notifications unit tests (4/5 passing; test 2 gating assertion pending — DB `roles` collection needs unique `role_id` handling in the fixture)
+- Piece 3 — docs/ folder auto-compose migration
+- Piece 4 — Multipart Content-Type sweep across 22 files (DONE this session)
+- Piece 5 — Schematic grid column-count Playwright verification (DONE this session — all 5 widths pass)
+
+## Next Action Items
+1. Land Piece 1 (bell UI panel).
+2. Nail the last failing test in `test_notifications_v57.py::test_2_category_gating_by_permission` (roles collection unique index handling).
+3. Ship v57.1 proper once the above two are green.
+
+---
+
+
 # 2026-08-04 — v160.3.9.57 — P0 photo-upload hotfix + partial v57 pieces
 
 ## P0 — Worker photo upload was silently failing (HTTP 400)

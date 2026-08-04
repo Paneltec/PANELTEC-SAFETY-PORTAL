@@ -64,7 +64,7 @@ export default function PdfImportModal({ open, onClose, onImported }) {
       const fd = new FormData();
       fd.append('file', item.file);
       try {
-        const r = await api.post('/imports/pdf', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+        const r = await api.post('/imports/pdf', fd);
         setFiles((prev) => prev.map((x) => x.id === item.id
           ? { ...x, status: 'done', resp: r.data } : x));
         onImported && onImported(r.data);

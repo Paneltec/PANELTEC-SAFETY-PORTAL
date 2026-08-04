@@ -98,7 +98,7 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
     if (fileOrUrl.file) fd.append('file', fileOrUrl.file);
     else fd.append('url', fileOrUrl.url);
     const resp = await api.post('/plant-maintenance/reimport', fd,
-      fileOrUrl.file ? { headers: { 'Content-Type': 'multipart/form-data' } } : {});
+      fileOrUrl.file ? { headers: { } } : {});
     return resp.data;
   };
 

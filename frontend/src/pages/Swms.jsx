@@ -467,7 +467,7 @@ function ScanSwmsDialog({ open, onClose, onCreated }) {
       fd.append('file', file);
       if (title) fd.append('title_hint', title);
       const r = await api.post('/swms/from-scan', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+        headers: { },
         timeout: 120000,
       });
       onCreated?.(r.data);

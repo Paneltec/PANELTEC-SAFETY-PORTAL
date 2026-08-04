@@ -117,9 +117,7 @@ function WorkerPhoto({ worker, canEdit, onChanged }) {
     try {
       const fd = new FormData();
       fd.append('file', file);
-      const { data } = await api.post(`/workers/${worker.id}/photo`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const { data } = await api.post(`/workers/${worker.id}/photo`, fd);
       toast.success('Photo updated');
       onChanged?.(data);
     } catch (e) {

@@ -70,11 +70,18 @@ def _user_out(doc: dict, has_overrides: bool = False) -> dict:
     invite_pending = bool(doc.get("invite_token_hash")) and _future(doc.get("invite_expires_at"))
     is_locked = _future(doc.get("locked_until"))
     return {
-        "id": doc["id"],
-        "email": doc["email"],
-        "name": doc["name"],
-        "role": doc["role"],
-        "org_id": doc["org_id"],
+        # v57.1 P0 — Every core identity field is `.get()` with a sensible
+        # fallback so a single malformed doc (missing `name`, `email`, or
+        # `role`) can no longer 500 the entire Users list. Root of a v57.1
+        # crash: 13 fixture-user docs leaked from an earlier pytest run
+        # that didn't set `name`. The KeyError there tanked the whole
+        # response. Never trust the shape of every row on a
+        # multi-tenant collection.
+        "id": doc.get("id") or str(doc.get("_id") or ""),
+        "email": doc.get("email") or "(no email)",
+        "name": doc.get("name") or (doc.get("email") or "(unnamed)").split("@")[0],
+        "role": doc.get("role") or doc.get("role_id") or "unknown",
+        "org_id": doc.get("org_id") or "",
         "workspace_ids": doc.get("workspace_ids", []),
         "status": doc.get("status", "active"),
         "last_login_at": doc.get("last_login_at"),

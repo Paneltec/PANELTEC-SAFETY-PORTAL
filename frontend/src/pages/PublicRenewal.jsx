@@ -28,7 +28,7 @@ export default function PublicRenewal() {
     const fd = new FormData();
     files.forEach((f) => fd.append('files', f));
     try {
-      await axios.post(`${API}/public/renewals/${token}/submit`, fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      await axios.post(`${API}/public/renewals/${token}/submit`, fd);
       setDone(true);
     } catch (e) { setError(e?.response?.data?.detail || 'Upload failed.'); }
     finally { setBusy(false); }

@@ -667,8 +667,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         const fd = new FormData();
         fd.append('field_id', fid);
         (photoFiles[fid] || []).forEach((file) => fd.append('files', file));
-        await api.post(`/forms/submissions/${sub.id}/photos`, fd,
-          { headers: { 'Content-Type': 'multipart/form-data' } });
+        await api.post(`/forms/submissions/${sub.id}/photos`, fd);
       }
       toast.success('Form submitted', { description: template.name });
       try { localStorage.removeItem(draftKey); } catch { /* noop */ }

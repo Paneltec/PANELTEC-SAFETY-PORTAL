@@ -2238,7 +2238,7 @@ function RestoreCard() {
       const qs = mode === "dry_run" ? "?mode=dry_run" :
                                       `?mode=${mode}&confirm=RESTORE`;
       const r = await api.post(`${API}/restore${qs}`, fd, {
-        headers: { ...authHdr(), "Content-Type": "multipart/form-data" },
+        headers: { ...authHdr() },
       });
       if (mode === "dry_run") setPreview(r.data);
       else setResult(r.data);

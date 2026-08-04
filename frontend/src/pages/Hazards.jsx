@@ -128,7 +128,7 @@ export function HazardNew() {
     const fd = new FormData();
     fd.append('file', file);
     try {
-      const { data } = await api.post('/ai/hazard-vision', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const { data } = await api.post('/ai/hazard-vision', fd);
       setAiAnalysis(data);
       setPhotoUrl(data.photo_url);
       setForm((f) => ({

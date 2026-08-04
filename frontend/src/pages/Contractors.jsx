@@ -387,7 +387,7 @@ export function ContractorDetail() {
     const fd = new FormData(); fd.append('file', file); fd.append('type', upload.type);
     if (upload.expiry_date) fd.append('expiry_date', upload.expiry_date);
     setBusy(true);
-    try { await api.post(`/contractors/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' } }); toast.success('Document uploaded'); load(); }
+    try { await api.post(`/contractors/${id}/documents`, fd); toast.success('Document uploaded'); load(); }
     catch (err) { toast.error(apiError(err)); } finally { setBusy(false); e.target.value = ''; }
   };
 

@@ -70,9 +70,7 @@ function ImportModal({ open, onClose, onDone }) {
       if (file) {
         const fd = new FormData();
         fd.append('file', file);
-        resp = await api.post('/list-forms/reimport', fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-        });
+        resp = await api.post('/list-forms/reimport', fd);
       } else if (url.trim()) {
         const fd = new FormData();
         fd.append('url', url.trim());
