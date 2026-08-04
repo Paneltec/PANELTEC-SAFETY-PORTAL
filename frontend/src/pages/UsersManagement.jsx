@@ -502,7 +502,7 @@ export default function UsersManagement() {
   const renderUserRow = (u) => (
     <tr key={u.id} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer" onClick={() => { setActiveTab('profile'); setActive(u); }} data-testid={`user-row-${u.id}`}>
       {can('users', 'edit') && (
-        <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+        <td className="px-3 py-1 align-middle" onClick={(e) => e.stopPropagation()}>
           {u.id !== me?.id && (
             <input type="checkbox"
               checked={bulkSelected.has(u.id)}
@@ -512,7 +512,7 @@ export default function UsersManagement() {
           )}
         </td>
       )}
-      <td className="px-4 py-1.5">
+      <td className="px-4 py-1 align-middle">
         <div className="flex items-center gap-2">
           {/* v160.3.9.42.1 — Match the Workers-portal avatar exactly.
               Shadcn <Avatar> + <AvatarImage> used `aspect-square h-full w-full`
@@ -565,7 +565,7 @@ export default function UsersManagement() {
           </div>
         </div>
       </td>
-      <td className="px-4 py-1.5">
+      <td className="px-4 py-1 align-middle">
         {/* v160.3.9.33.1 — Show role NAME (never the raw custom_ slug). */}
         <span className="text-xs px-2 py-0.5 bg-slate-100 rounded font-medium" data-testid={`role-chip-${u.id}`}>
           {(() => {
@@ -584,10 +584,10 @@ export default function UsersManagement() {
             data-testid={`overrides-badge-${u.id}`}>+ Overrides</span>
         )}
       </td>
-      <td className="px-4 py-1.5"><StatusPill user={u} /></td>
-      <td className="px-4 py-1.5 text-[11px] text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+      <td className="px-4 py-1 align-middle"><StatusPill user={u} /></td>
+      <td className="px-4 py-1 align-middle text-[11px] text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
       {can('users', 'edit') && (
-        <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+        <td className="px-4 py-1 align-middle text-right" onClick={(e) => e.stopPropagation()}>
           <div className="inline-flex gap-1 items-center">
             {!u.role_id && u.activation_status === 'pending_activation' && (
               <button

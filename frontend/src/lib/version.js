@@ -301,4 +301,23 @@
 //                  workers/*/photo/*` now flows through the shared
 //                  fetch-with-Bearer + blob URL helper so nothing
 //                  silently 401s post-SEC-004.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.42.1';
+// v160.3.9.42.2 — Users & Permissions row-height trim.
+//                  v42.1's bare-<img> avatar at 56 px pushed row height
+//                  to 69 px because the surrounding row cells still
+//                  carried the v42 `py-1.5` (12 px total padding) plus
+//                  the Actions cell's legacy `py-3` (24 px total). User
+//                  asked for a tighter layout that hugs the avatar
+//                  with only a couple of pixels of breathing room.
+//                  Every row `<td>` now uses `px-4 py-1 align-middle`
+//                  (checkbox cell uses `px-3 py-1 align-middle`).
+//                  Actions cell's outlier `py-3` reduced to `py-1` to
+//                  match the row. Avatar UNCHANGED at 56×56 —
+//                  reduction is padding-only. Row height measured
+//                  from 69–69.5 px → 60–61 px. Section header row,
+//                  drag handle, column widths, font sizes and every
+//                  other page element untouched. Explicit
+//                  `align-middle` is redundant with the browser
+//                  default `vertical-align: middle` on `<td>` but
+//                  makes future refactors safe against a Tailwind
+//                  reset that might change the default.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.42.2';
