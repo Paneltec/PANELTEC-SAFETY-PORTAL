@@ -416,6 +416,38 @@ async def delete_employee(
             "archived_preserved": r.get("archived")}
 
 
+@router.post("/refresh-from-source")
+async def refresh_from_source(
+    request: Request,
+    user: dict = Depends(require_permission("hr_employees", "reimport")),
+):
+    """v160.3.9.49 — Re-parse the on-disk `hr_employees_source.xlsx` and
+    upsert every row. Same permission gate as `reimport` — same
+    audit-trail semantics. Useful when the source file has been
+    manually replaced but no HTTP upload is desired.
+
+    Returns the standard `{source_bytes, parsed_rows, live_total,
+    inserted, updated, unchanged, security_flags}` shape so the
+    frontend Refresh button can render a single-line toast.
+    """
+    from pathlib import Path as _P
+    src = (_P(__file__).resolve().parent / "scripts" / "data"
+           / "hr_employees_source.xlsx")
+    if not src.exists():
+        raise HTTPException(404, "source-xlsx-missing")
+    from scripts.import_hr_employees import (
+        parse_workbook, upsert_rows, ensure_indexes as _idx)
+    await _idx()
+    rows, security_flags = parse_workbook(src)
+    stats = await upsert_rows(rows, actor_id=user["id"],
+                              security_flags=security_flags)
+    total = await db.hr_employees.count_documents({"deleted_at": None})
+    await _audit(actor=user, request=request, action="refresh-from-source",
+                 extra={"parsed_rows": len(rows), "stats": stats})
+    return {"source_bytes": src.stat().st_size, "parsed_rows": len(rows),
+            "live_total": total, **stats}
+
+
 @router.post("/reimport")
 async def reimport(
     request: Request,

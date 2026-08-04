@@ -132,6 +132,26 @@ export default function HrEmployeeDrawer({ uid, onClose, onChanged }) {
     finally { setBusy(false); }
   };
 
+  // v160.3.9.49 — Soft-delete from the drawer. Confirm via `window.confirm`
+  // (drawer already has a modal-scope container; a nested confirm would
+  // be visually noisy). Closes the drawer + refetches on success.
+  const doDelete = async () => {
+    // eslint-disable-next-line no-alert
+    if (!window.confirm(
+      `Delete ${doc.first_name || ''} ${doc.last_name || ''}?\n\n` +
+      `This soft-deletes the record (hidden from every list). ` +
+      `The audit trail is preserved.`,
+    )) return;
+    setBusy(true);
+    try {
+      await api.delete(`/hr/employees/${encodeURIComponent(uid)}`);
+      toast.success('Deleted.');
+      onChanged?.();
+      onClose?.();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
   const doRestore = async () => {
     setBusy(true);
     try {
@@ -201,6 +221,13 @@ export default function HrEmployeeDrawer({ uid, onClose, onChanged }) {
                 Archive
               </button>
             )}
+            <button
+              disabled={busy}
+              onClick={doDelete}
+              className="px-3 py-1.5 rounded bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700"
+              data-testid="hr-drawer-delete">
+              Delete
+            </button>
             <button onClick={onClose}
                     className="text-slate-500 text-sm hover:text-slate-800"
                     data-testid="hr-drawer-close">

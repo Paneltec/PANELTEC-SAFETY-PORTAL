@@ -4,7 +4,7 @@
 // Worker edit modal.
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Award, ClipboardList, Loader2, ArrowUpDown, ArrowUp, ArrowDown, FileText, FileWarning, Package, ChevronRight, ChevronDown as ChevronDownIcon, AlertTriangle, Clock } from 'lucide-react';
+import { Award, ClipboardList, Loader2, ArrowUpDown, ArrowUp, ArrowDown, FileText, FileWarning, Package, ChevronRight, ChevronDown as ChevronDownIcon, AlertTriangle, Clock, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { filesUrl } from '../lib/downloadUrl';
@@ -282,6 +282,9 @@ export default function Certifications() {
   // v160.3.6h — left-join workers so (a) zero-cert workers still appear as
   // rows, and (b) we can render their real photo instead of just initials.
   const [workers, setWorkers] = useState([]);
+  // v160.3.9.49 — "Refresh from Simpro" tactile-feedback state, mirrored
+  // from the UsersManagement.jsx v42.3 pattern. 500 ms floor + spinner.
+  const [isRefreshingSimpro, setIsRefreshingSimpro] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -477,7 +480,43 @@ export default function Certifications() {
   return (
     <div className="max-w-7xl mx-auto" data-testid="certifications-page">
       <PageHeader crumb="Settings / Certifications" title="Certifications"
-        subtitle="Every certification across your crew, ranked by what needs attention." />
+        subtitle="Every certification across your crew, ranked by what needs attention."
+        action={
+          <button
+            type="button"
+            data-testid="certifications-refresh-simpro-btn"
+            data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
+            disabled={isRefreshingSimpro}
+            onClick={async () => {
+              if (isRefreshingSimpro) return;
+              setIsRefreshingSimpro(true);
+              const started = Date.now();
+              try {
+                // v160.3.9.49 — Trigger the worker + cert delta sync
+                // for both Paneltec and Viatec companies. The endpoint
+                // walks `/workers/sync-from-simpro` internally and
+                // upserts every cert; the UI then re-fetches the list.
+                const { data } = await api.post('/workers/sync-from-simpro', { company: 'both' });
+                const created = data?.created ?? 0;
+                const updated = data?.updated ?? 0;
+                toast.success(`Simpro sync complete — ${created} new, ${updated} updated`);
+                await load();
+              } catch (e) {
+                toast.error(apiError(e));
+              } finally {
+                const elapsed = Date.now() - started;
+                const remaining = Math.max(0, 500 - elapsed);
+                setTimeout(() => setIsRefreshingSimpro(false), remaining);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Re-sync workers and their certifications from Simpro"
+          >
+            <RefreshCw size={14} className={isRefreshingSimpro ? 'animate-spin' : ''} />
+            {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}
+          </button>
+        }
+      />
 
       {/* v160.3.7 — Admin instruction card. Sits ABOVE the amber
           Compliance attention queue banner so a new admin lands on

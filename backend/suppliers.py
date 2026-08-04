@@ -74,6 +74,97 @@ async def list_meta(user: dict = Depends(require_permission("suppliers", "view")
     return {r["simpro_supplier_id"]: _serialise(r) for r in rows}
 
 
+@router.get("/address-lookup")
+async def address_lookup(
+    company_name: str,
+    user: dict = Depends(require_permission("suppliers", "view")),
+):
+    """v160.3.9.49 — Look up a supplier's postal address by company name.
+
+    Two providers, both server-side (frontend never talks to them
+    directly — keeps rate-limit compliance + no CORS pain):
+      1. ABN Lookup (Australian Business Register) — free but requires
+         `ABN_LOOKUP_GUID` env registration. Best for AU businesses.
+      2. OpenStreetMap Nominatim — free, no key, 1 req/sec ToS. We
+         send a descriptive `User-Agent: paneltec-civil/1.0` so we
+         stay on the polite side of their throttle.
+
+    Returns `{source, street, suburb, state, postcode, country,
+    confidence, raw}` OR `{source: null}` when nothing matched.
+    Secrets are never echoed back.
+    """
+    import os as _os
+    import httpx as _h
+    q = (company_name or "").strip()
+    if not q or len(q) < 3:
+        raise HTTPException(400, "company-name-too-short")
+
+    result: dict = {"source": None, "street": None, "suburb": None,
+                    "state": None, "postcode": None, "country": None,
+                    "confidence": None}
+
+    guid = _os.environ.get("ABN_LOOKUP_GUID", "").strip()
+    if guid:
+        try:
+            async with _h.AsyncClient(timeout=8.0,
+                                       headers={"User-Agent": "paneltec-civil/1.0"}) as c:
+                r = await c.get(
+                    "https://abr.business.gov.au/json/MatchingNames.aspx",
+                    params={"name": q, "guid": guid, "maxResults": 5},
+                )
+                if r.status_code == 200:
+                    # ABN JSON is wrapped in `callback(...)` — strip that.
+                    import json as _j, re as _re
+                    body = _re.sub(r"^[a-zA-Z_]+\(|\)$", "", r.text.strip())
+                    data = _j.loads(body) if body else {}
+                    names = data.get("Names") or []
+                    if names:
+                        top = names[0]
+                        result.update({
+                            "source": "abn",
+                            "suburb": top.get("Postcode") and top.get("Location"),
+                            "state": top.get("State"),
+                            "postcode": top.get("Postcode"),
+                            "country": "AU",
+                            "confidence": top.get("Score"),
+                        })
+        except Exception:
+            # Never log the GUID or the full URL — swallow and fall through.
+            pass
+
+    if result["source"] is None:
+        try:
+            async with _h.AsyncClient(timeout=8.0,
+                                       headers={"User-Agent": "paneltec-civil/1.0"}) as c:
+                r = await c.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": q, "format": "json", "limit": 1,
+                            "addressdetails": 1, "countrycodes": "au"},
+                )
+                if r.status_code == 200:
+                    data = r.json() or []
+                    if data:
+                        top = data[0]
+                        addr = top.get("address") or {}
+                        result.update({
+                            "source": "osm",
+                            "street": ", ".join(x for x in [
+                                addr.get("house_number"),
+                                addr.get("road") or addr.get("pedestrian"),
+                            ] if x) or None,
+                            "suburb": (addr.get("suburb") or addr.get("city")
+                                       or addr.get("town") or addr.get("village")),
+                            "state": addr.get("state"),
+                            "postcode": addr.get("postcode"),
+                            "country": addr.get("country_code", "").upper() or None,
+                            "confidence": top.get("importance"),
+                        })
+        except Exception:
+            pass
+
+    return result
+
+
 @router.get("/{simpro_supplier_id}/meta")
 async def get_meta(simpro_supplier_id: str, user: dict = Depends(require_permission("suppliers", "view"))):
     doc = await db.supplier_meta.find_one(

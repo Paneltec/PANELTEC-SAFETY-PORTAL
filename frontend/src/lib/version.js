@@ -674,4 +674,37 @@
 //                  admin), reveal-* audit-row assertions, archive vs
 //                  delete semantic split, migration idempotency, and
 //                  the Stephen-carries-all-tokens read-only invariant.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.48';
+// v160.3.9.49 — Bundle A + B + C polish pass.
+//                  A) Certifications page — added "Refresh from Simpro"
+//                     header button (mirrors the v42.3 Users pattern:
+//                     spinner + 500 ms floor + toast + refetch). Wired
+//                     to `POST /workers/sync-from-simpro` with
+//                     `{company: 'both'}` so the delta pulls both
+//                     Paneltec + Viatec workers plus their certifications.
+//                     The "69" number on the List tab is `workers.length`
+//                     — # of workers in the current view (a filtered slice
+//                     of the 80-worker roster). Documented in the
+//                     `certifications-tab-list` label pill.
+//                  B) HR Employees — inline `Delete` button on every
+//                     row + a `Delete` button in the drawer header (both
+//                     soft-delete via `DELETE /hr/employees/{uid}` — the
+//                     existing v48 endpoint, gated by `hr_employees.edit`).
+//                     Header "Refresh from Simpro" button wired to the
+//                     new `POST /hr/employees/refresh-from-source`
+//                     endpoint (gated by `hr_employees.reimport`,
+//                     re-parses the on-disk XLSX + audits — Simpro doesn't
+//                     currently expose an HR endpoint, so the on-disk
+//                     source is treated as the sync boundary).
+//                  C) Suppliers Edit modal — added "Look up address"
+//                     inline button next to the Address textarea. Calls
+//                     new `GET /suppliers/address-lookup?company_name=X`
+//                     backend endpoint which proxies ABN Lookup (if
+//                     `ABN_LOOKUP_GUID` env is set) → OpenStreetMap
+//                     Nominatim fallback (polite `User-Agent`, AU
+//                     country-code filter). Client-side rate-limit
+//                     enforces 1 req/sec per OSM ToS. Populates
+//                     `custom_address` + `custom_state` on top hit
+//                     with a toast "Found via ABN Lookup" or "Found via
+//                     OpenStreetMap"; friendly warn on empty result.
+//                     Secrets NEVER logged.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.49';

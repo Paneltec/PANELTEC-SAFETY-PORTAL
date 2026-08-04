@@ -125,6 +125,41 @@ function EditModal({ supplier, allSuppliers, onClose, onSaved }) {
     notes: supplier.notes || '',
   });
   const [saving, setSaving] = useState(false);
+  // v160.3.9.49 — Address auto-lookup state. Rate-limited to 1 req/sec
+  // client-side (OpenStreetMap Nominatim ToS).
+  const [lookingUpAddress, setLookingUpAddress] = useState(false);
+  const [lastLookupAt, setLastLookupAt] = useState(0);
+  const runAddressLookup = async () => {
+    if (lookingUpAddress) return;
+    const since = Date.now() - lastLookupAt;
+    if (since < 1000) {
+      toast.info(`Please wait ${Math.ceil((1000 - since) / 100) / 10}s (rate limit)`);
+      return;
+    }
+    setLookingUpAddress(true);
+    setLastLookupAt(Date.now());
+    try {
+      const { data } = await api.get('/suppliers/address-lookup', {
+        params: { company_name: supplier.name },
+      });
+      if (!data.source) {
+        toast.warning('No address found — try a broader company name');
+        return;
+      }
+      const parts = [data.street, data.suburb, data.state, data.postcode]
+        .filter(Boolean).join(', ');
+      setForm((f) => ({
+        ...f,
+        custom_address: parts || f.custom_address,
+        custom_state: data.state || f.custom_state,
+      }));
+      toast.success(`Found via ${data.source === 'abn' ? 'ABN Lookup' : 'OpenStreetMap'} · ${parts}`);
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setLookingUpAddress(false);
+    }
+  };
 
   const submit = async (e) => {
     e?.preventDefault();
@@ -169,7 +204,19 @@ function EditModal({ supplier, allSuppliers, onClose, onSaved }) {
 
         <div className="px-6 py-5 grid grid-cols-2 gap-4 text-sm">
           <label className="col-span-2">
-            <span className="block text-xs font-medium text-slate-700 mb-1">Address</span>
+            <span className="block text-xs font-medium text-slate-700 mb-1 flex items-center justify-between">
+              <span>Address</span>
+              <button
+                type="button"
+                onClick={runAddressLookup}
+                disabled={lookingUpAddress || !supplier.name}
+                data-testid="supplier-address-lookup-btn"
+                className="text-[11px] font-semibold text-[#2563eb] hover:text-[#1d4ed8] disabled:opacity-40 flex items-center gap-1"
+                title="Look up address online from the company name"
+              >
+                {lookingUpAddress ? '🔍 Looking up…' : '🔍 Look up address'}
+              </button>
+            </span>
             <textarea rows={2} value={form.custom_address}
               onChange={(e) => setForm({ ...form, custom_address: e.target.value })}
               data-testid="supplier-address-input"

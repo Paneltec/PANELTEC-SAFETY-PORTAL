@@ -32,6 +32,51 @@ export default function HrEmployeesPage() {
   const [flagCount, setFlagCount] = React.useState(0);
   const [loading, setLoading] = React.useState(false);
   const [openId, setOpenId] = React.useState(null);
+  // v160.3.9.49 — "Refresh from Simpro" tactile state (mirrors the
+  // v42.3 Users pattern — spinner + 500 ms floor + toast + reload).
+  // The endpoint re-parses the on-disk `hr_employees_source.xlsx`
+  // (see `POST /hr/employees/refresh-from-source`) — treated as our
+  // Simpro sync equivalent until Simpro exposes an HR endpoint.
+  const [isRefreshingSimpro, setIsRefreshingSimpro] = React.useState(false);
+  // v160.3.9.49 — Row-level delete confirm target. `null` = closed.
+  const [confirmDelete, setConfirmDelete] = React.useState(null);
+  const [deleting, setDeleting] = React.useState(false);
+
+  const refreshFromSimpro = async () => {
+    if (isRefreshingSimpro) return;
+    setIsRefreshingSimpro(true);
+    const started = Date.now();
+    try {
+      const { data } = await api.post('/hr/employees/refresh-from-source');
+      toast.success(
+        `HR refresh — ${data.parsed_rows} parsed · ` +
+        `${data.inserted ?? 0} new · ${data.updated ?? 0} updated · ` +
+        `${data.security_flags ?? 0} flagged`,
+      );
+      await load();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      const elapsed = Date.now() - started;
+      const remaining = Math.max(0, 500 - elapsed);
+      setTimeout(() => setIsRefreshingSimpro(false), remaining);
+    }
+  };
+
+  const deleteRow = async (row) => {
+    if (!row) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/hr/employees/${encodeURIComponent(row.id || row.employee_id)}`);
+      toast.success(`Deleted ${row.first_name || ''} ${row.last_name || ''}`.trim());
+      setConfirmDelete(null);
+      await load();
+    } catch (e) {
+      toast.error(apiError(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const load = React.useCallback(async () => {
     setLoading(true);
@@ -74,6 +119,20 @@ export default function HrEmployeesPage() {
         crumb="Settings / HR Employees"
         title="HR Employees"
         subtitle="Full employee register with PII masking and audit trail."
+        action={
+          <button
+            type="button"
+            onClick={refreshFromSimpro}
+            disabled={isRefreshingSimpro}
+            data-testid="hr-refresh-simpro-btn"
+            data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            title="Re-parse the HR source spreadsheet and upsert every row"
+          >
+            <span className={isRefreshingSimpro ? 'animate-spin inline-block' : 'inline-block'}>↻</span>
+            {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}
+          </button>
+        }
       />
 
       {flagCount > 0 && (
@@ -207,6 +266,15 @@ export default function HrEmployeesPage() {
                         Terminated
                       </span>
                     )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(row); }}
+                      className="ml-2 text-xs text-rose-600 hover:text-rose-800 font-semibold"
+                      data-testid={`hr-row-delete-${row.employee_id}`}
+                      title="Soft-delete this employee"
+                    >
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -221,6 +289,48 @@ export default function HrEmployeesPage() {
           onClose={() => setOpenId(null)}
           onChanged={load}
         />
+      )}
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4"
+          onClick={(e) => e.target === e.currentTarget && setConfirmDelete(null)}
+          data-testid="hr-delete-confirm"
+        >
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
+            <div className="text-lg font-semibold text-slate-900">
+              Delete employee?
+            </div>
+            <div className="text-sm text-slate-600 mt-1">
+              <span className="font-semibold">
+                {[confirmDelete.first_name, confirmDelete.last_name].filter(Boolean).join(' ')}
+              </span>{' '}
+              (ID {confirmDelete.employee_id}) will be soft-deleted (hidden from
+              every list). Their audit trail is preserved. An admin can restore
+              via direct DB access if needed.
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+                className="px-4 py-1.5 rounded border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                data-testid="hr-delete-cancel"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => deleteRow(confirmDelete)}
+                disabled={deleting}
+                className="px-4 py-1.5 rounded bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50"
+                data-testid="hr-delete-confirm-btn"
+              >
+                {deleting ? 'Deleting…' : 'Delete employee'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
