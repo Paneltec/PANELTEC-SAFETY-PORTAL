@@ -509,7 +509,7 @@ export default function Certifications() {
                 setTimeout(() => setIsRefreshingSimpro(false), remaining);
               }
             }}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm"
             title="Re-sync workers and their certifications from Simpro"
           >
             <RefreshCw size={14} className={isRefreshingSimpro ? 'animate-spin' : ''} />

@@ -1954,7 +1954,7 @@ export default function Workers() {
         {canEdit && (
           <div className="relative">
             <button onClick={() => setSyncOpen((v) => !v)} disabled={syncing} data-testid="sync-dropdown"
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#e6eff9] text-[#1e4a8c] text-sm font-medium hover:bg-[#d8e6f4] disabled:opacity-60">
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm">
               {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw />} Sync from Simpro <ChevronDown size={12} />
             </button>
             {syncOpen && (

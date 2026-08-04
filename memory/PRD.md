@@ -1,3 +1,98 @@
+# 2026-02-04 — v160.3.9.55.4 — v54 close-out bundle SHIPPED
+
+## Bundle contents
+1. **Program Schematic (fourth attempt).** Settings cluster block lifted
+   upward on the canvas (SETTINGS chip y=1105→900, Access rows y=890/1020
+   → 680/880, Data rows y=1180/1310 → 1120/1300). Row-to-row vertical
+   spacing widened 130→200 SVG units. Node x-spacing widened 200→250
+   SVG (3-column rows now at x=130/380/630, 2-column Data row 2 at
+   x=255/505). Sub-cluster labels re-rendered as chips (slate-950
+   pill + parent-tinted border + WHITE uppercase text with tinted
+   drop-shadow) so "ACCESS" and "DATA & AUTOMATION" render legible at
+   every viewport width from 360px up. Chip width scales with label
+   length so "DATA & AUTOMATION" (16 chars) never gets clipped.
+   Cluster label chips also flipped to WHITE text on slate-950 fill
+   with cluster-tinted border — closes the v53 "purple-on-purple"
+   contrast complaint. INTEGRATIONS chip moved from y=235 to y=90 so
+   it no longer overlaps the Simpro/Navixy tile row.
+
+   Verified at six viewport widths (360/420/480/768/1024/1440) via
+   Playwright bbox assertion. `dcTextContent === "Data & Automation"`
+   at every width; `data_in_viewport === true` at every width; the
+   chip does not overlap any Settings node bounding box; TOC chips
+   for "hr-employees-register" and the 3 other new sections all
+   render.
+
+2. **User Manual content refresh.** Manual re-indexed 15 → 19 sections
+   with four new bodies inserted:
+   - §8 HR Employees Register (XLSX seed, Refresh from Simpro, PII
+     reveal audit, Archive/Delete semantic split, `linked_worker_id`
+     reserved).
+   - §9 Program Schematic (six colour-coded clusters + navigation
+     semantics).
+   - §10 Backup & Restore (Fernet-encrypted SMB passwords, local_agent
+     mode, snapshot cadence, retention policy, restore semantics).
+   - §11 Simpro integration (all five Simpro sync buttons in brand
+     blue, on-demand semantics, `INTEGRATIONS_ENC_KEY` at-rest
+     encryption).
+   Existing §7 gained a "Roles are canonical in Simpro" subsection.
+   Sections 12–19 renumbered from 8–15. Manual mtime bump auto-flushes
+   the 5-minute in-process cache (per v122 mtime-invalidation).
+
+3. **Roles Admin: "+ Create custom role" removed.** Button + create
+   modal deleted from `pages/RolesAdmin.jsx`. Backend endpoint
+   `POST /api/admin/roles/custom` UNTOUCHED (existing custom roles
+   and scripted migrations still work — only the UI affordance is
+   hidden). "Sync roles from Simpro positions" button renamed to
+   "Sync from Simpro" and re-styled in Simpro brand blue (#0093D0).
+   Empty-state copy updated to point users at Sync.
+
+## DB state — existing custom roles
+- 11 system roles, 0 flagged auto_created, 34 non-system roles.
+- Of the 34: 16 are real user roles (Construction Worker L1/L2/L3/CW2,
+  Cleaner, Mechanic, Plumber, Machine Operator, Traffic Controller,
+  Director, Admin Assistant, Operations Manager, Business Development
+  Manager, Safety and Compliance Manager, Administration, "NewRole",
+  MECHANIC).
+- The remaining 18 are test artefacts from prior pytests
+  (`Fallback Test XX`, `CacheBust XX`). Left in place — user to
+  decide whether to purge.
+
+## Manual auto-generation proposal (NOT built)
+User's implicit ask: "i thought was automatic". The manual is a
+hand-written markdown source at `backend/content/user_manual.md`,
+rendered via react-markdown and cached by mtime. It does NOT
+auto-generate from routes or feature registry. Proposed cheap
+follow-up (~1 day of work): a `docs/` folder with one markdown file
+per feature, and a build-time composer that stitches them into
+`user_manual.md`. Version stamps auto-attach from git. Awaiting
+user confirmation before building.
+
+## Files touched
+- `frontend/src/lib/programSchematic.js` (Settings geometry, sub-cluster chips, cluster label positions)
+- `frontend/src/pages/settings/ProgramSchematicPage.jsx` (WHITE cluster/sub-cluster labels with drop-shadow, chip renderer, chip width scaling)
+- `frontend/src/pages/UserManual.jsx` (no change — v51 filter wiring verified correct)
+- `frontend/src/pages/RolesAdmin.jsx` (Create button removed, Sync button restyled Simpro blue, empty-state copy)
+- `backend/content/user_manual.md` (4 new sections + renumbering 8-15 → 12-19)
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`, `mobile/src/lib/version.ts` (v160.3.9.55.4 sync bump)
+
+## Not touched
+- `backend/roles_catalogue.py` (POST /api/admin/roles/custom endpoint remains — UI gated only)
+- `mobile/*` (except version constant — user's protected zone)
+
+## Verification receipts
+- `/tmp/schem_v54_att2_w{360,420,480,768,1024,1440}.png` — six schematic screenshots
+- `/tmp/manual_search_v54_hr_verified.png` — HR Employees section highlighted in search results
+- `/tmp/roles_admin_v554.png` — Roles Admin without "Create custom role", with Simpro-blue "Sync from Simpro" button
+
+## Next Action Items
+- Build `/api/notifications` endpoint (Bell popover backend) — v53 deferral still pending.
+- Confirm/reject the docs/ auto-compose proposal for the User Manual.
+- Ask user whether to purge the 18 "Fallback Test" / "CacheBust" test-artefact roles from the DB.
+
+---
+
+
 # 2026-07-11 — v160.3.0-adjust-7 — Modal / sidebar overlap SHIPPED
 
 ## Problem

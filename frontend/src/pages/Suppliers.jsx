@@ -443,7 +443,7 @@ export default function Suppliers() {
         </button>
         {canEdit && (
           <button onClick={sync} disabled={syncing} data-testid="sync-simpro"
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#ece6f4] text-[#4f3a8c] text-sm font-medium hover:bg-[#e2dcef] disabled:opacity-60">
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm">
             {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Sync from Simpro
           </button>
         )}
@@ -465,7 +465,7 @@ export default function Suppliers() {
             : 'Run a sync to pull suppliers from your Simpro account.'}
           action={canEdit && !searchQ ? (
             <button onClick={sync} disabled={syncing} data-testid="empty-sync"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#ece6f4] text-[#4f3a8c] text-sm font-medium hover:bg-[#e2dcef]">
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 shadow-sm">
               <RefreshCw size={14} /> Sync from Simpro
             </button>
           ) : null} />

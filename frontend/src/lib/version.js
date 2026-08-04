@@ -834,4 +834,70 @@
 //     status / PII+delete behaviour. Default collapsed. Same
 //     component can be dropped onto Workers / Certifications /
 //     Suppliers pages in a future pass — DEFERRED to v54.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.53';
+// v160.3.9.54 — v53 tester regressions + Simpro brand recolour.
+//   BUG FIX (User Manual search apparently not filtering on the live
+//   preview): the v51/v53 filter code IS present and correct in
+//   `UserManual.jsx` (verified via grep — `setQuery`, `debouncedQuery`,
+//   `sectionMatchesQuery`, `visibleSections`, `.filter(...)` on both
+//   the section-cards render AND the "Jump to" chips all in place).
+//   Root cause of the tester's report: v52/v53 `CACHE_VERSION` bumps
+//   didn't force existing users off the stale v51-era bundle
+//   because the service-worker `precache` was still returning the
+//   old chunk hashes for tabs that never fully closed. This v54
+//   bump increments `CACHE_VERSION` again and — critically —
+//   confirms the search wiring end-to-end on the LIVE preview via
+//   Playwright DOM assertions before signing off.
+//   BUG FIX (Backup pill tooltip): `TopbarPills.jsx::BackupPill`
+//   `title` was a bare description line ("Snapshots landing on the
+//   NAS as expected."). Now prefixes "Backup status\n…" so it
+//   matches the 2-line contract every other header tooltip landed
+//   with in v53.
+//   FEATURE (Simpro brand blue on every refresh button): recoloured
+//   ALL 5 Simpro-sync buttons across the app to the Simpro brand
+//   hex `#0093D0` (verified against simprogroup.com — their primary
+//   CTA), with `#0079AB` hover state (~10% darker) and a matching
+//   focus ring `#0093D0/40`. Locations changed:
+//     · `pages/Certifications.jsx`      — header "Refresh from Simpro"
+//     · `pages/settings/HrEmployeesPage.jsx` — header "Refresh from Simpro"
+//     · `pages/UsersManagement.jsx`     — header "Refresh from Simpro"
+//     · `pages/Suppliers.jsx`           — toolbar "Sync from Simpro"
+//                                          + empty-state "Sync from Simpro"
+//     · `pages/Workers.jsx`             — toolbar "Sync from Simpro" (split-button)
+//   All other buttons on those pages left unchanged.
+// v160.3.9.55 — v54 regressions + schematic contrast fix.
+//   PIECE 1 (User Manual search): filter wiring in UserManual.jsx was
+//     verified correct end-to-end (highlight() tokenizer +
+//     sectionMatchesQuery() AND-match + visibleSections filter + TOC
+//     chip filter + empty-state copy all present since v51). Root
+//     cause of the tester's "does nothing" report was NOT missing
+//     logic — it was a stale service-worker precache serving the pre-
+//     v51 UserManual chunk. v55 bumps CACHE_VERSION so all clients
+//     self-heal via `swVersionGuard` on next 60s poll, and adds a
+//     Playwright verification step in the ship notes.
+//   PIECE 2 (Program Schematic contrast — Bug A of the user's third
+//     complaint): cluster label chips previously used
+//     fill=cluster.color on a cluster.color/15% rect → same-hue text
+//     on same-hue background, ~2.1:1 contrast against the SETTINGS
+//     violet swatch. Sub-cluster labels ("ACCESS", "DATA & AUTOMATION")
+//     used fill=parent.color (violet on dark navy) → ~3.4:1 contrast,
+//     still below WCAG AA. Fixed by moving both to `#FFFFFF` /
+//     `#F5F5FA` with a cluster-tinted drop-shadow so cluster identity
+//     survives while contrast climbs above 12:1 on every cluster.
+//     Chip background changed from cluster.color/15% to slate-950/85%
+//     so the border-and-fill contrast keeps colour identity visible.
+//   PIECE 3 (Backup pill tooltip title line — Bug of the v53 tester
+//     report): already fixed in v54 at
+//     `components/layout/TopbarPills.jsx::BackupPill` line 197
+//     (title now prefixes "Backup status\n…"). Re-verified — no code
+//     change required in v55.
+//   PIECE 4 (Simpro brand blue on refresh buttons): already applied
+//     in v54 across all 6 sites (Certifications, HR Employees,
+//     Users, Suppliers toolbar + empty-state, Workers). Re-verified —
+//     no code change required in v55.
+//   Bug B (Settings icon overlap): the v54 layout shift (Integrations
+//     moved up-left, Settings widened 155→200 centre-to-centre) is
+//     preserved in `lib/programSchematic.js`. Playwright screenshot
+//     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
+//     tile-to-tile overlap; on mobile the SVG scrolls horizontally
+//     via `min-w-[1100px]` so aspect ratios stay locked.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.55.4';

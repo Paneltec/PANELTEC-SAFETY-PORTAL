@@ -365,37 +365,44 @@ export default function ProgramSchematicPage() {
               cluster labels. */}
           {SCHEMATIC_SUB_CLUSTERS.length > 0 && (
             <g data-testid="schematic-sub-clusters">
-              {SCHEMATIC_SUB_CLUSTERS.map((sc, i) => {
+              {SCHEMATIC_SUB_CLUSTERS.map((sc) => {
                 const parent = clusterByKey[sc.parent];
-                const next = SCHEMATIC_SUB_CLUSTERS[i + 1];
+                // v55.2 — Chip width scales with label length so
+                // "DATA & AUTOMATION" (16 chars, 260px) never
+                // gets clipped at any viewport width.
+                const chipWidth = Math.max(140, sc.label.length * 14 + 40);
+                const halfW = chipWidth / 2;
                 return (
                   <g key={sc.key}>
+                    <rect
+                      x={sc.x - halfW}
+                      y={sc.y - 17}
+                      width={chipWidth}
+                      height={34}
+                      rx={17}
+                      fill="#0B1220"
+                      opacity={0.92}
+                      stroke={parent.color}
+                      strokeOpacity={0.85}
+                      strokeWidth={1.4}
+                    />
                     <text
                       x={sc.x}
-                      y={sc.y}
+                      y={sc.y + 5}
+                      textAnchor="middle"
                       style={{
-                        fill: parent.color,
-                        fontSize: 15,
-                        fontWeight: 700,
-                        letterSpacing: 2,
+                        fill: '#FFFFFF',
+                        fontSize: 14,
+                        fontWeight: 800,
+                        letterSpacing: 2.5,
                         fontFamily: 'Inter, system-ui, sans-serif',
                         textTransform: 'uppercase',
+                        filter: `drop-shadow(0 0 6px ${parent.color}BB)`,
                       }}
+                      data-testid={`schematic-sub-cluster-label-${sc.key}`}
                     >
                       {sc.label}
                     </text>
-                    {next && next.parent === sc.parent && (
-                      <line
-                        x1={sc.x + 8}
-                        y1={sc.y + 10}
-                        x2={next.x + 8}
-                        y2={next.y - 18}
-                        stroke={parent.color}
-                        strokeWidth={1.2}
-                        strokeDasharray="4 4"
-                        opacity={0.55}
-                      />
-                    )}
                   </g>
                 );
               })}
@@ -403,34 +410,42 @@ export default function ProgramSchematicPage() {
           )}
 
           {/* Cluster label chips — floating outside each cluster's icon
-              group (positions declared per-cluster in `labelPos`). */}
+              group (positions declared per-cluster in `labelPos`).
+              v55 — Chip pattern reworked for legibility on dark navy:
+              solid slate-950 background (opacity 0.85) + cluster-coloured
+              border + WHITE label text with a cluster-tinted drop-shadow.
+              This closes the "purple-on-purple" contrast complaint on
+              the SETTINGS + INTEGRATIONS chips (both previously used
+              a same-hue fill/text pairing that was barely readable). */}
           <g data-testid="schematic-cluster-labels">
             {SCHEMATIC_CLUSTERS.map((c) => (
               <g key={c.key}>
                 <rect
-                  x={c.labelPos.x - 95}
+                  x={c.labelPos.x - 105}
                   y={c.labelPos.y - 20}
-                  width={190}
-                  height={36}
-                  rx={18}
-                  fill={c.color}
-                  opacity={0.15}
+                  width={210}
+                  height={38}
+                  rx={19}
+                  fill="#0B1220"
+                  opacity={0.85}
                   stroke={c.color}
-                  strokeOpacity={0.55}
-                  strokeWidth={1.2}
+                  strokeOpacity={0.85}
+                  strokeWidth={1.6}
                 />
                 <text
                   x={c.labelPos.x}
                   y={c.labelPos.y + 6}
                   textAnchor="middle"
                   style={{
-                    fill: c.color,
+                    fill: '#FFFFFF',
                     fontSize: CLUSTER_LABEL_FONT,
                     fontWeight: 800,
                     letterSpacing: 3,
                     fontFamily: 'Inter, system-ui, sans-serif',
                     textTransform: 'uppercase',
+                    filter: `drop-shadow(0 0 6px ${c.color}CC)`,
                   }}
+                  data-testid={`schematic-cluster-label-${c.key}`}
                 >
                   {c.label}
                 </text>

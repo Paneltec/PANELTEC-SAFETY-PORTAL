@@ -189,21 +189,19 @@ export default function RolesAdmin() {
               type="button"
               onClick={doSync}
               disabled={syncing}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-amber-300 bg-amber-50 text-amber-800 text-sm font-semibold hover:bg-amber-100 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm"
               data-testid="roles-admin-sync-btn"
-              title="Auto-create a role for every unique Simpro employee position"
+              title="Roles are canonical in Simpro. This pulls every unique Simpro employee position and mirrors it as a role here."
             >
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Syncing…' : 'Sync roles from Simpro positions'}
+              {syncing ? 'Syncing…' : 'Sync from Simpro'}
             </button>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800"
-              data-testid="roles-admin-create-btn"
-            >
-              <Plus className="w-4 h-4" /> Create custom role
-            </button>
+            {/* v55.4 — "+ Create custom role" button removed per user
+                instruction: roles are canonical in Simpro; the local DB
+                mirrors Simpro via the Sync from Simpro button above.
+                Backend `POST /api/admin/roles/custom` remains intact so
+                existing custom roles and any scripted migrations still
+                function — only the UI affordance is hidden. */}
           </div>
         }
       />
@@ -283,7 +281,7 @@ export default function RolesAdmin() {
           onDelete={setConfirmDelete}
           loading={loading}
           testid="roles-custom"
-          empty="No custom roles yet — click “Create custom role” to add one."
+          empty="No custom roles yet. Roles are created in Simpro and mirrored here via the Sync from Simpro button above."
         />
       </div>
 
@@ -296,7 +294,7 @@ export default function RolesAdmin() {
           onDelete={setConfirmDelete}
           loading={loading}
           testid="roles-auto"
-          empty="None yet — run “Sync roles from Simpro positions” above."
+          empty="None yet — run “Sync from Simpro” above."
         />
       </div>
 
@@ -341,61 +339,8 @@ export default function RolesAdmin() {
         </DialogContent>
       </Dialog>
 
-      {/* Create modal */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent data-testid="roles-admin-create-dialog">
-          <DialogHeader>
-            <DialogTitle>Create custom role</DialogTitle>
-            <DialogDescription>
-              Give the role a name and short description. You’ll pick its permissions
-              on the next screen. The role starts with zero tokens — no user gets access
-              until you grant it.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <label className="block">
-              <div className="text-xs font-medium text-slate-600 mb-1">Role name</div>
-              <input
-                value={createName}
-                onChange={(e) => setCreateName(e.target.value)}
-                placeholder="e.g. Site Auditor"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                data-testid="roles-admin-create-name"
-                autoFocus
-              />
-            </label>
-            <label className="block">
-              <div className="text-xs font-medium text-slate-600 mb-1">Description</div>
-              <textarea
-                value={createDesc}
-                onChange={(e) => setCreateDesc(e.target.value)}
-                rows={2}
-                placeholder="What is this role for?"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                data-testid="roles-admin-create-desc"
-              />
-            </label>
-          </div>
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setCreateOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={doCreate}
-              disabled={busy || !createName.trim()}
-              className="px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-semibold hover:bg-slate-800 disabled:opacity-40"
-              data-testid="roles-admin-create-submit"
-            >
-              {busy ? 'Creating…' : 'Create & edit permissions'}
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* v55.4 — Create-role modal removed. Roles are canonical in
+          Simpro; local DB mirrors Simpro via "Sync from Simpro". */}
 
       {/* v160.3.9.33 — Phase 4d Sync result modal */}
       <Dialog open={!!syncResult} onOpenChange={(o) => !o && setSyncResult(null)}>

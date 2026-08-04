@@ -202,9 +202,103 @@ Sidebar → **Users & Permissions** → click any user → **Permissions** tab. 
 ### Mobile App Modules per role
 Same Permissions tab → **Mobile Modules** section. Each module (Daily Pre-Start, Hazard Capture, Site Diary, etc.) has a per-role toggle. Disabling a module hides it from that role's mobile home screen — pull-to-refresh updates the config without a re-sign-in.
 
+### Roles are canonical in Simpro
+Sidebar → **Roles Admin**. This is the master list of every role your org uses. You cannot create custom roles here anymore — press **Sync from Simpro** (blue button, top-right) to pull every unique Simpro employee position and mirror it here. Each imported role starts with zero permission tokens; open its matrix to grant tokens per-resource. System roles (Admin, Manager, HSEQ Lead, Auditor, Supervisor, Worker) remain read-only. If a Simpro position no longer matches a user's locked role, an orange drift banner surfaces at the top of Roles Admin so you can unlock or override per user.
+
 ---
 
-## 8. Contractors & Suppliers
+## 8. HR Employees Register
+
+The HR Employees register is the employer-of-record roster (currently 121 employees). It sits alongside the Workers list — Workers is field-oriented (who's on site, what SWMS they've signed, what certifications are expiring), HR Employees is admin-oriented (payroll references, next-of-kin, DOB, address, employment status).
+
+### How data gets in
+- **Initial seed** — an XLSX file `hr_employees_source.xlsx` is auto-ingested at startup on first run (idempotent — subsequent restarts skip the ingest).
+- **Ongoing refresh** — press **Refresh from Simpro** (blue button, top-right) to re-parse the on-disk source. Simpro doesn't expose an HR endpoint, so the on-disk XLSX is treated as the sync boundary for now.
+- **No manual create form** — there is no "+ Add employee" button on this page. If you need to add an employee, drop them into the XLSX source and click Refresh.
+
+### Active vs Archived tabs
+Two tabs at the top of the table:
+- **Active** — every employee currently on the roster.
+- **Archived** — employees marked archived via the drawer's **Archive** action. Archiving keeps the record + audit trail but hides it from the Active view. Restore via the drawer.
+
+Delete (both inline row-button and drawer header) does a soft-delete: the record stays in Mongo with `deleted_at` set. Archive is orthogonal — you can archive without deleting, or delete without archiving.
+
+### PII controls
+Date of Birth, home Address, and Next-of-Kin phone/relationship are masked by default. Each field has a **Reveal** button that unmasks the value and writes an audit row (`hr_employees_audit`) capturing who revealed what and when. Reveals are gated by the `hr_employees.reveal_pii` permission token.
+
+### Sparse-column display
+The table shows a subset of columns (name, employee_id, role, employment_status, archived flag) — everything else surfaces in the row drawer's **Detail** tab. Filter dropdowns above the table cover role, employment status, and archived state. The search field indexes name, employee_id, and email.
+
+### `linked_worker_id` reserved
+Every HR Employees record carries a reserved `linked_worker_id` field for the future Employees↔Workers linker (so a payroll record can point at the field record). It's patchable via the drawer but no endpoint consumes it yet — coming in a future release.
+
+---
+
+## 9. Program Schematic
+
+Sidebar → **Program Schematic** (under Settings). A single-page SVG topology diagram showing every module in Paneltec Civil connected to the central control panel. Six clusters, colour-coded:
+
+- **Overview** (sky blue) — Intelligence Centre, Ask Intelligence, Document Library, Outbox.
+- **Capture** (orange) — AI SWMS, Pre-Starts, Site Diary, Hazards, Incidents, Inspections.
+- **Compliance** (emerald) — Risk Assessments, Contractors, Suppliers, Renewals, Audit Exports.
+- **Register** (indigo) — Workers, Vehicles, Sites, Forms.
+- **Settings** (violet) — split into Access (Organisation, Workspaces, Users & Perms, Roles Admin, Perm Presets, System) and Data & Automation (Certifications, Form Assignments, SWMS Assignments, Backup, Comms Safe).
+- **Integrations** (amber) — Simpro, Navixy, Microsoft 365, TextMagic.
+
+Click any node to open its module. On narrow screens the canvas scrolls horizontally so icons stay full-size — no pinch-zoom needed. Print (Ctrl+P) exports the schematic as a landscape one-pager for onboarding decks.
+
+---
+
+## 10. Backup & Restore
+
+Sidebar → **Backup & Restore** (Settings). Real MongoDB snapshots to GridFS + optional LAN mirror.
+
+### Snapshot cadence
+Two APScheduler cron jobs run automatically:
+- **Every 6 hours** — rolling backup, retained per the schedule below.
+- **Mon–Fri 17:00 Sydney** — daily close-of-business snapshot.
+
+The **Schedule** card on the page introspects the running scheduler and shows the exact cron + next-run for each job — no editable UI here, cadence is fixed.
+
+### Retention
+Every snapshot is retained per this rolling policy: `7d keep-all`, then `30d daily`, then `26w weekly`, then `forever monthly`. Older snapshots are hard-deleted automatically.
+
+### LAN destinations
+Add SMB shares under **Destinations** with `{host, share, username, password}`. Passwords are encrypted at rest with Fernet (AES-128-CBC + HMAC, keyed by `BACKUP_DEST_ENC_KEY`) — the plaintext never touches disk after write. For agents that run inside the NAS itself (no SMB round-trip), set `kind: "local_agent"` — the agent's LAN report unlocks a "DELIVERED (LOCAL MOUNT)" state instead of expecting SMB.
+
+### Backup pill in the top nav
+The green **Backup** LED in the header polls `/api/health/backup` every 60s and shows: last snapshot age, size, and destination count. Click it for the popover with the same detail. Grey means no snapshots yet.
+
+### Restore semantics
+The Restore panel carries a yellow banner: MongoDB `_id` fields regenerate on restore, but Paneltec Civil's UUID `id` fields are preserved — so foreign-key references (`worker_id`, `swms_id`, etc.) survive a restore intact.
+
+---
+
+## 11. Simpro integration
+
+Simpro is the source of truth for staff, positions/roles, vendors, and jobs. Paneltec Civil consumes Simpro on-demand:
+
+### The five Simpro sync buttons
+All are styled in Simpro-brand blue (`#0093D0`) with white text so they're impossible to miss:
+- **Users & Permissions → Refresh from Simpro** — pulls the latest employee list, updates linked user rows, refreshes photos.
+- **Roles Admin → Sync from Simpro** — pulls every unique Simpro employee position and mirrors it as a role here (this replaces the old "+ Create custom role" button, which has been removed — roles are canonical in Simpro).
+- **Certifications → Refresh from Simpro** — pulls both Paneltec + Viatec worker certifications in one call via `POST /workers/sync-from-simpro` with `company: 'both'`.
+- **HR Employees → Refresh from Simpro** — re-parses the on-disk XLSX source (see §8).
+- **Workers → Sync from Simpro** (split button in the toolbar), **Suppliers → Sync from Simpro** (toolbar + empty-state) — company-scoped pulls.
+
+Each button shows a spinner + "Refreshing…" state with a 500 ms minimum-visible floor so a fast round-trip still registers as a click.
+
+### Integration health
+The top-nav **API · N/5** pill polls `/api/health/integrations` every 60s. Click it for a popover with per-integration LED dots: green = live traffic possible, amber = degraded, red = down. Rows are clickable — they deep-link to the corresponding admin config page under `/app/settings/integrations/*`.
+
+Simpro is an **on-demand** integration, so a green "Ready" state is normal even if the last actual call was hours or days ago — that's not "stale", that's idle.
+
+### Simpro secrets at rest
+All Simpro API tokens are Fernet-encrypted (`INTEGRATIONS_ENC_KEY`) on the `integration_configs` doc — the plaintext is only rehydrated in memory when a request is about to fire.
+
+---
+
+## 12. Contractors & Suppliers
 
 ### Importing from Simpro
 Sidebar → **Suppliers** → **Import from Simpro** (top-right). Choose the vendor list, map fields if needed, click **Import**. Existing suppliers are matched by ABN; new ones are created with `Source: Simpro` pill.
@@ -223,7 +317,7 @@ Print the QR via the asset / supplier / worker row's **Print** action.
 
 ---
 
-## 9. Plant & Vehicles
+## 13. Plant & Vehicles
 
 ![Plant & Vehicles telemetry sources](/api/help/schematics/paneltec_plant_vehicles.png)
 
@@ -265,7 +359,7 @@ Each metric carries a small label explaining where the number came from:
 
 ---
 
-## 10. Sites & Site sign-on
+## 14. Sites & Site sign-on
 
 ![Sites & QR sign-on flow](/api/help/schematics/paneltec_sites_qr.png)
 
@@ -275,7 +369,7 @@ Sidebar → **Sites**. Each site has a public QR for worker sign-on. Coming-soon
 
 ---
 
-## 11. Certifications & Inductions
+## 15. Certifications & Inductions
 
 ### Adding a certification
 Sidebar → **Certifications** → **+ Add certification**. Pick the worker, choose the cert type (White Card, First Aid, Working at Heights, etc.), enter issue/expiry dates, attach the certificate PDF or photo. Save.
@@ -291,7 +385,7 @@ Workers list → row → **Print ID card** generates an A6 card PDF with photo, 
 
 ---
 
-## 12. Audit Exports
+## 16. Audit Exports
 
 ![Audit pack contents & delivery](/api/help/schematics/paneltec_audit_exports.png)
 
@@ -308,7 +402,7 @@ Download both from the audit pack row. Scheduled exports (weekly / monthly auto-
 
 ---
 
-## 13. Comms Safe Mode
+## 17. Comms Safe Mode
 
 ![Comms Safe Mode kill switch flow](/api/help/schematics/paneltec_comms_safe_mode.png)
 
@@ -334,7 +428,7 @@ Edit `/app/backend/.env`, set `COMMS_SAFE_MODE=off`, then `sudo supervisorctl re
 
 ---
 
-## 14. Mobile app (PWA)
+## 18. Mobile app (PWA)
 
 ### Installing
 See **Section 1 — Getting started**.
@@ -350,7 +444,7 @@ The PWA pre-caches the app shell + your last-viewed module screens. If you lose 
 
 ---
 
-## 15. Troubleshooting & FAQ
+## 19. Troubleshooting & FAQ
 
 - **"My changes aren't showing"** — Hard refresh (Cmd/Ctrl + Shift + R). Paneltec's service worker auto-detects new versions and prompts a reload, but a manual hard refresh always works.
 

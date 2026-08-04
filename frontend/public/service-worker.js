@@ -1242,8 +1242,14 @@
  *          Frontend untouched; SW bump exists solely to force
  *          browsers to see the enriched summary payload.
  */
-// v160.3.9.24a — Row-action icons always visible for admins.
-const CACHE_VERSION = 'paneltec-v160.3.9.53';
+// v160.3.9.55 — Schematic sub-cluster + cluster-label contrast fix
+//                (white text with tinted drop-shadow) + User Manual
+//                search re-shipped after tester report of "does nothing"
+//                (filter logic was correct since v51; cache bump forces
+//                clients off the stale precache). Backup pill tooltip
+//                title-line and Simpro brand-blue buttons re-verified
+//                as already correct from v54.
+const CACHE_VERSION = 'paneltec-v160.3.9.55.4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -821,7 +821,7 @@ export default function UsersManagement() {
               data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
               disabled={!simproStatus.connected || isRefreshingSimpro}
               title={simproStatus.connected ? 'Refresh linked users from Simpro' : 'Connect Simpro first'}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm"
             >
               <RefreshCw size={14} className={isRefreshingSimpro ? 'animate-spin' : ''} />
               {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}

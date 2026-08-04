@@ -194,7 +194,7 @@ export function BackupPill() {
       <button
         onClick={() => setOpen((v) => !v)}
         data-testid="backup-pill"
-        title={data?.health_reason || detailBits.join(' · ')}
+        title={`Backup status\n${data?.health_reason || detailBits.join(' · ') || 'Latest backup timestamp and destination. Green means backups are running on schedule.'}`}
         className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-bold uppercase tracking-[0.15em] transition-transform duration-200 hover:-translate-y-0.5 ${tone.chip}`}>
         <span className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
         <DatabaseArrowUp20Regular className="w-3 h-3 -mx-0.5" /> Backup
