@@ -534,4 +534,30 @@
 //                  regression stack now 91/91 (was 101/101 pre-wave —
 //                  the extra 2 sync_linked_snapshot tests from v43.2
 //                  contribute).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.44';
+// v160.3.9.45 — Wave 2 RBAC audit remediations.
+//                  P1-CUSTOM + P1-TC-UNDER closed. Idempotent one-shot
+//                  backfill of the 11 empty Simpro `custom_*` UUID
+//                  roles + Traffic Controller expansion (3 → 16
+//                  tokens) + Cleaner role INSERT (no UUID doc existed).
+//                  Marker: `bk_migrations.v160_3_9_45_custom_role_
+//                  token_backfill`. Field workers (Construction Worker
+//                  L1/L2/L3/CW2, Machine Operator, Traffic Controller)
+//                  get identical 16-token Cluster-A set; Plumber gets
+//                  Cluster-A + `assets.view + vehicles.view`; Cleaner
+//                  gets Cluster-A minus `swms.view + inductions.view`;
+//                  Directors get 44-token Cluster-C (read + email,
+//                  team_view, no edit); Ops Manager adds `.edit` on
+//                  hazards/incidents/pre_starts; Safety and Compliance
+//                  Manager adds `.edit` across the full compliance
+//                  domain; Admin Assistant + Administration get
+//                  Cluster-D (24 tokens view+email). NO `users.*`,
+//                  `roles.*`, `integrations.*`, `backups.*`, or
+//                  `.delete` grants anywhere outside admin. Total
+//                  active users unblocked: 57 (26 Traffic Controllers +
+//                  19 Construction Workers L2 + 12 across the other
+//                  10 roles).
+//                  Also: v44 IDOR-scoping test extended with the "no
+//                  cross-contractor writes anywhere" invariant across
+//                  every scoped resource (workers, hr, certifications,
+//                  documents, contractors).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.45';

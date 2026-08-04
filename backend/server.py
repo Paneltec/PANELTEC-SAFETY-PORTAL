@@ -590,6 +590,21 @@ async def on_startup():
         # absence of a positive OK line is itself a signal to check.
         log.warning("[v43.1 SEC-003 self-check skipped due to error: %s]", e)
 
+    # v160.3.9.45 — Idempotent one-shot backfill of the 11 empty Simpro
+    # `custom_*` UUID roles + Traffic Controller expansion + Cleaner
+    # role insert. Marker-guarded, so a subsequent boot is a no-op.
+    try:
+        from migrations.v45_custom_role_token_backfill import run_v45_migration
+        from db import db as _v45_db
+        result = await run_v45_migration(_v45_db)
+        if result.get("skipped"):
+            log.info("[v45] custom-role token backfill: no-op (marker present)")
+        else:
+            log.info("[v45] backfill applied: %d updates + %d insert(s)",
+                     len(result.get("updates", [])), len(result.get("inserts", [])))
+    except Exception as e:
+        log.warning("[v45] custom-role token backfill failed: %s", e)
+
     # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
     # rows whose `body_html` contains dangerous markup. Idempotent —
     # bleach is a no-op on already-safe HTML. Marker-guarded so we don't

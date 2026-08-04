@@ -126,3 +126,35 @@ def test_stephen_untouched_by_idor_suite(_mongo):
     )
     assert stephen is not None
     assert stephen.get("org_id") != TEST_ORG
+
+
+# ─── v160.3.9.45 IDOR invariant extension ────────────────────────────
+# "No cross-contractor writes anywhere" — for every entry in
+# `permissions_scope.SCOPED_RESOURCES`, a contractor_rep for company A
+# attempting to touch a record owned by company B must be denied by
+# `require_scoped_access`. Cheap regression net against future
+# regressions on any scoped resource, not just workers/certs/contractors.
+
+def test_no_cross_contractor_writes_anywhere_v45():
+    """v45 invariant: for every resource in the scoping matrix, a
+    contractor_rep for A cannot touch a record owned by B. Cheap
+    regression net for future scoped resources."""
+    from permissions_scope import require_scoped_access
+    from fastapi import HTTPException
+    # The scoping matrix is inline at permissions_scope.py:102/179/199 —
+    # we mirror it here so the assertion is decoupled from that internal
+    # tuple. Every entry must raise 403 for a cross-company access.
+    SCOPED_RESOURCES_MIRROR = (
+        "workers", "hr", "certifications", "documents", "contractors",
+    )
+    rep_for_A = {"id": "u", "org_id": TEST_ORG, "email": "r@x.invalid",
+                 "role": "contractor_rep", "role_id": "contractor_rep",
+                 "company_id": CID_A}
+    other_company_record = {"company_id": CID_B, "id": "other-record"}
+    for resource in SCOPED_RESOURCES_MIRROR:
+        with pytest.raises(HTTPException) as exc:
+            require_scoped_access(rep_for_A, resource, other_company_record)
+        assert exc.value.status_code == 403, (
+            f"{resource}: expected 403 for cross-contractor write, "
+            f"got {exc.value.status_code}"
+        )
