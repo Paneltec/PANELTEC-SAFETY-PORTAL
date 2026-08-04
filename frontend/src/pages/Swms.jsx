@@ -194,12 +194,12 @@ export default function SwmsList() {
       {/* Phase 4.17 v134.0 — Tabs. Dashboard is the default landing; the
           existing list stays fully intact under the List tab. */}
       <Tabs defaultValue="list" className="mt-2" data-testid="swms-tabs">
-        <TabsList variant="hero"
+        <TabsList variant="pill-pair"
                   data-testid="swms-tabs-list">
-          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="swms-tab-dashboard">
+          <TabsTrigger variant="pill-pair" emphasis="secondary" value="dashboard" data-testid="swms-tab-dashboard">
             Dashboard
           </TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="swms-tab-list">
+          <TabsTrigger variant="pill-pair" emphasis="primary" value="list" data-testid="swms-tab-list">
             List <span className="ml-1.5 text-[10px] text-slate-500 tabular-nums">{items.length}</span>
           </TabsTrigger>
         </TabsList>

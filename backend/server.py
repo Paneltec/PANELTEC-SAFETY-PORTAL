@@ -519,6 +519,77 @@ async def on_startup():
     except Exception as e:
         log.warning("[v40] integrations secrets migration failed at startup: %s", e)
 
+    # v160.3.9.43.1 — Fernet key ↔ encrypted-fields mismatch self-check.
+    # Scan `integration_configs` for docs that carry any `<field>_encrypted`
+    # secret. If we find any while `_FERNET` is unloaded (or fails a
+    # decrypt smoke-test on one of them), log a high-visibility WARNING
+    # naming each affected `kind`. Non-fatal — boot continues — but the
+    # log line makes a botched `INTEGRATIONS_ENC_KEY` rotation impossible
+    # to miss. Reason it matters: without this, the first production
+    # call for any impacted integration would 500 with an opaque
+    # `KeyError` or `InvalidToken` and no operator-facing breadcrumb.
+    try:
+        from integrations import _FERNET as _FERNET_LIVE, _decrypt_integration_secret
+        from db import db as _db_ref
+        encrypted_field_suffix = "_encrypted"
+        secret_kinds_with_ciphertext: dict[str, int] = {}
+        smoke_test_failed_kinds: set[str] = set()
+        async for row in _db_ref.integration_configs.find(
+            {}, {"_id": 0, "kind": 1, "config": 1},
+        ):
+            conf = row.get("config") or {}
+            ciphertexts = [(k, v) for k, v in conf.items()
+                           if k.endswith(encrypted_field_suffix)
+                           and isinstance(v, str) and v]
+            if not ciphertexts:
+                continue
+            kind = row.get("kind") or "unknown"
+            secret_kinds_with_ciphertext[kind] = (
+                secret_kinds_with_ciphertext.get(kind, 0) + 1
+            )
+            if _FERNET_LIVE is not None:
+                # Smoke-test: decrypt ONE ciphertext per kind. If it
+                # raises we know the key doesn't match the ciphertext
+                # (rotation drift).
+                if kind not in smoke_test_failed_kinds:
+                    _field, _ct = ciphertexts[0]
+                    try:
+                        _decrypt_integration_secret(_ct)
+                    except Exception:
+                        smoke_test_failed_kinds.add(kind)
+        if secret_kinds_with_ciphertext and _FERNET_LIVE is None:
+            # Case A: encrypted data exists but Fernet is not loaded.
+            # Every real API call for these kinds will 500.
+            log.error(
+                "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is NOT "
+                "loaded but %d integration_configs docs carry ciphertext. "
+                "Every API call for the following kinds will fail: %s. "
+                "Rotate the key back or re-run the v40 migration.",
+                sum(secret_kinds_with_ciphertext.values()),
+                sorted(secret_kinds_with_ciphertext.keys()),
+            )
+        elif smoke_test_failed_kinds:
+            # Case B: Fernet is loaded but doesn't match the ciphertext
+            # (a NEW key was rotated in without re-encrypting the docs).
+            log.error(
+                "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is "
+                "loaded but FAILED to decrypt ciphertext for kinds: %s. "
+                "The key was likely rotated without re-encrypting the "
+                "existing docs. Rotate the key back or re-run the v40 "
+                "migration.",
+                sorted(smoke_test_failed_kinds),
+            )
+        else:
+            log.info(
+                "[v43.1 SEC-003 SELF-CHECK] OK — %d integration kinds "
+                "carry ciphertext, all decrypt cleanly.",
+                len(secret_kinds_with_ciphertext),
+            )
+    except Exception as e:
+        # Never let the self-check block boot. Log the failure so the
+        # absence of a positive OK line is itself a signal to check.
+        log.warning("[v43.1 SEC-003 self-check skipped due to error: %s]", e)
+
     # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
     # rows whose `body_html` contains dangerous markup. Idempotent —
     # bleach is a no-op on already-safe HTML. Marker-guarded so we don't

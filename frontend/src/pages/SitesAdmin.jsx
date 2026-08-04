@@ -185,9 +185,9 @@ export default function SitesAdmin() {
       {/* v160.3.6u — Completing the v6p tab-hierarchy sweep. LIST is
           the primary hero capsule; Dashboard is the tiny secondary link. */}
       <Tabs defaultValue="list" className="mt-2" data-testid="sites-tabs">
-        <TabsList variant="hero">
-          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="sites-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="sites-tab-list">
+        <TabsList variant="pill-pair">
+          <TabsTrigger variant="pill-pair" emphasis="secondary" value="dashboard" data-testid="sites-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="pill-pair" emphasis="primary" value="list" data-testid="sites-tab-list">
             List <span>{filtered.length}</span>
           </TabsTrigger>
         </TabsList>

@@ -877,9 +877,9 @@ export default function UsersManagement() {
           blue capsule; Dashboard collapses to a tiny secondary text-link).
           This page was missed in the original v6p sweep. */}
       <Tabs defaultValue="list" className="mt-2" data-testid="users-tabs">
-        <TabsList variant="hero">
-          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="users-tab-list">
+        <TabsList variant="pill-pair">
+          <TabsTrigger variant="pill-pair" emphasis="secondary" value="dashboard" data-testid="users-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="pill-pair" emphasis="primary" value="list" data-testid="users-tab-list">
             List <span>{users.length}</span>
           </TabsTrigger>
         </TabsList>

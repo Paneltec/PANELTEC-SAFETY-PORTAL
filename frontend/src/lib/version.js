@@ -411,4 +411,52 @@
 //                  seed an encrypted config, call each of the eight
 //                  fixed code paths, and assert no `KeyError` and
 //                  no fallback-to-empty-cfg behaviour.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.43';
+// v160.3.9.43.1 — Green + Orange pill-toggle pair (Users list/dashboard
+//                   pattern applied app-wide) + SEC-003 startup self-
+//                   check + SEC-003 contract regression pytest.
+//                   AUDIT CORRECTION: original v43 audit table listed 12
+//                   sites; grep against the actual codebase found the
+//                   Shadcn `<TabsList>` "Dashboard + List" pair on
+//                   only 7 sites — Users, Hazards, Certifications,
+//                   Incidents, Inspections, Swms, SitesAdmin. The other
+//                   "12" from the audit were either bespoke pill toggles
+//                   (Workers Directory / Matrix), 3+ way tab strips
+//                   (PlantVehicles), or non-existent (Contractors,
+//                   Vehicles, Suppliers, RolesAdmin, Outbox,
+//                   DocumentLibrary, PermissionPresetsAdmin,
+//                   SwmsAssignmentsAdmin all have no `<TabsList>` at
+//                   all). Applied to the 7 verified sites only.
+//                  Component: new `variant="pill-pair"` on the shared
+//                  Shadcn `<TabsList>` + `<TabsTrigger>` so Radix keeps
+//                  ownership of state + keyboard nav + focus rings for
+//                  free. Colour is POSITION-BASED per your approval:
+//                  LEFT (List, emphasis="primary") → emerald;
+//                  RIGHT (Dashboard, emphasis="secondary") → orange.
+//                  Active = solid fill + white text + white/25
+//                  translucent count-badge; Inactive = pale tint
+//                  (emerald-50 / orange-50) + coloured text + white
+//                  opaque count-badge. Site conversion is a 3-token
+//                  swap (`variant="hero"` → `variant="pill-pair"`) —
+//                  ZERO structural changes, so every `<TabsContent>`
+//                  still switches correctly.
+//                  SEC-003 startup self-check (server.py:on_startup):
+//                  scans `integration_configs` for `<field>_encrypted`
+//                  keys and, if `_FERNET` is unloaded OR fails a
+//                  decrypt smoke-test on any kind, logs a high-visibility
+//                  `log.error` naming each affected `kind`. Non-fatal —
+//                  the app still boots — but the log line makes botched
+//                  key rotations impossible to miss. Verified: healthy
+//                  boot logs `[v43.1 SEC-003 SELF-CHECK] OK — 4
+//                  integration kinds carry ciphertext, all decrypt
+//                  cleanly.`
+//                  SEC-003 contract pytest
+//                  (`test_sec003_contract_v43_1.py`): static scan of
+//                  every `/app/backend/*.py` for the invariant "if you
+//                  read `integration_configs` AND dereference any
+//                  secret field on cfg/c/conf/tm_cfg/etc., you MUST
+//                  import `hydrate_integration_config`." Pre-v43 this
+//                  would have flagged 4 files (asset_meter_history,
+//                  integrations_textmagic, worker_certifications,
+//                  workers, simpro_import_users). Post-v43 the sweep
+//                  is complete — the test reports 0 offenders.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.43.1';

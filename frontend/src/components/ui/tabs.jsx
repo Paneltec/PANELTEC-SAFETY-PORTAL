@@ -21,7 +21,14 @@ const TabsList = React.forwardRef(({ className, variant, ...props }, ref) => (
     className={cn(
       variant === "hero"
         ? "inline-flex flex-row-reverse items-center gap-4"
-        : "inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm",
+        : variant === "pill-pair"
+          // v160.3.9.43.1 — Green + Orange two-pill toggle. Position-based
+          // mapping: JSX has `emphasis="secondary"` (Dashboard) rendered
+          // FIRST, then `emphasis="primary"` (List) rendered SECOND, then
+          // `flex-row-reverse` puts List on the LEFT and Dashboard on the
+          // RIGHT. So position → colour: LEFT=List=emerald, RIGHT=Dashboard=orange.
+          ? "inline-flex flex-row-reverse items-center gap-2"
+          : "inline-flex h-10 items-center gap-1 rounded-full bg-white/90 border border-slate-200 p-1 shadow-sm",
       className
     )}
     {...props} />
@@ -32,7 +39,36 @@ const TabsTrigger = React.forwardRef(({ className, variant, emphasis, ...props }
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      variant === "hero"
+      variant === "pill-pair"
+        // v160.3.9.43.1 — Two-pill toggle variant. Colour is position-
+        // driven: `emphasis="primary"` (List, rendered LEFT after
+        // flex-row-reverse) → emerald. `emphasis="secondary"` (Dashboard,
+        // rendered RIGHT) → orange. Active = solid fill + white text +
+        // white/25 count-badge; inactive = pale-50 tint + coloured text
+        // + white opaque count-badge. Radix drives the state; only the
+        // visual is new.
+        ? emphasis === "secondary"
+          ? cn(
+              "inline-flex items-center gap-2 whitespace-nowrap px-4 py-1.5 rounded-full border text-sm font-medium transition-colors cursor-pointer",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50",
+              "bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-100",
+              "data-[state=active]:bg-orange-500 data-[state=active]:text-white data-[state=active]:border-orange-500 data-[state=active]:hover:bg-orange-600",
+              "[&_span]:tabular-nums [&_span]:leading-none",
+              "[&_span]:!px-2 [&_span]:!py-0.5 [&_span]:!rounded-full [&_span]:!text-[11px] [&_span]:!font-semibold",
+              "[&_span]:!bg-white [&_span]:!text-orange-800",
+              "[&[data-state=active]_span]:!bg-white/25 [&[data-state=active]_span]:!text-white"
+            )
+          : cn(
+              "inline-flex items-center gap-2 whitespace-nowrap px-4 py-1.5 rounded-full border text-sm font-medium transition-colors cursor-pointer",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50",
+              "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100",
+              "data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:border-emerald-600 data-[state=active]:hover:bg-emerald-700",
+              "[&_span]:tabular-nums [&_span]:leading-none",
+              "[&_span]:!px-2 [&_span]:!py-0.5 [&_span]:!rounded-full [&_span]:!text-[11px] [&_span]:!font-semibold",
+              "[&_span]:!bg-white [&_span]:!text-emerald-800",
+              "[&[data-state=active]_span]:!bg-white/25 [&[data-state=active]_span]:!text-white"
+            )
+      : variant === "hero"
         ? emphasis === "secondary"
           // v160.3.6k — Secondary tab (Dashboard): ALWAYS subdued text-link.
           // Never a peer to the primary capsule. Tiny inactive, slightly

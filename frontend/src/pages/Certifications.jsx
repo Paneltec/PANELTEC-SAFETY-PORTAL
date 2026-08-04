@@ -496,9 +496,9 @@ export default function Certifications() {
       </div>
 
       <Tabs defaultValue="list" className="mt-2" data-testid="certifications-tabs">
-        <TabsList variant="hero">
-          <TabsTrigger variant="hero" emphasis="secondary" value="dashboard" data-testid="certifications-tab-dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger variant="hero" emphasis="primary" value="list" data-testid="certifications-tab-list">
+        <TabsList variant="pill-pair">
+          <TabsTrigger variant="pill-pair" emphasis="secondary" value="dashboard" data-testid="certifications-tab-dashboard">Dashboard</TabsTrigger>
+          <TabsTrigger variant="pill-pair" emphasis="primary" value="list" data-testid="certifications-tab-list">
             List <span className="ml-1.5 text-[10px] tabular-nums px-1.5 py-0.5 rounded-full bg-slate-200/70 text-slate-700">{workers.length || rows.length}</span>
           </TabsTrigger>
         </TabsList>
