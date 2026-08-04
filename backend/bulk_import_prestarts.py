@@ -1,6 +1,6 @@
-"""v160.3.9.12a — Bulk-import Daily Pre-Start PDFs.
+"""v160.3.9.58 — Bulk-import Daily Pre-Start PDFs.
 
-Backend + endpoints only. Wizard UI comes in v160.3.9.12b.
+Backend + endpoints only. Wizard UI comes in v160.3.9.58.1.
 
 Flow:
   POST /pre-starts/bulk-import/init      → create job, resolve URL
@@ -10,9 +10,24 @@ Flow:
   POST /pre-starts/bulk-import/{id}/approve → after dry-run OK, resume full run
 
 Job state machine:
-  init → downloading → dryrun → awaiting_approval
-                             → processing → complete
-                             → failed
+  init → downloading → extracting → dryrun → awaiting_approval
+                                          → processing → complete
+                                          → failed
+
+v58 hardening bundle (2026-02):
+  · Persist `src_url` on `/init` (mirrors `url_input` for the wizard).
+  · URL normalizer covers Dropbox (`?dl=0` → `?dl=1`) + Google Drive
+    share links (`/file/d/<id>` → `uc?export=download&id=<id>`).
+  · Zip-bomb guardrails: reject > 500 MB unpacked total, > 500 PDF
+    entries, or any single entry > 100 MB (limits configurable).
+  · Watchdog: any job stuck in `downloading` / `extracting` for
+    longer than `BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN` (default 10 min)
+    is failed with `error_step=download|extract` on the next tick.
+  · Every failure path stamps a structured `error_step` from a
+    fixed enum so the wizard can render actionable copy.
+  · 30-day retention sweep runs nightly at 03:00 Sydney via
+    APScheduler (wired in `server.py`), also removing the
+    associated `bulk_import_dryrun` rows.
 """
 from __future__ import annotations
 
@@ -42,6 +57,44 @@ log = logging.getLogger("paneltec.bulk_import_prestarts")
 router = APIRouter(prefix="/pre-starts/bulk-import", tags=["bulk-import"])
 
 _WRITE_ROLES = {"admin", "manager", "hseq_lead"}
+
+# ────────────────── v58 configuration + enums ──────────────────
+#
+# Configurable via env for future ops tuning without a code deploy.
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+# Watchdog: how long a job may sit in downloading/extracting before we
+# declare it dead. Default 10 min covers the user's ~5 min Dropbox
+# ZIP download with headroom for slow CDNs.
+DOWNLOAD_TIMEOUT_MIN = _env_int("BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN", 10)
+
+# Zip-bomb guardrails.
+MAX_UNPACKED_BYTES = _env_int("BULK_IMPORT_MAX_UNPACKED_MB", 500) * 1024 * 1024
+MAX_PDF_ENTRIES = _env_int("BULK_IMPORT_MAX_PDF_ENTRIES", 500)
+MAX_SINGLE_ENTRY_BYTES = _env_int("BULK_IMPORT_MAX_SINGLE_ENTRY_MB", 100) * 1024 * 1024
+
+# Retention: purge jobs (and their dryrun rows) after this many days.
+RETENTION_DAYS = _env_int("BULK_IMPORT_RETENTION_DAYS", 30)
+
+# error_step enum — every failure branch stamps EXACTLY one of these.
+# The wizard uses these to render "which stage broke?" copy.
+ERROR_STEPS = frozenset({
+    "download",       # HTTP GET / redirect / DNS failure fetching the archive
+    "extract",        # ZipFile.open / read failed on a corrupt archive
+    "extract_limit",  # zip-bomb guardrail tripped (bytes / entries / single-entry)
+    "parse",          # pdftoppm / PDF decode failed for a specific PDF
+    "vision",         # Claude classify/extract call failed
+    "match",          # worker / site fuzzy-match failed (currently soft-fail)
+    "dryrun",         # dry-run persistence layer failed
+    "approve",        # /approve endpoint side-effects failed
+    "write",          # form_submissions insert failed during full run
+})
 
 
 async def ensure_indexes() -> None:
@@ -88,22 +141,186 @@ async def _audit(user: dict, action: str, payload: dict) -> None:
 
 # ────────────────── URL resolver ──────────────────
 
+def _normalize_source_url(url: str) -> str:
+    """Rewrite share-link URLs so they stream the raw bytes directly.
+
+    Supports:
+      · Dropbox    — flips `?dl=0` → `?dl=1` (or appends `dl=1` when the
+                     query string is present but the flag is missing);
+                     also swaps `www.dropbox.com` → `dl.dropboxusercontent.com`
+                     is intentionally NOT done here because `dl=1` on the
+                     canonical host already 302s through to the CDN and
+                     httpx follows redirects.
+      · Google Drive — rewrites `/file/d/<id>[/view]` share links to the
+                     confirmable download endpoint
+                     `https://drive.google.com/uc?export=download&id=<id>`.
+
+    Idempotent — running twice returns the same string.
+    """
+    if not url:
+        return url
+    u = url.strip()
+
+    # Dropbox
+    if "dropbox.com" in u:
+        if "dl=0" in u:
+            u = u.replace("dl=0", "dl=1")
+        elif "dl=1" not in u:
+            # `?rlkey=…` share links: append the flag rather than
+            # replacing existing params.
+            u = u + ("&" if "?" in u else "?") + "dl=1"
+        return u
+
+    # Google Drive
+    m = re.search(r"drive\.google\.com/file/d/([A-Za-z0-9_-]+)", u)
+    if m:
+        return f"https://drive.google.com/uc?export=download&id={m.group(1)}"
+
+    return u
+
+
+# Legacy alias — a handful of pytests import this name.
 def _dropbox_dl_swap(url: str) -> str:
-    """Swap Dropbox share links `dl=0` → `dl=1` so they stream directly."""
-    if "dropbox.com" in url and "dl=0" in url:
-        return url.replace("dl=0", "dl=1")
-    return url
+    return _normalize_source_url(url)
 
 
 async def _resolve_and_head(url: str) -> tuple[str, Optional[int]]:
     """Follow redirects to the final CDN URL and return (final_url, size)."""
-    url = _dropbox_dl_swap(url)
+    url = _normalize_source_url(url)
     async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as c:
         r = await c.head(url)
         r.raise_for_status()
         size = int(r.headers.get("content-length") or 0) or None
         final = str(r.url)
     return final, size
+
+
+# ────────────────── v58 zip-bomb guardrail ──────────────────
+
+class ExtractLimitExceeded(Exception):
+    """Raised when a ZIP archive exceeds one of the configured limits."""
+
+
+def _guard_zip_limits(entries: list[tuple[int, str]]) -> None:
+    """Validate a list of (uncompressed_size, name) tuples against the
+    configured zip-bomb limits.
+
+    Fails fast on the FIRST breach with a self-explanatory message so
+    the job report reads clearly.
+    """
+    if len(entries) > MAX_PDF_ENTRIES:
+        raise ExtractLimitExceeded(
+            f"too many PDF entries ({len(entries)} > "
+            f"{MAX_PDF_ENTRIES} limit)"
+        )
+    total = 0
+    for size, name in entries:
+        if size > MAX_SINGLE_ENTRY_BYTES:
+            raise ExtractLimitExceeded(
+                f"single entry too large ({name}: "
+                f"{size/1024/1024:.1f} MB > "
+                f"{MAX_SINGLE_ENTRY_BYTES/1024/1024:.0f} MB limit)"
+            )
+        total += size
+        if total > MAX_UNPACKED_BYTES:
+            raise ExtractLimitExceeded(
+                f"unpacked total too large "
+                f"({total/1024/1024:.1f} MB > "
+                f"{MAX_UNPACKED_BYTES/1024/1024:.0f} MB limit)"
+            )
+
+
+# ────────────────── v58 job-failure helper ──────────────────
+
+async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
+    """Stamp a job as failed with a structured `error_step` from the
+    ERROR_STEPS enum. Idempotent — safe to call from a watchdog even
+    if the job already transitioned."""
+    if error_step not in ERROR_STEPS:
+        # Defensive — never silently drop unknown codes. Log and coerce.
+        log.warning("bulk_import: unknown error_step %r → 'download'",
+                    error_step)
+        error_step = "download"
+    await db.bulk_import_jobs.update_one(
+        {"id": job_id, "state": {"$nin": ["complete", "failed", "cancelled"]}},
+        {"$set": {"state": "failed", "error_step": error_step,
+                  "error": err_msg, "finished_at": _now_iso()}},
+    )
+
+
+# ────────────────── v58 watchdog + retention ──────────────────
+
+async def watchdog_tick() -> dict:
+    """Fail any job stuck in `downloading` or `extracting` for longer
+    than `DOWNLOAD_TIMEOUT_MIN`. Returns a stat block for logging.
+
+    Intended to be called from APScheduler on a short interval (~60s).
+    Idempotent — reruns on the same DB state are no-ops.
+    """
+    cutoff = datetime.now(timezone.utc).timestamp() - DOWNLOAD_TIMEOUT_MIN * 60
+    stuck_states = {"downloading", "extracting"}
+    reaped = 0
+    async for job in db.bulk_import_jobs.find(
+        {"state": {"$in": list(stuck_states)}}, {"_id": 0, "id": 1,
+                                                  "state": 1, "started_at": 1}):
+        started = job.get("started_at")
+        # `started_at` is ISO string; guard against `None` and malformed rows.
+        try:
+            ts = datetime.fromisoformat(started).timestamp() if started else 0
+        except (TypeError, ValueError):
+            ts = 0
+        if ts and ts < cutoff:
+            step = "download" if job["state"] == "downloading" else "extract"
+            await _fail_job(
+                job["id"], step,
+                f"watchdog: no progress for {DOWNLOAD_TIMEOUT_MIN} min "
+                f"in state '{job['state']}'",
+            )
+            reaped += 1
+    if reaped:
+        log.info("bulk_import watchdog reaped %d stuck job(s)", reaped)
+    return {"reaped": reaped, "timeout_min": DOWNLOAD_TIMEOUT_MIN}
+
+
+async def retention_cleanup() -> dict:
+    """Purge `bulk_import_jobs` rows older than `RETENTION_DAYS`, plus
+    their associated `bulk_import_dryrun` rows.
+
+    Called nightly by APScheduler (03:00 Sydney) — see `server.py`.
+    Also removes any orphan dryrun rows whose parent job has already
+    been swept.
+    """
+    cutoff_dt = datetime.now(timezone.utc)
+    cutoff_iso = (
+        cutoff_dt.replace(microsecond=0)
+        - _retention_delta()
+    ).isoformat()
+    # Find IDs first so we can prune the dryrun sidecar deterministically.
+    old_ids: list[str] = []
+    async for j in db.bulk_import_jobs.find(
+            {"created_at": {"$lt": cutoff_iso}}, {"_id": 0, "id": 1}):
+        old_ids.append(j["id"])
+    dryrun_deleted = 0
+    if old_ids:
+        r = await db.bulk_import_dryrun.delete_many({"job_id": {"$in": old_ids}})
+        dryrun_deleted = r.deleted_count
+    jobs_deleted = 0
+    if old_ids:
+        r = await db.bulk_import_jobs.delete_many({"id": {"$in": old_ids}})
+        jobs_deleted = r.deleted_count
+    if jobs_deleted:
+        log.info("bulk_import retention swept %d job(s) + %d dryrun row(s) "
+                 "older than %d days",
+                 jobs_deleted, dryrun_deleted, RETENTION_DAYS)
+    return {"jobs_deleted": jobs_deleted, "dryrun_deleted": dryrun_deleted,
+            "cutoff": cutoff_iso, "retention_days": RETENTION_DAYS}
+
+
+def _retention_delta():
+    """`timedelta` for the configured retention window. Extracted so
+    tests can monkeypatch it independently of the env var."""
+    from datetime import timedelta
+    return timedelta(days=RETENTION_DAYS)
 
 
 # ────────────────── Claude helpers ──────────────────
@@ -364,23 +581,42 @@ async def init_job(body: InitBody, user: dict = Depends(get_current_user)):
     if body.source == "url":
         if not body.url:
             raise HTTPException(400, "url required for source='url'")
-        final_url, size = await _resolve_and_head(body.url)
+        # v58: normalize before the HEAD so we don't burn a redirect on
+        # a link the CDN would reject.
+        normalized = _normalize_source_url(body.url)
+        try:
+            final_url, size = await _resolve_and_head(normalized)
+        except Exception as e:
+            log.warning("bulk_import init HEAD failed: %s", e)
+            raise HTTPException(
+                400,
+                f"Could not resolve source URL: {e}. "
+                f"Check the link is publicly accessible.",
+            )
     else:
-        final_url, size = None, None
+        normalized, final_url, size = None, None, None
 
     job_id = str(uuid.uuid4())
     doc = {
         "id": job_id, "org_id": user["org_id"], "actor_id": user.get("id"),
-        "source": body.source, "url_input": body.url, "url_final": final_url,
+        "source": body.source,
+        # v58 — persist BOTH the raw input (audit trail) and the
+        # normalised URL (`src_url`, used by the download worker and
+        # the wizard's "retry" affordance).
+        "url_input": body.url,
+        "src_url": normalized,
+        "url_final": final_url,
         "filename": body.filename, "size_bytes": size,
         "state": "init",
+        "error_step": None,  # v58 — set to one of ERROR_STEPS on failure.
         "processed": 0, "failed": 0, "total": None,
         "errors": [], "template_hits": {}, "created_at": _now_iso(),
     }
     await db.bulk_import_jobs.insert_one(doc)
     await _audit(user, "bulk_import.init",
                  {"job_id": job_id, "source": body.source, "size": size})
-    return {"job_id": job_id, "size_bytes": size, "url_final": final_url}
+    return {"job_id": job_id, "size_bytes": size,
+            "url_final": final_url, "src_url": normalized}
 
 
 @router.post("/{job_id}/start", status_code=202)
@@ -393,9 +629,13 @@ async def start_job(job_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(400, f"job in state {job['state']}, cannot start")
 
     mode = "full_run" if job["state"] == "awaiting_approval" else "dry_run"
+    # v58 — always start in `downloading`; the worker transitions to
+    # `extracting` / `dryrun` / `processing` after the ZIP is on disk.
+    # This lets the watchdog reap stuck downloads regardless of mode.
     await db.bulk_import_jobs.update_one({"id": job_id},
-        {"$set": {"state": "downloading" if mode == "dry_run" else "processing",
-                  "started_at": _now_iso(), "mode": mode}})
+        {"$set": {"state": "downloading",
+                  "started_at": _now_iso(), "mode": mode,
+                  "error_step": None}})
     # Fire the worker in the background — do NOT await.
     asyncio.create_task(_run_job(job_id, mode))
     await _audit(user, "bulk_import.start", {"job_id": job_id, "mode": mode})
@@ -436,11 +676,15 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
             {"$set": {"state": "cancelled", "cancelled_at": _now_iso()}})
         return {"job_id": job_id, "state": "cancelled"}
     # Kick off the full run.
+    # v58 — mirror start_job: begin in `downloading` since _run_job
+    # re-downloads the ZIP for the full pass (the dry-run tempfile
+    # was cleaned up in the earlier run's `finally:` block).
     await db.bulk_import_jobs.update_one({"id": job_id},
-        {"$set": {"state": "processing", "resumed_at": _now_iso()}})
+        {"$set": {"state": "downloading", "resumed_at": _now_iso(),
+                  "started_at": _now_iso(), "error_step": None}})
     asyncio.create_task(_run_job(job_id, "full_run"))
     await _audit(user, "bulk_import.approve", {"job_id": job_id})
-    return {"job_id": job_id, "state": "processing"}
+    return {"job_id": job_id, "state": "downloading"}
 
 
 # ────────────────── Worker ──────────────────
@@ -508,16 +752,31 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
 
 async def _run_job(job_id: str, mode: str):
     """The async worker. Downloads zip, iterates PDFs, runs classifier +
-    extractor per PDF, updates job progress."""
+    extractor per PDF, updates job progress.
+
+    v58 — every failure branch now stamps a structured `error_step` on
+    the job row so the wizard can render actionable copy.
+    """
     job = await db.bulk_import_jobs.find_one({"id": job_id}, {"_id": 0})
     if not job: return
     org_id = job["org_id"]
     dry_limit = 20 if mode == "dry_run" else None
+    # v58 — prefer the normalised `src_url` (set by /init), fall back to
+    # the raw `url_input` for jobs created before v58 rolled.
+    download_url = job.get("src_url") or job.get("url_input")
+    zip_path = None
+    outer_zf = None
+    nested_temp_files: list[str] = []
     try:
         # 1. Download ZIP.
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
-            zip_path = tf.name
-        await _stream_download(job["url_input"], zip_path)
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+                zip_path = tf.name
+            await _stream_download(download_url, zip_path)
+        except Exception as e:
+            log.exception("bulk_import job %s download failed", job_id)
+            await _fail_job(job_id, "download", f"download: {e}")
+            return
 
         # 2. Load pre-start templates once for extraction.
         templates_by_id = {}
@@ -531,52 +790,72 @@ async def _run_job(job_id: str, mode: str):
         # the outer archive contains a single inner `.zip` which holds the
         # actual PDFs. We walk one level of nesting to unwrap that pattern
         # (guarded — no deeper recursion, no zip-bomb amplification).
-        #
-        # Memory-safety: nested zips can themselves be multi-GB. We stream
-        # them to disk via `ZipFile.open()` + `shutil.copyfileobj` rather
-        # than `.read()` (which buffers the whole entry in RAM).
-        outer_zf = zipfile.ZipFile(zip_path, "r")
-        # (pdf_name, container_zip, container_label) for every reachable PDF.
-        pdf_entries: list[tuple[str, zipfile.ZipFile, str]] = []
-        nested_temp_files: list[str] = []
-        for entry in outer_zf.namelist():
-            low = entry.lower()
-            if low.endswith(".pdf"):
-                pdf_entries.append((entry, outer_zf, "<outer>"))
-            elif low.endswith(".zip"):
-                # Stream the nested zip to /tmp so we don't hold >1 GB
-                # in RAM. Reader is closed after copy so the temp file
-                # is safe to hand to a fresh ZipFile() below.
-                nested_path = tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".zip").name
-                nested_temp_files.append(nested_path)
-                try:
-                    with outer_zf.open(entry) as src, open(nested_path, "wb") as dst:
-                        shutil.copyfileobj(src, dst, length=8 * 1024 * 1024)
-                    inner_zf = zipfile.ZipFile(nested_path, "r")
-                except Exception as ze:
-                    log.warning("nested zip %s unreadable: %s", entry, ze)
-                    continue
-                inner_pdf_count = 0
-                for sub in inner_zf.namelist():
-                    if sub.lower().endswith(".pdf"):
-                        pdf_entries.append((sub, inner_zf, entry))
-                        inner_pdf_count += 1
-                log.info("bulk_import: nested zip %s contributed %d PDFs",
-                         entry, inner_pdf_count)
+        try:
+            outer_zf = zipfile.ZipFile(zip_path, "r")
+        except zipfile.BadZipFile as e:
+            await _fail_job(job_id, "extract", f"corrupt ZIP: {e}")
+            return
+
+        await db.bulk_import_jobs.update_one({"id": job_id},
+            {"$set": {"state": "extracting"}})
+
+        # (pdf_name, container_zip, container_label, uncompressed_size)
+        pdf_entries: list[tuple[str, zipfile.ZipFile, str, int]] = []
+        try:
+            for info in outer_zf.infolist():
+                entry = info.filename
+                low = entry.lower()
+                if low.startswith("__macosx"):
+                    continue  # metadata cruft
+                if low.endswith(".pdf"):
+                    pdf_entries.append((entry, outer_zf, "<outer>",
+                                        info.file_size))
+                elif low.endswith(".zip"):
+                    nested_path = tempfile.NamedTemporaryFile(
+                        delete=False, suffix=".zip").name
+                    nested_temp_files.append(nested_path)
+                    try:
+                        with outer_zf.open(entry) as src, open(nested_path, "wb") as dst:
+                            shutil.copyfileobj(src, dst, length=8 * 1024 * 1024)
+                        inner_zf = zipfile.ZipFile(nested_path, "r")
+                    except (zipfile.BadZipFile, OSError) as ze:
+                        log.warning("nested zip %s unreadable: %s", entry, ze)
+                        continue
+                    inner_pdf_count = 0
+                    for sub_info in inner_zf.infolist():
+                        sub = sub_info.filename
+                        if sub.lower().startswith("__macosx"):
+                            continue
+                        if sub.lower().endswith(".pdf"):
+                            pdf_entries.append((sub, inner_zf, entry,
+                                                sub_info.file_size))
+                            inner_pdf_count += 1
+                    log.info("bulk_import: nested zip %s contributed %d PDFs",
+                             entry, inner_pdf_count)
+        except Exception as e:
+            log.exception("bulk_import job %s extract-walk failed", job_id)
+            await _fail_job(job_id, "extract", f"extract walk: {e}")
+            return
+
+        # v58 — zip-bomb guardrail runs BEFORE we open a single PDF so a
+        # hostile archive can't burn CPU on Claude calls.
+        try:
+            _guard_zip_limits([(sz, name) for name, _c, _l, sz in pdf_entries])
+        except ExtractLimitExceeded as e:
+            log.warning("bulk_import job %s tripped extract_limit: %s",
+                        job_id, e)
+            await _fail_job(job_id, "extract_limit", str(e))
+            return
 
         total = min(len(pdf_entries), dry_limit) if dry_limit else len(pdf_entries)
         await db.bulk_import_jobs.update_one({"id": job_id},
-            {"$set": {"state": "extracting" if mode == "dry_run" else "processing",
+            {"$set": {"state": "dryrun" if mode == "dry_run" else "processing",
                       "total": total,
                       "total_pdfs_discovered": len(pdf_entries)}})
         log.info("bulk_import job %s: discovered=%d, dry_limit=%s, will_process=%d",
                  job_id, len(pdf_entries), dry_limit, total)
 
         # 4. Process with a 5-way concurrency limit.
-        # zipfile.ZipFile.read() is NOT safe for concurrent calls on the same
-        # handle — serialise reads via a dedicated lock, then hand the bytes
-        # off to `_process_one_pdf` which is safe to run concurrently.
         sem = asyncio.Semaphore(5)
         zip_lock = asyncio.Lock()
         processed = 0
@@ -587,8 +866,6 @@ async def _run_job(job_id: str, mode: str):
             async with sem:
                 async with zip_lock:
                     data = await asyncio.to_thread(container.read, pdf_name)
-                # Tag the record with which container the PDF came from —
-                # helps auditors trace back to the source archive.
                 display_name = (f"{container_label}::{pdf_name}"
                                 if container_label != "<outer>" else pdf_name)
                 rec = await _process_one_pdf(job, display_name, data,
@@ -597,47 +874,58 @@ async def _run_job(job_id: str, mode: str):
                 await db.bulk_import_jobs.update_one({"id": job_id},
                     {"$set": {"processed": processed}})
                 if rec["status"] == "ok" and mode == "full_run":
-                    # v160.3.9.12a-live — insert with the mapped positional
-                    # fields[] and the unmapped sidecar; the mapper is
-                    # tolerant so `fields` is safe even when Claude only
-                    # partially extracted the form.
-                    await db.form_submissions.insert_one({
-                        "id": str(uuid.uuid4()), "org_id": org_id,
-                        "template_id": rec["template_id"],
-                        "template_name_snapshot": rec["template_name"],
-                        "fields": rec.get("mapped_fields") or [],
-                        "source": "bulk_import",
-                        "submitted_at": _now_iso(),
-                        "submitted_by_id": job["actor_id"],
-                        "metadata": {
-                            "imported_via": "bulk_import_v160.3.9.12",
-                            "job_id": job_id, "src_filename": display_name,
-                            "classifier_confidence": (rec.get("classifier") or {}).get("confidence"),
-                            "mapped_count": rec.get("mapped_count"),
-                            "template_field_count": rec.get("template_field_count"),
-                            "unmapped_labels": rec.get("unmapped_labels") or [],
-                            "worker_match": rec.get("worker_match"),
-                            "site_match": rec.get("site_match"),
-                        },
-                        "deleted_at": None,
-                    })
+                    try:
+                        await db.form_submissions.insert_one({
+                            "id": str(uuid.uuid4()), "org_id": org_id,
+                            "template_id": rec["template_id"],
+                            "template_name_snapshot": rec["template_name"],
+                            "fields": rec.get("mapped_fields") or [],
+                            "source": "bulk_import",
+                            "submitted_at": _now_iso(),
+                            "submitted_by_id": job["actor_id"],
+                            "metadata": {
+                                "imported_via": "bulk_import_v160.3.9.58",
+                                "job_id": job_id, "src_filename": display_name,
+                                "classifier_confidence": (rec.get("classifier") or {}).get("confidence"),
+                                "mapped_count": rec.get("mapped_count"),
+                                "template_field_count": rec.get("template_field_count"),
+                                "unmapped_labels": rec.get("unmapped_labels") or [],
+                                "worker_match": rec.get("worker_match"),
+                                "site_match": rec.get("site_match"),
+                            },
+                            "deleted_at": None,
+                        })
+                    except Exception as we:
+                        # v58 — persist a per-record write failure without
+                        # blowing up the whole run; approve-side stamps
+                        # error_step=write only if EVERY record fails.
+                        log.warning("bulk_import: write failed for %s: %s",
+                                    display_name, we)
+                        await db.bulk_import_dryrun.update_one(
+                            {"job_id": job_id, "filename": display_name},
+                            {"$set": {"status": "failed",
+                                      "reason": f"write: {we}"}},
+                        )
 
         await asyncio.gather(*[
             _one(pdf_name, container, label)
-            for pdf_name, container, label in pdf_entries[:total]
+            for pdf_name, container, label, _sz in pdf_entries[:total]
         ])
 
         # 5. Final state transition.
         new_state = "awaiting_approval" if mode == "dry_run" else "complete"
         await db.bulk_import_jobs.update_one({"id": job_id},
             {"$set": {"state": new_state, "finished_at": _now_iso()}})
-        try: os.unlink(zip_path)
-        except OSError: pass
+    except Exception as e:
+        # Anything not caught in a stage-specific try/except above lands
+        # here — classify as `parse` since that's the widest remaining
+        # blast radius (PDF pipeline, template load, etc.).
+        log.exception("bulk_import job %s failed (unclassified)", job_id)
+        await _fail_job(job_id, "parse", str(e))
+    finally:
+        if zip_path:
+            try: os.unlink(zip_path)
+            except OSError: pass
         for np_ in nested_temp_files:
             try: os.unlink(np_)
             except OSError: pass
-    except Exception as e:
-        log.exception("bulk_import job %s failed", job_id)
-        await db.bulk_import_jobs.update_one({"id": job_id},
-            {"$set": {"state": "failed", "error": str(e),
-                      "finished_at": _now_iso()}})

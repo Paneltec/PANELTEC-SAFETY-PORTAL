@@ -202,9 +202,13 @@ api.include_router(swms_phase45_router)
 api.include_router(swms_router)
 api.include_router(prestarts_router)
 # v160.3.9.12a — Bulk-import legacy pre-start PDFs (URL/zip → Claude Vision).
+# v160.3.9.58 — imports extended with `watchdog_tick` + `retention_cleanup`
+# for the APScheduler hooks registered further down in on_startup.
 from bulk_import_prestarts import (  # noqa: E402
     router as bulk_import_prestarts_router,
     ensure_indexes as bulk_import_ensure_indexes,
+    watchdog_tick as bulk_import_watchdog_tick,
+    retention_cleanup as bulk_import_retention_cleanup,
 )
 api.include_router(bulk_import_prestarts_router)
 # v160.3.9.13 — Master Risks reference library.
@@ -882,6 +886,29 @@ async def on_startup():
             log.info("APScheduler job registered — meter_history_daily_snapshot daily at 01:00 UTC")
         except Exception as e:
             log.warning("meter_history_daily_snapshot scheduler hook failed: %s", e)
+        # v160.3.9.58 — Bulk-import Pre-Starts watchdog + retention.
+        # Watchdog runs every 60 s and fails jobs stuck in
+        # downloading/extracting past `BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN`.
+        # Retention runs nightly at 03:00 Sydney and purges
+        # `bulk_import_jobs` (+ their `bulk_import_dryrun` rows) older
+        # than `BULK_IMPORT_RETENTION_DAYS` (default 30).
+        try:
+            scheduler.add_job(
+                bulk_import_watchdog_tick, "interval", seconds=60,
+                id="bulk_import_watchdog", max_instances=1,
+                coalesce=True, replace_existing=True,
+            )
+            scheduler.add_job(
+                bulk_import_retention_cleanup, "cron",
+                hour=3, minute=0, timezone="Australia/Sydney",
+                id="bulk_import_retention", max_instances=1,
+                coalesce=True, replace_existing=True,
+                misfire_grace_time=6 * 3600,
+            )
+            log.info("APScheduler jobs registered — bulk_import_watchdog "
+                     "every 60s + bulk_import_retention daily 03:00 Sydney")
+        except Exception as e:
+            log.warning("bulk_import scheduler hooks failed: %s", e)
         # Phase 4.19 (v143) — MongoDB backup snapshots.
         # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
         # Both wrap `_do_snapshot` (defined in backup_service.install()) which
