@@ -483,6 +483,17 @@ export default function UsersManagement() {
   const { roles: systemRoles } = useSystemRoles();
   const [users, setUsers] = useState([]);
   const [filters, setFilters] = useState({ role: '', status: 'active' });
+  // v57.3 — client-side search across name / email / role / role_id /
+  // simpro_position / activation_status. Debounced ~150 ms so typing
+  // stays snappy at the current dataset size (~90 users). The search
+  // slots ahead of the existing role/status filter so segment counts
+  // reflect the filtered subset ("5 of 63 active matching 'smith'").
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 150);
+    return () => clearTimeout(t);
+  }, [search]);
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
   // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
@@ -580,10 +591,41 @@ export default function UsersManagement() {
     return { active, pending, archived, testHidden };
   }, [users]);
 
+  // v57.3 — Multi-token AND-match across name / email / role / role_id /
+  // simpro_position / activation_status. Returns a stable memoised
+  // predicate so the row filter + segment counters use identical logic.
+  const searchTokens = useMemo(() => (
+    debouncedSearch.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  ), [debouncedSearch]);
+  const matchesSearch = useMemo(() => {
+    if (!searchTokens.length) return () => true;
+    return (u) => {
+      const hay = [
+        u.name, u.email, u.role, u.role_id, u.simpro_position, u.activation_status,
+      ].filter(Boolean).join(' ').toLowerCase();
+      return searchTokens.every((t) => hay.includes(t));
+    };
+  }, [searchTokens]);
+
+  // Segment counts recomputed against the search-filtered set so the
+  // header reflects the visible subset ("5 of 63 active matching 'smith'").
+  const searchSegments = useMemo(() => {
+    let active = 0, pending = 0, archived = 0, testHidden = 0;
+    for (const u of users) {
+      if (!matchesSearch(u)) continue;
+      if (u.is_test_fixture) { testHidden += 1; continue; }
+      const s = u.activation_status;
+      if (s === 'pending_activation') pending += 1;
+      else if (s === 'suspended' || u.is_archived) archived += 1;
+      else active += 1;
+    }
+    return { active, pending, archived, testHidden };
+  }, [users, matchesSearch]);
+
   if (!can('users', 'view')) {
     return <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500" data-testid="users-denied">Access denied — you need users.view permission.</div>;
   }
-  const filtered = users.filter((u) => (!filters.role || u.role === filters.role) && (!filters.status || u.status === filters.status));
+  const filtered = users.filter((u) => matchesSearch(u) && (!filters.role || u.role === filters.role) && (!filters.status || u.status === filters.status));
   const disabledCount = users.filter((u) => u.status === 'disabled').length;
   const bulkable = filtered.filter((u) => u.id !== me?.id && !u.deleted_at);
   const bulkAllChecked = bulkable.length > 0 && bulkable.every((u) => bulkSelected.has(u.id));
@@ -604,6 +646,31 @@ export default function UsersManagement() {
       await load();
     } catch (e) { toast.error(apiError(e)); }
     finally { setActionBusy(false); }
+  };
+
+  // v57.3 — Highlight helper used by the row cells to mark search
+  // matches inline. Green `<mark>` styled to match the User Manual
+  // highlight for cross-page consistency (#16A34A bg + white text).
+  const highlight = (text) => {
+    const s = String(text ?? '');
+    if (!s || !searchTokens.length) return s;
+    // Longest tokens first so shorter overlapping tokens don't win.
+    const toks = [...searchTokens].sort((a, b) => b.length - a.length);
+    const rx = new RegExp('(' + toks.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'ig');
+    const out = [];
+    let last = 0, m;
+    while ((m = rx.exec(s))) {
+      if (m.index > last) out.push(s.slice(last, m.index));
+      out.push(
+        <mark
+          key={`m${m.index}`}
+          style={{ background: '#16A34A', color: '#FFFFFF', padding: '1px 3px', borderRadius: 3, fontWeight: 700 }}
+        >{m[0]}</mark>
+      );
+      last = m.index + m[0].length;
+    }
+    if (last < s.length) out.push(s.slice(last));
+    return out;
   };
 
   // v160.3.9.32-4c — Phase 4c: user-row renderer factored out so both the
@@ -650,7 +717,7 @@ export default function UsersManagement() {
           )}
           <div className="min-w-0">
             <div className="font-medium flex items-center gap-1.5 leading-tight">
-              <span className="truncate">{u.name}</span>
+              <span className="truncate">{highlight(u.name)}</span>
               {u.role_locked && (
                 <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 border border-amber-300 inline-flex items-center gap-0.5"
                   title="Role manually locked — Simpro sync won't change it"
@@ -672,7 +739,7 @@ export default function UsersManagement() {
                   data-testid={`archived-badge-${u.id}`}>Archived</span>
               )}
             </div>
-            <div className="text-[11px] text-slate-500 truncate">{u.email}</div>
+            <div className="text-[11px] text-slate-500 truncate">{highlight(u.email)}</div>
           </div>
         </div>
       </td>
@@ -731,11 +798,25 @@ export default function UsersManagement() {
       <PageHeader crumb="Settings / Users" title="Users &amp; permissions"
         subtitle={
           <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600" data-testid="users-header-segments">
-            <span data-testid="users-seg-active"><b className="text-slate-900">{segments.active}</b> active</span>
-            <span className="text-slate-300">·</span>
-            <span data-testid="users-seg-pending"><b className="text-slate-900">{segments.pending}</b> pending activation</span>
-            <span className="text-slate-300">·</span>
-            <span data-testid="users-seg-archived"><b className="text-slate-900">{segments.archived}</b> archived</span>
+            {/* v57.3 — When a search is live, show "N of M" so the user
+                sees both the filtered subset AND the total. */}
+            {debouncedSearch.trim() ? (
+              <>
+                <span data-testid="users-seg-active"><b className="text-slate-900">{searchSegments.active}</b> of {segments.active} active matching “{debouncedSearch}”</span>
+                <span className="text-slate-300">·</span>
+                <span data-testid="users-seg-pending"><b className="text-slate-900">{searchSegments.pending}</b> of {segments.pending} pending</span>
+                <span className="text-slate-300">·</span>
+                <span data-testid="users-seg-archived"><b className="text-slate-900">{searchSegments.archived}</b> of {segments.archived} archived</span>
+              </>
+            ) : (
+              <>
+                <span data-testid="users-seg-active"><b className="text-slate-900">{segments.active}</b> active</span>
+                <span className="text-slate-300">·</span>
+                <span data-testid="users-seg-pending"><b className="text-slate-900">{segments.pending}</b> pending activation</span>
+                <span className="text-slate-300">·</span>
+                <span data-testid="users-seg-archived"><b className="text-slate-900">{segments.archived}</b> archived</span>
+              </>
+            )}
             {showTest ? (
               <>
                 <span className="text-slate-300">·</span>
@@ -972,6 +1053,52 @@ export default function UsersManagement() {
           </div>
         )}
       </div>
+
+      {/* v57.3 — Search bar above the users table. Debounced client-side
+          filter across name / email / role / role_id / simpro_position /
+          activation_status. Clear via ×, Esc, or emptying the input. */}
+      <div className="mb-3 flex items-center gap-2" data-testid="users-search-wrap">
+        <div className="relative flex-1 max-w-xl">
+          <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') setSearch(''); }}
+            placeholder="Search users by name, email, role, or Simpro position…"
+            className="w-full pl-9 pr-9 py-2 text-sm bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue"
+            data-testid="users-search"
+            aria-label="Search users"
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-slate-400 hover:bg-slate-100"
+              data-testid="users-search-clear"
+              aria-label="Clear search"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          )}
+        </div>
+        {debouncedSearch.trim() && (
+          <span data-testid="users-search-count" className="text-xs text-slate-500">
+            <b className="text-slate-800">{filtered.length}</b> match{filtered.length === 1 ? '' : 'es'}
+          </span>
+        )}
+      </div>
+
+      {/* v57.3 — Empty state when search yields nothing. Sits above the
+          table so the header/segments stay visible for context. */}
+      {debouncedSearch.trim() && filtered.length === 0 && (
+        <div
+          data-testid="users-search-empty"
+          className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 mb-3"
+        >
+          No users match “{debouncedSearch}”. Try a different term.
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
         <table className="zebra-list w-full text-sm">
