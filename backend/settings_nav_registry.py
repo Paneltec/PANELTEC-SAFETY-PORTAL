@@ -26,6 +26,8 @@ SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     # v160.3.9.31-4a — Phase 4a: Roles Admin page.
     {"key": "roles_admin",        "label": "Roles Admin",          "route": "/app/settings/roles-admin",          "admin_only": True,  "resource": None},
     {"key": "workers",            "label": "Workers",              "route": "/app/settings/workers",              "admin_only": False, "resource": None},
+    # v160.3.9.48 — HR Employees register. Permission-gated via `hr_employees.view`.
+    {"key": "hr_employees",       "label": "HR Employees",         "route": "/app/settings/hr-employees",         "admin_only": True,  "resource": "hr_employees"},
     {"key": "form_assignments",   "label": "Form Assignments",     "route": "/app/settings/form-assignments",     "admin_only": True,  "resource": None},
     {"key": "swms_assignments",   "label": "SWMS Assignments",     "route": "/app/settings/swms-assignments",     "admin_only": True,  "resource": None},
     {"key": "integrations",       "label": "Integrations",         "route": "/app/settings/integrations",         "admin_only": False, "resource": "integrations"},

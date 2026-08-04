@@ -615,4 +615,63 @@
 //                    "Scroll horizontally →" on mobile, "Click any node"
 //                    on desktop.
 //                    Palette UNCHANGED (locked).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.47.1';
+// v160.3.9.48 — HR Employees Register (Green-to-Build).
+//                  Full authenticated register at `/app/settings/hr-employees`
+//                  with Active + Archived tabs, sparse-column table, filter
+//                  dropdowns, search, and PII controls (masked DOB / address /
+//                  next-of-kin phone with `Reveal` buttons per field that
+//                  each write an audit row server-side).
+//                  Permission tokens (new resource `hr_employees` in
+//                  PERMISSIONS_SCHEMA):
+//                    `hr_employees.view`, `.edit`, `.reveal_pii`, `.archive`,
+//                    `.reimport`, `.audit_view` (+ inherited open / delete
+//                    from the base `ACTIONS` list).
+//                  `permissions.ACTIONS` extended with four new actions:
+//                  `reveal_pii`, `archive`, `reimport`, `audit_view` —
+//                  hr_employees-scoped semantics; every other resource
+//                  leaves those cells False via `_grant()`'s default.
+//                  Endpoint gates converted from `require_roles("admin")`
+//                  to `require_permission("hr_employees", <action>)` for
+//                  all 11 routes (list, columns, audit, get, reveal-dob,
+//                  reveal-address, reveal-next-of-kin, patch, archive,
+//                  delete, reimport). New `POST /{uid}/reveal-next-of-kin`
+//                  returns raw next-of-kin phone + relationship (masked
+//                  by default via `_mask_phone(...)` — last-4 digits
+//                  visible). New `POST /{uid}/archive` (idempotent) sets
+//                  `archived="Archived"` without touching `deleted_at`
+//                  — semantic split with `DELETE /{uid}` which continues
+//                  to soft-delete via `deleted_at` while PRESERVING
+//                  `archived`. `linked_worker_id` reserved on the schema
+//                  for the P2 Employee↔Worker linker (patchable but
+//                  no endpoint consumes it yet).
+//                  `permissions_scope.py` reserved key `"hr"` renamed to
+//                  `"hr_employees"` across `scope_filter`, `can_access_record`
+//                  and the fail-closed branch.
+//                  Migration (`bk_migrations.v160_3_9_48_hr_employees_ingest`)
+//                  idempotently ingests the 121 rows from
+//                  `backend/scripts/data/hr_employees_source.xlsx` via
+//                  `parse_workbook` + `upsert_rows` (skips if the collection
+//                  is already populated) and backfills the `admin` role's
+//                  `permission_tokens[]` with the full v48 grant + the
+//                  `hseq_manager` role with `hr_employees.open + .view`.
+//                  Legacy `auditor` role gets `hr_employees.view` +
+//                  `.audit_view` via ROLE_DEFAULTS['auditor']['hr_employees']
+//                  override (no DB doc — hardcoded map). Cache invalidated
+//                  via `_bust_role_cache()` post-write.
+//                  Frontend:
+//                    · `HrEmployeesPage.jsx` (Active/Archived tabs, sparse
+//                      table, search + 3 filter dropdowns, security-flag
+//                      banner when `security_flag_count > 0`)
+//                    · `HrEmployeeDrawer.jsx` (Detail + Activity + Edit
+//                      tabs; per-field Reveal buttons; header
+//                      Archive/Restore actions)
+//                    · Sidebar entry `hr_employees` inserted after
+//                      `workers` in both frontend + backend
+//                      `settings_nav_registry` — visibility gated by
+//                      `requiresCan: ['hr_employees', 'view']`.
+//                  Tests: `backend/tests/test_hr_employees_v48.py` —
+//                  gate matrix (401 anon / 403 wrong-role / 200
+//                  admin), reveal-* audit-row assertions, archive vs
+//                  delete semantic split, migration idempotency, and
+//                  the Stephen-carries-all-tokens read-only invariant.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.48';

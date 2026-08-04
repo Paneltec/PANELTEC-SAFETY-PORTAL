@@ -145,7 +145,7 @@ def test_no_cross_contractor_writes_anywhere_v45():
     # we mirror it here so the assertion is decoupled from that internal
     # tuple. Every entry must raise 403 for a cross-company access.
     SCOPED_RESOURCES_MIRROR = (
-        "workers", "hr", "certifications", "documents", "contractors",
+        "workers", "hr_employees", "certifications", "documents", "contractors",
     )
     rep_for_A = {"id": "u", "org_id": TEST_ORG, "email": "r@x.invalid",
                  "role": "contractor_rep", "role_id": "contractor_rep",

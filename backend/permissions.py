@@ -15,8 +15,14 @@ from auth import get_current_user
 from db import db
 from models import now_iso
 
-Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use", "approve"]
-ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view", "use", "approve"]
+Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use", "approve",
+                 # v160.3.9.48 — hr_employees-specific extended actions.
+                 # Kept in the shared Action list so `_validate_tokens` and
+                 # `effective_for` don't reject them. Other resources leave
+                 # these cells `False` via `_grant()`'s default.
+                 "reveal_pii", "archive", "reimport", "audit_view"]
+ACTIONS: list[Action] = ["open", "view", "edit", "delete", "email", "team_view", "use", "approve",
+                         "reveal_pii", "archive", "reimport", "audit_view"]
 
 # v159.2 — Resources subject to team-scoping: workers who lack `team_view`
 # on these resources only see records where `created_by == user.id`.
@@ -76,6 +82,10 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     "notifications":   {"label": "Notifications",         "email_supported": False, "delete_supported": True},
     "help":            {"label": "Help / User Manual",    "email_supported": False, "delete_supported": True},
     "sites":           {"label": "Sites (QR sign-on)",    "email_supported": False, "delete_supported": True},
+    # v160.3.9.48 — HR Employees register. PII-heavy resource with
+    # extended actions: reveal_pii / archive / reimport / audit_view
+    # gate the sensitive endpoints in `hr_employees.py`.
+    "hr_employees":    {"label": "HR Employees",           "email_supported": False, "delete_supported": True},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -141,6 +151,10 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         # backend seeds so mechanical 2b migration doesn't narrow anyone.
         "reference_library": {**_all_no_delete(True), "email": False},
         "sites":             {**_all_no_delete(True), "email": False},
+        # v160.3.9.48 — HSEQ Lead legacy role gets read-only visibility on
+        # the HR Employees register. Sensitive actions (reveal_pii, edit,
+        # archive, reimport, audit_view) stay admin-only.
+        "hr_employees":      _grant(open=True, view=True),
     },
     # v160.3.9.30 — Phase 3d: contractor role activation. ROLE_DEFAULTS
     # entries added per Blocker-F resolution (F-i + Option B). Effective
@@ -238,6 +252,14 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
         for r in RESOURCES if r != "users"
     } | {"users": _grant()},
 }
+
+# v160.3.9.48 — Auditor picks up `audit_view` on `hr_employees` on top of
+# the org-wide view baseline (grants `open`, `view`, and `audit_view`).
+# `reveal_pii`, `edit`, `archive`, `reimport`, `delete` remain False —
+# an auditor reads records + reviews the audit trail, never mutates.
+ROLE_DEFAULTS["auditor"]["hr_employees"] = _grant(
+    open=True, view=True, audit_view=True,
+)
 
 
 async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:

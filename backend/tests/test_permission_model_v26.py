@@ -27,7 +27,10 @@ from permissions import (
 
 def test_approve_in_actions():
     assert "approve" in ACTIONS
-    assert len(ACTIONS) == 8
+    # v160.3.9.48 — ACTIONS extended from 8 to 12 with hr_employees-scoped
+    # `reveal_pii`, `archive`, `reimport`, `audit_view`. Update the count
+    # assertion so this test tracks the current shape.
+    assert len(ACTIONS) == 12
 
 
 def test_new_resources_in_schema():

@@ -28,7 +28,7 @@ CONTR_NO_ORG = {"id": "u-c2", "email": "c2@x", "role_id": "contractor_rep"}
 # ── scope_filter — privileged short-circuit ─────────────────────
 
 @pytest.mark.parametrize("u", [ADMIN, HSEQ, HSEQ_MGR, SUPER])
-@pytest.mark.parametrize("r", ["workers", "contractors", "documents", "notifications", "hr", "certifications"])
+@pytest.mark.parametrize("r", ["workers", "contractors", "documents", "notifications", "hr_employees", "certifications"])
 def test_scope_filter_privileged_returns_empty(u, r):
     assert scope_filter(u, r) == {}
 
@@ -39,7 +39,7 @@ def test_scope_filter_contractor_rep_contractors():
     assert scope_filter(CONTR, "contractors") == {"id": "co-42"}
 
 
-@pytest.mark.parametrize("r", ["workers", "hr", "certifications", "documents"])
+@pytest.mark.parametrize("r", ["workers", "hr_employees", "certifications", "documents"])
 def test_scope_filter_contractor_rep_child_resources(r):
     assert scope_filter(CONTR, r) == {"company_id": "co-42"}
 
@@ -80,7 +80,7 @@ def test_scope_filter_general_user_contractors_no_narrowing():
 
 def test_scope_filter_general_user_hr_fails_closed():
     # HR is admin-only; if this branch ever fires, no PII should leak.
-    assert scope_filter(WORKER, "hr") == {"__scope_no_match__": True}
+    assert scope_filter(WORKER, "hr_employees") == {"__scope_no_match__": True}
 
 
 def test_scope_filter_general_user_certifications_fails_closed():
@@ -142,7 +142,7 @@ def test_can_access_record_notifications_recipient_list_contains_email():
 
 
 def test_can_access_record_hr_and_certifications_fail_closed_for_general_user():
-    assert can_access_record(WORKER, "hr", {"any": "field"}) is False
+    assert can_access_record(WORKER, "hr_employees", {"any": "field"}) is False
     assert can_access_record(WORKER, "certifications", {"any": "field"}) is False
 
 

@@ -99,7 +99,7 @@ def scope_filter(user: dict, resource: str) -> Dict[str, Any]:
         if resource == "contractors":
             # Contractor sees their own contractor record only.
             return {"id": cid}
-        if resource in ("workers", "hr", "certifications", "documents"):
+        if resource in ("workers", "hr_employees", "certifications", "documents"):
             return {"company_id": cid}
         # Any other resource — no narrowing (their role tokens
         # already gate what they can call).
@@ -147,11 +147,12 @@ def scope_filter(user: dict, resource: str) -> Dict[str, Any]:
         # register (matches pre-v28 behaviour — no narrowing).
         return {}
 
-    if resource == "hr":
-        # Reserved. Never wired in prod because hr_employees is
-        # admin-only. Returning _UNSATISFIABLE here means "if
-        # anything ever calls this branch, fail-closed rather than
-        # silently expose PII".
+    if resource == "hr_employees":
+        # v160.3.9.48 — HR register is admin-only via
+        # `require_permission("hr_employees", ...)`. Non-privileged
+        # non-contractor users MUST NOT read any PII, so this branch
+        # fails-closed. Kept parallel to the fail-closed contractor_rep
+        # branch above.
         return _UNSATISFIABLE
 
     if resource == "certifications":
@@ -176,7 +177,7 @@ def can_access_record(user: dict, resource: str, record: Optional[dict]) -> bool
             return False
         if resource == "contractors":
             return record.get("id") == cid
-        if resource in ("workers", "hr", "certifications", "documents"):
+        if resource in ("workers", "hr_employees", "certifications", "documents"):
             return record.get("company_id") == cid
         return True   # generic — role tokens are the gate
 
@@ -196,7 +197,7 @@ def can_access_record(user: dict, resource: str, record: Optional[dict]) -> bool
         )
     if resource == "contractors":
         return True
-    if resource in ("hr", "certifications"):
+    if resource in ("hr_employees", "certifications"):
         # Reserved — fail closed for non-privileged.
         return False
     return True

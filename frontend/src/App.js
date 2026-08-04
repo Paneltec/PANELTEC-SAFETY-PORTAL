@@ -68,6 +68,8 @@ import CacheBusterBanner from '@/components/CacheBusterBanner';
 import SimproImportGuidePage from '@/pages/help/SimproImportGuidePage';
 // v160.3.7q — Program-wide visual schematic
 import ProgramSchematicPage from '@/pages/settings/ProgramSchematicPage';
+// v160.3.9.48 — HR Employees register.
+import HrEmployeesPage from '@/pages/settings/HrEmployeesPage';
 
 // Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
 // at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
@@ -168,6 +170,8 @@ function App() {
               {/* v160.3.9.31-4a — Phase 4a: Roles Admin page. */}
               <Route path="settings/roles-admin" element={<RolesAdmin />} />
               <Route path="settings/workers" element={<Workers />} />
+              {/* v160.3.9.48 — HR Employees register. Gated by `hr_employees.view`. */}
+              <Route path="settings/hr-employees" element={<HrEmployeesPage />} />
               <Route path="settings/form-assignments" element={<FormAssignmentsAdmin />} />
               <Route path="settings/swms-assignments" element={<SwmsAssignmentsAdmin />} />
               <Route path="settings/system" element={<SystemSettings />} />

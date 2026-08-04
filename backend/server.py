@@ -256,6 +256,12 @@ from plant_maintenance import (  # noqa: E402
 )
 api.include_router(plant_maintenance_router)
 api.include_router(plant_maintenance_scoped_router)
+# v160.3.9.48 — HR Employees register (Active + Archived, PII-gated).
+from hr_employees import (  # noqa: E402
+    router as hr_employees_router,
+    ensure_indexes as hr_employees_ensure_indexes,
+)
+api.include_router(hr_employees_router)
 api.include_router(diary_router)
 api.include_router(hazards_router)
 api.include_router(incidents_router)
@@ -677,6 +683,103 @@ async def on_startup():
         await ensure_hr_dedup_index()
     except Exception as e:
         log.warning("HR dedup index setup failed: %s", e)
+
+    # v160.3.9.48 — HR Employees register: indexes + one-shot ingest +
+    # role-token backfill. Marker: `bk_migrations.v160_3_9_48_hr_employees_ingest`.
+    try:
+        await hr_employees_ensure_indexes()
+        marker = await _mongo_db.bk_migrations.find_one(
+            {"_id": "v160_3_9_48_hr_employees_ingest"})
+        if not marker:
+            live_total = await _mongo_db.hr_employees.count_documents(
+                {"deleted_at": None})
+            ingest_stats = {"inserted": 0, "updated": 0,
+                            "unchanged": 0, "security_flags": 0}
+            if live_total == 0:
+                from pathlib import Path as _P
+                src = (_P(__file__).resolve().parent / "scripts" / "data"
+                       / "hr_employees_source.xlsx")
+                if src.exists():
+                    from scripts.import_hr_employees import (
+                        parse_workbook, upsert_rows,
+                        ensure_indexes as _hr_idx,
+                    )
+                    await _hr_idx()
+                    rows, security_flags = parse_workbook(src)
+                    ingest_stats = await upsert_rows(
+                        rows, actor_id="v160_3_9_48_ingest_migration",
+                        security_flags=security_flags)
+                    live_total = await _mongo_db.hr_employees.count_documents(
+                        {"deleted_at": None})
+                    log.info(
+                        "[v160.3.9.48] hr_employees ingest: "
+                        "parsed=%d inserted=%d updated=%d unchanged=%d "
+                        "security_flags=%d live_total=%d",
+                        len(rows), ingest_stats["inserted"],
+                        ingest_stats["updated"], ingest_stats["unchanged"],
+                        ingest_stats["security_flags"], live_total,
+                    )
+                else:
+                    log.warning(
+                        "[v160.3.9.48] hr_employees xlsx missing at %s "
+                        "— ingest skipped, marker still recorded", src)
+            else:
+                log.info(
+                    "[v160.3.9.48] hr_employees already populated "
+                    "(%d rows) — ingest skipped, backfilling role tokens only",
+                    live_total,
+                )
+
+            # Role-token backfill. Admin gets EVERY hr_employees token via
+            # `_all_tokens()` (which iterates ACTIONS × RESOURCES now that
+            # both are extended). hseq_manager gets view+open. Legacy
+            # `auditor` doesn't have a DB doc — it falls back to the
+            # hardcoded ROLE_DEFAULTS which was extended in v48.
+            from roles_catalogue import _tokens_admin, _tokens_hseq_manager
+            admin_tokens = _tokens_admin()
+            hseq_tokens = list(set(_tokens_hseq_manager()) | {
+                "hr_employees.open", "hr_employees.view",
+            })
+            role_updates = {}
+            r_admin = await _mongo_db.roles.update_one(
+                {"role_id": "admin"},
+                {"$set": {"permission_tokens": sorted(set(admin_tokens))}},
+            )
+            role_updates["admin_matched"] = r_admin.matched_count
+            r_hseq = await _mongo_db.roles.update_one(
+                {"role_id": "hseq_manager"},
+                {"$set": {"permission_tokens": sorted(hseq_tokens)}},
+            )
+            role_updates["hseq_manager_matched"] = r_hseq.matched_count
+
+            # Invalidate the in-memory _role_tokens cache so the new
+            # tokens are picked up without a boot restart.
+            try:
+                from permissions import _bust_role_cache
+                _bust_role_cache()
+            except Exception:
+                pass
+
+            await _mongo_db.bk_migrations.insert_one({
+                "_id": "v160_3_9_48_hr_employees_ingest",
+                "at": datetime.now(timezone.utc).isoformat(),
+                "ingest_stats": ingest_stats,
+                "live_total": live_total,
+                "role_updates": role_updates,
+            })
+            log.info(
+                "[v160.3.9.48] role-token backfill complete: %s",
+                role_updates,
+            )
+        else:
+            log.info(
+                "[v160.3.9.48] hr_employees ingest marker present "
+                "— skip (was: inserted=%s security_flags=%s)",
+                (marker.get("ingest_stats") or {}).get("inserted"),
+                (marker.get("ingest_stats") or {}).get("security_flags"),
+            )
+    except Exception as e:
+        log.warning("[v160.3.9.48] hr_employees migration failed: %s", e)
 
     # v160.3.8.4 — Reconcile every org's saved Settings-nav layout
     # against the current registry. Any doc that predates a new nav
