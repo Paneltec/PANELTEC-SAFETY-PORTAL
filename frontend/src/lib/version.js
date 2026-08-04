@@ -591,4 +591,28 @@
 //                  after the react-flow retirement; verified via grep
 //                  no other file imported them).
 // v160.3.9.46 — placeholder marker (pre-schematic session).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.47';
+// v160.3.9.47.1 — Program Schematic visual polish.
+//                  Two changes on top of v47:
+//                    1. Background: vertical linear gradient replaces
+//                       the radial-purple bloom. Top #1E1B4B (deep
+//                       indigo-950), mid #12173A, bottom #0B1220
+//                       (dark navy). Grid pattern retained but darker
+//                       + spaced 40→50 for extra breathing room. Hub
+//                       still carries a soft radial halo (r=320) so it
+//                       remains the visual anchor.
+//                    2. Everything larger. viewBox 1600×1300 → 1800×1500,
+//                       tile 88→128, icon 34→56 (+65%), node label
+//                       11→16 (+45%), cluster label 12→20 (+67%) with
+//                       chip 130×24 → 190×36, hub 260×110 → 320×140
+//                       with title 22→30, sub 11→15. Spoke stroke 2→2.8,
+//                       terminal dot r 6→8.
+//                    Mobile fallback: canvas wrapper now
+//                    `overflow-x-auto` below `md` and the SVG carries
+//                    `min-w-[1100px]` so on narrow viewports users
+//                    scroll horizontally to read icons at their
+//                    natural size rather than seeing them shrink to
+//                    ~12 px. Two hint copies keyed by breakpoint —
+//                    "Scroll horizontally →" on mobile, "Click any node"
+//                    on desktop.
+//                    Palette UNCHANGED (locked).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.47.1';

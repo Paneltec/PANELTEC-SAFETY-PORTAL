@@ -39,8 +39,12 @@ import {
   SCHEMATIC_NODES,
 } from '../../lib/programSchematic';
 
-const TILE = 88;            // icon-tile diameter
-const ICON_SIZE = 34;       // lucide-react size prop
+const TILE = 128;           // icon-tile diameter (v47.1: was 88)
+const ICON_SIZE = 56;       // lucide-react size prop (v47.1: was 34)
+const NODE_LABEL_FONT = 16; // (v47.1: was 11)
+const CLUSTER_LABEL_FONT = 20; // (v47.1: was 12)
+const HUB_TITLE_FONT = 30;  // (v47.1: was 22)
+const HUB_SUB_FONT = 15;    // (v47.1: was 11)
 
 // Bezier control-point helper. Draws a smooth "S"-ish curve from the
 // hub centre to each cluster anchor by pushing the control points 45%
@@ -136,11 +140,11 @@ function SchematicNode({ node, cluster, onClick }) {
       </foreignObject>
       <text
         x={node.x}
-        y={node.y + half + 14}
+        y={node.y + half + 22}
         textAnchor="middle"
         style={{
           fill: '#E2E8F0',
-          fontSize: 11,
+          fontSize: NODE_LABEL_FONT,
           fontWeight: 600,
           fontFamily: 'Inter, system-ui, sans-serif',
           pointerEvents: 'none',
@@ -192,20 +196,29 @@ export default function ProgramSchematicPage() {
       </div>
 
       <div
-        className="relative rounded-2xl overflow-hidden shadow-lg schematic-canvas"
-        style={{ background: '#0B1220', border: '1px solid #1E293B' }}
+        className="relative rounded-2xl overflow-hidden shadow-lg schematic-canvas overflow-x-auto md:overflow-x-visible"
+        style={{ border: '1px solid #1E293B' }}
         data-testid="schematic-canvas"
       >
         <svg
           viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
           preserveAspectRatio="xMidYMid meet"
+          className="min-w-[1100px] md:min-w-0"
           style={{ width: '100%', height: 'auto', display: 'block' }}
         >
           <defs>
-            {/* Radial bloom behind the hub. */}
-            <radialGradient id="hub-bloom" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"  stopColor="#7C3AED" stopOpacity="0.45" />
-              <stop offset="55%" stopColor="#7C3AED" stopOpacity="0.10" />
+            {/* v47.1 — Vertical linear gradient replaces the v47 radial
+                bloom. Top: deep indigo #1E1B4B, bottom: dark navy #0B1220. */}
+            <linearGradient id="canvas-bg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%"   stopColor="#1E1B4B" />
+              <stop offset="55%"  stopColor="#12173A" />
+              <stop offset="100%" stopColor="#0B1220" />
+            </linearGradient>
+            {/* Hub bloom — a soft radial halo hugging the badge only,
+                so the badge still reads as the visual anchor. */}
+            <radialGradient id="hub-halo" cx="50%" cy="50%" r="50%">
+              <stop offset="0%"  stopColor="#7C3AED" stopOpacity="0.55" />
+              <stop offset="55%" stopColor="#7C3AED" stopOpacity="0.12" />
               <stop offset="100%" stopColor="#0B1220" stopOpacity="0" />
             </radialGradient>
             {/* Hub badge gradient — blue to violet. */}
@@ -213,15 +226,18 @@ export default function ProgramSchematicPage() {
               <stop offset="0%"  stopColor="#2C6BFF" />
               <stop offset="100%" stopColor="#8B5CF6" />
             </linearGradient>
-            {/* Faint grid pattern for the "control-panel" vibe. */}
-            <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1E293B" strokeWidth="0.5" />
+            {/* Faint grid pattern — a touch darker than v47 to keep
+                icon contrast crisp against the indigo top of the
+                gradient. */}
+            <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse">
+              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="#1E293B" strokeWidth="0.6" opacity="0.45" />
             </pattern>
           </defs>
 
-          {/* Grid + bloom backdrop. */}
+          {/* Backdrop: vertical gradient, then grid pattern, then hub halo. */}
+          <rect width={CANVAS_W} height={CANVAS_H} fill="url(#canvas-bg)" />
           <rect width={CANVAS_W} height={CANVAS_H} fill="url(#grid)" />
-          <circle cx={hubCentre.x} cy={hubCentre.y} r={520} fill="url(#hub-bloom)" />
+          <circle cx={hubCentre.x} cy={hubCentre.y} r={320} fill="url(#hub-halo)" />
 
           {/* Bezier spokes — hub centre → each cluster anchor. */}
           <g data-testid="schematic-spokes">
@@ -230,19 +246,19 @@ export default function ProgramSchematicPage() {
                 <path
                   d={bezierPath(hubCentre, c.anchor)}
                   stroke={c.color}
-                  strokeWidth={2}
+                  strokeWidth={2.8}
                   fill="none"
                   strokeLinecap="round"
-                  opacity={0.75}
+                  opacity={0.78}
                   data-testid={`schematic-spoke-${c.key}`}
                 />
                 {/* Terminal dot at the cluster anchor. */}
                 <circle
                   cx={c.anchor.x}
                   cy={c.anchor.y}
-                  r={6}
+                  r={8}
                   fill={c.color}
-                  opacity={0.9}
+                  opacity={0.95}
                 />
               </g>
             ))}
@@ -262,9 +278,9 @@ export default function ProgramSchematicPage() {
                       y={sc.y}
                       style={{
                         fill: parent.color,
-                        fontSize: 12,
+                        fontSize: 15,
                         fontWeight: 700,
-                        letterSpacing: 1.5,
+                        letterSpacing: 2,
                         fontFamily: 'Inter, system-ui, sans-serif',
                         textTransform: 'uppercase',
                       }}
@@ -273,14 +289,14 @@ export default function ProgramSchematicPage() {
                     </text>
                     {next && next.parent === sc.parent && (
                       <line
-                        x1={sc.x + 6}
-                        y1={sc.y + 8}
-                        x2={next.x + 6}
-                        y2={next.y - 14}
+                        x1={sc.x + 8}
+                        y1={sc.y + 10}
+                        x2={next.x + 8}
+                        y2={next.y - 18}
                         stroke={parent.color}
-                        strokeWidth={1}
-                        strokeDasharray="3 3"
-                        opacity={0.5}
+                        strokeWidth={1.2}
+                        strokeDasharray="4 4"
+                        opacity={0.55}
                       />
                     )}
                   </g>
@@ -295,25 +311,26 @@ export default function ProgramSchematicPage() {
             {SCHEMATIC_CLUSTERS.map((c) => (
               <g key={c.key}>
                 <rect
-                  x={c.labelPos.x - 65}
-                  y={c.labelPos.y - 14}
-                  width={130}
-                  height={24}
-                  rx={12}
+                  x={c.labelPos.x - 95}
+                  y={c.labelPos.y - 20}
+                  width={190}
+                  height={36}
+                  rx={18}
                   fill={c.color}
                   opacity={0.15}
                   stroke={c.color}
-                  strokeOpacity={0.5}
+                  strokeOpacity={0.55}
+                  strokeWidth={1.2}
                 />
                 <text
                   x={c.labelPos.x}
-                  y={c.labelPos.y + 3}
+                  y={c.labelPos.y + 6}
                   textAnchor="middle"
                   style={{
                     fill: c.color,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    letterSpacing: 1.8,
+                    fontSize: CLUSTER_LABEL_FONT,
+                    fontWeight: 800,
+                    letterSpacing: 3,
                     fontFamily: 'Inter, system-ui, sans-serif',
                     textTransform: 'uppercase',
                   }}
@@ -354,7 +371,7 @@ export default function ProgramSchematicPage() {
               textAnchor="middle"
               style={{
                 fill: '#FFFFFF',
-                fontSize: 22,
+                fontSize: HUB_TITLE_FONT,
                 fontWeight: 800,
                 letterSpacing: 0.5,
                 fontFamily: 'Inter, system-ui, sans-serif',
@@ -364,13 +381,13 @@ export default function ProgramSchematicPage() {
             </text>
             <text
               x={SCHEMATIC_HUB.x + SCHEMATIC_HUB.w / 2}
-              y={SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2 + 22}
+              y={SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2 + 30}
               textAnchor="middle"
               style={{
-                fill: '#FFFFFFAA',
-                fontSize: 11,
+                fill: '#FFFFFFCC',
+                fontSize: HUB_SUB_FONT,
                 fontWeight: 600,
-                letterSpacing: 3,
+                letterSpacing: 4,
                 fontFamily: 'Inter, system-ui, sans-serif',
                 textTransform: 'uppercase',
               }}
@@ -394,7 +411,10 @@ export default function ProgramSchematicPage() {
         `}</style>
       </div>
 
-      <p className="mt-3 text-xs text-slate-500" data-testid="schematic-hint">
+      <p className="mt-3 text-xs text-slate-500 md:hidden" data-testid="schematic-hint-mobile">
+        Scroll horizontally to explore &rarr; &nbsp;·&nbsp; Tap any node to open its module.
+      </p>
+      <p className="mt-3 text-xs text-slate-500 hidden md:block" data-testid="schematic-hint">
         Click any node to open its module. Print (Ctrl + P) for a landscape one-pager.
       </p>
     </div>
