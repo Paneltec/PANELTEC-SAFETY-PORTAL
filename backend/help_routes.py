@@ -33,6 +33,53 @@ from pdf_brand import ORANGE, SLATE, SLATE_INK, SLATE_MUTED, SLATE_BORDER, PAPER
 router = APIRouter(prefix="/help", tags=["help"])
 
 MANUAL_PATH = Path(__file__).parent / "content" / "user_manual.md"
+MANUAL_DIR = Path(__file__).parent / "content" / "manual"
+
+# v57.2 — YAML frontmatter parser (tiny — the frontmatter is a fixed
+# 5-field shape). Kept inline rather than adding a `pyyaml` dep for
+# this one code-path. The composer reads every `NN_slug.md` file in
+# `MANUAL_DIR`, sorts by `order`, and joins their bodies into a single
+# markdown blob that the existing `_load_markdown()` consumer can use
+# unchanged. If the folder is empty (never happens in prod) it falls
+# back to the legacy monolithic `user_manual.md`.
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n?", re.DOTALL)
+
+
+def _parse_frontmatter(text: str) -> tuple[dict, str]:
+    m = _FRONTMATTER_RE.match(text)
+    if not m:
+        return {}, text
+    meta: dict = {}
+    for line in m.group(1).splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        meta[k.strip()] = v.strip()
+    return meta, text[m.end():]
+
+
+def _compose_from_manual_dir() -> tuple[str, float]:
+    """Read every .md file in `MANUAL_DIR`, sort by `order`, and
+    return `(composed_markdown, latest_mtime)`. Missing / malformed
+    files are skipped with a WARN — never fatal."""
+    if not MANUAL_DIR.is_dir():
+        return "", 0.0
+    parts: list[tuple[int, str, float]] = []  # (order, body, mtime)
+    latest = 0.0
+    for path in sorted(MANUAL_DIR.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
+        try:
+            raw = path.read_text(encoding="utf-8")
+            mt = path.stat().st_mtime
+            latest = max(latest, mt)
+            meta, body = _parse_frontmatter(raw)
+            order = int(meta.get("order") or 999)
+            parts.append((order, body.strip(), mt))
+        except Exception:
+            continue
+    parts.sort(key=lambda p: (p[0],))
+    return "\n\n".join(p[1] for p in parts), latest
 # Phase 4.11.5 (paneltec-v130) — colourful platform schematic + user
 # journey diagrams live alongside the markdown so both the browser render
 # and the PDF export can embed them.
@@ -57,7 +104,12 @@ _CACHE: dict = {"mtime": 0.0, "md": None, "pdf": None}
 
 
 def _file_mtime() -> float:
+    """v57.2 — mtime driver honours the folder-based composer."""
     try:
+        if MANUAL_DIR.is_dir():
+            mts = [p.stat().st_mtime for p in MANUAL_DIR.glob("*.md")]
+            if mts:
+                return max(mts)
         return MANUAL_PATH.stat().st_mtime
     except OSError:
         return 0.0
@@ -67,7 +119,8 @@ def _load_markdown() -> str:
     mt = _file_mtime()
     if _CACHE["md"] is not None and _CACHE["mtime"] == mt:
         return _CACHE["md"]
-    md = MANUAL_PATH.read_text(encoding="utf-8")
+    composed, _ = _compose_from_manual_dir()
+    md = composed if composed.strip() else MANUAL_PATH.read_text(encoding="utf-8")
     _CACHE["md"] = md
     _CACHE["pdf"] = None  # invalidate PDF whenever md changes
     _CACHE["mtime"] = mt

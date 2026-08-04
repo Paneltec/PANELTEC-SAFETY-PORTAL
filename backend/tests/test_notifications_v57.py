@@ -21,6 +21,7 @@ import uuid
 from datetime import datetime, timezone
 
 import bcrypt
+import pytest
 import pymongo
 import requests
 from tests.conftest import API, ADMIN_EMAIL, ADMIN_PWD, EPHEMERAL_PWD, _login
@@ -88,6 +89,7 @@ def test_1_unread_count_math():
 
 
 # ── Test 2 — category gating by permission token ──────────────────────
+@pytest.mark.live_db_writes
 def test_2_category_gating_by_permission():
     """A user whose role holds no tokens sees zero items — every
     category is gated behind a `require_permission` check and returns
@@ -97,6 +99,7 @@ def test_2_category_gating_by_permission():
     dbn = os.environ.get("DB_NAME", "paneltec")
     client[dbn].roles.insert_one({
         "id": role_id, "role_id": role_id, "name": role_id,
+        "is_active": True,  # v57.2 — required for _role_tokens() to return the empty set explicitly
         "is_system": False, "auto_created": False, "permission_tokens": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
     })
@@ -115,6 +118,7 @@ def test_2_category_gating_by_permission():
 
 
 # ── Test 3 — read idempotency ────────────────────────────────────────
+@pytest.mark.live_db_writes
 def test_3_read_idempotency():
     token, doc, client = _make_ephemeral_user(role_id="admin")
     try:
@@ -136,6 +140,7 @@ def test_3_read_idempotency():
 
 
 # ── Test 4 — mark-all-read clears unread count ───────────────────────
+@pytest.mark.live_db_writes
 def test_4_mark_all_read_clears_count():
     token, doc, client = _make_ephemeral_user(role_id="admin")
     try:

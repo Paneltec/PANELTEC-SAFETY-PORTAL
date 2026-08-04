@@ -1,3 +1,64 @@
+# 2026-08-04 — v160.3.9.57.2 — v57.1 resumed + shipped
+
+## Piece 0 · Live-DB write guard (`conftest.py`)
+- `pymongo.collection.Collection` write methods (`insert_one`, `insert_many`, `update_one`, `update_many`, `replace_one`, `delete_one`, `delete_many`, `bulk_write`, `find_one_and_update`, `find_one_and_replace`, `find_one_and_delete`) all wrapped at test-import time.
+- Autouse fixture `production_db_guard` checks `@pytest.mark.live_db_writes` on the current test node and flips `_ALLOW_PROD_WRITES` accordingly. Restore on teardown.
+- Unmarked writes on the prod DB now raise `RuntimeError: live-DB-guard: refusing to call ...`.
+- `backend/tests/README_live_db_guard.md` documents the mechanism + escape hatch.
+- Smoke suite `test_live_db_guard_v57_2.py` — 2 tests confirm guard blocks / allows correctly.
+
+## Piece 1 · Notifications bell dropdown (`NotificationsBell.jsx`)
+- Right-anchored ~380px dropdown, `max-height: 60vh` scroll, category grouping (CERTIFICATIONS · 25 / RENEWALS / INTEGRATIONS / APPROVALS pills).
+- Bell badge = `unread_count` (hidden when 0). Overflow → "99+".
+- 60s poll while `document.visibilityState === 'visible'`. Paused on hidden.
+- Row click → optimistic `read: true` + `POST /api/notifications/{id}/read` + `navigate(link)`. Failure reverts.
+- "Mark all as read" footer button when `unread > 0`.
+- Empty state: "You're all caught up — nothing needs attention right now."
+- Verified end-to-end: bell shows badge "16", panel opens with 30 items grouped, click POSTs `/read` and navigates to `/app/settings/certifications`. Screenshot `/tmp/notifications_bell_v57_2.png`.
+
+## Piece 2 · Notifications endpoint unit tests
+- `backend/tests/test_notifications_v57.py` — 5/5 tests pass. Test 2 fixture patched to set `is_active: True` on the empty-token role (required for `_role_tokens()` to return the empty set rather than falling through to the hardcoded defaults). Tests 2/3/4 marked `@pytest.mark.live_db_writes` so they're allowed through the guard.
+
+## Piece 3 · docs/ folder auto-compose migration
+- Legacy `backend/content/user_manual.md` split into `backend/content/manual/NN_<slug>.md` — 22 files (00_index + 21 sections + README).
+- Every section carries YAML frontmatter (`title`, `slug`, `order`, `tags`, `last_updated`).
+- Composer `_compose_from_manual_dir()` in `help_routes.py` reads folder, sorts by `order`, joins bodies. Skips `README.md`. Falls back to legacy monolithic file if folder is empty (never happens in prod).
+- Cache invalidated by `max(mtime of every *.md)`.
+- Manual page + PDF unchanged externally: `GET /api/help/manual.md` → 33 KB / 21 sections, `GET /api/help/manual.pdf` → **13.23 MB (byte-identical to v56 baseline)**.
+- `backend/content/manual/README.md` documents "how to add a section" for future devs.
+
+## Test suite state
+```
+7 passed, 1 warning in 3.75s
+tests/test_live_db_guard_v57_2.py::test_guard_blocks_unmarked_write  PASSED
+tests/test_live_db_guard_v57_2.py::test_guard_allows_marked_write    PASSED
+tests/test_notifications_v57.py::test_1_unread_count_math            PASSED
+tests/test_notifications_v57.py::test_2_category_gating_by_permission PASSED
+tests/test_notifications_v57.py::test_3_read_idempotency             PASSED
+tests/test_notifications_v57.py::test_4_mark_all_read_clears_count   PASSED
+tests/test_notifications_v57.py::test_5_stable_id_hash               PASSED
+```
+
+## Files touched
+- `backend/tests/conftest.py` — live-DB guard (autouse fixture + pymongo patch)
+- `backend/tests/README_live_db_guard.md` — new
+- `backend/tests/test_live_db_guard_v57_2.py` — new (smoke suite)
+- `backend/tests/test_notifications_v57.py` — fixed test 2 + markers on 2/3/4
+- `backend/help_routes.py` — folder composer + mtime fallback
+- `backend/content/manual/` — 22 new files (21 sections + README + index)
+- `backend/content/user_manual.md` — retained as legacy fallback
+- `frontend/src/components/layout/NotificationsBell.jsx` — new
+- `frontend/src/components/layout/AppShell.jsx` — swap `<button data-testid="notifications-bell">` for `<NotificationsBell />`
+- `frontend/src/lib/version.js`, `frontend/public/service-worker.js`, `mobile/src/lib/version.ts` — v160.3.9.57.2 sync bump
+
+## Next Action Items
+- Move the 4 healed `general_user` role assignments through a manual review (`audit@paneltec.com`, `david@appzoola.com`, `pending-activation-fixture@paneltec.com.au`, `admin@paneltec.com`) — confirm those are the intended permanent roles or reassign.
+- Add per-category unread counts to the bell panel header so users see the balance at a glance without expanding groups.
+- Wire the notification `link` field to preserve query params where useful (e.g. `?highlight=<cert_id>` on the certifications page).
+
+---
+
+
 # 2026-08-04 — v160.3.9.57.1 — P0 Users & Permissions crash healed
 
 ## Symptom

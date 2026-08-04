@@ -49,6 +49,7 @@ import { RUNNING_VERSION } from '../../lib/version';
 import { useWorkspace } from '../../lib/workspace';
 import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
+import NotificationsBell from './NotificationsBell';
 import PdfImportModal from '../imports/PdfImportModal';
 import useSessionTimeout from '../../hooks/useSessionTimeout';
 import SessionWarningModal from '../SessionWarningModal';
@@ -351,14 +352,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       </div>
       <div className="flex-1 md:hidden" />
 
-      <button
-        className="relative p-2 rounded-md hover:bg-slate-100 text-slate-500"
-        data-testid="notifications-bell"
-        title={'Notifications\nUnread alerts — expiring certifications, failed syncs, and things needing your attention. Click to open the list (endpoint launching in v54).'}
-        aria-label="Notifications — unread alerts and things needing attention"
-      >
-        <Bell size={18} />
-      </button>
+      <NotificationsBell />
       <OutboxBell />
 
       {/* v160.3.0-adjust-19 — Drag-drop PDF import (admin only). */}

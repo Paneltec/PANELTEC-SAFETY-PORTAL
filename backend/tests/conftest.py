@@ -99,6 +99,88 @@ def _mongo():
     client.close()
 
 
+# =====================================================================
+# v57.2 — Live-DB write guard
+# =====================================================================
+# Rationale: v57.1's Users & Permissions outage was caused by 13 test
+# fixture users leaking into the production `users` collection because
+# earlier pytest iterations errored before their cleanup step ran.
+# This guard intercepts every pymongo write and REJECTS it if the
+# target database name matches the production DB, unless the current
+# test declares an explicit opt-in via `@pytest.mark.live_db_writes`.
+#
+# Escape hatch: `@pytest.mark.live_db_writes` on a test function
+# enables writes for that test only. The test author is responsible
+# for the corresponding cleanup — see backend/tests/README_live_db_guard.md.
+#
+# The guard patches `pymongo.collection.Collection` methods at import
+# time. It has no effect on:
+#   • the running FastAPI backend process (separate PID)
+#   • ephemeral DBs whose name is not the production DB name
+#   • pytest sessions that don't import this conftest
+# =====================================================================
+import pymongo.collection as _pmc
+
+_PROD_DB_NAME = os.environ.get("DB_NAME", "paneltec")
+_ALLOW_PROD_WRITES = False  # flipped True by the fixture below
+
+_GUARDED_WRITE_METHODS = (
+    "insert_one", "insert_many",
+    "update_one", "update_many",
+    "replace_one",
+    "delete_one", "delete_many",
+    "bulk_write",
+    "find_one_and_update", "find_one_and_replace", "find_one_and_delete",
+)
+
+
+def _wrap_write_method(name: str):
+    original = getattr(_pmc.Collection, name)
+
+    def guarded(self, *args, **kwargs):
+        # Only intercept writes on the production DB.
+        if self.database.name == _PROD_DB_NAME and not _ALLOW_PROD_WRITES:
+            raise RuntimeError(
+                f"live-DB-guard: refusing to call "
+                f"Collection.{name}(...) on '{self.database.name}.{self.name}' "
+                f"without the @pytest.mark.live_db_writes opt-in. "
+                f"See backend/tests/README_live_db_guard.md."
+            )
+        return original(self, *args, **kwargs)
+
+    guarded.__name__ = name
+    guarded.__wrapped__ = original  # for introspection / restore
+    setattr(_pmc.Collection, name, guarded)
+
+
+for _name in _GUARDED_WRITE_METHODS:
+    _wrap_write_method(_name)
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "live_db_writes: enable writes to the production DB for this test only. "
+        "The test author is responsible for cleanup. See README_live_db_guard.md.",
+    )
+
+
+@pytest.fixture(autouse=True)
+def production_db_guard(request):
+    """Autouse — checks whether the current test declared the
+    `live_db_writes` marker, flips `_ALLOW_PROD_WRITES` accordingly,
+    and restores on teardown."""
+    global _ALLOW_PROD_WRITES
+    marker = request.node.get_closest_marker("live_db_writes")
+    _ALLOW_PROD_WRITES = bool(marker)
+    try:
+        yield
+    finally:
+        _ALLOW_PROD_WRITES = False
+
+
+
+
 # v160.3.9.36 — Shared session-scope event loop for tests that drive
 # `permissions.py` / `auth.py` async helpers directly via
 # `loop.run_until_complete(...)`. Without a shared loop each test
