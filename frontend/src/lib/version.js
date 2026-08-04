@@ -560,4 +560,4 @@
 //                  cross-contractor writes anywhere" invariant across
 //                  every scoped resource (workers, hr, certifications,
 //                  documents, contractors).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.45';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.46';

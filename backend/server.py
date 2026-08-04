@@ -605,6 +605,20 @@ async def on_startup():
     except Exception as e:
         log.warning("[v45] custom-role token backfill failed: %s", e)
 
+    # v160.3.9.46 — Role hygiene: general_user trim, HSEQ Creator forms.edit,
+    # ephemeral fixture role sweep, empty user_permissions cleanup +
+    # permissions-resolution INFO summary.
+    try:
+        from migrations.v46_role_hygiene import (
+            run_v46_migration, report_permissions_resolution)
+        from db import db as _v46_db
+        r = await run_v46_migration(_v46_db)
+        if r.get("skipped"):
+            log.info("[v46] role hygiene: no-op (marker present)")
+        await report_permissions_resolution(_v46_db)
+    except Exception as e:
+        log.warning("[v46] role hygiene failed: %s", e)
+
     # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
     # rows whose `body_html` contains dangerous markup. Idempotent —
     # bleach is a no-op on already-safe HTML. Marker-guarded so we don't

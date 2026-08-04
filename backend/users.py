@@ -664,15 +664,46 @@ async def disable_user(user_id: str, hard: bool = False,
         raise HTTPException(400, "Can't disable your own account")
     target = await db.users.find_one(
         {"id": user_id, "org_id": actor["org_id"]},
-        {"_id": 0, "role": 1, "status": 1, "deleted_at": 1, "email": 1},
+        {"_id": 0, "role": 1, "role_id": 1, "status": 1, "deleted_at": 1,
+         "email": 1, "name": 1, "is_test": 1, "activation_status": 1},
     )
     if not target:
         raise HTTPException(404, "User not found")
+    # v160.3.9.46 — Test-fixture users can be hard-deleted in a single
+    # click. The two-step (soft then hard) protection stays in place
+    # for real users, but if the target is unambiguously a test row
+    # (name starts with "Pytest Ephemeral" etc., or email matches the
+    # strict test regex, or `is_test=True`), we skip the two-step and
+    # remove the row immediately. Prior behaviour left rows in the UI
+    # forever because a second Delete click was another soft-delete.
+    from migrations.v46_role_hygiene import (
+        _EPHEMERAL_USER_EMAIL_RE, _EPHEMERAL_USER_NAME_RE,
+        _EPHEMERAL_USER_TEST_DOMAINS, _STEPHEN_EXCLUDES,
+    )
+    _email = (target.get("email") or "").lower()
+    _name = target.get("name") or ""
+    _is_ephemeral = (
+        _email not in _STEPHEN_EXCLUDES
+        and (
+            bool(_EPHEMERAL_USER_EMAIL_RE.search(_email))
+            or any(_email.endswith(d) for d in _EPHEMERAL_USER_TEST_DOMAINS)
+            or bool(_EPHEMERAL_USER_NAME_RE.match(_name))
+            or target.get("is_test") is True
+        )
+    )
     # Last-admin guard: refuse to disable the only active admin in the org.
     if target.get("role") == "admin" and target.get("status", "active") == "active":
         remaining = await _other_active_admins_count(actor["org_id"], exclude_user_id=user_id)
         if remaining == 0:
             raise HTTPException(400, "Cannot delete the last active admin in this org")
+    if _is_ephemeral:
+        # Direct hard-delete — one click, test-fixture rows never linger.
+        res = await db.users.delete_one({"id": user_id, "org_id": actor["org_id"]})
+        if res.deleted_count == 0:
+            raise HTTPException(404, "User not found")
+        log.info("users.ephemeral_delete actor=%s target=%s email=%s",
+                 actor["id"], user_id, target.get("email"))
+        return {"ok": True, "hard_deleted": True, "reason": "ephemeral_test_fixture"}
     if hard:
         # Hard-delete = physically remove the row. Only legal when the user
         # is already soft-deleted — forces the admin to make the choice in
