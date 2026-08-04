@@ -459,4 +459,37 @@
 //                  integrations_textmagic, worker_certifications,
 //                  workers, simpro_import_users). Post-v43 the sweep
 //                  is complete — the test reports 0 offenders.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.43.1';
+// v160.3.9.43.2 — Bug fix: "Refresh from Simpro" pill stayed "22d ago"
+//                  after a successful click. Case (a) diagnosis — field
+//                  mismatch. The pill reads `GET /integrations/simpro/
+//                  workers/last-sync`, which is the ZIP-import snapshot
+//                  endpoint (`simpro_zip_import.py::last_sync_marker` →
+//                  latest `worker_import_snapshots` doc by `run_at`).
+//                  `POST /admin/simpro/sync-linked` (v42.3 fix) writes
+//                  only per-user `users.simpro_last_synced_at` fields.
+//                  So the pill was picking up the last ZIP import (July
+//                  12 — 22 days ago) even though the manual sync had
+//                  just run. Two-part fix:
+//                    • Backend: `sync_linked_users` now writes a
+//                      `worker_import_snapshots` row on completion with
+//                      `kind='sync_linked'` + `counts={scanned, changed,
+//                      role_updates, lock_drifts}`. The shared pill
+//                      endpoint returns the latest by `run_at`, so the
+//                      pill now reflects manual syncs immediately.
+//                    • Frontend: the Refresh button's success handler
+//                      calls `await Promise.all([load(), loadLastSync()])`
+//                      instead of `await load()`, so the pill refreshes
+//                      without a full page reload.
+//                  Test coverage: `test_sync_linked_writes_snapshot_v43_2`
+//                  seeds an ephemeral simpro config + one linked user,
+//                  monkey-patches `_fetch_simpro`, calls the handler,
+//                  and asserts a fresh `worker_import_snapshots` row
+//                  exists with `kind='sync_linked'` and `run_at`
+//                  within the current test window.
+//                  Note: this fix only covers the sync-linked path.
+//                  Other Simpro flows (workers ZIP import at
+//                  `integrations_simpro_workers.py` and roles sync at
+//                  `roles_catalogue.py::sync_roles_from_positions`)
+//                  already write to their own snapshot rows or don't
+//                  need to appear in this pill.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.43.2';

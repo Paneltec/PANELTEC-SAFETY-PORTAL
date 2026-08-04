@@ -555,6 +555,26 @@ async def sync_linked_users(
                     "actor_email": user.get("email"),
                     "at": ts,
                 })
+    # v160.3.9.43.2 — Persist a `worker_import_snapshots` row on every
+    # successful Refresh-from-Simpro run so the "Synced X ago" pill on
+    # Settings → Users reflects the manual sync. Prior to this ship the
+    # pill only ever picked up ZIP-import snapshots, so a user could
+    # click Refresh a dozen times and still see the stale ZIP timestamp
+    # (up to 22d old in the bug report). `kind='sync_linked'` marks the
+    # row so downstream consumers can differentiate ZIP vs manual runs.
+    await db.worker_import_snapshots.insert_one({
+        "id": new_id(),
+        "org_id": org_id,
+        "run_at": ts,
+        "triggered_by": user["id"],
+        "kind": "sync_linked",
+        "counts": {
+            "scanned": scanned,
+            "changed": changed,
+            "role_updates": role_updates,
+            "lock_drifts": lock_drifts,
+        },
+    })
     return {"scanned": scanned, "changed": changed,
             "role_updates": role_updates,
             "lock_drifts": lock_drifts,

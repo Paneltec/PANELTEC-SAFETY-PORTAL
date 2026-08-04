@@ -803,7 +803,12 @@ export default function UsersManagement() {
                 try {
                   const { data } = await api.post('/admin/simpro/sync-linked');
                   toast.success(`Synced ${data.scanned} · Updated ${data.changed}`);
-                  await load();
+                  // v160.3.9.43.2 — Also refresh the "Synced X ago" pill.
+                  // Backend now writes a `worker_import_snapshots` row on
+                  // every sync-linked success, so this refetch will pick
+                  // up the fresh timestamp and the stale ZIP-import pill
+                  // updates to "just now" without a page reload.
+                  await Promise.all([load(), loadLastSync()]);
                 } catch (e) {
                   toast.error(apiError(e));
                 } finally {
