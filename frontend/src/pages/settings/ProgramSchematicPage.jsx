@@ -87,13 +87,51 @@ function ClusterLegendPill({ cluster }) {
   );
 }
 
-// Node tile — SVG group so it lives inside the same viewBox coordinate
-// system as the bezier lines. Icon rendered via lucide-react inside a
-// `<foreignObject>` so we still get the crisp lucide stroke set.
-function SchematicNode({ node, cluster, onClick }) {
+// v49.1 → v50 — Labels curl around the outer edge of the circle via
+// `<textPath>`. v50 refinement: multi-word labels on nodes with no
+// row directly below can wrap into a full "coin" (word 1 on the
+// top arc, remaining words on the bottom arc). Nodes with a row
+// below stay single-arc to prevent bottom-arc text colliding with
+// the next row's top-arc text. `hasRowBelow(node)` in
+// `programSchematic.js` drives this decision — pure data lookup,
+// no per-frame work.
+function SchematicNode({ node, cluster, onClick, splitArc }) {
   const Icon = LucideIcons[node.icon] || LucideIcons.Layers;
   const slug = node.id;
   const half = TILE / 2;
+  const arcR = half + 12;
+  const topArcId = `arc-${slug}`;
+  const bottomArcId = `arc-b-${slug}`;
+
+  // Top arc — sweep-flag=1 → clockwise → over the top from 9 to 3.
+  const topArcD =
+    `M ${node.x - arcR} ${node.y} ` +
+    `A ${arcR} ${arcR} 0 0 1 ${node.x + arcR} ${node.y}`;
+  // Bottom arc — sweep-flag=0 → counterclockwise → under the bottom
+  // from 9 to 3. Letters have tops-up + read L→R along the bottom.
+  const bottomArcD =
+    `M ${node.x - arcR} ${node.y} ` +
+    `A ${arcR} ${arcR} 0 0 0 ${node.x + arcR} ${node.y}`;
+
+  // Decide split: 2+ words AND caller says the node has no row below.
+  // We split on the space closest to the middle of the string so the
+  // two halves are roughly balanced (e.g. "Users & Perms" → "Users &"
+  // / "Perms", "Ask Intelligence" → "Ask" / "Intelligence").
+  const parts = (() => {
+    if (!splitArc || !node.label.includes(' ')) return [node.label, null];
+    const s = node.label;
+    const mid = s.length / 2;
+    const idxs = [];
+    for (let i = 0; i < s.length; i++) if (s[i] === ' ') idxs.push(i);
+    let best = idxs[0];
+    let bestDist = Math.abs(mid - best);
+    for (const j of idxs) {
+      const d = Math.abs(mid - j);
+      if (d < bestDist) { best = j; bestDist = d; }
+    }
+    return [s.slice(0, best), s.slice(best + 1)];
+  })();
+
   return (
     <g
       className="schematic-node cursor-pointer"
@@ -101,6 +139,7 @@ function SchematicNode({ node, cluster, onClick }) {
       data-testid={`schematic-node-${slug}`}
       role="button"
       tabIndex={0}
+      aria-label={node.label}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -108,21 +147,15 @@ function SchematicNode({ node, cluster, onClick }) {
         }
       }}
     >
-      {/* Halo ring — subtle glow of the cluster colour */}
       <circle
-        cx={node.x}
-        cy={node.y}
-        r={half - 2}
+        cx={node.x} cy={node.y} r={half - 2}
         fill={`${cluster.color}22`}
         stroke={`${cluster.color}88`}
         strokeWidth={1.5}
         className="transition-all duration-200 group-hover:stroke-2"
       />
-      {/* Inner glass tile */}
       <circle
-        cx={node.x}
-        cy={node.y}
-        r={half - 12}
+        cx={node.x} cy={node.y} r={half - 12}
         fill="#0F172A"
         stroke={cluster.color}
         strokeWidth={1}
@@ -138,20 +171,64 @@ function SchematicNode({ node, cluster, onClick }) {
           <Icon size={ICON_SIZE} strokeWidth={1.8} />
         </div>
       </foreignObject>
+      {/* Top arc + label */}
+      <path
+        id={topArcId} d={topArcD}
+        fill="none" stroke="none"
+        data-testid={`schematic-node-arc-${slug}`}
+      />
       <text
-        x={node.x}
-        y={node.y + half + 22}
-        textAnchor="middle"
+        className="schematic-node-label"
         style={{
-          fill: '#E2E8F0',
+          fill: '#FFFFFFE6',
           fontSize: NODE_LABEL_FONT,
-          fontWeight: 600,
+          fontWeight: 700,
+          letterSpacing: 1,
           fontFamily: 'Inter, system-ui, sans-serif',
           pointerEvents: 'none',
+          filter: `drop-shadow(0 0 4px ${cluster.color}CC)`,
         }}
       >
-        {node.label}
+        <textPath
+          href={`#${topArcId}`}
+          startOffset="50%"
+          textAnchor="middle"
+          data-testid={`schematic-node-textpath-${slug}`}
+        >
+          {parts[0]}
+        </textPath>
       </text>
+      {/* v50 — Optional bottom arc + second half of the label. */}
+      {parts[1] && (
+        <>
+          <path
+            id={bottomArcId} d={bottomArcD}
+            fill="none" stroke="none"
+            data-testid={`schematic-node-arc-b-${slug}`}
+          />
+          <text
+            className="schematic-node-label"
+            style={{
+              fill: '#FFFFFFE6',
+              fontSize: NODE_LABEL_FONT,
+              fontWeight: 700,
+              letterSpacing: 1,
+              fontFamily: 'Inter, system-ui, sans-serif',
+              pointerEvents: 'none',
+              filter: `drop-shadow(0 0 4px ${cluster.color}CC)`,
+            }}
+          >
+            <textPath
+              href={`#${bottomArcId}`}
+              startOffset="50%"
+              textAnchor="middle"
+              data-testid={`schematic-node-textpath-b-${slug}`}
+            >
+              {parts[1]}
+            </textPath>
+          </text>
+        </>
+      )}
     </g>
   );
 }
@@ -179,6 +256,26 @@ export default function ProgramSchematicPage() {
     x: SCHEMATIC_HUB.x + SCHEMATIC_HUB.w / 2,
     y: SCHEMATIC_HUB.y + SCHEMATIC_HUB.h / 2,
   };
+
+  // v50 — Pre-compute which nodes have a row directly below within
+  // the same cluster (any node whose y is greater by 80-260 units).
+  // Nodes WITHOUT a row below are safe candidates for the split-arc
+  // "coin" treatment (word 1 on top arc, word 2 on bottom arc)
+  // because their bottom-arc text can't collide with a next-row's
+  // top-arc text.
+  const canSplitArc = React.useMemo(() => {
+    const set = new Set();
+    for (const n of SCHEMATIC_NODES) {
+      const hasBelow = SCHEMATIC_NODES.some(
+        (m) => m.cluster === n.cluster
+          && m.id !== n.id
+          && m.y > n.y + 60
+          && m.y < n.y + 260,
+      );
+      if (!hasBelow) set.add(n.id);
+    }
+    return set;
+  }, []);
 
   return (
     <div className="max-w-[1600px] mx-auto pb-16" data-testid="program-schematic-page">
@@ -349,12 +446,69 @@ export default function ProgramSchematicPage() {
                 node={n}
                 cluster={clusterByKey[n.cluster]}
                 onClick={() => handleNodeClick(n)}
+                splitArc={canSplitArc.has(n.id)}
               />
             ))}
           </g>
 
-          {/* Central hub badge — drawn LAST so it sits above the spokes. */}
+          {/* Central hub badge — drawn LAST so it sits above the spokes.
+              v49.1 — Add two concentric decorative text rings around
+              the badge so the hub becomes a proper visual centrepiece.
+              Outer ring: repeating brand wordmark. Inner ring: subtitle
+              in a smaller size. Both are pure decoration; the actual
+              readable hub title stays on the rectangular badge. */}
           <g data-testid="schematic-hub">
+            {/* v49.1 — Decorative outer text ring, radius 210. */}
+            <defs>
+              <path
+                id="hub-ring-outer"
+                d={
+                  `M ${hubCentre.x - 210} ${hubCentre.y} ` +
+                  `A 210 210 0 1 1 ${hubCentre.x + 210} ${hubCentre.y} ` +
+                  `A 210 210 0 1 1 ${hubCentre.x - 210} ${hubCentre.y}`
+                }
+                fill="none"
+              />
+              <path
+                id="hub-ring-inner"
+                d={
+                  `M ${hubCentre.x - 180} ${hubCentre.y} ` +
+                  `A 180 180 0 1 1 ${hubCentre.x + 180} ${hubCentre.y} ` +
+                  `A 180 180 0 1 1 ${hubCentre.x - 180} ${hubCentre.y}`
+                }
+                fill="none"
+              />
+            </defs>
+            <text
+              style={{
+                fill: '#FFFFFF55',
+                fontSize: 15,
+                fontWeight: 700,
+                letterSpacing: 8,
+                fontFamily: 'Inter, system-ui, sans-serif',
+                pointerEvents: 'none',
+              }}
+              data-testid="schematic-hub-outer-ring"
+            >
+              <textPath href="#hub-ring-outer" startOffset="0%">
+                · PANELTEC CIVIL · CONTROL PANEL · PANELTEC CIVIL · CONTROL PANEL · PANELTEC CIVIL · CONTROL PANEL ·
+              </textPath>
+            </text>
+            <text
+              style={{
+                fill: '#8B5CF677',
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: 5,
+                fontFamily: 'Inter, system-ui, sans-serif',
+                pointerEvents: 'none',
+              }}
+              data-testid="schematic-hub-inner-ring"
+            >
+              <textPath href="#hub-ring-inner" startOffset="0%">
+                · overview · capture · compliance · register · settings · integrations · overview · capture · compliance · register · settings · integrations ·
+              </textPath>
+            </text>
             <rect
               x={SCHEMATIC_HUB.x}
               y={SCHEMATIC_HUB.y}
@@ -404,6 +558,10 @@ export default function ProgramSchematicPage() {
           .schematic-node { transition: transform 200ms ease; transform-box: fill-box; transform-origin: center; }
           .schematic-node:hover { transform: scale(1.06); }
           .schematic-node:focus { outline: none; }
+          /* v49.1 — hover ripple on the arced label: subtle letter-spacing
+             breathe + opacity punch. Pure CSS, no JS overhead. */
+          .schematic-node .schematic-node-label { transition: letter-spacing 260ms ease, opacity 260ms ease; }
+          .schematic-node:hover .schematic-node-label { letter-spacing: 1.5px; opacity: 1; }
           @media print {
             @page { size: A3 landscape; margin: 8mm; }
             .schematic-canvas { break-inside: avoid; border: 0 !important; box-shadow: none !important; }

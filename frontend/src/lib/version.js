@@ -707,4 +707,73 @@
 //                     with a toast "Found via ABN Lookup" or "Found via
 //                     OpenStreetMap"; friendly warn on empty result.
 //                     Secrets NEVER logged.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.49';
+// v160.3.9.49.1 — Program Schematic label + hub polish.
+//                    - Node labels moved from flat text below the icon
+//                      circle onto an invisible top-arc `<path>` via
+//                      `<textPath>`. Arc radius `TILE/2 + 12`. Every
+//                      label now hugs the outer edge of its circle
+//                      (12-o'clock centred, reads left-to-right around
+//                      the top half). Solves the v47.1 collision where
+//                      adjacent circles' flat labels overlapped.
+//                    - Label styling: font-weight 700, letter-spacing
+//                      0.5, `filter: drop-shadow(0 0 4px <cluster>CC)`
+//                      so each cluster's tint glows softly behind its
+//                      own labels (cluster identity read at a glance).
+//                    - Central hub badge now sits inside TWO concentric
+//                      decorative text rings (outer r=210, inner r=180)
+//                      carrying repeating brand wordmarks — the hub
+//                      becomes a proper visual centrepiece per the
+//                      user's brief.
+//                    - Hover ripple: pure-CSS letter-spacing breathe
+//                      on the arced label (0.5 → 1.5 px over 260 ms)
+//                      + opacity punch to full. Zero JS overhead.
+//                    - "Current-route glow" was in-scope but dropped:
+//                      would need a Router-wide `sessionStorage`
+//                      writer to survive SPA navigation, and the
+//                      schematic's primary use is standalone — value
+//                      didn't justify the cross-file wire-up. Kept
+//                      documented for a future pass.
+//                    - No layout, palette, cluster, or route changes.
+//                    - Keyboard focus + `aria-label` preserved on every
+//                      node (SchematicNode now sets `aria-label={node.label}`
+//                      on the outer group).
+// v160.3.9.51 — Two frontend polishes shipped together.
+//
+//   A) Program Schematic (v50 slice).
+//      Split-arc labels for multi-word node names in "bottom-row"
+//      positions. `SchematicNode` now receives a `splitArc` prop
+//      driven by a pre-computed `canSplitArc` Set: a node qualifies
+//      when NO sibling in the same cluster sits within 60..260 units
+//      below it. Qualifying 2-word labels split on the space closest
+//      to the middle of the string (balanced halves) and render as
+//      word 1 on the top arc (sweep-1 → over the top, letters upright)
+//      + word 2 on the bottom arc (sweep-0 → under the bottom, letters
+//      still upright, reads L→R). Non-qualifying nodes stay on
+//      top-arc only so their bottom-arc text can't collide with the
+//      next-row's top-arc text. Letter-spacing bumped 0.5 → 1 for a
+//      more "hugged" typographic feel.
+//
+//   B) User Manual search (v51 slice — bug fix).
+//      Previously typing "hr employees" did nothing because
+//      `highlight()` treated the query as a single literal regex and
+//      no section-level filter existed. Rewrite:
+//        · `highlight()` now tokenises on whitespace and wraps EVERY
+//          matching token in `<mark>` (case-insensitive, escape-safe).
+//          "hr employees" now highlights both "HR" and "Employees"
+//          wherever they appear in title or body.
+//        · New `sectionMatchesQuery()` AND-matches every whitespace
+//          token against the section's title + body markdown.
+//        · Debounced query (150 ms) drives the filter so keystrokes
+//          stay snappy across 17 sections.
+//        · Non-matching sections hidden. "Jump to" chips filter to
+//          match. Filter summary below the toolbar reads
+//          "N sections match "<query>" · PDF export always includes
+//          the full manual." Empty state reads "No sections match
+//          "<query>". Try a shorter term." (soft orange).
+//        · Section numbering preserved via `sections.indexOf()` so a
+//          filtered result for "HR Employees" still reads as its
+//          canonical section number.
+//        · `onDownload()` unchanged — PDF export continues to hit
+//          `/help/manual.pdf` server-side, so the current on-screen
+//          filter never leaks into the exported document.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.51';

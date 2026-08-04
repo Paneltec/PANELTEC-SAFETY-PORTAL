@@ -41,9 +41,17 @@ function slugify(s = '') {
 
 // Highlight matches while walking children. Only string leaves get
 // wrapped in <mark>, so React nodes aren't mangled.
+// v51 — multi-token AND-match. `highlight("HR Employees", "hr employees")`
+// now wraps BOTH "HR" and "Employees" via a per-token regex loop; the
+// v50 single-regex version couldn't match tokens separated by other
+// text.
 function highlight(children, query) {
-  if (!query) return children;
-  const rx = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  if (!query || !query.trim()) return children;
+  const tokens = query.trim().split(/\s+/)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .filter(Boolean);
+  if (!tokens.length) return children;
+  const rx = new RegExp(`(${tokens.join('|')})`, 'gi');
   const walk = (node) => {
     if (typeof node !== 'string') return node;
     const parts = node.split(rx);
@@ -56,6 +64,17 @@ function highlight(children, query) {
   return Array.isArray(children)
     ? children.map((c, i) => <React.Fragment key={i}>{walk(c)}</React.Fragment>)
     : walk(children);
+}
+
+// v51 — AND-match test: section matches only when EVERY whitespace
+// token in the query appears (case-insensitively) somewhere in the
+// section's title or body markdown. Used by the search filter to hide
+// non-matching sections + chips.
+function sectionMatchesQuery(section, query) {
+  if (!query || !query.trim()) return true;
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = `${section.title} ${section.body}`.toLowerCase();
+  return tokens.every((t) => haystack.includes(t));
 }
 
 // Split raw markdown at `## ` boundaries. Everything before the
@@ -113,6 +132,15 @@ export default function UserManual() {
   const [md, setMd]           = useState('');
   const [loading, setLoading] = useState(true);
   const [query, setQuery]     = useState('');
+  // v51 — debounced query (150 ms) drives the filter to keep typing
+  // smooth even on 17-section content trees. Highlight callbacks
+  // still fire on the raw `query` so the mark-wrap happens in step
+  // with keystrokes; filtering just waits a beat.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 150);
+    return () => clearTimeout(t);
+  }, [query]);
   const contentRef = useRef(null);
 
   useEffect(() => {
@@ -128,6 +156,21 @@ export default function UserManual() {
 
   const { preamble, sections } = useMemo(() => splitSections(md), [md]);
 
+  // v51 — Filter sections by AND-matching every whitespace token in
+  // the debounced query against title+body. `sections` remains
+  // authoritative for the PDF export (Download PDF always prints the
+  // full manual regardless of the current search); `visibleSections`
+  // drives the visible cards + toc chips + summary line.
+  const visibleSections = useMemo(
+    () => sections.filter((s) => sectionMatchesQuery(s, debouncedQuery)),
+    [sections, debouncedQuery],
+  );
+  const isFiltering = Boolean(debouncedQuery && debouncedQuery.trim());
+  const visibleSlugs = useMemo(
+    () => new Set(visibleSections.map((s) => s.slug)),
+    [visibleSections],
+  );
+
   // Scroll to the first match after a query change.
   useEffect(() => {
     if (!query || !contentRef.current) return;
@@ -137,18 +180,19 @@ export default function UserManual() {
 
   // react-markdown component overrides. NOTE: only in-card renderers
   // — the outer page title / preamble use plain <h1>/<p> in the layout.
+  // v51 — highlight uses `debouncedQuery` so body mark-wrapping fires
+  // in step with the filter (150ms debounce) rather than on every
+  // keystroke. Feels snappier on 17-section content trees.
   const components = useMemo(() => ({
     h3: ({ children, ...p }) => {
       const text = Array.isArray(children) ? children.join('') : String(children ?? '');
       const id = slugify(text);
-      return <h3 {...p} id={id}>{highlight(text, query)}</h3>;
+      return <h3 {...p} id={id}>{highlight(text, debouncedQuery)}</h3>;
     },
-    // Everything below leaves the DOM element untouched so
-    // UserManual.module.css can style via `.card h3`, `.card ul` etc.
-    p:  ({ children, ...p }) => <p {...p}>{highlight(children, query)}</p>,
-    li: ({ children, ...p }) => <li {...p}>{highlight(children, query)}</li>,
-    strong: ({ children }) => <strong>{highlight(children, query)}</strong>,
-    em: ({ children }) => <em>{highlight(children, query)}</em>,
+    p:  ({ children, ...p }) => <p {...p}>{highlight(children, debouncedQuery)}</p>,
+    li: ({ children, ...p }) => <li {...p}>{highlight(children, debouncedQuery)}</li>,
+    strong: ({ children }) => <strong>{highlight(children, debouncedQuery)}</strong>,
+    em: ({ children }) => <em>{highlight(children, debouncedQuery)}</em>,
     code: ({ inline, children, ...p }) =>
       inline
         ? <code {...p}>{children}</code>
@@ -177,7 +221,7 @@ export default function UserManual() {
         dataTestId={src?.includes('/schematics/') ? `manual-schematic-${(src.split('/').pop() || '').replace(/\.png$/, '')}` : undefined}
       />
     ),
-  }), [query]);
+  }), [debouncedQuery]);
 
   const onDownload = async () => {
     try {
@@ -204,16 +248,18 @@ export default function UserManual() {
         {sections.length > 0 && (
           <div className={styles.tocBar} data-testid="manual-toc-bar">
             <span className={styles.tocLabel}>Jump to</span>
-            {sections.map((s, i) => (
-              <a
-                key={s.slug}
-                href={`#${s.slug}`}
-                className={styles.tocChip}
-                data-testid={`manual-toc-${s.slug}`}
-              >
-                {i + 1}. {s.title}
-              </a>
-            ))}
+            {sections
+              .filter((s) => !isFiltering || visibleSlugs.has(s.slug))
+              .map((s) => (
+                <a
+                  key={s.slug}
+                  href={`#${s.slug}`}
+                  className={styles.tocChip}
+                  data-testid={`manual-toc-${s.slug}`}
+                >
+                  {sections.indexOf(s) + 1}. {s.title}
+                </a>
+              ))}
             {/* v160.3.9.2 — Feature Index now opens the manual, so
                 the chip reads as an in-page anchor rather than a
                 jump-to-bottom. */}
@@ -258,6 +304,35 @@ export default function UserManual() {
         </button>
       </div>
 
+      {/* v51 — Filter summary. Only rendered when the search field is
+          non-empty; keeps the toolbar quiet in the default state. */}
+      {isFiltering && (
+        <div
+          className={styles.searchSummary}
+          data-testid="manual-search-summary"
+          style={{
+            margin: '0 0 12px', fontSize: 13, color: '#5A554D',
+            display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+          }}
+        >
+          {visibleSections.length > 0 ? (
+            <>
+              <span data-testid="manual-search-count">
+                {visibleSections.length} section{visibleSections.length === 1 ? '' : 's'} match “{debouncedQuery}”
+              </span>
+              <span aria-hidden style={{ opacity: 0.4 }}>·</span>
+              <span style={{ color: '#8B857A' }}>
+                PDF export always includes the full manual.
+              </span>
+            </>
+          ) : (
+            <span data-testid="manual-search-empty" style={{ color: '#B84F1E' }}>
+              No sections match “{debouncedQuery}”. Try a shorter term.
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Preamble ribbon */}
       {preamble && (
         <div className={styles.preamble} data-testid="manual-preamble">
@@ -278,27 +353,29 @@ export default function UserManual() {
             accent={{ key: 'orange', ink: '#E9782E', wash: '#FBE6CE' }}
             query={query}
           />
-          {sections.map((s, i) => {
-            // v160.3.8.3 — Rotate accent colour across all 17 cards
-            // by deterministic modulo. CSS custom properties pipe
-            // the ink/wash into `.pill` and `.card::before` inside
-            // UserManual.module.css, so the stylesheet stays static.
-            const accent = accentForIndex(i);
-            return (
-              <ManualSectionCard
-                key={s.slug}
-                number={i + 1}
-                title={highlight(s.title, query)}
-                icon={s.icon}
-                slug={s.slug}
-                accent={accent}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-                  {s.body}
-                </ReactMarkdown>
-              </ManualSectionCard>
-            );
-          })}
+          {sections
+            .filter((s) => !isFiltering || visibleSlugs.has(s.slug))
+            .map((s) => {
+              // Original index preserved so numbering stays stable
+              // across filter states (e.g. "5. HR Employees" still
+              // reads as 5 even when it's the only visible card).
+              const originalIdx = sections.indexOf(s);
+              const accent = accentForIndex(originalIdx);
+              return (
+                <ManualSectionCard
+                  key={s.slug}
+                  number={originalIdx + 1}
+                  title={highlight(s.title, debouncedQuery)}
+                  icon={s.icon}
+                  slug={s.slug}
+                  accent={accent}
+                >
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+                    {s.body}
+                  </ReactMarkdown>
+                </ManualSectionCard>
+              );
+            })}
           {/* v160.3.9.2 — Feature Index moved to the top; see the
               opening `<FeatureIndexCard>` above sections.map. */}
         </div>
