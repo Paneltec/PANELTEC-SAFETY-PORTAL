@@ -51,6 +51,8 @@ import { PermissionsProvider, useCan } from '../../lib/permissions';
 import OutboxBell from './OutboxBell';
 import NotificationsBell from './NotificationsBell';
 import PdfImportModal from '../imports/PdfImportModal';
+// v160.3.9.58.1 — Persistent "bulk-import in progress" pill.
+import { BulkImportPill } from '../../pages/prestarts/BulkImport/BulkImportPill';
 import useSessionTimeout from '../../hooks/useSessionTimeout';
 import SessionWarningModal from '../SessionWarningModal';
 import {
@@ -70,6 +72,12 @@ const NAV = [
   { section: 'Capture', items: [
     { to: '/app/swms', label: 'AI SWMS', icon: DocumentText24Regular, iconActive: DocumentText24Filled, testid: 'nav-swms', resource: 'swms', pastel: 'mint' },
     { to: '/app/pre-starts', label: 'Daily Pre-Starts', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-pre-starts', resource: 'pre_starts', pastel: 'sky' },
+    // v160.3.9.58.1 — Bulk import route (URL → dry-run → approve). Distinct from
+    // the drag/drop `Import PDFs` action below — that stays for one-off uploads.
+    // Chose sidebar entry (over a page button on PreStarts) because this is a
+    // first-class capture flow, not a hidden action. Gated on `pre_starts.edit`
+    // to match backend `_WRITE_ROLES` (admin / manager / hseq_lead).
+    { to: '/app/pre-starts/bulk-import', label: 'Bulk Import from URL', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-pre-starts-bulk-import', requiresCan: ['pre_starts', 'edit'], pastel: 'peach' },
     { to: '/app/site-diary', label: 'Site Diary', icon: Notebook24Regular, iconActive: Notebook24Filled, testid: 'nav-site-diary', resource: 'site_diary', pastel: 'butter' },
     { to: '/app/hazards', label: 'Hazard Reports', icon: Warning24Regular, iconActive: Warning24Filled, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
     { to: '/app/incidents', label: 'Incident Reports', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
@@ -354,6 +362,8 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 
       <NotificationsBell />
       <OutboxBell />
+      {/* v160.3.9.58.1 — persistent pill for in-flight bulk imports. */}
+      <BulkImportPill />
 
       {/* v160.3.0-adjust-19 — Drag-drop PDF import (admin only). */}
       {canImport && (

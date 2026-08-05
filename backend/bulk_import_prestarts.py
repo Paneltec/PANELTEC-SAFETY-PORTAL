@@ -820,6 +820,28 @@ class ApproveBody(BaseModel):
 
 # ────────────────── Endpoints ──────────────────
 
+# ────────────────── v58.1 test fixture ──────────────────
+#
+# Publicly served small ZIP for smoke-testing the wizard without
+# pointing it at real customer data. Gated by `ENABLE_TEST_FIXTURES=on`
+# env (default `on`) so prod deployments can flip it off.
+
+_FIXTURE_PATH = os.path.join(os.path.dirname(__file__), "fixtures",
+                             "prestart-sample.zip")
+
+
+@router.api_route("/fixture/prestart-sample.zip", methods=["GET", "HEAD"],
+                  include_in_schema=False)
+async def fixture_zip():
+    from fastapi.responses import FileResponse
+    if os.environ.get("ENABLE_TEST_FIXTURES", "on").lower() != "on":
+        raise HTTPException(404, "test fixtures disabled")
+    if not os.path.exists(_FIXTURE_PATH):
+        raise HTTPException(404, "fixture missing")
+    return FileResponse(_FIXTURE_PATH, media_type="application/zip",
+                        filename="prestart-sample.zip")
+
+
 @router.post("/init", status_code=201)
 async def init_job(body: InitBody, user: dict = Depends(get_current_user)):
     _require_admin(user)

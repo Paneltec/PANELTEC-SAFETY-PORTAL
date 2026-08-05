@@ -60,6 +60,15 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         date_to: Optional[str] = Query(None),
         scope: Optional[str] = Query(None, description="`me` = own records only, `team` = org-wide (needs team_view)"),
         limit: int = Query(200, ge=1, le=500),
+        # v160.3.9.58.1 — filters used by the Bulk-Import wizard's
+        # deep-links. `bulk_import_id` narrows the list to records
+        # committed by one import job; `needs_review` shows only rows
+        # whose worker fuzzy-match returned nothing (soft-fail path).
+        # Both only apply to the mirrored `form_submissions` slice —
+        # legacy `pre_starts` rows never carry this metadata so they
+        # simply drop out when either filter is set.
+        bulk_import_id: Optional[str] = Query(None),
+        needs_review: Optional[int] = Query(None),
         user: dict = Depends(require_permission(resource, "view")),
     ):
         q = _scoped(user, workspace_id)
@@ -81,7 +90,14 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
             if date_to:
                 rng["$lte"] = date_to
             q["date"] = rng
-        docs = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
+        # v160.3.9.58.1 — When wizard filters are active, the legacy
+        # `pre_starts` (etc.) collection can NEVER match — those rows
+        # don't carry bulk-import metadata. Skip the base query to avoid
+        # noise and keep the response deterministic.
+        if bulk_import_id or needs_review:
+            docs = []
+        else:
+            docs = await db[collection].find(q, {"_id": 0}).sort("created_at", -1).to_list(limit)
 
         # v160.2.5a — union in matching `form_submissions` (phone-filled
         # forms). Non-destructive — legacy rows keep priority; merged
@@ -107,6 +123,21 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                     **({"$gte": date_from} if date_from else {}),
                     **({"$lte": date_to} if date_to else {}),
                 }
+            # v160.3.9.58.1 — bulk-import wizard filters.
+            if bulk_import_id:
+                mq["metadata.job_id"] = bulk_import_id
+            if needs_review:
+                # Rows without a resolved worker land in the review queue.
+                # `needs_review=True` is stamped by the extractor when
+                # the fuzzy-match returns nothing. Match either form of
+                # the flag so legacy rows that only carry a null id
+                # still surface.
+                mq["$and"] = mq.get("$and", []) + [{
+                    "$or": [
+                        {"metadata.worker_match.needs_review": True},
+                        {"metadata.worker_match.id": None},
+                    ],
+                }]
             mirrored = await db.form_submissions.find(mq, {"_id": 0}).sort(
                 "submitted_at", -1).to_list(limit)
             # v160.2.9-delete — Fill in `template_name_snapshot` from the

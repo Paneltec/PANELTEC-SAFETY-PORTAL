@@ -15,6 +15,8 @@ import { WorkspaceProvider } from '@/lib/workspace';
 
 import SwmsList, { SwmsNew, SwmsDetail } from '@/pages/Swms';
 import PreStartsList, { PreStartNew } from '@/pages/PreStarts';
+// v160.3.9.58.1 — Bulk-import Pre-Starts wizard (4-step, URL-driven).
+import BulkImportWizard from '@/pages/prestarts/BulkImport/BulkImportWizard';
 import SiteDiaryList, { SiteDiaryNew } from '@/pages/SiteDiary';
 import HazardsList, { HazardNew } from '@/pages/Hazards';
 import IncidentsList, { IncidentNew } from '@/pages/Incidents';
@@ -119,6 +121,9 @@ function App() {
 
               <Route path="pre-starts" element={<PreStartsList />} />
               <Route path="pre-starts/new" element={<PreStartNew />} />
+              {/* v160.3.9.58.1 — bulk-import wizard route. Gated by
+                  `pre_starts.edit` (matches backend `_WRITE_ROLES`). */}
+              <Route path="pre-starts/bulk-import" element={<BulkImportWizard />} />
 
               <Route path="site-diary" element={<SiteDiaryList />} />
               <Route path="site-diary/new" element={<SiteDiaryNew />} />
