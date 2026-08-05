@@ -200,8 +200,11 @@ class _InMemoryCollection:
 
 class TestWatchdog:
     def test_fails_stuck_downloading_job(self, monkeypatch):
+        # v58.0.1 note: `extracting` now uses its own longer ceiling
+        # (`EXTRACT_TIMEOUT_MIN`, default 30 min), so we age both rows
+        # past THAT cap to keep this legacy smoke test meaningful.
         old = (datetime.now(timezone.utc)
-               - timedelta(minutes=bip.DOWNLOAD_TIMEOUT_MIN + 5)).isoformat()
+               - timedelta(minutes=bip.EXTRACT_TIMEOUT_MIN + 5)).isoformat()
         fresh = datetime.now(timezone.utc).isoformat()
         jobs = _InMemoryCollection([
             {"id": "old-download", "state": "downloading", "started_at": old},
