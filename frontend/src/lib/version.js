@@ -900,4 +900,4 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.2';

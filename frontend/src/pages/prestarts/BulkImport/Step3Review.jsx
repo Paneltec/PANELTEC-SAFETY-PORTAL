@@ -21,7 +21,11 @@ export function Step3Review({ jobId, job, approving, setApproving, onApproved, o
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
-  const [skipFailedVision, setSkipFailedVision] = useState(true);
+  // v58.2 — default OFF ("import everything"). Failed-vision rows land
+  // in the review queue with the raw PDF attached (via GridFS) so a
+  // reviewer can triage them later. Operators can flip this ON to
+  // skip failed rows entirely (legacy pre-v58.2 behaviour).
+  const [skipFailedVision, setSkipFailedVision] = useState(false);
   const [attachNothing, setAttachNothing] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -45,7 +49,14 @@ export function Step3Review({ jobId, job, approving, setApproving, onApproved, o
   const doApprove = async () => {
     setApproving(true);
     try {
-      await api.post(`/pre-starts/bulk-import/${jobId}/approve`, { approve: true });
+      await api.post(`/pre-starts/bulk-import/${jobId}/approve`, {
+        approve: true,
+        // v58.2 — when the operator LEAVES the skip toggle OFF (default),
+        // we want failed-vision rows to also land in `form_submissions`
+        // with `needs_review=True`. Backend defaults `include_failed_rows`
+        // to True but we send it explicitly so behaviour is deterministic.
+        include_failed_rows: !skipFailedVision,
+      });
       toast.success('Import approved — committing records now.');
       onApproved?.();
     } catch (e) {
@@ -103,13 +114,22 @@ export function Step3Review({ jobId, job, approving, setApproving, onApproved, o
 
       {/* Bulk-action controls */}
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-3">
-        <label className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer">
+        <label className="flex items-start gap-3 text-sm text-slate-800 cursor-pointer">
           <input type="checkbox"
                  checked={skipFailedVision}
                  onChange={(e) => setSkipFailedVision(e.target.checked)}
                  data-testid="wizard-skip-failed-checkbox"
-                 className="w-4 h-4 rounded border-slate-300" />
-          <span>Skip <b>{counts.visionFailed}</b> vision-failed rows (won&rsquo;t be imported)</span>
+                 className="w-4 h-4 rounded border-slate-300 mt-0.5" />
+          <span className="flex-1">
+            <span>Skip <b>{counts.visionFailed}</b> vision-failed rows (won&rsquo;t be imported)</span>
+            <span className="block text-xs text-slate-500 mt-1 font-normal leading-relaxed"
+                  data-testid="wizard-skip-failed-subtext">
+              By default, <b>all rows import</b> — including those where AI
+              extraction failed. Failed rows land in the Review Queue with
+              the raw PDF attached so a reviewer can open them. Toggle ON
+              to skip them entirely.
+            </span>
+          </span>
         </label>
         <label className="flex items-center gap-3 text-sm text-slate-800 cursor-pointer">
           <input type="checkbox"

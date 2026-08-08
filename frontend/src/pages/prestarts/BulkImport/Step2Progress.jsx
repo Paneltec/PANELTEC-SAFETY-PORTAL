@@ -29,6 +29,10 @@ export function Step2Progress({ job, error, onRetry }) {
   const cachedHits = progress.cached_hits || 0;
   const failed = progress.failed || 0;
   const estimatedCost = Number(progress.estimated_cost_usd || 0);
+  // v58.2 — Show a friendly "this will take a while" banner once we
+  // know the archive is big. Threshold matches the real-world backfill
+  // scale (multi-thousand PDF archives).
+  const isLargeImport = (total || 0) > 1000;
 
   // Simple rate-based ETA: extracted / (now - stage_started_at) seconds.
   const etaMinutes = useMemo(() => {
@@ -47,6 +51,20 @@ export function Step2Progress({ job, error, onRetry }) {
 
   return (
     <div className="space-y-6" data-testid="wizard-step2-progress">
+      {/* v58.2 — Large-import banner. Only renders once we know the
+          archive is big; keeps the small-import UX clean. */}
+      {isLargeImport && (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 flex items-start gap-3"
+             data-testid="wizard-large-import-banner">
+          <Sparkles className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-900 leading-relaxed">
+            <b>Large import — this may take up to 90 minutes.</b> You can
+            safely close this tab and return later; the import continues
+            in the background. Track progress via the pill in the top
+            bar or come back to this page any time.
+          </div>
+        </div>
+      )}
       {/* Stage stepper */}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="grid grid-cols-4 gap-3">

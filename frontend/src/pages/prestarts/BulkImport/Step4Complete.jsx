@@ -56,6 +56,9 @@ function CompleteCard({ job, jobId, onReset }) {
     ? Math.max(extracted - (progress.matched || 0), 0)
     : 0;
   const failed = progress.failed || 0;
+  // v58.2 — For big backfills, nudge the operator to schedule review as
+  // a separate task rather than trying to triage 10 000 rows in one sit.
+  const isLargeImport = extracted > 1000;
   return (
     <div className="space-y-6" data-testid="wizard-step4-complete">
       <div className="rounded-2xl border border-emerald-300 bg-emerald-50 p-6 shadow-sm">
@@ -71,6 +74,19 @@ function CompleteCard({ job, jobId, onReset }) {
           </div>
         </div>
       </div>
+
+      {isLargeImport && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex items-start gap-3"
+             data-testid="wizard-step4-large-hint">
+          <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+          <div className="text-sm text-amber-900 leading-relaxed">
+            <b>Schedule review triage as a follow-up task.</b> Working
+            through {needsReview.toLocaleString()} review-queue records
+            in one sit is a lot — consider batching by worker or by
+            week. The Review Queue link below preserves your filters.
+          </div>
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-3">
         <Link

@@ -451,15 +451,41 @@ async def retention_cleanup() -> dict:
     except Exception as e:  # non-fatal
         log.warning("pdf_cache retention sweep failed: %s", e)
 
-    if jobs_deleted or cache_deleted:
-        log.info("bulk_import retention: %d job(s) + %d dryrun + %d cache "
-                 "row(s) purged (jobs>%dd, cache>%dd)",
-                 jobs_deleted, dryrun_deleted, cache_deleted,
+    # v58.2 — PDF GridFS purge: nuke any blob whose parent job just
+    # got swept, plus any orphan blob older than the cache TTL.
+    pdfs_deleted = 0
+    try:
+        bucket = _pdf_bucket()
+        # Blobs tied to a purged job.
+        if old_ids:
+            async for f in db[f"{_PDF_BUCKET_NAME}.files"].find(
+                    {"metadata.job_id": {"$in": old_ids}}, {"_id": 1}):
+                try:
+                    await bucket.delete(f["_id"])
+                    pdfs_deleted += 1
+                except Exception as pe:
+                    log.debug("gridfs delete failed for %s: %s", f["_id"], pe)
+        # Orphan blobs older than the cache cutoff (defensive).
+        async for f in db[f"{_PDF_BUCKET_NAME}.files"].find(
+                {"metadata.stored_at": {"$lt": cache_cutoff}}, {"_id": 1}):
+            try:
+                await bucket.delete(f["_id"])
+                pdfs_deleted += 1
+            except Exception as pe:
+                log.debug("gridfs delete failed for %s: %s", f["_id"], pe)
+    except Exception as e:
+        log.warning("failed-pdf retention sweep failed: %s", e)
+
+    if jobs_deleted or cache_deleted or pdfs_deleted:
+        log.info("bulk_import retention: %d job(s) + %d dryrun + %d cache + "
+                 "%d pdf row(s) purged (jobs>%dd, cache>%dd)",
+                 jobs_deleted, dryrun_deleted, cache_deleted, pdfs_deleted,
                  RETENTION_DAYS, PDF_CACHE_TTL_DAYS)
     return {
         "jobs_deleted": jobs_deleted,
         "dryrun_deleted": dryrun_deleted,
         "cache_deleted": cache_deleted,
+        "pdfs_deleted": pdfs_deleted,
         "jobs_cutoff": jobs_cutoff,
         "cache_cutoff": cache_cutoff,
         "retention_days": RETENTION_DAYS,
@@ -471,6 +497,52 @@ def _retention_delta():
     tests can monkeypatch it independently of the env var."""
     from datetime import timedelta
     return timedelta(days=RETENTION_DAYS)
+
+
+# ────────────────── v58.2 · GridFS storage for failed-row PDFs ──────────────────
+#
+# When the vision pipeline can't extract a PDF (pdftoppm crashed on a
+# malformed file, Claude returned no fields, etc.) we still commit the
+# row into the review queue with `needs_review=True`. The reviewer
+# needs to be able to look at the PDF that broke; the raw bytes are
+# stashed in this GridFS bucket keyed by the returned `ObjectId`
+# (persisted as a string on `form_submissions.metadata.gridfs_id`).
+#
+# Successful rows do NOT get their bytes persisted — the extractor
+# already produced usable fields and re-storing multi-GB of clean PDFs
+# would be wasteful. The retention sweep purges these blobs alongside
+# their parent job.
+
+_PDF_BUCKET_NAME = "bulk_import_failed_pdfs"
+
+
+def _pdf_bucket():
+    """Lazy singleton. Motor bucket construction is cheap but stashing
+    the reference avoids repeated attribute lookups during hot loops."""
+    from motor.motor_asyncio import AsyncIOMotorGridFSBucket
+    if not hasattr(_pdf_bucket, "_bucket"):
+        _pdf_bucket._bucket = AsyncIOMotorGridFSBucket(
+            db, bucket_name=_PDF_BUCKET_NAME)
+    return _pdf_bucket._bucket
+
+
+async def _store_failed_pdf(pdf_bytes: bytes, filename: str,
+                            org_id: str, job_id: str) -> Optional[str]:
+    """Upload the PDF bytes to GridFS and return the resulting id as a
+    string. On any error returns `None` and logs — this is best-effort,
+    the primary flow (row → form_submissions) never fails on a storage
+    hiccup."""
+    try:
+        oid = await _pdf_bucket().upload_from_stream(
+            filename,
+            pdf_bytes,
+            metadata={"org_id": org_id, "job_id": job_id,
+                      "stored_at": _now_iso()},
+        )
+        return str(oid)
+    except Exception as e:  # non-fatal
+        log.warning("failed-pdf upload failed for %s: %s", filename, e)
+        return None
 
 
 # ────────────────── v58.0.1 · Claude retry wrapper ──────────────────
@@ -816,6 +888,13 @@ class InitBody(BaseModel):
 
 class ApproveBody(BaseModel):
     approve: bool = True
+    # v58.2 — When True (default), also commit rows whose vision
+    # extraction failed. They land in `form_submissions` with
+    # `metadata.needs_review=True` and `metadata.error_step` set to
+    # the failing stage. A `metadata.gridfs_id` points to the raw PDF
+    # stored in GridFS so a reviewer can open it later. When False,
+    # failed rows are dropped entirely (legacy pre-v58.2 behaviour).
+    include_failed_rows: bool = True
 
 
 # ────────────────── Endpoints ──────────────────
@@ -840,6 +919,43 @@ async def fixture_zip():
         raise HTTPException(404, "fixture missing")
     return FileResponse(_FIXTURE_PATH, media_type="application/zip",
                         filename="prestart-sample.zip")
+
+
+# v58.2 — Stream a failed-row PDF back from GridFS. Auth-gated. The
+# reviewer's review-queue UI wires up to this route (Phase 2 of the
+# wizard). Content-Disposition is inline so the browser previews it.
+@router.get("/pdf/{gridfs_id}", include_in_schema=False)
+async def get_failed_pdf(gridfs_id: str,
+                        user: dict = Depends(get_current_user)):
+    from bson import ObjectId
+    from bson.errors import InvalidId
+    from fastapi.responses import StreamingResponse
+    try:
+        oid = ObjectId(gridfs_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(400, "invalid gridfs id")
+    try:
+        stream = await _pdf_bucket().open_download_stream(oid)
+    except Exception as e:
+        # gridfs raises `NoFile` on miss — bucket the failure as 404
+        # rather than exposing the internal exception.
+        raise HTTPException(404, f"pdf not found: {e}")
+    # Same-org check: `metadata.org_id` was set on upload.
+    if (stream.metadata or {}).get("org_id") != user["org_id"]:
+        raise HTTPException(404, "pdf not found")
+    filename = getattr(stream, "filename", None) or "prestart.pdf"
+
+    async def _iter():
+        while True:
+            chunk = await stream.readchunk()
+            if not chunk:
+                break
+            yield chunk
+
+    return StreamingResponse(
+        _iter(), media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 @router.post("/init", status_code=201)
@@ -958,6 +1074,8 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
         return {"job_id": job_id, "state": "cancelled"}
     # Kick off the full run.
     # v58.0.1 — re-download + reset both watchdog clocks.
+    # v58.2 — persist `include_failed_rows` on the job doc so
+    # `_run_job` knows whether to commit failed rows too.
     now = _now_iso()
     await db.bulk_import_jobs.update_one({"id": job_id},
         {"$set": {"state": "downloading",
@@ -965,6 +1083,7 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
                   "started_at": now,
                   "stage_started_at": now,
                   "last_progress_at": now,
+                  "include_failed_rows": bool(body.include_failed_rows),
                   "error_step": None}})
     asyncio.create_task(_run_job(job_id, "full_run"))
     await _audit(user, "bulk_import.approve", {"job_id": job_id})
@@ -1001,9 +1120,16 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
     """
     png_b64 = await asyncio.to_thread(_pdf_first_page_png_b64, pdf_bytes)
     if not png_b64:
+        # v58.2 — pdftoppm failed. Stash the raw PDF in GridFS so a
+        # reviewer can open it from the review queue and figure out
+        # what's wrong with the file.
+        gid = await _store_failed_pdf(pdf_bytes, filename, org_id, job["id"])
         rec = {"job_id": job["id"], "filename": filename,
                "status": "failed", "reason": "pdftoppm failed",
-               "error_step": "parse", "at": _now_iso()}
+               "error_step": "parse",
+               "gridfs_id": gid,
+               "pdf_hash": _pdf_hash(pdf_bytes),
+               "at": _now_iso()}
         await db.bulk_import_dryrun.replace_one(
             {"job_id": job["id"], "filename": filename}, rec, upsert=True)
         return rec
@@ -1062,10 +1188,14 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
             "at": _now_iso(),
         }
     except Exception as e:
+        # v58.2 — Claude classify/extract failed. Same treatment as
+        # a parse failure: stash the raw PDF so the reviewer has it.
+        gid = await _store_failed_pdf(pdf_bytes, filename, org_id, job["id"])
         rec = {"job_id": job["id"], "filename": filename,
                "status": "failed",
                "reason": f"claude: {e}",
                "error_step": "vision",
+               "gridfs_id": gid,
                "pdf_hash": pdf_hash,
                "at": _now_iso()}
     await db.bulk_import_dryrun.replace_one(
@@ -1161,6 +1291,68 @@ async def _stream_pdfs_from_archive(
             pass
 
 
+# ────────────────── v58.2 · form_submission builder ──────────────────
+
+
+def _build_form_submission(job: dict, rec: dict, display_name: str) -> dict:
+    """Produce the `form_submissions` doc for both the `ok` and the
+    v58.2 failed-row commit paths.
+
+    For failed rows we deliberately still supply `template_id` and
+    `template_name_snapshot` — falling back to a generic pre-start
+    label — so the review queue can render the row in the same table
+    as everything else. `metadata.needs_review=True` is the signal
+    that a human needs to act on it.
+    """
+    is_failed = rec.get("status") == "failed"
+    metadata: dict = {
+        "imported_via": "bulk_import_v160.3.9.58.2",
+        "job_id": job["id"],
+        "src_filename": display_name,
+        "pdf_hash": rec.get("pdf_hash"),
+        "cached": rec.get("cached", False),
+        "classifier_confidence":
+            (rec.get("classifier") or {}).get("confidence"),
+        "mapped_count": rec.get("mapped_count"),
+        "template_field_count": rec.get("template_field_count"),
+        "unmapped_labels": rec.get("unmapped_labels") or [],
+        "worker_match": dict(rec.get("worker_match")
+            or {"id": None, "confidence": 0.0, "needs_review": True}),
+        "site_match": rec.get("site_match") or {"id": None},
+    }
+    if is_failed:
+        # v58.2 — flag the review queue and preserve the raw PDF handle.
+        metadata["needs_review"] = True
+        metadata["error_step"] = rec.get("error_step")
+        metadata["failure_reason"] = rec.get("reason")
+        # If the extractor got partial fields before crashing, keep
+        # them — the reviewer can salvage the date / worker name / etc.
+        metadata["partial_extraction"] = rec.get("extracted") or {}
+        gid = rec.get("gridfs_id")
+        if gid:
+            metadata["gridfs_id"] = gid
+        # `worker_match` above already carries `needs_review=True` — this
+        # is a belt-and-braces flag so the query
+        # `metadata.worker_match.needs_review=True` also lights up on
+        # failed rows.
+        metadata["worker_match"]["needs_review"] = True
+
+    return {
+        "id": str(uuid.uuid4()),
+        "org_id": job["org_id"],
+        "template_id": rec.get("template_id"),
+        "template_name_snapshot": rec.get("template_name")
+            or ("Daily Pre-Start (needs review)" if is_failed else "Daily Pre-Start"),
+        "fields": rec.get("mapped_fields") or [],
+        "source": "bulk_import",
+        "submitted_at": _now_iso(),
+        "submitted_by_id": job.get("actor_id"),
+        "metadata": metadata,
+        "deleted_at": None,
+    }
+
+
+
 async def _run_job(job_id: str, mode: str):
     """The async worker. Downloads zip, iterates PDFs, runs classifier +
     extractor per PDF, updates job progress.
@@ -1173,6 +1365,10 @@ async def _run_job(job_id: str, mode: str):
         return
     org_id = job["org_id"]
     dry_limit = 20 if mode == "dry_run" else None
+    # v58.2 — for full runs, whether to also commit failed rows into
+    # `form_submissions` with `needs_review=True`. Default True.
+    include_failed = bool(job.get("include_failed_rows", True)) \
+        if mode == "full_run" else False
     download_url = job.get("src_url") or job.get("url_input")
     zip_path: Optional[str] = None
     try:
@@ -1296,6 +1492,9 @@ async def _run_job(job_id: str, mode: str):
                                     if archive_label != "<outer>" else pdf_name)
                     rec = await _process_one_pdf(job, display_name, data,
                                                  templates_by_id, org_id)
+
+                    # Book-keeping counters (all rows contribute to
+                    # progress; separate `ok` vs `failed` accounting).
                     if rec["status"] == "ok":
                         prog["extracted"] += 1
                         if rec.get("worker_match", {}).get("id"):
@@ -1303,53 +1502,36 @@ async def _run_job(job_id: str, mode: str):
                         if rec.get("cached"):
                             prog["cached_hits"] += 1
                         else:
-                            # Only non-cached calls cost real money.
                             prog["estimated_cost_usd"] += VISION_PER_PDF_COST_USD
-                        if (rec["status"] == "ok" and mode == "full_run"):
-                            try:
-                                await db.form_submissions.insert_one({
-                                    "id": str(uuid.uuid4()),
-                                    "org_id": org_id,
-                                    "template_id": rec["template_id"],
-                                    "template_name_snapshot": rec["template_name"],
-                                    "fields": rec.get("mapped_fields") or [],
-                                    "source": "bulk_import",
-                                    "submitted_at": _now_iso(),
-                                    "submitted_by_id": job["actor_id"],
-                                    "metadata": {
-                                        "imported_via":
-                                            "bulk_import_v160.3.9.58.0.1",
-                                        "job_id": job_id,
-                                        "src_filename": display_name,
-                                        "pdf_hash": rec.get("pdf_hash"),
-                                        "cached": rec.get("cached", False),
-                                        "classifier_confidence":
-                                            (rec.get("classifier") or {}).get(
-                                                "confidence"),
-                                        "mapped_count": rec.get("mapped_count"),
-                                        "template_field_count":
-                                            rec.get("template_field_count"),
-                                        "unmapped_labels":
-                                            rec.get("unmapped_labels") or [],
-                                        "worker_match": rec.get("worker_match"),
-                                        "site_match": rec.get("site_match"),
-                                    },
-                                    "deleted_at": None,
-                                })
-                            except Exception as we:
-                                log.warning("bulk_import: write failed for %s: %s",
-                                            display_name, we)
-                                prog["failed"] += 1
-                                prog["failed_pdfs"].append(display_name)
-                                await db.bulk_import_dryrun.update_one(
-                                    {"job_id": job_id, "filename": display_name},
-                                    {"$set": {"status": "failed",
-                                              "reason": f"write: {we}",
-                                              "error_step": "write"}},
-                                )
                     else:
                         prog["failed"] += 1
                         prog["failed_pdfs"].append(display_name)
+
+                    # v58.2 — Full-run insert path. On `ok` we always
+                    # insert. On `failed` we ALSO insert when the job
+                    # was approved with `include_failed_rows=True`
+                    # (default) — the row lands in the review queue
+                    # with `needs_review=True` and a `gridfs_id` link
+                    # to the raw PDF.
+                    if mode == "full_run" and (
+                        rec["status"] == "ok"
+                        or (rec["status"] == "failed" and include_failed)
+                    ):
+                        try:
+                            await db.form_submissions.insert_one(
+                                _build_form_submission(job, rec, display_name)
+                            )
+                        except Exception as we:
+                            log.warning("bulk_import: write failed for %s: %s",
+                                        display_name, we)
+                            prog["failed"] += 1
+                            prog["failed_pdfs"].append(display_name)
+                            await db.bulk_import_dryrun.update_one(
+                                {"job_id": job_id, "filename": display_name},
+                                {"$set": {"status": "failed",
+                                          "reason": f"write: {we}",
+                                          "error_step": "write"}},
+                            )
                     await _flush_progress()
                 except Exception as e:
                     log.exception("consumer failed on %s: %s", pdf_name, e)
