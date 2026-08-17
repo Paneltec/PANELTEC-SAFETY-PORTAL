@@ -203,9 +203,26 @@ function BarCard({ chart, accent }) {
   );
 }
 
+// v58.3 — Prettify role/label strings for the donut legend so a
+// 16-slice role breakdown stays readable in a 376px-wide card.
+//   Custom_Construction_Worker_L1 → Construction Worker L1
+//   HSEQ_Lead                      → HSEQ Lead
+function _prettyLegendLabel(raw) {
+  if (!raw) return '';
+  const stripped = String(raw).replace(/^custom_/i, '');
+  return stripped.replace(/_/g, ' ').trim();
+}
+
 function DonutCard({ chart }) {
   const data = Array.isArray(chart.data) ? chart.data : [];
   const total = data.reduce((s, d) => s + (d.value || 0), 0);
+  // v58.3 — sort desc by value so the biggest slice is at the top of
+  // the legend. Recharts respects the original order, so we sort here
+  // once and hand the sorted array to BOTH the pie and the legend.
+  const sorted = useMemo(
+    () => [...data].sort((a, b) => (b.value || 0) - (a.value || 0)),
+    [data],
+  );
   return (
     <div className="rounded-2xl border border-slate-200 bg-white text-slate-900 p-4"
          data-testid={`module-dashboard-chart-${chart.type}`}>
@@ -213,40 +230,62 @@ function DonutCard({ chart }) {
         <div className="text-[10px] uppercase tracking-widest font-semibold text-slate-500">
           {chart.title}
         </div>
-        <div className="text-[11px] text-slate-400 tabular-nums">total {total.toLocaleString()}</div>
+        <div className="text-[11px] text-slate-400 tabular-nums"
+             data-testid="module-dashboard-donut-total">
+          total {total.toLocaleString()}
+        </div>
       </div>
-      <div className="h-56">
-        {data.length === 0 ? (
-          <EmptyChart label="No data yet" />
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey="value"
-                nameKey="label"
-                innerRadius={50}
-                outerRadius={80}
-                paddingAngle={2}
-                stroke="#0f172a"
-              >
-                {data.map((slice, i) => (
-                  <Cell key={i} fill={slice.color || '#F97316'} />
-                ))}
-              </Pie>
-              <Tooltip
-                contentStyle={{ background: '#0f172a', border: '1px solid #1f2937',
-                                borderRadius: 8, color: '#e2e8f0', fontSize: 12 }}
-              />
-              <Legend
-                verticalAlign="bottom"
-                iconType="circle"
-                wrapperStyle={{ fontSize: 11, color: '#94a3b8' }}
-              />
-            </PieChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      {data.length === 0 ? (
+        <div className="h-56"><EmptyChart label="No data yet" /></div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {/* v58.3 — Fixed-height donut area, no Recharts Legend (the
+              built-in one overlaps the pie once you have >6 slices with
+              long labels). Legend rendered as a plain scrollable list
+              below so 20+ role buckets stay readable. */}
+          <div className="h-40" data-testid="module-dashboard-donut-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={sorted}
+                  dataKey="value"
+                  nameKey="label"
+                  innerRadius={38}
+                  outerRadius={64}
+                  paddingAngle={2}
+                  stroke="#0f172a"
+                >
+                  {sorted.map((slice, i) => (
+                    <Cell key={i} fill={slice.color || '#F97316'} />
+                  ))}
+                </Pie>
+                <Tooltip
+                  formatter={(value, name) => [value, _prettyLegendLabel(name)]}
+                  contentStyle={{ background: '#0f172a', border: '1px solid #1f2937',
+                                  borderRadius: 8, color: '#e2e8f0', fontSize: 12 }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="max-h-40 overflow-y-auto pr-1 space-y-1 text-[11px] text-slate-600"
+              data-testid="module-dashboard-donut-legend">
+            {sorted.map((slice, i) => {
+              const label = _prettyLegendLabel(slice.label);
+              const value = slice.value || 0;
+              const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+              return (
+                <li key={i} className="flex items-center gap-2 min-w-0">
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ background: slice.color || '#F97316' }} />
+                  <span className="truncate flex-1" title={label}>{label}</span>
+                  <span className="tabular-nums text-slate-500 shrink-0">{value}</span>
+                  <span className="tabular-nums text-slate-400 shrink-0 w-9 text-right">{pct}%</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
