@@ -948,7 +948,7 @@
 //
 //   Contract test: `test_bulk_import_auto_resume_v58_8.py` — 5 cases
 //   covering stale/fresh/complete/dry_run/multi-orphan invariants.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.8';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.8.1';
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".
@@ -1003,7 +1003,6 @@ export const RUNNING_VERSION = 'paneltec-v160.3.9.58.8';
 //   beating the oldest, (2) multiple edited rows where the latest
 //   edit wins. Existing tests updated to consume the new 4-tuple
 //   yield signature.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.3';
 
 // v160.3.9.58.7.2 — Bulk Import: upsert-on-pdf_hash + duplicate cleanup.
 //   Following the v58.7.1 resume that materialised 2,186 duplicate
