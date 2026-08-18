@@ -93,7 +93,7 @@ export default function LoginScreen() {
         <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled">
           <View style={s.logoRow}>
             <View style={s.logoIcon}>
-              <Ionicons name="shield-checkmark" size={22} color={Colors.orange} />
+              <Ionicons name="shield-checkmark" size={22} color="#FFFFFF" />
             </View>
             <Text style={s.logoText}>PANELTEC <Text style={{ color: Colors.orange }}>CIVIL</Text></Text>
           </View>
@@ -191,12 +191,12 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 40, paddingBottom: 32 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 32 },
-  logoIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center' },
+  logoIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center' },
   logoText: { fontSize: 18, fontWeight: '800', color: Colors.ink, letterSpacing: 1.5 },
   h1: { fontSize: 28, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5, lineHeight: 34 },
   sub: { fontSize: 13, color: Colors.textSecondary, marginTop: 8, lineHeight: 19 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 14 },
-  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)', backgroundColor: Colors.orangeSoft },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: '#E5E5E5', backgroundColor: Colors.surface },
   chipText: { fontSize: 9, fontWeight: '700', color: Colors.orange, letterSpacing: 0.8 },
   demoBanner: { flexDirection: 'row', gap: 10, marginTop: 20, padding: 12, borderRadius: 12, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, alignItems: 'flex-start' },
   demoTitle: { fontSize: 10, fontWeight: '700', color: Colors.orange, letterSpacing: 1 },
@@ -205,8 +205,8 @@ const s = StyleSheet.create({
   label: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 1.2, marginBottom: 6, marginTop: 14 },
   input: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 13, fontSize: 14, color: Colors.text },
   error: { color: Colors.red, fontSize: 12, marginTop: 8 },
-  btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.orange, borderRadius: 12, paddingVertical: 15, marginTop: 20, minHeight: 52 },
-  btnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '800', letterSpacing: 1 },
+  btn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 15, marginTop: 20, minHeight: 52 },
+  btnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', letterSpacing: 0.5 },
   footer: { flexDirection: 'row', marginTop: 24, justifyContent: 'center' },
   footerText: { fontSize: 14, color: Colors.textSecondary },
   link: { fontSize: 14, fontWeight: '600', color: Colors.orange },
@@ -216,6 +216,6 @@ const s = StyleSheet.create({
   secBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, marginTop: 12, backgroundColor: Colors.surface, minHeight: 52 },
   secBtnText: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.5 },
   hint: { fontSize: 11, color: Colors.textTertiary, marginTop: 6, textAlign: 'center' },
-  bioBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: 'rgba(249,115,22,0.3)', borderRadius: 12, paddingVertical: 14, marginTop: 12, backgroundColor: Colors.orangeSoft, minHeight: 52 },
+  bioBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderWidth: 1, borderColor: '#E5E5E5', borderRadius: 14, paddingVertical: 14, marginTop: 12, backgroundColor: Colors.orangeSoft, minHeight: 52 },
   bioBtnText: { fontSize: 14, fontWeight: '700', color: Colors.orange },
 });

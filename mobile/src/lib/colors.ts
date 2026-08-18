@@ -1,178 +1,170 @@
 /**
  * Paneltec Civil — Mobile Design System palette
  *
- * v160.1.2 — "Industrial Materials" palette. LIGHT theme.
- *   Concrete-white screen bg + white cards + bronze accents + soft-steel
- *   sticky headers and tab bar.
+ * v160.3.9.58.7 — "Airy Construction" palette.
+ *   Near-white backgrounds, amber (#F5B301) primary accent,
+ *   warm coral secondary, deep near-black text. Modern, premium,
+ *   iOS-native aesthetic. White cards with subtle borders + soft shadows.
  *
- * User directive for this cycle: "NO EXCLUSIONS". Every hardcoded hex
- * that used to live inline across the mobile codebase has been swept
- * onto these tokens. If you're adding a new colour, add it here first,
- * then reference `Colors.<token>` from your screen — never inline
- * `#RRGGBB` strings in JSX/style-sheets.
- *
- * Status shades (imSuccess/imWarning/imError) are DERIVED — the raw IM
- * palette shipped by the user gave no green/amber/red, so we chose
- * muted olive-green, bronze-as-warning, and brick-red so status pills
- * stay legible without stepping outside the industrial vocabulary.
+ * Every colour referenced in the mobile app cascades through these
+ * tokens. Never inline `#RRGGBB` strings — import `Colors.<token>`.
  */
 export const Colors = {
-  // ─── v160.1.2 Industrial Materials palette (SOURCE OF TRUTH) ───────
-  imSteel:      '#B2B2B2',   // light metallic grey — top bar, notch backdrop, sticky header
-  imBronze:     '#C08040',   // bronze — CTAs, active tab, focus, pill accent
-  imStone:      '#A0A0A0',   // medium grey — secondary buttons, muted accents
-  imConcrete:   '#EAEAEA',   // very light warm grey — screen background
-  imInk:        '#1A1A1A',   // near-black — primary text on light surfaces
-  imInkMuted:   '#4B4B4B',   // secondary text
-  imInkSubtle:  '#8A8A8A',   // tertiary text / placeholders
-  imBorder:     '#C8C8C8',   // card borders
-  imSurface:    '#FFFFFF',   // card / row / tile bg — pure white pops against concrete
+  // ─── v160.3.9.58.7 Airy Construction palette (SOURCE OF TRUTH) ─────
+  imSteel:      '#F0F0F2',   // very light gray — header backdrops, sticky bars
+  imBronze:     '#F5B301',   // amber — primary accent (CTAs, active tab, logo)
+  imStone:      '#A0A0A0',   // medium gray — muted accents
+  imConcrete:   '#F5F5F7',   // near-white gray — page background
+  imInk:        '#0A0A0A',   // near-black — primary text
+  imInkMuted:   '#6B6B6B',   // secondary text
+  imInkSubtle:  '#A0A0A0',   // tertiary text / placeholders
+  imBorder:     '#E5E5E5',   // card borders — very subtle
+  imSurface:    '#FFFFFF',   // card / tile bg — pure white
 
-  // DERIVED status shades — see note at top of file.
-  imSuccess:    '#6B7F5C',   // muted olive-green
-  imWarning:    '#C08040',   // bronze doubles as warning
-  imError:      '#8B3A3A',   // deep muted brick red
+  // Status shades — vivid modern semantic colours
+  imSuccess:    '#16A34A',   // green
+  imWarning:    '#F59E0B',   // amber-orange
+  imError:      '#DC2626',   // red
 
-  // ─── Paneltec brand accents kept as named tokens (not swept away) ─
-  paneltecBlue:   '#1E4A8C',   // legacy Paneltec blue — used sparingly on info banners
-  paneltecViolet: '#4F3A8C',   // legacy Paneltec violet — AI/Ask badges
-  paneltecGold:   '#F4C430',
+  // ─── Brand accents ─────────────────────────────────────────────────
+  paneltecBlue:   '#3B82F6',   // modern blue — info banners
+  paneltecViolet: '#6D5CC8',   // AI/intelligence badges
+  paneltecGold:   '#F5B301',   // amber
 
-  // ─── Semantic tokens — REMAPPED to cascade through the app ────────
-  bg:              '#EAEAEA',   // imConcrete — screen bg is LIGHT
-  surface:         '#FFFFFF',   // imSurface — cards
-  surfaceLight:    '#EAEAEA',   // imConcrete
-  surfaceHover:    '#F5F5F5',   // slightly warmer press state
-  surfaceDark:     '#B2B2B2',   // imSteel — tab bar bg (LIGHT steel, not dark)
-  libraryBg:       '#EAEAEA',   // imConcrete
-  tileWarm:        '#FFFFFF',   // imSurface (deprecated warm tile)
-  mutedBg:         '#EAEAEA',
+  // ─── Semantic tokens — cascade through the entire app ──────────────
+  bg:              '#F5F5F7',   // page background — airy light gray
+  surface:         '#FFFFFF',   // cards — pure white
+  surfaceLight:    '#F5F5F7',   // secondary surface
+  surfaceHover:    '#FAFAFA',   // press state
+  surfaceDark:     '#F0F0F2',   // tab bar bg — soft gray
+  libraryBg:       '#F5F5F7',
+  tileWarm:        '#FFFFFF',
+  mutedBg:         '#F5F5F7',
 
-  // v160.1.1 HV aliases repointed at IM so any lingering HV usages cascade
-  hvAsphalt:     '#B2B2B2',   // OVERRIDE — the dark HV bg becomes light steel
-  hvOrange:      '#C08040',   // → imBronze
-  hvYellow:      '#C08040',   // no yellow in palette; map warning to bronze
+  // HV aliases — all repointed to airy palette
+  hvAsphalt:     '#F0F0F2',
+  hvOrange:      '#F5B301',
+  hvYellow:      '#F5B301',
   hvSurface:     '#FFFFFF',
-  hvGreen:       '#6B7F5C',
-  hvRed:         '#8B3A3A',
-  hvInk:         '#1A1A1A',
-  hvInkMuted:    '#4B4B4B',
-  hvInkSubtle:   '#8A8A8A',
-  hvBorder:      '#C8C8C8',
-  hvTabInactive: '#4B4B4B',   // dark-enough grey to read on light steel bg
+  hvGreen:       '#16A34A',
+  hvRed:         '#DC2626',
+  hvInk:         '#0A0A0A',
+  hvInkMuted:    '#6B6B6B',
+  hvInkSubtle:   '#A0A0A0',
+  hvBorder:      '#E5E5E5',
+  hvTabInactive: '#A0A0A0',
 
-  // Brand aliases kept from v160.1.0 (repointed at IM)
-  brandNavy:       '#B2B2B2',   // → imSteel (unified with header)
-  brandOrange:     '#C08040',
-  brandBgLight:    '#EAEAEA',
+  // Brand aliases — repointed at airy palette
+  brandNavy:       '#F0F0F2',
+  brandOrange:     '#F5B301',
+  brandBgLight:    '#F5F5F7',
   brandSurface:    '#FFFFFF',
-  brandTeal:       '#6B7F5C',
-  brandGrey:       '#4B4B4B',
-  brandGreen:      '#6B7F5C',
-  brandAmber:      '#C08040',
-  brandRed:        '#8B3A3A',
-  brandTabBar:     '#B2B2B2',
-  brandTabActive:  '#C08040',
-  brandTabInactive:'#4B4B4B',
-  brandInk:        '#1A1A1A',
-  brandInkMuted:   '#4B4B4B',
-  brandInkSubtle:  '#8A8A8A',
-  brandBorder:     '#C8C8C8',
+  brandTeal:       '#16A34A',
+  brandGrey:       '#6B6B6B',
+  brandGreen:      '#16A34A',
+  brandAmber:      '#F5B301',
+  brandRed:        '#DC2626',
+  brandTabBar:     '#FAFAFA',   // very light gray tab bar
+  brandTabActive:  '#F5B301',   // amber active tab
+  brandTabInactive:'#A0A0A0',   // gray inactive
+  brandInk:        '#0A0A0A',
+  brandInkMuted:   '#6B6B6B',
+  brandInkSubtle:  '#A0A0A0',
+  brandBorder:     '#E5E5E5',
 
-  // v160.0.22 light-paper aliases — kept, repointed at IM
+  // Light tile aliases
   tileLight:            '#FFFFFF',
-  tileLightBorder:      '#C8C8C8',
-  tileLightInk:         '#1A1A1A',
-  tileLightMuted:       '#4B4B4B',
-  tileLightAccentBg:    '#C08040',
+  tileLightBorder:      '#E5E5E5',
+  tileLightInk:         '#0A0A0A',
+  tileLightMuted:       '#6B6B6B',
+  tileLightAccentBg:    '#F5B301',
   tileLightAccentIcon:  '#FFFFFF',
 
-  // ─── Borders ─────────────────────────────────────────────────────
-  border:      '#C8C8C8',   // imBorder
-  borderLight: '#EAEAEA',   // imConcrete-adjacent, very soft divider
-  borderMuted: '#C8C8C8',
-  borderFocus: '#C08040',   // imBronze — focused input outline
+  // ─── Borders ───────────────────────────────────────────────────────
+  border:      '#E5E5E5',
+  borderLight: '#F0F0F2',
+  borderMuted: '#E5E5E5',
+  borderFocus: '#F5B301',   // amber focus ring
 
-  // ─── Text ────────────────────────────────────────────────────────
-  ink:            '#1A1A1A',   // FLIP BACK to dark ink for the light theme
-  text:           '#1A1A1A',
-  textPrimary:    '#1A1A1A',
-  textSecondary:  '#4B4B4B',
-  textTertiary:   '#8A8A8A',
-  placeholder:    '#8A8A8A',
-  textDisabled:   '#A0A0A0',
+  // ─── Text ──────────────────────────────────────────────────────────
+  ink:            '#0A0A0A',
+  text:           '#0A0A0A',
+  textPrimary:    '#0A0A0A',
+  textSecondary:  '#6B6B6B',
+  textTertiary:   '#A0A0A0',
+  placeholder:    '#A0A0A0',
+  textDisabled:   '#C0C0C0',
   white:          '#FFFFFF',
 
-  // ─── Orange accent (brand) ───────────────────────────────────────
-  orange:      '#C08040',   // imBronze
-  orangeLight: '#D89A6A',
-  orangeDark:  '#8F5A28',
-  orangeSoft:  'rgba(192,128,64,0.15)',
+  // ─── Amber accent (primary brand) ─────────────────────────────────
+  orange:      '#F5B301',   // amber — primary accent
+  orangeLight: '#F5B301',   // amber (unified)
+  orangeDark:  '#D49800',   // darker amber
+  orangeSoft:  '#FEF3C7',   // warm amber tint bg
 
-  // ─── Legacy blue alias (kept as Paneltec blue) ───────────────────
-  blue:     '#1E4A8C',
-  blueSoft: 'rgba(30,74,140,0.15)',
+  // ─── Blue accent ──────────────────────────────────────────────────
+  blue:     '#3B82F6',
+  blueSoft: 'rgba(59,130,246,0.08)',
 
-  // ─── Brand — Paneltec gold ──────────────────────────────────────
-  gold:         '#EAB308',
-  goldSoft:     'rgba(234,179,8,0.15)',
+  // ─── Gold (now = amber) ───────────────────────────────────────────
+  gold:         '#F5B301',
+  goldSoft:     '#FEF3C7',
 
-  // ─── Semantic ────────────────────────────────────────────────────
-  emerald:      '#6B7F5C',   // imSuccess
-  emeraldDark:  '#4F5F44',
-  mint:         'rgba(107,127,92,0.18)',
-  red:          '#8B3A3A',   // imError
-  redSoft:      'rgba(139,58,58,0.18)',
-  amber:        '#C08040',   // imWarning (bronze)
-  amberSoft:    'rgba(192,128,64,0.18)',
-  violet:       '#4F3A8C',   // paneltecViolet
-  violetSoft:   'rgba(79,58,140,0.18)',
+  // ─── Semantic ─────────────────────────────────────────────────────
+  emerald:      '#16A34A',
+  emeraldDark:  '#15803D',
+  mint:         'rgba(22,163,74,0.08)',
+  red:          '#DC2626',
+  redSoft:      'rgba(220,38,38,0.08)',
+  amber:        '#F59E0B',
+  amberSoft:    'rgba(245,158,11,0.08)',
+  violet:       '#6D5CC8',
+  violetSoft:   'rgba(109,92,200,0.06)',
 
-  // ─── Aliases for readable code ───────────────────────────────────
-  success: '#6B7F5C',
-  error:   '#8B3A3A',
-  warning: '#C08040',
-  info:    '#1E4A8C',
+  // ─── Readable aliases ─────────────────────────────────────────────
+  success: '#16A34A',
+  error:   '#DC2626',
+  warning: '#F59E0B',
+  info:    '#3B82F6',
 } as const;
 
 /**
- * Status chip palette — used by badges across the app.
+ * Status chip palette — v160.3.9.58.7
  *
- * v160.1.2 — reworked for the Industrial Materials theme. All pills
- * use white text on a saturated status colour so they read cleanly on
- * either the concrete screen bg or the white card bg.
+ * Modern pill colors — white text on saturated backgrounds.
+ * Lighter and more vibrant than the old industrial-materials palette.
  */
 export const StatusColors: Record<string, { bg: string; text: string; border: string }> = {
-  // Draft / muted — stone grey pill
-  draft:             { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
-  low:               { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
-  inactive:          { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
-  cancelled:         { bg: '#A0A0A0', text: '#FFFFFF', border: '#8A8A8A' },
+  // Draft / muted — soft gray pill
+  draft:             { bg: '#D1D5DB', text: '#374151', border: '#9CA3AF' },
+  low:               { bg: '#D1D5DB', text: '#374151', border: '#9CA3AF' },
+  inactive:          { bg: '#D1D5DB', text: '#374151', border: '#9CA3AF' },
+  cancelled:         { bg: '#D1D5DB', text: '#374151', border: '#9CA3AF' },
 
-  // In progress / warning — bronze pill
-  submitted:         { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  changes_requested: { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  open:              { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  in_progress:       { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  medium:            { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  high:              { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  pending:           { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  queued:            { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
-  expiring_soon:     { bg: '#C08040', text: '#FFFFFF', border: '#8F5A28' },
+  // In progress / warning — amber pill
+  submitted:         { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  changes_requested: { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  open:              { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  in_progress:       { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  medium:            { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  high:              { bg: '#F97316', text: '#FFFFFF', border: '#EA580C' },
+  pending:           { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  queued:            { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
+  expiring_soon:     { bg: '#F59E0B', text: '#FFFFFF', border: '#D97706' },
 
-  // Success — muted olive pill
-  approved:          { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
-  closed:            { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
-  active:            { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
-  completed:         { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
-  valid:             { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
-  sent:              { bg: '#6B7F5C', text: '#FFFFFF', border: '#4F5F44' },
+  // Success — green pill
+  approved:          { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
+  closed:            { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
+  active:            { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
+  completed:         { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
+  valid:             { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
+  sent:              { bg: '#16A34A', text: '#FFFFFF', border: '#15803D' },
 
-  // Error / danger — brick red pill
-  rejected:          { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
-  critical:          { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
-  suspended:         { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
-  revoked:           { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
-  expired:           { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
-  failed:            { bg: '#8B3A3A', text: '#FFFFFF', border: '#6B2C2C' },
+  // Error / danger — red pill
+  rejected:          { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
+  critical:          { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
+  suspended:         { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
+  revoked:           { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
+  expired:           { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
+  failed:            { bg: '#DC2626', text: '#FFFFFF', border: '#B91C1C' },
 };

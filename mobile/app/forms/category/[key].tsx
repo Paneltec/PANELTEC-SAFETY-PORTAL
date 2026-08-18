@@ -148,7 +148,7 @@ const s = StyleSheet.create({
   // v160.0.24 — Brand palette applied to Forms/Category ONLY.
   safe: { flex: 1, backgroundColor: Colors.brandBgLight },
   stickyHeader: {
-    backgroundColor: Colors.brandNavy,
+    backgroundColor: Colors.bg,
     paddingHorizontal: 16, paddingBottom: 14,
   },
   scroll: { flex: 1 },
@@ -156,7 +156,7 @@ const s = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, marginBottom: 4 },
   backText: { fontSize: 13, fontWeight: '700', color: Colors.hvOrange },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
-  heading: { fontSize: 20, fontWeight: '800', color: Colors.brandSurface, marginTop: 2 },
+  heading: { fontSize: 20, fontWeight: '800', color: Colors.ink, marginTop: 2 },
   sub: { fontSize: 13, color: Colors.brandInkMuted, marginTop: 4, marginBottom: 18 },
   emptyBox: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 10 },
   emptyText: { fontSize: 14, color: Colors.brandInkMuted, textAlign: 'center', paddingHorizontal: 24 },
@@ -181,14 +181,14 @@ const s = StyleSheet.create({
   // v160.2.5b — In-category search input styling (dark header context).
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
     borderRadius: 10, paddingHorizontal: 10,
     marginTop: 10,
   },
   searchInput: {
     flex: 1, paddingVertical: 8, fontSize: 14,
-    color: Colors.brandSurface,
+    color: Colors.ink,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } as any : {}),
   },
 });

@@ -66,7 +66,7 @@ function RootNav() {
 
   return (
     <>
-      <StatusBar style="light" translucent backgroundColor="transparent" />
+      <StatusBar style="dark" translucent backgroundColor="transparent" />
       <NotchBackdrop />
       <ChangePasswordModal
         visible={isAuth && mustChangePassword}

@@ -262,7 +262,7 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.brandBgLight },
   stickyHeader: {
     // Sibling above the ScrollView, so it never scrolls away.
-    backgroundColor: Colors.brandNavy,
+    backgroundColor: Colors.bg,
     paddingHorizontal: 16, paddingBottom: 14,
   },
   headerRow: {
@@ -274,11 +274,11 @@ const s = StyleSheet.create({
   backBtn: { flexDirection: 'row', alignItems: 'center', gap: 2, minWidth: 56 },
   backText: { fontSize: 14, fontWeight: '700', color: Colors.hvOrange },
   headerTitle: {
-    fontSize: 16, fontWeight: '700', color: Colors.brandSurface,
+    fontSize: 16, fontWeight: '700', color: Colors.ink,
     letterSpacing: 0.2,
   },
   headerSub: {
-    fontSize: 12, lineHeight: 16, color: 'rgba(255,255,255,0.72)',
+    fontSize: 12, lineHeight: 16, color: Colors.textSecondary,
     marginTop: 8, textAlign: 'center', paddingHorizontal: 8,
   },
   overline: { fontSize: 10, fontWeight: '800', letterSpacing: 1.5, color: Colors.brandOrange },
@@ -320,14 +320,14 @@ const s = StyleSheet.create({
   // v160.2.5b — Search + scan row styles.
   searchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
-    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
     borderRadius: 10, paddingHorizontal: 10,
     marginTop: 10,
   },
   searchInput: {
     flex: 1, paddingVertical: 8, fontSize: 14,
-    color: Colors.brandSurface,
+    color: Colors.ink,
     ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } as any : {}),
   },
   scanIconBtn: {

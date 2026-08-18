@@ -77,32 +77,39 @@ export default function TabLayout() {
       <Tabs
         screenOptions={{
           headerShown: false,
-          // v160.1.0 — brand palette: navy tab bar, orange active, light-grey inactive.
           tabBarActiveTintColor: Colors.brandTabActive,
           tabBarInactiveTintColor: Colors.brandTabInactive,
           tabBarStyle: {
             backgroundColor: Colors.brandTabBar,
-            borderTopColor: Colors.imInk, // linter-ok: HV theme tab-bar top border — one shade darker than hvAsphalt
+            borderTopColor: Colors.borderLight,
             borderTopWidth: 1,
             height: 64,
             paddingBottom: 8,
             paddingTop: 6,
           },
-          tabBarLabelStyle: { fontSize: 10, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
+          tabBarLabelStyle: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
         }}
       >
         <Tabs.Screen
           name="dashboard"
           options={{
             title: 'Home',
-            tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused ? rs.activeTabIcon : undefined}>
+                <Ionicons name="home" size={size} color={focused ? '#FFFFFF' : color} />
+              </View>
+            ),
           }}
         />
         <Tabs.Screen
           name="qr-signon"
           options={{
             title: 'QR Scan',
-            tabBarIcon: ({ color, size }) => <Ionicons name="qr-code" size={size} color={color} />,
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused ? rs.activeTabIcon : undefined}>
+                <Ionicons name="qr-code" size={size} color={focused ? '#FFFFFF' : color} />
+              </View>
+            ),
             href: modules.sign_on ? undefined : null,
           }}
         />
@@ -114,7 +121,11 @@ export default function TabLayout() {
           name="vehicles"
           options={{
             title: 'Fleet',
-            tabBarIcon: ({ color, size }) => <Ionicons name="car" size={size} color={color} />,
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused ? rs.activeTabIcon : undefined}>
+                <Ionicons name="car" size={size} color={focused ? '#FFFFFF' : color} />
+              </View>
+            ),
             href: modules.plant_vehicles ? undefined : null,
           }}
         />
@@ -128,7 +139,11 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color, size }) => <Ionicons name="person-circle" size={size} color={color} />,
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused ? rs.activeTabIcon : undefined}>
+                <Ionicons name="person-circle" size={size} color={focused ? '#FFFFFF' : color} />
+              </View>
+            ),
           }}
         />
         <Tabs.Screen name="compliance" options={{ href: null }} />
@@ -137,7 +152,11 @@ export default function TabLayout() {
           options={{
             href: modules.ask_intel ? undefined : null,
             title: 'Ask AI',
-            tabBarIcon: ({ color, size }) => <Ionicons name="sparkles" size={size} color={color} />,
+            tabBarIcon: ({ color, size, focused }) => (
+              <View style={focused ? rs.activeTabIcon : undefined}>
+                <Ionicons name="sparkles" size={size} color={focused ? '#FFFFFF' : color} />
+              </View>
+            ),
           }}
         />
       </Tabs>
@@ -146,19 +165,24 @@ export default function TabLayout() {
 }
 
 const rs = StyleSheet.create({
+  activeTabIcon: {
+    width: 36, height: 36, borderRadius: 10,
+    backgroundColor: Colors.brandTabActive,
+    alignItems: 'center', justifyContent: 'center',
+  },
   ribbon: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: Colors.surfaceLight, paddingVertical: 5, paddingHorizontal: 12,
+    backgroundColor: '#FEF3C7', paddingVertical: 5, paddingHorizontal: 12,
   },
   ribbonText: { fontSize: 10, fontWeight: '700', color: Colors.orange, letterSpacing: 1 },
   signoffBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
     backgroundColor: Colors.orange, paddingVertical: 10, paddingHorizontal: 16,
   },
-  signoffText: { flex: 1, fontSize: 11, fontWeight: '700', color: Colors.imSurface, letterSpacing: 0.8 },
+  signoffText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.8 },
   signoffBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.25)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+    backgroundColor: 'rgba(0,0,0,0.15)', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
   },
-  signoffBtnText: { fontSize: 10, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.5 },
+  signoffBtnText: { fontSize: 10, fontWeight: '800', color: '#FFFFFF', letterSpacing: 0.5 },
 });

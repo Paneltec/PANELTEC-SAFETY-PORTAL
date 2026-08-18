@@ -1363,10 +1363,9 @@ export default function FillOutScreen() {
 const fs = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    // v160.1.1 — Solid opaque sticky header. Same colour as safe bg
-    // so the notch backdrop reads as a continuous top bar with no seam.
-    backgroundColor: Colors.hvAsphalt,
+    backgroundColor: Colors.bg,
     paddingHorizontal: 16, paddingBottom: 12,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1379,7 +1378,7 @@ const fs = StyleSheet.create({
     fontSize: 14, fontWeight: '700', color: Colors.hvOrange,
   },
   headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.hvYellow },
-  headerTitle: { fontSize: 15, fontWeight: '700', color: Colors.imSurface }, // linter-ok: HV header title — explicit white on hvAsphalt
+  headerTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
   draftBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
     backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
