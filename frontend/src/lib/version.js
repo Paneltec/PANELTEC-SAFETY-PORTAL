@@ -900,6 +900,24 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.9 — Bulk-import → pre_starts visibility fix (P0).
+//   User reported: "we started with 200 pre-starts and end with 200
+//   pre-starts after 2 weeks." Root cause: bulk import writes to
+//   `form_submissions` (source='bulk_import') but the Daily
+//   Pre-Starts page reads from the `pre_starts` collection —
+//   3,776 imported records were invisible for 2 weeks.
+//
+//   Fix: one-shot idempotent migration
+//   `scripts/backfill_prestarts_from_bulk_import_v58_9.py` inserts a
+//   shim `pre_starts` row per active bulk-import form_submission.
+//   Shim rows carry `imported=True` (frontend suppresses fake
+//   subtitles) + `source_form_submission_id` (reversible + idempotent).
+//   `pre_starts` count post-migration: 3,788 active (was 12).
+//
+//   Deferred to v58.10: teach the bulk-import pipeline to write
+//   directly into `pre_starts` for the Pre-Start template family so
+//   future runs don't need a backfill.
+
 // v160.3.9.58.8 — Auto-resume + batch checkpoints + notification bell.
 //   Solves the "kill on backend restart" pattern that has cost this
 //   10k import 3+ manual re-approvals over 6 hours.
@@ -948,7 +966,7 @@
 //
 //   Contract test: `test_bulk_import_auto_resume_v58_8.py` — 5 cases
 //   covering stale/fresh/complete/dry_run/multi-orphan invariants.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.8.1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.9';
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".

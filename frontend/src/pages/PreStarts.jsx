@@ -12,7 +12,7 @@ export default function PreStartsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/pre-starts').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
+  useEffect(() => { api.get('/pre-starts', { params: { limit: 5000 } }).then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
 
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
