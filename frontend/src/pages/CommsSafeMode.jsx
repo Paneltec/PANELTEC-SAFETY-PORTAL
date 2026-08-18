@@ -34,7 +34,7 @@ export default function CommsSafeMode() {
 
   const toggle = async (mode) => {
     if (status?.env_locked) {
-      toast.error('Env var COMMS_SAFE_MODE is locked ON. Ask your operator to lift the lock.');
+      toast.error('Locked by env var — contact your operator.');
       return;
     }
     setBusy(true);
@@ -42,7 +42,14 @@ export default function CommsSafeMode() {
       await api.patch('/admin/comms-safe-mode', { mode });
       toast.success(`Comms Safe Mode set to ${mode.toUpperCase()}`);
       await load();
-    } catch (e) { toast.error(apiError(e)); }
+    } catch (e) {
+      // v58.7.1 — Defensive: if the backend rejects with 423 (env
+      // locked between load and click) surface the same toast as the
+      // pre-check above so the user isn't left wondering.
+      const code = e?.response?.status;
+      if (code === 423) toast.error('Locked by env var — contact your operator.');
+      else toast.error(apiError(e));
+    }
     finally { setBusy(false); }
   };
 
@@ -79,15 +86,30 @@ export default function CommsSafeMode() {
               <Lock size={11} /> Locked by env var (operator-controlled)
             </div>
           )}
+          {/* v58.7.1 — Prominent lock banner ABOVE the toggle buttons.
+              The old small pill was too easy to miss; users would
+              click the greyed-out buttons and get no visible feedback.
+              This banner spells out both the "why" (env var) and the
+              "how" (ask operator) in one row. */}
+          {locked && (
+            <div className="mt-3 rounded-xl border border-slate-300 bg-slate-100 p-3 flex items-start gap-2 text-sm text-slate-800"
+                 data-testid="env-lock-banner">
+              <Lock size={16} className="mt-0.5 shrink-0 text-slate-600" />
+              <span>
+                <span className="font-semibold">Toggle is locked at the environment level.</span>
+                {' '}Ask your operator to lift the lock before changing this setting.
+              </span>
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
             <button onClick={() => toggle('on')} disabled={busy || locked || eff === 'on'}
               data-testid="safe-mode-toggle-on"
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-50 disabled:cursor-not-allowed">
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500">
               Turn ON
             </button>
             <button onClick={() => toggle('off')} disabled={busy || locked || eff === 'off'}
               data-testid="safe-mode-toggle-off"
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed">
+              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
               Turn OFF
             </button>
           </div>

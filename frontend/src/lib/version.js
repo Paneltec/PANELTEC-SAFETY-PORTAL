@@ -900,6 +900,29 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.7.1 — Comms Safe Mode: sharper env-lock UX.
+//   User reported clicking "Turn OFF" did nothing — root cause was
+//   that the locked-state visual signal was too subtle (a small pill
+//   at 8pt text below the description, disabled buttons at 50% opacity)
+//   so the buttons looked clickable and the pre-toggle env-lock check
+//   silently returned. Fix (contained to `CommsSafeMode.jsx`):
+//     · Full-width lock banner rendered ABOVE the toggle buttons
+//       when `status.env_locked === true`. Copy: "Toggle is locked at
+//       the environment level. Ask your operator to lift the lock
+//       before changing this setting." Lock icon + neutral slate tone
+//       so it reads as a system message, not an alarm.
+//     · Toggle buttons dimmed harder (opacity 40, was 50) and pinned
+//       hover-state to match disabled bg so the mouse can't produce
+//       any visual response.
+//     · Defensive 423 catch on the PATCH call: if the env lock flips
+//       between page load and click, the same "Locked by env var"
+//       toast fires. Consistent copy across both paths.
+//   No backend change — `GET /api/admin/comms-safe-mode/status`
+//   already returns `env_locked: bool`. `COMMS_SAFE_MODE=on` in
+//   `backend/.env` is untouched (that's an operator lift, not an app
+//   change).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.1';
+
 // v160.3.9.58.7 — PhonePreview chrome sync with mobile v58.7 palette.
 //   The mobile team just landed a new airy light palette (amber
 //   `#F5B301` primary, `#F5F5F7` page bg, `#E5E5E5` borders,
@@ -927,7 +950,6 @@
 //       page bg so about:blank frame doesn't flash a hard-white)
 //
 //   No functional / logic changes. All data-testids preserved.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7';
 
 // v160.3.9.58.6.2 — BulkImportPill ghost-trap protection (symmetric
 //   to v58.6.1's FailedCard fix). The persistent top-nav pill now
