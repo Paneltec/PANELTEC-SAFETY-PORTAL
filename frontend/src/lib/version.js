@@ -986,7 +986,23 @@
 //       AND wrongly excluded in-flight dry_runs.
 //   No mobile-facing behaviour change; version bump exists solely
 //   because the guardrail requires all 3 canonical files to agree.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.1';
+// v160.3.9.58.10.2 — Daily Pre-Starts UX refactor (frontend only).
+//   · Worker names removed from tile display (kept in data for search
+//     match). Row 3 of the CaptureCard now shows only the date when
+//     the new `hideOperator` prop is set (Pre-Starts calls with it).
+//   · Tiles grouped and coloured by TEMPLATE TYPE (not by parent-zip
+//     like v58.9.1). New helper `lib/preStartsPalette.js` maps the 9
+//     template families the user named to explicit colours, with a
+//     deterministic hash fallback for anything new.
+//   · Sticky toolbar: search box (name / work_summary / filenames),
+//     date-from / date-to inputs, type dropdown, coloured chip row
+//     with counts, `<mark>` highlights, localStorage-persisted type
+//     filter (`pt.prestarts.type_filter`).
+//   · CaptureCard picks up two backward-compatible props: `hideOperator`
+//     and `stripeStyle`. Defaults preserve behaviour on the other 5
+//     Capture tabs.
+//   · No backend touched. Running import job `9f5715aa-…` unaffected.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.2';
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".

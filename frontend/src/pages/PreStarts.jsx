@@ -1,122 +1,364 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Trash2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
+import { inferTemplateType, paletteForType } from '../lib/preStartsPalette';
 
-// v58.9.1 — Group tiles by parent-zip (source contractor batch) with
-// a rotating 6-colour palette. The prior single-flat-grid buried
-// bulk-imported records; this restores the visual grouping the user
-// referenced ("coloured in groups like Viatec Traffic Solutions - SSRA").
-const GROUP_PALETTE = [
-  { name: 'amber',   heading: '#F5B301', bg: '#FEF3C7', border: '#F5B301' },
-  { name: 'coral',   heading: '#F97316', bg: '#FFEDD5', border: '#F97316' },
-  { name: 'emerald', heading: '#10B981', bg: '#D1FAE5', border: '#10B981' },
-  { name: 'sky',     heading: '#0EA5E9', bg: '#E0F2FE', border: '#0EA5E9' },
-  { name: 'violet',  heading: '#8B5CF6', bg: '#EDE9FE', border: '#8B5CF6' },
-  { name: 'rose',    heading: '#F43F5E', bg: '#FFE4E6', border: '#F43F5E' },
-];
+// v160.3.9.58.10.2 — Daily Pre-Starts UX refactor.
+//
+//   · Tiles no longer expose the worker/lead name. The underlying
+//     `crew_lead` field stays on the record so free-text search still
+//     matches on it, but the display is intentionally anonymised so
+//     4,000+ imported tiles read as compliance data rather than a
+//     public roll-call.
+//   · Tiles are grouped and coloured by TEMPLATE TYPE (not by parent
+//     zip like v58.9.1). Colour resolution lives in
+//     `lib/preStartsPalette.js` — explicit map for the 9 template
+//     families the user named, deterministic hash-based fallback for
+//     anything new so refreshes stay stable.
+//   · Header shows a chip row of every type with its count and colour
+//     pill. Clicking a chip filters the grid. Persists to
+//     `localStorage['pt.prestarts.type_filter']`.
+//   · Toolbar: date-from / date-to inputs + free-text name search.
+//     Name search AND-matches multi-token across crew_lead,
+//     work_summary, metadata.src_filename, metadata.batch_label, plus
+//     the derived template type. Matching text is <mark>-highlighted
+//     inline on tiles.
+//
+// Preserved: click-to-view (SubmissionViewer), PDF actions, delete,
+// and the New Pre-Start form below (untouched).
 
-function _deriveGroup(row) {
-  // Bulk-import shims carry the parent zip name inside `work_summary`
-  // (format: "Imported: <PARENT>.zip::<pdf>.pdf"). Extract that
-  // prefix. Fall back to a workspace-based bucket for original rows.
-  const ws = row.work_summary || '';
-  const m = ws.match(/Imported:\s*([^:]+?)(?:\.zip)?::/i);
-  if (m) return m[1].trim();
-  if (row.imported) return 'Imported (unlabelled)';
-  return 'Original entries';
+const LS_TYPE_KEY = 'pt.prestarts.type_filter';
+
+// v160.3.9.58.10.2 — Split the search string into whitespace tokens
+// (drop empties). Case-insensitive AND-match.
+function tokenize(q) {
+  return (q || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+}
+
+function matchesAllTokens(hay, tokens) {
+  if (tokens.length === 0) return true;
+  const low = hay.toLowerCase();
+  return tokens.every((t) => low.includes(t));
+}
+
+// v160.3.9.58.10.2 — Render `text` with case-insensitive <mark>
+// highlights around every token match. Reuses the styling from the
+// User Manual / Users search: bg-emerald-100 + text-emerald-900.
+function Highlight({ text, tokens }) {
+  const str = String(text || '');
+  if (!str || tokens.length === 0) return <>{str}</>;
+  // Build a single alternation regex, escaping regex meta chars.
+  const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const re = new RegExp(`(${escaped.join('|')})`, 'gi');
+  const parts = str.split(re);
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (i % 2 === 1) {
+          return (
+            <mark key={i} className="bg-emerald-100 text-emerald-900 rounded-sm px-0.5" data-testid="prestarts-mark">
+              {p}
+            </mark>
+          );
+        }
+        return <React.Fragment key={i}>{p}</React.Fragment>;
+      })}
+    </>
+  );
 }
 
 export default function PreStartsList() {
   const [items, setItems] = useState([]);
-  const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  useEffect(() => { api.get('/pre-starts', { params: { limit: 5000 } }).then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
+  const [q, setQ] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [typeFilter, setTypeFilter] = useState(() => {
+    try { return localStorage.getItem(LS_TYPE_KEY) || 'All'; } catch { return 'All'; }
+  });
 
-  const evict = (id) => {
+  useEffect(() => {
+    api.get('/pre-starts', { params: { limit: 5000 } })
+      .then((r) => setItems(Array.isArray(r.data) ? r.data : []))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Persist type filter across sessions.
+  useEffect(() => {
+    try { localStorage.setItem(LS_TYPE_KEY, typeFilter); } catch { /* noop */ }
+  }, [typeFilter]);
+
+  const evict = useCallback((id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
-    setFiltered((prev) => prev.filter((x) => x.id !== id));
-  };
+  }, []);
 
-  // v58.9.1 — Group `filtered` rows by derived label, sort each group
-  // by date desc, and assign a stable palette entry per group (order
-  // by tile-count desc so the largest crew batches get amber first).
+  // Decorate each row with its inferred type + palette. Cached in a
+  // useMemo so we only recompute when the raw items change (not on
+  // every keystroke).
+  const decorated = useMemo(() => {
+    return items.map((row) => {
+      const type = inferTemplateType(row) || 'Unclassified';
+      const palette = paletteForType(type);
+      return { row, type, palette };
+    });
+  }, [items]);
+
+  // Build the type index — every distinct type + its unfiltered count.
+  const typeIndex = useMemo(() => {
+    const buckets = new Map();
+    for (const d of decorated) {
+      const key = d.type;
+      if (!buckets.has(key)) buckets.set(key, { type: key, palette: d.palette, count: 0 });
+      buckets.get(key).count += 1;
+    }
+    return Array.from(buckets.values()).sort((a, b) => b.count - a.count);
+  }, [decorated]);
+
+  // Apply filters (type + date range + name tokens).
+  const tokens = useMemo(() => tokenize(q), [q]);
+
+  const filtered = useMemo(() => {
+    return decorated.filter(({ row, type }) => {
+      if (typeFilter !== 'All' && type !== typeFilter) return false;
+      const d = row.date || (row.submitted_at || '').substring(0, 10) || '';
+      if (dateFrom && d && d < dateFrom) return false;
+      if (dateTo && d && d > dateTo) return false;
+      if (tokens.length === 0) return true;
+      const meta = row.metadata || {};
+      const hay = [
+        row.crew_lead, row.work_summary, row.description,
+        meta.src_filename, meta.batch_label, meta.filename,
+        row.site_name, row.site_address, row.workspace_name,
+        row.submitted_by_name,
+        type,
+        d,
+      ].filter(Boolean).join(' ');
+      return matchesAllTokens(hay, tokens);
+    });
+  }, [decorated, typeFilter, dateFrom, dateTo, tokens]);
+
+  // Group filtered rows by type. Section order follows unfiltered
+  // count desc so colour position is stable across filter changes.
   const grouped = useMemo(() => {
     const buckets = new Map();
-    for (const row of filtered) {
-      const key = _deriveGroup(row);
-      if (!buckets.has(key)) buckets.set(key, []);
-      buckets.get(key).push(row);
+    for (const f of filtered) {
+      if (!buckets.has(f.type)) buckets.set(f.type, { type: f.type, palette: f.palette, rows: [] });
+      buckets.get(f.type).rows.push(f.row);
     }
-    const arr = Array.from(buckets.entries())
-      .map(([label, rows]) => ({
-        label,
-        rows: rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    const orderMap = new Map(typeIndex.map((t, i) => [t.type, i]));
+    return Array.from(buckets.values())
+      .map((g) => ({
+        ...g,
+        rows: g.rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
       }))
-      .sort((a, b) => b.rows.length - a.rows.length);
-    return arr.map((g, i) => ({
-      ...g,
-      palette: GROUP_PALETTE[i % GROUP_PALETTE.length],
-    }));
-  }, [filtered]);
+      .sort((a, b) => (orderMap.get(a.type) ?? 999) - (orderMap.get(b.type) ?? 999));
+  }, [filtered, typeIndex]);
 
+  const totalCount = decorated.length;
+  const filteredCount = filtered.length;
+
+  const clearAll = () => {
+    setQ(''); setDateFrom(''); setDateTo(''); setTypeFilter('All');
+  };
+  const hasActiveFilter = Boolean(q || dateFrom || dateTo || typeFilter !== 'All');
 
   return (
     <div className="max-w-7xl mx-auto" data-testid="prestarts-list">
       <CaptureSticky testid="prestarts-sticky">
-        <PageHeader crumb="Capture / Daily Pre-Starts" title="Daily Pre-Starts" subtitle="Crew sign-on and toolbox talk records, by date."
-          action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />} />
+        <PageHeader
+          crumb="Capture / Daily Pre-Starts"
+          title="Daily Pre-Starts"
+          subtitle="Grouped by template type. Search by date, name, or type."
+          action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-create-btn" />}
+        />
         {items.length > 0 && (
-          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="prestarts" />
+          <div className="mb-3" data-testid="prestarts-toolbar">
+            {/* Row 1 — search inputs */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative flex-1 min-w-[220px]">
+                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden />
+                <input
+                  type="search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search name, work, filename…"
+                  className="w-full pl-8 pr-3 py-2 rounded-lg border border-slate-200 bg-white text-sm outline-none focus:ring-2 focus:ring-slate-300"
+                  data-testid="prestarts-search-name"
+                />
+              </div>
+              <label className="flex items-center gap-1 text-xs text-slate-500">
+                <span>From</span>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  className="px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm"
+                  data-testid="prestarts-search-date-from"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-xs text-slate-500">
+                <span>To</span>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  className="px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm"
+                  data-testid="prestarts-search-date-to"
+                />
+              </label>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="px-2 py-2 rounded-lg border border-slate-200 bg-white text-sm max-w-[240px]"
+                data-testid="prestarts-search-type"
+              >
+                <option value="All">All types</option>
+                {typeIndex.map((t) => (
+                  <option key={t.type} value={t.type}>{t.type}</option>
+                ))}
+              </select>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-900 px-2 py-1.5"
+                  data-testid="prestarts-clear-filters"
+                >
+                  <X size={12} /> Clear
+                </button>
+              )}
+              <div className="text-xs text-slate-500 tabular-nums ml-auto" data-testid="prestarts-count">
+                Showing {filteredCount} of {totalCount} pre-starts
+              </div>
+            </div>
+            {/* Row 2 — coloured type chips */}
+            {typeIndex.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2" data-testid="prestarts-type-chips">
+                <TypeChip
+                  active={typeFilter === 'All'}
+                  label="All"
+                  count={totalCount}
+                  palette={{ hex: '#0F172A', chipBg: '#F1F5F9', chipText: '#0F172A', border: '#0F172A' }}
+                  onClick={() => setTypeFilter('All')}
+                  testid="prestarts-chip-all"
+                />
+                {typeIndex.map((t) => (
+                  <TypeChip
+                    key={t.type}
+                    active={typeFilter === t.type}
+                    label={t.type}
+                    count={t.count}
+                    palette={t.palette}
+                    onClick={() => setTypeFilter(t.type)}
+                    testid={`prestarts-chip-${t.palette.key}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </CaptureSticky>
       <div className="mt-3">
-      {loading ? <div className="text-sm text-slate-500">Loading…</div>
-       : items.length === 0 ? <EmptyState title="No pre-starts yet" body="Capture your first daily pre-start with crew sign-ons."
-            action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-empty-create" />} />
-       : (
-        <div className="space-y-8" data-testid="prestarts-grouped">
-          {grouped.map((g) => (
-            <section key={g.label}
-                     data-testid={`prestarts-group-${g.label}`}
-                     data-color={g.palette.name}
-                     className="rounded-2xl border p-4"
-                     style={{ background: g.palette.bg, borderColor: g.palette.border + '55' }}>
-              <div className="flex items-baseline justify-between mb-3">
-                <h2 className="font-display font-semibold text-slate-900 flex items-center gap-2">
-                  <span className="inline-block w-2.5 h-2.5 rounded-full"
-                        style={{ background: g.palette.heading }} />
-                  <span style={{ color: g.palette.heading }}>{g.label}</span>
-                  <span className="text-xs font-normal text-slate-500 tabular-nums">
-                    · {g.rows.length} record{g.rows.length === 1 ? '' : 's'}
-                  </span>
-                </h2>
-              </div>
-              <CaptureCardGrid testid={`prestarts-grid-${g.label}`}>
-                {g.rows.map((p) => (
-                  <CaptureCard
-                    key={p.id}
-                    record={p}
-                    resourceKind="pre_starts"
-                    apiPath="pre-starts"
-                    subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
-                    body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
-                    subtitle={p.imported ? null : (p.work_summary || (p.sign_ons?.length ? `${p.sign_ons.length} signed on` : null))}
-                    onDeleted={evict}
-                  />
-                ))}
-              </CaptureCardGrid>
-            </section>
-          ))}
-        </div>
-       )}
+        {loading ? (
+          <div className="text-sm text-slate-500">Loading…</div>
+        ) : items.length === 0 ? (
+          <EmptyState
+            title="No pre-starts yet"
+            body="Capture your first daily pre-start with crew sign-ons."
+            action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-empty-create" />}
+          />
+        ) : filtered.length === 0 ? (
+          <div className="text-sm text-slate-500 border border-slate-200 rounded-2xl p-6 bg-slate-50 text-center" data-testid="prestarts-empty-filtered">
+            No pre-starts match the current filters.
+          </div>
+        ) : (
+          <div className="space-y-6" data-testid="prestarts-grouped">
+            {grouped.map((g) => (
+              <section
+                key={g.type}
+                data-testid={`prestarts-group-${g.palette.key}`}
+                data-type={g.type}
+                className="rounded-2xl border p-4"
+                style={{ background: g.palette.tint, borderColor: g.palette.border }}
+              >
+                <div className="flex items-baseline justify-between mb-3">
+                  <h2 className="font-display font-semibold text-slate-900 flex items-center gap-2">
+                    <span
+                      className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-sm font-semibold"
+                      style={{ background: g.palette.hex, color: '#ffffff' }}
+                      data-testid={`prestarts-group-pill-${g.palette.key}`}
+                    >
+                      {g.type}
+                    </span>
+                    <span className="text-xs font-normal text-slate-500 tabular-nums">
+                      · {g.rows.length} record{g.rows.length === 1 ? '' : 's'}
+                    </span>
+                  </h2>
+                </div>
+                <CaptureCardGrid testid={`prestarts-grid-${g.palette.key}`}>
+                  {g.rows.map((p) => {
+                    const ws = p.work_summary || '';
+                    const shortSummary = ws.length > 90 ? ws.substring(0, 87) + '…' : ws;
+                    return (
+                      <CaptureCard
+                        key={p.id}
+                        record={p}
+                        resourceKind="pre_starts"
+                        apiPath="pre-starts"
+                        subject={`Daily Pre-Start — ${p.date}`}
+                        body={`Daily pre-start summary.\n\nDate: ${p.date}\nType: ${g.type}\nWork: ${ws}`}
+                        subtitle={shortSummary ? <Highlight text={shortSummary} tokens={tokens} /> : null}
+                        titleNode={<Highlight text={g.type} tokens={tokens} />}
+                        hideOperator
+                        stripeStyle={{ backgroundColor: g.palette.hex }}
+                        onDeleted={evict}
+                      />
+                    );
+                  })}
+                </CaptureCardGrid>
+              </section>
+            ))}
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function TypeChip({ active, label, count, palette, onClick, testid }) {
+  const style = active
+    ? { background: palette.hex, color: '#ffffff', borderColor: palette.hex }
+    : { background: palette.chipBg, color: palette.chipText, borderColor: palette.border };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={style}
+      className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border transition-shadow hover:shadow-sm"
+      data-testid={testid}
+      title={label}
+    >
+      <span
+        className="w-1.5 h-1.5 rounded-full"
+        style={{ background: active ? '#ffffff' : palette.hex }}
+        aria-hidden
+      />
+      <span className="max-w-[220px] truncate">{label}</span>
+      <span
+        className="tabular-nums px-1.5 py-0.5 rounded-full text-[10px] font-semibold"
+        style={{
+          background: active ? 'rgba(255,255,255,0.22)' : '#ffffff',
+          color: active ? '#ffffff' : palette.chipText,
+        }}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 

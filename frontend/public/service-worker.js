@@ -1252,7 +1252,11 @@
 // v160.3.9.58.10.1 — Bulk-import auto-restart guard P0 fix (backend
 //                    only; SW bumped to keep guardrail happy — no
 //                    frontend behaviour change).
-const CACHE_VERSION = 'paneltec-v160.3.9.58.10.1';
+// v160.3.9.58.10.2 — Daily Pre-Starts UX refactor: worker names hidden
+//                    from tiles, template-type-based colour grouping,
+//                    date + name + type search, coloured chip filter
+//                    with counts, `<mark>` highlights. Client-only.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.10.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

@@ -39,6 +39,19 @@ export default function CaptureCard({
   subtitle,
   badges,
   onDeleted,
+  // v160.3.9.58.10.2 — Pre-Starts UX opt-ins. Both default to the
+  // pre-existing behaviour so the other 5 Capture tabs are untouched.
+  //   · `hideOperator`  – suppress the row-3 operator name (Pre-Starts
+  //     tiles hide worker names per user request).
+  //   · `stripeStyle`   – inline style object that OVERRIDES the
+  //     Tailwind `colour.stripe` class. Used to paint the 4-px left
+  //     accent from a runtime palette (Pre-Starts colours by template
+  //     type from `preStartsPalette.js`).
+  //   · `titleNode`     – optional ReactNode replacing the plain-text
+  //     title so callers can inject `<mark>` highlights.
+  hideOperator = false,
+  stripeStyle,
+  titleNode,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -58,7 +71,11 @@ export default function CaptureCard({
       className="group relative rounded-lg bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow"
       data-testid={`capture-card-${r.id}`}
     >
-      <div className={`absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`} aria-hidden />
+      <div
+        className={stripeStyle ? 'absolute left-0 top-0 bottom-0 w-1' : `absolute left-0 top-0 bottom-0 w-1 ${colour.stripe}`}
+        style={stripeStyle}
+        aria-hidden
+      />
       <div className="pl-2.5 pr-1.5 py-1.5">
         {/* Row 1 — chip/legacy pills + action icons on the SAME line */}
         <div className="flex items-center justify-between gap-2">
@@ -133,11 +150,17 @@ export default function CaptureCard({
           title={title}
           data-testid={`capture-title-${r.id}`}
         >
-          {title}
+          {titleNode || title}
         </div>
-        {/* Row 3 — operator · date */}
-        <div className="text-[10.5px] text-slate-500 leading-tight truncate" title={`${operator} · ${dateStr}`}>
-          {operator || '—'} <span className="text-slate-300">·</span> {dateStr || '—'}
+        {/* Row 3 — operator · date (operator hidden on Pre-Starts) */}
+        <div
+          className="text-[10.5px] text-slate-500 leading-tight truncate"
+          title={hideOperator ? dateStr : `${operator} · ${dateStr}`}
+          data-testid={`capture-meta-${r.id}`}
+        >
+          {hideOperator ? (dateStr || '—') : (
+            <>{operator || '—'} <span className="text-slate-300">·</span> {dateStr || '—'}</>
+          )}
         </div>
         {subtitle && (
           <div className="text-[10.5px] text-slate-500 leading-tight line-clamp-1" title={typeof subtitle === 'string' ? subtitle : undefined}>
