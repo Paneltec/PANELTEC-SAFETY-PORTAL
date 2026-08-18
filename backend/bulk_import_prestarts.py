@@ -119,6 +119,12 @@ RETENTION_DAYS = _env_int("BULK_IMPORT_RETENTION_DAYS", 30)
 VISION_CONCURRENCY = _env_int("BULK_IMPORT_VISION_CONCURRENCY", 4)
 VISION_MAX_RETRIES = _env_int("BULK_IMPORT_VISION_MAX_RETRIES", 5)
 VISION_BACKOFF_CAP_SEC = _env_int("BULK_IMPORT_VISION_BACKOFF_CAP_SEC", 30)
+# v58.5.1 — Per-attempt wall-clock timeout on each Claude call.
+# The upstream `LlmChat.send_message()` has NO client-side timeout, so a
+# silently-hung request could park a consumer indefinitely. This turns
+# that indefinite hang into a bounded retriable failure. 90s covers a
+# comfortable 3σ of real classify+extract latencies (p99 ≈ 22s observed).
+VISION_CALL_TIMEOUT_SEC = _env_int("BULK_IMPORT_VISION_CALL_TIMEOUT_SEC", 90)
 # Rough per-PDF cost estimate. Two Claude calls per PDF (classify +
 # extract) at ~$0.003 each → $0.006. Env-overridable so ops can tune.
 VISION_PER_PDF_COST_USD = _env_float("BULK_IMPORT_VISION_PER_PDF_COST_USD", 0.006)
@@ -566,24 +572,55 @@ def _is_retriable_claude_error(exc: Exception) -> bool:
     ))
 
 
-async def _claude_call_with_backoff(fn, *args, **kwargs):
+async def _claude_call_with_backoff(fn, *args, counters: Optional[dict] = None,
+                                    **kwargs):
     """Retry `fn(*args, **kwargs)` up to `VISION_MAX_RETRIES` times with
     exponential backoff (1, 2, 4, 8, 16 s, capped at
     `VISION_BACKOFF_CAP_SEC`). Only retries transient errors — everything
-    else raises immediately."""
+    else raises immediately.
+
+    v58.5.1 — Each attempt is wrapped in `asyncio.wait_for(...,
+    VISION_CALL_TIMEOUT_SEC)` so a silent hang in the underlying LLM
+    client becomes a retriable `asyncio.TimeoutError`. Optional
+    `counters` dict is mutated in-place to record `429s / 5xxs /
+    timeouts / retries` for per-batch telemetry."""
     delays = [1, 2, 4, 8, 16]
     last_exc: Optional[Exception] = None
     attempts = min(VISION_MAX_RETRIES + 1, len(delays) + 1)
     for i in range(attempts):
         try:
-            return await fn(*args, **kwargs)
+            return await asyncio.wait_for(
+                fn(*args, **kwargs), timeout=VISION_CALL_TIMEOUT_SEC)
+        except asyncio.TimeoutError as exc:
+            last_exc = exc
+            if counters is not None:
+                counters["timeouts"] = counters.get("timeouts", 0) + 1
+            if i == attempts - 1:
+                # Wrap as a plain Exception so upstream `except` clauses
+                # (which look for `str(e)`) get a stable error string.
+                raise Exception(
+                    f"claude call timeout after {VISION_CALL_TIMEOUT_SEC}s") from exc
+            delay = min(delays[i], VISION_BACKOFF_CAP_SEC)
+            log.info("claude retry %d/%d after %ds (timeout %ds)",
+                     i + 1, attempts - 1, delay, VISION_CALL_TIMEOUT_SEC)
+            if counters is not None:
+                counters["retries"] = counters.get("retries", 0) + 1
+            await asyncio.sleep(delay)
         except Exception as exc:
             last_exc = exc
+            if counters is not None:
+                txt = str(getattr(exc, "detail", None) or exc).lower()
+                if "429" in txt or "rate" in txt or "overloaded" in txt or "quota" in txt:
+                    counters["429s"] = counters.get("429s", 0) + 1
+                elif "502" in txt or "503" in txt or "504" in txt:
+                    counters["5xxs"] = counters.get("5xxs", 0) + 1
             if not _is_retriable_claude_error(exc) or i == attempts - 1:
                 raise
             delay = min(delays[i], VISION_BACKOFF_CAP_SEC)
             log.info("claude retry %d/%d after %ds (%s)",
                      i + 1, attempts - 1, delay, str(exc)[:120])
+            if counters is not None:
+                counters["retries"] = counters.get("retries", 0) + 1
             await asyncio.sleep(delay)
     # Defensive — the loop above always either returns or re-raises.
     raise last_exc  # pragma: no cover
@@ -1105,7 +1142,8 @@ async def _stream_download(url: str, dest_path: str) -> int:
 
 
 async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
-                           templates_by_id: dict, org_id: str) -> dict:
+                           templates_by_id: dict, org_id: str,
+                           counters: Optional[dict] = None) -> dict:
     """Classifier + extractor + fuzzy match for one PDF. Persists to
     `bulk_import_dryrun`. Returns the persisted record dict.
 
@@ -1149,13 +1187,14 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
             site_match = cached.get("site_match") or {"id": None}
             template = templates_by_id.get(tpl_id) or {}
         else:
-            cls = await _claude_call_with_backoff(_claude_classify, png_b64)
+            cls = await _claude_call_with_backoff(
+                _claude_classify, png_b64, counters=counters)
             tpl_name = (cls or {}).get("template_name") or "Daily Pre-Start"
             tpl_id = next((k for k, v in _TEMPLATE_HINTS.items() if v == tpl_name),
                           "536805af-e397-451f-94f0-30296d8f3a97")
             template = templates_by_id.get(tpl_id) or {}
             ext = await _claude_call_with_backoff(
-                _claude_extract, png_b64, template)
+                _claude_extract, png_b64, template, counters=counters)
             worker_id, worker_conf = await _match_worker(
                 ext.get("worker_name", ""), org_id)
             site_id = await _match_site(ext.get("site", ""), org_id)
@@ -1422,8 +1461,15 @@ async def _run_job(job_id: str, mode: str):
             "cached_hits": 0,
             "failed_pdfs": [],
             "estimated_cost_usd": 0.0,
+            # v58.5.1 — per-run telemetry for silent-hang debugging.
+            # Mutated in place by `_claude_call_with_backoff`.
+            "429s": 0,
+            "5xxs": 0,
+            "timeouts": 0,
+            "retries": 0,
         }
         last_write_ts = time.monotonic()
+        run_started_ts = time.monotonic()
 
         async def _flush_progress(force: bool = False) -> None:
             nonlocal last_write_ts
@@ -1458,6 +1504,16 @@ async def _run_job(job_id: str, mode: str):
                 await db.bulk_import_jobs.update_one({"id": job_id}, update)
             except Exception as e:  # non-fatal
                 log.debug("progress write failed: %s", e)
+            # v58.5.1 — per-batch telemetry so a future stall is
+            # diagnosable from the logs alone (no MongoDB probe needed).
+            elapsed = int(time.monotonic() - run_started_ts)
+            log.info(
+                "bulk_import[%s] batch processed=%d cached=%d matched=%d "
+                "failed=%d 429s=%d 5xxs=%d timeouts=%d retries=%d elapsed=%ds",
+                job_id, processed, prog["cached_hits"], prog["matched"],
+                prog["failed"], prog["429s"], prog["5xxs"],
+                prog["timeouts"], prog["retries"], elapsed,
+            )
 
         producer_done = asyncio.Event()
         producer_error: dict[str, Optional[Exception]] = {"err": None}
@@ -1491,7 +1547,8 @@ async def _run_job(job_id: str, mode: str):
                     display_name = (f"{archive_label}::{pdf_name}"
                                     if archive_label != "<outer>" else pdf_name)
                     rec = await _process_one_pdf(job, display_name, data,
-                                                 templates_by_id, org_id)
+                                                 templates_by_id, org_id,
+                                                 counters=prog)
 
                     # Book-keeping counters (all rows contribute to
                     # progress; separate `ok` vs `failed` accounting).
