@@ -90,6 +90,14 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    """Parse an env var as bool. Accepts on/true/1/yes as truthy."""
+    v = os.environ.get(name)
+    if v is None:
+        return default
+    return v.strip().lower() in ("on", "true", "1", "yes")
+
+
 # ── Stage-specific watchdog timeouts (v58.0.1) ──
 #   downloading   → too slow to fetch the archive
 #   extracting    → walker can't get through the outer + nested archives
@@ -181,6 +189,31 @@ async def ensure_indexes() -> None:
         # skip the TTL index to avoid Mongo errors on string fields.
         # (Deliberate: we already have a nightly sweep and TTL rows
         # would need `created_at` migrated to Date, which is Phase 2.)
+
+        # v58.7.2 — Optional unique index on
+        # `(org_id, source='bulk_import', metadata.pdf_hash)` for
+        # `form_submissions`. Complements the v58.7.2 upsert patch by
+        # rejecting any concurrent-writer duplicate. Held behind a
+        # feature flag because it CANNOT be built on a collection that
+        # still contains duplicate rows — the dedupe cleanup script
+        # (`scripts/dedupe_bulk_import_submissions_v58_7_2.py --commit`)
+        # must run FIRST. Once ops confirms zero duplicates, set
+        # `BULK_IMPORT_ENFORCE_UNIQUE_INDEX=true` and restart backend.
+        if _env_bool("BULK_IMPORT_ENFORCE_UNIQUE_INDEX", False):
+            try:
+                await db.form_submissions.create_index(
+                    [("org_id", 1), ("source", 1), ("metadata.pdf_hash", 1)],
+                    unique=True,
+                    name="uniq_bulk_import_pdfhash",
+                    partialFilterExpression={
+                        "source": "bulk_import",
+                        "metadata.pdf_hash": {"$exists": True},
+                    },
+                )
+            except Exception as e:
+                log.warning(
+                    "form_submissions unique index blocked (likely "
+                    "residual duplicates — run the dedupe script): %s", e)
     except Exception as e:  # pragma: no cover — bootstrap only
         log.warning("bulk_import index setup: %s", e)
 
@@ -1632,14 +1665,36 @@ async def _run_job(job_id: str, mode: str):
                     # (default) — the row lands in the review queue
                     # with `needs_review=True` and a `gridfs_id` link
                     # to the raw PDF.
+                    # v58.7.2 — Upsert-by-pdf_hash to prevent duplicate
+                    # rows on cache-hit inserts during a resume. Keyed
+                    # on `(org_id, source='bulk_import', metadata.pdf_hash)`
+                    # so a re-run against the same Dropbox URL replays
+                    # the extraction path (cheap, cache-driven) without
+                    # producing 2 form_submissions for the same PDF.
+                    # `$setOnInsert` preserves any post-import edits on
+                    # a row that already exists (reviewer notes, worker
+                    # matches manually corrected, etc). Legacy paths
+                    # that don't carry a `pdf_hash` fall through to the
+                    # original `insert_one`.
                     if mode == "full_run" and (
                         rec["status"] == "ok"
                         or (rec["status"] == "failed" and include_failed)
                     ):
                         try:
-                            await db.form_submissions.insert_one(
-                                _build_form_submission(job, rec, display_name)
-                            )
+                            _doc = _build_form_submission(job, rec, display_name)
+                            _hash = (_doc.get("metadata") or {}).get("pdf_hash")
+                            if _hash:
+                                await db.form_submissions.update_one(
+                                    {
+                                        "org_id": _doc["org_id"],
+                                        "source": "bulk_import",
+                                        "metadata.pdf_hash": _hash,
+                                    },
+                                    {"$setOnInsert": _doc},
+                                    upsert=True,
+                                )
+                            else:
+                                await db.form_submissions.insert_one(_doc)
                         except Exception as we:
                             log.warning("bulk_import: write failed for %s: %s",
                                         display_name, we)

@@ -900,6 +900,48 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.7.2 — Bulk Import: upsert-on-pdf_hash + duplicate cleanup.
+//   Following the v58.7.1 resume that materialised 2,186 duplicate
+//   form_submissions rows (cache-hit path re-inserted rows that were
+//   committed by the previous run), three defensive changes:
+//
+//     1. `bulk_import_prestarts.py` — the full_run insert branch
+//        (line ~1638) now `update_one(..., $setOnInsert=doc,
+//        upsert=True)` keyed on
+//        `(org_id, source='bulk_import', metadata.pdf_hash)`. Every
+//        subsequent resume against the same source URL is idempotent:
+//        cache-hit PDFs no longer create ghost rows. `$setOnInsert`
+//        preserves any post-import edits on rows that already exist
+//        (reviewer notes, worker corrections). Legacy rows without a
+//        `pdf_hash` fall through to the original `insert_one`.
+//
+//     2. `scripts/dedupe_bulk_import_submissions_v58_7_2.py` — new
+//        one-shot maintenance script. `--dry-run` (default) reports
+//        duplicate groups; `--commit` soft-deletes all but the
+//        OLDEST row per group, stamping the removed rows with:
+//          · deleted_at
+//          · metadata.merged_into_id (pointer to survivor)
+//          · metadata.merged_at
+//          · metadata.merged_by = "system-cleanup-v58-7-2"
+//        One consolidated `admin_actions` audit row is written per
+//        sweep. NEVER hard deletes — every row remains recoverable.
+//
+//     3. Feature-flagged unique index — `ensure_indexes()` will
+//        create a partial unique index on
+//        `(org_id, source, metadata.pdf_hash)` when
+//        `BULK_IMPORT_ENFORCE_UNIQUE_INDEX=true`. Held OFF by default
+//        because building it on a collection with residual duplicates
+//        fails; ops must run the dedupe script's `--commit` first.
+//
+//   Deployment note: uvicorn in this env runs WITHOUT `--reload`, so
+//   editing `bulk_import_prestarts.py` does NOT hot-reload the
+//   running worker. The v58.7.1 resume job that motivated this patch
+//   is safe from a mid-flight restart; the upsert protects future
+//   runs, not the current one. The current job's dupe bleed had
+//   already stopped naturally when its cache saturated at
+//   cached_hits=2,186.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.2';
+
 // v160.3.9.58.7.1 — Comms Safe Mode: sharper env-lock UX.
 //   User reported clicking "Turn OFF" did nothing — root cause was
 //   that the locked-state visual signal was too subtle (a small pill
@@ -921,7 +963,6 @@
 //   already returns `env_locked: bool`. `COMMS_SAFE_MODE=on` in
 //   `backend/.env` is untouched (that's an operator lift, not an app
 //   change).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.1';
 
 // v160.3.9.58.7 — PhonePreview chrome sync with mobile v58.7 palette.
 //   The mobile team just landed a new airy light palette (amber
