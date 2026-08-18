@@ -409,7 +409,8 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
     # without tailing supervisor logs. Best-effort — swallows errors.
     try:
         j = await db.bulk_import_jobs.find_one(
-            {"id": job_id}, {"_id": 0, "org_id": 1, "processed": 1})
+            {"id": job_id}, {"_id": 0, "org_id": 1, "processed": 1,
+                              "mode": 1, "auto_resume_count": 1})
         if j and j.get("org_id"):
             await _notify_admins(
                 j["org_id"],
@@ -421,6 +422,36 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
                       f"v58.8 auto-resume will pick it up automatically "
                       f"unless you 'Start over' first."),
             )
+        # v58.8.2 — In-process auto-restart. If the reap was a vision
+        # stall (not a permanent bad-input error) AND the job has made
+        # progress AND we haven't already retried too many times,
+        # spawn a fresh `_run_job` immediately. Cache-skip + v58.7.2
+        # upsert make this cost-safe. Capped by
+        # `BULK_IMPORT_MAX_AUTO_RESUME` (default 5) so a truly stuck
+        # job doesn't loop forever.
+        max_retries = _env_int("BULK_IMPORT_MAX_AUTO_RESUME", 5)
+        if (j and error_step == "vision"
+                and (j.get("processed") or 0) > 0
+                and (j.get("auto_resume_count") or 0) < max_retries
+                and j.get("mode") == "full_run"):
+            new_count = (j.get("auto_resume_count") or 0) + 1
+            await db.bulk_import_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "state": "processing",
+                    "error_step": None, "error": None,
+                    "finished_at": None,
+                    "last_progress_at": _now_iso(),
+                    "auto_resumed_at": _now_iso(),
+                    "auto_resume_count": new_count,
+                }},
+            )
+            log.info(
+                "bulk_import[%s] watchdog reap → in-process "
+                "auto-restart (count=%d/%d)",
+                job_id, new_count, max_retries,
+            )
+            asyncio.create_task(_run_job(job_id, mode="full_run"))
     except Exception as _:  # pragma: no cover
         pass
 
@@ -1850,6 +1881,43 @@ async def _run_job(job_id: str, mode: str):
                                     {"$setOnInsert": _doc},
                                     upsert=True,
                                 )
+                                # v58.10 — Dual-write into `pre_starts`
+                                # for the Pre-Start template family so
+                                # Daily Pre-Starts renders records live.
+                                # `form_submissions` remains source of
+                                # truth (rich `fields` array, audit).
+                                # `pre_starts` shim is a lightweight
+                                # visibility layer keyed on pdf_hash.
+                                _tpl = (_doc.get("template_name_snapshot") or "").lower()
+                                if "pre-start" in _tpl or "pre start" in _tpl or "checklist" in _tpl:
+                                    _fname = (_doc.get("metadata") or {}).get("src_filename") or "unknown.pdf"
+                                    _wname = (((_doc.get("metadata") or {}).get("worker_match") or {}).get("name")) or "Imported from PDF"
+                                    _shim = {
+                                        "id": _doc["id"],
+                                        "org_id": _doc["org_id"],
+                                        "workspace_id": _doc.get("workspace_id") or "",
+                                        "date": (_doc.get("submitted_at") or _now_iso())[:10],
+                                        "crew_lead": _wname,
+                                        "work_summary": f"Imported: {_fname}",
+                                        "linked_swms_ids": [],
+                                        "linked_permits": [],
+                                        "hazards_discussed": "",
+                                        "sign_ons": [],
+                                        "notes": "Auto-written by v58.10 dual-write.",
+                                        "created_by": _doc.get("submitted_by_id"),
+                                        "created_at": _doc.get("created_at") or _now_iso(),
+                                        "updated_at": _now_iso(),
+                                        "deleted_at": None,
+                                        "imported": True,
+                                        "source_form_submission_id": _doc["id"],
+                                        "pdf_hash": _hash,
+                                    }
+                                    await db.pre_starts.update_one(
+                                        {"org_id": _doc["org_id"],
+                                         "pdf_hash": _hash, "imported": True},
+                                        {"$setOnInsert": _shim},
+                                        upsert=True,
+                                    )
                             else:
                                 await db.form_submissions.insert_one(_doc)
                         except Exception as we:

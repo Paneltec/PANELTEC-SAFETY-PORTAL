@@ -966,7 +966,7 @@
 //
 //   Contract test: `test_bulk_import_auto_resume_v58_8.py` — 5 cases
 //   covering stale/fresh/complete/dry_run/multi-orphan invariants.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.9';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10';
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".

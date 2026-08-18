@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,6 +7,30 @@ import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
+
+// v58.9.1 — Group tiles by parent-zip (source contractor batch) with
+// a rotating 6-colour palette. The prior single-flat-grid buried
+// bulk-imported records; this restores the visual grouping the user
+// referenced ("coloured in groups like Viatec Traffic Solutions - SSRA").
+const GROUP_PALETTE = [
+  { name: 'amber',   heading: '#F5B301', bg: '#FEF3C7', border: '#F5B301' },
+  { name: 'coral',   heading: '#F97316', bg: '#FFEDD5', border: '#F97316' },
+  { name: 'emerald', heading: '#10B981', bg: '#D1FAE5', border: '#10B981' },
+  { name: 'sky',     heading: '#0EA5E9', bg: '#E0F2FE', border: '#0EA5E9' },
+  { name: 'violet',  heading: '#8B5CF6', bg: '#EDE9FE', border: '#8B5CF6' },
+  { name: 'rose',    heading: '#F43F5E', bg: '#FFE4E6', border: '#F43F5E' },
+];
+
+function _deriveGroup(row) {
+  // Bulk-import shims carry the parent zip name inside `work_summary`
+  // (format: "Imported: <PARENT>.zip::<pdf>.pdf"). Extract that
+  // prefix. Fall back to a workspace-based bucket for original rows.
+  const ws = row.work_summary || '';
+  const m = ws.match(/Imported:\s*([^:]+?)(?:\.zip)?::/i);
+  if (m) return m[1].trim();
+  if (row.imported) return 'Imported (unlabelled)';
+  return 'Original entries';
+}
 
 export default function PreStartsList() {
   const [items, setItems] = useState([]);
@@ -18,6 +42,29 @@ export default function PreStartsList() {
     setItems((prev) => prev.filter((x) => x.id !== id));
     setFiltered((prev) => prev.filter((x) => x.id !== id));
   };
+
+  // v58.9.1 — Group `filtered` rows by derived label, sort each group
+  // by date desc, and assign a stable palette entry per group (order
+  // by tile-count desc so the largest crew batches get amber first).
+  const grouped = useMemo(() => {
+    const buckets = new Map();
+    for (const row of filtered) {
+      const key = _deriveGroup(row);
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(row);
+    }
+    const arr = Array.from(buckets.entries())
+      .map(([label, rows]) => ({
+        label,
+        rows: rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+      }))
+      .sort((a, b) => b.rows.length - a.rows.length);
+    return arr.map((g, i) => ({
+      ...g,
+      palette: GROUP_PALETTE[i % GROUP_PALETTE.length],
+    }));
+  }, [filtered]);
+
 
   return (
     <div className="max-w-7xl mx-auto" data-testid="prestarts-list">
@@ -33,20 +80,40 @@ export default function PreStartsList() {
        : items.length === 0 ? <EmptyState title="No pre-starts yet" body="Capture your first daily pre-start with crew sign-ons."
             action={<NewButton to="/app/pre-starts/new" label="New pre-start" testid="prestart-empty-create" />} />
        : (
-        <CaptureCardGrid testid="prestarts-grid">
-          {filtered.map((p) => (
-            <CaptureCard
-              key={p.id}
-              record={p}
-              resourceKind="pre_starts"
-              apiPath="pre-starts"
-              subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
-              body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
-              subtitle={p.imported ? null : (p.work_summary || (p.sign_ons?.length ? `${p.sign_ons.length} signed on` : null))}
-              onDeleted={evict}
-            />
+        <div className="space-y-8" data-testid="prestarts-grouped">
+          {grouped.map((g) => (
+            <section key={g.label}
+                     data-testid={`prestarts-group-${g.label}`}
+                     data-color={g.palette.name}
+                     className="rounded-2xl border p-4"
+                     style={{ background: g.palette.bg, borderColor: g.palette.border + '55' }}>
+              <div className="flex items-baseline justify-between mb-3">
+                <h2 className="font-display font-semibold text-slate-900 flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full"
+                        style={{ background: g.palette.heading }} />
+                  <span style={{ color: g.palette.heading }}>{g.label}</span>
+                  <span className="text-xs font-normal text-slate-500 tabular-nums">
+                    · {g.rows.length} record{g.rows.length === 1 ? '' : 's'}
+                  </span>
+                </h2>
+              </div>
+              <CaptureCardGrid testid={`prestarts-grid-${g.label}`}>
+                {g.rows.map((p) => (
+                  <CaptureCard
+                    key={p.id}
+                    record={p}
+                    resourceKind="pre_starts"
+                    apiPath="pre-starts"
+                    subject={`Daily Pre-Start — ${p.date}${p.crew_lead ? ` — ${p.crew_lead}` : ''}`}
+                    body={`Daily pre-start summary.\n\nDate: ${p.date}\nCrew lead: ${p.crew_lead || ''}\nWork: ${p.work_summary || ''}`}
+                    subtitle={p.imported ? null : (p.work_summary || (p.sign_ons?.length ? `${p.sign_ons.length} signed on` : null))}
+                    onDeleted={evict}
+                  />
+                ))}
+              </CaptureCardGrid>
+            </section>
           ))}
-        </CaptureCardGrid>
+        </div>
        )}
       </div>
     </div>
