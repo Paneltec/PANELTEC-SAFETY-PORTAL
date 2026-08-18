@@ -900,6 +900,35 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.7 — PhonePreview chrome sync with mobile v58.7 palette.
+//   The mobile team just landed a new airy light palette (amber
+//   `#F5B301` primary, `#F5F5F7` page bg, `#E5E5E5` borders,
+//   `#0A0A0A` primary text). The web-side Permissions Matrix hosts a
+//   `PhonePreview` component (`MobileModulesSection.jsx` lines 193+)
+//   that renders an iframe of the real mobile app inside a
+//   phone-shaped bezel — the chrome around that iframe was still on
+//   the old slate/orange scheme and clashed with the redesigned Expo
+//   screens rendering inside.
+//
+//   Surgical chrome updates (iframe content unchanged — inherits
+//   mobile palette from the Expo bundle itself):
+//     · Card wrapper border: slate-200 → `#E5E5E5` + dividing rule
+//     · Header logo tile: dark-slate + orange-400 → `#F5B301` bg,
+//       `#0A0A0A` glyph — matches the mobile home-screen logo square
+//     · Header text: `#0A0A0A` primary, `#6B6B6B` secondary
+//     · Icon buttons: hover `bg-amber-50` instead of `bg-slate-100`
+//     · Role-select focus ring: `orange-*` → `#F5B301` border,
+//       `#FEF3C7` (amberSoft) ring via inline `--tw-ring-color`
+//     · Checkbox accentColor: browser-native blue → `#F5B301`
+//     · Phone bezel body: `bg-slate-900` → `#1A1A1A` (slightly warmer
+//       black to sit better next to amber accents)
+//     · Notch dot: `bg-orange-500` → `#F5B301`
+//     · Iframe fallback bg: `bg-white` → `#F5F5F7` (matches mobile
+//       page bg so about:blank frame doesn't flash a hard-white)
+//
+//   No functional / logic changes. All data-testids preserved.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7';
+
 // v160.3.9.58.6.2 — BulkImportPill ghost-trap protection (symmetric
 //   to v58.6.1's FailedCard fix). The persistent top-nav pill now
 //   polls `/pre-starts/bulk-import/last?states=processing,downloading,
@@ -931,7 +960,6 @@
 //   protections remain in force. Combined with v58.6.1's FailedCard
 //   fix, the ghost-trap class of bug is now closed at every point
 //   the wizard state is surfaced to the user.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6.2';
 
 // v160.3.9.58.6.1 — Bulk Import Wizard: FailedCard defensive fixes.
 //   Closes the "stale UI ghost" trap that a P0 diagnosis surfaced when

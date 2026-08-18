@@ -408,3 +408,29 @@
   - `/app/mobile/src/components/WorkerEditModal.tsx`
   - `/app/mobile/src/lib/version.ts`
 - **Verified**: No `POST /workers` callers remain, info banner visible, edit modal works for existing workers
+
+
+## Iteration 19 — v160.3.9.58.7 Airy Construction Palette Redesign
+- **Commit**: 79b3d4b1c4774986b7b36d69d5ddddf88a469851
+- **Date**: 2026-08-18T03:05:00Z
+- **Changes**:
+  - Rewrote `src/lib/colors.ts`: all 100+ tokens swapped from dark-navy+orange to airy light palette
+  - Tab bar: light gray bg (#FAFAFA), amber rounded-square (#F5B301) behind active icon
+  - StatusBar: dark content on light bg
+  - Dashboard: white cards, amber icon tiles, amber avatar
+  - Login: amber logo tile, amber CTA, subtle feature chips
+  - Forms library + category: light headers, dark readable text, white search inputs
+  - Form fill: light header with bottom border separator
+  - StatusColors: modern vivid pills
+- **Files modified (9)**:
+  - `src/lib/colors.ts` — full palette rewrite
+  - `src/lib/version.ts` — v160.3.9.58.7
+  - `app/_layout.tsx` — StatusBar dark
+  - `app/(auth)/login.tsx` — amber logo, white icon, border fixes
+  - `app/(tabs)/_layout.tsx` — tab bar light + amber active icon wrapper
+  - `app/(tabs)/dashboard.tsx` — notch backdrop, avatar, violet rgba fixes
+  - `app/forms/library.tsx` — header bg + text + search input
+  - `app/forms/category/[key].tsx` — header bg + heading + search input
+  - `app/forms/fill/[id].tsx` — header bg + title text
+- **Screens updated**: Login, Dashboard, Forms Library, Forms Category, Form Fill, Tab Bar, Settings (via token cascade)
+- **Deferred**: Pre-starts/new.tsx (has rgba(255,255,255,0.85) inline), QR scan (camera overlay), document-library.tsx (minor badge)

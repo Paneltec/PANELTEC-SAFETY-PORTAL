@@ -270,16 +270,26 @@ function PhonePreview({ canEdit }) {
     //   · `self-start` belt-and-braces guarantee the aside doesn't
     //     stretch to grid row height (parent already carries
     //     `items-start`, but explicit is cheaper than a regression).
+    // v58.7 — Palette sync with mobile redesign. The card chrome,
+    // header logo tile, bezel notch, and select focus ring now use
+    // the mobile palette's amber (`#F5B301`) accent + `#E5E5E5` borders
+    // so the panel doesn't visually clash with the redesigned Expo
+    // screens rendering inside the iframe. The iframe content itself
+    // is unchanged — it inherits the mobile team's palette when the
+    // Expo bundle loads.
     <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto" data-testid="mobile-preview-panel">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-2 mb-3">
+      <div className="rounded-2xl border bg-white p-4" style={{ borderColor: '#E5E5E5' }}>
+        <div className="flex items-center justify-between gap-2 mb-3 pb-3 border-b" style={{ borderColor: '#E5E5E5' }}>
           <div className="inline-flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-slate-900 text-orange-400 inline-flex items-center justify-center">
+            <span
+              className="w-9 h-9 rounded-xl inline-flex items-center justify-center shadow-sm"
+              style={{ background: '#F5B301', color: '#0A0A0A' }}
+            >
               <Phone20Regular />
             </span>
             <div>
-              <div className="text-sm font-semibold text-slate-900">Live Preview</div>
-              <div className="text-[11px] text-slate-500">
+              <div className="text-sm font-semibold" style={{ color: '#0A0A0A' }}>Live Preview</div>
+              <div className="text-[11px]" style={{ color: '#6B6B6B' }}>
                 Saved config · {(() => {
                   const match = allRoles.find((r) => r.role_id === role);
                   return match ? match.name : role;
@@ -289,11 +299,15 @@ function PhonePreview({ canEdit }) {
           </div>
           <div className="flex items-center gap-1">
             <button type="button" onClick={onReload} data-testid="mobile-preview-reload"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100" title="Reload preview">
+              className="p-1.5 rounded-lg hover:bg-amber-50 transition"
+              style={{ color: '#6B6B6B' }}
+              title="Reload preview">
               <ArrowClockwise20Regular />
             </button>
             <button type="button" onClick={onOpen} data-testid="mobile-preview-open"
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100" title="Open in new tab">
+              className="p-1.5 rounded-lg hover:bg-amber-50 transition"
+              style={{ color: '#6B6B6B' }}
+              title="Open in new tab">
               <Open20Regular />
             </button>
           </div>
@@ -301,9 +315,9 @@ function PhonePreview({ canEdit }) {
 
         <label className="block">
           <div className="flex items-center justify-between mb-1">
-            <span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-slate-400">Preview as role</span>
+            <span className="block text-[10px] uppercase tracking-[0.12em] font-semibold" style={{ color: '#A0A0A0' }}>Preview as role</span>
             {/* v58.4 — role-count summary next to the dropdown. */}
-            <span className="text-[10px] text-slate-400 tabular-nums"
+            <span className="text-[10px] tabular-nums" style={{ color: '#A0A0A0' }}
                   data-testid="mobile-preview-role-count">
               {visibleCount} of {totalRoles}
             </span>
@@ -313,7 +327,14 @@ function PhonePreview({ canEdit }) {
             onChange={onRoleChange}
             data-testid="mobile-preview-role"
             disabled={!canEdit}
-            className="w-full rounded-lg border border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400"
+            className="w-full rounded-lg border bg-white text-sm px-3 py-2 focus:outline-none focus:ring-2"
+            style={{
+              borderColor: '#E5E5E5',
+              color: '#0A0A0A',
+              '--tw-ring-color': '#FEF3C7',
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#F5B301'; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E5E5'; }}
           >
             {!hasLive && ROLES.map((r) => (
               <option key={r.key} value={r.key}>{r.label}</option>
@@ -343,33 +364,36 @@ function PhonePreview({ canEdit }) {
             )}
           </select>
           {/* v58.4 — checkbox to reveal unassigned roles. Default OFF. */}
-          <label className="mt-2 flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer select-none">
+          <label className="mt-2 flex items-center gap-2 text-[11px] cursor-pointer select-none" style={{ color: '#6B6B6B' }}>
             <input type="checkbox"
                    checked={showUnassigned}
                    onChange={(e) => setShowUnassigned(e.target.checked)}
                    data-testid="mobile-preview-show-unassigned"
-                   className="w-3.5 h-3.5 rounded border-slate-300" />
+                   className="w-3.5 h-3.5 rounded"
+                   style={{ borderColor: '#E5E5E5', accentColor: '#F5B301' }} />
             Show unassigned roles
-            <span className="text-slate-400 tabular-nums">
+            <span className="tabular-nums" style={{ color: '#A0A0A0' }}>
               (+{seedGroup.length + simproGroup.length})
             </span>
           </label>
-          <p className="mt-1 text-[10px] text-slate-500 leading-tight">
+          <p className="mt-1 text-[10px] leading-tight" style={{ color: '#6B6B6B' }}>
             Reviewing what a user with this role would see. Per-user overrides are not reflected here.
           </p>
         </label>
 
-        {/* Phone bezel — slate body, orange notch accent. CSS-only,
-            no images so it survives offline + dark scrollbars. */}
+        {/* Phone bezel — dark body (a real phone bezel IS dark), amber
+            notch dot to match the mobile team's v58.7 palette. Iframe
+            content is unchanged; it inherits the new mobile palette
+            when the Expo bundle loads. */}
         <div className="mx-auto mt-4" style={{ width: 320 }}>
           <div
-            className="relative bg-slate-900 rounded-[36px] p-3 shadow-2xl"
-            style={{ height: 680 }}
+            className="relative rounded-[36px] p-3 shadow-2xl"
+            style={{ height: 680, background: '#1A1A1A' }}
             data-testid="mobile-preview-bezel"
           >
             {/* Notch */}
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 bg-slate-950 rounded-b-2xl flex items-center justify-center">
-              <span className="block w-1.5 h-1.5 rounded-full bg-orange-500" />
+            <div className="absolute top-2 left-1/2 -translate-x-1/2 w-28 h-5 rounded-b-2xl flex items-center justify-center" style={{ background: '#0A0A0A' }}>
+              <span className="block w-1.5 h-1.5 rounded-full" style={{ background: '#F5B301' }} />
             </div>
             <iframe
               ref={iframeRef}
@@ -378,14 +402,14 @@ function PhonePreview({ canEdit }) {
               data-testid="mobile-preview-iframe"
               sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
               referrerPolicy="no-referrer-when-downgrade"
-              className="w-full h-full rounded-[24px] bg-white block"
-              style={{ border: 0 }}
+              className="w-full h-full rounded-[24px] block"
+              style={{ border: 0, background: '#F5F5F7' }}
             />
           </div>
         </div>
 
-        <p className="mt-3 text-[11px] text-slate-500 leading-relaxed">
-          Preview reflects unsaved toggle changes <strong className="text-slate-700">only after Save</strong>.
+        <p className="mt-3 text-[11px] leading-relaxed" style={{ color: '#6B6B6B' }}>
+          Preview reflects unsaved toggle changes <strong style={{ color: '#0A0A0A' }}>only after Save</strong>.
           Click <span className="inline-flex items-center align-middle gap-0.5"><ArrowClockwise20Regular style={{ width: 12, height: 12 }} /></span> to reload once you&rsquo;ve saved.
         </p>
       </div>
