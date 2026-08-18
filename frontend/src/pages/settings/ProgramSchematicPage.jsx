@@ -61,21 +61,26 @@ function IconTile({ node, cluster, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      className="group flex flex-col items-center justify-start gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-4 hover:bg-white/[0.07] hover:border-white/25 focus:outline-none focus:ring-2 focus:ring-white/40 transition"
+      // v58.5 — Lightened. Off-white surface with soft slate border,
+      // subtle hover lift; text stays high-contrast slate-900. Icons
+      // shrunk ~35%. Target tile ~100 px tall (was ~140).
+      className="group flex flex-col items-center justify-start gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2.5 hover:bg-white hover:border-slate-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-slate-300 transition"
       data-testid={`schematic-node-${node.id}`}
-      style={{ minHeight: 140 }}
+      style={{ minHeight: 100 }}
     >
       <div
-        className="w-14 h-14 rounded-full flex items-center justify-center shadow-sm ring-1 group-hover:scale-105 transition-transform"
+        // Icon container also shrinks (w/h 10 vs old 14) — keeps the
+        // coloured chip readable without dominating the tile.
+        className="w-9 h-9 rounded-full flex items-center justify-center ring-1 group-hover:scale-105 transition-transform"
         style={{
-          background: `${cluster.color}22`,
-          borderColor: `${cluster.color}88`,
-          boxShadow: `0 0 0 1px ${cluster.color}55`,
+          background: `${cluster.color}18`,
+          borderColor: `${cluster.color}66`,
+          boxShadow: `0 0 0 1px ${cluster.color}33`,
         }}
       >
-        <Icon size={28} style={{ color: cluster.color }} strokeWidth={2} />
+        <Icon size={18} style={{ color: cluster.color }} strokeWidth={2.25} />
       </div>
-      <div className="text-center text-[13px] font-semibold text-white leading-tight px-1">
+      <div className="text-center text-[12px] font-semibold text-slate-800 leading-tight px-0.5">
         {node.label}
       </div>
     </button>
@@ -99,7 +104,7 @@ function ClusterGroup({ cluster, nodes, onNavigate }) {
           style={{ background: cluster.color }}
         />
         <h2
-          className="text-white text-lg font-extrabold uppercase tracking-[0.18em]"
+          className="text-slate-900 text-lg font-extrabold uppercase tracking-[0.18em]"
           style={{ letterSpacing: '0.18em' }}
           data-testid={`schematic-cluster-label-${cluster.key}`}
         >
@@ -142,7 +147,7 @@ function ClusterGroup({ cluster, nodes, onNavigate }) {
               data-testid={`schematic-sub-cluster-${sub.key}`}
             >
               <h3
-                className="text-[12px] font-bold uppercase tracking-[0.22em] text-white/70 mb-3"
+                className="text-[12px] font-bold uppercase tracking-[0.22em] text-slate-500 mb-3"
                 data-testid={`schematic-sub-cluster-label-${sub.key}`}
               >
                 {sub.label}
@@ -185,8 +190,10 @@ export default function ProgramSchematicPage() {
       className="min-h-full"
       data-testid="program-schematic-page"
       style={{
+        // v58.5 — Lightened: soft slate gradient replaces the deep-navy
+        // radial. Preserves a bit of depth without going dark.
         background:
-          'radial-gradient(circle at 30% 15%, #1E1B4B 0%, #0B1220 55%, #050710 100%)',
+          'radial-gradient(circle at 30% 15%, #F8FAFC 0%, #EEF2F7 55%, #E2E8F0 100%)',
       }}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -194,7 +201,7 @@ export default function ProgramSchematicPage() {
           title="Program Schematic"
           subtitle="Every Paneltec Civil module at a glance, grouped by cluster. Click a tile to open its page."
           testId="program-schematic-header"
-          textClassName="text-white"
+          textClassName="text-slate-900"
         />
 
         {/* Legend row — one pill per cluster, colour-coded. */}
@@ -248,7 +255,7 @@ export default function ProgramSchematicPage() {
           })}
         </div>
 
-        <p className="text-xs text-white/50 mt-8 mb-2">
+        <p className="text-xs text-slate-500 mt-8 mb-2">
           {SCHEMATIC_NODES.length} modules across {SCHEMATIC_CLUSTERS.length}{' '}
           clusters. Grid adapts 1→2→3→4 columns from mobile to desktop.
         </p>

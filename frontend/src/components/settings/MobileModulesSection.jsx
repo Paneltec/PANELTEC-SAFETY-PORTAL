@@ -399,6 +399,9 @@ export default function MobileModulesSection({ canEdit }) {
   const [applyingDefaults, setApplyingDefaults] = useState(false);
   const [original, setOriginal] = useState(null);
   const [matrix, setMatrix]     = useState(null);
+  // v58.5 — per-role overrides layered on top of the 4-category matrix.
+  // Shape: `{role_id: {module_key: bool}}`.
+  const [overrides, setOverrides] = useState({});
   // v58.4 — Live-fetched roles shared between the matrix table and the
   // PhonePreview dropdown. Prevents the historical mismatch where the
   // matrix showed 4 static columns and the dropdown showed 30 live roles.
@@ -424,6 +427,7 @@ export default function MobileModulesSection({ canEdit }) {
       const { data } = await api.get('/settings/mobile-modules');
       setOriginal(deepClone(data.mobile_modules));
       setMatrix(deepClone(data.mobile_modules));
+      setOverrides(deepClone(data.mobile_modules_overrides || {}));
       setDefaultsMeta({
         needs_migration_review: !!data.needs_migration_review,
         defaults_version: data.defaults_version || null,
@@ -457,6 +461,63 @@ export default function MobileModulesSection({ canEdit }) {
   };
 
   const reset = () => setMatrix(deepClone(original));
+
+  // v58.5 — Per-role override handlers. `toggleOverride` writes a
+  // single (role_id, module_key) override; `resetRoleOverrides` wipes
+  // every override for a live role, restoring pure inheritance.
+  const toggleOverride = async (role_id, module_key, current) => {
+    if (!canEdit) return;
+    const next = !current;
+    // Optimistic update — snap the UI so rapid toggles feel responsive.
+    setOverrides((o) => {
+      const roleO = { ...(o[role_id] || {}) };
+      roleO[module_key] = next;
+      return { ...o, [role_id]: roleO };
+    });
+    try {
+      const { data } = await api.patch('/settings/mobile-modules/overrides', {
+        role_id, module_key, enabled: next,
+      });
+      // Server may UNSET the override (same-as-inherited); reflect that.
+      setOverrides((o) => {
+        const roleO = { ...(o[role_id] || {}) };
+        if (data.override === null) delete roleO[module_key];
+        else roleO[module_key] = data.override;
+        const cleaned = { ...o };
+        if (Object.keys(roleO).length === 0) delete cleaned[role_id];
+        else cleaned[role_id] = roleO;
+        return cleaned;
+      });
+    } catch (e) {
+      // Roll back on failure.
+      setOverrides((o) => {
+        const roleO = { ...(o[role_id] || {}) };
+        if (roleO[module_key] !== undefined && roleO[module_key] === next) {
+          delete roleO[module_key];
+        }
+        const cleaned = { ...o };
+        if (Object.keys(roleO).length === 0) delete cleaned[role_id];
+        else cleaned[role_id] = roleO;
+        return cleaned;
+      });
+      toast.error(apiError(e, 'Override write failed'));
+    }
+  };
+
+  const resetRoleOverrides = async (role_id) => {
+    if (!canEdit) return;
+    try {
+      await api.delete(`/settings/mobile-modules/overrides/${role_id}`);
+      setOverrides((o) => {
+        const cleaned = { ...o };
+        delete cleaned[role_id];
+        return cleaned;
+      });
+      toast.success('Reset to inherited');
+    } catch (e) {
+      toast.error(apiError(e, 'Reset failed'));
+    }
+  };
 
   // v58.4 — Compute the ordered list of columns to render in the matrix.
   // Contract:
@@ -649,9 +710,10 @@ export default function MobileModulesSection({ canEdit }) {
                         <span className="text-slate-700">{r.label}</span>
                         {r.key === 'admin' && <LockClosed20Regular style={{ width: 12, height: 12 }} className="text-slate-400" />}
                       </div>
-                      {/* v58.4 — For non-category live-role columns show
-                          which storage bucket they inherit from + user
-                          count. Also flags read-only. */}
+                      {/* v58.4/v58.5 — For non-category live-role columns
+                          show which storage bucket they inherit from,
+                          user count, override count, and a "Reset to
+                          inherited" affordance. */}
                       {!r.is_category ? (
                         <div className="mt-1 flex flex-col items-center gap-0.5">
                           <span className="text-[9px] font-medium text-slate-400 normal-case tracking-normal">
@@ -660,6 +722,18 @@ export default function MobileModulesSection({ canEdit }) {
                           <span className="text-[9px] text-slate-500 tabular-nums normal-case">
                             {r.user_count} user{r.user_count === 1 ? '' : 's'}
                           </span>
+                          {overrides[r.key] && Object.keys(overrides[r.key]).length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => resetRoleOverrides(r.key)}
+                              disabled={!canEdit}
+                              className="text-[9px] font-medium text-orange-600 hover:underline normal-case tracking-normal disabled:opacity-50"
+                              data-testid={`mobile-reset-overrides-${r.key}`}
+                              title="Remove all overrides for this role"
+                            >
+                              reset ({Object.keys(overrides[r.key]).length})
+                            </button>
+                          )}
                         </div>
                       ) : r.key !== 'admin' && canEdit ? (
                         <div className="flex items-center justify-center gap-1.5 mt-1.5 text-[10px] font-medium">
@@ -694,20 +768,55 @@ export default function MobileModulesSection({ canEdit }) {
                       </div>
                     </td>
                     {matrixCols.cols.map((r) => {
-                      // v58.4 — Non-category columns render the EFFECTIVE
-                      // toggle from their category's bucket, read-only.
+                      // v58.5 — Non-category columns render either the
+                      // EFFECTIVE toggle (overridden) or the INHERITED
+                      // toggle (from their category's bucket) with
+                      // distinct visual states.
                       const bucketKey = r.is_category ? r.key : r.category;
-                      const on = !!matrix[bucketKey]?.[key];
-                      const locked = !r.is_category || r.key === 'admin' || !canEdit;
+                      const inherited = !!matrix[bucketKey]?.[key];
+                      const roleOverride = !r.is_category
+                        ? (overrides[r.key] || {})[key]
+                        : undefined;
+                      const hasOverride = roleOverride !== undefined;
+                      const on = hasOverride ? !!roleOverride : inherited;
+                      const locked = r.key === 'admin' || !canEdit;
                       return (
                         <td key={r.key} className="text-center px-3 py-3"
-                            data-inherit={!r.is_category || undefined}>
-                          <ToggleCell
-                            on={on}
-                            locked={locked}
-                            onChange={() => r.is_category && toggle(r.key, key)}
-                            testid={`mobile-toggle-${r.key}-${key}`}
-                          />
+                            data-inherit={!r.is_category || undefined}
+                            data-override={hasOverride || undefined}>
+                          {r.is_category ? (
+                            <ToggleCell
+                              on={on}
+                              locked={locked}
+                              onChange={() => toggle(r.key, key)}
+                              testid={`mobile-toggle-${r.key}-${key}`}
+                            />
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!canEdit}
+                              onClick={() => toggleOverride(r.key, key, on)}
+                              data-testid={`mobile-override-${r.key}-${key}`}
+                              data-state={hasOverride ? (on ? 'override-on' : 'override-off') : 'inherit'}
+                              title={hasOverride
+                                ? `Overridden (${on ? 'ON' : 'OFF'}) — click to revert`
+                                : `Inheriting from ${r.category} — click to override`}
+                              className={`
+                                inline-flex items-center justify-center w-8 h-6 rounded-md text-[11px] font-semibold transition
+                                ${hasOverride
+                                  ? (on
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                                    : 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200')
+                                  : (on
+                                    ? 'text-emerald-500/60 hover:bg-slate-100'
+                                    : 'text-slate-300 hover:bg-slate-100')
+                                }
+                                disabled:opacity-50 disabled:cursor-not-allowed
+                              `.trim().replace(/\s+/g, ' ')}
+                            >
+                              {hasOverride ? (on ? '✓' : '✕') : (on ? '↳✓' : '↳·')}
+                            </button>
+                          )}
                         </td>
                       );
                     })}
