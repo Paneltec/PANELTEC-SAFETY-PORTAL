@@ -900,7 +900,43 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
-// v160.3.9.58.6 — Bulk Import Wizard: "Resume last import" button.
+// v160.3.9.58.6.1 — Bulk Import Wizard: FailedCard defensive fixes.
+//   Closes the "stale UI ghost" trap that a P0 diagnosis surfaced when
+//   the user's browser continued displaying an old failed job (`ea81ce03…`)
+//   even though a fresh import (`85885ddd…`) was actively processing in
+//   the background. Root cause was localStorage-scoped active-job
+//   tracking: subsequent API-driven kick-offs never updated the stuck
+//   wizard.
+//
+//   Two changes, contained to `Step4Complete.jsx` + a new
+//   `onSwitchToJob` callback threaded through `BulkImportWizard.jsx`:
+//
+//     1. `FailedCard` mounts + polls (every 15 s) the existing
+//        `GET /api/pre-starts/bulk-import/last?states=processing,
+//        downloading,extracting,awaiting_approval&within_days=1`
+//        endpoint. When the response's job ID differs from the failed
+//        job the user is looking at, an amber banner appears above the
+//        red failure box: "A newer import is already in progress —
+//        {N} PDFs processed so far — you're looking at an older failed
+//        job." One click on "Switch to current import" swaps the
+//        wizard's `activeJobId` to the newer job and jumps to the
+//        appropriate step (Step 3 for `awaiting_approval`, Step 4 for
+//        every other live state). Toast: "Switched to current import."
+//
+//     2. New "Resume this import" button INSIDE `FailedCard` next to
+//        "Start over". Reuses the same POST /init + /start flow from
+//        `ResumeLastJobCard.jsx` with the failed job's `src_url` +
+//        `filename` prefilled. Cache hits still skip already-processed
+//        PDFs. Toast: "Resuming previous import — cache will skip N
+//        already-processed PDFs."
+//
+//   Both flows compare job IDs strictly, so a filter that ever
+//   surfaces the same failed job as the "latest" won't produce a
+//   nonsensical "switch to yourself" banner.
+//
+//   No pipeline / backend changes. v58.5.1 timeout + telemetry
+//   protections remain in force.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6.1';
 //   New backend endpoint `GET /api/pre-starts/bulk-import/last?
 //   within_days=30&states=failed,awaiting_approval` returns the most-
 //   recent resumable job for the caller's org (or null). Admin-gated
@@ -930,4 +966,3 @@
 //
 //   Contract test: `test_bulk_import_last_v58_6.py` covers the null
 //   case, most-recent-wins, within_days cutoff, and state filter.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6';

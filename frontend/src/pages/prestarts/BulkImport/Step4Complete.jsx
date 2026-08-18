@@ -1,9 +1,19 @@
 // v160.3.9.58.1 — Wizard Step 4: processing + result.
-import React from 'react';
+// v160.3.9.58.6.1 — FailedCard: auto-detect a newer live job (closes
+// the "stale UI ghost" trap where the wizard would keep displaying an
+// old failed job even after a fresh import was underway in the
+// background) and offer a one-click "Resume this import" from within
+// the failure view itself.
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, XCircle, Loader2, ClipboardList, ShieldAlert, RotateCcw } from 'lucide-react';
+import {
+  CheckCircle2, XCircle, Loader2, ClipboardList, ShieldAlert, RotateCcw,
+  ArrowRightCircle,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import api, { apiError } from '../../../lib/api';
 
-export function Step4Complete({ job, jobId, onReset }) {
+export function Step4Complete({ job, jobId, onReset, onSwitchToJob, onResumeCreated }) {
   const state = job?.state;
   const progress = job?.progress || {};
   const isProcessing = state === 'processing' || state === 'downloading'
@@ -14,7 +24,15 @@ export function Step4Complete({ job, jobId, onReset }) {
   }
 
   if (state === 'failed') {
-    return <FailedCard job={job} onReset={onReset} />;
+    return (
+      <FailedCard
+        job={job}
+        jobId={jobId}
+        onReset={onReset}
+        onSwitchToJob={onSwitchToJob}
+        onResumeCreated={onResumeCreated}
+      />
+    );
   }
 
   // complete
@@ -135,11 +153,108 @@ function CompleteCard({ job, jobId, onReset }) {
   );
 }
 
-function FailedCard({ job, onReset }) {
+function FailedCard({ job, jobId, onReset, onSwitchToJob, onResumeCreated }) {
   const progress = job?.progress || {};
   const extracted = progress.extracted || 0;
+  const cachedHits = progress.cached_hits || 0;
+  const [newerJob, setNewerJob] = useState(null);
+  const [resuming, setResuming] = useState(false);
+  const [switching, setSwitching] = useState(false);
+
+  // v58.6.1 — Detect a newer LIVE job for this org. If one exists we
+  // surface the switch banner: the failed job the user is looking at
+  // is likely stale (they never left Step 4 after a first failure, so
+  // subsequent job kick-offs in another tab / via API never updated
+  // their local wizard). Polls every 15 s so a run kicked off in
+  // another tab auto-appears here.
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const resp = await api.get('/pre-starts/bulk-import/last', {
+          params: {
+            states: 'processing,downloading,extracting,awaiting_approval',
+            within_days: 1,
+          },
+        });
+        if (cancelled) return;
+        const nj = resp.data;
+        // Guard against comparing a job to itself — jobId here is the
+        // failed job the user is stuck on. A `null` response is
+        // normal (no newer live job), just clear the banner.
+        if (nj && nj.id && nj.id !== jobId) setNewerJob(nj);
+        else setNewerJob(null);
+      } catch {
+        // Silent — a probe failure just means "no banner this tick".
+      }
+    };
+    check();
+    const t = setInterval(check, 15_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [jobId]);
+
+  const handleSwitch = useCallback(() => {
+    if (!newerJob || switching) return;
+    setSwitching(true);
+    onSwitchToJob?.(newerJob.id, newerJob.state);
+    toast.success('Switched to current import');
+  }, [newerJob, switching, onSwitchToJob]);
+
+  const handleResume = useCallback(async () => {
+    if (resuming) return;
+    const srcUrl = job?.src_url || job?.url_input;
+    if (!srcUrl) {
+      toast.error('Cannot resume: previous job has no source URL.');
+      return;
+    }
+    setResuming(true);
+    try {
+      const initResp = await api.post('/pre-starts/bulk-import/init', {
+        source: 'url',
+        url: srcUrl,
+        filename: job?.filename || 'bulk-import',
+      });
+      const { job_id: newJobId } = initResp.data;
+      await api.post(`/pre-starts/bulk-import/${newJobId}/start`);
+      const skip = cachedHits + extracted;
+      toast.success('Resuming previous import', {
+        description: `Cache will skip ${skip.toLocaleString()} already-processed PDF${skip === 1 ? '' : 's'}.`,
+      });
+      onResumeCreated?.(newJobId);
+    } catch (e) {
+      toast.error(apiError(e, 'Failed to resume import'));
+    } finally {
+      setResuming(false);
+    }
+  }, [job, resuming, cachedHits, extracted, onResumeCreated]);
+
   return (
     <div className="space-y-6" data-testid="wizard-step4-failed">
+      {newerJob && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 shadow-sm flex items-start gap-3"
+             data-testid="wizard-step4-newer-banner"
+             data-newer-job-id={newerJob.id}>
+          <ArrowRightCircle className="w-6 h-6 text-amber-700 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <div className="text-base font-semibold text-amber-900">
+              A newer import is already in progress
+            </div>
+            <div className="mt-1 text-sm text-amber-800 leading-relaxed">
+              {(newerJob.progress?.extracted || 0).toLocaleString()} PDF{(newerJob.progress?.extracted || 0) === 1 ? '' : 's'} processed so far — you're looking at an older failed job.
+            </div>
+          </div>
+          <button
+            onClick={handleSwitch}
+            disabled={switching}
+            data-testid="wizard-step4-switch-btn"
+            className="shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition text-sm disabled:opacity-60"
+          >
+            Switch to current import
+            <ArrowRightCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-red-300 bg-red-50 p-6 shadow-sm">
         <div className="flex items-start gap-3">
           <XCircle className="w-7 h-7 text-red-700 shrink-0 mt-0.5" />
@@ -158,12 +273,20 @@ function FailedCard({ job, onReset }) {
           </div>
         </div>
       </div>
+
       <div className="flex items-center justify-end gap-2">
         <button onClick={onReset}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition text-sm"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-300 text-slate-700 hover:bg-slate-50 transition text-sm"
                 data-testid="wizard-step4-retry">
           <RotateCcw className="w-4 h-4" />
           Start over
+        </button>
+        <button onClick={handleResume}
+                disabled={resuming || !(job?.src_url || job?.url_input)}
+                data-testid="wizard-step4-resume"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 text-white hover:bg-slate-800 transition text-sm disabled:opacity-60 disabled:cursor-wait">
+          <RotateCcw className="w-4 h-4" />
+          {resuming ? 'Resuming…' : 'Resume this import'}
         </button>
       </div>
     </div>

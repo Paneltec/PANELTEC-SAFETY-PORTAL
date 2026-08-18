@@ -70,6 +70,20 @@ export default function BulkImportWizard() {
     refresh();
   }, [refresh]);
 
+  // v58.6.1 — Switch the wizard to a different (usually newer) job.
+  // Powered by Step 4 FailedCard's "Switch to current import" banner
+  // when the endpoint reports a live job with a different ID.
+  const onSwitchToJob = useCallback((newJobId, newState) => {
+    setJobId(newJobId);
+    saveActiveJobId(newJobId);
+    // Map state → step. `awaiting_approval` deep-links to Step 3, all
+    // other live states (`downloading`, `extracting`, `processing`)
+    // belong on Step 4 which handles both progress + result rendering.
+    if (newState === 'awaiting_approval') setStep(3);
+    else setStep(4);
+    refresh();
+  }, [refresh]);
+
   const onReset = useCallback(() => {
     setJobId(null);
     saveActiveJobId(null);
@@ -115,6 +129,8 @@ export default function BulkImportWizard() {
             job={job}
             jobId={jobId}
             onReset={onReset}
+            onSwitchToJob={onSwitchToJob}
+            onResumeCreated={onJobCreated}
           />
         )}
       </div>
