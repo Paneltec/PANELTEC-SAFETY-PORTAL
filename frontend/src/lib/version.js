@@ -900,6 +900,39 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.6.2 — BulkImportPill ghost-trap protection (symmetric
+//   to v58.6.1's FailedCard fix). The persistent top-nav pill now
+//   polls `/pre-starts/bulk-import/last?states=processing,downloading,
+//   extracting,awaiting_approval&within_days=1` every 15 s. When a
+//   newer live job surfaces:
+//
+//     · If the pill's current job is in `failed` / `complete` /
+//       `loading` state (or state is undefined) → silently swap
+//       `localStorage.bulkImport.activeJobId` to the newer job's ID
+//       and clear the dismiss marker. No toast — the pill was
+//       misrepresenting reality; correcting it silently is the
+//       right call.
+//     · If the pill's current job is itself in a LIVE state
+//       (`processing` / `downloading` / `extracting` / `dryrun`) →
+//       DON'T hijack. A concurrent import is a legitimate use case
+//       (two admins running imports in parallel). `console.warn`
+//       so future debugging surfaces the split.
+//     · Strict `!==` on job IDs so no self-swap loops.
+//
+//   Polish bundled:
+//     · Small pulsing dot (`animate-ping`) in the top-right corner
+//       of the pill when the tracked job is in a LIVE state — makes
+//       "currently working" visually distinct from a static
+//       "complete" state at a glance.
+//     · Hover tooltip now shows current stage + progress fraction,
+//       e.g. `"Processing · 850/10,000 (8.5%) · click to open"`.
+//
+//   No backend / pipeline changes. v58.5.1 timeout + telemetry
+//   protections remain in force. Combined with v58.6.1's FailedCard
+//   fix, the ghost-trap class of bug is now closed at every point
+//   the wizard state is surfaced to the user.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6.2';
+
 // v160.3.9.58.6.1 — Bulk Import Wizard: FailedCard defensive fixes.
 //   Closes the "stale UI ghost" trap that a P0 diagnosis surfaced when
 //   the user's browser continued displaying an old failed job (`ea81ce03…`)
@@ -936,7 +969,6 @@
 //
 //   No pipeline / backend changes. v58.5.1 timeout + telemetry
 //   protections remain in force.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6.1';
 //   New backend endpoint `GET /api/pre-starts/bulk-import/last?
 //   within_days=30&states=failed,awaiting_approval` returns the most-
 //   recent resumable job for the caller's org (or null). Admin-gated
