@@ -900,31 +900,34 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
-// v160.3.9.58.5.1 — Bulk Import silent-hang fix.
-//   Root cause of the v58.5 10k-PDF import stalling at PDF ~592/821:
-//   `ai._claude_json` calls `LlmChat.send_message()` with NO client-side
-//   timeout. A single hung Claude request parked a consumer indefinitely.
-//   With `VISION_CONCURRENCY=4`, enough concurrent silent hangs starved
-//   the batch → no progress write for 15 min → watchdog reaped the job.
-//   Logs at the reap moment showed no 429s / 5xxs / stack traces — a
-//   classic silent hang, not a rate-limit event.
+// v160.3.9.58.6 — Bulk Import Wizard: "Resume last import" button.
+//   New backend endpoint `GET /api/pre-starts/bulk-import/last?
+//   within_days=30&states=failed,awaiting_approval` returns the most-
+//   recent resumable job for the caller's org (or null). Admin-gated
+//   like every other bulk-import route.
 //
-//   Fix (backend-only, isolated to `bulk_import_prestarts.py`):
-//     · New env `BULK_IMPORT_VISION_CALL_TIMEOUT_SEC` (default 90s).
-//       Every Claude classify/extract call in `_claude_call_with_backoff`
-//       is now wrapped in `asyncio.wait_for(..., timeout=90)`. Silent
-//       hangs become bounded `asyncio.TimeoutError` → retry (transient)
-//       or fail-with-context (permanent). Watchdog can never eat a job
-//       just because one PDF's Claude call parked.
-//     · Per-batch telemetry counters (`429s`, `5xxs`, `timeouts`,
-//       `retries`) threaded through `prog` and logged at every progress
-//       flush. Future stalls will be diagnosable from `.err.log` alone.
-//     · Log format:
-//       `bulk_import[<job_id>] batch processed=X cached=Y matched=Z
-//        failed=F 429s=A 5xxs=B timeouts=T retries=R elapsed=Es`
+//   Frontend: new `useLastFailedJob` hook polls the endpoint once on
+//   Step 1 mount. When a job is returned, `ResumeLastJobCard` renders
+//   above the URL form with a dynamic subtitle:
+//     · state=failed              → "Failed at X/Y · Nh ago" (or
+//       "Failed at extract stage — will restart from scratch" when
+//       extracted=0)
+//     · state=awaiting_approval   → "Awaiting your review · N PDFs
+//       scanned · Nh ago"
 //
-//   Impact: The failed job (592 PDFs successfully cached) is now safe
-//   to resume — the `bulk_import_pdf_cache` warm rows will skip Claude
-//   entirely and the remaining ~229 PDFs will proceed under the new
-//   timeout guard. No code path in `ai.py` was touched.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.5.1';
+//   Click behaviour:
+//     · awaiting_approval → deep-link into Step 3 for that SAME job;
+//       no new download, no new Claude calls. Toast:
+//       "Continuing existing import — N PDFs ready to review."
+//     · failed             → POST /init + /start with the previous
+//       job's src_url + batch label, then auto-advance to Step 2.
+//       Cache hits skip already-processed PDFs. Toast:
+//       "Resuming previous import — cache will skip N already-
+//       processed PDFs."
+//
+//   First-time users see nothing (endpoint returns null → hook returns
+//   null → card unmounted). No clutter.
+//
+//   Contract test: `test_bulk_import_last_v58_6.py` covers the null
+//   case, most-recent-wins, within_days cutoff, and state filter.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.6';

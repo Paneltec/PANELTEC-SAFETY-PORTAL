@@ -57,7 +57,7 @@ import tempfile
 import time
 import uuid
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import AsyncIterator, Optional
 
 import httpx
@@ -1048,6 +1048,68 @@ async def init_job(body: InitBody, user: dict = Depends(get_current_user)):
                  {"job_id": job_id, "source": body.source, "size": size})
     return {"job_id": job_id, "size_bytes": size,
             "url_final": final_url, "src_url": normalized}
+
+
+@router.get("/last")
+async def last_resumable_job(
+    within_days: int = 30,
+    states: str = "failed,awaiting_approval",
+    user: dict = Depends(get_current_user),
+):
+    """v58.6 — Return the most-recent bulk-import job for the caller's
+    org that is in a resumable state. Powers the wizard's "Resume last
+    import" button.
+
+    Query params:
+      · `within_days` — cap on `created_at` age (default 30d).
+      · `states`      — comma-separated list of states to consider
+                        (default `failed,awaiting_approval`).
+
+    Returns `null` when no matching job exists — the wizard hides the
+    button entirely so first-time users don't see clutter. When a job
+    is returned, only the fields the wizard needs are projected —
+    stripping `errors`, `url_final`, `_id` etc keeps the payload small
+    and the shape stable.
+    """
+    _require_admin(user)
+    within_days = max(1, min(within_days, 365))
+    state_list = [s.strip() for s in (states or "").split(",") if s.strip()]
+    if not state_list:
+        state_list = ["failed", "awaiting_approval"]
+    # `created_at` is stored as ISO string, so use string comparison
+    # against a computed cutoff ISO string (lexicographic ordering
+    # matches chronological ordering for ISO-8601 with UTC offsets).
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(days=within_days)).isoformat()
+    doc = await db.bulk_import_jobs.find_one(
+        {
+            "org_id": user["org_id"],
+            "state": {"$in": state_list},
+            "created_at": {"$gte": cutoff},
+        },
+        sort=[("created_at", -1)],
+        projection={"_id": 0},
+    )
+    if not doc:
+        return None
+    return {
+        "id": doc.get("id"),
+        "src_url": doc.get("src_url") or doc.get("url_input"),
+        "url_input": doc.get("url_input"),
+        "filename": doc.get("filename"),
+        "batch_label": doc.get("filename"),  # wizard alias
+        "notes": doc.get("notes"),
+        "include_failed_rows": doc.get("include_failed_rows", True),
+        "state": doc.get("state"),
+        "progress": doc.get("progress") or {},
+        "total": doc.get("total"),
+        "total_pdfs_discovered": doc.get("total_pdfs_discovered"),
+        "created_at": doc.get("created_at"),
+        "updated_at": doc.get("last_progress_at") or doc.get("finished_at")
+                       or doc.get("created_at"),
+        "error": doc.get("error"),
+        "error_step": doc.get("error_step"),
+    }
 
 
 @router.post("/{job_id}/start", status_code=202)

@@ -1,9 +1,13 @@
 // v160.3.9.58.1 — Wizard Step 1: source URL entry.
+// v160.3.9.58.6 — Adds "Resume last import" affordance above the form
+// when a recent failed/awaiting-approval job exists.
 import React, { useState } from 'react';
 import { Link as LinkIcon, PlayCircle, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../../../lib/api';
 import { inputClass } from '../../../components/capture/Ui';
+import { useLastFailedJob } from './useLastFailedJob';
+import { ResumeLastJobCard } from './ResumeLastJobCard';
 
 const HELPER_TEXT = (
   <>
@@ -14,12 +18,13 @@ const HELPER_TEXT = (
   </>
 );
 
-export function Step1SourceUrl({ onCreated }) {
+export function Step1SourceUrl({ onCreated, onContinueAwaitingApproval }) {
   const [url, setUrl] = useState('');
   const [batchLabel, setBatchLabel] = useState('');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [fieldError, setFieldError] = useState(null);
+  const { job: lastJob } = useLastFailedJob();
 
   const start = async (e) => {
     e?.preventDefault?.();
@@ -56,6 +61,13 @@ export function Step1SourceUrl({ onCreated }) {
 
   return (
     <form onSubmit={start} className="space-y-6" data-testid="wizard-step1-form">
+      {lastJob && (
+        <ResumeLastJobCard
+          job={lastJob}
+          onContinueAwaitingApproval={onContinueAwaitingApproval}
+          onResumeCreated={onCreated}
+        />
+      )}
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <label htmlFor="source-url"
                className="text-xs uppercase tracking-wider text-slate-500 font-semibold">

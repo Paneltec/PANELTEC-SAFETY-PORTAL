@@ -60,6 +60,16 @@ export default function BulkImportWizard() {
     setStep(2);
   }, []);
 
+  // v58.6 — Resume-button deep-link into Step 3 for an existing
+  // awaiting_approval job. Same persistence as `onJobCreated` — the
+  // pill on other routes should show this job too.
+  const onContinueAwaitingApproval = useCallback((existingJobId) => {
+    setJobId(existingJobId);
+    saveActiveJobId(existingJobId);
+    setStep(3);
+    refresh();
+  }, [refresh]);
+
   const onReset = useCallback(() => {
     setJobId(null);
     saveActiveJobId(null);
@@ -78,7 +88,10 @@ export default function BulkImportWizard() {
 
       <div className="mt-6">
         {step === 1 && (
-          <Step1SourceUrl onCreated={onJobCreated} />
+          <Step1SourceUrl
+            onCreated={onJobCreated}
+            onContinueAwaitingApproval={onContinueAwaitingApproval}
+          />
         )}
         {step === 2 && jobId && (
           <Step2Progress
