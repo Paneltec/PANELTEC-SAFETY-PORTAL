@@ -50,15 +50,65 @@ import {
 } from '@fluentui/react-icons';
 
 // v160.3.9.33.3 — Legacy fallback role list. The live dropdown fetches
-// from `/api/admin/roles?is_active=true` on mount and merges in every
-// seeded + custom + Simpro-position-auto role. This static list is only
-// used until the API responds, and as an offline safety net.
-const ROLES = [
+// from `/api/admin/roles` on mount and merges in every seeded + custom +
+// Simpro-position-auto role. This static list is used only as an offline
+// fallback and as the CATEGORY mapping for storage: `mobile_modules`
+// stores one bucket per LEGACY_CATEGORY. Live roles map to the nearest
+// category via `_categoryForRole`.
+const LEGACY_CATEGORIES = [
   { key: 'worker',     label: 'Worker'     },
   { key: 'supervisor', label: 'Supervisor' },
   { key: 'contractor', label: 'Contractor' },
   { key: 'admin',      label: 'Admin'      },
 ];
+const ROLES = LEGACY_CATEGORIES;  // legacy alias — some helpers below still reference `ROLES`.
+const LEGACY_KEYS = new Set(LEGACY_CATEGORIES.map((r) => r.key));
+
+// v58.4 — Map a live role to one of the 4 storage categories. Storage
+// (`mobile_modules[category][module]`) is still keyed by category; live
+// roles surface as extra columns that INHERIT their category's toggles.
+// Best-effort classifier — falls back to `worker` for unrecognised
+// custom roles (the safe conservative default).
+function _categoryForRole(roleId, roleName) {
+  const idL = (roleId || '').toLowerCase();
+  const nmL = (roleName || '').toLowerCase();
+  if (LEGACY_KEYS.has(idL)) return idL;
+  if (idL === 'general_user' || idL === 'training_inductions_only') return 'worker';
+  if (idL.includes('admin')) return 'admin';
+  if (idL.includes('contractor')) return 'contractor';
+  if (idL.includes('hseq') || idL.includes('manager') || idL.includes('director')
+      || idL.includes('supervisor') || nmL.includes('manager')) {
+    return 'supervisor';
+  }
+  return 'worker';
+}
+
+// v58.4 — Localstorage key + defaults for the preview dropdown UX.
+const LS_PREVIEW_SHOW_UNASSIGNED = 'perms.previewDropdown.showUnassigned';
+// Max non-legacy columns visible in the matrix by default. "Show all"
+// toggle lifts the cap.
+const MATRIX_TOP_N_DEFAULT = 8;
+
+// v58.4 — Shared live-roles fetcher. Returns:
+//   { allRoles, groups: { inUse, seed, simpro }, matrixCols, loading }
+// `matrixCols` is the ordered list of columns to render in the matrix
+// header (top-N live roles by user count, then the 4 legacy categories
+// as always-visible editable rows if not already covered).
+function useLiveRoles() {
+  const [allRoles, setAllRoles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/admin/roles').then(({ data }) => {
+      if (cancelled) return;
+      const rs = (data?.roles || []).filter((r) => r.is_active !== false);
+      setAllRoles(rs);
+    }).catch(() => setAllRoles([]))
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, []);
+  return { allRoles, loading };
+}
 
 // Module catalogue mirrors `mobile_modules.MODULE_KEYS` on the backend.
 // Friendly labels are taken verbatim from the Phase 4.3 brief.
@@ -143,13 +193,19 @@ function computeExpoUrl(role, token) {
 function PhonePreview({ canEdit }) {
   const [role, setRole] = useState('worker');
   const [src, setSrc] = useState('');
-  // v160.3.9.33.3 — live-fetched roles for the "Preview as role"
-  // dropdown. Grouped in <optgroup> by source (seeded / custom /
-  // simpro_position_auto). Falls back to the static ROLES list until
-  // the fetch resolves or if it fails. Custom + auto roles rely on
-  // the v4d Option-1 fallback so the mobile preview matches the
-  // effective grants of a real user on those roles.
+  // v160.3.9.33.3 → v58.4 — live-fetched roles now enriched with
+  // `user_count` from the backend so the dropdown can prioritise
+  // in-use roles and hide unassigned ones behind a checkbox.
   const [allRoles, setAllRoles] = useState([]);
+  const [showUnassigned, setShowUnassigned] = useState(() => {
+    try { return localStorage.getItem(LS_PREVIEW_SHOW_UNASSIGNED) === '1'; }
+    catch { return false; }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_PREVIEW_SHOW_UNASSIGNED, showUnassigned ? '1' : '0');
+    } catch { /* noop */ }
+  }, [showUnassigned]);
   useEffect(() => {
     api.get('/admin/roles').then(({ data }) => {
       const rs = (data?.roles || []).filter((r) => r.is_active !== false);
@@ -158,19 +214,35 @@ function PhonePreview({ canEdit }) {
   }, []);
   const iframeRef = useRef(null);
 
-  // Group + sort for the dropdown. Order: seeded → custom → auto,
-  // alphabetical within each group. Falls back to legacy ROLES when
-  // the API returned nothing (offline / cold start).
-  const seedRoles = allRoles
-    .filter((r) => (r.source || (r.is_system ? 'seed' : 'admin_created')) === 'seed')
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const customRoles = allRoles
-    .filter((r) => r.source === 'admin_created')
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const autoRoles = allRoles
-    .filter((r) => r.source === 'simpro_position_auto')
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const hasLive = seedRoles.length + customRoles.length + autoRoles.length > 0;
+  // v58.4 — Group live roles into 3 optgroups sorted by user count.
+  //   · inUse   — anyone with users > 0 (the operational set)
+  //   · seed    — untouched seeded roles nobody is on yet
+  //   · simpro  — auto-created Simpro roles nobody is on yet
+  // Admin is force-appended to `inUse` even if user_count is 0 so the
+  // operator can always sanity-check the admin view.
+  const { inUse, seedGroup, simproGroup } = useMemo(() => {
+    const _byCountThenName = (a, b) =>
+      (b.user_count || 0) - (a.user_count || 0)
+      || (a.name || '').localeCompare(b.name || '');
+    const _byName = (a, b) => (a.name || '').localeCompare(b.name || '');
+    const inUse = allRoles
+      .filter((r) => (r.user_count || 0) > 0 || r.role_id === 'admin')
+      .sort(_byCountThenName);
+    const seedGroup = allRoles
+      .filter((r) => (r.user_count || 0) === 0 && r.role_id !== 'admin'
+                     && ((r.source || (r.is_system ? 'seed' : '')) === 'seed'))
+      .sort(_byName);
+    const simproGroup = allRoles
+      .filter((r) => (r.user_count || 0) === 0 && r.role_id !== 'admin'
+                     && r.source === 'simpro_position_auto')
+      .sort(_byName);
+    return { inUse, seedGroup, simproGroup };
+  }, [allRoles]);
+  const hasLive = inUse.length + seedGroup.length + simproGroup.length > 0;
+  const totalRoles = allRoles.length;
+  const visibleCount = showUnassigned
+    ? (inUse.length + seedGroup.length + simproGroup.length)
+    : inUse.length;
 
   // Build the src once on first render — and only rebuild when the admin
   // explicitly changes role or clicks Reload. Deliberately NOT reactive to
@@ -228,7 +300,14 @@ function PhonePreview({ canEdit }) {
         </div>
 
         <label className="block">
-          <span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-slate-400 mb-1">Preview as role</span>
+          <div className="flex items-center justify-between mb-1">
+            <span className="block text-[10px] uppercase tracking-[0.12em] font-semibold text-slate-400">Preview as role</span>
+            {/* v58.4 — role-count summary next to the dropdown. */}
+            <span className="text-[10px] text-slate-400 tabular-nums"
+                  data-testid="mobile-preview-role-count">
+              {visibleCount} of {totalRoles}
+            </span>
+          </div>
           <select
             value={role}
             onChange={onRoleChange}
@@ -239,28 +318,42 @@ function PhonePreview({ canEdit }) {
             {!hasLive && ROLES.map((r) => (
               <option key={r.key} value={r.key}>{r.label}</option>
             ))}
-            {hasLive && seedRoles.length > 0 && (
-              <optgroup label="Seeded roles">
-                {seedRoles.map((r) => (
+            {hasLive && inUse.length > 0 && (
+              <optgroup label={`In use (${inUse.length})`}>
+                {inUse.map((r) => (
+                  <option key={r.role_id} value={r.role_id}>
+                    {r.name} · {r.user_count} user{r.user_count === 1 ? '' : 's'}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {hasLive && showUnassigned && seedGroup.length > 0 && (
+              <optgroup label={`System / seed — unassigned (${seedGroup.length})`}>
+                {seedGroup.map((r) => (
                   <option key={r.role_id} value={r.role_id}>{r.name}</option>
                 ))}
               </optgroup>
             )}
-            {hasLive && customRoles.length > 0 && (
-              <optgroup label="Custom roles">
-                {customRoles.map((r) => (
-                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
-                ))}
-              </optgroup>
-            )}
-            {hasLive && autoRoles.length > 0 && (
-              <optgroup label="Simpro position roles">
-                {autoRoles.map((r) => (
+            {hasLive && showUnassigned && simproGroup.length > 0 && (
+              <optgroup label={`Simpro — unassigned (${simproGroup.length})`}>
+                {simproGroup.map((r) => (
                   <option key={r.role_id} value={r.role_id}>{r.name}</option>
                 ))}
               </optgroup>
             )}
           </select>
+          {/* v58.4 — checkbox to reveal unassigned roles. Default OFF. */}
+          <label className="mt-2 flex items-center gap-2 text-[11px] text-slate-600 cursor-pointer select-none">
+            <input type="checkbox"
+                   checked={showUnassigned}
+                   onChange={(e) => setShowUnassigned(e.target.checked)}
+                   data-testid="mobile-preview-show-unassigned"
+                   className="w-3.5 h-3.5 rounded border-slate-300" />
+            Show unassigned roles
+            <span className="text-slate-400 tabular-nums">
+              (+{seedGroup.length + simproGroup.length})
+            </span>
+          </label>
           <p className="mt-1 text-[10px] text-slate-500 leading-tight">
             Reviewing what a user with this role would see. Per-user overrides are not reflected here.
           </p>
@@ -306,6 +399,14 @@ export default function MobileModulesSection({ canEdit }) {
   const [applyingDefaults, setApplyingDefaults] = useState(false);
   const [original, setOriginal] = useState(null);
   const [matrix, setMatrix]     = useState(null);
+  // v58.4 — Live-fetched roles shared between the matrix table and the
+  // PhonePreview dropdown. Prevents the historical mismatch where the
+  // matrix showed 4 static columns and the dropdown showed 30 live roles.
+  const { allRoles, loading: rolesLoading } = useLiveRoles();
+  // Show-all toggle for the matrix — off by default, in which case we
+  // cap at MATRIX_TOP_N_DEFAULT (default 8) non-admin live roles by
+  // user count. Legacy 4 categories always appear.
+  const [showAllCols, setShowAllCols] = useState(false);
   // v159.1 — server-reported defaults metadata. When
   // `needs_migration_review === true` we render a persistent banner so
   // the admin consciously reviews + applies the new hardened defaults.
@@ -356,6 +457,48 @@ export default function MobileModulesSection({ canEdit }) {
   };
 
   const reset = () => setMatrix(deepClone(original));
+
+  // v58.4 — Compute the ordered list of columns to render in the matrix.
+  // Contract:
+  //   · Legacy 4 categories (Worker/Supervisor/Contractor/Admin) always
+  //     appear FIRST and are editable — they are the storage buckets.
+  //   · Live roles then follow, sorted by user_count desc then name.
+  //   · When `showAllCols` is off, non-legacy live roles are capped at
+  //     `MATRIX_TOP_N_DEFAULT`.
+  //   · Each column carries a `category` field so the non-legacy cells
+  //     can render the INHERITED toggle value from that category's
+  //     storage bucket (read-only — you can only edit the 4 categories).
+  const matrixCols = useMemo(() => {
+    const cols = LEGACY_CATEGORIES.map((c) => ({
+      key: c.key,
+      label: c.label,
+      category: c.key,
+      is_category: true,
+      user_count: allRoles
+        .filter((r) => _categoryForRole(r.role_id, r.name) === c.key)
+        .reduce((s, r) => s + (r.user_count || 0), 0),
+    }));
+    const seenLegacy = new Set(LEGACY_CATEGORIES.map((c) => c.key));
+    const liveExtras = allRoles
+      .filter((r) => !seenLegacy.has(r.role_id))
+      .map((r) => ({
+        key: r.role_id,
+        label: r.name || r.role_id,
+        category: _categoryForRole(r.role_id, r.name),
+        is_category: false,
+        source: r.source,
+        user_count: r.user_count || 0,
+      }))
+      .sort((a, b) => (b.user_count - a.user_count)
+                     || (a.label || '').localeCompare(b.label || ''));
+    const visibleExtras = showAllCols ? liveExtras : liveExtras.slice(0, MATRIX_TOP_N_DEFAULT);
+    return {
+      cols: [...cols, ...visibleExtras],
+      liveExtrasCount: liveExtras.length,
+      hiddenCount: Math.max(0, liveExtras.length - visibleExtras.length),
+    };
+  }, [allRoles, showAllCols]);
+
 
   const save = async () => {
     setSaving(true);
@@ -464,18 +607,61 @@ export default function MobileModulesSection({ canEdit }) {
           phone-bezel preview on the right (stacks on < lg). */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+          {/* v58.4 — Column control strip. Shows the matrix ↔ preview
+              consistency count and the "show all columns" toggle. */}
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60"
+               data-testid="mobile-modules-cols-strip">
+            <div className="text-[11px] text-slate-600">
+              <span className="font-semibold text-slate-800">
+                {matrixCols.cols.length}
+              </span>{' '}
+              column{matrixCols.cols.length === 1 ? '' : 's'} —
+              {' '}4 legacy categories + {' '}
+              <span className="tabular-nums">
+                {matrixCols.cols.length - LEGACY_CATEGORIES.length}
+              </span>{' '}
+              live role{matrixCols.cols.length - LEGACY_CATEGORIES.length === 1 ? '' : 's'}
+              {matrixCols.hiddenCount > 0 && (
+                <span className="text-slate-400">
+                  {' · '}{matrixCols.hiddenCount} hidden
+                </span>
+              )}
+            </div>
+            <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer select-none">
+              <input type="checkbox"
+                     checked={showAllCols}
+                     onChange={(e) => setShowAllCols(e.target.checked)}
+                     data-testid="mobile-modules-show-all-cols"
+                     className="w-3.5 h-3.5 rounded border-slate-300" />
+              Show all columns
+            </label>
+          </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="mobile-modules-grid">
               <thead className="bg-slate-50 text-slate-500 text-[11px] uppercase tracking-wider">
                 <tr>
                   <th className="text-left px-4 py-3 font-semibold w-[42%]">Module</th>
-                  {ROLES.map((r) => (
-                    <th key={r.key} className="px-3 py-3 font-semibold text-center" data-testid={`mobile-col-${r.key}`}>
+                  {matrixCols.cols.map((r) => (
+                    <th key={r.key} className="px-3 py-3 font-semibold text-center"
+                        data-testid={`mobile-col-${r.key}`}
+                        data-category={r.category}>
                       <div className="inline-flex items-center gap-1.5 justify-center">
                         <span className="text-slate-700">{r.label}</span>
                         {r.key === 'admin' && <LockClosed20Regular style={{ width: 12, height: 12 }} className="text-slate-400" />}
                       </div>
-                      {r.key !== 'admin' && canEdit && (
+                      {/* v58.4 — For non-category live-role columns show
+                          which storage bucket they inherit from + user
+                          count. Also flags read-only. */}
+                      {!r.is_category ? (
+                        <div className="mt-1 flex flex-col items-center gap-0.5">
+                          <span className="text-[9px] font-medium text-slate-400 normal-case tracking-normal">
+                            inherits {r.category}
+                          </span>
+                          <span className="text-[9px] text-slate-500 tabular-nums normal-case">
+                            {r.user_count} user{r.user_count === 1 ? '' : 's'}
+                          </span>
+                        </div>
+                      ) : r.key !== 'admin' && canEdit ? (
                         <div className="flex items-center justify-center gap-1.5 mt-1.5 text-[10px] font-medium">
                           <button
                             type="button"
@@ -491,7 +677,7 @@ export default function MobileModulesSection({ canEdit }) {
                             className="text-slate-500 hover:text-slate-700 hover:underline"
                           >All off</button>
                         </div>
-                      )}
+                      ) : null}
                     </th>
                   ))}
                 </tr>
@@ -507,15 +693,19 @@ export default function MobileModulesSection({ canEdit }) {
                         <span className="font-medium text-slate-800">{label}</span>
                       </div>
                     </td>
-                    {ROLES.map((r) => {
-                      const on = !!matrix[r.key]?.[key];
-                      const locked = r.key === 'admin' || !canEdit;
+                    {matrixCols.cols.map((r) => {
+                      // v58.4 — Non-category columns render the EFFECTIVE
+                      // toggle from their category's bucket, read-only.
+                      const bucketKey = r.is_category ? r.key : r.category;
+                      const on = !!matrix[bucketKey]?.[key];
+                      const locked = !r.is_category || r.key === 'admin' || !canEdit;
                       return (
-                        <td key={r.key} className="text-center px-3 py-3">
+                        <td key={r.key} className="text-center px-3 py-3"
+                            data-inherit={!r.is_category || undefined}>
                           <ToggleCell
                             on={on}
                             locked={locked}
-                            onChange={() => toggle(r.key, key)}
+                            onChange={() => r.is_category && toggle(r.key, key)}
                             testid={`mobile-toggle-${r.key}-${key}`}
                           />
                         </td>

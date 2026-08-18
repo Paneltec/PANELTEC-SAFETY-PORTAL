@@ -383,8 +383,30 @@ router = APIRouter(prefix="/admin/roles", tags=["admin-roles"])
 
 @router.get("")
 async def list_roles(user: dict = Depends(require_roles("admin"))):
-    """List every role in the catalogue. Admin-only."""
+    """List every role in the catalogue. Admin-only.
+
+    v58.4 — response now includes `user_count` on each row (a single
+    aggregation query, not N per-role queries) so the UI can sort /
+    filter by "in use" without extra round-trips.
+    """
     docs = await db.roles.find({}, {"_id": 0}).sort("role_id", 1).to_list(200)
+
+    # One-shot pass: for each user pick the FIRST non-null of
+    # (role_id, role) and increment the running count. `break` after
+    # first match ensures a user with BOTH legacy `role` and modern
+    # `role_id` set is only counted once.
+    counts: dict[str, int] = {}
+    async for u in db.users.find({}, {"_id": 0, "role_id": 1, "role": 1}):
+        for k in ("role_id", "role"):
+            v = u.get(k)
+            if v:
+                counts[v] = counts.get(v, 0) + 1
+                break
+
+    for d in docs:
+        rid = d.get("role_id") or d.get("id")
+        d["user_count"] = counts.get(rid, 0)
+
     return {
         "count": len(docs),
         "roles": docs,
