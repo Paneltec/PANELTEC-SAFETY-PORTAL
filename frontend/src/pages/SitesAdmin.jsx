@@ -247,8 +247,8 @@ export default function SitesAdmin() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map((s) => (
-                <tr key={s.simpro_site_id} data-testid={`site-row-${s.simpro_site_id}`} className="hover:bg-slate-50">
+              {filtered.map((s, _i) => (
+                <tr key={s.id || `sim-${s.simpro_site_id}-${_i}`} data-testid={`site-row-${s.simpro_site_id}`} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <input type="checkbox"
                       checked={selected.has(s.simpro_site_id)}

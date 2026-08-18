@@ -209,6 +209,7 @@ from bulk_import_prestarts import (  # noqa: E402
     ensure_indexes as bulk_import_ensure_indexes,
     watchdog_tick as bulk_import_watchdog_tick,
     retention_cleanup as bulk_import_retention_cleanup,
+    auto_resume_orphaned_jobs as bulk_import_auto_resume,
 )
 api.include_router(bulk_import_prestarts_router)
 # v160.3.9.13 — Master Risks reference library.
@@ -406,6 +407,17 @@ async def on_startup():
         await bulk_import_ensure_indexes()
     except Exception as e:
         log.warning("bulk_import_prestarts index setup failed: %s", e)
+    # v58.8 — Auto-resume any bulk-import jobs that were mid-flight
+    # when the previous backend process died. Runs AFTER indexes so
+    # `_run_job`'s cache/write path finds its expected indexes ready.
+    # Best-effort — a failure here must never block startup.
+    try:
+        _res = await bulk_import_auto_resume()
+        if _res.get("resumed"):
+            log.info("bulk_import: auto-resumed %d orphaned job(s) on startup: %s",
+                     _res["resumed"], _res["job_ids"])
+    except Exception as e:  # pragma: no cover
+        log.warning("bulk_import auto-resume failed: %s", e)
     # v160.3.9.13 — Master Risks index setup.
     try:
         await master_risks_ensure_indexes()

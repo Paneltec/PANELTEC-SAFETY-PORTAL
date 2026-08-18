@@ -109,6 +109,19 @@ DOWNLOAD_TIMEOUT_MIN = _env_int("BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN", 10)
 EXTRACT_TIMEOUT_MIN = _env_int("BULK_IMPORT_EXTRACT_TIMEOUT_MIN", 30)
 VISION_STALL_TIMEOUT_MIN = _env_int("BULK_IMPORT_VISION_STALL_TIMEOUT_MIN", 15)
 
+# v58.8 — Every N successful commits, write a checkpoint line to the
+# logs and append a `{batch, processed, at}` entry to `job.checkpoints`.
+# `0` = disabled. Default `2000` gives Stephen a visible milestone
+# roughly every ~50 min at ~0.5 PDF/s. No process-level restart, no
+# sleep, purely a logging + audit-trail hook.
+BATCH_CHECKPOINT_SIZE = _env_int("BULK_IMPORT_BATCH_SIZE", 2000)
+
+# v58.8 — Auto-resume guard. On backend boot, any job whose
+# `last_progress_at` is older than this many seconds is a candidate for
+# auto-resume. Set high enough not to trip over healthy workers on a
+# graceful restart (uvicorn typically hands off in < 3 s).
+AUTO_RESUME_GRACE_SECONDS = _env_int("BULK_IMPORT_AUTO_RESUME_GRACE_SEC", 90)
+
 # ── Zip-bomb / oversized-archive guardrails (v58.0.1 lifted defaults) ──
 # Ceilings sized for the intentional 10k+ pre-start backfill; still
 # provide runway against a hostile input.
@@ -392,6 +405,114 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
         {"$set": {"state": "failed", "error_step": error_step,
                   "error": err_msg, "finished_at": _now_iso()}},
     )
+    # v58.8 — Emit an admin bell notification so ops sees a reap
+    # without tailing supervisor logs. Best-effort — swallows errors.
+    try:
+        j = await db.bulk_import_jobs.find_one(
+            {"id": job_id}, {"_id": 0, "org_id": 1, "processed": 1})
+        if j and j.get("org_id"):
+            await _notify_admins(
+                j["org_id"],
+                kind="bulk_import_stalled",
+                severity="warning",
+                title=f"Bulk import stalled at {j.get('processed', 0)} records",
+                body=(f"Job {job_id} failed at stage '{error_step}': "
+                      f"{err_msg}. On the next backend restart, "
+                      f"v58.8 auto-resume will pick it up automatically "
+                      f"unless you 'Start over' first."),
+            )
+    except Exception as _:  # pragma: no cover
+        pass
+
+
+async def _notify_admins(org_id: str, *, kind: str, severity: str,
+                          title: str, body: str) -> None:
+    """v58.8 — Fan out a header-bell notification. Mirrors the shape
+    used by `cron_simpro_delta.py` so the existing UI consumer picks
+    it up with no schema change. Swallows exceptions — a failed
+    notification must never take down the pipeline."""
+    try:
+        import uuid
+        await db.notifications.insert_one({
+            "id": f"bulk-import-{kind}-{uuid.uuid4().hex[:12]}",
+            "org_id": org_id,
+            "kind": kind,
+            "severity": severity,
+            "title": title[:180],
+            "body": body[:800],
+            "created_at": _now_iso(),
+            "read_by": [],
+        })
+    except Exception as e:  # pragma: no cover
+        log.warning("notify_admins failed (kind=%s): %s", kind, e)
+
+
+async def auto_resume_orphaned_jobs() -> dict:
+    """v58.8 — Scan for `full_run` jobs whose worker died mid-flight
+    (backend restart, uvicorn OOM, supervisor bounce) and re-fire
+    `_run_job` for each.
+
+    Selection criteria:
+      · `state IN {downloading, extracting, dryrun, processing}`
+      · `mode == 'full_run'`  (dry-run jobs are user-initiated
+         validation loops — resuming them silently could surprise
+         Stephen mid-review; those stay `awaiting_approval`)
+      · `last_progress_at < now - AUTO_RESUME_GRACE_SECONDS`  (the
+         grace prevents us from stepping on a live worker during a
+         graceful supervisor reload)
+
+    Cache-skip on the pdf_hash cache means the resumed run replays
+    already-processed PDFs at zero Claude cost, then continues from
+    the first uncached PDF. v58.7.2 upsert-on-pdf_hash guarantees no
+    duplicate `form_submissions` rows.
+
+    Called ONCE from `on_startup` in server.py. Idempotent — reruns
+    on the same DB state see zero orphans."""
+    from datetime import timedelta
+    grace = timedelta(seconds=AUTO_RESUME_GRACE_SECONDS)
+    threshold = (datetime.now(timezone.utc) - grace).isoformat()
+    orphaned = await db.bulk_import_jobs.find({
+        "state": {"$in": ["downloading", "extracting", "dryrun", "processing"]},
+        "mode": "full_run",
+        "$or": [
+            {"last_progress_at": {"$lt": threshold}},
+            {"last_progress_at": None},
+        ],
+    }).to_list(length=None)
+    resumed_ids: list = []
+    for job in orphaned:
+        job_id = job["id"]
+        log.info(
+            "bulk_import auto-resume: job=%s state=%s last_progress=%s "
+            "processed=%s — re-firing _run_job(full_run)",
+            job_id, job.get("state"), job.get("last_progress_at"),
+            job.get("processed"),
+        )
+        # Bump `last_progress_at` NOW so a concurrent watchdog tick
+        # doesn't reap the job before the resumed worker writes its
+        # first progress line.
+        await db.bulk_import_jobs.update_one(
+            {"id": job_id},
+            {"$set": {"last_progress_at": _now_iso(),
+                      "auto_resumed_at": _now_iso(),
+                      "auto_resume_count": (job.get("auto_resume_count", 0) + 1)}},
+        )
+        asyncio.create_task(_run_job(job_id, mode="full_run"))
+        resumed_ids.append(job_id)
+        # Emit a header-bell notification for admin visibility.
+        await _notify_admins(
+            job.get("org_id", ""),
+            kind="bulk_import_auto_resume",
+            severity="warning",
+            title=f"Bulk import auto-resumed at {job.get('processed', 0)} records",
+            body=(f"Job {job_id} was stalled in state '{job.get('state')}' "
+                  f"and has been automatically resumed on backend startup. "
+                  f"Cache will skip already-processed PDFs. No action needed."),
+        )
+    if resumed_ids:
+        log.info("bulk_import auto-resume: %d job(s) restarted: %s",
+                 len(resumed_ids), resumed_ids)
+    return {"resumed": len(resumed_ids), "job_ids": resumed_ids}
 
 
 # ────────────────── v58 watchdog + retention ──────────────────
@@ -1616,6 +1737,35 @@ async def _run_job(job_id: str, mode: str):
                 prog["failed"], prog["429s"], prog["5xxs"],
                 prog["timeouts"], prog["retries"], elapsed,
             )
+            # v58.8 — Batch checkpoint. When `BATCH_CHECKPOINT_SIZE > 0`
+            # (default 2000), emit a distinctive log line + append a
+            # checkpoint entry to `job.checkpoints` every N processed
+            # rows. Purely informative — no throttle, no restart, no
+            # sleep. Stephen sees a visible "batch 2 complete" milestone
+            # in logs + the pill can render "Batch 3/5 committed".
+            if BATCH_CHECKPOINT_SIZE > 0 and processed > 0:
+                bucket = processed // BATCH_CHECKPOINT_SIZE
+                last_bucket = prog.get("_last_checkpoint_bucket", -1)
+                if bucket > last_bucket and bucket > 0:
+                    log.info(
+                        "bulk_import[%s] BATCH CHECKPOINT batch=%d "
+                        "total=%d matched=%d cached=%d",
+                        job_id, bucket, processed,
+                        prog["matched"], prog["cached_hits"],
+                    )
+                    prog["_last_checkpoint_bucket"] = bucket
+                    try:
+                        await db.bulk_import_jobs.update_one(
+                            {"id": job_id},
+                            {"$push": {"checkpoints": {
+                                "batch": bucket, "processed": processed,
+                                "at": _now_iso(),
+                                "matched": prog["matched"],
+                                "cached": prog["cached_hits"],
+                            }}},
+                        )
+                    except Exception as _:  # pragma: no cover
+                        pass
 
         producer_done = asyncio.Event()
         producer_error: dict[str, Optional[Exception]] = {"err": None}

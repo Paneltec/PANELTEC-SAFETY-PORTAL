@@ -244,12 +244,22 @@ async def bulk_delete_sites(body: BulkDeleteIn,
         if site.get("kind", "simpro") == "simpro" and site.get("simpro_active_jobs", 0) > 0:
             refused.append({"id": sid, "reason": "linked_to_active_simpro_jobs"})
             continue
-        await db.simpro_sites.update_one(
-            {"id": site["id"], "org_id": user["org_id"]},
+        # v58.7.4 — Use `update_many` with the SAME `$or` filter that
+        # `find_one` used above, keyed on the original `sid` passed in.
+        # This closes a P1 bug where the previous `update_one(
+        # {"id": site["id"], ...})` filter would collapse to
+        # `{"id": None}` on legacy seed rows (where the app-level `id`
+        # field is missing) and either silently update the wrong row
+        # or leave a duplicate visible in the UI. `update_many` also
+        # takes care of legacy duplicate seed rows sharing the same
+        # `simpro_site_id`: one delete now cleans up all copies.
+        res = await db.simpro_sites.update_many(
+            {"$or": [{"simpro_site_id": sid}, {"id": sid}],
+             "org_id": user["org_id"], "deleted_at": None},
             {"$set": {"deleted_at": now, "deleted_by": user["id"],
                       "restore_until": restore_until}},
         )
-        deleted += 1
+        deleted += res.modified_count
     return {"deleted": deleted, "refused": refused}
 
 

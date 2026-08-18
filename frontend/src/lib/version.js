@@ -900,6 +900,91 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.8 — Auto-resume + batch checkpoints + notification bell.
+//   Solves the "kill on backend restart" pattern that has cost this
+//   10k import 3+ manual re-approvals over 6 hours.
+//
+//   Piece 1 — Auto-resume orphaned jobs
+//     · New `auto_resume_orphaned_jobs()` in `bulk_import_prestarts.py`
+//       scans on backend startup for jobs where
+//       `state IN {downloading, extracting, dryrun, processing}` AND
+//       `mode == 'full_run'` AND `last_progress_at < now - 90s`
+//       (`AUTO_RESUME_GRACE_SEC` env-tunable). Re-fires `_run_job` in
+//       the background for each. Bumps `auto_resume_count` +
+//       `auto_resumed_at` so the count is visible in logs. Wired into
+//       `server.py`'s `on_startup` hook.
+//     · Dry-run jobs are DELIBERATELY excluded — they're user-review
+//       loops, silent continuation could surprise Stephen.
+//     · Cache-skip (v58.0.1) + upsert-on-pdf_hash (v58.7.2) mean the
+//       resumed run replays already-processed PDFs at $0 Claude cost
+//       and cannot create duplicate `form_submissions` rows.
+//
+//   Piece 2 — Batch checkpoints
+//     · New env `BULK_IMPORT_BATCH_SIZE` (default 2000). Every N
+//       committed PDFs, `_flush_progress` emits a distinctive
+//       `BATCH CHECKPOINT batch=N total=X` log line + appends a
+//       `{batch, processed, at, matched, cached}` entry to
+//       `job.checkpoints`. Zero throttling, zero sleep — purely a
+//       milestone marker.
+//     · Set `BULK_IMPORT_BATCH_SIZE=2000` in `backend/.env` so
+//       Stephen's in-flight run picks up the milestones on the next
+//       restart. Pill can render "Batch 3/5 committed" in a follow-up.
+//
+//   Piece 3 — Notification bell fan-out
+//     · New `_notify_admins()` helper writes to `db.notifications`
+//       (matches `cron_simpro_delta.py` schema exactly). Two triggers:
+//         (a) `_fail_job` — warns admins whenever the watchdog reaps a
+//             stuck job. Copy: "Bulk import stalled at N records.
+//             v58.8 auto-resume will pick it up on the next backend
+//             restart."
+//         (b) `auto_resume_orphaned_jobs` — logs a warning-severity
+//             bell entry per resurrected job. Copy: "Bulk import
+//             auto-resumed at N records — no action needed."
+//     · Best-effort — a failing notification never blocks the pipeline.
+//
+//   No changes to the existing v58.5.1 90-s per-Claude-call timeout,
+//   v58.7.2 upsert, v58.7.3 dedupe, or the ghost-trap protections in
+//   v58.6/v58.6.1/v58.6.2. All previous protections stay in force.
+//
+//   Contract test: `test_bulk_import_auto_resume_v58_8.py` — 5 cases
+//   covering stale/fresh/complete/dry_run/multi-orphan invariants.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.8';
+
+// v160.3.9.58.7.4 — Sites delete bug fix (P1).
+//   User reported "delete failed under Compliance/Sites — Sites".
+//   Root cause: legacy seed rows in `simpro_sites` have `id=None`
+//   while a valid `simpro_site_id`. The prior `update_one({"id":
+//   site["id"], ...})` filter collapsed to `{"id": None}` — a
+//   promiscuous match that either silently updated the wrong row or
+//   left a duplicate visible in the UI. Two Erskineville seed rows
+//   sharing `simpro_site_id="DEV-SITE-001"` were the specific
+//   trigger.
+//
+//   Backend fix (`sites_signon_v127.py` bulk_delete_sites):
+//     · Use `update_many` with the same `$or` filter that `find_one`
+//       used, keyed on the ORIGINAL `sid` passed in from the client.
+//       Deletes every row representing this logical site — including
+//       legacy duplicate seeds. `deleted += res.modified_count`
+//       reports honest counts.
+//
+//   Frontend fix (`SitesAdmin.jsx`):
+//     · React `key` on the list rows was `s.simpro_site_id`, which
+//       collided when two seed rows shared the same value. Changed
+//       to `s.id || \`sim-${s.simpro_site_id}-${_i}\`` — real UUID
+//       when present, synthetic index-suffix fallback otherwise.
+//     · Silences the "Encountered two children with the same key"
+//       console error observed in the reproduction.
+//
+//   Permission gate confirmed working — `_role_default_hardcoded('admin',
+//   'sites', 'delete')` returns True for Stephen's role. No RBAC
+//   change needed.
+//
+//   Deploy note: because uvicorn in this env runs without --reload,
+//   the backend picks up the new `bulk_delete_sites` code only on
+//   next supervisor restart. Frontend fix ships immediately (Vite
+//   HMR / SW cache bust). Ship a restart after the 10k resume job
+//   `3dadabfd…` completes to activate the backend half.
+
 // v160.3.9.58.7.3 — Dedupe tiebreaker honours reviewer edits.
 //   Enhancement to the v58.7.2 dedupe script: before applying
 //   "keep oldest" per group, `_find_duplicate_groups` now scans each
