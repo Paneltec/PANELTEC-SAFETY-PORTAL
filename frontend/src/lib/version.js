@@ -966,7 +966,27 @@
 //
 //   Contract test: `test_bulk_import_auto_resume_v58_8.py` — 5 cases
 //   covering stale/fresh/complete/dry_run/multi-orphan invariants.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10';
+//
+// v160.3.9.58.10.1 — Bulk-import auto-restart guard P0 fix.
+//   Job `a90eff90-…` (dry_run) stalled at 4,563 records during the
+//   vision stage. Watchdog reap fired correctly; v58.8.2 in-process
+//   auto-restart did NOT fire because the guard required
+//   `mode == "full_run"`. In production every job is `mode="dry_run"`
+//   until the user hits `/approve` (which flips it to `full_run`).
+//   Because `a90eff90` was reaped straight out of `processing` (never
+//   hit `awaiting_approval`), it stayed `dry_run` and the guard
+//   silently skipped restart.
+//   Fix (`bulk_import_prestarts.py`):
+//     · `_fail_job`: broaden the auto-restart mode filter to
+//       `{"full_run", "dry_run"}` and preserve the ORIGINAL mode on
+//       the respawned worker (no silent upgrade to full_run).
+//     · `auto_resume_orphaned_jobs`: same mode broadening for the
+//       on-startup path; the state filter already excludes
+//       `awaiting_approval`, so the mode restriction was redundant
+//       AND wrongly excluded in-flight dry_runs.
+//   No mobile-facing behaviour change; version bump exists solely
+//   because the guardrail requires all 3 canonical files to agree.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.1';
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".

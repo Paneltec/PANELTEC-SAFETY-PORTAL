@@ -429,11 +429,24 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
         # upsert make this cost-safe. Capped by
         # `BULK_IMPORT_MAX_AUTO_RESUME` (default 5) so a truly stuck
         # job doesn't loop forever.
+        # v58.10.1 — Broaden auto-restart to `dry_run` jobs. Historically
+        # this guard required `mode == "full_run"` on the theory that
+        # dry-runs are user-initiated review loops. In practice, ALL
+        # jobs in production are `dry_run` (the approve endpoint only
+        # flips mode to `full_run` at commit time), and a watchdog reap
+        # of a `processing`/`dryrun` job is by definition NOT a
+        # mid-review event — the user hasn't yet clicked approve.
+        # Job `a90eff90-…` stalled at 4,563 records with the old guard
+        # silently skipping the restart because `mode='dry_run'`. Fix:
+        # allow both modes, and preserve the ORIGINAL mode on the
+        # respawned worker so a dry_run stays a dry_run (no silent
+        # upgrade to full_run).
         max_retries = _env_int("BULK_IMPORT_MAX_AUTO_RESUME", 5)
+        resume_mode = j.get("mode") if j else None
         if (j and error_step == "vision"
                 and (j.get("processed") or 0) > 0
                 and (j.get("auto_resume_count") or 0) < max_retries
-                and j.get("mode") == "full_run"):
+                and resume_mode in ("full_run", "dry_run")):
             new_count = (j.get("auto_resume_count") or 0) + 1
             await db.bulk_import_jobs.update_one(
                 {"id": job_id},
@@ -448,10 +461,10 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
             )
             log.info(
                 "bulk_import[%s] watchdog reap → in-process "
-                "auto-restart (count=%d/%d)",
-                job_id, new_count, max_retries,
+                "auto-restart (count=%d/%d, mode=%s)",
+                job_id, new_count, max_retries, resume_mode,
             )
-            asyncio.create_task(_run_job(job_id, mode="full_run"))
+            asyncio.create_task(_run_job(job_id, mode=resume_mode))
     except Exception as _:  # pragma: no cover
         pass
 
@@ -479,15 +492,17 @@ async def _notify_admins(org_id: str, *, kind: str, severity: str,
 
 
 async def auto_resume_orphaned_jobs() -> dict:
-    """v58.8 — Scan for `full_run` jobs whose worker died mid-flight
-    (backend restart, uvicorn OOM, supervisor bounce) and re-fire
-    `_run_job` for each.
+    """v58.8 — Scan for jobs whose worker died mid-flight (backend
+    restart, uvicorn OOM, supervisor bounce) and re-fire `_run_job`
+    for each.
 
     Selection criteria:
       · `state IN {downloading, extracting, dryrun, processing}`
-      · `mode == 'full_run'`  (dry-run jobs are user-initiated
-         validation loops — resuming them silently could surprise
-         Stephen mid-review; those stay `awaiting_approval`)
+      · `mode IN {full_run, dry_run}` — v58.10.1: the state filter
+         already excludes `awaiting_approval` (the review checkpoint),
+         so restricting by mode was redundant AND missed dry_runs that
+         died mid-flight. Broadened to both modes; the resumed worker
+         preserves the ORIGINAL mode.
       · `last_progress_at < now - AUTO_RESUME_GRACE_SECONDS`  (the
          grace prevents us from stepping on a live worker during a
          graceful supervisor reload)
@@ -504,7 +519,7 @@ async def auto_resume_orphaned_jobs() -> dict:
     threshold = (datetime.now(timezone.utc) - grace).isoformat()
     orphaned = await db.bulk_import_jobs.find({
         "state": {"$in": ["downloading", "extracting", "dryrun", "processing"]},
-        "mode": "full_run",
+        "mode": {"$in": ["full_run", "dry_run"]},
         "$or": [
             {"last_progress_at": {"$lt": threshold}},
             {"last_progress_at": None},
@@ -513,11 +528,12 @@ async def auto_resume_orphaned_jobs() -> dict:
     resumed_ids: list = []
     for job in orphaned:
         job_id = job["id"]
+        resume_mode = job.get("mode") or "full_run"
         log.info(
             "bulk_import auto-resume: job=%s state=%s last_progress=%s "
-            "processed=%s — re-firing _run_job(full_run)",
+            "processed=%s — re-firing _run_job(%s)",
             job_id, job.get("state"), job.get("last_progress_at"),
-            job.get("processed"),
+            job.get("processed"), resume_mode,
         )
         # Bump `last_progress_at` NOW so a concurrent watchdog tick
         # doesn't reap the job before the resumed worker writes its
@@ -528,7 +544,7 @@ async def auto_resume_orphaned_jobs() -> dict:
                       "auto_resumed_at": _now_iso(),
                       "auto_resume_count": (job.get("auto_resume_count", 0) + 1)}},
         )
-        asyncio.create_task(_run_job(job_id, mode="full_run"))
+        asyncio.create_task(_run_job(job_id, mode=resume_mode))
         resumed_ids.append(job_id)
         # Emit a header-bell notification for admin visibility.
         await _notify_admins(
@@ -1370,6 +1386,13 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
     now = _now_iso()
     await db.bulk_import_jobs.update_one({"id": job_id},
         {"$set": {"state": "downloading",
+                  # v58.10.1 — Canonically flip `mode` to `full_run` on
+                  # approval so downstream watchdog reaps that read
+                  # `mode` from the DB doc see the effective mode (not
+                  # the stale `dry_run` from init). Prevents the
+                  # in-process auto-restart from silently downgrading
+                  # an approved full-run back to a 20-PDF dry_run.
+                  "mode": "full_run",
                   "resumed_at": now,
                   "started_at": now,
                   "stage_started_at": now,
