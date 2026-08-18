@@ -205,9 +205,16 @@ async def ensure_indexes() -> None:
                     [("org_id", 1), ("source", 1), ("metadata.pdf_hash", 1)],
                     unique=True,
                     name="uniq_bulk_import_pdfhash",
+                    # v58.7.3 — restrict the unique constraint to
+                    # ACTIVE rows only. Soft-deleted duplicates
+                    # (deleted_at != None) intentionally share the
+                    # same `pdf_hash` as their survivor — including
+                    # them in the index would immediately fail on the
+                    # first cleanup sweep.
                     partialFilterExpression={
                         "source": "bulk_import",
                         "metadata.pdf_hash": {"$exists": True},
+                        "deleted_at": None,
                     },
                 )
             except Exception as e:

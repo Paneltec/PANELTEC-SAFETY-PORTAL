@@ -103,6 +103,7 @@ class _FormSubmissionsColl:
             groups.setdefault(key, []).append({
                 "id": d["id"], "created_at": d.get("created_at"),
                 "submitted_at": d.get("submitted_at"),
+                "reviewer_edits": (d.get("metadata") or {}).get("reviewer_edits"),
             })
         out = []
         for (org_id, pdf_hash), rows_ in groups.items():
@@ -201,15 +202,17 @@ class TestDedupeScript:
             _fs_doc("h-A", "id-newer-2", created_offset=100),
             _fs_doc("h-B", "id-lonely",  created_offset=50),
         ])
-        groups = []
+        results = []
         async def collect():
-            async for pdf_hash, rows in ded._find_duplicate_groups(coll, {}):
-                groups.append((pdf_hash, [r["id"] for r in rows]))
+            async for pdf_hash, survivor, dups, path in ded._find_duplicate_groups(coll, {}):
+                results.append((pdf_hash, survivor["id"],
+                                [d["id"] for d in dups], path))
         _run(collect())
-        assert len(groups) == 1
-        assert groups[0][0] == "h-A"
-        # Oldest is first (survivor).
-        assert groups[0][1][0] == "id-oldest"
+        assert len(results) == 1
+        assert results[0][0] == "h-A"
+        # Oldest survives (no reviewer edits present).
+        assert results[0][1] == "id-oldest"
+        assert results[0][3] == "kept-oldest"
         # `h-B` (n=1) is NOT in the result.
 
     def test_commit_soft_deletes_all_but_oldest(self):
@@ -228,9 +231,8 @@ class TestDedupeScript:
         now = ded._now_iso()
         pairs = []
         async def gather():
-            async for pdf_hash, rows in ded._find_duplicate_groups(coll, {}):
-                survivor = rows[0]
-                for dup in rows[1:]:
+            async for pdf_hash, survivor, dups, path in ded._find_duplicate_groups(coll, {}):
+                for dup in dups:
                     pairs.append((dup["id"], survivor["id"]))
         _run(gather())
         ops = [
@@ -268,7 +270,58 @@ class TestDedupeScript:
         ])
         found = []
         async def gather():
-            async for h, rows in ded._find_duplicate_groups(coll, {}):
-                found.append((h, len(rows)))
+            async for h, survivor, dups, path in ded._find_duplicate_groups(coll, {}):
+                found.append((h, survivor["id"]))
         _run(gather())
         assert found == []
+
+    def test_reviewer_edit_wins_tiebreaker(self):
+        """v58.7.3 — a reviewer-edited row beats the oldest one.
+
+        Seeded: 3 rows for hash `h-X`. The MIDDLE row (id-X-mid) has
+        a `reviewer_edits` entry — that row must be the survivor, not
+        id-X-old (which would win under the pre-v58.7.3 heuristic)."""
+        from scripts import dedupe_bulk_import_submissions_v58_7_2 as ded
+        oldest = _fs_doc("h-X", "id-X-old", 500)
+        mid = _fs_doc("h-X", "id-X-mid", 300)
+        mid["metadata"]["reviewer_edits"] = [
+            {"by": "stephen", "at": _iso(120), "field": "worker_id"},
+        ]
+        newest = _fs_doc("h-X", "id-X-new", 100)
+        coll = _FormSubmissionsColl([oldest, mid, newest])
+
+        results = []
+        async def gather():
+            async for pdf_hash, survivor, dups, path in ded._find_duplicate_groups(coll, {}):
+                results.append((pdf_hash, survivor["id"],
+                                sorted(d["id"] for d in dups), path))
+        _run(gather())
+        assert len(results) == 1
+        pdf_hash, survivor_id, dup_ids, path = results[0]
+        assert pdf_hash == "h-X"
+        assert survivor_id == "id-X-mid"       # NOT id-X-old
+        assert dup_ids == ["id-X-new", "id-X-old"]
+        assert path.startswith("kept-edited-by:stephen")
+
+    def test_multiple_edited_rows_most_recent_wins(self):
+        """v58.7.3 — when >1 row has reviewer edits, latest edit wins."""
+        from scripts import dedupe_bulk_import_submissions_v58_7_2 as ded
+        a = _fs_doc("h-Y", "id-Y-a", 500)
+        a["metadata"]["reviewer_edits"] = [
+            {"by": "alice", "at": _iso(400), "field": "worker_id"},
+        ]
+        b = _fs_doc("h-Y", "id-Y-b", 300)
+        b["metadata"]["reviewer_edits"] = [
+            {"by": "bob", "at": _iso(60), "field": "worker_id"},  # most recent
+        ]
+        c = _fs_doc("h-Y", "id-Y-c", 100)
+        coll = _FormSubmissionsColl([a, b, c])
+
+        results = []
+        async def gather():
+            async for pdf_hash, survivor, dups, path in ded._find_duplicate_groups(coll, {}):
+                results.append((survivor["id"], path))
+        _run(gather())
+        assert len(results) == 1
+        assert results[0][0] == "id-Y-b"   # bob's later edit wins
+        assert results[0][1] == "kept-edited-by:bob"

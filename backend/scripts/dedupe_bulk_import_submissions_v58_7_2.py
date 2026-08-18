@@ -45,11 +45,18 @@ def _now_iso() -> str:
 
 
 async def _find_duplicate_groups(coll, match: dict):
-    """Yield `(pdf_hash, [rows...])` for each group with count > 1.
+    """Yield `(pdf_hash, survivor_id, dup_ids, path)` for each group
+    with count > 1.
 
-    Rows are projected + sorted by `created_at` ascending (oldest
-    first) so `[0]` is the survivor. `_id` is stringified in the
-    projection so pipeline reuse across cleanup + audit is safe.
+    v58.7.3 — survivor selection now honours reviewer edits:
+      1. If any row in the group has a non-empty `metadata.reviewer_edits`
+         array, keep the row with the MOST RECENT edit (by
+         `reviewer_edits[-1].at` if present, else group-position order).
+         `path` = "kept-edited-by:<user>".
+      2. Otherwise fall back to the original "keep oldest by
+         `created_at`" heuristic. `path` = "kept-oldest".
+    Path is returned for the dry-run report so ops can eyeball which
+    heuristic fired per group.
     """
     pipeline = [
         {"$match": {**match, "source": "bulk_import",
@@ -58,17 +65,42 @@ async def _find_duplicate_groups(coll, match: dict):
         {"$sort": {"created_at": 1, "_id": 1}},
         {"$group": {
             "_id": {"org_id": "$org_id", "pdf_hash": "$metadata.pdf_hash"},
-            "rows": {"$push": {"id": "$id", "created_at": "$created_at",
-                               "submitted_at": "$submitted_at"}},
+            "rows": {"$push": {
+                "id": "$id", "created_at": "$created_at",
+                "submitted_at": "$submitted_at",
+                "reviewer_edits": "$metadata.reviewer_edits",
+            }},
             "n": {"$sum": 1},
         }},
         {"$match": {"n": {"$gt": 1}}},
     ]
     async for grp in coll.aggregate(pipeline, allowDiskUse=True):
-        # Use `submitted_at` as the canonical timestamp — `created_at`
-        # doesn't exist on legacy rows. We already sorted by that in
-        # the pipeline; the $push preserves order.
-        yield grp["_id"]["pdf_hash"], grp["rows"]
+        rows = grp["rows"]
+        # Prefer any row with reviewer edits.
+        edited = [r for r in rows
+                  if r.get("reviewer_edits")
+                  and len(r["reviewer_edits"]) > 0]
+        if edited:
+            # Most recent edit wins.
+            def _last_edit_at(r):
+                try:
+                    return r["reviewer_edits"][-1].get("at", "")
+                except Exception:
+                    return ""
+            edited.sort(key=_last_edit_at, reverse=True)
+            survivor = edited[0]
+            actor = ""
+            try:
+                actor = survivor["reviewer_edits"][-1].get("by", "?") or "?"
+            except Exception:
+                actor = "?"
+            path = f"kept-edited-by:{actor}"
+        else:
+            # Fallback — oldest by created_at (already sorted asc).
+            survivor = rows[0]
+            path = "kept-oldest"
+        dups = [r for r in rows if r["id"] != survivor["id"]]
+        yield (grp["_id"]["pdf_hash"], survivor, dups, path)
 
 
 async def _run(args):
@@ -93,36 +125,43 @@ async def _run(args):
     per_group_summaries: list = []
     to_soft_delete_ids: list = []
     survivor_by_hash: dict = {}
+    tiebreaker_counts = {"kept-oldest": 0, "kept-edited": 0}
 
-    async for pdf_hash, rows in _find_duplicate_groups(
+    async for pdf_hash, survivor, dups, path in _find_duplicate_groups(
             db.form_submissions, match):
         groups_scanned += 1
-        survivor = rows[0]
-        dups = rows[1:]
         rows_to_soft_delete += len(dups)
         survivor_ids.append(survivor["id"])
         survivor_by_hash[pdf_hash] = survivor["id"]
+        if path == "kept-oldest":
+            tiebreaker_counts["kept-oldest"] += 1
+        else:
+            tiebreaker_counts["kept-edited"] += 1
         for d in dups:
             to_soft_delete_ids.append((d["id"], survivor["id"]))
         if len(per_group_summaries) < 5:
             per_group_summaries.append({
                 "pdf_hash": pdf_hash[:12] + "…",
-                "n": len(rows),
+                "n": len(dups) + 1,
                 "keep_id": survivor["id"],
+                "path": path,
                 "soft_delete_ids": [d["id"] for d in dups[:3]] +
                                     (["…"] if len(dups) > 3 else []),
             })
 
-    print("┌─ v58.7.2 dedupe report ─" + "─" * 40)
+    print("┌─ v58.7.3 dedupe report ─" + "─" * 40)
     print(f"│ mode              : {'DRY-RUN' if args.dry_run else 'COMMIT'}")
     print(f"│ scope             : {match if match else 'all bulk_import rows'}")
     print(f"│ duplicate groups  : {groups_scanned}")
     print(f"│ rows to soft-delete: {rows_to_soft_delete}")
     print(f"│ survivors kept    : {len(survivor_ids)}")
+    print(f"│ tiebreaker paths  : kept-oldest={tiebreaker_counts['kept-oldest']} "
+          f"kept-edited={tiebreaker_counts['kept-edited']}")
     if per_group_summaries:
         print("│ sample groups (up to 5):")
         for g in per_group_summaries:
             print(f"│   · hash={g['pdf_hash']} n={g['n']} keep={g['keep_id'][:8]}… "
+                  f"path={g['path']} "
                   f"drop={[i[:8] + '…' for i in g['soft_delete_ids'] if i != '…']}"
                   + (" +more" if any(i == '…' for i in g['soft_delete_ids']) else ""))
     print("└" + "─" * 62)

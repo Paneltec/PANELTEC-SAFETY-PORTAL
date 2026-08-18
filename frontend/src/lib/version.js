@@ -900,6 +900,26 @@
 //     matrix at 6 widths (360/480/768/1024/1440/1920) confirms no
 //     tile-to-tile overlap; on mobile the SVG scrolls horizontally
 //     via `min-w-[1100px]` so aspect ratios stay locked.
+// v160.3.9.58.7.3 — Dedupe tiebreaker honours reviewer edits.
+//   Enhancement to the v58.7.2 dedupe script: before applying
+//   "keep oldest" per group, `_find_duplicate_groups` now scans each
+//   duplicate group for a non-empty `metadata.reviewer_edits` array.
+//   If any row in the group has been reviewer-edited, that row wins
+//   the survivor slot (or, if multiple rows have edits, the one with
+//   the MOST RECENT edit wins). Falls back to "keep oldest" when no
+//   row in the group has been touched.
+//
+//   Dry-run report now prints the tiebreaker path per group
+//   (`kept-oldest` vs `kept-edited-by:<user>`) plus a summary count
+//   at the bottom so ops can eyeball how many groups had human edits
+//   that would have been lost under the naive heuristic.
+//
+//   Two new pytests cover: (1) a single reviewer-edited middle row
+//   beating the oldest, (2) multiple edited rows where the latest
+//   edit wins. Existing tests updated to consume the new 4-tuple
+//   yield signature.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.3';
+
 // v160.3.9.58.7.2 — Bulk Import: upsert-on-pdf_hash + duplicate cleanup.
 //   Following the v58.7.1 resume that materialised 2,186 duplicate
 //   form_submissions rows (cache-hit path re-inserted rows that were
@@ -940,7 +960,6 @@
 //   runs, not the current one. The current job's dupe bleed had
 //   already stopped naturally when its cache saturated at
 //   cached_hits=2,186.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.7.2';
 
 // v160.3.9.58.7.1 — Comms Safe Mode: sharper env-lock UX.
 //   User reported clicking "Turn OFF" did nothing — root cause was
