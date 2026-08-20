@@ -1610,6 +1610,41 @@ async def _stream_pdfs_from_archive(
 # ────────────────── v58.2 · form_submission builder ──────────────────
 
 
+# ────────────────── v58.2 · form_submission builder ──────────────────
+
+
+# v58.10.3 — Extract the first plausible date value from a Claude-mapped
+# `fields[]` array. Templates commonly place Date at index 0, but we
+# defensively scan all fields for a `YYYY-MM-DD` shape rather than
+# hard-coding a position. Returns None when no date-shaped value is
+# found — caller falls back to submitted_at.
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _pick_extraction_date(fields: list) -> Optional[str]:
+    for f in fields or []:
+        v = f.get("value") if isinstance(f, dict) else None
+        if isinstance(v, str) and _DATE_RE.match(v):
+            return v
+    return None
+
+
+# v58.10.3 — Extract the extracted worker/operator name from a
+# `fields[]` array. Claude places the operator payload as a list of
+# dicts with a `name` key (see `bulk_import_dryrun` samples). Uses the
+# extracted name even when `worker_id` failed to resolve — a name on
+# the tile is more useful to the reviewer than the "Imported from PDF"
+# placeholder. Returns None when no name-shaped value is found.
+def _pick_worker_name(fields: list) -> Optional[str]:
+    for f in fields or []:
+        v = f.get("value") if isinstance(f, dict) else None
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            name = v[0].get("name")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+    return None
+
+
 def _build_form_submission(job: dict, rec: dict, display_name: str) -> dict:
     """Produce the `form_submissions` doc for both the `ok` and the
     v58.2 failed-row commit paths.
@@ -1893,6 +1928,18 @@ async def _run_job(job_id: str, mode: str):
                     ):
                         try:
                             _doc = _build_form_submission(job, rec, display_name)
+                            # v58.10.3 — Stamp `template_category_snapshot`
+                            # so the pre-starts endpoint's mirror-union
+                            # (which filters on this key) picks up
+                            # bulk-import rows. Prior to v58.10.3 this
+                            # field was never set on the bulk-import
+                            # write path, so the mirror was inert and
+                            # the rich `fields[]` never surfaced on the
+                            # Daily Pre-Starts list.
+                            _tpl_row = templates_by_id.get(_doc.get("template_id")) or {}
+                            _tpl_cat = _tpl_row.get("category")
+                            if _tpl_cat:
+                                _doc["template_category_snapshot"] = _tpl_cat
                             _hash = (_doc.get("metadata") or {}).get("pdf_hash")
                             if _hash:
                                 await db.form_submissions.update_one(
@@ -1904,6 +1951,22 @@ async def _run_job(job_id: str, mode: str):
                                     {"$setOnInsert": _doc},
                                     upsert=True,
                                 )
+                                # v58.10.3 — Also stamp
+                                # `template_category_snapshot` on EXISTING
+                                # rows that were inserted by an earlier
+                                # tranche (pre-v58.10.3). `$setOnInsert`
+                                # above only writes on insert; a
+                                # separate `$set` covers the re-play case.
+                                if _tpl_cat:
+                                    await db.form_submissions.update_one(
+                                        {
+                                            "org_id": _doc["org_id"],
+                                            "source": "bulk_import",
+                                            "metadata.pdf_hash": _hash,
+                                            "template_category_snapshot": {"$exists": False},
+                                        },
+                                        {"$set": {"template_category_snapshot": _tpl_cat}},
+                                    )
                                 # v58.10 — Dual-write into `pre_starts`
                                 # for the Pre-Start template family so
                                 # Daily Pre-Starts renders records live.
@@ -1914,19 +1977,32 @@ async def _run_job(job_id: str, mode: str):
                                 _tpl = (_doc.get("template_name_snapshot") or "").lower()
                                 if "pre-start" in _tpl or "pre start" in _tpl or "checklist" in _tpl:
                                     _fname = (_doc.get("metadata") or {}).get("src_filename") or "unknown.pdf"
-                                    _wname = (((_doc.get("metadata") or {}).get("worker_match") or {}).get("name")) or "Imported from PDF"
+                                    # v58.10.3 — Enrich the shim so the
+                                    # Daily Pre-Starts tile face reads
+                                    # correctly (real template name,
+                                    # extraction date, extracted worker
+                                    # name if Claude got one) and the
+                                    # detail modal has `fields[]` to
+                                    # render.
+                                    _fields = _doc.get("fields") or []
+                                    _wname = _pick_worker_name(_fields) or "Imported from PDF"
+                                    _pdate = _pick_extraction_date(_fields) \
+                                        or (_doc.get("submitted_at") or _now_iso())[:10]
                                     _shim = {
                                         "id": _doc["id"],
                                         "org_id": _doc["org_id"],
                                         "workspace_id": _doc.get("workspace_id") or "",
-                                        "date": (_doc.get("submitted_at") or _now_iso())[:10],
+                                        "date": _pdate,
                                         "crew_lead": _wname,
                                         "work_summary": f"Imported: {_fname}",
+                                        "template_name_snapshot": _doc.get("template_name_snapshot"),
+                                        "template_category_snapshot": _tpl_cat,
+                                        "fields": _fields,
                                         "linked_swms_ids": [],
                                         "linked_permits": [],
                                         "hazards_discussed": "",
                                         "sign_ons": [],
-                                        "notes": "Auto-written by v58.10 dual-write.",
+                                        "notes": "Auto-written by v58.10 dual-write (enriched v58.10.3).",
                                         "created_by": _doc.get("submitted_by_id"),
                                         "created_at": _doc.get("created_at") or _now_iso(),
                                         "updated_at": _now_iso(),

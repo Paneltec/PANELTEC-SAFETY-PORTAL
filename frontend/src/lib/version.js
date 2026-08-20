@@ -1002,7 +1002,40 @@
 //     and `stripeStyle`. Defaults preserve behaviour on the other 5
 //     Capture tabs.
 //   · No backend touched. Running import job `9f5715aa-…` unaffected.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.2';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.3';
+
+// v160.3.9.58.10.3 — Bulk-import enrichment (Case A + partial Case B
+//   from the completeness diagnosis).
+//   1. `bulk_import_prestarts.py`:
+//      · On write, stamp `template_category_snapshot` on the
+//        `form_submissions` row (activates the pre-starts mirror
+//        route which had been silently inert on all 6,948 bulk-import
+//        rows because this key was never set).
+//      · Enrich the paired `pre_starts` shim with:
+//          – `template_name_snapshot` (from the paired form_submission)
+//          – `date`  (first date-shaped value in `fields[]`, falls
+//                     back to `submitted_at` if the extractor missed
+//                     the date field)
+//          – `crew_lead` (extracted operator name from `fields[]`
+//                     even when `worker_id` failed to resolve —
+//                     shows "Alex BARBARI" instead of "Imported
+//                     from PDF" placeholder; a name is more useful
+//                     to reviewers than the placeholder)
+//          – `fields[]` copied from the form_submission so the
+//                     detail modal renders the per-field breakdown
+//                     rather than the "legacy shape" italic
+//                     fallback.
+//   2. `crud.py` mirror-union path: dedup mirrored rows against
+//      shim `source_form_submission_id` so we surface ONE tile per
+//      PDF (the enriched shim) even though the paired
+//      form_submission would also match the mirror category.
+//   3. New backfill script `backfill_prestarts_enrichment_v58_10_3.py`:
+//      idempotent pass over all 10,724 imported pre_starts + 6,948
+//      bulk-import form_submissions. Only writes where the target
+//      field is still the placeholder — re-runs are no-ops.
+//   No frontend behaviour change. Version bump exists solely because
+//   the guardrail requires all 3 canonical files to agree.
+
 
 // v160.3.9.58.7.4 — Sites delete bug fix (P1).
 //   User reported "delete failed under Compliance/Sites — Sites".

@@ -140,6 +140,23 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 }]
             mirrored = await db.form_submissions.find(mq, {"_id": 0}).sort(
                 "submitted_at", -1).to_list(limit)
+            # v58.10.3 — Dedup against the legacy shim. Rows in `docs`
+            # (from the legacy collection, e.g. `pre_starts`) may carry
+            # `source_form_submission_id` pointing at the paired
+            # `form_submissions` row. If we blindly union `mirrored` in
+            # we'd surface both — one tile per PDF twice. Drop any
+            # mirrored row whose `id` is already referenced by a shim
+            # in this response. The shim (enriched by v58.10.3) is the
+            # canonical row to render; the paired form_submission is
+            # still reachable via `/api/form-submissions/{id}` for the
+            # detail view.
+            _shim_source_ids = {
+                d.get("source_form_submission_id") for d in docs
+                if d.get("source_form_submission_id")
+            }
+            if _shim_source_ids:
+                mirrored = [m for m in mirrored
+                            if m.get("id") not in _shim_source_ids]
             # v160.2.9-delete — Fill in `template_name_snapshot` from the
             # live `form_templates` row for any legacy submission that
             # missed the snapshot capture. Falls back to "Deleted
