@@ -1259,7 +1259,10 @@
 // v160.3.9.58.10.3 — Bulk-import enrichment (backend-only; SW bumped
 //                    to keep guardrail happy — no frontend behaviour
 //                    change).
-const CACHE_VERSION = 'paneltec-v160.3.9.58.10.3';
+// v160.3.9.58.11.0 — Multi-page Claude vision extraction + Daily
+//                    Pre-Starts list-limit bumped 5000 → 50000 so
+//                    the UI can render the full ~28k target archive.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.11.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

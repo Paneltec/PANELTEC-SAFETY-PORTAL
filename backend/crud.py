@@ -59,7 +59,7 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
         scope: Optional[str] = Query(None, description="`me` = own records only, `team` = org-wide (needs team_view)"),
-        limit: int = Query(200, ge=1, le=10000),
+        limit: int = Query(200, ge=1, le=50000),
         # v160.3.9.58.1 — filters used by the Bulk-Import wizard's
         # deep-links. `bulk_import_id` narrows the list to records
         # committed by one import job; `needs_review` shows only rows

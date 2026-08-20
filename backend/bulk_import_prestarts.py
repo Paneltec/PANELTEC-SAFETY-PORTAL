@@ -1515,12 +1515,6 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
     png_pages = await asyncio.to_thread(_pdf_pages_png_b64, pdf_bytes)
     if not png_pages:
         counters["pdf_render_failed"] = counters.get("pdf_render_failed", 0) + 1
-        return {"status": "failed", "error_step": "pdf_render",
-                "error": "pdftoppm produced no pages",
-                "pdf_hash": _sha256(pdf_bytes)}
-    # Preserve the v58.10 variable name for the classifier / extractor
-    # branches below (they now accept a list too).
-    png_b64 = png_pages
         # v58.2 — pdftoppm failed. Stash the raw PDF in GridFS so a
         # reviewer can open it from the review queue and figure out
         # what's wrong with the file.
@@ -1534,6 +1528,9 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
         await db.bulk_import_dryrun.replace_one(
             {"job_id": job["id"], "filename": filename}, rec, upsert=True)
         return rec
+    # Preserve the v58.10 variable name for the classifier / extractor
+    # branches below (they now accept a list too).
+    png_b64 = png_pages
 
     # v58.0.1 — check the content-hash cache first. On hit we bypass
     # BOTH Claude calls, saving ~5 s + ~$0.006 per PDF.

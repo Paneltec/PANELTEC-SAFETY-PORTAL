@@ -1002,7 +1002,15 @@
 //     and `stripeStyle`. Defaults preserve behaviour on the other 5
 //     Capture tabs.
 //   · No backend touched. Running import job `9f5715aa-…` unaffected.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.10.3';
+// v160.3.9.58.11.0 — Bulk-import multi-page vision extraction (Case C
+//   from the v58.10.3 diagnosis). Renderer now sends every page (up
+//   to `BULK_IMPORT_MAX_PAGES_PER_PDF`, default 8) to Claude in ONE
+//   call; prompt asks for the exact answer text seen (OK, Satisfactory,
+//   Yes, N/A) rather than forcing Pass/Fail vocabulary. Auto-restart
+//   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
+//   the full ~28k target archive renders without UI truncation.
+//   Backend-only + frontend request-limit bump; no visible UI change.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.0';
 
 // v160.3.9.58.10.3 — Bulk-import enrichment (Case A + partial Case B
 //   from the completeness diagnosis).

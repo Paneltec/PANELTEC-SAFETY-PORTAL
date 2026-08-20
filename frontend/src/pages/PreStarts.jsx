@@ -83,7 +83,7 @@ export default function PreStartsList() {
   });
 
   useEffect(() => {
-    api.get('/pre-starts', { params: { limit: 5000 } })
+    api.get('/pre-starts', { params: { limit: 50000 } })
       .then((r) => setItems(Array.isArray(r.data) ? r.data : []))
       .finally(() => setLoading(false));
   }, []);
