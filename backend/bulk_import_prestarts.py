@@ -887,33 +887,74 @@ async def _cache_put(org_id: str, pdf_hash: str, payload: dict) -> None:
 
 # ────────────────── Claude helpers ──────────────────
 
-async def _claude_classify(png_b64: str) -> dict:
-    """Ask Claude which of the 6 templates this PDF page best matches."""
+async def _claude_classify(png_b64s) -> dict:
+    """Ask Claude which of the 6 templates this PDF page best matches.
+
+    v58.11.0 — Accepts a single base64 PNG (legacy) OR a list of
+    base64 PNGs (multi-page). The classifier only needs page 1 in
+    principle, but passing the full page-set costs nothing extra and
+    helps when the first page is a cover sheet with no template
+    identifier."""
     from ai import _claude_json  # reuse the existing helper
     names = list(_TEMPLATE_HINTS.values())
     system = ("You classify photos of Australian pre-start check-sheets. "
               "Return JSON only.")
-    user = ("Which of these template names best matches this form? "
+    user = ("Which of these template names best matches this multi-page form? "
             f"Options: {json.dumps(names)}. "
             'Respond as {"template_name": "…", "confidence": 0.0-1.0}.')
-    return await _claude_json(system, user, image_b64=png_b64)
+    if isinstance(png_b64s, str):
+        return await _claude_json(system, user, image_b64=png_b64s)
+    pages = png_b64s or []
+    if not pages:
+        return {"template_name": "", "confidence": 0.0}
+    return await _claude_json(system, user,
+                              image_b64=pages[0],
+                              images_b64=pages[1:])
 
 
-async def _claude_extract(png_b64: str, template: dict) -> dict:
-    """Extract structured values keyed by field label from the PDF page."""
+async def _claude_extract(png_b64s, template: dict) -> dict:
+    """Extract structured values keyed by field label from the PDF pages.
+
+    v58.11.0 — Rewritten prompt + multi-page image input. Every
+    Simpro-exported pre-start we sampled from A-Barbari/A-Blyth is a
+    5-8 page PDF where the header lives on page 1 (which v58.10 sent
+    to Claude) but the ~19-item checklist body + signatures + GPS/photo
+    evidence live on pages 2-5. The old prompt only saw page 1 and
+    Claude correctly returned `checklist: {}`. This helper now:
+      · accepts a list of page-images and forwards them all to Claude
+        (or a single string for the legacy code path),
+      · states explicitly that the input is a multi-page form so
+        Claude scans EVERY page,
+      · nudges Claude to record the answer TYPE it sees on the PDF
+        (e.g. "OK", "Satisfactory", "Yes", "N/A") rather than
+        forcing everything into Pass/Fail vocabulary.
+    """
     from ai import _claude_json
     labels = [f["label"] for f in template.get("fields", [])]
-    system = "You extract filled pre-start check-sheet values. Return JSON only."
+    system = ("You extract filled values from a multi-page Australian pre-start "
+              "check-sheet exported from Simpro. Scan EVERY page (header, "
+              "checklist body, signatures, photos, notes). Return JSON only.")
     user = (
-        f"Template: {template.get('name')}. "
-        f"For each of these field labels, extract the filled value: "
+        f"Template: {template.get('name')}. This form spans multiple pages. "
+        f"For EACH of these field labels, look through ALL pages and "
+        f"extract the filled value if visible anywhere in the PDF: "
         f"{json.dumps(labels)}. "
         'Return {"date":"YYYY-MM-DD","worker_name":"…","plant_or_vehicle":"…",'
         '"site":"…","gps_map_present":true|false,"signature_present":true|false,'
-        '"checklist":{"<label>":"Pass|Fail|N/A|Yes|No|<text>"},"notes":"…"}. '
-        "Use exact label strings as keys. Omit fields you cannot see."
+        '"checklist":{"<exact label from template>":"<the answer text you see '
+        'e.g. OK, Satisfactory, Yes, No, N/A, or free text>"},'
+        '"notes":"…"}. Use each template label EXACTLY as given. Include '
+        "EVERY checklist item you can see filled in (usually 15-25 rows). "
+        "Only omit an item if the answer field is genuinely blank on the PDF."
     )
-    return await _claude_json(system, user, image_b64=png_b64)
+    if isinstance(png_b64s, str):
+        return await _claude_json(system, user, image_b64=png_b64s)
+    pages = png_b64s or []
+    if not pages:
+        return {}
+    return await _claude_json(system, user,
+                              image_b64=pages[0],
+                              images_b64=pages[1:])
 
 
 # ────────────────── Fuzzy match ──────────────────
@@ -1103,24 +1144,60 @@ def _map_extraction_to_fields(
 # ────────────────── PDF → PNG ──────────────────
 
 def _pdf_first_page_png_b64(pdf_bytes: bytes) -> Optional[str]:
-    """pdftoppm the first page of `pdf_bytes` → PNG → base64."""
+    """pdftoppm the first page of `pdf_bytes` → PNG → base64.
+
+    Retained for backward compatibility (unit tests reach for this
+    name); production code paths call `_pdf_pages_png_b64` which
+    returns a list of pages up to `BULK_IMPORT_MAX_PAGES_PER_PDF`.
+    """
+    pages = _pdf_pages_png_b64(pdf_bytes, max_pages=1)
+    return pages[0] if pages else None
+
+
+def _pdf_pages_png_b64(pdf_bytes: bytes,
+                       max_pages: Optional[int] = None) -> list:
+    """v58.11.0 — Render the first `max_pages` pages of `pdf_bytes`
+    to PNG (110 DPI) and return them as a list of base64 strings.
+
+    Previously only page 1 was rendered, which caused Claude to
+    return `checklist: {}` on the fully-populated Simpro exports —
+    the checklist body lives on pages 2-5 of a typical 5-8 page
+    PDF. This helper now renders every page (bounded by
+    `BULK_IMPORT_MAX_PAGES_PER_PDF`, default 8) in a single
+    pdftoppm invocation so downstream Claude calls can see the
+    complete form.
+
+    Failure modes:
+      · pdftoppm not installed or timing out → returns [] and lets
+        the caller record a `pdf_render_failed` error step.
+      · Single-page PDFs → returns a 1-element list.
+      · PDFs longer than the cap → additional pages are silently
+        dropped (form appendices rarely carry compliance data).
+    """
+    cap = max_pages if max_pages is not None else _env_int(
+        "BULK_IMPORT_MAX_PAGES_PER_PDF", 8)
+    if cap <= 0:
+        return []
     with tempfile.TemporaryDirectory() as td:
         pdf_path = os.path.join(td, "in.pdf")
         with open(pdf_path, "wb") as f:
             f.write(pdf_bytes)
         try:
             subprocess.run(
-                ["pdftoppm", "-png", "-r", "110", "-f", "1", "-l", "1",
+                ["pdftoppm", "-png", "-r", "110",
+                 "-f", "1", "-l", str(cap),
                  pdf_path, os.path.join(td, "page")],
-                check=True, capture_output=True, timeout=30,
+                check=True, capture_output=True, timeout=45,
             )
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             log.warning("pdftoppm failed: %s", e)
-            return None
+            return []
+        pages: list = []
         for fn in sorted(os.listdir(td)):
             if fn.startswith("page") and fn.endswith(".png"):
-                return base64.b64encode(open(os.path.join(td, fn), "rb").read()).decode()
-    return None
+                with open(os.path.join(td, fn), "rb") as fh:
+                    pages.append(base64.b64encode(fh.read()).decode())
+        return pages
 
 
 # ────────────────── Models ──────────────────
@@ -1433,8 +1510,17 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
       · Cache hits are marked with `cached: True` in the returned
         record so the wizard can render a "resumed" pill.
     """
-    png_b64 = await asyncio.to_thread(_pdf_first_page_png_b64, pdf_bytes)
-    if not png_b64:
+    # v58.11.0 — render EVERY page (up to the configured cap) so
+    # downstream Claude vision sees the whole form, not just page 1.
+    png_pages = await asyncio.to_thread(_pdf_pages_png_b64, pdf_bytes)
+    if not png_pages:
+        counters["pdf_render_failed"] = counters.get("pdf_render_failed", 0) + 1
+        return {"status": "failed", "error_step": "pdf_render",
+                "error": "pdftoppm produced no pages",
+                "pdf_hash": _sha256(pdf_bytes)}
+    # Preserve the v58.10 variable name for the classifier / extractor
+    # branches below (they now accept a list too).
+    png_b64 = png_pages
         # v58.2 — pdftoppm failed. Stash the raw PDF in GridFS so a
         # reviewer can open it from the review queue and figure out
         # what's wrong with the file.

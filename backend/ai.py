@@ -81,8 +81,15 @@ def _emergent_key() -> str:
 
 
 async def _claude_json(system: str, user_text: str, image_b64: Optional[str] = None,
-                       image_mime: str = "image/jpeg") -> dict:
-    """Call Claude Sonnet 4.5 and parse strict JSON from its reply."""
+                       image_mime: str = "image/jpeg",
+                       images_b64: Optional[list] = None) -> dict:
+    """Call Claude Sonnet 4.5 and parse strict JSON from its reply.
+
+    v58.11.0 — Accepts EITHER `image_b64` (single legacy image) OR
+    `images_b64` (multi-page list). When both are supplied, `image_b64`
+    is treated as the first page and `images_b64` as pages 2..N. Empty
+    lists / None both mean "no image" (text-only prompt).
+    """
     chat = LlmChat(
         api_key=_emergent_key(),
         session_id=str(uuid.uuid4()),
@@ -92,6 +99,9 @@ async def _claude_json(system: str, user_text: str, image_b64: Optional[str] = N
     file_contents = []
     if image_b64:
         file_contents.append(ImageContent(image_base64=image_b64))
+    for _b64 in (images_b64 or []):
+        if _b64:
+            file_contents.append(ImageContent(image_base64=_b64))
 
     msg = UserMessage(text=user_text, file_contents=file_contents or None)
     try:
