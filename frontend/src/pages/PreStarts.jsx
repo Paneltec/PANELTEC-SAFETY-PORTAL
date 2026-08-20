@@ -75,6 +75,7 @@ function Highlight({ text, tokens }) {
 export default function PreStartsList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [q, setQ] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -82,11 +83,41 @@ export default function PreStartsList() {
     try { return localStorage.getItem(LS_TYPE_KEY) || 'All'; } catch { return 'All'; }
   });
 
-  useEffect(() => {
-    api.get('/pre-starts', { params: { limit: 50000 } })
-      .then((r) => setItems(Array.isArray(r.data) ? r.data : []))
-      .finally(() => setLoading(false));
+  // v160.3.9.58.11.1 — Retry-on-fetch-error. The on-mount fetch was
+  // previously fire-and-forget; if the backend blipped mid-load
+  // (Cloudflare 502 during a supervisor restart, upstream timeout),
+  // `items` stayed `[]`, `loading` flipped to `false`, and the UI
+  // rendered the "No pre-starts yet" empty-state — which looked
+  // exactly like a data-loss event to the user. We now:
+  //   · surface a distinct `loadError` state so the empty-state can't
+  //     collide with a network failure,
+  //   · auto-retry twice (3s, then 10s), same params,
+  //   · offer a manual `Retry` button once both retries fail.
+  // Retries fire on initial mount OR manual click only — no polling.
+  const fetchItems = useCallback(async (attempt = 0) => {
+    setLoading(true);
+    try {
+      const r = await api.get('/pre-starts', { params: { limit: 50000 } });
+      setItems(Array.isArray(r.data) ? r.data : []);
+      setLoadError(null);
+      setLoading(false);
+      return true;
+    } catch (err) {
+      const message = apiError(err) || 'Network error';
+      setLoadError({ message, attempt });
+      setLoading(false);
+      if (attempt === 0) {
+        setTimeout(() => { fetchItems(1); }, 3000);
+      } else if (attempt === 1) {
+        setTimeout(() => { fetchItems(2); }, 10000);
+      }
+      return false;
+    }
   }, []);
+
+  useEffect(() => {
+    fetchItems(0);
+  }, [fetchItems]);
 
   // Persist type filter across sessions.
   useEffect(() => {
@@ -266,6 +297,40 @@ export default function PreStartsList() {
       <div className="mt-3">
         {loading ? (
           <div className="text-sm text-slate-500">Loading…</div>
+        ) : loadError && items.length === 0 ? (
+          // v58.11.1 — Network / server failure. Distinct from the
+          // "genuinely empty" case so the user isn't misled into
+          // thinking data was lost. Auto-retries fire in the
+          // background at 3s / 10s; the manual Retry button re-runs
+          // the same fetch immediately.
+          <div
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center"
+            data-testid="prestarts-load-error"
+          >
+            <div className="font-display font-semibold text-amber-900">
+              Couldn&apos;t reach the server.
+            </div>
+            <div className="text-sm text-amber-800 mt-1">
+              {loadError.attempt < 2
+                ? `Retrying automatically… (attempt ${loadError.attempt + 1} of 2)`
+                : "We tried twice and still couldn't load your pre-starts."}
+            </div>
+            {loadError.message && (
+              <div className="text-xs text-amber-700 mt-2 font-mono">
+                {loadError.message}
+              </div>
+            )}
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={() => fetchItems(0)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                data-testid="prestarts-load-error-retry"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
         ) : items.length === 0 ? (
           <EmptyState
             title="No pre-starts yet"

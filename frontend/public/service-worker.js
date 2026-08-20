@@ -1262,7 +1262,10 @@
 // v160.3.9.58.11.0 — Multi-page Claude vision extraction + Daily
 //                    Pre-Starts list-limit bumped 5000 → 50000 so
 //                    the UI can render the full ~28k target archive.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.11.0';
+// v160.3.9.58.11.1 — Daily Pre-Starts fetch retry + error card.
+//                    SW CACHE_VERSION bumped so any client whose SW
+//                    cached the empty 502 response flushes on load.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.11.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

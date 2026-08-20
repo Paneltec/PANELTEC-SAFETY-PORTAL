@@ -1010,7 +1010,21 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.0';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.1';
+
+// v160.3.9.58.11.1 — Daily Pre-Starts fetch resilience. On-mount
+//   fetch now catches network / 5xx errors, auto-retries at 3s and
+//   10s (same params), and renders a distinct amber "Couldn't reach
+//   the server" card with a manual Retry button when both retries
+//   fail. Fixes the earlier failure mode where a mid-fetch Cloudflare
+//   502 (during a supervisor restart) left `items=[]` and the UI
+//   silently rendered the "No pre-starts yet" empty-state — visually
+//   indistinguishable from a data-loss event to the user. Empty-state
+//   and error-state now render in mutually-exclusive branches. No
+//   backend change; no polling. Retries fire on initial mount or
+//   manual Retry only. SW `CACHE_VERSION` bumped so any browser that
+//   cached the empty 502 response flushes on next load.
+
 
 // v160.3.9.58.10.3 — Bulk-import enrichment (Case A + partial Case B
 //   from the completeness diagnosis).
