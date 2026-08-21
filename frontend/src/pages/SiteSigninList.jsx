@@ -1,6 +1,15 @@
 // v58.13.6 — Site Sign-In / Visitor Register dedicated Capture page.
 // v58.13.7 — Per-tile View + Delete actions (SubmissionViewer +
 // DeleteRecordButton reused; zero shared-component modifications).
+// v58.13.10 — Fix: View button flashes-and-closes.
+//   Root cause: SubmissionViewer's backdrop (`onClick={onClose}`)
+//   receives the SAME synthetic-event bubble that opened it. React
+//   commits the portal synchronously between the button's `onClick`
+//   and the event reaching the root's delegated listener, so the
+//   backdrop's `onClick` is registered in time to fire on the same
+//   tick. Fix is a 1-line `e.stopPropagation()` on the View trigger,
+//   mirroring the pattern DeleteRecordButton uses internally.
+//   Zero shared-component edits, zero GroupedTilesView edits.
 // Edit action deferred to v58.13.8 (audit-trail design pending).
 import React, { useCallback, useEffect, useState } from 'react';
 import { Eye } from 'lucide-react';
@@ -42,9 +51,19 @@ export default function SiteSigninList() {
         </div>
       </div>
       {/* v58.13.7 — Per-tile action bar. Mirrors the Inspections.jsx
-          pattern (Eye view + DeleteRecordButton). Edit deferred to v58.13.8. */}
+          pattern (Eye view + DeleteRecordButton). Edit deferred to v58.13.8.
+          v58.13.10 — View trigger now stops propagation. Without it the
+          same click that sets `viewerRec` bubbles through React's
+          synthetic-event tree into the freshly-mounted
+          `SubmissionViewer` backdrop (`onClick={onClose}`), closing
+          the modal on the same tick — the "flash and close" the user
+          reported. DeleteRecordButton already does this internally
+          (line 76 of its component), which is why Delete worked and
+          View didn't on the same tile. */}
       <div className="flex flex-wrap gap-1 items-center pt-1 border-t border-slate-100">
-        <button type="button" onClick={() => setViewerRec(rec)} title="View submission"
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); setViewerRec(rec); }}
+          title="View submission"
           data-testid={`site-signin-view-${rec.id}`}
           className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
           <Eye size={13} />

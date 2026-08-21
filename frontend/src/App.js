@@ -24,6 +24,7 @@ import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 // v58.13.6 — Site Sign-In / Visitor Register capture page.
 import SiteSigninList from '@/pages/SiteSigninList';
 import RiskAssessments from '@/pages/RiskAssessments';
+import CsIncidentsList from '@/pages/CsIncidentsList';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
 import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
@@ -141,6 +142,12 @@ function App() {
               <Route path="site-signin" element={<SiteSigninList />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
+              {/* v58.13.12 — Submissions bucket. CS Incidents migrated
+                  out of the "Risk Assessments" tab into its own tiled
+                  list. Old bookmarks with `?tab=cs_incident` get a
+                  soft redirect from RiskAssessments.jsx. */}
+              <Route path="submissions" element={<Navigate to="/app/submissions/cs-incidents" replace />} />
+              <Route path="submissions/cs-incidents" element={<CsIncidentsList />} />
               <Route path="inspections/new" element={<InspectionNew />} />
 
               <Route path="contractors" element={<ContractorsList />} />

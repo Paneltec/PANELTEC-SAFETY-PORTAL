@@ -1,3 +1,121 @@
+# 2026-08-21 — v160.3.9.58.13.13 — Version-sync bug fix + ship-checklist guardrail
+
+## Ship summary
+- Corrected `RUNNING_VERSION` export in `frontend/src/lib/version.js:1910` from `paneltec-v160.3.9.58.13.7` → `paneltec-v160.3.9.58.13.13`. This export had drifted for FOUR consecutive ships (v58.13.9, .10, .11, .12) because each ship bumped `MOBILE_BUNDLE_VERSION` + `CACHE_VERSION` + prepended a changelog block, but never touched line 1910. Every UI surface reading `RUNNING_VERSION` (sidebar footer, ActiveSessionsPanel, UserManual, CacheBusterBanner mismatch trigger) reported v58.13.7 while the bundle itself was current.
+- Bumped `MOBILE_BUNDLE_VERSION` (mobile/version.ts) + `CACHE_VERSION` (service-worker.js) to v58.13.13 for parity.
+- Shipped Option A guardrail — new pytest at `/app/tests/frontend_smoke/test_version_sync_v58_13_13.py` (5 tests). Asserts (a) all 3 canonical version strings match the strict `paneltec-v<int>.<int>.<int>.<int>.<int>.<int>` format, (b) all 3 are IDENTICAL character-for-character, (c) the top changelog banner in `version.js` references the exact same version as the `RUNNING_VERSION` export. Any future ship that drifts one line fails the pytest immediately.
+- Backend UNTOUCHED — no reload triggered, no `4f395643-…` orphan event.
+
+## CacheBusterBanner audit — no bug found, no code change
+- Banner IS mounted (`App.js:98`) app-wide.
+- Comparison `serverVersion !== RUNNING_VERSION` fires correctly (verified against `d.cache_version` from `/api/health/version`).
+- Reason Stephen didn't notice: v160.3.6w intentionally softened the banner to a bottom-right toast that AUTO-HIDES after 8 s once the 30 s boot grace elapses (`AUTO_HIDE_MS = 8_000`, banner file line 23). Working as designed per the v6w "we deploy many patches per day — old brown banner nagged admins" rationale.
+- Post-v58.13.13 the mismatch stops firing (server + client both on v58.13.13). If stickier UX ever needed, that's a separate ticket (candidate v58.13.14+).
+
+## 🔒 NEW HARD RULE — ship checklist (encoded from v58.13.13 postmortem)
+
+**BEFORE every ship, in this exact order:**
+
+1. Write / edit code changes.
+2. **Grep-verify** the `RUNNING_VERSION` export line in `frontend/src/lib/version.js` will be updated to the new version — this is a SINGLE line at line ~1910 that lives OUTSIDE the changelog banner block at the top. Look for `export const RUNNING_VERSION`. It is trivially easy to forget because search_replace edits to the changelog banner never touch it.
+3. Prepend a `// vXXX — <summary>` changelog block at the top of `version.js`.
+4. Update the export at the bottom to match: `export const RUNNING_VERSION = 'paneltec-vXXX'`.
+5. Bump `MOBILE_BUNDLE_VERSION` in `mobile/src/lib/version.ts`.
+6. Bump `CACHE_VERSION` in `frontend/public/service-worker.js`.
+7. Run `pytest tests/frontend_smoke/test_version_sync_v58_13_13.py` — if it fails, one of steps 4–6 was missed.
+8. Then take the pre-ship 5-count snapshot and proceed.
+
+**The pytest is the mechanical enforcement layer — no fork-agent has to remember any of this on their own. If a ship forgets step 4, the pytest fails on step 7 with a specific message pointing at the drift.**
+
+## Files touched this ship
+- `frontend/src/lib/version.js` — line 1910 corrected + new v58.13.13 changelog block at top.
+- `mobile/src/lib/version.ts` — bundle version bump.
+- `frontend/public/service-worker.js` — CACHE_VERSION bump.
+- `tests/frontend_smoke/test_version_sync_v58_13_13.py` — new (5 pytests).
+- `memory/PRD.md` — this entry + hard-rule capture.
+
+## Pre/post 5-count parity
+| Collection | Pre | Post | Δ |
+|---|---|---|---|
+| form_submissions | 8079 | 8079 | 0 |
+| workers | 69 | 69 | 0 |
+| incidents | 4 | 4 | 0 |
+| inspections | 6 | 6 | 0 |
+| form_templates | 96 | 96 | 0 |
+| pre_starts | 11331 | 11331 | 0 |
+| asset_service_schedules | 1 | 1 | 0 |
+
+Frontend-only + test-file ship. Zero backend surface change; zero DB churn.
+
+## Next Action Items
+- `v58.13.11-b` — Schedule attachment upload endpoint + FE `AttachmentField` wiring (still deferred).
+- `v58.13.14` (optional) — Sticker CacheBusterBanner UX (remove auto-hide OR extend to 30 s) IF users report they keep missing update notices. Not blocking.
+- `v58.13.8` — Submissions Edit mode discovery.
+- `v58.13.0-c` — Auto-generation cron for periodic tasks.
+
+---
+
+# 2026-08-21 — v160.3.9.58.13.11 — Periodic Task Templates Phase B (+ hard rule capture)
+
+## Ship summary
+- Extended `ScheduleIn` (`backend/asset_service.py`) with 7 new nullable fields: `phone`, `reported_by_contact`, `project_id`, `assigned_to_worker_id`, `assigned_to_worker_name`, `notes`, `attachments`. Handlers `create_schedule` / `update_schedule` needed no change (existing `**payload` splat covers new fields).
+- Extended `AssetServiceTabs.jsx` schedule form with 5 new UI controls in the existing collapsed "More details" panel: phone, reported_by_contact, project_id, assigned_to_worker (position-filtered dropdown with hint), notes.
+- Client-side position filter for the worker dropdown reuses `/workers/directory`'s `position` projection (v58.12.8 / v58.12.10). No new endpoint, no new network hop.
+- 7 pytests at `/app/tests/backend_unit/test_periodic_task_phase_b_v58_13_11.py` — all green.
+- Version synced across `frontend/src/lib/version.js`, `mobile/src/lib/version.ts`, `frontend/public/service-worker.js` → `v160.3.9.58.13.11`.
+
+## Deferred (surface, do NOT auto-scope)
+- **`attachments` UI**: field is on the backend schema (nullable list-of-dicts) but no FE drag-and-drop shipped. Reusing `BydaFields.AttachmentField` verbatim requires a `POST /api/assets/{id}/schedules/{sid}/attachments` upload endpoint that doesn't exist — building one is >15 LOC + storage path + delete route = scope-creep beyond "add 6 form fields". Follow-up ticket **v58.13.11-b** for the endpoint + FE wiring. No schema migration required when it lands.
+
+## 🔒 NEW HARD RULE — captured from v58.13.10 postmortem
+**Any new `.py` file placed under `/app/backend/` — including `/app/backend/tests/` — triggers `uvicorn --reload-dir /app/backend` to reload the worker.** During the v58.13.10 ship this killed the in-flight `_run_job` task for bulk import job `4f395643-…` at `processed=15,096`; the shutdown drain stuck for ~10 minutes waiting for the task to yield, requiring a supervisor restart to recover. Same near-miss during v58.13.11 when editing `asset_service.py` (expected — schema change needs reload).
+
+**Forward rule (encode in every fork):**
+| File location | Purpose | Triggers reload? |
+|---|---|---|
+| `/app/backend/*.py` | Application code | ✅ Yes — expected for real changes |
+| `/app/backend/tests/*.py` (NEW file) | Any new test file | ❌ **DO NOT PUT NEW TESTS HERE** |
+| `/app/backend/tests/*.py` (edit existing) | Modifying existing tests | ⚠️ Triggers reload — same risk |
+| `/app/tests/backend_unit/*.py` | New backend unit / schema tests | ✅ Safe — outside reload-dir |
+| `/app/tests/frontend_smoke/*.py` | Static-grep smoke tests for FE / SW | ✅ Safe — outside reload-dir |
+
+**Fork checklist BEFORE editing / creating any `.py` under `/app/backend/` while `4f395643-…` (or any other long-running bulk_import job) is `state=processing`:**
+1. Confirm the bulk_import job is idle (`state ∈ {complete, failed, cancelled}`) OR
+2. Accept that a supervisor restart will be needed to auto-resume the orphaned job (adds ~10s downtime + one `arc` increment) OR
+3. Defer the edit until the job completes.
+
+New tests go at `/app/tests/backend_unit/` with the local `conftest.py` that loads `/app/backend/.env` + prepends `sys.path`.
+
+## Files touched this ship
+- `backend/asset_service.py` — `ScheduleIn` +7 nullable fields + comment block referencing v58.13.11-b follow-up.
+- `frontend/src/components/AssetServiceTabs.jsx` — form state (+6 keys), `filteredAssignWorkers` memo, clear-on-position-change effect, 5 new UI controls in the More Details panel.
+- `frontend/src/lib/version.js` — v58.13.11 changelog entry + rule capture inline.
+- `mobile/src/lib/version.ts` — bundle version bump (only line touched under `/app/mobile/`).
+- `frontend/public/service-worker.js` — CACHE_VERSION bump.
+- `tests/backend_unit/conftest.py` — new (sys.path prepend + .env loader).
+- `tests/backend_unit/test_periodic_task_phase_b_v58_13_11.py` — new (7 pytests).
+
+## Pre/post 5-count parity
+| Collection | Pre | Post | Δ |
+|---|---|---|---|
+| form_submissions | 8079 | 8079 | 0 |
+| workers | 69 | 69 | 0 |
+| incidents | 4 | 4 | 0 |
+| inspections | 6 | 6 | 0 |
+| form_templates | 96 | 96 | 0 |
+| pre_starts | 11331 | 11331 | 0 |
+| asset_service_schedules | 1 | 1 | 0 |
+
+Schema-only change; zero DB churn as expected.
+
+## Next Action Items
+- `v58.13.11-b` — Schedule attachment upload endpoint + FE `AttachmentField` wiring.
+- `v58.13.8` — Submissions Edit mode discovery (audit-trail options).
+- `v58.13.0-c` — Auto-generation cron for periodic tasks (was `v58.13.1`).
+- `v58.13.12` — CS Incident list migration to Submissions + GroupedTilesView (renumbered from the old `v58.13.10` slot which is now the SW skipWaiting fix).
+
+---
+
 # 2026-08-04 — v160.3.9.57.2 — v57.1 resumed + shipped
 
 ## Piece 0 · Live-DB write guard (`conftest.py`)

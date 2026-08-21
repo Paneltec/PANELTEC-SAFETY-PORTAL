@@ -1,7 +1,12 @@
 // Risk Assessments — Capture sub-tab. v160.3.9.15.
 // Four-tab surface: Submissions, Master Risks, List Forms, Incident Root
 // Causes.
+// v58.13.12 — CS Incident tab REMOVED. It now lives at
+// `/app/submissions/cs-incidents` (dedicated tile-list page). Old
+// bookmarks landing here with `?tab=cs_incident` get a client-side
+// soft redirect to preserve link continuity.
 import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import api from '../lib/api';
 import { TOKEN_KEY, USER_KEY } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
@@ -10,7 +15,6 @@ import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
 import ListFormsTab from './ListFormsTab';
 import IncidentRootCausesTab from './IncidentRootCausesTab';
-import CsIncidentTab from './CsIncidentTab';
 import ListRolesTab from './ListRolesTab';
 import CompletedTrainingTab from './CompletedTrainingTab';
 import CompaniesTab from './CompaniesTab';
@@ -20,7 +24,6 @@ const TABS = [
   { key: 'master',        label: 'Master Risks' },
   { key: 'list_forms',    label: 'List Forms' },
   { key: 'root_causes',   label: 'Incident Root Causes' },
-  { key: 'cs_incident',   label: 'CS Incident' },
   { key: 'list_roles',    label: 'List Roles' },
   { key: 'completed_training', label: 'My Completed Training' },
   { key: 'companies',     label: 'Companies' },
@@ -39,6 +42,19 @@ export default function RiskAssessments() {
   const [user] = useState(loadUser);
   // Reference to TOKEN_KEY to keep tree-shaking honest on the named import.
   void TOKEN_KEY;
+
+  // v58.13.12 — Soft-redirect old CS Incident bookmarks that hit this
+  // page with `?tab=cs_incident` to the new dedicated route. Effect
+  // runs on mount + on `search` change; `replace` so the old URL
+  // doesn't linger in the back-stack.
+  const navigate = useNavigate();
+  const { search } = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(search);
+    if (params.get('tab') === 'cs_incident') {
+      navigate('/app/submissions/cs-incidents', { replace: true });
+    }
+  }, [search, navigate]);
 
   useEffect(() => {
     if (tab !== 'submissions') return;
@@ -117,7 +133,6 @@ export default function RiskAssessments() {
         {tab === 'master' && <MasterRisksTab user={user} />}
         {tab === 'list_forms' && <ListFormsTab user={user} />}
         {tab === 'root_causes' && <IncidentRootCausesTab user={user} />}
-        {tab === 'cs_incident' && <CsIncidentTab user={user} />}
         {tab === 'list_roles' && <ListRolesTab user={user} />}
         {tab === 'completed_training' && <CompletedTrainingTab user={user} />}
         {tab === 'companies' && <CompaniesTab user={user} />}

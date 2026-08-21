@@ -139,6 +139,17 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     task_identification: initial?.task_identification ?? '',
     description_html: initial?.description_html ?? '',
     assigned_to_position: initial?.assigned_to_position ?? '',
+    // v58.13.0-b (shipped v58.13.11) — Phase B fields. 5 shipped this
+    // turn (phone, reported_by_contact, project_id, assigned_to_worker_*,
+    // notes). `attachments` UI is deferred: reusing `AttachmentField`
+    // requires a schedule-attachment upload endpoint that doesn't
+    // exist yet (see backend `ScheduleIn` comment).
+    phone: initial?.phone ?? '',
+    reported_by_contact: initial?.reported_by_contact ?? '',
+    project_id: initial?.project_id ?? '',
+    assigned_to_worker_id: initial?.assigned_to_worker_id ?? '',
+    assigned_to_worker_name: initial?.assigned_to_worker_name ?? '',
+    notes: initial?.notes ?? '',
   }));
   // v58.13.0-a — Simpro-position dropdown for `assigned_to_position`.
   // Reuses the widened /workers/directory payload (v58.12.10) to
@@ -155,6 +166,31 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     () => Array.from(new Set((schedTechs || []).map((t) => t.position).filter(Boolean))).sort(),
     [schedTechs],
   );
+  // v58.13.0-b (shipped v58.13.11) — Position-filtered worker list
+  // for the Phase B `assigned_to_worker` picker. Empty until a
+  // position is chosen so the dropdown surfaces a "Select position
+  // first" hint instead of a wall of 60+ workers. Client-side filter
+  // (same source of truth as `schedPositions`) — no extra network
+  // hop needed.
+  const filteredAssignWorkers = React.useMemo(
+    () => (form.assigned_to_position
+      ? (schedTechs || []).filter((t) => (t.position || '') === form.assigned_to_position)
+      : []),
+    [schedTechs, form.assigned_to_position],
+  );
+  // v58.13.11 — If the position picker changes to a value that no
+  // longer contains the current worker, clear the worker id/name so
+  // we don't persist a mismatched pair. Also clears when position
+  // itself is cleared.
+  useEffect(() => {
+    if (!form.assigned_to_worker_id) return;
+    const stillValid = filteredAssignWorkers.some(
+      (t) => t.id === form.assigned_to_worker_id,
+    );
+    if (!stillValid) {
+      setForm((f) => ({ ...f, assigned_to_worker_id: '', assigned_to_worker_name: '' }));
+    }
+  }, [form.assigned_to_position, filteredAssignWorkers, form.assigned_to_worker_id]);
   const [saving, setSaving] = useState(false);
 
   // Phase 3.5 — helper line shows the projected next-due based on the
@@ -496,6 +532,85 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                     data-testid="sch-description-html"
                     placeholder="Task notes, checklist references, or HTML." />
+                </div>
+                {/* v58.13.0-b (shipped v58.13.11) — Phase B fields.
+                    5 rendered: phone, reported_by_contact, project_id,
+                    assigned_to_worker (position-filtered dropdown),
+                    notes. `attachments` UI is deferred pending a
+                    schedule-attachment upload endpoint — see backend
+                    `ScheduleIn` v58.13.11 block for full rationale. */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Phone</label>
+                    <input value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-phone"
+                      placeholder="e.g. 0400 123 456"
+                      type="tel" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Reported by (contact)</label>
+                    <input value={form.reported_by_contact}
+                      onChange={(e) => setForm({ ...form, reported_by_contact: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-reported-by-contact"
+                      placeholder="Name or contact reference" />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Project ID</label>
+                  <input value={form.project_id}
+                    onChange={(e) => setForm({ ...form, project_id: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    data-testid="sch-project-id"
+                    placeholder="Free-text project identifier" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Assigned to (worker)</label>
+                  <select value={form.assigned_to_worker_id}
+                    disabled={!form.assigned_to_position}
+                    onChange={(e) => {
+                      const wid = e.target.value;
+                      const w = filteredAssignWorkers.find((x) => x.id === wid);
+                      setForm({
+                        ...form,
+                        assigned_to_worker_id: wid,
+                        assigned_to_worker_name: w?.name || '',
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white text-sm disabled:bg-slate-50 disabled:text-slate-400"
+                    data-testid="sch-assigned-worker">
+                    <option value="">
+                      {form.assigned_to_position
+                        ? (filteredAssignWorkers.length === 0
+                          ? '— No workers with this position —'
+                          : '— Select worker —')
+                        : 'Select position first'}
+                    </option>
+                    {filteredAssignWorkers.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.simpro_employee_id
+                          ? `${t.name} · #${t.simpro_employee_id}`
+                          : t.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!form.assigned_to_position && (
+                    <p className="mt-1 text-[11px] text-slate-500"
+                       data-testid="sch-assigned-worker-hint">
+                      Pick a position above to filter the worker list.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Notes</label>
+                  <textarea value={form.notes}
+                    onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    data-testid="sch-notes"
+                    placeholder="Additional notes for this schedule (plain text)." />
                 </div>
               </div>
             )}

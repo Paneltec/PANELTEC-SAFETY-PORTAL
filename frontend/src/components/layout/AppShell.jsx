@@ -91,6 +91,12 @@ const NAV = [
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },
+    // v58.13.12 — New "Submissions" bucket. Consolidates
+    // reference-library issue lists that share the tile UX. First
+    // occupant is CS Incidents (migrated out of the Risk Assessments
+    // tab bar). Reuses `reference_library` gate — same permission the
+    // old tab used, no permission migration required.
+    { to: '/app/submissions/cs-incidents', label: 'CS Incidents', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-submissions-cs-incidents', resource: 'reference_library', pastel: 'coral' },
     { to: '/app/forms', label: 'Forms', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-forms', pastel: 'sky' },
     // v160.3.0-adjust-20b — Drag-drop import entry point. Opens the
     // shared <PdfImportModal>. Admin/HSEQ-lead only. Renders as a

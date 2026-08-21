@@ -20,7 +20,7 @@ export function Step4Complete({ job, jobId, onReset, onSwitchToJob, onResumeCrea
                        || state === 'extracting' || state === 'dryrun';
 
   if (isProcessing) {
-    return <ProcessingCard progress={progress} state={state} />;
+    return <ProcessingCard progress={progress} state={state} autoApproved={!!job?.auto_approved} />;
   }
 
   if (state === 'failed') {
@@ -36,10 +36,10 @@ export function Step4Complete({ job, jobId, onReset, onSwitchToJob, onResumeCrea
   }
 
   // complete
-  return <CompleteCard job={job} jobId={jobId} onReset={onReset} />;
+  return <CompleteCard job={job} jobId={jobId} onReset={onReset} autoApproved={!!job?.auto_approved} />;
 }
 
-function ProcessingCard({ progress, state }) {
+function ProcessingCard({ progress, state, autoApproved }) {
   const extracted = progress.extracted || 0;
   const total = progress.total || 0;
   const failed = progress.failed || 0;
@@ -53,6 +53,15 @@ function ProcessingCard({ progress, state }) {
           {state === 'processing' ? 'Committing records…' : `Preparing (${state})…`}
         </div>
       </div>
+      {autoApproved && (
+        <div className="mt-3 inline-flex items-center gap-1.5 rounded-full
+                        border border-emerald-300 bg-emerald-50 px-2.5 py-1
+                        text-xs font-medium text-emerald-800"
+             data-testid="wizard-auto-approved-chip">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          Auto-approved (all cache-hits)
+        </div>
+      )}
       <div className="mt-4">
         <div className="h-2 rounded-full bg-white/60 overflow-hidden">
           <div className="h-full bg-blue-600" style={{ width: `${pct.toFixed(1)}%` }}
@@ -67,7 +76,7 @@ function ProcessingCard({ progress, state }) {
   );
 }
 
-function CompleteCard({ job, jobId, onReset }) {
+function CompleteCard({ job, jobId, onReset, autoApproved }) {
   const progress = job?.progress || {};
   const extracted = progress.extracted || 0;
   const needsReview = (job?.progress?.matched != null)
@@ -89,6 +98,15 @@ function CompleteCard({ job, jobId, onReset }) {
               {needsReview > 0 && <> {needsReview} landed in the review queue for worker attach.</>}
               {failed > 0 && <> {failed} row{failed !== 1 ? 's were' : ' was'} skipped.</>}
             </div>
+            {autoApproved && (
+              <div className="mt-2 inline-flex items-center gap-1.5 rounded-full
+                              border border-emerald-400 bg-white px-2.5 py-1
+                              text-xs font-medium text-emerald-800"
+                   data-testid="wizard-auto-approved-chip">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Auto-approved (all cache-hits)
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -1,6 +1,268 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.13 — Version-sync bug fix + guardrail.
+//
+// The smoking gun: v58.13.9, .10, .11, and .12 each shipped with
+// changelog comment blocks prepended to this file, and each bumped
+// `service-worker.js#CACHE_VERSION` + `mobile/version.ts
+// #MOBILE_BUNDLE_VERSION`. But NONE of those four ships updated the
+// `RUNNING_VERSION` export at the bottom of this file — the
+// constant every UI surface reads to display "what am I running"
+// (sidebar footer, ActiveSessionsPanel, UserManual, and the
+// CacheBusterBanner's mismatch trigger). The export sat at
+// `paneltec-v160.3.9.58.13.7` for four consecutive ships,
+// producing the "browser stuck on v58.13.7 after aggressive
+// cache-clear" symptom Stephen kept hitting. The bundle was
+// ALWAYS current — the string it displayed was not.
+//
+// Fix (2 mechanical parts):
+//   1. `RUNNING_VERSION` corrected to v58.13.13 (was v58.13.7).
+//   2. New static-grep pytest at
+//      `tests/frontend_smoke/test_version_sync_v58_13_13.py`
+//      asserts the 3 canonical version strings are identical
+//      AND the top changelog entry in THIS file references the
+//      same version. Any future ship that bumps the SW / mobile
+//      pair but forgets `RUNNING_VERSION` (or updates
+//      `RUNNING_VERSION` but drops a changelog block) fails the
+//      pytest immediately.
+//
+// CacheBusterBanner audit (deferred — no bug found):
+//   The banner IS mounted at `App.js:98` (app-wide), does compare
+//   `serverVersion !== RUNNING_VERSION`, and would have fired for
+//   Stephen's stale v58.13.7 export. Reason he didn't notice:
+//   v160.3.6w intentionally softened the banner to a bottom-right
+//   toast that AUTO-HIDES after 8 seconds (`AUTO_HIDE_MS = 8_000`
+//   at line 23) once the 30-second boot grace has elapsed. So the
+//   banner had an ~8-second visibility window per full page
+//   reload, easy to miss if the tab wasn't focused. Working as
+//   designed per the v6w rationale ("we deploy many patch
+//   versions per day so the old brown banner was constantly
+//   nagging admins"). Post-v58.13.13 the mismatch stops firing
+//   anyway (server + client both on v58.13.13). If sticker UX is
+//   desired later, that's a separate ticket (candidate v58.13.14+).
+//   No code change to CacheBusterBanner this ship.
+//
+// New ship-checklist rule (also captured in `/app/memory/PRD.md`):
+//   BEFORE bumping `MOBILE_BUNDLE_VERSION` + `CACHE_VERSION`,
+//   grep-verify the `RUNNING_VERSION` export line in this file
+//   matches the new version. The v58.13.13 pytest enforces this
+//   mechanically — no fork-agent has to remember it.
+//
+// Guardrail hold:
+//   · Backend UNTOUCHED — no `--reload` triggered by this ship.
+//     bulk_import job `4f395643-…` continues uninterrupted.
+//   · SW registration logic, listener wiring, 60s update
+//     interval — all unchanged (verified working in the
+//     read-only diagnostic).
+//   · Options B (env-driven derivation) + C (visibilitychange
+//     update) explicitly punted — the 60s poll is already
+//     sufficient for propagation.
+//   · Orphaned `CsIncidentTab.jsx` NOT deleted (separate cleanup
+//     out of scope).
+
+
+// v160.3.9.58.13.12 — CS Incident list migrated to Submissions bucket.
+//
+// Nav change: new `Capture › CS Incidents` NavLink (data-testid
+// `nav-submissions-cs-incidents`) inserted between Risk Assessments
+// and Forms in `AppShell.jsx`. Same `reference_library` permission
+// gate as the old tab — zero permission migration.
+//
+// Route change (`App.js`):
+//   · Added `/app/submissions/cs-incidents` → new `CsIncidentsList`
+//     page.
+//   · Added `/app/submissions` → `<Navigate to="/app/submissions
+//     /cs-incidents" replace />` so a bare `/submissions` doesn't
+//     404.
+//
+// Legacy-URL redirect (`RiskAssessments.jsx`):
+//   · Any hit to `/app/risk-assessments?tab=cs_incident` on-mount
+//     `navigate('/app/submissions/cs-incidents', { replace: true })`.
+//   · Removed `cs_incident` from the `TABS` array + removed the
+//     `<CsIncidentTab />` render branch. `CsIncidentTab.jsx` file
+//     retained (unmounted) — no dead-code cleanup this ship,
+//     following the "surgical fix" rule.
+//
+// New page (`CsIncidentsList.jsx`):
+//   · Renders via `GroupedTilesView`, groupBy `business_unit` (falls
+//     back to "Unassigned business unit"), dateFn `date_of_issue`.
+//   · Tile shows Issue #, status pill, issue_type, date, 2-line
+//     description snippet.
+//   · Tile actions: View (portal modal with every populated column)
+//     + Edit / Delete via reused `useCrudModal` from
+//     `components/riskAssessments/`.
+//   · Filters preserved (business_unit / status / issue_type / free
+//     text) + XLSX Import modal (same `POST /cs-incident/reimport`
+//     endpoint).
+//   · v58.13.10 flash-bug guardrail: every tile action button calls
+//     `e.stopPropagation()` before mutating state, so the freshly-
+//     mounted View modal cannot receive its own opening click. The
+//     detail modal itself follows the SubmissionViewer portal
+//     pattern (backdrop `onClick={onClose}` + inner
+//     `onClick={(e) => e.stopPropagation()}`).
+//
+// Data / backend untouched:
+//   · Zero backend edits (no `--reload` triggered by this ship).
+//   · `GET /cs-incident/`, `GET /cs-incident/columns`, `POST
+//     /cs-incident/reimport`, `PUT /cs-incident/{uid}`, `DELETE
+//     /cs-incident/{uid}` all called with the exact same shape the
+//     old tab used.
+//   · Inspections / Incidents / Site Sign-In pages verified
+//     untouched — same GroupedTilesView import path unchanged.
+//
+// Tests (`tests/frontend_smoke/test_cs_incidents_migration_v58_13_12.py`):
+//   · Static-grep smoke checks that the migration didn't half-land.
+//   · Route registered; nav item present; RiskAssessments no longer
+//     mounts CsIncidentTab; redirect shipped; new page uses
+//     GroupedTilesView; tile action buttons stop propagation.
+//
+// Deferred (surfaced, NOT acted on):
+//   · The old `CsIncidentTab.jsx` file remains on disk (orphaned).
+//     Safe to delete in a follow-up cleanup ship. Not deleted here
+//     because import graph may surface other references, and a
+//     file-delete is riskier than an unmount for a mid-turn ship.
+//   · `v58.13.11-b` — Schedule attachment upload endpoint (still
+//     deferred per Phase B ship).
+
+
+// v160.3.9.58.13.11 — Periodic Task Template Phase B (v58.13.0-b).
+// Six user-facing fields agreed with the user in Phase B; five ship
+// this turn (phone, reported_by_contact, project_id,
+// assigned_to_worker, notes). `attachments` shipped on the backend
+// schema (`Optional[list[dict]]`) but the FE drag-and-drop is
+// deferred to a follow-up ticket:
+//
+//   Scope-creep guard (surfaced, NOT acted on):
+//     Reusing `BydaFields.AttachmentField` verbatim requires a
+//     `/api/assets/{id}/schedules/{sid}/attachments` upload
+//     endpoint that does NOT exist yet. `AttachmentField` in
+//     "staging" mode never persists files itself — the parent
+//     `Forms.jsx` FillOutModal POSTs the staged rows after
+//     submission create. Adding an equivalent endpoint for
+//     schedule attachments is >15 LOC + a new file storage path +
+//     a delete route — clearly beyond "add 6 form fields".
+//     Deferred to v58.13.11-b. Backend schema field is nullable
+//     and future-proof so no migration is required when the
+//     endpoint lands.
+//
+// Files touched:
+//   · backend/asset_service.py — `ScheduleIn` extended with 7
+//     new nullable fields (6 UI + denormalised worker name).
+//     `create_schedule` / `update_schedule` handlers unchanged —
+//     `**payload` splat already pipes every Pydantic field into
+//     the doc.
+//   · frontend/src/components/AssetServiceTabs.jsx —
+//     · `form` state gains 6 new keys.
+//     · New `filteredAssignWorkers` memo (client-side filter of
+//       `/workers/directory` by `assigned_to_position`).
+//     · Effect: when position changes to a value that no longer
+//       contains the current worker, clears the worker pair so we
+//       never persist a mismatched (id, name) tuple.
+//     · 5 new form controls rendered inside the existing
+//       "More details" collapsed panel below the Description
+//       textarea: phone, reported_by_contact, project_id,
+//       assigned_to_worker (position-filtered select with
+//       "Select position first" hint when disabled), notes.
+//   · tests/backend_unit/test_periodic_task_phase_b_v58_13_11.py —
+//     8 pytests covering: every field parses, every field
+//     optional, phone/notes length caps, project_id free-text
+//     shape, Phase A + Phase B co-existence, and the
+//     `/workers/directory` position-projection contract that the
+//     FE filter depends on.
+//
+// Test location rationale:
+//   NEW HARD RULE (v58.13.10 postmortem):
+//     Any new .py file placed under `/app/backend/` — including
+//     `backend/tests/` — triggers `uvicorn --reload-dir /app/backend`
+//     to reload, which killed the in-flight bulk_import task for
+//     job 4f395643-… during the v58.13.10 ship. Recovery required
+//     a supervisor restart. Going forward EVERY new backend
+//     pytest lives under `/app/tests/backend_unit/` (or
+//     `/app/tests/frontend_smoke/`) which sit outside the
+//     reload-dir. Existing tests under `backend/tests/` are safe
+//     to run; only new file creation is the trigger. This rule
+//     is captured in `/app/memory/PRD.md` for future forks.
+//
+// Guardrail hold:
+//   · Dual-track hours/km scheduling logic (v58.12.6) untouched.
+//   · No new endpoints; no new DB indexes; no data migration.
+//   · Existing schedule docs remain valid — every Phase B field
+//     defaults to None on the Pydantic model.
+//   · `/api/openapi.json` reflects the new fields automatically
+//     via FastAPI's Pydantic → JSON-schema pipeline.
+
+
+// v160.3.9.58.13.10 — P0 fix: Site Sign-In "View" button flashes and closes.
+// `SubmissionViewer` uses `onClick={onClose}` on its portal backdrop
+// (v58.13.6-era design, working correctly on every OTHER capture page
+// because those pages already stopped propagation on their trigger).
+// `SiteSigninList.jsx` was the sole caller wiring the View button
+// with a bare `onClick={() => setViewerRec(rec)}`, so React's
+// synthetic-event system was bubbling the same click into the
+// freshly-mounted portal on the same tick, firing `onClose`.
+// Fix: single-file 1-line change on `SiteSigninList.jsx` — add
+// `e.stopPropagation()` on the View trigger. Zero changes to
+// SubmissionViewer, GroupedTilesView, DeleteRecordButton, or any
+// shared component. DeleteRecordButton already uses the same
+// stopPropagation pattern internally (line 76), which is why Delete
+// works and View doesn't on the same tile row — the diagnosis
+// evidence is the asymmetry.
+//
+// Also confirmed (no code change needed for either):
+//   · SW client listener for `paneltec_sw_force_reload` already
+//     wired in `serviceWorkerRegistration.js` (v69 · attached
+//     unconditionally on module load, per-version sessionStorage
+//     guard).
+//   · SW `activate` handler already posts the message to every
+//     window client (`service-worker.js:1328`).
+//   · SW already calls `self.skipWaiting()` on install
+//     (`service-worker.js:1310`) and `self.clients.claim()` on
+//     activate (`service-worker.js:1323`).
+//   These were reported as "missing" in the previous session but
+//   were already present — investigation this turn included a full
+//   grep of both files. See ship report for evidence.
+//
+// v58.13.11+ backlog:
+//   · v58.13.11 (was v58.13.10) — CS Incident list migration to
+//     Submissions + GroupedTilesView.
+//   · v58.13.8 — Submissions Edit mode (audit-trail: silent
+//     overwrite vs new-submission vs field-level log).
+//   · v58.13.0-b — Complete remaining Periodic Task Template fields.
+
+
+// v160.3.9.58.13.9 — Auto-approve dry-runs with ZERO new Claude work.
+// At dry_run completion, if `cached_hits == extracted` AND `failed == 0`
+// AND `extracted > 0`, `_run_job` skips the manual review gate and
+// transitions the job directly to `state=downloading, mode=full_run`
+// (which the existing full_run branch then commits). Job doc gains
+// `auto_approved: True` + `auto_approved_reason: "100% cache-hits"`
+// + `auto_approved_at` for audit. Manual gate preserved for every
+// dry-run with new extractions OR any vision failure.
+// Backend: `bulk_import_prestarts.py`
+//   · New pure helper `_should_auto_approve_dry_run(mode, prog)` —
+//     unit-testable predicate (isolated from `_run_job` machinery).
+//   · `_run_job` Step 7 (final state transition) branches on the
+//     predicate — auto-approve path fires `asyncio.create_task
+//     (_run_job(job_id, "full_run"))` after flipping state + audit.
+//   · Manual `POST /{job_id}/approve` endpoint unchanged — still the
+//     path for any dry-run that produced new extractions.
+// Frontend: `Step4Complete.jsx`
+//   · ProcessingCard + CompleteCard render a
+//     `wizard-auto-approved-chip` when `job.auto_approved === true`.
+// Tests: 3 pytests in
+// `test_bulk_import_auto_approve_v58_13_9.py`
+//   · 100% cache-hits + zero fails → predicate True
+//   · Any single new extraction (cached_hits < extracted) → False
+//   · Any single vision failure (failed > 0) → False
+//   · Zero PDFs processed → False (guards div-by-zero degenerate)
+//   · Non-dry_run mode → False
+//
+// Pre/post 5-count snapshot expected identical to the pre-ship
+// snapshot (backend code change only; running Part-1 job
+// `4f395643-…` is past the auto-approve decision point and unaffected).
+
+
 // v160.3.9.58.13.7 — SiteSigninList per-tile View + Delete actions.
 // Reuses SubmissionViewer (resourceKind="forms" apiPath="forms/submissions")
 // + DeleteRecordButton. Testid `site-signin-view-{id}` for view;
@@ -1706,7 +1968,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.7';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.13';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -257,6 +257,34 @@ class ScheduleIn(BaseModel):
     task_identification: Optional[str] = Field(default=None, max_length=200)
     description_html: Optional[str] = Field(default=None, max_length=100_000)
     assigned_to_position: Optional[str] = Field(default=None, max_length=120)
+    # v58.13.0-b (shipped v58.13.11) — Periodic Task Template Phase B.
+    # Six user-facing fields added alongside Phase A. All optional;
+    # legacy schedules parse identically. Server-side handlers need
+    # zero change — `**payload` splat in create_schedule /
+    # update_schedule already pipes every Pydantic field through.
+    #
+    # `assigned_to_worker_*` captures the resolved worker (id + name)
+    # from the FE dropdown that filters `/workers/directory` by the
+    # Phase A `assigned_to_position`. Denormalised name follows the
+    # same pattern as `entered_by_name` / `technician_name` —
+    # snapshot-at-write so display doesn't need a per-row lookup and
+    # audit shows the worker as they were at scheduling time.
+    #
+    # `attachments` accepts BydaFields-shape metadata rows
+    # (`{name, description, mime, size, ...}`). No server-side
+    # binary upload endpoint exists yet for schedules — the FE
+    # therefore renders NO drag-and-drop control in v58.13.11.
+    # This field is defined here so a follow-up ticket
+    # (`v58.13.11-b`) can add `POST /assets/{id}/schedules/{sid}
+    # /attachments` + wire the existing `AttachmentField` without
+    # any schema migration.
+    phone: Optional[str] = Field(default=None, max_length=64)
+    reported_by_contact: Optional[str] = Field(default=None, max_length=200)
+    project_id: Optional[str] = Field(default=None, max_length=200)
+    assigned_to_worker_id: Optional[str] = Field(default=None, max_length=64)
+    assigned_to_worker_name: Optional[str] = Field(default=None, max_length=200)
+    notes: Optional[str] = Field(default=None, max_length=10_000)
+    attachments: Optional[list[dict[str, Any]]] = None
 
 
 class RecordIn(BaseModel):

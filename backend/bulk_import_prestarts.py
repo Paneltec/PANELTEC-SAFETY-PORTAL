@@ -1483,6 +1483,22 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
 
 # ────────────────── Worker ──────────────────
 
+# v58.13.9 — Auto-approve predicate for dry-runs. Extracted as a pure
+# helper so the transition logic is unit-testable without spinning up
+# the full `_run_job` producer/consumer machinery. Contract: True iff
+# a dry-run should skip the human review gate AND resume as a
+# full_run. The manual gate must fire for every OTHER shape.
+def _should_auto_approve_dry_run(mode: str, prog: dict) -> bool:
+    if mode != "dry_run":
+        return False
+    extracted = int(prog.get("extracted") or 0)
+    if extracted <= 0:
+        return False
+    cached_hits = int(prog.get("cached_hits") or 0)
+    failed = int(prog.get("failed") or 0)
+    return cached_hits == extracted and failed == 0
+
+
 async def _stream_download(url: str, dest_path: str) -> int:
     """Streaming download to disk. Returns bytes written."""
     total = 0
@@ -2175,6 +2191,54 @@ async def _run_job(job_id: str, mode: str):
         await _flush_progress(force=True)
 
         # ─── 7. Final state transition ─────────────────────────
+        # v58.13.9 — Auto-approve dry-runs that produced ZERO new
+        # Claude work (every extracted PDF was a cache hit AND zero
+        # vision failures). The human review gate exists to sanity-
+        # check spend; when spend is $0 the gate is pure friction.
+        # Manual gate is preserved for ANY dry-run with new
+        # extractions OR any vision failure.
+        if _should_auto_approve_dry_run(mode, prog):
+            now = _now_iso()
+            await db.bulk_import_jobs.update_one(
+                {"id": job_id},
+                {"$set": {
+                    "state": "downloading",
+                    "mode": "full_run",
+                    "total": prog["total"],
+                    "total_pdfs_discovered": stats.entries,
+                    "auto_approved": True,
+                    "auto_approved_reason": "100% cache-hits",
+                    "auto_approved_at": now,
+                    "resumed_at": now,
+                    "started_at": now,
+                    "stage_started_at": now,
+                    "last_progress_at": now,
+                    "include_failed_rows": True,
+                    "error_step": None,
+                }},
+            )
+            try:
+                await db.audit_logs.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "org_id": job["org_id"],
+                    "actor_id": job.get("actor_id"),
+                    "actor_name": "system:v58.13.9-auto-approve",
+                    "action": "bulk_import.auto_approve",
+                    "at": now,
+                    "job_id": job_id,
+                    "reason": "100% cache-hits",
+                    "extracted": prog["extracted"],
+                    "cached_hits": prog["cached_hits"],
+                })
+            except Exception as e:
+                log.warning("v58.13.9 audit insert failed for %s: %s",
+                            job_id, e)
+            log.info(
+                "bulk_import job %s auto-approved (100%% cache-hits, "
+                "extracted=%d)", job_id, prog["extracted"])
+            asyncio.create_task(_run_job(job_id, "full_run"))
+            return
+
         new_state = "awaiting_approval" if mode == "dry_run" else "complete"
         await db.bulk_import_jobs.update_one(
             {"id": job_id},
