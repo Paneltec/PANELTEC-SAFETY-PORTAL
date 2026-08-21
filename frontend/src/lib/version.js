@@ -1,6 +1,95 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.15 — Shutdown-drain fix + hot-loop yield insurance.
+//
+// Ships THIS turn:
+//   1. Fixes the 10+ minute shutdown-drain stall observed during
+//      bulk_import (cost 3+ `supervisorctl restart backend` cycles
+//      this session).
+//   2. Adds explicit yield insurance in the bulk_import consumer hot
+//      loop — belt-and-braces per the v58.13.15 diagnostic.
+//   3. Regression guards that the existing v58.6-era `to_thread` +
+//      `VISION_CONCURRENCY` semaphore defences stay in place.
+//
+// Does NOT ship (honest scoping):
+//   · Semaphore / to_thread wraps — ALREADY exist in bulk_import
+//     (VISION_CONCURRENCY=4 producer/consumer at line 2178; every
+//     PyMuPDF + zipfile call already wrapped in `asyncio.to_thread`).
+//     Re-adding them would be theatre.
+//   · `/api/openapi.json` caching — FastAPI already caches this
+//     in-memory after first hit (`app.openapi_schema` is set on
+//     first call and reused). Adding a second layer would be
+//     duplicate work.
+//   · Any change to Claude call semantics, cache lookup logic,
+//     watchdog / auto-resume behaviour.
+//
+// Root cause of the drain stall:
+//   Background `_run_job` tasks (created via
+//   `asyncio.create_task(_run_job(job_id, ...))` at 5 seams —
+//   lines 530, 610, 1484, 1542, 2302) were never tracked. On
+//   uvicorn SIGTERM the server's `@app.on_event("shutdown")` fired
+//   but had NO handle to cancel them. `loop.close()` then blocked
+//   waiting for the default `ThreadPoolExecutor` used by
+//   `asyncio.to_thread`. OS threads cannot be cancelled — Python
+//   3.10+'s only lever is `ThreadPoolExecutor.shutdown
+//   (cancel_futures=True)` which declines to schedule NEW futures
+//   but STILL waits for running ones. Result: uvicorn's drain
+//   waits for the worst-case in-flight PyMuPDF render (30s+) PLUS
+//   every queued PDF in the executor's ready queue.
+//
+// Fix (bulk_import_prestarts.py):
+//   · New module-level `_ACTIVE_JOB_TASKS: set[asyncio.Task]`.
+//   · New `_track_job_task(task)` helper — adds to the set + auto-
+//     removes on completion via `add_done_callback`.
+//   · Every existing `asyncio.create_task(_run_job(...))` call
+//     wrapped: `_track_job_task(asyncio.create_task(_run_job(...)))`.
+//     5 seams total, patched atomically via a regex sub so no seam
+//     is missed.
+//   · New `async def shutdown_bulk_import_jobs()` — cancels every
+//     tracked task + `asyncio.wait_for(..., timeout=
+//     SHUTDOWN_DRAIN_TIMEOUT_SEC)` (default 25 s, env-var
+//     overridable via `BULK_IMPORT_SHUTDOWN_DRAIN_TIMEOUT_SEC`).
+//     Tasks stuck inside a running to_thread OS thread still take
+//     one PyMuPDF render's worth of wall-clock to release the
+//     await, but the bounded budget guarantees uvicorn's drain
+//     completes. Anything left over is picked up by the
+//     `auto_resume_orphaned_jobs()` on the next boot.
+//   · Consumer hot loop: `await asyncio.sleep(0)` every
+//     `HOT_LOOP_YIELD_EVERY` records (default 50, env-var
+//     `BULK_IMPORT_HOT_LOOP_YIELD_EVERY`). Cache-hit iterations
+//     already await Mongo but this covers the pathological
+//     cache-cold vision path.
+//
+// Fix (server.py):
+//   · Existing `@app.on_event("shutdown")` now calls `await
+//     shutdown_bulk_import_jobs()` FIRST, then scheduler.shutdown,
+//     then close_db. Non-fatal error handling — server MUST still
+//     shut down even if bulk_import teardown misbehaves.
+//
+// Tests (`tests/backend_unit/test_bulk_import_backpressure_v58_13_15.py`):
+//   · Regression guard: existing to_thread wraps still at expected
+//     lines. Existing VISION_CONCURRENCY semaphore still defined.
+//   · Shutdown drain: mock a producer + N consumers, kick, call
+//     `shutdown_bulk_import_jobs()`, assert total wall-clock < 30 s
+//     even with 10 in-flight items.
+//   · Task tracking: create tasks → registered; complete → auto-
+//     removed from the set (no leak).
+//   · Yield present: static-grep confirms
+//     `await asyncio.sleep(0)` and `HOT_LOOP_YIELD_EVERY` are in
+//     the consumer body.
+//
+// Guardrail hold:
+//   · `to_thread` wraps + `VISION_CONCURRENCY` semaphore UNTOUCHED.
+//   · Claude call, cache lookup, watchdog, auto-resume — UNTOUCHED.
+//   · No k8s / supervisor / ingress config changes.
+//   · `bulk_import_pdf_cache` + `pre_starts` NOT touched by the ship
+//     itself (Part-1 continues committing during the ship).
+//   · v58.13.16 orphan-blob cleanup + v58.13.17 AroFlo cron — NOT
+//     sneaked in.
+//   · Version-sync pytest guardrail from v58.13.13 still passing.
+
+
 // v160.3.9.58.13.14 — Schedule attachments endpoint + FE wire-up
 // (closes the v58.13.11-b deferred loop).
 //
@@ -2077,7 +2166,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.14';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.15';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

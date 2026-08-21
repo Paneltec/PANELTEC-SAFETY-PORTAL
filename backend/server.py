@@ -1077,6 +1077,17 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
+    # v58.13.15 — Cancel any in-flight bulk_import background tasks
+    # with a bounded drain budget BEFORE the loop tears down. Without
+    # this the untracked `_run_job` tasks would hold `loop.close()` open
+    # for 10+ minutes waiting on `asyncio.to_thread` OS threads (which
+    # can't be cancelled). Watchdog auto-resumes anything that didn't
+    # unwind cleanly on the next boot.
+    try:
+        from bulk_import_prestarts import shutdown_bulk_import_jobs
+        await shutdown_bulk_import_jobs()
+    except Exception as e:  # non-fatal — server must still shut down
+        log.warning("bulk_import shutdown handler failed: %s", e)
     sched = getattr(app.state, "scheduler", None)
     if sched is not None:
         try:

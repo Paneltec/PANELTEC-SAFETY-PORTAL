@@ -138,6 +138,69 @@ RETENTION_DAYS = _env_int("BULK_IMPORT_RETENTION_DAYS", 30)
 
 # ── Vision pipeline knobs (v58.0.1) ──
 VISION_CONCURRENCY = _env_int("BULK_IMPORT_VISION_CONCURRENCY", 4)
+
+# v58.13.15 — Shutdown-drain fix.
+# Background `_run_job` tasks (created via `asyncio.create_task` at the
+# init / resume / auto-approve seams) were never tracked, so uvicorn's
+# SIGTERM path had no handle to cancel them. `loop.close()` then blocked
+# on the default `ThreadPoolExecutor` used by `asyncio.to_thread` (OS
+# threads can't be cancelled — Python 3.10+ can only decline to schedule
+# NEW futures with `cancel_futures=True`). Result: 10+ minute drain
+# stalls that cost 3+ `supervisorctl restart backend` cycles this
+# session. Fix: register every job task in `_ACTIVE_JOB_TASKS`, and
+# expose `shutdown_bulk_import_jobs()` for `server.py`'s shutdown hook
+# to cancel + await them with a bounded budget.
+_ACTIVE_JOB_TASKS: "set[asyncio.Task]" = set()
+SHUTDOWN_DRAIN_TIMEOUT_SEC = _env_int(
+    "BULK_IMPORT_SHUTDOWN_DRAIN_TIMEOUT_SEC", 25,
+)
+# Consumer hot-loop yield insurance. Cache-hit iterations already await
+# Mongo, but pathological cache-cold vision workloads could theoretically
+# starve the event loop without an explicit yield. Every N records the
+# consumer performs an `await asyncio.sleep(0)` — belt-and-braces per the
+# v58.13.15 diagnostic.
+HOT_LOOP_YIELD_EVERY = _env_int("BULK_IMPORT_HOT_LOOP_YIELD_EVERY", 50)
+
+
+def _track_job_task(task: "asyncio.Task") -> "asyncio.Task":
+    """Register a bulk_import background task for shutdown cancellation.
+    Adds to the module-level set and installs a done-callback that
+    auto-removes on completion so the set doesn't leak."""
+    _ACTIVE_JOB_TASKS.add(task)
+    task.add_done_callback(_ACTIVE_JOB_TASKS.discard)
+    return task
+
+
+async def shutdown_bulk_import_jobs() -> None:
+    """Called from `server.py`'s `@app.on_event("shutdown")`. Cancels
+    every tracked bulk_import background task and waits up to
+    `SHUTDOWN_DRAIN_TIMEOUT_SEC` for them to unwind. Tasks stuck inside
+    a running `to_thread` OS thread will still take up to a single
+    PyMuPDF render's worth of wall-clock time to release the event
+    loop, but the bounded wait guarantees uvicorn's drain completes."""
+    tasks = list(_ACTIVE_JOB_TASKS)
+    if not tasks:
+        return
+    log.info(
+        "v58.13.15 shutdown: cancelling %d bulk_import job task(s) "
+        "(timeout=%ds)", len(tasks), SHUTDOWN_DRAIN_TIMEOUT_SEC,
+    )
+    for t in tasks:
+        t.cancel()
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True),
+            timeout=SHUTDOWN_DRAIN_TIMEOUT_SEC,
+        )
+        log.info("v58.13.15 shutdown: bulk_import tasks drained cleanly.")
+    except asyncio.TimeoutError:
+        log.warning(
+            "v58.13.15 shutdown: drain timed out after %ds — %d task(s) "
+            "still running (likely inside to_thread OS threads). "
+            "Watchdog will auto-resume on next boot.",
+            SHUTDOWN_DRAIN_TIMEOUT_SEC,
+            sum(1 for t in tasks if not t.done()),
+        )
 VISION_MAX_RETRIES = _env_int("BULK_IMPORT_VISION_MAX_RETRIES", 5)
 VISION_BACKOFF_CAP_SEC = _env_int("BULK_IMPORT_VISION_BACKOFF_CAP_SEC", 30)
 # v58.5.1 — Per-attempt wall-clock timeout on each Claude call.
@@ -464,7 +527,7 @@ async def _fail_job(job_id: str, error_step: str, err_msg: str) -> None:
                 "auto-restart (count=%d/%d, mode=%s)",
                 job_id, new_count, max_retries, resume_mode,
             )
-            asyncio.create_task(_run_job(job_id, mode=resume_mode))
+            _track_job_task(asyncio.create_task(_run_job(job_id, mode=resume_mode)))
     except Exception as _:  # pragma: no cover
         pass
 
@@ -544,7 +607,7 @@ async def auto_resume_orphaned_jobs() -> dict:
                       "auto_resumed_at": _now_iso(),
                       "auto_resume_count": (job.get("auto_resume_count", 0) + 1)}},
         )
-        asyncio.create_task(_run_job(job_id, mode=resume_mode))
+        _track_job_task(asyncio.create_task(_run_job(job_id, mode=resume_mode)))
         resumed_ids.append(job_id)
         # Emit a header-bell notification for admin visibility.
         await _notify_admins(
@@ -1418,7 +1481,7 @@ async def start_job(job_id: str, user: dict = Depends(get_current_user)):
                   "mode": mode,
                   "error_step": None}})
     # Fire the worker in the background — do NOT await.
-    asyncio.create_task(_run_job(job_id, mode))
+    _track_job_task(asyncio.create_task(_run_job(job_id, mode)))
     await _audit(user, "bulk_import.start", {"job_id": job_id, "mode": mode})
     return {"job_id": job_id, "mode": mode}
 
@@ -1476,7 +1539,7 @@ async def approve(job_id: str, body: ApproveBody, user: dict = Depends(get_curre
                   "last_progress_at": now,
                   "include_failed_rows": bool(body.include_failed_rows),
                   "error_step": None}})
-    asyncio.create_task(_run_job(job_id, "full_run"))
+    _track_job_task(asyncio.create_task(_run_job(job_id, "full_run")))
     await _audit(user, "bulk_import.approve", {"job_id": job_id})
     return {"job_id": job_id, "state": "downloading"}
 
@@ -2003,11 +2066,21 @@ async def _run_job(job_id: str, mode: str):
                     await q.put(SENTINEL)
 
         async def consumer() -> None:
+            # v58.13.15 — Yield insurance: every N records the consumer
+            # performs an explicit `await asyncio.sleep(0)` so any
+            # HTTP handlers pending on the event loop get a slice
+            # under load. Cache-hit iterations already await Mongo,
+            # but this is belt-and-braces coverage for pathological
+            # cache-cold vision workloads.
+            _iter_count = 0
             while True:
                 item = await q.get()
                 if item is SENTINEL:
                     q.task_done()
                     return
+                _iter_count += 1
+                if _iter_count % HOT_LOOP_YIELD_EVERY == 0:
+                    await asyncio.sleep(0)
                 archive_label, pdf_name, data = item
                 try:
                     display_name = (f"{archive_label}::{pdf_name}"
@@ -2236,7 +2309,7 @@ async def _run_job(job_id: str, mode: str):
             log.info(
                 "bulk_import job %s auto-approved (100%% cache-hits, "
                 "extracted=%d)", job_id, prog["extracted"])
-            asyncio.create_task(_run_job(job_id, "full_run"))
+            _track_job_task(asyncio.create_task(_run_job(job_id, "full_run")))
             return
 
         new_state = "awaiting_approval" if mode == "dry_run" else "complete"
