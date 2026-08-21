@@ -262,7 +262,7 @@ async def workers_directory(
     cursor = db.workers.find(
         q,
         {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
-         "simpro_employee_id": 1, "active": 1},
+         "simpro_employee_id": 1, "active": 1, "position": 1},
     ).collation({"locale": "en", "strength": 2}).sort(
         [("first_name", 1), ("last_name", 1)],
     )
@@ -274,6 +274,11 @@ async def workers_directory(
         "name": (f"{r.get('first_name') or ''} {r.get('last_name') or ''}").strip(),
         "simpro_employee_id": r.get("simpro_employee_id"),
         "active": bool(r.get("active", True)),
+        # v58.12.8 (shipped v58.12.10) — surface Simpro `position` for the
+        # AssetServiceTabs Technician-position hybrid picker. Blank string
+        # when absent so the FE distinct-position derivation drops it via
+        # `.filter(Boolean)`.
+        "position": r.get("position") or "",
     } for r in rows]
 
 

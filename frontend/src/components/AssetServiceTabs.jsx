@@ -1,7 +1,7 @@
 // Phase 3 — Service & Maintenance UI surfaces for the AssetDrawer.
 // Consolidates the three new tabs (Schedules, Service log, Defects) so the
 // AssetDrawer can stay a single file with low churn.
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Loader2, Clock, Gauge, Calendar, Edit3, Trash2, X, Check,
   Wrench, AlertTriangle, ShieldAlert,
@@ -554,6 +554,9 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
     cost: initial?.cost != null ? String(initial.cost) : '',
     technician_name: initial?.technician_name ?? '',
     technician_id: initial?.technician_id ?? '',
+    // v58.12.8 (shipped v58.12.10) — Simpro position captured alongside
+    // the technician. Free-text at persistence; picker-constrained in UI.
+    technician_position: initial?.technician_position ?? '',
     defect_severity: initial?.defect_severity ?? 'minor',
   });
   const [saving, setSaving] = useState(false);
@@ -572,6 +575,18 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
   const [techs, setTechs] = useState([]);
   const [techsLoaded, setTechsLoaded] = useState(false);
   const [techMode, setTechMode] = useState('picker');
+  // v58.12.8 (shipped v58.12.10) — Technician-position hybrid picker.
+  // `posMode` is 'chip' when a position is captured (via auto-fill or
+  // explicit save), 'select' when the user is editing via the dropdown
+  // of Simpro-distinct positions, and 'freetext' when the user chose
+  // "type manually" for a contractor / off-roster position. Distinct
+  // list is derived from the same `techs` payload the technician picker
+  // consumes — one round trip, one source of truth for the roster.
+  const [posMode, setPosMode] = useState(initial?.technician_position ? 'chip' : 'select');
+  const positions = useMemo(
+    () => Array.from(new Set((techs || []).map((t) => t.position).filter(Boolean))).sort(),
+    [techs],
+  );
   useEffect(() => {
     if (kind !== 'service') return;
     let cancelled = false;
@@ -621,7 +636,12 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
         ...f,
         technician_id: chosen.id,
         technician_name: chosen.name,
+        // v58.12.8 (shipped v58.12.10) — Auto-fill Simpro position when
+        // the picked tech carries one. Overwrites any prior free-text
+        // value so the roster row is authoritative on tech pick.
+        technician_position: chosen.position || '',
       }));
+      setPosMode(chosen.position ? 'chip' : 'select');
     }
   };
   const backToPicker = () => {
@@ -639,6 +659,11 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
         cost: form.cost === '' ? null : Number(form.cost),
         technician_name: form.technician_name || null,
         technician_id: form.technician_id || null,
+        // v58.12.8 (shipped v58.12.10) — always send the field so the
+        // backend's PATCH-clear semantic (None → $unset via the "keep if
+        // None" whitelist in update_record) is exercised when the user
+        // deletes the position.
+        technician_position: form.technician_position || null,
       };
       if (kind === 'defect') payload.defect_severity = form.defect_severity;
       if (isEdit) {
@@ -742,6 +767,72 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
                       Pick from list
                     </button>
                   </div>
+                )}
+              </div>
+              {/* v58.12.8 (shipped v58.12.10) — Technician-position hybrid picker.
+                  Chip when a position is set (auto-filled on Simpro tech pick or
+                  saved from a prior record); pencil converts to a select backed
+                  by the distinct Simpro-roster positions with a "type manually"
+                  sentinel for off-roster overrides. */}
+              <div className="col-span-2">
+                <label className="block text-xs font-semibold mb-1">Technician position</label>
+                {posMode === 'chip' && form.technician_position ? (
+                  <div className="flex items-center gap-2">
+                    <span
+                      data-testid="technician-position-chip"
+                      className="inline-flex items-center px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200"
+                    >
+                      {form.technician_position}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setPosMode('select')}
+                      data-testid="technician-position-edit"
+                      title="Edit position"
+                      className="w-6 h-6 inline-flex items-center justify-center rounded-md text-slate-400 hover:text-slate-900 hover:bg-slate-100"
+                    >
+                      <Edit3 size={12} />
+                    </button>
+                  </div>
+                ) : posMode === 'freetext' ? (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      value={form.technician_position}
+                      onChange={(e) => setForm({ ...form, technician_position: e.target.value })}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg"
+                      data-testid="technician-position-freetext"
+                      placeholder="e.g. Plumber, Site Supervisor"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setPosMode('select')}
+                      className="text-[11px] text-slate-500 hover:text-slate-900 underline whitespace-nowrap"
+                    >
+                      Pick from list
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={form.technician_position || ''}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === '__manual__') {
+                        setPosMode('freetext');
+                        setForm((f) => ({ ...f, technician_position: '' }));
+                      } else {
+                        setForm((f) => ({ ...f, technician_position: v }));
+                        if (v) setPosMode('chip');
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                    data-testid="technician-position-select"
+                  >
+                    <option value="">— Select position —</option>
+                    {positions.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                    <option value="__manual__">— Type manually —</option>
+                  </select>
                 )}
               </div>
             </div>

@@ -1,6 +1,84 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.10 — Work-item label: v58.12.8 (Technician Position
+// Hybrid picker) — shipped as v58.12.10 after v58.12.9 pre-empted the
+// queue. Precedent going forward: work-item LABELS in briefs (v58.12.8)
+// are decoupled from VERSION STAMPS on disk (v58.12.10). Stamp is
+// always max+1 relative to the running file; label documents the
+// queue-position of the work item.
+//
+// User ask: "the technician's position field needs to be captured
+// alongside the technician's name on the service log — pick from the
+// Simpro list of positions where possible, allow override for
+// contractors / off-roster techs."
+//
+// SCHEMA — `asset_service.py`
+//   · `RecordIn.technician_position: Optional[str] = None` (free-text at
+//     the persistence boundary; picker-constrained in the UI).
+//   · `RecordPatch.technician_position: Optional[str] = None`.
+//   · `update_record()` "keep if None" whitelist extended to include
+//     `technician_position` so PATCH-to-None explicitly clears the
+//     field, matching the existing behaviour for `technician_name`
+//     and `technician_id`.
+//
+// ROUTE — `workers.py::workers_directory`
+//   · Projection widened to include `position`. Response objects now
+//     carry `position: r.get("position") or ""` (empty string when the
+//     Simpro row has no position — the FE's `.filter(Boolean)` distinct
+//     derivation drops the blank so the dropdown never shows an empty
+//     row). No other endpoint shape change.
+//
+// UX — `AssetServiceTabs.jsx::RecordEditor`
+//   · New `form.technician_position` state initialised from
+//     `initial?.technician_position ?? ''`.
+//   · New `posMode` state — `'chip' | 'select' | 'freetext'`. Initial:
+//     `'chip'` when a position is already captured, `'select'` otherwise.
+//   · `positions` memo — runtime distinct list derived from the same
+//     `techs` payload the technician picker already consumes (one round
+//     trip, one source of truth). `.filter(Boolean).sort()` guarantees
+//     no blank row and stable alphabetical order.
+//   · `onPickTech` — auto-copies `chosen.position` into
+//     `form.technician_position` and flips `posMode` to `'chip'` when
+//     the picked tech carries a position. Overwrite is intentional: the
+//     Simpro row is authoritative on tech pick.
+//   · New UI block below Technician (col-span-2):
+//       — `posMode === 'chip'`: pill showing the position + pencil
+//         (Edit3 lucide) to enter select mode.
+//       — `posMode === 'select'`: `<select>` of distinct Simpro
+//         positions + `— Type manually —` sentinel.
+//       — `posMode === 'freetext'`: `<input>` + "Pick from list" back-
+//         button to return to select mode.
+//   · Off-roster technician (v58.11.2 `techMode === 'freetext'`) still
+//     sees the position picker — the position field is independent of
+//     the technician-name mode. No auto-fill possible on contractor
+//     names, but the roster's position list is still available.
+//   · Submit payload always sends `technician_position: form.technician_position || null`
+//     so PATCH-clear semantic is exercised when the user deletes the value.
+//   · Testids: `technician-position-chip`, `technician-position-edit`,
+//     `technician-position-select`, `technician-position-freetext`.
+//
+// TESTS
+//   · Backend: 2 pure-function pytest cases in
+//     `test_asset_service_tech_position_v58_12_10.py` (RecordIn round
+//     trip + RecordPatch None-clear semantic via model_dump(exclude_unset=True)).
+//   · Frontend: 3 jsdom cases in `AssetServiceTabs.techposition.test.jsx`
+//     (auto-fill on tech pick → chip; pencil → select with sorted
+//     distinct options and no blank row; off-roster branch renders
+//     position select in parallel to the free-text name input).
+//
+// PRE/POST DB SNAPSHOT — expected identical (schema addition only —
+// no migration, no data touch): form_submissions_live=7690,
+// workers_simpro_live=68, incidents_live=4, inspections_live=6,
+// form_templates_live=96.
+//
+// UNTOUCHED — mobile beyond the version bump, TemplateBuilder.jsx,
+// PreStarts.jsx, Hazards.jsx, CaptureCard.jsx, folderColors.js,
+// preStartsPalette.js, GroupedTilesView.jsx (v58.12.9 territory —
+// zero re-edit needed), any worker row, any asset_service_records
+// row, Simpro roster (no re-sync triggered), bulk import job.
+
+
 // v160.3.9.58.12.9 — Tile-format parity: Inspections + Incidents tiles
 // now adopt the Hazards `CaptureCard` visual language (rounded-lg,
 // tight padding, optional 4px absolute left stripe). User ask: bring
@@ -1365,7 +1443,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.9';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.10';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

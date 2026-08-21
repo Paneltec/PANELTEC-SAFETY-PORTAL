@@ -238,6 +238,12 @@ class RecordIn(BaseModel):
     currency: str = "AUD"
     technician_name: Optional[str] = None
     technician_id: Optional[str] = None
+    # v58.12.8 (shipped v58.12.10) — technician's Simpro position captured
+    # alongside their name/id so the service log persists what role the
+    # technician held at the time of the service. Free-text at the schema
+    # boundary (the FE picker constrains to Simpro's distinct-position list
+    # with a "type manually" override for contractors / off-roster techs).
+    technician_position: Optional[str] = None
     technician_signature_file_id: Optional[str] = None
     invoice_file_id: Optional[str] = None
     photo_file_ids: list[str] = Field(default_factory=list)
@@ -253,6 +259,10 @@ class RecordPatch(BaseModel):
     cost: Optional[float] = None
     technician_name: Optional[str] = None
     technician_id: Optional[str] = None
+    # v58.12.8 (shipped v58.12.10) — see RecordIn.technician_position.
+    # PATCH-clearable via explicit None thanks to the "keep if None"
+    # whitelist in `update_record` below.
+    technician_position: Optional[str] = None
     defect_severity: Optional[DefectSeverity] = None
     photo_file_ids: Optional[list[str]] = None
     notes: Optional[str] = Field(default=None, max_length=4000)
@@ -980,7 +990,7 @@ async def update_record(asset_id: str, rid: str, body: RecordPatch,
     )
     if not existing:
         raise HTTPException(404, "Record not found")
-    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {"description", "technician_name", "technician_id", "cost", "hours_at", "km_at", "notes"}}
+    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {"description", "technician_name", "technician_id", "technician_position", "cost", "hours_at", "km_at", "notes"}}
     # `type` is immutable post-creation.
     payload.pop("type", None)
 
