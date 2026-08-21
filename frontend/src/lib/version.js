@@ -1,6 +1,63 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.4 — Attachment local staging (P-B). Closes the
+// "first-fill can't attach" UX gap flagged in v58.12.2's Decision #1.
+//
+// v58.12.2 chose "upload immediately on file add" for AttachmentField,
+// which required a `submissionId` — and `FillOutModal` doesn't have one
+// until AFTER `submit()` succeeds. So on a NEW submission the dropzone
+// was rendered disabled with a "Save the form first, then attach files"
+// hint. Users couldn't drop invoices/reports on first fill.
+//
+// Photo precedent (forms.py + Forms.jsx submit() loop): batch File
+// objects in React state during composition, POST after the submission
+// itself is created. Attachments now do the same.
+//
+// AttachmentField (components/forms/BydaFields.jsx)
+//   · New `onStageChange(field_id, [{tempId, file, name, description,
+//     mime, size}, …])` prop. Fires whenever the local staged list
+//     mutates (add / edit-name / edit-description / remove).
+//   · Two lifecycle branches gated by `submissionId`:
+//       — `isStaging = !submissionId`: rows land as status='staged'
+//         and NEVER upload immediately. Same MIME + max_bytes pre-flight.
+//         Editable Name (default: filename without ext) + Description.
+//         Remove clears the local row. New row testid
+//         `attachment-row-staged-{tempId}` distinct from the pre-existing
+//         `attachment-row-{tempId}`.
+//       — `!isStaging`: unchanged from v58.12.2 — immediate multipart
+//         POST via `uploadOne` with Cancel/Retry. Kept for the future
+//         re-open / edit path (no UI wires this today).
+//   · "Save the form first" hint retired — never rendered again.
+//   · Saved-row Delete tooltip bumped to v58.12.5 (matches DELETE
+//     endpoint parking).
+//
+// Forms.jsx FillOutModal
+//   · New `attachmentFiles` state, keyed by field.id. Same shape as
+//     `photoFiles`. `FieldRunner` wires `onStageChange` into
+//     `AttachmentField`.
+//   · `submit()`: after the submission POST returns `sub.id`, and after
+//     the existing photo loop, iterates `attachmentFieldIds` and POSTs
+//     each staged file as multipart to
+//     `/forms/submissions/{sub.id}/attachments` with `files`, `names`,
+//     `descriptions` (endpoint contract unchanged). Progress toast reads
+//     "Uploading attachments (i/n)…". Best-effort per-file: a single
+//     failure toasts + moves on, doesn't roll back the submission.
+//     Matches photo semantic exactly.
+//
+// Tests: BydaFields.test.jsx retires the "disabled dropzone" test that
+// was v58.12.2-specific and adds 5 staging tests (add / MIME reject /
+// size reject / remove / edit name+desc).
+//
+// Explicitly NOT touched:
+//   · Backend attachments endpoint contract.
+//   · Immediate-upload branch (retained for future re-open flow).
+//   · TemplateBuilder.jsx (parked for v58.12.5).
+//   · Attachment DELETE endpoint (parked for v58.12.5).
+//   · Mobile (only the version string bumped).
+
+
+
 // v160.3.9.58.12.3 — Portal every full-screen modal in Forms.jsx to
 // document.body. Fixes user report "the header of the program is
 // cutting off the top of this form" on TTM Risk Assessment (and
@@ -1120,7 +1177,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.3';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.4';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -127,15 +127,23 @@ export function ReferenceMatrixField({ field }) {
   );
 }
 
-export function AttachmentField({ field, value, submissionId, readOnly }) {
+export function AttachmentField({ field, value, submissionId, readOnly, onStageChange }) {
   const cfg = field.config || {};
   const allowMultiple = cfg.allow_multiple !== false;
   const [serverFiles, setServerFiles] = useState(Array.isArray(value) ? value : []);
+  // v58.12.4 — one state, two lifecycle branches:
+  //   isStaging (submissionId == null): rows land as status='staged'
+  //     and NEVER upload immediately. Parent (Forms.jsx FillOutModal)
+  //     receives them via onStageChange and POSTs after the submission
+  //     itself is created — same shape as `photoFiles`.
+  //   !isStaging: rows land as status='pending' and upload immediately
+  //     via `uploadOne` (kept for the future re-open / edit path).
   const [pending, setPending] = useState([]);
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
-  const canUpload = !readOnly && !!submissionId;
+  const isStaging = !submissionId;
+  const canUpload = !readOnly;
 
   // Merge in server records if the parent re-fetches (dedup by stored_name).
   useEffect(() => {
@@ -146,6 +154,23 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
       return extra.length ? [...prev, ...extra] : prev;
     });
   }, [value]);
+
+  // v58.12.4 — Emit staged (valid) rows up to the parent whenever the
+  // pending list changes. Non-staging mode never fires this callback.
+  useEffect(() => {
+    if (!isStaging || !onStageChange) return;
+    const stagedList = pending
+      .filter((p) => p.status === 'staged')
+      .map((p) => ({
+        tempId: p.tempKey,
+        file: p.file,
+        name: p.name,
+        description: p.description,
+        mime: p.file?.type || '',
+        size: p.file?.size || 0,
+      }));
+    onStageChange(field.id, stagedList);
+  }, [pending, isStaging, field.id]);
 
   const uploadOne = useCallback(async (entry) => {
     const abort = new AbortController();
@@ -184,14 +209,17 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
       return {
         tempKey: nowKey(), file,
         name: stripped, description: '',
-        status: chk.ok ? 'pending' : 'error',
+        status: chk.ok ? (isStaging ? 'staged' : 'pending') : 'error',
         error: chk.ok ? null : chk.error,
         abort: null,
       };
     });
     setPending((p) => [...p, ...newRows]);
-    newRows.forEach((r) => { if (r.status === 'pending') uploadOne(r); });
-  }, [canUpload, cfg, allowMultiple, uploadOne]);
+    // Only fire immediate uploads outside staging mode.
+    if (!isStaging) {
+      newRows.forEach((r) => { if (r.status === 'pending') uploadOne(r); });
+    }
+  }, [canUpload, cfg, allowMultiple, uploadOne, isStaging]);
 
   const onDrop = (e) => {
     e.preventDefault(); e.stopPropagation();
@@ -222,8 +250,8 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
       return;
     }
     setPending((p) => p.map((x) => x.tempKey === tempKey
-      ? { ...x, status: 'pending', error: null } : x));
-    uploadOne(row);
+      ? { ...x, status: isStaging ? 'staged' : 'pending', error: null } : x));
+    if (!isStaging) uploadOne(row);
   };
   const updatePending = (tempKey, patch) => {
     setPending((p) => p.map((x) => x.tempKey === tempKey ? { ...x, ...patch } : x));
@@ -250,6 +278,7 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
           tabIndex={canUpload ? 0 : -1}
           data-testid={`attachment-dropzone-${field.id}`}
           data-canupload={canUpload ? '1' : '0'}
+          data-mode={isStaging ? 'staging' : 'immediate'}
           className={
             'rounded-2xl border-2 border-dashed px-4 py-6 text-center transition-colors ' +
             (canUpload
@@ -261,19 +290,10 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
         >
           <div className="flex flex-col items-center gap-1 text-sm text-slate-600">
             <FileText size={20} className="text-slate-400" />
-            {canUpload ? (
-              <>
-                <span className="font-semibold">Drop files here or click to browse</span>
-                <span className="text-xs text-slate-500">
-                  Allowed: {allowedList} · Max {maxMB} MB {allowMultiple ? '· multiple ok' : '· single file'}
-                </span>
-              </>
-            ) : (
-              <span className="text-xs italic text-slate-500"
-                    data-testid={`attachment-dropzone-hint-${field.id}`}>
-                Save the form first, then attach files.
-              </span>
-            )}
+            <span className="font-semibold">Drop files here or click to browse</span>
+            <span className="text-xs text-slate-500">
+              Allowed: {allowedList} · Max {maxMB} MB {allowMultiple ? '· multiple ok' : '· single file'}
+            </span>
           </div>
           <input
             ref={inputRef}
@@ -287,56 +307,77 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
         </div>
       )}
 
-      {pending.map((row) => (
-        <div key={row.tempKey}
-             data-testid={`attachment-row-${row.tempKey}`}
-             className={
-               'flex items-start gap-3 rounded-lg border px-3 py-2 ' +
-               (row.status === 'error' ? 'border-rose-300 bg-rose-50' : 'border-slate-200 bg-white')
-             }>
-          {row.status === 'pending'
-            ? <Loader2 size={18} className="text-brand-blue animate-spin shrink-0 mt-1" />
-            : <AlertCircle size={18} className="text-rose-600 shrink-0 mt-1" />}
-          <div className="flex-1 min-w-0 space-y-1">
-            <input value={row.name}
-                   onChange={(e) => updatePending(row.tempKey, { name: e.target.value })}
-                   placeholder="Name"
-                   data-testid={`attachment-row-name-${row.tempKey}`}
-                   className="w-full px-2 py-1 text-sm border border-slate-200 rounded"
-                   disabled={row.status === 'pending'} />
-            <input value={row.description}
-                   onChange={(e) => updatePending(row.tempKey, { description: e.target.value })}
-                   placeholder="Description (optional)"
-                   data-testid={`attachment-row-desc-${row.tempKey}`}
-                   className="w-full px-2 py-1 text-xs border border-slate-200 rounded"
-                   disabled={row.status === 'pending'} />
-            <div className="text-[10px] text-slate-500 truncate">
-              {row.file?.name} · {row.file?.type || 'unknown/unknown'}
-              {row.file?.size ? ` · ${Math.round(row.file.size / 1024)} KB` : ''}
-            </div>
-            {row.status === 'error' && row.error && (
-              <div className="text-xs font-semibold text-rose-700"
-                   data-testid={`attachment-row-error-${row.tempKey}`}>
-                {row.error}
+      {pending.map((row) => {
+        const isStaged = row.status === 'staged';
+        // Testid: staged rows carry a distinct id so tests can assert
+        // the local-staging branch. Non-staged rows (pending / error in
+        // immediate-upload mode) keep the pre-v58.12.4 testid.
+        const rowTestId = isStaged
+          ? `attachment-row-staged-${row.tempKey}`
+          : `attachment-row-${row.tempKey}`;
+        return (
+          <div key={row.tempKey}
+               data-testid={rowTestId}
+               data-status={row.status}
+               className={
+                 'flex items-start gap-3 rounded-lg border px-3 py-2 ' +
+                 (row.status === 'error'
+                   ? 'border-rose-300 bg-rose-50'
+                   : isStaged
+                     ? 'border-brand-blue/40 bg-blue-50/40'
+                     : 'border-slate-200 bg-white')
+               }>
+            {row.status === 'pending'
+              ? <Loader2 size={18} className="text-brand-blue animate-spin shrink-0 mt-1" />
+              : row.status === 'error'
+                ? <AlertCircle size={18} className="text-rose-600 shrink-0 mt-1" />
+                : <FileText size={18} className="text-brand-blue shrink-0 mt-1" />}
+            <div className="flex-1 min-w-0 space-y-1">
+              <input value={row.name}
+                     onChange={(e) => updatePending(row.tempKey, { name: e.target.value })}
+                     placeholder="Name"
+                     data-testid={`attachment-row-name-${row.tempKey}`}
+                     className="w-full px-2 py-1 text-sm border border-slate-200 rounded"
+                     disabled={row.status === 'pending'} />
+              <input value={row.description}
+                     onChange={(e) => updatePending(row.tempKey, { description: e.target.value })}
+                     placeholder="Description (optional)"
+                     data-testid={`attachment-row-desc-${row.tempKey}`}
+                     className="w-full px-2 py-1 text-xs border border-slate-200 rounded"
+                     disabled={row.status === 'pending'} />
+              <div className="text-[10px] text-slate-500 truncate">
+                {row.file?.name} · {row.file?.type || 'unknown/unknown'}
+                {row.file?.size ? ` · ${Math.round(row.file.size / 1024)} KB` : ''}
               </div>
-            )}
-          </div>
-          <div className="flex flex-col gap-1 shrink-0">
-            {row.status === 'error' && (
-              <button type="button" onClick={() => retryPending(row.tempKey)}
-                      data-testid={`attachment-row-retry-${row.tempKey}`}
-                      className="inline-flex items-center gap-1 text-xs text-brand-blue hover:underline">
-                <RefreshCw size={12} /> Retry
+              {row.status === 'error' && row.error && (
+                <div className="text-xs font-semibold text-rose-700"
+                     data-testid={`attachment-row-error-${row.tempKey}`}>
+                  {row.error}
+                </div>
+              )}
+              {isStaged && (
+                <div className="text-[10px] text-brand-blue font-semibold">
+                  Staged — will upload when you submit the form.
+                </div>
+              )}
+            </div>
+            <div className="flex flex-col gap-1 shrink-0">
+              {row.status === 'error' && (
+                <button type="button" onClick={() => retryPending(row.tempKey)}
+                        data-testid={`attachment-row-retry-${row.tempKey}`}
+                        className="inline-flex items-center gap-1 text-xs text-brand-blue hover:underline">
+                  <RefreshCw size={12} /> Retry
+                </button>
+              )}
+              <button type="button" onClick={() => cancelPending(row.tempKey)}
+                      data-testid={`attachment-row-remove-${row.tempKey}`}
+                      className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600">
+                <X size={12} /> {row.status === 'pending' ? 'Cancel' : 'Remove'}
               </button>
-            )}
-            <button type="button" onClick={() => cancelPending(row.tempKey)}
-                    data-testid={`attachment-row-remove-${row.tempKey}`}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600">
-              <X size={12} /> {row.status === 'pending' ? 'Cancel' : 'Remove'}
-            </button>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {liveServer.map((f) => (
         <div key={f.file_id || f.stored_name}
@@ -356,7 +397,7 @@ export function AttachmentField({ field, value, submissionId, readOnly }) {
             <Download size={14} /> Download
           </button>
           <button type="button" disabled
-                  title="Delete lands in v58.12.3"
+                  title="Delete lands in v58.12.5"
                   data-testid={`attachment-row-remove-${f.file_id || f.stored_name}`}
                   className="p-1 text-slate-300 cursor-not-allowed">
             <Trash2 size={14} />

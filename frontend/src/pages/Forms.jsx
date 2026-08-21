@@ -377,14 +377,14 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
   );
 }
 
-export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId, onStageChange }) {
   if (field.type === 'reference_matrix') {
     const { ReferenceMatrixField } = require('../components/forms/BydaFields');
     return <ReferenceMatrixField field={field} />;
   }
   if (field.type === 'attachment') {
     const { AttachmentField } = require('../components/forms/BydaFields');
-    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly={readOnly} />;
+    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly={readOnly} onStageChange={onStageChange} />;
   }
   if (field.type === 'actions') {
     const { ActionsField } = require('../components/forms/BydaFields');
@@ -529,6 +529,11 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     return base;
   });
   const [photoFiles, setPhotoFiles] = useState({});
+  // v58.12.4 — staged attachments, keyed by field.id. Same shape as
+  // photoFiles: each value is an array of { tempId, file, name, description,
+  // mime, size } coming from AttachmentField's `onStageChange`. Uploaded
+  // AFTER the submission POST returns (see submit() below).
+  const [attachmentFiles, setAttachmentFiles] = useState({});
   const [saving, setSaving] = useState(false);
   const [progress, setProgress] = useState('');
   const [lockedFields, setLockedFields] = useState({});
@@ -717,6 +722,30 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
         (photoFiles[fid] || []).forEach((file) => fd.append('files', file));
         await api.post(`/forms/submissions/${sub.id}/photos`, fd);
       }
+      // v58.12.4 — attachment upload loop mirrors the photo loop above.
+      // Best-effort per file: individual failure toasts but never rolls
+      // back the submission (matches photo semantic).
+      const attachmentFieldIds = Object.keys(attachmentFiles).filter((fid) => (attachmentFiles[fid] || []).length > 0);
+      const totalAtt = attachmentFieldIds.reduce((n, fid) => n + (attachmentFiles[fid] || []).length, 0);
+      let doneAtt = 0;
+      for (const fid of attachmentFieldIds) {
+        for (const staged of (attachmentFiles[fid] || [])) {
+          doneAtt += 1;
+          setProgress(`Uploading attachments (${doneAtt}/${totalAtt})…`);
+          const fd = new FormData();
+          fd.append('field_id', fid);
+          fd.append('files', staged.file);
+          fd.append('names', staged.name || '');
+          fd.append('descriptions', staged.description || '');
+          try {
+            await api.post(`/forms/submissions/${sub.id}/attachments`, fd);
+          } catch (err) {
+            toast.error(`Attachment "${staged.name || staged.file?.name || 'file'}" failed`, {
+              description: err?.response?.data?.detail || err?.message || 'Upload failed',
+            });
+          }
+        }
+      }
       toast.success('Form submitted', { description: template.name });
       try { localStorage.removeItem(draftKey); } catch { /* noop */ }
       onSubmitted?.(sub);
@@ -851,6 +880,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
                 onChange={(v) => setField(f.id, v)}
                 photoFiles={photoFiles[f.id]}
                 onPhotoChange={(files) => setPhotoField(f.id, files)}
+                onStageChange={(fid, files) => setAttachmentFiles((prev) => ({ ...prev, [fid]: files }))}
                 allFields={template.fields || []}
                 allValues={values}
                 readOnly={isLocked} />

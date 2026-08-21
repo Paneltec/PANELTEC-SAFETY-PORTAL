@@ -138,20 +138,121 @@ describe('attachmentPreflight', () => {
 
 // ─────────────────────────── AttachmentField ────────────────────────────────
 
-describe('AttachmentField — disabled dropzone (submissionId null)', () => {
-  test('shows "Save the form first" hint and does NOT POST on file drop', async () => {
-    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} />);
-    // Hint testid rendered inside the disabled dropzone
-    expect(screen.getByTestId('attachment-dropzone-hint-byda_attachments')).toBeInTheDocument();
-    // data-canupload attribute reflects the disabled state
-    expect(screen.getByTestId('attachment-dropzone-byda_attachments')).toHaveAttribute('data-canupload', '0');
-    // Try firing a drop event — should be a no-op
+describe('AttachmentField — local staging (submissionId null, v58.12.4)', () => {
+  test('valid file → stages locally, onStageChange fires, api.post NOT called', async () => {
+    const onStageChange = jest.fn();
+    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} onStageChange={onStageChange} />);
+    // Dropzone is active in staging mode
+    expect(screen.getByTestId('attachment-dropzone-byda_attachments'))
+      .toHaveAttribute('data-mode', 'staging');
+    expect(screen.getByTestId('attachment-dropzone-byda_attachments'))
+      .toHaveAttribute('data-canupload', '1');
+    // Old v58.12.2 "Save the form first" hint retired
+    expect(screen.queryByTestId('attachment-dropzone-hint-byda_attachments')).toBeNull();
+
     const good = makeFile('site-plan.pdf', 'application/pdf', 100);
-    fireEvent.drop(screen.getByTestId('attachment-dropzone-byda_attachments'), {
-      dataTransfer: { files: [good] },
+    const input = screen.getByTestId('attachment-input-byda_attachments');
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [good], writable: false });
+      fireEvent.change(input);
     });
-    // Give any (accidentally scheduled) microtask time to fire
-    await new Promise((r) => setTimeout(r, 5));
+    // Staged row testid distinct from immediate-upload rows
+    await waitFor(() => expect(document.querySelector('[data-testid^="attachment-row-staged-"]')).toBeInTheDocument());
+    // onStageChange fired with the file, name defaulted to "site-plan"
+    expect(onStageChange).toHaveBeenCalled();
+    const [fid, staged] = onStageChange.mock.calls[onStageChange.mock.calls.length - 1];
+    expect(fid).toBe('byda_attachments');
+    expect(staged).toHaveLength(1);
+    expect(staged[0]).toMatchObject({ file: good, name: 'site-plan', description: '', mime: 'application/pdf', size: 100 });
+    // NO network POST
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  test('MIME rejection in staging mode → inline error, no onStageChange for the rejected file', async () => {
+    const onStageChange = jest.fn();
+    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} onStageChange={onStageChange} />);
+    const bad = makeFile('malware.exe', 'application/x-msdownload', 100);
+    const input = screen.getByTestId('attachment-input-byda_attachments');
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [bad], writable: false });
+      fireEvent.change(input);
+    });
+    expect(await screen.findByText(/Unsupported file type/i)).toBeInTheDocument();
+    // Non-staged rows use the plain testid; error rows aren't staged.
+    expect(document.querySelector('[data-testid^="attachment-row-staged-"]')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+    // onStageChange may fire with an empty list (or not fire) — either way,
+    // the last-known staged list must not include the rejected file.
+    const calls = onStageChange.mock.calls;
+    if (calls.length > 0) {
+      const lastStaged = calls[calls.length - 1][1];
+      expect(lastStaged.every((s) => s.file !== bad)).toBe(true);
+    }
+  });
+
+  test('size rejection in staging mode → inline error, no upload, no stage', async () => {
+    const onStageChange = jest.fn();
+    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} onStageChange={onStageChange} />);
+    const bloated = makeFile('big.pdf', 'application/pdf', 2 * 1024 * 1024); // 2 MB > 1 MB cap
+    const input = screen.getByTestId('attachment-input-byda_attachments');
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [bloated], writable: false });
+      fireEvent.change(input);
+    });
+    expect(await screen.findByText(/too large/i)).toBeInTheDocument();
+    expect(document.querySelector('[data-testid^="attachment-row-staged-"]')).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  test('remove staged file → onStageChange fires with shorter array', async () => {
+    const onStageChange = jest.fn();
+    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} onStageChange={onStageChange} />);
+    const good = makeFile('doc.pdf', 'application/pdf', 100);
+    const input = screen.getByTestId('attachment-input-byda_attachments');
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [good], writable: false });
+      fireEvent.change(input);
+    });
+    const stagedRow = await waitFor(() => document.querySelector('[data-testid^="attachment-row-staged-"]'));
+    expect(stagedRow).toBeInTheDocument();
+    const tempKey = stagedRow.getAttribute('data-testid').replace('attachment-row-staged-', '');
+    // At least one call so far — record how many, then click remove.
+    const callsBeforeRemove = onStageChange.mock.calls.length;
+    await act(async () => {
+      fireEvent.click(screen.getByTestId(`attachment-row-remove-${tempKey}`));
+    });
+    // Staged row gone
+    expect(document.querySelector('[data-testid^="attachment-row-staged-"]')).toBeNull();
+    // onStageChange fired again with an empty list
+    expect(onStageChange.mock.calls.length).toBeGreaterThan(callsBeforeRemove);
+    const lastStaged = onStageChange.mock.calls[onStageChange.mock.calls.length - 1][1];
+    expect(lastStaged).toEqual([]);
+  });
+
+  test('edit Name + Description on staged row → onStageChange fires with mutated entry', async () => {
+    const onStageChange = jest.fn();
+    render(<AttachmentField field={attachmentField} value={[]} submissionId={null} onStageChange={onStageChange} />);
+    const good = makeFile('site-plan.pdf', 'application/pdf', 100);
+    const input = screen.getByTestId('attachment-input-byda_attachments');
+    await act(async () => {
+      Object.defineProperty(input, 'files', { value: [good], writable: false });
+      fireEvent.change(input);
+    });
+    const stagedRow = await waitFor(() => document.querySelector('[data-testid^="attachment-row-staged-"]'));
+    const tempKey = stagedRow.getAttribute('data-testid').replace('attachment-row-staged-', '');
+    // Edit Name
+    await act(async () => {
+      fireEvent.change(screen.getByTestId(`attachment-row-name-${tempKey}`), { target: { value: 'North boundary' } });
+    });
+    // Edit Description
+    await act(async () => {
+      fireEvent.change(screen.getByTestId(`attachment-row-desc-${tempKey}`), { target: { value: 'from LiDAR scan' } });
+    });
+    // Last onStageChange call must reflect BOTH edits.
+    const lastStaged = onStageChange.mock.calls[onStageChange.mock.calls.length - 1][1];
+    expect(lastStaged).toHaveLength(1);
+    expect(lastStaged[0]).toMatchObject({ name: 'North boundary', description: 'from LiDAR scan' });
+    // Still zero network calls
     expect(api.post).not.toHaveBeenCalled();
   });
 });
@@ -253,7 +354,7 @@ describe('AttachmentField — read-only server rows', () => {
     // Disabled remove button with the v58.12.3 tooltip
     const removeBtn = screen.getByTestId('attachment-row-remove-f1');
     expect(removeBtn).toBeDisabled();
-    expect(removeBtn).toHaveAttribute('title', 'Delete lands in v58.12.3');
+    expect(removeBtn).toHaveAttribute('title', 'Delete lands in v58.12.5');
   });
 });
 
