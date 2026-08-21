@@ -1,6 +1,15 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.6 — Site Sign-In / Visitor Register dedicated Capture page.
+// New route `/app/site-signin` + sidebar entry (PersonAvailable icon,
+// slotted after Inspections, before Risk Assessments). Zero backend
+// changes — reads existing `GET /forms/templates/{tid}/submissions`.
+// Renders via shared `GroupedTilesView` (v58.12.7). Groups by
+// `submitted_by_name`. testidPrefix `site-signin`. Template id
+// e8873f7e-6fd4-44c9-961a-d68e6ffecd8d.
+
+
 // v160.3.9.58.13.5 — Supervisor `--reload` config.
 // Fixes the class of stale-backend bugs that broke v58.12.10 delivery.
 // /etc/supervisor/conf.d/supervisord.conf now runs uvicorn with
@@ -1688,7 +1697,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.5';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.6';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

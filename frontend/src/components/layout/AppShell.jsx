@@ -82,6 +82,12 @@ const NAV = [
     { to: '/app/hazards', label: 'Hazard Reports', icon: Warning24Regular, iconActive: Warning24Filled, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
     { to: '/app/incidents', label: 'Incident Reports', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
     { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheckmark24Regular, iconActive: ShieldCheckmark24Filled, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
+    // v58.13.6 — Site Sign-In / Visitor Register capture entry. Reads
+    // submissions of the fixed template id via the shared endpoint.
+    // Uses PersonAvailable icon (already imported) — semantically fits
+    // "visitor present". Slotted after Inspections and before Risk
+    // Assessments to preserve the existing Capture ordering.
+    { to: '/app/site-signin', label: 'Site Sign-In / Visitor Register', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-site-signin', pastel: 'sky' },
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },
