@@ -1,6 +1,15 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.7 — SiteSigninList per-tile View + Delete actions.
+// Reuses SubmissionViewer (resourceKind="forms" apiPath="forms/submissions")
+// + DeleteRecordButton. Testid `site-signin-view-{id}` for view;
+// DeleteRecordButton's auto-generated `delete-forms-{id}` for delete.
+// Edit action deferred to v58.13.8 (audit-trail design pending).
+// Zero backend changes — reuses `DELETE /api/forms/submissions/{id}`
+// at forms.py:995 (verified extant; not exercised on real data).
+
+
 // v160.3.9.58.13.6 — Site Sign-In / Visitor Register dedicated Capture page.
 // New route `/app/site-signin` + sidebar entry (PersonAvailable icon,
 // slotted after Inspections, before Risk Assessments). Zero backend
@@ -1697,7 +1706,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.6';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.7';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
