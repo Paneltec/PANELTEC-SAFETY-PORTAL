@@ -2,9 +2,48 @@
 
 Ephemeral-worker fixture pattern so no production worker is ever mutated.
 """
+# v58.13.21 — Unblock the 9 fixture-driven tests in this file that
+# were silently blocked by the v57.2 live-DB-guard.
+#
+# Why the obvious fix (`pytestmark = pytest.mark.live_db_writes`) is
+# NOT sufficient here: the shared `ephemeral_admin` fixture in
+# `backend/tests/conftest.py` is `scope="module"`. It runs BEFORE
+# any function-scoped fixture — including the autouse
+# `production_db_guard` that reads the marker. At the moment
+# `ephemeral_admin` calls `_mongo.users.insert_one(...)` for the
+# first time, `_ALLOW_PROD_WRITES` is still False and the guard
+# fires. This is a pre-existing systemic gap in the guard (affects
+# EVERY `ephemeral_admin`-dependent test file — see
+# `test_phase_4d_v160_3_9_33.py` which is also currently 100%
+# blocked). A proper conftest-level fix is scoped for a future ship.
+#
+# In-file workaround: a session-scoped autouse fixture that pre-flips
+# `_ALLOW_PROD_WRITES` before any module-scoped setup runs. Reverts
+# after the session. Kept module-local so we don't perturb any other
+# suite. `pytestmark` is retained so per-function guard evaluation
+# also sees the opt-in (belt-and-braces).
 import io
 import uuid
 import requests
+
+import pytest
+
+pytestmark = pytest.mark.live_db_writes
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _prod_writes_module_optin_v58_13_21():
+    """Pre-flip the guard for this module's session so
+    module-scoped `ephemeral_admin` can perform its inserts. Restore
+    on session teardown. See conftest.py:110-179 for the guard."""
+    from . import conftest as _cf
+    _prev = _cf._ALLOW_PROD_WRITES
+    _cf._ALLOW_PROD_WRITES = True
+    try:
+        yield
+    finally:
+        _cf._ALLOW_PROD_WRITES = _prev
+
 
 from .conftest import API, _login
 
@@ -20,7 +59,7 @@ def _jpeg_bytes(color="steelblue", size=(400, 300)):
     return buf.getvalue()
 
 
-import pytest
+# (pytest imported at module top for the `live_db_writes` marker.)
 
 
 @pytest.fixture

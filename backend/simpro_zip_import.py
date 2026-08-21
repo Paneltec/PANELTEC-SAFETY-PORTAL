@@ -653,6 +653,21 @@ async def _commit_zip(
     if plan.get("photo"):
         p = plan["photo"]
         blob = zf.read(p["zip_path"])
+        # v58.13.21 — Delete OLD GridFS blob first to preserve the
+        # zero-orphan invariant. Mirrors workers.py:644-649 exactly:
+        # if the delete fails (e.g. blob already gone / never
+        # existed), log and continue — the fresh upload still
+        # proceeds. `pre_worker` was captured above at L504 so no
+        # extra round-trip.
+        old_gid = pre_worker.get("photo_gridfs_id")
+        if old_gid and ObjectId is not None:
+            try:
+                await fs.delete(ObjectId(old_gid))
+            except Exception as e:
+                log.warning(
+                    "simpro.photo old-blob delete failed for worker=%s (may already be gone): %s",
+                    worker_id, e,
+                )
         gid = await fs.upload_from_stream(
             p["filename"], blob,
             metadata={"kind": "worker_photo", "org_id": org_id, "worker_id": worker_id},

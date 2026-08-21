@@ -73,11 +73,15 @@ def test_workers_py_f811_clean():
 
 
 def test_version_sync_still_green():
-    """v58.13.13 version-sync guardrail — all 3 canonical files."""
+    """v58.13.13 version-sync guardrail — all 3 canonical files agree
+    on the CURRENT RUNNING_VERSION (read dynamically so this test
+    survives future bumps)."""
+    import re
     running = (APP / "frontend/src/lib/version.js").read_text(encoding="utf-8")
     sw = (APP / "frontend/public/service-worker.js").read_text(encoding="utf-8")
     mobile = (APP / "mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    assert "'paneltec-v160.3.9.58.13.20'" in running
-    assert "'paneltec-v160.3.9.58.13.20'" in sw
-    assert "'paneltec-v160.3.9.58.13.20'" in mobile
-    assert "export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.20'" in running
+    m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+)'", running)
+    assert m, "RUNNING_VERSION export not found"
+    current = m.group(1)
+    assert f"'{current}'" in sw, f"service-worker CACHE_VERSION != {current}"
+    assert f"'{current}'" in mobile, f"mobile MOBILE_BUNDLE_VERSION != {current}"

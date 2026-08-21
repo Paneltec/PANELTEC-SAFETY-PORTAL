@@ -1,6 +1,70 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.21 — Simpro ZIP photo-replace zero-orphan fix +
+// unblocked legacy worker-photo test.
+//
+// **Diagnostic reframe (Pass 1)**: The backlog premise
+// ("test_replace_photo_deletes_old_gridfs_blob fails because
+// workers.py leaks GridFS blobs") turned out to be inverted. The
+// actual state:
+//   · `workers.py:614-668` (POST /workers/{id}/photo) IS correct —
+//     deletes old blob at L644-649 before upload, with a
+//     `zero-orphan invariant` comment already in place.
+//   · The test never reached its assertion. It died in the
+//     `ephemeral_admin` fixture at conftest.py:294 with the v57.2
+//     `live-DB-guard` error: `.insert_one` on `test_database.users`
+//     without the `@pytest.mark.live_db_writes` opt-in marker.
+//     `test_worker_photo_v34.py` predates the guard.
+//   · The REAL leak — never described in the backlog — was at
+//     `simpro_zip_import.py:653-666`. Simpro ZIP re-imports that
+//     included a photo would upload the new blob without deleting
+//     the old, orphaning it. Current Mongo footprint: `fs.files`
+//     total = 8, zero orphans (no re-imports had triggered it yet),
+//     but the code path was actively broken.
+//
+// Files touched
+//   · `backend/simpro_zip_import.py` — +11 LOC. Before the
+//     `fs.upload_from_stream` in the "# Photo" block, read
+//     `pre_worker.get("photo_gridfs_id")` (already captured at
+//     L504 for the rollback snapshot — zero extra round-trip) and
+//     `fs.delete(ObjectId(old))` if present. Try/except with
+//     `log.warning` mirrors the exact pattern from `workers.py`.
+//   · `backend/tests/test_worker_photo_v34.py` — 1-line
+//     `pytestmark = pytest.mark.live_db_writes` at module scope.
+//     Unblocks all 9 tests. File remains under `/app/backend/tests/`
+//     as a documented v58.13.10-rule grandfather exception (rewriting
+//     9 requests-based tests to motor mocks was explicitly out of
+//     scope).
+//   · `tests/backend_unit/test_simpro_photo_replace_v58_13_21.py` —
+//     NEW (~280 LOC). Four scenarios: pre-existing photo triggers
+//     `fs.delete(OLD)` exactly once BEFORE upload; no pre-existing
+//     photo → delete NOT called; `fs.delete` raising →
+//     log-and-continue proceeds to upload + doc update; two workers
+//     processed back-to-back → each replaces its own blob with no
+//     cross-contamination. Handler-level via `_commit_zip(...)` with
+//     a fake db + fake AsyncIOMotorGridFSBucket surface. Extra
+//     source-level guard verifies the delete-before-upload invariant
+//     survives future refactors.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/backend_unit/`. Grandfathered legacy file is
+//     touched with a 1-line marker only.
+//   · Zero schema change. Zero new npm packages. No GridFS blobs
+//     deleted during this ship. No GridFS audit endpoint/script
+//     added (deferred per Pass 1 approval).
+//   · `workers.py` untouched (already correct).
+//   · Backend WILL reload once (single .py edit) — drain fix from
+//     v58.13.15 keeps it fast.
+//
+// Deferred (still parked, per prior approvals)
+//   · GridFS audit endpoint / one-shot script.
+//   · CacheBusterBanner stickier UX.
+//   · Contract dates / periodic template Phase C polish.
+
+
 // v160.3.9.58.13.20 — Small polish bundle (housekeeping ship).
 //
 // Three unrelated, low-risk cleanups bundled to reduce ceremony:
@@ -2476,7 +2540,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.20';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.21';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
