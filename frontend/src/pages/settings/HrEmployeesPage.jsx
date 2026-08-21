@@ -12,6 +12,8 @@ import { PageHeader } from '../../components/capture/Ui';
 import HrEmployeeDrawer from './HrEmployeeDrawer';
 // v58.13.25 — Employee ↔ Worker linker modal.
 import WorkerLinkModal from '../../components/WorkerLinkModal';
+// v58.13.26 — Bulk link wizard.
+import BulkWorkerLinkWizard from '../../components/BulkWorkerLinkWizard';
 
 const FIXED_COLUMNS = [
   { key: 'employee_id',       label: 'ID',           width: 70 },
@@ -45,6 +47,9 @@ export default function HrEmployeesPage() {
   // v58.13.25 — Employee ↔ Worker linker modal state. Holds the
   // employee row whose link is being edited; null = modal closed.
   const [linkingEmployee, setLinkingEmployee] = React.useState(null);
+  // v58.13.26 — Bulk link wizard visibility + auto-match presence.
+  const [bulkWizardOpen, setBulkWizardOpen] = React.useState(false);
+  const [bulkAutoCount, setBulkAutoCount] = React.useState(0);
   const [deleting, setDeleting] = React.useState(false);
 
   const refreshFromSimpro = async () => {
@@ -104,6 +109,19 @@ export default function HrEmployeesPage() {
 
   React.useEffect(() => { load(); }, [load]);
 
+  // v58.13.26 — Poll bulk-candidate counts so the header button appears
+  // when there are auto-matches to review. Best-effort; a failure just
+  // hides the button.
+  const loadBulkCounts = React.useCallback(async () => {
+    try {
+      const { data } = await api.get('/hr/employees/link-candidates/bulk');
+      setBulkAutoCount((data.auto_matches || []).length);
+    } catch {
+      setBulkAutoCount(0);
+    }
+  }, []);
+  React.useEffect(() => { loadBulkCounts(); }, [loadBulkCounts]);
+
   // Derive filter options from the current result set. Cheap on <200 rows.
   const businessUnits = React.useMemo(
     () => Array.from(new Set(items.map((r) => r.business_unit).filter(Boolean))).sort(),
@@ -125,18 +143,33 @@ export default function HrEmployeesPage() {
         title="HR Employees"
         subtitle="Full employee register with PII masking and audit trail."
         action={
-          <button
-            type="button"
-            onClick={refreshFromSimpro}
-            disabled={isRefreshingSimpro}
-            data-testid="hr-refresh-simpro-btn"
-            data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm"
-            title="Re-parse the HR source spreadsheet and upsert every row"
-          >
-            <span className={isRefreshingSimpro ? 'animate-spin inline-block' : 'inline-block'}>↻</span>
-            {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}
-          </button>
+          <div className="flex items-center gap-2">
+            {bulkAutoCount > 0 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); setBulkWizardOpen(true); }}
+                data-testid="bulk-link-open-btn"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold border border-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 shadow-sm"
+                title={`${bulkAutoCount} auto-match${bulkAutoCount === 1 ? '' : 'es'} available`}
+              >
+                <span aria-hidden>🔗</span>
+                Bulk link workers…
+                <span className="ml-1 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-bold">{bulkAutoCount}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={refreshFromSimpro}
+              disabled={isRefreshingSimpro}
+              data-testid="hr-refresh-simpro-btn"
+              data-refreshing={isRefreshingSimpro ? 'true' : 'false'}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[#0093D0] text-white text-sm font-semibold border border-[#0093D0] hover:bg-[#0079AB] hover:border-[#0079AB] focus:outline-none focus:ring-2 focus:ring-[#0093D0]/40 disabled:opacity-60 shadow-sm"
+              title="Re-parse the HR source spreadsheet and upsert every row"
+            >
+              <span className={isRefreshingSimpro ? 'animate-spin inline-block' : 'inline-block'}>↻</span>
+              {isRefreshingSimpro ? 'Refreshing…' : 'Refresh from Simpro'}
+            </button>
+          </div>
         }
       />
 
@@ -164,7 +197,7 @@ export default function HrEmployeesPage() {
             it re-parses the same XLSX and does a <b>merge-safe <code>$set</code></b> per row (existing fields you edited in the drawer stay; source columns overwrite). Rows removed at the source are <b>NOT</b> auto-deleted here — offboarding is manual.
           </div>
           <div>
-            • <b>Manual entry</b> — no in-app "Add employee" form yet; new hires enter via the XLSX + refresh. Ask an admin if you need a row created ad-hoc.
+            • <b>Manual entry</b> — no in-app &ldquo;Add employee&rdquo; form yet; new hires enter via the XLSX + refresh. Ask an admin if you need a row created ad-hoc.
           </div>
           <div>
             • <b>Worker linkage</b> — the <code className="px-1 rounded bg-slate-100 text-[12px]">linked_worker_id</code> field is reserved on the schema; the Employee ↔ Worker linker UI is queued as a follow-up.
@@ -371,6 +404,14 @@ export default function HrEmployeesPage() {
           employee={linkingEmployee}
           onClose={() => setLinkingEmployee(null)}
           onLinked={() => load()}
+        />
+      )}
+
+      {/* v58.13.26 — Bulk link wizard. Refetches list + counts on close. */}
+      {bulkWizardOpen && (
+        <BulkWorkerLinkWizard
+          onClose={() => { setBulkWizardOpen(false); load(); loadBulkCounts(); }}
+          onCompleted={() => { load(); loadBulkCounts(); }}
         />
       )}
 

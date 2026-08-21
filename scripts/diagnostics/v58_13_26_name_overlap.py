@@ -2,6 +2,13 @@
 v58.13.26 Pass 1 — READ-ONLY diagnostic for name overlap between
 `hr_employees` and `workers` collections.
 
+Productionised in v58.13.26: findings are now the source of truth for
+`backend/name_matching.py::find_matches` (3-tier composite lookup —
+email → norm_basic → norm_last_first_initial, no fuzzy tier). Keep
+this script under `/app/scripts/diagnostics/` as an ops tool for
+future data audits — rerunning it after a Simpro re-import will
+surface any drift in normaliser hit-rates.
+
 Objective:
   - Explain why v58.13.25 auto-suggest (SequenceMatcher >= 0.75) yielded 0 hits.
   - Characterise mismatch patterns (case, order, middle names, disjoint sets).

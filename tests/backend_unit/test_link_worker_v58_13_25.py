@@ -215,14 +215,20 @@ async def test_candidates_exact_match_similarity_10(_patch):
 
 
 @pytest.mark.asyncio
-async def test_candidates_typo_still_ranks_above_075(_patch):
-    _patch([_emp(first_name="Robert", last_name="Smith")],
-           [_worker(id="w-1", first_name="Robet", last_name="Smith")])
+async def test_candidates_typo_matched_via_lfi_tier(_patch):
+    """v58.13.26 — 1-char first-name typo with an exact surname now
+    matches at 1.0 via the `norm_last_first_initial` tier (both
+    normalise to `smith r`). This is stronger than v58.13.25's fuzzy
+    ratio ≥0.75 (which was noise-prone in the 0.60-0.79 band on live
+    data) — the LFI tier is exact after normalisation."""
+    _patch([_emp(first_name="Robert", last_name="Smith", email=None)],
+           [_worker(id="w-1", first_name="Robet", last_name="Smith",
+                    email=None)])
     r = await hr_employees.link_candidates(eid="e-1", limit=10, user=USER)
     assert len(r["candidates"]) == 1
     assert r["candidates"][0]["id"] == "w-1"
-    assert r["candidates"][0]["similarity"] >= 0.75
-    assert r["candidates"][0]["similarity"] < 1.0
+    assert r["candidates"][0]["similarity"] == 1.0
+    assert r["candidates"][0]["tier"] == "norm_lfi"
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,117 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.26 — Bulk Employee ↔ Worker linker wizard + composite
+// normalisation fix on the single-record ranker.
+//
+// v58.13.25 shipped the linker with a raw-case `SequenceMatcher`
+// ranker. That produced ZERO candidates on live data at ≥0.75 because
+// workers are 88% ALL-UPPER (Simpro import) while hr_employees are
+// 100% Mixed-case. The v58.13.26 diagnostic
+// (`scripts/diagnostics/v58_13_26_name_overlap.py`) established:
+//   · Set-based overlap after `norm_basic` (lower+strip+punct) =
+//     64 / 121 hr_employees exact-match a worker.
+//   · Email exact-match = 54 / 60 worker emails match an hr_employee.
+//   · Combined 3-tier (email → norm_basic → norm_lfi) with collision
+//     guard = 66 / 121 unambiguous auto-links.
+//   · Fuzzy band 0.60 ≤ r < 0.80 (17 employees) is 80% false-positive
+//     — dropped from the ranker.
+// C-strict UX chosen: no fuzzy tier, no theatre.
+//
+// Backend
+//   · NEW `backend/name_matching.py` (~110 LOC). Pure functions —
+//     `strip_accents`, `norm_basic`, `norm_last_first_initial`,
+//     `find_matches(hr_first, hr_last, hr_email, workers)`.
+//     3-tier composite lookup with collision guard.
+//   · `backend/hr_employees.py`:
+//     · `_link_worker_inner()` extracted from the PATCH handler so
+//       the bulk-commit path uses the SAME code (uniqueness pre-write
+//       query, `$set`, audit row).
+//     · `_audit(target_id=…)` typo corrected to
+//       `_audit(employee_id=…, target_uid=…)` — matches every other
+//       `_audit()` caller in the file. v58.13.25 would have raised
+//       TypeError on the first real link (linked_worker_id count was
+//       0, so it never surfaced).
+//     · `/link-candidates` ranker rewritten to call `find_matches`.
+//       Returns AT MOST ONE candidate at similarity=1.0 with a `tier`
+//       field. Empty candidates now include `reason: "no_exact_match"`
+//       + `suggestion: "browse_all"` so the FE can pick the browse
+//       fallback deterministically. No fuzzy path.
+//     · NEW `GET /link-candidates/bulk` — returns
+//       `{auto_matches:[{employee_id, employee_name, worker_id,
+//       worker_name, tier}], no_match:[{employee_id, employee_name}]}`.
+//       Excludes already-linked employees + soft-deleted / inactive
+//       workers. First-come-first-served on worker collisions. Hard
+//       cap 1000 employees.
+//     · NEW `POST /link-worker/bulk` body
+//       `{links: [{employee_id, worker_id, tier?}]}` — fan-outs via
+//       `_link_worker_inner()`. Per-link try/except → response
+//       `{succeeded: N, failed: [{employee_id, error}]}`. Audit row
+//       per successful link (same code path as single endpoint).
+//   · Both bulk endpoints gated by `require_permission
+//     ("hr_employees", "edit")`.
+//
+// Frontend
+//   · NEW `components/BulkWorkerLinkWizard.jsx` (~250 LOC). Two-step
+//     modal (Auto-matches · No match) launched from the
+//     HrEmployeesPage header. Tier badges (email green, norm_basic
+//     blue, norm_lfi amber). Bulk-accept controls: Accept all /
+//     Accept email tier only / Reject all. Confirm N links →
+//     `POST /link-worker/bulk`. Per-employee toast on failure. Step 2
+//     "Browse workers…" opens the existing WorkerLinkModal with the
+//     employee context preserved.
+//   · `components/WorkerLinkModal.jsx` — new optional prop
+//     `initialCandidateWorkerId` floats a pre-focused worker to the
+//     top of the browse list. Auto-suggest strip now green-only
+//     (similarity=1.0 is the only band that ever ships).
+//   · `pages/settings/HrEmployeesPage.jsx`:
+//     · "Bulk link workers…" button added to the page header,
+//       visible only when `auto_matches.length > 0`. Badge shows
+//       the count.
+//     · `loadBulkCounts()` polled on mount so the button appears
+//       automatically.
+//     · Wizard mounted alongside the drawer; refetches the employee
+//       list + bulk counts on completion.
+//   · v58.13.10 flash-bug guardrail: every wizard button + row
+//     handler calls `e.stopPropagation() + e.preventDefault()`
+//     before mutating state.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_bulk_link_v58_13_26.py` —
+//     17 pytests: composite normaliser (5) + regression on the
+//     single-record ranker (3) + bulk candidates (4) + bulk commit (5).
+//     Includes the "no fuzzy ever returned" regression guard.
+//   · NEW `tests/frontend_smoke/test_bulk_link_wizard_v58_13_26.py`
+//     — 8 static-grep pytests: wizard exports, two-step state
+//     machine, tier badge colours, bulk-accept controls,
+//     stopPropagation on every handler, page mount, backdrop close
+//     pattern, and the v58.13.13 version-sync guardrail.
+//
+// Diagnostic script retained at
+// `scripts/diagnostics/v58_13_26_name_overlap.py` — valuable ops
+// tool for future data audits. Header comment updated to note
+// v58.13.26 productionised these findings.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS (3 canonical files + this changelog).
+//   · v58.13.10 test-placement: all new pytests under
+//     `/app/tests/{backend_unit,frontend_smoke}/`.
+//   · Zero schema migration — `linked_worker_id` was pre-reserved
+//     on the v48 schema; still no cascade on worker soft-delete.
+//   · Zero touch to `workers.py`, `simpro_zip_import.py`, or any
+//     other module. Bulk endpoint reads only.
+//   · No fuzzy matching ANYWHERE — deliberately (Pass 1 evidence).
+//   · Backend WILL reload once (single hr_employees.py edit + one
+//     new module). Job 4f395643 is state=failed — no in-flight work
+//     to preserve.
+//
+// Deferred (still parked, per prior approvals)
+//   · Worker-side view of the linked employee.
+//   · Auto-null cascade on worker soft-delete.
+//   · Stable `asset-edit-<id>` deep-link testid path for the
+//     ScheduleDrawer.
+
+
 // v160.3.9.58.13.25 — Employee ↔ Worker record linker (per-record picker).
 //
 // Connects `hr_employees` (HR-managed register, 121 rows) to
@@ -2779,7 +2890,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.25';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.26';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

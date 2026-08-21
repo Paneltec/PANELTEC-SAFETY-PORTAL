@@ -1,11 +1,12 @@
 // v58.13.25 — WorkerLinkModal. Opens from HrEmployeesPage when an
 // admin clicks "Link worker…" on an unlinked employee row.
 //
-// Auto-suggest strip at top (top-N results from
-// GET /api/hr/employees/{eid}/link-candidates). Similarity=1.0 →
-// green chip (perfect match). 0.75-0.99 → amber chip (fuzzy).
-// Below the strip: searchable list of ALL unlinked workers with
-// client-side substring filter. One click = PATCH /link-worker.
+// v58.13.26 — /link-candidates now returns at most ONE candidate at
+// similarity=1.0 (composite-normaliser exact match). Fuzzy tier
+// removed. Chip stays green (perfect match) — no amber path anymore
+// but the styling logic is preserved for defence-in-depth. Modal also
+// accepts an optional `initialCandidateWorkerId` prop so the bulk
+// wizard's "Browse workers…" fallback can pre-focus a candidate.
 //
 // Reuses the ChecklistLinkPicker pattern (v58.13.19) for the
 // backdrop close + useLockBodyScroll + stopPropagation guards.
@@ -15,7 +16,7 @@ import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
-export default function WorkerLinkModal({ employee, onClose, onLinked }) {
+export default function WorkerLinkModal({ employee, onClose, onLinked, initialCandidateWorkerId }) {
   useLockBodyScroll();
   const [candidates, setCandidates] = useState([]);
   const [allWorkers, setAllWorkers] = useState([]);
@@ -57,12 +58,25 @@ export default function WorkerLinkModal({ employee, onClose, onLinked }) {
 
   const filteredWorkers = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return allWorkers.slice(0, 100);
-    return allWorkers.filter((w) => {
-      const full = `${w.first_name || ''} ${w.last_name || ''} ${w.email || ''}`.toLowerCase();
-      return full.includes(needle);
-    }).slice(0, 100);
-  }, [allWorkers, q]);
+    const base = needle
+      ? allWorkers.filter((w) => {
+          const full = `${w.first_name || ''} ${w.last_name || ''} ${w.email || ''}`.toLowerCase();
+          return full.includes(needle);
+        })
+      : allWorkers;
+    // v58.13.26 — Float the pre-focused candidate to the top so the bulk
+    // wizard's "Browse workers…" fallback lands on the right row.
+    if (initialCandidateWorkerId) {
+      const idx = base.findIndex((w) => w.id === initialCandidateWorkerId);
+      if (idx > 0) {
+        const clone = base.slice();
+        const [row] = clone.splice(idx, 1);
+        clone.unshift(row);
+        return clone.slice(0, 100);
+      }
+    }
+    return base.slice(0, 100);
+  }, [allWorkers, q, initialCandidateWorkerId]);
 
   const link = useCallback(async (e, workerId) => {
     e?.stopPropagation?.(); e?.preventDefault?.();
