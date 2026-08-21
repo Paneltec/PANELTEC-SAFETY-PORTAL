@@ -317,6 +317,17 @@ class ScheduleIn(BaseModel):
     assigned_to_worker_name: Optional[str] = Field(default=None, max_length=200)
     notes: Optional[str] = Field(default=None, max_length=10_000)
     attachments: Optional[list[dict[str, Any]]] = None
+    # v58.13.23 — Contract dates. All optional ISO date strings from
+    # the FE `<input type="date">` (YYYY-MM-DD). Legacy schedules
+    # parse identically (no field → None default). No validator
+    # beyond `max_length=32` — matches the `last_done_at` pattern.
+    # These are informational only: no cron / reminder / status
+    # logic reads them yet. Preview badge on the FE tile shows
+    # traffic-light status derived from `contract_expiry`.
+    contract_cust_on: Optional[str] = Field(default=None, max_length=32)
+    contract_review:  Optional[str] = Field(default=None, max_length=32)
+    contract_start:   Optional[str] = Field(default=None, max_length=32)
+    contract_expiry:  Optional[str] = Field(default=None, max_length=32)
 
 
 class RecordIn(BaseModel):

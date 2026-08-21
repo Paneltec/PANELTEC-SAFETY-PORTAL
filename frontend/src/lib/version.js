@@ -1,6 +1,62 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.23 — Contract dates on schedules + phase4d opt-in.
+//
+// Two items bundled:
+//
+// Item A — Contract dates on `asset_service_schedules`.
+//   Adds 4 optional ISO date-string fields to `ScheduleIn`:
+//     · contract_cust_on   (Customer Onboarded)
+//     · contract_start     (Contract start)
+//     · contract_review    (Review date)
+//     · contract_expiry    (Contract expiry)
+//   All Optional[str] (max_length=32), matches the `last_done_at`
+//   pattern. Legacy schedules parse identically. Server-side
+//   handlers unchanged — `**payload` splat pipes every Pydantic
+//   field through to Mongo. No new endpoints. No migration.
+//
+//   Frontend: new "Contract Dates" sub-header inside the
+//   ScheduleEditor's More Details panel, with a 2×2 grid of
+//   native `<input type="date">` inputs (chronological order:
+//   Cust On · Start · Review · Expiry). Payload nullifies empty
+//   strings so backend gets None rather than "".
+//
+//   Preview: expiry-only traffic-light badge in the
+//   ServiceSchedulesTab tile:
+//     · > 30 days away  → green  "Contract active · expires DD MMM YYYY"
+//     · 0–30 days away  → amber  "Contract expires in N days"
+//     · past expiry     → rose   "CONTRACT EXPIRED N days ago"
+//   Only rendered when `s.contract_expiry` is set (per approved
+//   Pass 1 plan).
+//
+// Item B — Piggyback fix: 1-line
+//   `pytestmark = pytest.mark.live_db_writes` at module scope of
+//   `backend/tests/test_phase_4d_v160_3_9_33.py`. Unblocks 14
+//   previously-blocked tests thanks to the v58.13.22 conftest
+//   hardening.  Verified 14/14 GREEN.
+//
+// Files touched
+//   · `backend/asset_service.py` — 4 new fields on ScheduleIn.
+//   · `frontend/src/components/AssetServiceTabs.jsx` — form
+//     state + payload nullify + 2×2 date grid + tile badge.
+//   · `backend/tests/test_phase_4d_v160_3_9_33.py` — 1-line
+//     pytestmark opt-in + explanatory comment.
+//   · NEW `tests/backend_unit/test_schedule_contract_dates_v58_13_23.py`
+//     — round-trip + update + nullify + legacy parse + openapi.
+//   · NEW `tests/frontend_smoke/test_contract_dates_v58_13_23.py`
+//     — form state, grid ordering, badge conditional on
+//       `s.contract_expiry`, traffic-light colour classes.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytests under
+//     `/app/tests/{backend_unit,frontend_smoke}/`.
+//   · Zero migration. All fields Optional, default None.
+//   · No new endpoints. No cron / bulk_import / auth touch.
+//   · Backend reload once (single ScheduleIn schema edit).
+
+
 // v160.3.9.58.13.22 — Legacy test hygiene + conftest guard hardening.
 //
 // Four small follow-ups from v58.13.21's report, all test-only or
@@ -2609,7 +2665,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.22';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.23';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

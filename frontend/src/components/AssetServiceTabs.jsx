@@ -150,6 +150,42 @@ export function ServiceSchedulesTab({ asset, canEdit }) {
                     dangerouslySetInnerHTML={{ __html: s.description_html }}
                   />
                 )}
+                {/* v58.13.23 — Contract expiry traffic-light. Shown
+                    ONLY when `s.contract_expiry` is set. Green >30d
+                    away, amber 0–30d, rose past expiry. Date-math is
+                    calendar-days based on ISO string parsing (UTC
+                    midnight both sides — good enough for display;
+                    ±1-day tz drift is acceptable for a contract
+                    lifecycle badge). */}
+                {s.contract_expiry && (() => {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const exp = new Date(`${s.contract_expiry}T00:00:00`);
+                  const daysLeft = Math.round((exp - today) / 86400000);
+                  const expDisplay = exp.toLocaleDateString(undefined, {
+                    day: '2-digit', month: 'short', year: 'numeric',
+                  });
+                  let cls, label;
+                  if (daysLeft < 0) {
+                    cls = 'bg-rose-50 border-rose-200 text-rose-700';
+                    label = `CONTRACT EXPIRED ${Math.abs(daysLeft)} ${Math.abs(daysLeft) === 1 ? 'day' : 'days'} ago`;
+                  } else if (daysLeft <= 30) {
+                    cls = 'bg-amber-50 border-amber-200 text-amber-800';
+                    label = `Contract expires in ${daysLeft} ${daysLeft === 1 ? 'day' : 'days'}`;
+                  } else {
+                    cls = 'bg-emerald-50 border-emerald-200 text-emerald-700';
+                    label = `Contract active · expires ${expDisplay}`;
+                  }
+                  return (
+                    <div
+                      className={`mt-1.5 inline-flex items-center px-2 py-1 rounded-md border text-[10px] font-bold uppercase tracking-wider ${cls}`}
+                      data-testid={`schedule-contract-badge-${s.id}`}
+                      title={`Expiry: ${expDisplay}`}
+                    >
+                      {label}
+                    </div>
+                  );
+                })()}
               </div>
               {canEdit && (
                 <>
@@ -213,6 +249,13 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     assigned_to_worker_id: initial?.assigned_to_worker_id ?? '',
     assigned_to_worker_name: initial?.assigned_to_worker_name ?? '',
     notes: initial?.notes ?? '',
+    // v58.13.23 — Contract dates. All ISO YYYY-MM-DD strings from
+    // the native `<input type="date">`. Empty string sentinel is
+    // converted to null in the save payload below.
+    contract_cust_on: initial?.contract_cust_on ?? '',
+    contract_start:   initial?.contract_start   ?? '',
+    contract_review:  initial?.contract_review  ?? '',
+    contract_expiry:  initial?.contract_expiry  ?? '',
   }));
   // v58.13.0-a — Simpro-position dropdown for `assigned_to_position`.
   // Reuses the widened /workers/directory payload (v58.12.10) to
@@ -370,6 +413,13 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
         reminder_lead_hours: form.reminder_lead_hours === '' ? null : Number(form.reminder_lead_hours),
         reminder_lead_km: form.reminder_lead_km === '' ? null : Number(form.reminder_lead_km),
         last_done_value: form.last_done_value === '' ? null : Number(form.last_done_value),
+        // v58.13.23 — Contract dates: empty string → null so the
+        // backend gets None rather than "" (matches how other
+        // Optional[str] fields are cleared server-side).
+        contract_cust_on: form.contract_cust_on === '' ? null : form.contract_cust_on,
+        contract_start:   form.contract_start   === '' ? null : form.contract_start,
+        contract_review:  form.contract_review  === '' ? null : form.contract_review,
+        contract_expiry:  form.contract_expiry  === '' ? null : form.contract_expiry,
       };
       // Phase 3.5 — checkbox override: baseline this schedule on today's
       // current meter (or current date for calendar intervals).
@@ -750,6 +800,45 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
                     data-testid="sch-notes"
                     placeholder="Additional notes for this schedule (plain text)." />
+                </div>
+                {/* v58.13.23 — Contract Dates sub-header + 2×2 grid.
+                    Ordering (per approved Pass 1 plan): Cust On top-
+                    left · Start top-right · Review bottom-left ·
+                    Expiry bottom-right. All fields optional — legacy
+                    schedules render the grid blank. Traffic-light
+                    expiry badge lives in the tile preview, not here. */}
+                <div data-testid="sch-contract-dates">
+                  <label className="block text-xs font-semibold mb-1 text-slate-700">Contract Dates</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1 text-slate-500 uppercase tracking-wider">Cust On</label>
+                      <input type="date" value={form.contract_cust_on}
+                        onChange={(e) => setForm({ ...form, contract_cust_on: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs"
+                        data-testid="sch-contract-cust-on" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1 text-slate-500 uppercase tracking-wider">Start</label>
+                      <input type="date" value={form.contract_start}
+                        onChange={(e) => setForm({ ...form, contract_start: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs"
+                        data-testid="sch-contract-start" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1 text-slate-500 uppercase tracking-wider">Review</label>
+                      <input type="date" value={form.contract_review}
+                        onChange={(e) => setForm({ ...form, contract_review: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs"
+                        data-testid="sch-contract-review" />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-semibold mb-1 text-slate-500 uppercase tracking-wider">Expiry</label>
+                      <input type="date" value={form.contract_expiry}
+                        onChange={(e) => setForm({ ...form, contract_expiry: e.target.value })}
+                        className="w-full px-2 py-1.5 border border-slate-300 rounded-lg text-xs"
+                        data-testid="sch-contract-expiry" />
+                    </div>
+                  </div>
                 </div>
                 {/* v58.13.14 — Attachments (v58.13.11-b endpoint).
                     Only visible in edit mode; new-schedule staging
