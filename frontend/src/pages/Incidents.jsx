@@ -94,7 +94,11 @@ export default function IncidentsList() {
         {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
             `category` in the fixed CATS escalation order (near_miss →
             property). The status/category selects above still layer into
-            `preFiltered`, and CaptureListToolbar adds search on top. */}
+            `preFiltered`, and CaptureListToolbar adds search on top.
+            v58.12.9 — Tile bodies inherit the new CaptureCard-parity
+            visual language (rounded-lg, tight padding). The CATS
+            escalation banner palette stays via `groupPaletteOverrides`
+            — semantically stronger than a `preStartsPalette` map. */}
         <GroupedTilesView
           items={searchFiltered}
           groupBy={(i) => i.category || 'other'}

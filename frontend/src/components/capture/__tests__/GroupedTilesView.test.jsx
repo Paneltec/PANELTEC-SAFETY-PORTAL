@@ -80,4 +80,45 @@ describe('GroupedTilesView (v58.12.7)', () => {
     // Palette override for near_miss carries the amber classes
     expect(groups[0].className).toMatch(/border-amber-200/);
   });
+
+  // v58.12.9 — Hazard-parity tile visuals via `getStripeType`.
+  test('v58.12.9 getStripeType renders 4px absolute left stripe on every tile', () => {
+    const items = [
+      { id: 't1', tpl: 'Daily Pre-Start' },
+      { id: 't2', tpl: 'Daily Pre-Start' },
+    ];
+    render(<GroupedTilesView items={items} groupBy={(r) => r.tpl}
+      getStripeType={(r) => r.tpl}
+      renderTile={(r) => <span>{r.id}</span>} testidPrefix="ins" />);
+    const tile1 = screen.getByTestId('ins-tile-t1');
+    // Absolute-positioned 4px stripe present as an aria-hidden child.
+    const stripe = tile1.querySelector('[aria-hidden]');
+    expect(stripe).not.toBeNull();
+    expect(stripe.className).toMatch(/absolute/);
+    expect(stripe.className).toMatch(/w-1/);
+    // Inline backgroundColor set from paletteForType (Daily Pre-Start → amber #F59E0B).
+    expect(stripe.getAttribute('style')).toMatch(/background-color/i);
+    // Tile body itself carries the CaptureCard rounded-lg visual language.
+    expect(tile1.className).toMatch(/rounded-lg/);
+  });
+
+  test('v58.12.9 getStripeType tints group banner from first-card palette (inline styles)', () => {
+    const items = [
+      { id: 't1', tpl: 'Daily Pre-Start' },
+      { id: 't2', tpl: 'Daily Pre-Start' },
+    ];
+    render(<GroupedTilesView items={items} groupBy={(r) => r.tpl}
+      getStripeType={(r) => r.tpl}
+      renderTile={(r) => <span>{r.id}</span>} testidPrefix="ins" />);
+    const group = screen.getByTestId('ins-tile-group-Daily Pre-Start');
+    // Banner uses inline background-color + border-color from paletteForType,
+    // NOT the legacy Tailwind class palette (bg-blue-50 etc.).
+    const style = group.getAttribute('style') || '';
+    expect(style).toMatch(/background-color/i);
+    expect(style).toMatch(/border-color/i);
+    // Count chip also carries inline colours (Daily Pre-Start → amber chipBg/chipText).
+    const chip = screen.getByTestId('ins-tile-count-Daily Pre-Start');
+    expect(chip.getAttribute('style')).toMatch(/background-color/i);
+    expect(chip.textContent).toBe('2');
+  });
 });

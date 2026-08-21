@@ -1,6 +1,63 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.9 — Tile-format parity: Inspections + Incidents tiles
+// now adopt the Hazards `CaptureCard` visual language (rounded-lg,
+// tight padding, optional 4px absolute left stripe). User ask: bring
+// visual consistency to the Capture sections.
+//
+// CHANGED — components/capture/GroupedTilesView.jsx
+//   · New optional prop `getStripeType(record) → typeKey`. When
+//     provided:
+//       — Each tile renders an absolute 4px left stripe styled inline
+//         from `paletteForType(typeKey).hex` (shared
+//         `../../lib/preStartsPalette` — read-only import, no palette
+//         additions).
+//       — The group banner (background + border + dot + count chip)
+//         tints from `paletteForType(getStripeType(rows[0]))` — the
+//         first-card palette per user's approved brief.
+//   · `groupPaletteOverrides[key]` STILL wins for the banner
+//     (backward compat — Incidents' fixed CATS escalation ladder
+//     relies on this).
+//   · Tile body classes switch to `CaptureCard` visual language:
+//     `rounded-lg bg-white border border-slate-200 overflow-hidden
+//     hover:shadow-md hover:border-slate-300 transition-shadow` with
+//     `pl-2.5 pr-1.5 py-1.5` inner padding when a stripe is present;
+//     legacy `p-3` retained otherwise.
+//   · Grid density bumped `sm:2 / lg:3` → `sm:2 / lg:3 / xl:4`.
+//
+// CHANGED — pages/Inspections.jsx (1-line prop add)
+//   · Passes `getStripeType={(r) => r.template_name || ''}` so each
+//     inspection tile gets the family-coloured stripe + the group
+//     banner tints from the first-card template family.
+//
+// CHANGED — pages/Incidents.jsx (comment only — v58.12.9 decision (Y))
+//   · Existing `INCIDENT_CATEGORY_PALETTE` overrides remain the banner
+//     palette. `getStripeType` is intentionally NOT passed. Rationale:
+//     CATS is a fixed 6-key escalation ladder (near_miss → property)
+//     whose semantic meaning is carried by the current amber → rose →
+//     red → violet → emerald → slate ordering. Mapping through
+//     `preStartsPalette`'s template-name-scoped regex would either
+//     hash-map (loses ladder) or require a duplicate CATS→palette-key
+//     table (two sources of truth for one visual meaning). Tile bodies
+//     still inherit the new `rounded-lg` + tight-padding CaptureCard
+//     visual language via the shared `GroupedTilesView` rewrite.
+//
+// UNTOUCHED — PreStarts.jsx, Hazards.jsx, CaptureCard.jsx,
+// preStartsPalette.js, folderColors.js, all backend endpoints, any
+// record data.
+//
+// PRE/POST DB SNAPSHOT — expected identical (frontend-only ship):
+//   form_submissions_live=7690, workers_simpro_live=68,
+//   incidents_live=4, inspections_live=6, form_templates_live=96.
+//
+// TESTS — 2 jsdom tests added to
+// `components/capture/__tests__/GroupedTilesView.test.jsx`:
+//   · palette-derived banner tint (getStripeType → paletteForType hex);
+//   · per-tile absolute stripe present + width class match.
+// Cumulative repo test count remains green.
+
+
 // v160.3.9.58.12.7 — Tile-format standardisation for Inspection Reports
 // and Incident Reports. User ask: "could you change the Inspection
 // Reports and Incident Reports be displayed in the tile format, for
@@ -1308,7 +1365,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.7';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.9';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

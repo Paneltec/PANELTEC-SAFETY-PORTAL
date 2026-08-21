@@ -76,10 +76,13 @@ export default function InspectionsList() {
         {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
             `template_name`; sorts groups alphabetically; sorts rows
             within each group by `date` DESC. Toolbar filter above still
-            layers its result into `filtered` — the tile view reads that. */}
+            layers its result into `filtered` — the tile view reads that.
+            v58.12.9 — `getStripeType` drives Hazards-parity tile stripes
+            + first-card-tint group banners via `preStartsPalette`. */}
         <GroupedTilesView
           items={filtered}
           groupBy={(it) => it.template_name || 'Deleted template'}
+          getStripeType={(it) => it.template_name || ''}
           testidPrefix="inspection"
           dateFn={(it) => it.date || it.created_at || ''}
           emptyMessage="No matching inspections."

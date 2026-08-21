@@ -1272,7 +1272,7 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.12.7';
+const CACHE_VERSION = 'paneltec-v160.3.9.58.12.9';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
