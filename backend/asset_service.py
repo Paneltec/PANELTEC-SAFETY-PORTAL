@@ -437,6 +437,10 @@ class AppliesToIn(BaseModel):
     worker_ids: list[TargetWorker] = Field(default_factory=list)
     roles: list[TargetRole] = Field(default_factory=list)
     companies: list[TargetCompany] = Field(default_factory=list)
+    # v58.12.13 — Simpro-position gate. Sits as a top-level field on
+    # form_templates (NOT nested inside applies_to). Carried through
+    # this PUT payload for atomic saves alongside the other targets.
+    assigned_positions: list[str] = Field(default_factory=list)
     # When true, mute the email/SMS dispatcher for this save (admin opt-out).
     skip_notifications: bool = False
 
@@ -448,6 +452,8 @@ class BulkAssignmentEntry(BaseModel):
     worker_ids: list[TargetWorker] = Field(default_factory=list)
     roles: list[TargetRole] = Field(default_factory=list)
     companies: list[TargetCompany] = Field(default_factory=list)
+    # v58.12.13 — Bulk-save companion for the position gate.
+    assigned_positions: list[str] = Field(default_factory=list)
 
 
 class BulkAssignmentsIn(BaseModel):
@@ -464,7 +470,8 @@ async def list_assignments(user: dict = Depends(get_current_user)):
     rows = []
     async for t in db.form_templates.find(
         {"org_id": user["org_id"], "deleted_at": None},
-        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1, "applies_to": 1},
+        {"_id": 0, "id": 1, "name": 1, "description": 1, "category": 1,
+         "applies_to": 1, "assigned_positions": 1},
     ):
         rows.append({
             "id": t["id"], "name": t["name"],
@@ -474,6 +481,10 @@ async def list_assignments(user: dict = Depends(get_current_user)):
                 "kinds": [], "asset_types": [],
                 "worker_ids": [], "roles": [], "companies": [],
             },
+            # v58.12.13 — Top-level position gate. Legacy templates
+            # without the field return [] so the FE toggler treats them
+            # as ungated (matches the OR-gate semantic in list_templates).
+            "assigned_positions": t.get("assigned_positions") or [],
         })
     rows.sort(key=lambda r: (r["category"], r["name"].lower()))
 
@@ -509,12 +520,21 @@ async def list_assignments(user: dict = Depends(get_current_user)):
         })
     companies.sort(key=lambda c: c["company_label"].lower())
 
+    # v58.12.13 — Distinct Simpro positions currently active on workers.
+    # Same source of truth as the widened `/workers/directory` v58.12.10
+    # response. Blank strings are dropped (`.filter(Boolean)` on the FE
+    # already does this too, but belt-and-braces at the API edge).
+    positions = sorted({(p or "").strip() for p in await db.workers.distinct(
+        "position", {"org_id": user["org_id"], "source": "simpro",
+                     "deleted_at": None}) if p and p.strip()})
+
     return {
         "templates": rows,
         "asset_type_columns": columns,
         "roles": roles or ["admin", "manager", "hseq_lead", "foreman",
                            "operator", "driver", "worker"],
         "companies": companies,
+        "positions": positions,
     }
 
 
@@ -572,9 +592,14 @@ async def update_applies_to(template_id: str, body: AppliesToIn,
         raise HTTPException(404, "Template not found")
 
     next_applies = _serialise_applies_to(body, user)
+    # v58.12.13 — Whitespace-strip + dedupe + drop blanks. Same
+    # normalisation as `create_template` in forms.py.
+    next_positions = sorted({p.strip() for p in (body.assigned_positions or [])
+                             if p and p.strip()})
     await db.form_templates.update_one(
         {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
-        {"$set": {"applies_to": next_applies}},
+        {"$set": {"applies_to": next_applies,
+                  "assigned_positions": next_positions}},
     )
 
     # Phase 3.9c — fire email + SMS for newly-exposed workers.
@@ -615,9 +640,13 @@ async def bulk_save_assignments(body: BulkAssignmentsIn,
             continue
 
         next_applies = _serialise_applies_to(entry, user)
+        # v58.12.13 — Same normalisation as the single-template PUT.
+        next_positions = sorted({p.strip() for p in (entry.assigned_positions or [])
+                                 if p and p.strip()})
         await db.form_templates.update_one(
             {"id": entry.template_id, "org_id": user["org_id"], "deleted_at": None},
-            {"$set": {"applies_to": next_applies}},
+            {"$set": {"applies_to": next_applies,
+                      "assigned_positions": next_positions}},
         )
         saved += 1
         diff = await dispatch_diff(

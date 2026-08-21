@@ -1,6 +1,102 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.13 — Position-based form assignment (work-item v58.12.10).
+//
+// User ask: "could the form assignments be /Drug & Alcohol Test Record
+// have applied to roles from Simpro employee /workers list roles/position
+// get from this list and all other forms with the same option where needed."
+//
+// P-2 shape (per user's explicit brief): TOP-LEVEL `assigned_positions:
+// List[str] = []` on `form_templates`. NOT nested inside `applies_to`.
+// OR-gate with existing `role_form_allowlist` filter in
+// `forms.py::list_templates`: template is visible if caller's
+// `workers.position` ∈ `template.assigned_positions` OR the existing
+// role-based path admits them.
+//
+// SCHEMA — backend/forms.py
+//   · `TemplateIn.assigned_positions: list[str] = []` — POST create.
+//   · `TemplatePatch.assigned_positions: Optional[list[str]] = None`
+//     — PATCH clear/set/omit semantics via model_dump(exclude_unset).
+//   · `create_template()` persists `assigned_positions` on insert
+//     (whitespace-strip + drop blanks — same normalisation as
+//     `_clean_cert_slugs` uses for its slugs).
+//
+// SCHEMA — backend/asset_service.py
+//   · `AppliesToIn.assigned_positions: list[str] = []` — the payload
+//     wire shape FormAssignmentsAdmin sends via
+//     `PUT /form-templates/{id}/applies-to` and the bulk endpoint.
+//   · `BulkAssignmentEntry.assigned_positions: list[str] = []` — same
+//     for the bulk-save endpoint.
+//
+// FILTER — backend/forms.py::list_templates (~L419-448)
+//   · Widened worker lookup: joins `users.email` → `workers.email`
+//     projecting `position` when caller is a non-admin/owner. Non-Simpro
+//     admins bypass entirely via the existing
+//     `caller_role in {admin, owner}` short-circuit.
+//   · OR-gate list comprehension: `if r["id"] in allowed OR
+//     (caller_position and caller_position in
+//     (r.get("assigned_positions") or []))`.
+//   · Case-sensitive on position (matches Simpro's canonical
+//     capitalisation — we deliberately do not lowercase, so "Plumber"
+//     ≠ "plumber"; that's the roster's source of truth).
+//
+// ENDPOINTS — backend/asset_service.py
+//   · `list_assignments` (GET) — projection widened to include
+//     `assigned_positions`. Response gains a top-level `positions: []`
+//     — distinct Simpro-position values from the workers collection,
+//     source of truth for the FE toggler.
+//   · `update_applies_to` (PUT single) — extends the atomic $set to
+//     also write `assigned_positions` alongside `applies_to`. Whitespace-
+//     strip + dedupe + drop blanks. Notification dispatcher unchanged
+//     (positions are not on the notify path yet).
+//   · `bulk_save_assignments` (POST bulk) — same atomic $set.
+//
+// UX — frontend/src/pages/FormAssignmentsAdmin.jsx (primary surface)
+//   · New `positionOptions` state — seeded from `data.positions` on load.
+//   · Draft shape extended: `positions: Set<string>` per template. Seeded
+//     from `t.assigned_positions` on load.
+//   · `dirtyCount` extended to detect position changes.
+//   · `toggleType` / `toggleTarget` / `applyPreset` extended to safety-
+//     init `positions: new Set()` and preserve on kind-preset apply.
+//   · `appliesToPayload` extended to emit `assigned_positions:
+//     Array.from(v.positions)` — arrives at backend as expected.
+//   · `save` cheap-skip check extended to compare positions.
+//   · New "Applies to POSITIONS" section between Roles and Companies,
+//     rendering one `CheckChip` per distinct Simpro position with
+//     testid `chip-position-{name}`. Empty state:
+//     `positions-empty-hint`. HardHat icon (already imported).
+//
+// DEFERRED — TemplateBuilder.jsx mirror block
+//   · TemplateBuilder.jsx has NO existing applies_to / assignment UI —
+//     grep shows zero matches for `applies_to`, `roles`, `positions`,
+//     `assigned`. Adding a Positions section would mean inventing a
+//     whole new UX region (labels, save wiring, endpoint call, error
+//     state) — 30+ standalone LOC. Per the user's explicit hard limit
+//     ("TemplateBuilder.jsx UNLESS the mirror block sits cleanly"),
+//     this does not sit cleanly. ESCALATED and DEFERRED to a future
+//     v58.12.14-work-item if the user wants the mirror later.
+//
+// TESTS — backend
+//   · 8 pytests in `test_form_assignments_positions_v58_12_13.py`:
+//     - 4 schema round-trip tests (TemplateIn, TemplatePatch omit/set/
+//       clear, AppliesToIn defaults + accepts).
+//     - 4 OR-gate filter arithmetic tests (role-only, position-only,
+//       both-and-neither with case-sensitivity, non-Simpro-admin bypass).
+//
+// PRE/POST SNAPSHOT — expected identical (schema addition only, no
+// migration). Pre-ship baselines locked at: form_submissions_live =
+// 7,699 (organic +9 during v58.12.11+12 window — not from any ship) ·
+// workers_simpro_live = 68 · incidents_live = 4 · inspections_live = 6
+// · form_templates_live = 96 · templates_with_assigned_positions = 0.
+//
+// UNTOUCHED — TemplateBuilder.jsx (see DEFERRED above),
+// role_form_allowlist current shape (still active as first branch of
+// the OR-gate), any org doc, any template doc, any worker doc,
+// mobile beyond the version bump, bulk import job `0da9f903-…`
+// (auto_resume_count still 9, processing forward at organic pace).
+
+
 // v160.3.9.58.12.12 — Service Log Position-Primary redesign.
 //
 // User feedback on v58.12.10: "the log service record, we already
@@ -1569,7 +1665,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.12';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.13';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

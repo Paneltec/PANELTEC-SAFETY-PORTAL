@@ -69,7 +69,11 @@ export default function FormAssignmentsAdmin() {
   const [columns, setColumns] = useState({});
   const [roleOptions, setRoleOptions] = useState([]);
   const [companyOptions, setCompanyOptions] = useState([]);
-  const [draft, setDraft] = useState({});         // {tid: {kinds:Set, asset_types:Set, worker_ids:Set, roles:Set, companies:Set}}
+  // v58.12.13 — Simpro-position gate. Distinct positions surfaced by
+  // `GET /form-templates/assignments` from `workers.position` where
+  // `source=simpro` (v58.12.10 widening).
+  const [positionOptions, setPositionOptions] = useState([]);
+  const [draft, setDraft] = useState({});         // {tid: {kinds:Set, asset_types:Set, worker_ids:Set, roles:Set, companies:Set, positions:Set}}
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [multiOn, setMultiOn] = useState(false);
@@ -90,6 +94,9 @@ export default function FormAssignmentsAdmin() {
       setColumns(data.asset_type_columns || {});
       setRoleOptions(data.roles || []);
       setCompanyOptions(data.companies || []);
+      // v58.12.13 — Simpro positions from the widened `/workers/directory`
+      // source. Filtered to non-blank + sorted server-side.
+      setPositionOptions(data.positions || []);
       const next = {};
       (data.templates || []).forEach((t) => {
         const a = t.applies_to || {};
@@ -99,6 +106,9 @@ export default function FormAssignmentsAdmin() {
           worker_ids: new Set((a.worker_ids || []).map((w) => w.worker_id || w)),
           roles: new Set((a.roles || []).map((r) => (r.role || r).toLowerCase())),
           companies: new Set((a.companies || []).map((c) => String(c.simpro_company_id || c))),
+          // v58.12.13 — Top-level `assigned_positions` on the template
+          // doc (NOT nested inside applies_to). Seed from that field.
+          positions: new Set(t.assigned_positions || []),
         };
       });
       setDraft(next);
@@ -126,12 +136,15 @@ export default function FormAssignmentsAdmin() {
       const origWorkers = (orig.worker_ids || []).map((w) => w.worker_id || w);
       const origRoles = (orig.roles || []).map((r) => (r.role || r).toLowerCase());
       const origCompanies = (orig.companies || []).map((c) => String(c.simpro_company_id || c));
+      // v58.12.13 — Positions live at the top level, NOT inside applies_to.
+      const origPositions = t.assigned_positions || [];
       if (
         !eqSet(d.kinds, (orig.kinds || []))
         || !eqSet(d.asset_types, (orig.asset_types || []))
         || !eqSet(d.worker_ids, origWorkers)
         || !eqSet(d.roles, origRoles)
         || !eqSet(d.companies, origCompanies)
+        || !eqSet(d.positions, origPositions)
       ) n += 1;
     });
     return n;
@@ -169,7 +182,7 @@ export default function FormAssignmentsAdmin() {
       const next = { ...prev };
       const allOn = ids.every((id) => next[id]?.asset_types.has(at));
       ids.forEach((id) => {
-        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
+        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set(), positions: new Set() };
         const asset_types = new Set(d.asset_types);
         if (allOn) asset_types.delete(at); else asset_types.add(at);
         next[id] = { ...d, asset_types };
@@ -187,7 +200,7 @@ export default function FormAssignmentsAdmin() {
       const next = { ...prev };
       const allOn = ids.every((id) => next[id]?.[setName]?.has(value));
       ids.forEach((id) => {
-        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
+        const d = next[id] ?? { kinds: new Set(), asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set(), positions: new Set() };
         const s = new Set(d[setName]);
         if (allOn) s.delete(value); else s.add(value);
         next[id] = { ...d, [setName]: s };
@@ -233,11 +246,14 @@ export default function FormAssignmentsAdmin() {
     setDraft((prev) => {
       const next = { ...prev };
       ids.forEach((id) => {
-        const keep = next[id] || { worker_ids: new Set(), roles: new Set(), companies: new Set() };
-        if (preset === 'clear')        next[id] = { kinds: new Set(),                  asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set() };
-        else if (preset === 'any')     next[id] = { kinds: new Set(['any']),           asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
-        else if (preset === 'vehicle') next[id] = { kinds: new Set(['vehicle']),       asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
-        else if (preset === 'plant')   next[id] = { kinds: new Set(['plant']),         asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies };
+        const keep = next[id] || { worker_ids: new Set(), roles: new Set(), companies: new Set(), positions: new Set() };
+        // v58.12.13 — Position gate preserved across kind presets (it's
+        // orthogonal to the asset-kind axis; a "Plumber" gate on a
+        // vehicle-preset template still applies).
+        if (preset === 'clear')        next[id] = { kinds: new Set(),                  asset_types: new Set(), worker_ids: new Set(), roles: new Set(), companies: new Set(), positions: new Set() };
+        else if (preset === 'any')     next[id] = { kinds: new Set(['any']),           asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies, positions: keep.positions };
+        else if (preset === 'vehicle') next[id] = { kinds: new Set(['vehicle']),       asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies, positions: keep.positions };
+        else if (preset === 'plant')   next[id] = { kinds: new Set(['plant']),         asset_types: new Set(), worker_ids: keep.worker_ids, roles: keep.roles, companies: keep.companies, positions: keep.positions };
       });
       return next;
     });
@@ -252,6 +268,11 @@ export default function FormAssignmentsAdmin() {
     worker_ids: Array.from(v.worker_ids).map((w) => ({ worker_id: w })),
     roles: Array.from(v.roles).map((r) => ({ role: r })),
     companies: Array.from(v.companies).map((c) => ({ simpro_company_id: c })),
+    // v58.12.13 — Top-level position gate. Sent through the same
+    // bulk-save endpoint alongside the applies_to nested fields;
+    // the backend $sets `assigned_positions` at the top level in
+    // one atomic write.
+    assigned_positions: Array.from(v.positions || []),
   });
 
   // Actually persist; `skip_notifications` opts out of the email + SMS fanout.
@@ -292,6 +313,8 @@ export default function FormAssignmentsAdmin() {
           (orig?.worker_ids?.length || 0) === v.worker_ids.size
           && (orig?.roles?.length || 0) === v.roles.size
           && (orig?.companies?.length || 0) === v.companies.size
+          // v58.12.13 — Positions live at the top level, not in applies_to.
+          && (templates.find((t) => t.id === tid)?.assigned_positions?.length || 0) === v.positions.size
         );
         if (same) continue;
         const r = await api.post(`/form-templates/${tid}/preview-recipients`, appliesToPayload(v));
@@ -537,6 +560,30 @@ export default function FormAssignmentsAdmin() {
                         label={c.company_label}
                         hint={`#${c.simpro_company_id}`}
                         testid={`chip-company-${c.simpro_company_id}`} />
+                    ))}
+                  </div>
+                </section>
+
+                {/* v58.12.13 — Positions (Simpro-position gate). Distinct
+                    values sourced from the widened /workers/directory
+                    (v58.12.10). OR-gate with role_form_allowlist: caller
+                    sees this template if their `workers.position` is
+                    ticked here OR the existing role path admits them. */}
+                <section className="mt-6" data-testid="section-positions">
+                  <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2 inline-flex items-center gap-1.5"><HardHat size={11} /> Applies to POSITIONS</h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {positionOptions.length === 0 && (
+                      <span className="text-[11px] text-slate-400 italic" data-testid="positions-empty-hint">
+                        No Simpro positions on active workers.
+                      </span>
+                    )}
+                    {positionOptions.map((p) => (
+                      <CheckChip key={p}
+                        on={selDraft.positions.has(p)}
+                        onClick={() => toggleTarget('positions', p)}
+                        disabled={!canEdit}
+                        label={p}
+                        testid={`chip-position-${p}`} />
                     ))}
                   </div>
                 </section>

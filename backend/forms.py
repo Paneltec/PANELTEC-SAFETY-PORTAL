@@ -176,6 +176,12 @@ class TemplateIn(BaseModel):
     # calls `/access-check` before opening the fill screen and blocks
     # if the worker is missing or expired on any listed slug.
     required_certifications: list[str] = Field(default_factory=list)
+    # v58.12.13 — Simpro-position gating. When non-empty, the template
+    # is ADDITIONALLY visible to callers whose `workers.position` is in
+    # the list (OR-gate with the existing role_form_allowlist path in
+    # `list_templates`). Legacy templates default to `[]` and behave
+    # byte-identically.
+    assigned_positions: list[str] = Field(default_factory=list)
 
 
 class TemplatePatch(BaseModel):
@@ -186,6 +192,9 @@ class TemplatePatch(BaseModel):
     # v160.3.0 — Allow admins to add / remove cert gates without
     # re-uploading the whole template. Empty list = ungated.
     required_certifications: Optional[list[str]] = None
+    # v58.12.13 — See TemplateIn.assigned_positions. Explicit `None` on
+    # PATCH = leave unchanged; empty list = clear the gate.
+    assigned_positions: Optional[list[str]] = None
 
 
 class ImportPayload(BaseModel):
@@ -420,16 +429,31 @@ async def list_templates(category: Optional[str] = None,
     # templates enabled for their role in `org_settings.role_form_allowlist`.
     # Admins bypass entirely so they can curate for other roles. Missing
     # entry = backwards-compat "all enabled".
+    # v58.12.13 — Additive OR-gate: template ALSO admitted if the
+    # caller's `workers.position` is in `template.assigned_positions`.
+    # Non-Simpro admins bypass the gate (via `caller_role in
+    # {admin, owner}`) and never hit the position lookup.
     caller_role = (user.get("role") or "").lower()
     if caller_role not in ("admin", "owner") and not show_all:
         org = await db.orgs.find_one({"id": user["org_id"]}, {"_id": 0, "role_form_allowlist": 1}) or {}
         allowlist = ((org.get("role_form_allowlist") or {}).get(caller_role))
+        caller_position: Optional[str] = None
+        if user.get("email"):
+            _w = await db.workers.find_one(
+                {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+                {"_id": 0, "position": 1},
+            )
+            caller_position = ((_w or {}).get("position") or None) or None
         # Explicit `None` = no config yet = show all. Explicit list =
         # intersect. Empty list = the admin has hidden everything for
-        # this role → nothing to show.
+        # this role → position gate can still admit.
         if isinstance(allowlist, list):
             allowed = set(allowlist)
-            rows = [r for r in rows if r["id"] in allowed]
+            rows = [
+                r for r in rows
+                if r["id"] in allowed
+                or (caller_position and caller_position in (r.get("assigned_positions") or []))
+            ]
     ids = [r["id"] for r in rows]
     counts: dict = {}
     pipeline = [
@@ -619,6 +643,9 @@ async def create_template(body: TemplateIn, user: dict = Depends(get_current_use
         # v160.3.0 — Only accept slugs we know. Silently drops unknown
         # entries so a hand-crafted request can't poison the gate.
         "required_certifications": _clean_cert_slugs(body.required_certifications),
+        # v58.12.13 — Simpro-position gating. Whitespace-strip + drop
+        # blank entries (matches the FE `.filter(Boolean)` derivation).
+        "assigned_positions": [p.strip() for p in (body.assigned_positions or []) if p and p.strip()],
         "source": "manual", "imported_at": None,
         "created_by": user["id"],
         "created_at": now_iso(), "updated_at": now_iso(), "deleted_at": None,
