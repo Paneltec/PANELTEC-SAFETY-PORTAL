@@ -1,6 +1,74 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.16 — Orphan schedule-attachment blob cleanup.
+//
+// Closes the E2 finding from v58.13.14: `DELETE /assets/{aid}
+// /schedules/{sid}` soft-deleted the schedule doc but left the
+// attachment blob directory on disk indefinitely — the exact
+// orphaned-blob leak the v58.13.14 brief called out to avoid.
+//
+// Files touched (backend + tests only, no FE code):
+//   · `backend/asset_service.py` — `delete_schedule` handler now
+//     `shutil.rmtree(SCHEDULE_ATTACHMENT_ROOT / sid,
+//     ignore_errors=True)` immediately after the soft-delete
+//     $set. Idempotent (missing dir is a no-op). rmtree exception
+//     path logs `log.exception(...)` rather than silently
+//     orphaning, matching the v58.13.14 delete-attachment
+//     endpoint's error behaviour.
+//   · `backend/scripts/cleanup_orphan_schedule_attachments_v58_13_16.py`
+//     — new one-shot script. Scans SCHEDULE_ATTACHMENT_ROOT/*,
+//     categorises each sid directory as (kept | soft-deleted |
+//     missing), rmtrees the last two categories, prints a summary
+//     line. Idempotent — safe to re-run. Left in place under
+//     `backend/scripts/` for future manual invocation if a fork
+//     ever needs it.
+//   · `tests/backend_unit/test_schedule_delete_cascade_v58_13_16.py`
+//     — 4 integration pytests. Cascade fires, cascade is
+//     idempotent, attachment-DELETE alone does NOT cascade
+//     (v58.13.14 remains an attachment-scoped operation), empty
+//     schedule delete doesn't crash.
+//
+// Explicit design choice — Option (a) hard-delete cascade,
+// NOT Option (b) background sweeper:
+//   · The schedule's soft-delete window exists for the DB doc
+//     (reviewer notes, audit trail, undelete UI if it ever gets
+//     built). Attachment blobs have no recovery path — there's no
+//     "restore trashed schedule" UI, and the file bytes aren't
+//     usable without the doc's metadata. Sweeper would add a
+//     background job + telemetry + reconciliation surface for
+//     zero real recovery value.
+//   · Consistent with v58.13.14 attachment-DELETE endpoint which
+//     also hard-deletes the disk blob.
+//   · If a fork EVER decides to build "restore trashed schedule",
+//     they can flip this to `soft_delete_blob` easily (rename dir
+//     to `sid.trashed`, unrename on restore). One-line change.
+//
+// One-shot cleanup script output (this ship):
+//   [v58.13.16] scanning 22 sid directories under
+//     /app/backend/uploads/schedule_attachments
+//   [v58.13.16] done.
+//     kept=0
+//     deleted_soft_deleted=2   (v58.13.14 pytest scratch schedules)
+//     deleted_missing=20       (v58.13.14 pytest scratch schedules
+//                               whose asset was deleted, taking the
+//                               schedule row with it)
+//     skipped_error=0
+//   All 22 legacy test-scratch directories cleaned.
+//
+// Observed drain time on this ship's reload: TBD (recorded below).
+//
+// Guardrail hold:
+//   · SCHEDULE_ATTACHMENT_ROOT path + storage layout UNCHANGED.
+//   · v58.13.14 attachment-DELETE endpoint UNTOUCHED (still
+//     scoped to a single stored_name, still leaves the sid dir).
+//   · bulk_import, form_submissions, watchdog, auto-resume — all
+//     untouched.
+//   · v58.13.17 AroFlo cron + CsIncidentTab.jsx orphan file —
+//     still deferred.
+//   · v58.13.13 version-sync guardrail: PASS.
+
+
 // v160.3.9.58.13.15 — Shutdown-drain fix + hot-loop yield insurance.
 //
 // Ships THIS turn:
@@ -2166,7 +2234,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.15';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.16';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -6,6 +6,7 @@ scanner that fans out via the existing M365 + TextMagic plumbing.
 """
 from __future__ import annotations
 import logging
+import shutil
 import uuid
 import bleach  # v58.13.0-a — server-side rich-text sanitiser (already in requirements)
 from datetime import datetime, timedelta, timezone
@@ -934,6 +935,25 @@ async def delete_schedule(asset_id: str, sid: str, user: dict = Depends(get_curr
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Schedule not found")
+    # v58.13.16 — Cascade hard-delete the attachment blob directory.
+    # Soft-deleting the schedule doc is fine for recoverability, but
+    # attachment blobs on disk have no recovery path (there's no
+    # "restore trashed schedule" UI), so leaving them accumulates
+    # orphaned files indefinitely. Idempotent: `ignore_errors=True`
+    # covers the case where the dir was never created (no
+    # attachments uploaded) or already removed by a previous call.
+    sid_dir = SCHEDULE_ATTACHMENT_ROOT / sid
+    if sid_dir.exists():
+        try:
+            shutil.rmtree(sid_dir, ignore_errors=True)
+        except OSError as e:
+            # rmtree with ignore_errors=True doesn't raise, but a
+            # subprocess / permissions edge could theoretically slip
+            # through. Surface loudly rather than silently orphaning.
+            log.exception(
+                "v58.13.16 cascade delete: sid_dir rmtree failed sid=%s "
+                "err=%s", sid, e,
+            )
     return None
 
 
