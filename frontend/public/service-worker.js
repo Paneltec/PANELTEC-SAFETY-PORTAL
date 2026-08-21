@@ -1271,7 +1271,8 @@
 // v160.3.9.58.12.0 — BYDA form: reference_matrix + attachment +
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.12.0';
+// v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.12.1';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

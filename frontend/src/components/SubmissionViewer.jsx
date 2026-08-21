@@ -40,6 +40,20 @@ function FieldRow({ field }) {
 
 function FieldValue({ field }) {
   const { value, type } = field;
+  // v58.12.1 — reference_matrix has no `value` (template-embedded);
+  // render the matrix using the field's config regardless of value.
+  if (type === 'reference_matrix') {
+    const { ReferenceMatrixField } = require('./forms/BydaFields');
+    return <ReferenceMatrixField field={field} />;
+  }
+  if (type === 'attachment') {
+    const { AttachmentField } = require('./forms/BydaFields');
+    return <AttachmentField field={field} value={value} />;
+  }
+  if (type === 'actions') {
+    const { ActionsField } = require('./forms/BydaFields');
+    return <ActionsField field={field} value={value} readOnly />;
+  }
   if (value == null || value === '') {
     return <div className="text-sm text-slate-400 italic">—</div>;
   }

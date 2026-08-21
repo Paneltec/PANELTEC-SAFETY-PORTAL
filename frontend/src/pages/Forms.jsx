@@ -372,6 +372,18 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
 }
 
 export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues }) {
+  if (field.type === 'reference_matrix') {
+    const { ReferenceMatrixField } = require('../components/forms/BydaFields');
+    return <ReferenceMatrixField field={field} />;
+  }
+  if (field.type === 'attachment') {
+    const { AttachmentField } = require('../components/forms/BydaFields');
+    return <AttachmentField field={field} value={value} />;
+  }
+  if (field.type === 'actions') {
+    const { ActionsField } = require('../components/forms/BydaFields');
+    return <ActionsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
+  }
   if (field.type === 'photo') return <PhotoField field={field} files={photoFiles} onChange={onPhotoChange} readOnly={readOnly} />;
   if (field.type === 'signature') return <SignatureField field={field} value={value} onChange={onChange} readOnly={readOnly} />;
   if (field.type === 'gps') return <GpsField field={field} value={value} onChange={onChange} readOnly={readOnly} />;

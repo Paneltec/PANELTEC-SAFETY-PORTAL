@@ -1010,7 +1010,25 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.0';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.1';
+
+// v160.3.9.58.12.1 — BYDA frontend renderers.
+//   New file `components/forms/BydaFields.jsx` exports
+//   `ReferenceMatrixField`, `AttachmentField`, `ActionsField`.
+//   Wired into `Forms.FieldRunner` (fill mode) + `SubmissionViewer`
+//   (read-only mode). Matrix renders banded (Gas + Water highlighted
+//   yellow); Actions renders as an editable table with the v58.11.2
+//   worker directory dropdown + off-roster contractor toggle +
+//   Closed→date_closed inline validation. AttachmentField renders
+//   server-uploaded rows as download links; the fill-mode upload
+//   flow (multipart POST to /forms/submissions/{id}/attachments) is
+//   PARKED for v58.12.2 — needs post-submit orchestration in the
+//   shared FormRunner that we're deliberately not touching in this
+//   ship. TemplateBuilder JSON editors for the 3 new types also
+//   parked (per hard-limit fallback: "downgrade to read-only if
+//   fiddly") — admins introduce these fields via the seed script or
+//   direct POST /forms/templates in v58.12.1.
+
 
 // v160.3.9.58.12.0 — BYDA / Utility Awareness form.
 //   Backend adds 3 field types to ALLOWED_FIELD_TYPES:
