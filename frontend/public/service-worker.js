@@ -1265,7 +1265,10 @@
 // v160.3.9.58.11.1 — Daily Pre-Starts fetch retry + error card.
 //                    SW CACHE_VERSION bumped so any client whose SW
 //                    cached the empty 502 response flushes on load.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.11.1';
+// v160.3.9.58.11.2 — Log Service technician picker (Simpro roster).
+//                    Backend-only + minor RecordEditor UI addition;
+//                    SW bumped so pickers ship without stale bundles.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.11.2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

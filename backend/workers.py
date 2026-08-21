@@ -233,6 +233,50 @@ async def list_workers(
     return [_serialise_thin(r) for r in rows]
 
 
+# v160.3.9.58.11.2 — Thin worker directory for form pickers.
+#
+# The "Log Service" modal (`AssetServiceTabs.RecordEditor`) used a
+# free-text `<input>` for the Technician field. Users asked to pick
+# from the Simpro-imported employee list instead. The existing
+# `GET /api/workers` gate is `workers.view` (admin/HSEQ/supervisor
+# only for the full directory) — too tight for a form dropdown that
+# techs themselves need. This companion endpoint returns a THIN
+# projection (id, first_name, last_name, name, simpro_employee_id,
+# active) for use in pickers, gated on `get_current_user` to match
+# the caller-authenticator on `POST /assets/{id}/records` (the
+# actual "Log service" write endpoint uses `get_current_user`, not
+# a permission — the directory read must not be TIGHTER than the
+# write). Same org scoping as everything else in `workers.py`.
+@router.get("/directory")
+async def workers_directory(
+    active: Optional[bool] = None,
+    source: Optional[str] = None,
+    limit: int = 500,
+    user: dict = Depends(get_current_user),
+):
+    q: dict = {"org_id": user["org_id"], "deleted_at": None}
+    if active is not None:
+        q["active"] = active
+    if source:
+        q["source"] = source
+    cursor = db.workers.find(
+        q,
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
+         "simpro_employee_id": 1, "active": 1},
+    ).collation({"locale": "en", "strength": 2}).sort(
+        [("first_name", 1), ("last_name", 1)],
+    )
+    rows = await cursor.to_list(min(limit, 500))
+    return [{
+        "id": r.get("id"),
+        "first_name": r.get("first_name") or "",
+        "last_name": r.get("last_name") or "",
+        "name": (f"{r.get('first_name') or ''} {r.get('last_name') or ''}").strip(),
+        "simpro_employee_id": r.get("simpro_employee_id"),
+        "active": bool(r.get("active", True)),
+    } for r in rows]
+
+
 @router.get("/{worker_id}")
 async def get_worker(worker_id: str, user: dict = Depends(get_current_user)):
     # v160.2.2 — Single-worker read for the Web admin's eye-icon

@@ -139,6 +139,7 @@ class RecordIn(BaseModel):
     cost: Optional[float] = None
     currency: str = "AUD"
     technician_name: Optional[str] = None
+    technician_id: Optional[str] = None
     technician_signature_file_id: Optional[str] = None
     invoice_file_id: Optional[str] = None
     photo_file_ids: list[str] = Field(default_factory=list)
@@ -153,6 +154,7 @@ class RecordPatch(BaseModel):
     km_at: Optional[float] = None
     cost: Optional[float] = None
     technician_name: Optional[str] = None
+    technician_id: Optional[str] = None
     defect_severity: Optional[DefectSeverity] = None
     photo_file_ids: Optional[list[str]] = None
     notes: Optional[str] = Field(default=None, max_length=4000)
@@ -864,7 +866,7 @@ async def update_record(asset_id: str, rid: str, body: RecordPatch,
     )
     if not existing:
         raise HTTPException(404, "Record not found")
-    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {"description", "technician_name", "cost", "hours_at", "km_at", "notes"}}
+    payload = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None or k in {"description", "technician_name", "technician_id", "cost", "hours_at", "km_at", "notes"}}
     # `type` is immutable post-creation.
     payload.pop("type", None)
 

@@ -395,9 +395,81 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
     km_at: initial?.km_at != null ? String(initial.km_at) : '',
     cost: initial?.cost != null ? String(initial.cost) : '',
     technician_name: initial?.technician_name ?? '',
+    technician_id: initial?.technician_id ?? '',
     defect_severity: initial?.defect_severity ?? 'minor',
   });
   const [saving, setSaving] = useState(false);
+  // v160.3.9.58.11.2 — Simpro-employee dropdown for the Technician
+  // field. Fetches once on mount from the new
+  // `GET /api/workers/directory?active=true&source=simpro` endpoint
+  // (thin projection, `service_records.edit`-gated). Two UI modes:
+  //   · `mode="picker"` — native `<select>` sourced from Simpro.
+  //     Default for new records. If an edited legacy record's
+  //     `technician_name` doesn't match any dropdown option, we
+  //     start in `mode="freetext"` so the value renders and can be
+  //     preserved without forcing the user to overwrite it.
+  //   · `mode="freetext"` — the pre-v58.11.2 `<input>`. Reachable
+  //     from the picker via the "— Type manually —" sentinel option
+  //     (contractors, one-off techs, employees not yet synced).
+  const [techs, setTechs] = useState([]);
+  const [techsLoaded, setTechsLoaded] = useState(false);
+  const [techMode, setTechMode] = useState('picker');
+  useEffect(() => {
+    if (kind !== 'service') return;
+    let cancelled = false;
+    api.get('/workers/directory', {
+      params: { active: true, source: 'simpro' },
+    }).then((r) => {
+      if (cancelled) return;
+      const list = Array.isArray(r.data) ? r.data : [];
+      setTechs(list);
+      setTechsLoaded(true);
+      // Decide initial mode once we have the list. Legacy records
+      // that don't match any option start in freetext to preserve
+      // the string.
+      if (initial?.technician_id && list.some((t) => t.id === initial.technician_id)) {
+        setTechMode('picker');
+      } else if (initial?.technician_name && !list.some((t) => t.name === initial.technician_name)) {
+        setTechMode('freetext');
+      } else {
+        setTechMode('picker');
+      }
+    }).catch(() => {
+      if (cancelled) return;
+      // Endpoint unreachable → fall back to freetext so the user is
+      // never blocked from logging a service.
+      setTechs([]);
+      setTechsLoaded(true);
+      setTechMode('freetext');
+    });
+    return () => { cancelled = true; };
+  }, [kind, initial]);
+
+  const onPickTech = (value) => {
+    if (value === '__manual__') {
+      // Preserve the currently-picked name if any so the user can
+      // edit rather than retype from scratch.
+      setTechMode('freetext');
+      setForm((f) => ({ ...f, technician_id: '' }));
+      return;
+    }
+    if (!value) {
+      setForm((f) => ({ ...f, technician_id: '', technician_name: '' }));
+      return;
+    }
+    const chosen = techs.find((t) => t.id === value);
+    if (chosen) {
+      setForm((f) => ({
+        ...f,
+        technician_id: chosen.id,
+        technician_name: chosen.name,
+      }));
+    }
+  };
+  const backToPicker = () => {
+    setTechMode('picker');
+  };
+
   const submit = async () => {
     setSaving(true);
     try {
@@ -408,6 +480,7 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
         km_at: form.km_at === '' ? null : Number(form.km_at),
         cost: form.cost === '' ? null : Number(form.cost),
         technician_name: form.technician_name || null,
+        technician_id: form.technician_id || null,
       };
       if (kind === 'defect') payload.defect_severity = form.defect_severity;
       if (isEdit) {
@@ -475,7 +548,43 @@ function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold mb-1">Technician</label>
-                <input value={form.technician_name} onChange={(e) => setForm({ ...form, technician_name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg" data-testid="rec-tech" />
+                {techMode === 'picker' ? (
+                  <select
+                    value={form.technician_id || ''}
+                    onChange={(e) => onPickTech(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                    data-testid="rec-tech-select"
+                    disabled={!techsLoaded}
+                  >
+                    <option value="">— Select technician —</option>
+                    {techs.map((t) => (
+                      <option key={t.id} value={t.id} data-testid={`rec-tech-opt-${t.id}`}>
+                        {t.simpro_employee_id
+                          ? `${t.name} · #${t.simpro_employee_id}`
+                          : t.name}
+                      </option>
+                    ))}
+                    <option value="__manual__">— Type manually —</option>
+                  </select>
+                ) : (
+                  <div className="flex gap-2 items-center">
+                    <input
+                      value={form.technician_name}
+                      onChange={(e) => setForm({ ...form, technician_name: e.target.value, technician_id: '' })}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg"
+                      data-testid="rec-tech"
+                      placeholder="Contractor or unlisted technician"
+                    />
+                    <button
+                      type="button"
+                      onClick={backToPicker}
+                      className="text-[11px] text-slate-500 hover:text-slate-900 underline whitespace-nowrap"
+                      data-testid="rec-tech-back-to-picker"
+                    >
+                      Pick from list
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}

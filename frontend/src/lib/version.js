@@ -1010,7 +1010,24 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.2';
+
+// v160.3.9.58.11.2 — Log Service · Simpro-employee technician picker.
+//   Backend adds `GET /api/workers/directory?active=true&source=simpro`
+//   (thin id/first_name/last_name/name/simpro_employee_id/active
+//   projection, org-scoped, alpha-sorted case-insensitive), gated on
+//   `service_records.edit`. Existing `/api/workers` gate unchanged.
+//   `ServiceRecordCreate`/`RecordPatch` grow an optional
+//   `technician_id` companion to the frozen-string `technician_name`
+//   (both persisted so a Simpro deactivation doesn't wipe history).
+//   `AssetServiceTabs.RecordEditor` renders a native `<select>` with
+//   the Simpro roster; a "— Type manually —" sentinel falls back to
+//   the pre-existing free-text `<input>` for contractors / not-yet-
+//   synced employees. Legacy records whose `technician_name` doesn't
+//   match any option auto-open in freetext mode with the string
+//   preserved. No touch on `/api/workers` behaviour, no writes to the
+//   `workers` collection.
+
 
 // v160.3.9.58.11.1 — Daily Pre-Starts fetch resilience. On-mount
 //   fetch now catches network / 5xx errors, auto-retries at 3s and
