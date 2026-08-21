@@ -1,6 +1,48 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.3 — Portal every full-screen modal in Forms.jsx to
+// document.body. Fixes user report "the header of the program is
+// cutting off the top of this form" on TTM Risk Assessment (and
+// silently every other template — TTM was the loudest example).
+//
+// Root cause (empirical, DOM-diagnosed via Playwright):
+//   · FillOutModal is `fixed inset-0 z-50` INSIDE the AppShell content
+//     column `<div className="flex-1 flex flex-col min-w-0 relative
+//     z-40">`. The TopBar is a sibling of the modal inside that same
+//     z-40 stacking context — `sticky top-0 z-30`. Per CSS z-index
+//     rules the modal (50) SHOULD paint above the topbar (30). But
+//     `elementsFromPoint(720, 32)` (topbar centre) with the modal open
+//     returned the topbar SPAN and its parent BUTTON + HEADER (z=30)
+//     AS TOPMOST, with the modal backdrop (z=50) BELOW. This is the
+//     "stacking context escape" the AppShell.jsx L522 comment
+//     explicitly acknowledges: "Bumping the modal's z-index to 100 /
+//     9999 did NOT help". AppShell.jsx itself recommends the fix at
+//     L523: "Portaling the modal to `document.body` DID fix it."
+//
+// Fix — portal ALL FIVE full-screen modals declared in Forms.jsx:
+//   1. `FillOutModal`          testid `form-fillout-modal`   (L~756)
+//   2. `PreviewModal`          testid `form-preview-modal`   (L~910)
+//   3. `ImportModal`           testid `forms-import-modal`   (L~989)
+//   4. `AiBuilderModal`        testid `ai-builder-modal`     (L~1037)
+//   5. `SubmissionViewModal`   testid `submission-view-modal` (L~1592)
+// Every one has a full-screen backdrop + centred card + close-X + esc
+// handling — no popovers or anchor-positioned tooltips in scope.
+//
+// The nested `discard-confirm-dialog` inside FillOutModal (z-[60]) is
+// intentionally NOT portalled separately — it moves with its parent.
+//
+// Precedent for the pattern: SubmissionViewer.jsx L162 already portals
+// via `createPortal(<div ...>, document.body)`. UsersManagement.jsx
+// portals in three places (L1626, L1984, L2487). No new pattern.
+//
+// Explicitly NOT touched:
+//   · AppShell.jsx (header component) — global change territory.
+//   · Any modal's z-index (empirically doesn't fix it).
+//   · Any other file — Forms.jsx is the whole diff.
+
+
+
 // v160.3.9.58.12.2 — BYDA v2, ship 2/3 (user-facing critical).
 //   Close-out of the pieces the previous session deferred out of
 //   v58.12.1. Split from the original spec — the TemplateBuilder
@@ -1078,7 +1120,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.2';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.3';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

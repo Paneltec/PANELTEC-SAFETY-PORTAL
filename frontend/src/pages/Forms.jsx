@@ -3,6 +3,12 @@
 // icons + Preview/Fill buttons, AI-builder modal, redesigned Fill-Out modal
 // with coloured Yes/No/N-A radios + orange Submit, and Preview modal.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+// v58.12.3 — every modal in this file portals to document.body to escape
+// the AppShell content-column's `relative z-40` stacking context. Without
+// this, the sticky topbar (z-30) is painted above the modal backdrop
+// (z-50) in Chromium — see /tmp/ttm_r1_fill.png + elementsFromPoint proof.
+// Precedent: SubmissionViewer.jsx L162, UsersManagement.jsx L1626/1984/2487.
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import SignatureCanvas from 'react-signature-canvas';
 // v160.3.7k — Inoculation sweep: lock body scroll while any Forms modal
@@ -747,7 +753,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     if (dirty) setConfirmClose(true); else onClose();
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={handleBackdropClick}
       data-testid="form-fillout-modal">
@@ -893,7 +899,8 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
           </div>
         </div>
       )}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -901,7 +908,7 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
 
 function PreviewModal({ template, onClose, onFill }) {
   useLockBodyScroll();
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="form-preview-modal">
@@ -948,7 +955,8 @@ function PreviewModal({ template, onClose, onFill }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -979,7 +987,7 @@ function ImportModal({ onClose, onImported }) {
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="forms-import-modal">
@@ -1007,7 +1015,8 @@ function ImportModal({ onClose, onImported }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1027,7 +1036,7 @@ function AiBuilderModal({ onClose, onCreated }) {
     } catch (e) { toast.error(apiError(e)); }
     finally { setBusy(false); }
   };
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && !busy && onClose()}
       data-testid="ai-builder-modal">
@@ -1060,7 +1069,8 @@ function AiBuilderModal({ onClose, onCreated }) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1582,7 +1592,7 @@ export function SubmissionViewModal({ submissionId, onClose }) {
     return lbl || raw;
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
       data-testid="submission-view-modal">
@@ -1623,6 +1633,7 @@ export function SubmissionViewModal({ submissionId, onClose }) {
             ))}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
