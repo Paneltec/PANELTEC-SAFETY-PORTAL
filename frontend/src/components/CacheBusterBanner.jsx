@@ -1,17 +1,31 @@
 // Paneltec Civil · v154.3 — CacheBusterBanner.
 // v160.3.6w — Option B: toned-down update-available toast.
-//
+// v58.13.24 — Stickier UX pass. Rebalances "don't nag admins" with
+// "don't let users miss it entirely". Changes:
+//   · AUTO_HIDE_MS 8s → 30s (3.75× more window to notice).
+//   · Version-scoped localStorage dismiss so a "Dismiss" click for
+//     server v58.13.24 does NOT suppress the toast for v58.13.25 —
+//     each new server version gets its own fresh signal.
+//   · Explicit **Dismiss** (was "Later") and **Reload now** (was
+//     "Reload") buttons with `e.stopPropagation()` +
+//     `e.preventDefault()` per v58.13.10 flash-bug guardrail.
+//   · Subtle 5-second pulse ring when the toast first appears so
+//     peripheral vision picks it up.
 // Detects when the browser bundle version differs from the server's
-// `/api/health/version`. Instead of a sticky brown top-of-page banner
-// this now renders as a small, soft-slate toast at the BOTTOM-RIGHT with:
-//   • Auto-hide after 8 s (session dismissal survives the auto-hide too)
-//   • Compact "Reload" button + subtle "Later" link
-//   • Keeps the full hard-reload path (unregister SW + clear caches + reload)
+// `/api/health/version`.
+//   · Auto-hide after AUTO_HIDE_MS (unless the user dismisses first).
+//   · Compact "Reload now" button + "Dismiss" button — no more
+//     scrunched-together "Later" link.
+//   · Version-scoped `paneltec_cachebust_dismissed_${serverVersion}`
+//     localStorage key survives page reloads: if the user chose
+//     Dismiss for that specific server version we won't nag again.
+//     Bumps automatically when the next ship lands.
+//   · Keeps the full hard-reload path (unregister SW + clear caches +
+//     reload) for the "Reload now" button.
 //
-// Rationale: we deploy many patch versions per day so the old brown
-// banner was constantly nagging admins. The auto-reload path (SW poll +
-// SKIP_WAITING + controllerchange listener) handles 99 % of updates
-// silently — this toast is now purely the safety net for edge cases.
+// Rationale: many patch versions per day, but the toast is the
+// safety net for edge cases where the SW SKIP_WAITING /
+// controllerchange auto-reload didn't fire.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, X as XIcon } from 'lucide-react';
@@ -20,16 +34,41 @@ import { RUNNING_VERSION } from '../lib/version';
 const HEALTH_URL = (process.env.REACT_APP_BACKEND_URL || '') + '/api/health/version';
 const POLL_MS = 5 * 60 * 1000;         // 5 minutes
 const BOOT_GRACE_MS = 30_000;          // suppress for first 30 s after mount
-const AUTO_HIDE_MS = 8_000;            // v6w — soft auto-dismiss after 8 s
+// v58.13.24 — bumped from 8_000 to 30_000. The old 8s window meant
+// users could easily glance away and miss it. 30s is still short of
+// "nag" territory but gives ~4x the peripheral-vision window.
+const AUTO_HIDE_MS = 30_000;
+// v58.13.24 — pulse the toast for the first 5 s on appear so the
+// eye actually catches the movement.
+const PULSE_MS = 5_000;
+
+// v58.13.24 — Version-scoped dismiss. Reading and writing here is
+// wrapped in try/catch because Safari private mode / iframes can
+// throw on localStorage access.
+const DISMISS_KEY_PREFIX = 'paneltec_cachebust_dismissed_';
+function readDismissed(version) {
+  if (!version) return false;
+  try {
+    return localStorage.getItem(DISMISS_KEY_PREFIX + version) === '1';
+  } catch { return false; }
+}
+function writeDismissed(version) {
+  if (!version) return;
+  try {
+    localStorage.setItem(DISMISS_KEY_PREFIX + version, '1');
+  } catch { /* noop */ }
+}
 
 export default function CacheBusterBanner() {
   const [serverVersion, setServerVersion] = useState(null);
   const [dismissed, setDismissed] = useState(false);
   const [autoHidden, setAutoHidden] = useState(false);
+  const [pulsing, setPulsing] = useState(false);
   const [reloading, setReloading] = useState(false);
   const [ready, setReady] = useState(false);
   const bootTsRef = useRef(Date.now());
   const autoHideTimerRef = useRef(null);
+  const pulseTimerRef = useRef(null);
 
   const check = useCallback(async () => {
     try {
@@ -67,30 +106,53 @@ export default function CacheBusterBanner() {
       if (iv) clearInterval(iv);
       clearTimeout(t);
       if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
     };
   }, [check]);
+
+  // v58.13.24 — Reset session-dismiss when the server version
+  // changes (so a Dismiss for the OLD server version doesn't
+  // suppress the toast for a NEW server version). Belt-and-braces
+  // alongside the version-scoped localStorage key.
+  useEffect(() => { setDismissed(false); }, [serverVersion]);
+
+  // v58.13.24 — Version-scoped persistent dismiss check.
+  const persistentlyDismissed = readDismissed(serverVersion);
 
   const mismatched = ready
     && serverVersion
     && serverVersion !== RUNNING_VERSION
     && !dismissed
+    && !persistentlyDismissed
     && (Date.now() - bootTsRef.current) >= BOOT_GRACE_MS;
 
-  // v6w — kick off the auto-hide timer the first time the mismatch is
-  // detected. If the server version changes again later we reset it.
+  // Kick off the auto-hide + pulse timers the first time the
+  // mismatch is detected. Reset when serverVersion changes.
   useEffect(() => {
     if (!mismatched) return;
     setAutoHidden(false);
+    setPulsing(true);
     if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
     autoHideTimerRef.current = setTimeout(() => setAutoHidden(true), AUTO_HIDE_MS);
+    pulseTimerRef.current = setTimeout(() => setPulsing(false), PULSE_MS);
     return () => {
       if (autoHideTimerRef.current) clearTimeout(autoHideTimerRef.current);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
     };
   }, [mismatched, serverVersion]);
 
   if (!mismatched || autoHidden) return null;
 
-  const forceReload = async () => {
+  const dismiss = (e) => {
+    // v58.13.10 flash-bug guardrail on both button handlers.
+    e?.stopPropagation?.(); e?.preventDefault?.();
+    writeDismissed(serverVersion);
+    setDismissed(true);
+  };
+
+  const forceReload = async (e) => {
+    e?.stopPropagation?.(); e?.preventDefault?.();
     setReloading(true);
     try {
       if (navigator?.serviceWorker?.getRegistrations) {
@@ -116,10 +178,10 @@ export default function CacheBusterBanner() {
       role="status"
       aria-live="polite"
       data-testid="cache-buster-banner"
-      className="fixed bottom-4 right-4 z-[100] max-w-sm animate-[fadeInUp_0.25s_ease-out]"
+      className={`fixed bottom-4 right-4 z-[100] max-w-sm animate-[fadeInUp_0.25s_ease-out] ${pulsing ? 'animate-[pulseRing_1.2s_ease-in-out_infinite]' : ''}`}
     >
       <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white shadow-lg px-4 py-3">
-        <div className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-slate-100 text-slate-500 shrink-0">
+        <div className="mt-0.5 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-blue-100 text-blue-600 shrink-0">
           <RefreshCw size={14} />
         </div>
         <div className="flex-1 min-w-0">
@@ -141,24 +203,24 @@ export default function CacheBusterBanner() {
               onClick={forceReload}
               disabled={reloading}
               data-testid="cache-buster-reload"
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-800 text-white text-[11px] font-semibold hover:bg-slate-900 disabled:opacity-60"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-600 text-white text-[11px] font-semibold hover:bg-blue-700 disabled:opacity-60"
             >
               <RefreshCw size={10} className={reloading ? 'animate-spin' : ''} />
-              {reloading ? 'Reloading…' : 'Reload'}
+              {reloading ? 'Reloading…' : 'Reload now'}
             </button>
             <button
               type="button"
-              onClick={() => setDismissed(true)}
-              data-testid="cache-buster-later"
-              className="text-[11px] font-medium text-slate-500 hover:text-slate-700"
+              onClick={dismiss}
+              data-testid="cache-buster-dismiss"
+              className="inline-flex items-center px-2.5 py-1 rounded-md border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
             >
-              Later
+              Dismiss
             </button>
           </div>
         </div>
         <button
           type="button"
-          onClick={() => setDismissed(true)}
+          onClick={dismiss}
           data-testid="cache-buster-close"
           aria-label="Dismiss update notice"
           className="text-slate-400 hover:text-slate-700 shrink-0 -mr-1 -mt-1 p-1"
@@ -166,7 +228,10 @@ export default function CacheBusterBanner() {
           <XIcon size={13} />
         </button>
       </div>
-      <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      <style>{`
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pulseRing { 0%, 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } 50% { box-shadow: 0 0 0 6px rgba(37, 99, 235, 0.18); } }
+      `}</style>
     </div>
   );
 }

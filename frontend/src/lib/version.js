@@ -1,6 +1,49 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.24 — CacheBusterBanner stickier UX.
+//
+// The update-available toast landed in v160.3.6w as a soft
+// bottom-right toast to replace the old brown top-of-page nag banner.
+// Its 8-second auto-hide was too aggressive — users could easily
+// glance away and miss it. This ship rebalances "don't nag" with
+// "don't let users miss it".
+//
+// Changes to `frontend/src/components/CacheBusterBanner.jsx`:
+//   · `AUTO_HIDE_MS`: 8_000 → 30_000 (~4× the peripheral-vision
+//     window; still far short of the old brown-banner nag).
+//   · NEW `PULSE_MS = 5_000` — subtle blue-tinted `box-shadow` ring
+//     pulses for the first 5 s so movement in peripheral vision
+//     draws the eye.
+//   · NEW version-scoped persistent dismiss:
+//     `localStorage.paneltec_cachebust_dismissed_${serverVersion}`.
+//     "Dismiss" for server v58.13.24 does NOT suppress the toast
+//     when v58.13.25 lands — each new server version gets a fresh
+//     signal. Also survives page reloads within the same version.
+//   · Buttons relabelled and colour-refreshed:
+//     · "Reload" → **"Reload now"** (bg-blue-600).
+//     · "Later" (link) → **"Dismiss"** (bordered button).
+//     Both use `e.stopPropagation()` + `e.preventDefault()` per
+//     v58.13.10 flash-bug guardrail.
+//   · Session-dismiss auto-resets when `serverVersion` changes
+//     (belt-and-braces alongside the persistent key).
+//
+// Files touched
+//   · `frontend/src/components/CacheBusterBanner.jsx` — rewritten
+//     in place (~220 LOC; net +50 vs prior).
+//   · NEW `tests/frontend_smoke/test_cachebust_stickier_v58_13_24.py`
+//     — 6 pytests covering AUTO_HIDE_MS, dismiss testids, reload
+//     handler + `window.location.reload`, version-scoped key,
+//     stopPropagation on both buttons, pulse animation.
+//   · Version files ×3 canonical + changelog block.
+//
+// Guardrails held
+//   · Zero backend changes. No supervisor restart.
+//   · No auto-force-reload — user must click "Reload now" explicitly.
+//   · Old brown top banner NOT restored — bottom-right toast only.
+//   · v58.13.13 version-sync: PASS.
+
+
 // v160.3.9.58.13.23 — Contract dates on schedules + phase4d opt-in.
 //
 // Two items bundled:
@@ -2665,7 +2708,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.23';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.24';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
