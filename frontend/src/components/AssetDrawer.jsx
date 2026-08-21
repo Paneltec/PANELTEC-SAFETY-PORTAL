@@ -114,11 +114,14 @@ const emptyForm = {
   make: '', model: '', year: '', owner: '', notes: '', status: 'active',
 };
 
-export default function AssetDrawer({ asset, onClose, onSaved }) {
+export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
   useLockBodyScroll();
   const isEdit = !!asset?.id;
   const isNavixy = !!asset?.navixy_device_id;
-  const [tab, setTab] = useState('details');
+  // v58.13.27 — Accept optional `initialTab` prop for deep-link opens.
+  // Validated against TABS; falls through to 'details' when unknown.
+  const _validTab = (t) => TABS.some((x) => x.key === t) ? t : 'details';
+  const [tab, setTab] = useState(() => _validTab(initialTab || 'details'));
   const [form, setForm] = useState(() => asset ? { ...emptyForm, ...asset, year: asset.year || '' } : { ...emptyForm });
   const [saving, setSaving] = useState(false);
   const [nfcSaving, setNfcSaving] = useState(false);
@@ -243,8 +246,13 @@ export default function AssetDrawer({ asset, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-stretch justify-end bg-slate-900/40 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}
-      data-testid="asset-drawer">
-      <aside className="w-full sm:max-w-xl h-full bg-white shadow-2xl border-l border-slate-200 overflow-hidden flex flex-col">
+      data-testid="asset-drawer"
+      data-asset-id={current?.id || ''}
+      data-active-tab={tab}>
+      <aside
+        className="w-full sm:max-w-xl h-full bg-white shadow-2xl border-l border-slate-200 overflow-hidden flex flex-col"
+        data-testid={current?.id ? `asset-drawer-open-${current.id}` : 'asset-drawer-open-new'}
+      >
         <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
           <div className="flex-1 min-w-0">
             <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">{isEdit ? 'Edit asset' : 'New asset'}</div>

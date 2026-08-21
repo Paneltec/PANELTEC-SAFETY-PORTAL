@@ -1,6 +1,83 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.27 — Stable AssetDrawer deep-link path.
+//
+// Backlog: multiple prior ships (v58.13.18, v58.13.19, v58.13.23)
+// flagged that automated visual QA of the ScheduleEditor is blocked
+// because there is no stable URL surface to reach the drawer.
+// v58.13.18's ServiceInboxTab "Open schedule" button had wired
+// `/app/vehicles?assetDrawer=<id>&tab=schedules` as a best-effort
+// link, but PlantVehicles.jsx never read the query — the link was a
+// silent no-op (drawer never opened, tester fell back to functional
+// pytests). Pass 1 grep confirmed: 1 producer, 0 consumers.
+//
+// Files touched (frontend only — pure FE ship, no backend reload):
+//   · `pages/PlantVehicles.jsx`:
+//     · Imports `useNavigate` + `useLocation` (previously only `Link`).
+//     · New `drawerInitialTab` state (nullable — defaults to the
+//       drawer's own 'details' when null).
+//     · New useEffect keyed on `_location.search` reads
+//       `?assetDrawer=<id>&tab=<tab>` on mount + whenever the URL
+//       changes, `GET /assets/<id>`, opens the drawer on the
+//       requested tab, and `_navigate('/app/vehicles', { replace:
+//       true })` to strip the query so back-nav is clean and a
+//       reload doesn't re-fire the same open.
+//     · Both `onClose` + `onSaved` handlers clear `drawerInitialTab`
+//       so a subsequent state-driven row-click open uses the
+//       drawer's own default tab.
+//     · `<AssetDrawer initialTab={drawerInitialTab} …/>` prop wired.
+//   · `components/AssetDrawer.jsx`:
+//     · Accepts new optional `initialTab` prop. Validated against
+//       `TABS` via `_validTab()`; falls through to 'details' when
+//       the caller passed something unknown (e.g. a typo in a URL
+//       or a legacy tab name that was later removed).
+//     · Adds a stable `data-testid={`asset-drawer-open-${current.id}`}`
+//       (with `asset-drawer-open-new` fallback on the new-asset
+//       flow so the attribute is always present) to the inner
+//       `<aside>` render root. Testers wait on this testid to
+//       confirm the deep-link open completed.
+//     · Adds `data-asset-id` + `data-active-tab` attributes on the
+//       backdrop for finer-grained assertions (e.g.
+//       "drawer is on the schedules tab").
+//     · Existing state-driven opens (row-click, "New asset",
+//       attention-row) unchanged — `initialTab` is optional and
+//       defaults to 'details' via the validator.
+//
+// Sample URL for future tester use
+//   /app/vehicles?assetDrawer=<asset_id>&tab=schedules   (Schedules)
+//   /app/vehicles?assetDrawer=<asset_id>&tab=service_log (Service log)
+//   /app/vehicles?assetDrawer=<asset_id>                 (details tab)
+//   /app/vehicles?assetDrawer=<asset_id>&tab=bogus       (falls back
+//                                                          to 'details')
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_asset_drawer_deeplink_v58_13_27.py`
+//     — 8 static-grep pytests: query-param consumption, replace:true
+//     URL stripping, `initialTab` prop wire-up, tab validation in
+//     the drawer, stable `asset-drawer-open-<id>` testid pattern,
+//     ServiceInboxTab producer still uses the pattern, guardrail
+//     that no v58.13.27 marker appears in the backend, and the
+//     v58.13.13 version-sync check.
+//
+// Guardrails held
+//   · Backend NOT touched. No `sudo supervisorctl restart backend`.
+//   · v58.13.13 version-sync guardrail: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/frontend_smoke/`.
+//   · AssetDrawer tabs list, per-asset write endpoints, and the
+//     ServiceInboxTab "Open schedule" producer — all UNTOUCHED.
+//     The v58.13.18 link now actually works end-to-end.
+//   · Deep-link open path fetches the asset via `GET /assets/<id>`
+//     — no extra endpoints introduced. Same code path a row-click
+//     via `openAttentionAsset` already used since v160.3.9.21e.
+//
+// Deferred (still parked)
+//   · Worker-side view of the linked employee (v58.13.26 backlog).
+//   · Auto-null cascade on worker soft-delete.
+//   · Bulk unlink companion to v58.13.26's bulk link.
+
+
 // v160.3.9.58.13.26 — Bulk Employee ↔ Worker linker wizard + composite
 // normalisation fix on the single-record ranker.
 //
@@ -2890,7 +2967,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.26';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.27';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

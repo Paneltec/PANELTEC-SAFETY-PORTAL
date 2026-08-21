@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { MapPin, Truck, Loader2, Archive, X, List as ListIcon, Map as MapIcon, Radio, ClipboardCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow, parseISO } from 'date-fns';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import HowThisWorks from '../components/help/HowThisWorks';
 import api, { apiError } from '../lib/api';
 // v160.3.7k — Inoculation sweep: lock body scroll while the print-labels modal is open.
@@ -191,6 +191,10 @@ export default function PlantVehicles() {
   const [activeMapAsset, setActiveMapAsset] = useState(null);
   const [drawerAsset, setDrawerAsset] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // v58.13.27 — Initial tab for the drawer, used by deep-link opens
+  // via `?assetDrawer=<id>&tab=<tab>`. `null` means the drawer's own
+  // default ('details') applies.
+  const [drawerInitialTab, setDrawerInitialTab] = useState(null);
   const [printIds, setPrintIds] = useState(null);
   // v160.3.9.20 — Unmatched maintenance count for the tab-header badge.
   const [pmUnmatched, setPmUnmatched] = useState(null);
@@ -225,6 +229,39 @@ export default function PlantVehicles() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
+
+  // v58.13.27 — Deep-link opener. Reads `?assetDrawer=<id>&tab=<tab>`
+  // on mount + whenever the URL changes, fetches the asset, opens the
+  // drawer on the requested tab (validated against AssetDrawer.TABS),
+  // then strips the query params so back-nav is clean and a reload
+  // doesn't re-fire.
+  const _navigate = useNavigate();
+  const _location = useLocation();
+  useEffect(() => {
+    const params = new URLSearchParams(_location.search);
+    const wantId = params.get('assetDrawer');
+    const wantTab = params.get('tab');
+    if (!wantId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: asset } = await api.get(`/assets/${wantId}`);
+        if (cancelled) return;
+        setDrawerAsset(asset);
+        setDrawerInitialTab(wantTab || null);
+        setDrawerOpen(true);
+      } catch (e) {
+        toast.error(apiError(e) || 'Asset not found');
+      } finally {
+        if (!cancelled) {
+          // Strip query params so a reload / back-nav doesn't re-fire.
+          _navigate('/app/vehicles', { replace: true });
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [_location.search]);
 
   const typeCounts = useMemo(() => {
     const m = {};
@@ -685,7 +722,7 @@ export default function PlantVehicles() {
 
       <VehicleMapModal vehicle={activeMapAsset} open={!!activeMapAsset} onClose={() => setActiveMapAsset(null)} />
       {drawerOpen && (
-        <AssetDrawer asset={drawerAsset} onClose={() => setDrawerOpen(false)} onSaved={() => { setDrawerOpen(false); load(); }} />
+        <AssetDrawer asset={drawerAsset} initialTab={drawerInitialTab} onClose={() => { setDrawerOpen(false); setDrawerInitialTab(null); }} onSaved={() => { setDrawerOpen(false); setDrawerInitialTab(null); load(); }} />
       )}
       {printIds && <PrintLabelsModal assetIds={printIds} onClose={() => setPrintIds(null)} />}
       {deletePending && (

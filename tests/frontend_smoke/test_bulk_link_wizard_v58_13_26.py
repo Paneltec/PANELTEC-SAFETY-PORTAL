@@ -83,7 +83,6 @@ def test_version_sync_current():
     m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+)'", running)
     assert m
     current = m.group(1)
+    # Version-sync guardrail — three canonical files must be identical.
     assert f"'{current}'" in sw
     assert f"'{current}'" in mobile
-    # Guardrail: current version must be v58.13.26 for this ship.
-    assert "58.13.26" in current
