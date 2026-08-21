@@ -56,6 +56,7 @@ import uuid
 from pathlib import Path
 from typing import Any, List, Optional
 
+from fastapi.responses import FileResponse, StreamingResponse  # noqa: F401
 from fastapi import (
     APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile,
 )
@@ -90,8 +91,27 @@ ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        # v160.2.3 — Time picker for permit issue/expiry and
                        # start/end times on toolbox / sign-in / induction.
                        "time",
-                       # v160.2.4 — SWMS attachment picker for permits + JSEA.
-                       "swms_picker"}
+                       # v160.3.9.58.12.0 — BYDA / Utility Awareness form.
+                       # `reference_matrix` is a template-embedded read-only
+                       # compliance table (never contributes to submission
+                       # value). `attachment` is a multi-file field mirroring
+                       # `photo` but with per-file name/description metadata
+                       # and a broader MIME allowlist (see ATTACHMENT_*).
+                       # `actions` is a repeatable follow-up-task row with
+                       # server-stamped id, frozen actionee_name, and a
+                       # Closed-row date-closed invariant enforced on write.
+                       "reference_matrix", "attachment", "actions"}
+ATTACHMENT_ALLOWED_MIMES = {
+    "application/pdf", "image/png", "image/jpeg", "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv", "text/plain",
+}
+MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
+ATTACHMENT_ROOT = Path(__file__).parent / "uploads" / "form_attachments"
+ATTACHMENT_ROOT.mkdir(parents=True, exist_ok=True)
 PHOTO_ALLOWED_MIMES = {"image/png", "image/jpeg", "image/jpg", "image/webp", "image/heic", "image/heif"}
 MAX_PHOTO_BYTES = 15 * 1024 * 1024
 
@@ -868,9 +888,27 @@ async def create_submission(template_id: str, body: SubmissionIn,
         if not isinstance(cfg, dict):
             cfg = {}
         v: Any = f.get("value")
+        # v58.12.0 — reference_matrix is template-embedded read-only
+        # guidance. It never contributes a value to the submission; we
+        # drop any client-sent value and record an empty payload.
+        if t == "reference_matrix":
+            v = None
+        # v58.12.0 — attachment arrays start empty; files land via
+        # POST /submissions/{id}/attachments (same pattern as photos).
+        elif t == "attachment":
+            if v is None:
+                v = []
+            elif not isinstance(v, list):
+                v = []
+        # v58.12.0 — actions: repeatable follow-up rows. Server stamps
+        # `id` (act_<uuid4>) on new rows, freezes `actionee_name` from
+        # the workers directory (v58.11.2), enforces the Closed→date
+        # invariant, and records updated_by/updated_at.
+        elif t == "actions":
+            v = await _normalise_actions_value(v, user)
         # Photo arrays may be empty at submit-time; they get filled by the
         # subsequent /photos endpoint. Signature is base64 PNG. GPS is a dict.
-        if t == "photo":
+        elif t == "photo":
             if v is None:
                 v = []
             elif not isinstance(v, list):
@@ -943,6 +981,162 @@ async def delete_submission(submission_id: str, user: dict = Depends(get_current
         {"$set": {"deleted_at": ts}},
     )
     return None
+
+
+# v58.12.0 — Actions field: normalise a submitted `value` list of
+# rows. Server-stamps id (act_<uuid4>) on rows without one, freezes
+# actionee_name from the workers directory, enforces the Closed→
+# date_closed invariant, and records updated_by/updated_at. Rejects
+# with 422 on any invalid row so a bad submission never lands.
+_ACTION_STATUS_ENUM = {"Open", "In Progress", "Closed", "On Hold"}
+
+
+async def _normalise_actions_value(v: Any, user: dict) -> list:
+    if v is None:
+        return []
+    if not isinstance(v, list):
+        raise HTTPException(422, "actions.value must be a list of rows")
+    workers_by_id: dict = {}
+    if v:
+        # Resolve actionee names in one pass to freeze on-write.
+        ids = [str(r.get("actionee_id") or "") for r in v if isinstance(r, dict) and r.get("actionee_id")]
+        if ids:
+            cursor = db.workers.find(
+                {"org_id": user["org_id"], "id": {"$in": list(set(ids))}, "deleted_at": None},
+                {"_id": 0, "id": 1, "first_name": 1, "last_name": 1},
+            )
+            async for w in cursor:
+                nm = f"{w.get('first_name') or ''} {w.get('last_name') or ''}".strip()
+                workers_by_id[w["id"]] = nm
+    now = now_iso()
+    out: list = []
+    for i, r in enumerate(v):
+        if not isinstance(r, dict):
+            raise HTTPException(422, f"actions[{i}] must be an object")
+        status = str(r.get("status") or "Open")
+        if status not in _ACTION_STATUS_ENUM:
+            raise HTTPException(422, f"actions[{i}].status must be one of {sorted(_ACTION_STATUS_ENUM)}")
+        date_closed = r.get("date_closed") or None
+        if status == "Closed" and not date_closed:
+            raise HTTPException(422, f"actions[{i}] status=Closed requires date_closed")
+        row_id = str(r.get("id") or "")
+        if not row_id.startswith("act_"):
+            row_id = f"act_{uuid.uuid4()}"
+        actionee_id = str(r.get("actionee_id") or "") or None
+        actionee_name = workers_by_id.get(actionee_id) if actionee_id else None
+        # Fall back to any client-supplied name (contractor / off-roster)
+        # if the id didn't resolve.
+        if actionee_id and not actionee_name:
+            actionee_name = str(r.get("actionee_name") or "").strip() or None
+        elif not actionee_id:
+            actionee_name = str(r.get("actionee_name") or "").strip() or None
+        out.append({
+            "id": row_id,
+            "first_name": str(r.get("first_name") or "").strip()[:100],
+            "last_name": str(r.get("last_name") or "").strip()[:100],
+            "actionee_id": actionee_id,
+            "actionee_name": actionee_name,
+            "due_date": r.get("due_date") or None,
+            "date_closed": date_closed,
+            "description": str(r.get("description") or "")[:2000],
+            "status": status,
+            "last_comment": str(r.get("last_comment") or "")[:2000],
+            "created_at": r.get("created_at") or now,
+            "updated_at": now,
+            "updated_by": user.get("id"),
+        })
+    return out
+
+
+# v58.12.0 — Multi-file attachment upload for BYDA + other forms that
+# need document evidence (not just photos). Mirrors the photo upload
+# pattern: multipart, disk-backed, org-gated, appended to the target
+# field's value array atomically. Storage layout:
+#   uploads/form_attachments/{submission_id}/{stored_uuid}
+# Stored filename is a UUID so a malicious `original.pdf/../../etc`
+# can't traverse. Original name is preserved on the record only for
+# display.
+@router.post("/submissions/{submission_id}/attachments", status_code=201)
+async def upload_submission_attachments(
+    submission_id: str,
+    field_id: str = Form(...),
+    files: list[UploadFile] = File(...),
+    names: list[str] = Form(default=[]),
+    descriptions: list[str] = Form(default=[]),
+    user: dict = Depends(get_current_user),
+):
+    sub = await db.form_submissions.find_one(
+        {"id": submission_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0},
+    )
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    target = next((f for f in (sub.get("fields") or []) if f.get("id") == field_id), None)
+    if not target:
+        raise HTTPException(404, "Field not found on submission")
+    if target.get("type") != "attachment":
+        raise HTTPException(400, "Field is not an attachment field")
+    saved: list = []
+    dest_dir = ATTACHMENT_ROOT / submission_id
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    now = now_iso()
+    for i, upload in enumerate(files):
+        mime = (upload.content_type or "").lower()
+        if mime not in ATTACHMENT_ALLOWED_MIMES:
+            raise HTTPException(415, f"MIME '{mime}' not allowed")
+        data = await upload.read()
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            raise HTTPException(413, f"File exceeds {MAX_ATTACHMENT_BYTES} bytes")
+        stored_name = f"{uuid.uuid4()}"
+        dest = dest_dir / stored_name
+        dest.write_bytes(data)
+        display_name = (names[i] if i < len(names) else "") or upload.filename or stored_name
+        description = descriptions[i] if i < len(descriptions) else ""
+        rec = {
+            "file_id": stored_name,
+            "stored_name": stored_name,
+            "name": str(display_name)[:255],
+            "description": str(description)[:2000],
+            "mime": mime,
+            "size": len(data),
+            "url": f"/api/forms/submissions/{submission_id}/attachments/{stored_name}",
+            "uploaded_by": user.get("id"),
+            "uploaded_at": now,
+            "deleted_at": None,
+        }
+        saved.append(rec)
+    await db.form_submissions.update_one(
+        {"id": submission_id, "fields.id": field_id},
+        {"$push": {"fields.$.value": {"$each": saved}}, "$set": {"updated_at": now}},
+    )
+    return {"attachments": saved}
+
+
+@router.get("/submissions/{submission_id}/attachments/{stored_name}")
+async def serve_submission_attachment(submission_id: str, stored_name: str,
+                                       user: dict = Depends(get_current_user)):
+    sub = await db.form_submissions.find_one(
+        {"id": submission_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "fields": 1},
+    )
+    if not sub:
+        raise HTTPException(404, "Submission not found")
+    # Find the attachment record so we can serve the right MIME + name.
+    rec = None
+    for f in sub.get("fields") or []:
+        if f.get("type") != "attachment":
+            continue
+        for a in (f.get("value") or []):
+            if a.get("stored_name") == stored_name and not a.get("deleted_at"):
+                rec = a; break
+        if rec:
+            break
+    if not rec:
+        raise HTTPException(404, "Attachment not found")
+    path = ATTACHMENT_ROOT / submission_id / stored_name
+    if not path.exists():
+        raise HTTPException(404, "File missing on disk")
+    return FileResponse(str(path), media_type=rec.get("mime") or "application/octet-stream",
+                        filename=rec.get("name") or stored_name)
 
 
 # ──────────────── Submission photos ────────────────

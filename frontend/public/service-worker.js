@@ -1268,7 +1268,10 @@
 // v160.3.9.58.11.2 — Log Service technician picker (Simpro roster).
 //                    Backend-only + minor RecordEditor UI addition;
 //                    SW bumped so pickers ship without stale bundles.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.11.2';
+// v160.3.9.58.12.0 — BYDA form: reference_matrix + attachment +
+//                    actions field types (backend + seed script).
+//                    SW bumped so clients pick up the new type enum.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.12.0';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

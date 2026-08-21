@@ -1010,7 +1010,33 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.11.2';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.0';
+
+// v160.3.9.58.12.0 — BYDA / Utility Awareness form.
+//   Backend adds 3 field types to ALLOWED_FIELD_TYPES:
+//     · `reference_matrix` — template-embedded read-only compliance
+//       table (rows/columns/sections). Never contributes to submission
+//       value; server drops any client-sent value on write.
+//     · `attachment` — multi-file field mirroring `photo` but broader
+//       MIME allowlist (PDF, PNG/JPEG/WebP, Word, Excel, CSV, plain
+//       text). 25 MB per file. Server persists `{file_id, stored_name,
+//       name, description, mime, size, url, uploaded_by, uploaded_at,
+//       deleted_at}`. Storage: uploads/form_attachments/{sub_id}/{uuid}.
+//       No delete endpoint in v58.12.0 (schema-only prep with
+//       `deleted_at` sentinel).
+//     · `actions` — repeatable follow-up-task rows with server-stamped
+//       `id` (`act_<uuid4>`), frozen `actionee_name` resolved from
+//       /api/workers/directory (v58.11.2), Closed→date_closed
+//       invariant enforced 422, and updated_by/updated_at stamped.
+//   Two new endpoints: POST/GET /forms/submissions/{id}/attachments.
+//   Seed script `seed_byda_utility_awareness_v58_12.py` idempotently
+//   upserts the BYDA template with the 5-section matrix content,
+//   Gas + Water banded `highlighted`, plus the attachment and actions
+//   fields. Frontend TemplateBuilder + SubmissionViewer visual arms
+//   for the 3 new types are parked for v58.12.1 — existing templates
+//   are unaffected because they never used these types (they're
+//   additive to the ALLOWED_FIELD_TYPES enum, no rename).
+
 
 // v160.3.9.58.11.2 — Log Service · Simpro-employee technician picker.
 //   Backend adds `GET /api/workers/directory?active=true&source=simpro`
