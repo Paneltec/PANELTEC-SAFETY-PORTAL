@@ -1,6 +1,19 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.0 — Periodic Task Templates (v58.13.0-a).
+// Extends ScheduleIn with 5 optional user-facing fields (priority,
+// task_type, task_identification, description_html, assigned_to_position)
+// + 2 auto-stamped fields (entered_by_user_id, entered_by_name).
+// Extends `status` enum: ["active","paused"] → ["active","paused","archived"].
+// description_html sanitised server-side via `bleach.clean` (allowlist
+// tags/attrs, strip=True). ScheduleEditor UI grows a collapsed
+// "More details" panel. Backend: forms.py + asset_service.py.
+// Frontend: AssetServiceTabs.jsx ScheduleEditor.
+// Attachments + phone/reported_by/project_id/notes + assigned_to_worker
+// filter deferred to v58.13.0-b.
+
+
 // v160.3.9.58.12.13 — Position-based form assignment (work-item v58.12.10).
 //
 // User ask: "could the form assignments be /Drug & Alcohol Test Record
@@ -1665,7 +1678,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.13';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.0';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

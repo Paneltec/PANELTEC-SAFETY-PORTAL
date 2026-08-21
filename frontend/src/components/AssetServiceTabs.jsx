@@ -131,7 +131,30 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     secondary_last_done_value: initial?.secondary_interval?.last_done_value ?? '',
     secondary_reminder_lead: initial?.secondary_interval?.reminder_lead ?? '',
     secondary_baseline_today: false,
+    // v58.13.0-a — Periodic Task Template fields (collapsed "More
+    // details" panel below). All optional; legacy schedules parse
+    // identically. `entered_by_*` are auto-stamped server-side.
+    priority: initial?.priority ?? '',
+    task_type: initial?.task_type ?? '',
+    task_identification: initial?.task_identification ?? '',
+    description_html: initial?.description_html ?? '',
+    assigned_to_position: initial?.assigned_to_position ?? '',
   }));
+  // v58.13.0-a — Simpro-position dropdown for `assigned_to_position`.
+  // Reuses the widened /workers/directory payload (v58.12.10) to
+  // derive distinct positions — same source of truth as the Service
+  // Log position picker (v58.12.12).
+  const [schedTechs, setSchedTechs] = useState([]);
+  const [showMoreDetails, setShowMoreDetails] = useState(false);
+  useEffect(() => {
+    api.get('/workers/directory', { params: { active: true, source: 'simpro' } })
+      .then((r) => setSchedTechs(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setSchedTechs([]));
+  }, []);
+  const schedPositions = React.useMemo(
+    () => Array.from(new Set((schedTechs || []).map((t) => t.position).filter(Boolean))).sort(),
+    [schedTechs],
+  );
   const [saving, setSaving] = useState(false);
 
   // Phase 3.5 — helper line shows the projected next-due based on the
@@ -398,6 +421,82 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                     data-testid="sch-secondary-baseline-today" />
                   <span>Second baseline = today&apos;s reading</span>
                 </label>
+              </div>
+            )}
+          </div>
+          {/* v58.13.0-a — Periodic Task Template "More details" panel.
+              Collapsed by default so the v58.12.6 fast-flow is preserved.
+              5 user-facing fields; entered_by_* are auto-stamped server-side. */}
+          <div className="pt-2 border-t border-slate-100">
+            <button
+              type="button"
+              onClick={() => setShowMoreDetails((v) => !v)}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 inline-flex items-center gap-1"
+              data-testid="sch-more-details-toggle"
+            >
+              {showMoreDetails ? '−' : '+'} More details
+            </button>
+            {showMoreDetails && (
+              <div className="mt-3 space-y-3" data-testid="sch-more-details-panel">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Priority</label>
+                    <select value={form.priority}
+                      onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                      data-testid="sch-priority">
+                      <option value="">— None —</option>
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                      <option value="Urgent">Urgent</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold mb-1">Task type</label>
+                    <select value={form.task_type}
+                      onChange={(e) => setForm({ ...form, task_type: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                      data-testid="sch-task-type">
+                      <option value="">— None —</option>
+                      <option value="Installation">Installation</option>
+                      <option value="Repair">Repair</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Inspection">Inspection</option>
+                      <option value="Service">Service</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Task identification</label>
+                  <input value={form.task_identification}
+                    onChange={(e) => setForm({ ...form, task_identification: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg"
+                    data-testid="sch-task-id"
+                    placeholder="e.g. Holden Ute : 6MO / 10,000KM Service" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Assigned to (position)</label>
+                  <select value={form.assigned_to_position}
+                    onChange={(e) => setForm({ ...form, assigned_to_position: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
+                    data-testid="sch-assigned-position">
+                    <option value="">— Select position —</option>
+                    {schedPositions.map((p) => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold mb-1">Description</label>
+                  <textarea value={form.description_html}
+                    onChange={(e) => setForm({ ...form, description_html: e.target.value })}
+                    rows={4}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                    data-testid="sch-description-html"
+                    placeholder="Task notes, checklist references, or HTML." />
+                </div>
               </div>
             )}
           </div>

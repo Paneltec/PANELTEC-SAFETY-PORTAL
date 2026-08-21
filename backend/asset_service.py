@@ -6,6 +6,7 @@ scanner that fans out via the existing M365 + TextMagic plumbing.
 """
 from __future__ import annotations
 import logging
+import bleach  # v58.13.0-a — server-side rich-text sanitiser (already in requirements)
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
@@ -25,6 +26,28 @@ IntervalKind = Literal["hours", "km", "calendar"]
 CalendarUnit = Literal["days", "weeks", "months", "years"]
 RecordType = Literal["service", "defect", "meter_update"]
 DefectSeverity = Literal["minor", "major", "critical"]
+# v58.13.0-a — Periodic Task Template rollout. Enums for the new fields
+# on ScheduleIn (see below). Kept module-level so tests + FE can consume
+# via the openapi spec.
+Priority = Literal["Low", "Medium", "High", "Urgent"]
+TaskType = Literal["Installation", "Repair", "Maintenance", "Inspection", "Service", "Other"]
+
+# v58.13.0-a — Rich-text sanitiser allowlist. Conservative: block tags
+# (p/br/h1-h6/lists/formatting) + one attribute (href on <a>). Any
+# `<script>`, `<iframe>`, event handlers, or unknown tags are stripped
+# with `strip=True`. Matches the bleach usage pattern in email_outbox.
+_HTML_ALLOWED_TAGS = ["p", "br", "b", "strong", "i", "em", "u",
+                       "ul", "ol", "li", "a", "h1", "h2", "h3", "h4"]
+_HTML_ALLOWED_ATTRS = {"a": ["href", "title", "rel"]}
+
+
+def _sanitize_description_html(v: Optional[str]) -> Optional[str]:
+    """v58.13.0-a — bleach.clean wrapper. `None` → `None` (PATCH-omit
+    friendly). Empty string → empty string (explicit clear)."""
+    if v is None:
+        return None
+    return bleach.clean(v, tags=_HTML_ALLOWED_TAGS,
+                        attributes=_HTML_ALLOWED_ATTRS, strip=True)
 
 
 # ────────────────── helpers ──────────────────
@@ -219,11 +242,21 @@ class ScheduleIn(BaseModel):
     reminder_lead_days: int = Field(default=7, ge=0, le=365)
     reminder_lead_hours: Optional[float] = None
     reminder_lead_km: Optional[float] = None
-    status: Literal["active", "paused"] = "active"
+    status: Literal["active", "paused", "archived"] = "active"
     # v58.12.6 — dual-track (D-2). Optional; absent → schedule behaves
     # exactly as pre-v58.12.6. Existing docs parse cleanly (no field →
     # None default). See `_validate_secondary` for cross-field rules.
     secondary_interval: Optional[SecondaryInterval] = None
+    # v58.13.0-a — Periodic Task Template rollout. Five user-facing
+    # fields (all optional; legacy schedules parse identically). Two
+    # auto-stamped fields (entered_by_user_id / entered_by_name) are
+    # NOT on this model — they're set by the create_schedule handler
+    # from `current_user` and preserved verbatim on update.
+    priority: Optional[Priority] = None
+    task_type: Optional[TaskType] = None
+    task_identification: Optional[str] = Field(default=None, max_length=200)
+    description_html: Optional[str] = Field(default=None, max_length=100_000)
+    assigned_to_position: Optional[str] = Field(default=None, max_length=120)
 
 
 class RecordIn(BaseModel):
@@ -722,10 +755,17 @@ async def create_schedule(asset_id: str, body: ScheduleIn, user: dict = Depends(
         raise HTTPException(400, "calendar_unit is required for calendar schedules")
     _validate_secondary(body.interval_kind, body.secondary_interval, asset)
     ts = now_iso()
+    # v58.13.0-a — Bleach-sanitise description_html + auto-stamp
+    # entered_by_* from current_user. Both stamps are set only on
+    # CREATE — update_schedule preserves the originals below.
+    payload = body.dict()
+    payload["description_html"] = _sanitize_description_html(payload.get("description_html"))
     doc = {
         "id": new_id(), "asset_id": asset_id, "org_id": user["org_id"],
         "workspace_id": asset.get("workspace_id"),
-        **body.dict(),
+        **payload,
+        "entered_by_user_id": user["id"],
+        "entered_by_name": user.get("name") or user.get("email") or user["id"],
         "created_at": ts, "updated_at": ts, "created_by": user["id"],
         "deleted_at": None,
     }
@@ -749,7 +789,13 @@ async def update_schedule(asset_id: str, sid: str, body: ScheduleIn, user: dict 
     if not existing:
         raise HTTPException(404, "Schedule not found")
     _validate_secondary(body.interval_kind, body.secondary_interval, asset)
-    merged = {**existing, **body.dict(), "updated_at": now_iso()}
+    # v58.13.0-a — Sanitise description_html on update. entered_by_*
+    # from the original doc are preserved verbatim (audit trail).
+    payload = body.dict()
+    payload["description_html"] = _sanitize_description_html(payload.get("description_html"))
+    merged = {**existing, **payload, "updated_at": now_iso()}
+    merged["entered_by_user_id"] = existing.get("entered_by_user_id")
+    merged["entered_by_name"] = existing.get("entered_by_name")
     nd = _compute_next_due(merged, asset)
     merged.update({
         "next_due_value": nd["next_due_value"],
