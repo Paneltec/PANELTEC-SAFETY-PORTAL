@@ -32,6 +32,14 @@ import bcrypt
 import pytest
 import requests
 
+# v58.13.23 — Module-level `live_db_writes` opt-in. Every test here
+# uses the module-scoped `ephemeral_admin` fixture (or its own
+# ephemeral users) that write to `test_database.users`. The v58.13.22
+# conftest hardening (_module_prod_writes_gate + skip-reset in
+# production_db_guard) makes this one-line opt-in sufficient — no
+# in-file workaround needed.
+pytestmark = pytest.mark.live_db_writes
+
 from .conftest import (
     API, ADMIN_EMAIL, ADMIN_PWD,
     _login, _hash, assert_ephemeral_target,
