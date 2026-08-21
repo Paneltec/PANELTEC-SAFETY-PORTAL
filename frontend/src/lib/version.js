@@ -1,6 +1,86 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.6 — Dual-track service schedules (D-2). One schedule
+// can now track BOTH hours AND km (or any combo of hours/km/calendar)
+// with "whichever comes first" reminder semantics. User ask: "could you
+// record Kilometres as well as hours in this form".
+//
+// SCHEMA — `asset_service.py`
+//   · New `SecondaryInterval` pydantic model: {kind, value, calendar_unit,
+//     last_done_at, last_done_value, reminder_lead}. `reminder_lead` is
+//     a single unit-per-kind value — days for calendar, hours for hours,
+//     km for km. The pre-v58 developer had already left dedicated
+//     `reminder_lead_hours` + `reminder_lead_km` fields on `ScheduleIn`
+//     — we're walking through the door they left open.
+//   · `ScheduleIn.secondary_interval: Optional[SecondaryInterval] = None`.
+//   · New helper `_validate_secondary(interval_kind, secondary, asset)`
+//     rejects: same-kind primary+secondary (422), secondary=hours on
+//     asset without hours_meter (422), secondary=km on asset without
+//     odo_km (422), secondary=calendar without calendar_unit (422).
+//   · `_compute_next_due` refactored — new pure helper `_compute_axis_due`
+//     projects ONE axis to (next_value, next_at, status). The top-level
+//     wrapper calls primary; if `secondary_interval` present, calls
+//     secondary; materialises: next_due_value (primary numeric — UI
+//     contract unchanged), next_due_at_primary, next_due_at_secondary,
+//     next_due_value_secondary (new), next_due_at = None-safe
+//     min(primary.next_at, secondary.next_at). Status is worst-of.
+//   · Cron/reminder pipeline UNCHANGED — existing queries against
+//     `next_due_at < now() + lead_days` continue to fire correctly on
+//     the earliest projection.
+//
+// UX — `AssetServiceTabs.jsx` `ScheduleEditor`
+//   · New collapsible "Also track by (second dimension)" checkbox below
+//     the Baseline-today section.
+//   · Kind select is limited to the OTHER two kinds; the option whose
+//     required reading is null on the asset renders `disabled` with a
+//     tooltip ("This asset has no odometer reading" / "…no hours_meter
+//     reading") — visibility educates the user, doesn't hide the option.
+//   · Live purple helper line "Also: currently X km → next due at Y km"
+//     using `asset.odo_km` / `asset.hours_meter` (same source as the
+//     primary "Currently…" line — routed through `AssetServiceTabs.jsx`
+//     L122-126 as pre-v58.12.6).
+//   · Save serialises the secondary block only when the toggle is on;
+//     UI-only fields (`secondary_enabled` / `secondary_kind` / …) are
+//     stripped from the payload.
+//   · Schedule list view renders a second purple line when
+//     `s.secondary_interval` is present: "Also every N km · Next at Y km"
+//     with a "Whichever comes first fires the reminder" hover hint.
+//
+// BACKWARD COMPAT (proven, not assumed) —
+//   · `asset_service_schedules` has 2 legacy hours-only docs. Both have
+//     NO `secondary_interval` field. `Optional[SecondaryInterval] = None`
+//     parses them cleanly; `_compute_next_due` primary-only branch fires
+//     exactly as pre-v58.12.6. **Confirmed via 3 dedicated unit tests**
+//     (see `tests/test_asset_schedule_dual_track_v58_12_6.py`):
+//       — `test_legacy_single_axis_schedule_read_unchanged` — pre-doc
+//         `id=1fd87b6e-…` materialises to `next_due_value=1440.1`,
+//         matching the stored value byte-for-byte.
+//       — `test_legacy_single_axis_schedule_write_unchanged` — fresh
+//         create path with no secondary in payload = pre-v58 output.
+//       — `test_legacy_single_axis_schedule_update_no_secondary` — PUT
+//         path preserves the None secondary block.
+//   · ZERO migration. The 2 existing docs are not touched.
+//
+// TESTS
+//   · Backend: 9 pytest tests all green (3 backward-compat safeguards +
+//     5 required scenarios + 1 axis-projection sanity).
+//   · Frontend: 3 jsdom tests all green (toggle collapsed default,
+//     disabled-option tooltip, payload includes/excludes secondary).
+//   · Cumulative repo test count: 36/36 (frontend) + 9/9 (v58.12.6
+//     backend) — no regression.
+//
+// Explicitly NOT touched:
+//   · `asset_meter_history` / `asset_navixy_sync` (only READ from
+//     `assets.hours_meter` + `assets.odo_km`).
+//   · The 2 existing schedule docs (Optional field parse; no $set).
+//   · Cron/reminder-pipeline behaviour.
+//   · TemplateBuilder.jsx (still v58.12.5 territory).
+//   · Attachment DELETE endpoint (still v58.12.5 territory).
+//   · Mobile (only the version string bumped).
+
+
+
 // v160.3.9.58.12.4 — Attachment local staging (P-B). Closes the
 // "first-fill can't attach" UX gap flagged in v58.12.2's Decision #1.
 //
@@ -1177,7 +1257,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.4';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.6';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

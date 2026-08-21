@@ -57,22 +57,25 @@ async def _get_asset(asset_id: str, org_id: str) -> dict:
     return doc
 
 
-def _compute_next_due(sched: dict, asset: dict) -> dict:
-    """Return {next_due_value, next_due_at, status, lead_window} for a schedule."""
-    kind = sched["interval_kind"]
-    interval = float(sched.get("interval_value") or 0)
-    last_v = sched.get("last_done_value")
-    last_at = _parse_iso(sched.get("last_done_at")) if isinstance(sched.get("last_done_at"), str) else sched.get("last_done_at")
-    lead_days = int(sched.get("reminder_lead_days") or 7)
-    lead_hours = float(sched.get("reminder_lead_hours") or max(interval * 0.05, 5))
-    lead_km = float(sched.get("reminder_lead_km") or max(interval * 0.05, 100))
-    out: dict[str, Any] = {"next_due_value": None, "next_due_at": None, "status": "ok"}
+def _worst_status(a: str, b: str) -> str:
+    rank = {"overdue": 2, "due_soon": 1, "ok": 0}
+    return a if rank.get(a, 0) >= rank.get(b, 0) else b
 
+
+def _compute_axis_due(asset: dict, *, kind: str, interval: float,
+                      last_v: Optional[float], last_at: Optional[Any],
+                      calendar_unit: Optional[str],
+                      lead_days: int, lead_hours: float, lead_km: float) -> dict:
+    """v58.12.6 — Project one axis (hours / km / calendar) → next-due.
+    Returns {next_value, next_at, status}. Either next_value or next_at
+    may be None depending on the axis kind (hours/km yield a numeric,
+    calendar yields a datetime)."""
+    out = {"next_value": None, "next_at": None, "status": "ok"}
     if kind == "hours":
         base = float(last_v) if last_v is not None else 0.0
         next_v = base + interval
         cur = float(asset.get("hours_meter") or 0)
-        out["next_due_value"] = next_v
+        out["next_value"] = next_v
         if cur >= next_v:
             out["status"] = "overdue"
         elif cur >= next_v - lead_hours:
@@ -81,22 +84,79 @@ def _compute_next_due(sched: dict, asset: dict) -> dict:
         base = float(last_v) if last_v is not None else 0.0
         next_v = base + interval
         cur = float(asset.get("odo_km") or 0)
-        out["next_due_value"] = next_v
+        out["next_value"] = next_v
         if cur >= next_v:
             out["status"] = "overdue"
         elif cur >= next_v - lead_km:
             out["status"] = "due_soon"
     elif kind == "calendar":
-        unit = sched.get("calendar_unit") or "days"
-        anchor = last_at or _parse_iso(sched.get("created_at")) or _utcnow()
+        unit = calendar_unit or "days"
+        anchor = last_at or _utcnow()
         nxt = _add_calendar(anchor, int(interval), unit)
-        out["next_due_at"] = nxt.isoformat()
+        out["next_at"] = nxt.isoformat()
         now = _utcnow()
         if now >= nxt:
             out["status"] = "overdue"
         elif now >= nxt - timedelta(days=lead_days):
             out["status"] = "due_soon"
     return out
+
+
+def _compute_next_due(sched: dict, asset: dict) -> dict:
+    """Return {next_due_value, next_due_at, next_due_at_primary,
+    next_due_at_secondary, next_due_value_secondary, status}.
+
+    v58.12.6 — dual-track (D-2): if `sched.secondary_interval` is present,
+    the secondary axis is projected too and `next_due_at` becomes
+    min(primary.next_at, secondary.next_at) (None-safe). `next_due_value`
+    always reflects the PRIMARY axis's numeric next (unchanged pre-v58.12.6
+    UI meaning); the secondary axis's numeric next lives on
+    `next_due_value_secondary`. Reminder cron continues to query
+    `next_due_at` unchanged."""
+    kind = sched["interval_kind"]
+    interval = float(sched.get("interval_value") or 0)
+    last_v = sched.get("last_done_value")
+    last_at = _parse_iso(sched.get("last_done_at")) if isinstance(sched.get("last_done_at"), str) else sched.get("last_done_at")
+    lead_days = int(sched.get("reminder_lead_days") or 7)
+    lead_hours = float(sched.get("reminder_lead_hours") or max(interval * 0.05, 5))
+    lead_km = float(sched.get("reminder_lead_km") or max(interval * 0.05, 100))
+
+    primary = _compute_axis_due(
+        asset, kind=kind, interval=interval, last_v=last_v, last_at=last_at,
+        calendar_unit=sched.get("calendar_unit"),
+        lead_days=lead_days, lead_hours=lead_hours, lead_km=lead_km,
+    )
+
+    sec_cfg = sched.get("secondary_interval")
+    secondary = None
+    if sec_cfg:
+        sec_interval = float(sec_cfg.get("value") or 0)
+        sec_last_v = sec_cfg.get("last_done_value")
+        sec_last_at = _parse_iso(sec_cfg.get("last_done_at")) if isinstance(sec_cfg.get("last_done_at"), str) else sec_cfg.get("last_done_at")
+        sec_lead = sec_cfg.get("reminder_lead")
+        secondary = _compute_axis_due(
+            asset, kind=sec_cfg.get("kind"), interval=sec_interval,
+            last_v=sec_last_v, last_at=sec_last_at,
+            calendar_unit=sec_cfg.get("calendar_unit"),
+            # Route the single `reminder_lead` field to the axis it matches;
+            # falls back to primary's lead for the other two axes (irrelevant).
+            lead_days=int(sec_lead) if sec_cfg.get("kind") == "calendar" and sec_lead is not None else lead_days,
+            lead_hours=float(sec_lead) if sec_cfg.get("kind") == "hours" and sec_lead is not None else lead_hours,
+            lead_km=float(sec_lead) if sec_cfg.get("kind") == "km" and sec_lead is not None else lead_km,
+        )
+
+    # Merge — None-safe min for next_due_at across the two axes.
+    p_at, s_at = primary.get("next_at"), (secondary or {}).get("next_at")
+    merged_at = p_at if s_at is None else (s_at if p_at is None else min(p_at, s_at))
+    status = primary["status"] if secondary is None else _worst_status(primary["status"], secondary["status"])
+    return {
+        "next_due_value": primary["next_value"],
+        "next_due_at": merged_at,
+        "next_due_at_primary": primary["next_at"],
+        "next_due_at_secondary": (secondary or {}).get("next_at"),
+        "next_due_value_secondary": (secondary or {}).get("next_value"),
+        "status": status,
+    }
 
 
 async def _recompute_and_save(sched: dict, asset: dict) -> dict:
@@ -106,6 +166,10 @@ async def _recompute_and_save(sched: dict, asset: dict) -> dict:
         {"$set": {
             "next_due_value": nd["next_due_value"],
             "next_due_at": nd["next_due_at"],
+            # v58.12.6 — dual-track materialisation.
+            "next_due_at_primary": nd["next_due_at_primary"],
+            "next_due_at_secondary": nd["next_due_at_secondary"],
+            "next_due_value_secondary": nd["next_due_value_secondary"],
             "status_cached": nd["status"],
             "updated_at": now_iso(),
         }},
@@ -114,6 +178,36 @@ async def _recompute_and_save(sched: dict, asset: dict) -> dict:
 
 
 # ────────────────── models ──────────────────
+
+class SecondaryInterval(BaseModel):
+    """v58.12.6 — Optional second axis on a schedule. Same shape as the
+    primary interval fields but scoped so we can materialise the second
+    projection independently. `reminder_lead` is a single per-axis value
+    — days for calendar, hours for hours, km for km."""
+    kind: IntervalKind
+    value: int = Field(ge=1, le=1_000_000)
+    calendar_unit: Optional[CalendarUnit] = None
+    last_done_at: Optional[str] = None
+    last_done_value: Optional[float] = None
+    reminder_lead: Optional[float] = None
+
+
+def _validate_secondary(interval_kind: str, secondary: Optional[SecondaryInterval], asset: dict) -> None:
+    """v58.12.6 — Cross-field validation for the D-2 dual-track model.
+    Same-kind rejection guarantees the two axes track DIFFERENT
+    dimensions; asset-reading rejection guarantees the projection can
+    actually be computed."""
+    if secondary is None:
+        return
+    if secondary.kind == interval_kind:
+        raise HTTPException(422, "Primary and secondary intervals must track different dimensions.")
+    if secondary.kind == "calendar" and not secondary.calendar_unit:
+        raise HTTPException(422, "calendar_unit is required when secondary_interval.kind is 'calendar'.")
+    if secondary.kind == "hours" and asset.get("hours_meter") is None:
+        raise HTTPException(422, "Asset has no hours_meter reading (not linked to Navixy).")
+    if secondary.kind == "km" and asset.get("odo_km") is None:
+        raise HTTPException(422, "Asset has no odo_km reading (not linked to Navixy).")
+
 
 class ScheduleIn(BaseModel):
     name: str = Field(min_length=1, max_length=120)
@@ -126,6 +220,10 @@ class ScheduleIn(BaseModel):
     reminder_lead_hours: Optional[float] = None
     reminder_lead_km: Optional[float] = None
     status: Literal["active", "paused"] = "active"
+    # v58.12.6 — dual-track (D-2). Optional; absent → schedule behaves
+    # exactly as pre-v58.12.6. Existing docs parse cleanly (no field →
+    # None default). See `_validate_secondary` for cross-field rules.
+    secondary_interval: Optional[SecondaryInterval] = None
 
 
 class RecordIn(BaseModel):
@@ -583,6 +681,7 @@ async def create_schedule(asset_id: str, body: ScheduleIn, user: dict = Depends(
     asset = await _get_asset(asset_id, user["org_id"])
     if body.interval_kind == "calendar" and not body.calendar_unit:
         raise HTTPException(400, "calendar_unit is required for calendar schedules")
+    _validate_secondary(body.interval_kind, body.secondary_interval, asset)
     ts = now_iso()
     doc = {
         "id": new_id(), "asset_id": asset_id, "org_id": user["org_id"],
@@ -592,7 +691,14 @@ async def create_schedule(asset_id: str, body: ScheduleIn, user: dict = Depends(
         "deleted_at": None,
     }
     nd = _compute_next_due(doc, asset)
-    doc.update({"next_due_value": nd["next_due_value"], "next_due_at": nd["next_due_at"], "status_cached": nd["status"]})
+    doc.update({
+        "next_due_value": nd["next_due_value"],
+        "next_due_at": nd["next_due_at"],
+        "next_due_at_primary": nd["next_due_at_primary"],
+        "next_due_at_secondary": nd["next_due_at_secondary"],
+        "next_due_value_secondary": nd["next_due_value_secondary"],
+        "status_cached": nd["status"],
+    })
     await db.asset_service_schedules.insert_one(doc)
     out = dict(doc); out.pop("_id", None); return out
 
@@ -603,9 +709,17 @@ async def update_schedule(asset_id: str, sid: str, body: ScheduleIn, user: dict 
     existing = await db.asset_service_schedules.find_one({"id": sid, "asset_id": asset_id, "org_id": user["org_id"], "deleted_at": None})
     if not existing:
         raise HTTPException(404, "Schedule not found")
+    _validate_secondary(body.interval_kind, body.secondary_interval, asset)
     merged = {**existing, **body.dict(), "updated_at": now_iso()}
     nd = _compute_next_due(merged, asset)
-    merged.update({"next_due_value": nd["next_due_value"], "next_due_at": nd["next_due_at"], "status_cached": nd["status"]})
+    merged.update({
+        "next_due_value": nd["next_due_value"],
+        "next_due_at": nd["next_due_at"],
+        "next_due_at_primary": nd["next_due_at_primary"],
+        "next_due_at_secondary": nd["next_due_at_secondary"],
+        "next_due_value_secondary": nd["next_due_value_secondary"],
+        "status_cached": nd["status"],
+    })
     await db.asset_service_schedules.replace_one({"id": sid}, merged)
     merged.pop("_id", None); return merged
 

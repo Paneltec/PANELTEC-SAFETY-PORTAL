@@ -79,6 +79,14 @@ export function ServiceSchedulesTab({ asset, canEdit }) {
                   {s.next_due_value != null && <span className="ml-2">· Next at {s.next_due_value}{s.interval_kind === 'hours' ? 'h' : 'km'}</span>}
                   {s.next_due_at && <span className="ml-2">· Next on {new Date(s.next_due_at).toLocaleDateString()}</span>}
                 </div>
+                {s.secondary_interval && (
+                  <div className="text-[11px] text-purple-700 mt-0.5" data-testid={`schedule-secondary-${s.id}`}
+                       title="Whichever comes first fires the reminder.">
+                    Also every {s.secondary_interval.value} {s.secondary_interval.kind === 'calendar' ? s.secondary_interval.calendar_unit : s.secondary_interval.kind}
+                    {s.next_due_value_secondary != null && <span className="ml-2">· Next at {s.next_due_value_secondary}{s.secondary_interval.kind === 'hours' ? 'h' : 'km'}</span>}
+                    {s.next_due_at_secondary && <span className="ml-2">· Next on {new Date(s.next_due_at_secondary).toLocaleDateString()}</span>}
+                  </div>
+                )}
               </div>
               {canEdit && (
                 <>
@@ -113,6 +121,16 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     status: initial?.status || 'active',
     // Phase 3.5 — set "now" as the baseline
     service_done_today: false,
+    // v58.12.6 — dual-track (D-2). All local state; only serialised into
+    // `secondary_interval` on save when `secondary_enabled === true`.
+    secondary_enabled: !!(initial?.secondary_interval),
+    secondary_kind: initial?.secondary_interval?.kind
+      || ((initial?.interval_kind || 'hours') === 'hours' ? 'km' : 'hours'),
+    secondary_value: initial?.secondary_interval?.value ?? 250,
+    secondary_calendar_unit: initial?.secondary_interval?.calendar_unit || 'days',
+    secondary_last_done_value: initial?.secondary_interval?.last_done_value ?? '',
+    secondary_reminder_lead: initial?.secondary_interval?.reminder_lead ?? '',
+    secondary_baseline_today: false,
   }));
   const [saving, setSaving] = useState(false);
 
@@ -145,6 +163,41 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     return `Currently ${fmtCur} ${unit} → next due at ${fmtNext} ${unit}`;
   })();
 
+  // v58.12.6 — secondary axis helper line + reading availability guard.
+  const secondaryMeter = form.secondary_kind === 'hours'
+    ? asset?.hours_meter
+    : form.secondary_kind === 'km'
+      ? asset?.odo_km
+      : null;
+  const secondaryHelperLine = (() => {
+    if (!form.secondary_enabled) return null;
+    const iv = Number(form.secondary_value);
+    if (form.secondary_kind === 'calendar') {
+      if (!iv || isNaN(iv)) return null;
+      const dt = new Date();
+      const u = form.secondary_calendar_unit;
+      if (u === 'days') dt.setDate(dt.getDate() + iv);
+      else if (u === 'weeks') dt.setDate(dt.getDate() + iv * 7);
+      else if (u === 'months') dt.setMonth(dt.getMonth() + iv);
+      else if (u === 'years') dt.setFullYear(dt.getFullYear() + iv);
+      return `Also: next due ${dt.toLocaleDateString()}`;
+    }
+    if (secondaryMeter == null || isNaN(iv) || iv <= 0) return null;
+    const next = Number(secondaryMeter) + iv;
+    const unit = form.secondary_kind === 'hours' ? 'hrs' : 'km';
+    return `Also: currently ${Number(secondaryMeter).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit} → next due at ${next.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`;
+  })();
+  // Which secondary kinds are available for this asset? Primary's kind is
+  // always excluded (same-dimension is server-rejected). Hours/km require
+  // the corresponding reading on the asset doc.
+  const secondaryOptions = ['hours', 'km', 'calendar']
+    .filter((k) => k !== form.interval_kind)
+    .map((k) => ({
+      kind: k,
+      disabled: (k === 'hours' && asset?.hours_meter == null)
+             || (k === 'km' && asset?.odo_km == null),
+    }));
+
   const save = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
@@ -169,6 +222,30 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
       }
       // Remove UI-only field before sending
       delete payload.service_done_today;
+      // v58.12.6 — assemble secondary_interval iff the toggle is on.
+      // The UI-only fields on `form` (`secondary_*`) are stripped either
+      // way so they never leak into the payload.
+      if (form.secondary_enabled) {
+        const sec = {
+          kind: form.secondary_kind,
+          value: Number(form.secondary_value),
+          calendar_unit: form.secondary_kind === 'calendar' ? form.secondary_calendar_unit : null,
+          last_done_value: form.secondary_last_done_value === '' ? null : Number(form.secondary_last_done_value),
+          reminder_lead: form.secondary_reminder_lead === '' ? null : Number(form.secondary_reminder_lead),
+          last_done_at: null,
+        };
+        if (form.secondary_baseline_today) {
+          if (form.secondary_kind === 'hours' && asset?.hours_meter != null) sec.last_done_value = Number(asset.hours_meter);
+          else if (form.secondary_kind === 'km' && asset?.odo_km != null) sec.last_done_value = Number(asset.odo_km);
+          sec.last_done_at = new Date().toISOString();
+        }
+        payload.secondary_interval = sec;
+      } else {
+        payload.secondary_interval = null;
+      }
+      ['secondary_enabled', 'secondary_kind', 'secondary_value', 'secondary_calendar_unit',
+       'secondary_last_done_value', 'secondary_reminder_lead', 'secondary_baseline_today'
+      ].forEach((k) => delete payload[k]);
       if (isEdit) await api.put(`/assets/${asset.id}/schedules/${initial.id}`, payload);
       else await api.post(`/assets/${asset.id}/schedules`, payload);
       toast.success(isEdit ? 'Schedule updated' : 'Schedule created');
@@ -243,6 +320,87 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
               </span>
             </span>
           </label>
+          {/* v58.12.6 — Also-track-by (dual-track schedule) */}
+          <div className="pt-1 border-t border-slate-100" data-testid="sch-secondary-section">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.secondary_enabled}
+                onChange={(e) => setForm({ ...form, secondary_enabled: e.target.checked })}
+                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                data-testid="sch-secondary-toggle" />
+              <span className="text-xs font-semibold text-slate-800">Also track by (second dimension)</span>
+            </label>
+            {form.secondary_enabled && (
+              <div className="mt-2 pl-6 space-y-2" data-testid="sch-secondary-panel">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wider text-slate-500">Second kind</label>
+                    <select value={form.secondary_kind}
+                      onChange={(e) => setForm({ ...form, secondary_kind: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-secondary-kind">
+                      {secondaryOptions.map((o) => (
+                        <option key={o.kind} value={o.kind} disabled={o.disabled}
+                          title={o.disabled ? (o.kind === 'hours' ? 'This asset has no hours_meter reading' : 'This asset has no odometer reading') : ''}>
+                          {o.kind === 'hours' ? 'Hours' : o.kind === 'km' ? 'Kilometres' : 'Calendar'}
+                          {o.disabled ? ' — unavailable' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wider text-slate-500">Second value</label>
+                    <input type="number" value={form.secondary_value}
+                      onChange={(e) => setForm({ ...form, secondary_value: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-secondary-value" />
+                  </div>
+                </div>
+                {form.secondary_kind === 'calendar' && (
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wider text-slate-500">Second calendar unit</label>
+                    <select value={form.secondary_calendar_unit}
+                      onChange={(e) => setForm({ ...form, secondary_calendar_unit: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-secondary-unit">
+                      <option value="days">Days</option><option value="weeks">Weeks</option>
+                      <option value="months">Months</option><option value="years">Years</option>
+                    </select>
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wider text-slate-500">
+                      Reminder lead ({form.secondary_kind === 'calendar' ? 'days' : form.secondary_kind === 'hours' ? 'hours' : 'km'})
+                    </label>
+                    <input type="number" value={form.secondary_reminder_lead}
+                      onChange={(e) => setForm({ ...form, secondary_reminder_lead: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-secondary-lead" placeholder="auto" />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold mb-1 uppercase tracking-wider text-slate-500">Last done {form.secondary_kind === 'calendar' ? 'date' : 'value'}</label>
+                    <input value={form.secondary_last_done_value}
+                      onChange={(e) => setForm({ ...form, secondary_last_done_value: e.target.value })}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-secondary-last-done" />
+                  </div>
+                </div>
+                {secondaryHelperLine && (
+                  <div className="px-3 py-2 rounded-lg bg-purple-50 border border-purple-200 text-[11px] text-purple-800"
+                       data-testid="sch-secondary-helper-line">
+                    {secondaryHelperLine}
+                  </div>
+                )}
+                <label className="flex items-start gap-2 cursor-pointer text-[11px] text-slate-700">
+                  <input type="checkbox" checked={form.secondary_baseline_today}
+                    onChange={(e) => setForm({ ...form, secondary_baseline_today: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                    data-testid="sch-secondary-baseline-today" />
+                  <span>Second baseline = today&apos;s reading</span>
+                </label>
+              </div>
+            )}
+          </div>
         </div>
         <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="sch-cancel">Cancel</button>
