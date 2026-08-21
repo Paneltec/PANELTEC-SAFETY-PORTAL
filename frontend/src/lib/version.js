@@ -1,6 +1,98 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.19 — Rich-text description editor + "View Checklist" links.
+//
+// The Schedule editor's `description_html` field is now optionally
+// edited in a **rich-text** contentEditable surface (Plain / Rich
+// toggle, plain default, choice persisted per-device via
+// localStorage). Backend infra was already in place from v58.13.0-a
+// (bleach sanitiser + `description_html` field + `<a>` allowlist) —
+// this ship is 100% frontend.
+//
+// Files touched (frontend only, zero backend churn):
+//   · `frontend/src/components/RichTextEditor.jsx` — NEW (~200 LOC).
+//     Homegrown contentEditable + execCommand toolbar. Buttons map
+//     1:1 to the backend bleach allowlist (Bold, Italic, Underline,
+//     UL, OL, H3, Link, Insert Checklist). `document.execCommand`
+//     is deprecated but universally supported and emits HTML that a
+//     future Tiptap migration can consume unchanged. Best-effort
+//     paste-scrubber walks the DOM and unwraps any element not in
+//     the allowlist so the visible editor doesn't render junk
+//     between paste and save (bleach on the server is the
+//     authoritative pass).
+//   · `frontend/src/components/ChecklistLinkPicker.jsx` — NEW
+//     (~130 LOC). Modal listing `form_templates` from the existing
+//     `GET /api/forms/templates` endpoint. Client-side substring
+//     filter, keyboard-focused search, `useLockBodyScroll`, close
+//     via X / backdrop / Cancel. On pick, calls
+//     `onPick(templateId, templateName)` and the caller inserts an
+//     `<a href="/app/forms?template_id=<id>">Name</a>` into the
+//     rich-text buffer.
+//   · `frontend/src/components/AssetServiceTabs.jsx` — Plain/Rich
+//     toggle wired above the ScheduleEditor description field.
+//     Plain path renders the existing `<textarea>` unchanged (byte
+//     parity for legacy users). Rich path mounts RichTextEditor
+//     bound to the same `description_html` state. Rich→Plain UX:
+//     silent swap when there's no HTML tag in the buffer (no
+//     popup fatigue); confirm dialog when formatting would be lost.
+//     Also adds a read-only description preview panel to
+//     ServiceSchedulesTab so `description_html` is no longer
+//     write-only. Preview uses `dangerouslySetInnerHTML` on the
+//     already-bleached value from Mongo (guardrail: NEVER on
+//     pre-save user input).
+//   · `frontend/src/pages/Forms.jsx` — +19 LOC. New useEffect
+//     consumes `?template_id=<id>` and auto-opens the preview
+//     modal, then strips the query param via `navigate(..., {
+//     replace: true })` so a back-nav doesn't retrigger the modal.
+//     Distinct from the existing `?template=<id>` handler which
+//     opens the FILL-OUT modal (fill vs preview are different
+//     flows).
+//
+// Rich → Plain toggle UX (documented decision)
+//   Chose option (c) — Confirm modal — with a twist: DETECT
+//   formatting on the fly via `hasHtmlTags(desc)`. If the current
+//   description contains no HTML tags, swap silently (no popup
+//   when there's nothing to lose). If tags are present, show a
+//   confirm dialog before stripping. Gives the fast-toggle path
+//   when the user hasn't formatted anything, and explicit consent
+//   when they have. Also picked the cleanest of options (a/b/c):
+//   (a) is confusing (raw tags in a textarea), (b) is silent data
+//   loss, (c) is safe but chatty — the "silent when empty" tweak
+//   removes the chattiness for the common case.
+//
+// Backend
+//   ZERO changes. `description_html` field, bleach sanitiser
+//   (`asset_service.py:_sanitize_description_html`), and `<a href>`
+//   allowlist all shipped in v58.13.0-a. Backend did NOT need to
+//   reload for this ship — supervisor was untouched.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/frontend_smoke/`, never `/app/backend/`.
+//   · v58.13.10 flash-bug: every trigger that mounts the checklist
+//     picker calls `e.stopPropagation()`; the picker's backdrop
+//     handler uses `e.target === e.currentTarget` so clicks inside
+//     the modal don't dismiss it.
+//   · `dangerouslySetInnerHTML` is used ONLY on `s.description_html`
+//     read from Mongo (already bleach-sanitised on write); NEVER on
+//     any pre-save user-typed value.
+//   · Zero new npm packages (homegrown editor per Pass 1 brief).
+//   · asset_service_schedules / asset_service_records / assets —
+//     schema unchanged.
+//
+// Deferred (still parked)
+//   · Rich-text for RecordEditor description / TemplateBuilder /
+//     other description fields — separate ships if desired.
+//   · Dedicated `checklist_template_id` field on schedules — the
+//     approach-(ii) alternative from the Pass 1 report. Not shipped;
+//     inline-in-HTML link is more flexible and needs no schema
+//     change.
+//   · CsIncidentTab.jsx orphan cleanup, CacheBusterBanner UX,
+//     backend/workers.py F811 — still parked from prior ships.
+
+
 // v160.3.9.58.13.18 — Due & Generated inbox tab (Service Inbox).
 //
 // Adds a 5th tab to PlantVehicles.jsx that surfaces two org-wide
@@ -2335,7 +2427,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.18';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.19';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

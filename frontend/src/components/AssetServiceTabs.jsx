@@ -17,6 +17,49 @@ import useLockBodyScroll from '../lib/useLockBodyScroll';
 // `apiBasePath` / `apiDeletePath` so it can POST/DELETE to
 // `/assets/{asset_id}/schedules/{sid}/attachments`.
 import { AttachmentField } from './forms/BydaFields';
+// v58.13.19 — Rich-text editor for schedule `description_html`.
+// Homegrown contentEditable + execCommand toolbar; matches the
+// backend bleach allowlist exactly. Toggle is Plain / Rich with the
+// user's choice persisted per-device via localStorage.
+import RichTextEditor from './RichTextEditor';
+import ChecklistLinkPicker from './ChecklistLinkPicker';
+
+// v58.13.19 — Persist the Plain / Rich preference so returning users
+// don't get their preferred editor mode reset on every schedule edit.
+const DESC_EDITOR_MODE_KEY = 'paneltec_schedule_desc_editor_mode';
+function loadEditorMode() {
+  try {
+    const v = localStorage.getItem(DESC_EDITOR_MODE_KEY);
+    return v === 'rich' ? 'rich' : 'plain';
+  } catch { return 'plain'; }
+}
+function saveEditorMode(mode) {
+  try { localStorage.setItem(DESC_EDITOR_MODE_KEY, mode); } catch { /* noop */ }
+}
+// v58.13.19 — Detects whether the current `description_html` string
+// contains ANY HTML tags. Drives the "Switching to Plain will strip
+// formatting" confirmation dialog: if the answer is No, we swap
+// silently (nothing to lose).
+const HTML_TAG_RE = /<[a-z][^>]*>/i;
+function hasHtmlTags(s) { return typeof s === 'string' && HTML_TAG_RE.test(s); }
+// Simple entity-decoding tag-strip. Only invoked when the user
+// confirms the plaintext downgrade, so precision losses (e.g. a
+// pathological `&amp;amp;`) are acceptable.
+function stripToPlain(html) {
+  if (!html) return '';
+  return html
+    .replace(/<\/?(p|div|li|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 function statusPill(status) {
   if (status === 'overdue') return ['OVERDUE', 'bg-rose-50 text-rose-700 border-rose-200'];
@@ -91,6 +134,21 @@ export function ServiceSchedulesTab({ asset, canEdit }) {
                     {s.next_due_value_secondary != null && <span className="ml-2">· Next at {s.next_due_value_secondary}{s.secondary_interval.kind === 'hours' ? 'h' : 'km'}</span>}
                     {s.next_due_at_secondary && <span className="ml-2">· Next on {new Date(s.next_due_at_secondary).toLocaleDateString()}</span>}
                   </div>
+                )}
+                {/* v58.13.19 — Read-only preview of description_html so
+                    rich-text isn't a write-only feature. Value comes
+                    directly from Mongo (already bleach-sanitised on
+                    write in asset_service.py:_sanitize_description_html),
+                    so dangerouslySetInnerHTML is safe here.
+                    Guardrail: NEVER use dangerouslySetInnerHTML on
+                    pre-save user input. */}
+                {s.description_html && (
+                  <div
+                    className="mt-1.5 px-2 py-1.5 rounded-md bg-slate-50 border border-slate-100 text-[11px] text-slate-700 prose prose-sm max-w-none overflow-hidden line-clamp-3
+                      [&_a]:text-blue-600 [&_a]:underline [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_h3]:text-xs [&_h3]:font-bold [&_p]:my-0.5"
+                    data-testid={`schedule-desc-preview-${s.id}`}
+                    dangerouslySetInnerHTML={{ __html: s.description_html }}
+                  />
                 )}
               </div>
               {canEdit && (
@@ -197,6 +255,45 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
     }
   }, [form.assigned_to_position, filteredAssignWorkers, form.assigned_to_worker_id]);
   const [saving, setSaving] = useState(false);
+  // v58.13.19 — Rich-text toggle state. Default persisted mode is
+  // "plain" (legacy-safe). `pendingPlainSwap` triggers a confirm
+  // dialog when the user is about to lose HTML formatting.
+  const [descEditorMode, _setDescEditorMode] = useState(loadEditorMode);
+  const [pendingPlainSwap, setPendingPlainSwap] = useState(false);
+  const [checklistPickerOpen, setChecklistPickerOpen] = useState(false);
+  const setDescEditorMode = (next) => {
+    if (next === 'plain' && descEditorMode === 'rich' && hasHtmlTags(form.description_html)) {
+      // Rich → Plain with formatting present → confirm before stripping.
+      setPendingPlainSwap(true);
+      return;
+    }
+    _setDescEditorMode(next);
+  };
+  const confirmPlainSwap = () => {
+    setForm((f) => ({ ...f, description_html: stripToPlain(f.description_html) }));
+    _setDescEditorMode('plain');
+    saveEditorMode('plain');
+    setPendingPlainSwap(false);
+  };
+  const cancelPlainSwap = () => setPendingPlainSwap(false);
+  const insertChecklistLink = (templateId, templateName) => {
+    // Insert an `<a>` at the current caret. If no caret is inside the
+    // editor (e.g. user opened the picker without clicking in first),
+    // append to the end of the current description_html.
+    const safeName = String(templateName || 'Checklist')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const anchor = `<a href="/app/forms?template_id=${templateId}" rel="noopener">${safeName}</a>`;
+    setChecklistPickerOpen(false);
+    const rte = document.querySelector('[data-testid="sch-description-rte-content"]');
+    if (rte && document.activeElement === rte) {
+      document.execCommand('insertHTML', false, anchor + '&nbsp;');
+      rte.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      const cur = form.description_html || '';
+      const glue = cur && !/\s$/.test(cur.replace(/<[^>]+>/g, '')) ? ' ' : '';
+      setForm((f) => ({ ...f, description_html: `${cur}${glue}${anchor}&nbsp;` }));
+    }
+  };
 
   // Phase 3.5 — helper line shows the projected next-due based on the
   // asset's current meter (or today's date) the moment the user changes
@@ -530,13 +627,50 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold mb-1">Description</label>
-                  <textarea value={form.description_html}
-                    onChange={(e) => setForm({ ...form, description_html: e.target.value })}
-                    rows={4}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                    data-testid="sch-description-html"
-                    placeholder="Task notes, checklist references, or HTML." />
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="block text-xs font-semibold flex-1">Description</label>
+                    {/* v58.13.19 — Plain / Rich toggle. Default plain
+                        (legacy-safe). Choice persists per-device. */}
+                    <div className="inline-flex rounded-md border border-slate-200 overflow-hidden text-[10px] font-bold uppercase tracking-wider"
+                         data-testid="sch-desc-mode-toggle">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (descEditorMode === 'plain') return;
+                          setDescEditorMode('plain'); saveEditorMode('plain');
+                        }}
+                        className={descEditorMode === 'plain'
+                          ? 'px-2 py-1 bg-slate-800 text-white'
+                          : 'px-2 py-1 bg-white text-slate-600 hover:bg-slate-50'}
+                        data-testid="sch-desc-mode-plain">Plain</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (descEditorMode === 'rich') return;
+                          setDescEditorMode('rich'); saveEditorMode('rich');
+                        }}
+                        className={descEditorMode === 'rich'
+                          ? 'px-2 py-1 bg-blue-600 text-white'
+                          : 'px-2 py-1 bg-white text-blue-700 hover:bg-blue-50'}
+                        data-testid="sch-desc-mode-rich">Rich</button>
+                    </div>
+                  </div>
+                  {descEditorMode === 'plain' ? (
+                    <textarea value={form.description_html}
+                      onChange={(e) => setForm({ ...form, description_html: e.target.value })}
+                      rows={4}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="sch-description-html"
+                      placeholder="Task notes, checklist references, or HTML." />
+                  ) : (
+                    <RichTextEditor
+                      value={form.description_html}
+                      onChange={(html) => setForm({ ...form, description_html: html })}
+                      placeholder="Task notes. Use the toolbar for formatting or the checklist icon to link a form template."
+                      testid="sch-description-rte"
+                      onInsertChecklist={() => setChecklistPickerOpen(true)}
+                    />
+                  )}
                 </div>
                 {/* v58.13.0-b (shipped v58.13.11) — Phase B fields.
                     5 rendered: phone, reported_by_contact, project_id,
@@ -659,11 +793,47 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
           </button>
         </div>
       </div>
+      {/* v58.13.19 — Checklist link picker (mounted lazily). */}
+      {checklistPickerOpen && (
+        <ChecklistLinkPicker
+          onPick={insertChecklistLink}
+          onClose={() => setChecklistPickerOpen(false)}
+        />
+      )}
+      {/* v58.13.19 — Rich → Plain confirmation. Only mounted when the
+          user actually has formatting to lose (hasHtmlTags check
+          upstream); no popup fatigue for empty / plaintext content. */}
+      {pendingPlainSwap && (
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-900/50 p-3"
+          onClick={(e) => e.target === e.currentTarget && cancelPlainSwap()}
+          data-testid="sch-desc-plain-confirm">
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl border border-slate-200 p-5 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+                <AlertTriangle size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-bold text-slate-900">Switch to plain text?</h3>
+                <p className="text-xs text-slate-600 mt-1">
+                  Formatting (bold, lists, links, headings) will be
+                  stripped and cannot be recovered from Plain mode.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={cancelPlainSwap}
+                className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold"
+                data-testid="sch-desc-plain-confirm-cancel">Cancel</button>
+              <button onClick={confirmPlainSwap}
+                className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-bold"
+                data-testid="sch-desc-plain-confirm-ok">Strip &amp; switch</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// ────────────────── Service log tab ──────────────────
 
 export function ServiceLogTab({ asset, canEdit }) {
   const [records, setRecords] = useState([]);

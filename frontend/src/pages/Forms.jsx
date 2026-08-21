@@ -1320,6 +1320,25 @@ export default function Forms() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
+  // v58.13.19 — Deep-link `?template_id=<id>` → auto-open the preview
+  // modal (read-only, no fill-out). Fired by rich-text "View
+  // Checklist" links inserted into schedule descriptions. Ignored if
+  // the id isn't in the loaded rows (e.g. archived or from a
+  // different org). Runs after `rows` is populated so the modal has
+  // a template to render.
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tid = params.get('template_id');
+    if (!tid || !rows.length) return;
+    const tpl = rows.find((t) => t.id === tid);
+    if (!tpl) return;
+    setPreviewT(tpl);
+    // Strip the query param so a back-nav doesn't retrigger the
+    // modal after the user closes it.
+    navigate('/app/forms', { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.search, rows.length]);
+
   useEffect(() => {
     if (!filterOpen) return;
     const onDoc = (e) => { if (filterRef.current && !filterRef.current.contains(e.target)) setFilterOpen(false); };
