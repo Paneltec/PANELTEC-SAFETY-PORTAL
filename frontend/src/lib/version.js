@@ -1,6 +1,55 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.20 — Small polish bundle (housekeeping ship).
+//
+// Three unrelated, low-risk cleanups bundled to reduce ceremony:
+//
+//   1. `CsIncidentTab.jsx` orphan file — DELETED (~427 LOC removed).
+//      This file was unmounted from the router in v58.13.12's CS
+//      Incident → Submissions migration but never physically
+//      removed from disk. Zero live-code references (only mentions
+//      were in /app/memory/*.md docs + a historical code-comment
+//      in CsIncidentsList.jsx explaining where the import modal
+//      was extracted from — no import, no dynamic import, no
+//      test-mock). Safe delete confirmed by grep.
+//
+//   2. km/hours `Next due: "—"` fallback (deferred from v58.13.18)
+//      — `frontend/src/pages/ServiceInboxTab.jsx`. Meter-tracked
+//      schedules (hours / km) have `next_due_at == null` because
+//      those axes track by meter, not date. Previously the DUE
+//      tile showed "—" for the Next-due line on meter schedules,
+//      losing information. New `nextDueDisplay` helper picks:
+//      `next_due_at` (calendar) → formatted date; `hours` → "8250 h";
+//      `km` → "125000 km"; else "—". Calendar-axis display
+//      preserved verbatim.
+//
+//   3. `backend/workers.py` F811 warning — `require_permission`
+//      was imported twice (line 21 solo, then again as part of a
+//      multi-name import on line 25). Dropped from line 25 per
+//      ruff's F811 autofix suggestion; line 21 remains the sole
+//      source. Zero behavioural change. Backend WILL reload
+//      once — drain fix from v58.13.15 keeps it fast.
+//
+// Files touched
+//   · DELETED `frontend/src/pages/CsIncidentTab.jsx`.
+//   · `frontend/src/pages/ServiceInboxTab.jsx` — +14 LOC
+//     (nextDueDisplay helper).
+//   · `backend/workers.py` — one-line import rewrite, +3 LOC comment.
+//   · Version files ×3 canonical + changelog block here.
+//   · NEW `tests/frontend_smoke/test_polish_bundle_v58_13_20.py`
+//     (5 pytests — orphan absent, fallback logic present,
+//     workers.py F811 clean, version-sync green).
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/frontend_smoke/`, never `/app/backend/`.
+//   · Each item <15 LOC net. None expanded.
+//   · No schema change. No new npm packages. No new backend
+//     endpoints.
+
+
 // v160.3.9.58.13.19 — Rich-text description editor + "View Checklist" links.
 //
 // The Schedule editor's `description_html` field is now optionally
@@ -2427,7 +2476,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.19';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.20';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

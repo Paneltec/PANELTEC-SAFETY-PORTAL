@@ -136,11 +136,15 @@ def test_forms_page_consumes_template_id_query_param():
 
 
 def test_version_sync_still_green():
+    """Re-assert the three canonical files agree on the CURRENT
+    RUNNING_VERSION (read dynamically so this test survives future
+    bumps). Full guardrail is at test_version_sync_v58_13_13.py."""
+    import re
     running = (APP / "frontend/src/lib/version.js").read_text(encoding="utf-8")
     sw = (APP / "frontend/public/service-worker.js").read_text(encoding="utf-8")
     mobile = (APP / "mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    assert "'paneltec-v160.3.9.58.13.19'" in running
-    assert "'paneltec-v160.3.9.58.13.19'" in sw
-    assert "'paneltec-v160.3.9.58.13.19'" in mobile
-    # RUNNING_VERSION export line must specifically be at 58.13.19.
-    assert "export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.19'" in running
+    m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+)'", running)
+    assert m, "RUNNING_VERSION export not found"
+    current = m.group(1)
+    assert f"'{current}'" in sw, f"service-worker CACHE_VERSION != {current}"
+    assert f"'{current}'" in mobile, f"mobile MOBILE_BUNDLE_VERSION != {current}"

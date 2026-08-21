@@ -156,6 +156,20 @@ export default function ServiceInboxTab() {
       : row.interval_kind === 'hours'
         ? 'hours'
         : 'km';
+    // v58.13.20 — km/hours schedules track by meter, not date, so
+    // `next_due_at` is null for those axes. Fall back to
+    // `next_due_value` + unit so the tile shows a useful signal
+    // instead of the em-dash "—" `fmtDate` returns for null.
+    const nextDueDisplay = (() => {
+      if (row.next_due_at) return fmtDate(row.next_due_at);
+      if (row.interval_kind === 'hours' && row.next_due_value != null) {
+        return `${row.next_due_value} h`;
+      }
+      if (row.interval_kind === 'km' && row.next_due_value != null) {
+        return `${row.next_due_value} km`;
+      }
+      return '—';
+    })();
     return (
       <div className="p-3 space-y-2" data-testid={`inbox-due-tile-${row.schedule_id}`}>
         <div className="flex items-start gap-2">
@@ -169,7 +183,7 @@ export default function ServiceInboxTab() {
               {row.asset?.rego_serial && <span className="ml-1 text-slate-400">· {row.asset.rego_serial}</span>}
             </div>
             <div className="text-[11px] text-slate-500 mt-1">
-              Next due: <span className="font-medium text-slate-800">{fmtDate(row.next_due_at)}</span>
+              Next due: <span className="font-medium text-slate-800">{nextDueDisplay}</span>
               <span className="ml-1 text-slate-400">({axisLabel})</span>
               {row.priority && (
                 <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-semibold uppercase tracking-wider">

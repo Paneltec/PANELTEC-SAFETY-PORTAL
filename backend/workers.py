@@ -22,7 +22,10 @@ from permissions import require_permission
 from db import db
 from models import new_id, now_iso
 
-from permissions import require_permission, resolve_team_scope, require_module
+# v58.13.20 — `require_permission` was double-imported (line above +
+# in the multi-name import below). Dropped from the second import
+# per ruff F811 fix; line 21 remains the sole source.
+from permissions import resolve_team_scope, require_module
 from permissions_scope import scope_filter, can_access_record, require_scoped_access  # v160.3.9.28 + v43.2
 
 router = APIRouter(
