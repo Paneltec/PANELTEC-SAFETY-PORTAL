@@ -7,7 +7,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Literal, Any
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request
 from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 from bson import ObjectId
@@ -357,6 +357,7 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
 @router.delete("/{worker_id}", status_code=204)
 async def delete_worker(
     worker_id: str,
+    request: Request,
     user: dict = Depends(require_permission("workers", "delete")),
 ):
     # Phase 3.18 — auth now flows through the permissions matrix.
@@ -375,6 +376,50 @@ async def delete_worker(
     )
     if result.matched_count == 0:
         raise HTTPException(404, "Worker not found")
+
+    # v58.13.28 — Auto-null cascade: any hr_employees still pointing at
+    # this now-soft-deleted worker must have `linked_worker_id` cleared
+    # so future joins don't dereference a tombstone. The link's
+    # historical existence is preserved in the audit trail (one row
+    # per affected employee below).
+    #
+    # Deferred import — hr_employees is peer-router and importing it
+    # at module scope would risk load-order weirdness during test
+    # harness setup that mocks the workers module in isolation.
+    from hr_employees import _audit as _hr_audit
+    affected = []
+    async for e in db.hr_employees.find(
+        {"linked_worker_id": worker_id, "deleted_at": None},
+        {"_id": 0, "id": 1, "employee_id": 1,
+         "linked_worker_name": 1},
+    ):
+        affected.append(e)
+    if affected:
+        upd = await db.hr_employees.update_many(
+            {"linked_worker_id": worker_id, "deleted_at": None},
+            {"$set": {"linked_worker_id": None,
+                      "linked_worker_name": None,
+                      "updated_at": ts}},
+        )
+        log.info(
+            "v58.13.28 cascade: worker %s soft-deleted → unlinked %d hr_employees",
+            worker_id, upd.modified_count,
+        )
+        worker_name = (
+            f"{existing.get('first_name','')} {existing.get('last_name','')}".strip()
+        )
+        for e in affected:
+            await _hr_audit(
+                actor=user, request=request,
+                action="worker_unlinked_via_cascade",
+                employee_id=e.get("employee_id"),
+                target_uid=e.get("id"),
+                extra={
+                    "prev_worker_id": worker_id,
+                    "prev_worker_name": e.get("linked_worker_name") or worker_name,
+                    "reason": "worker_soft_deleted",
+                },
+            )
     return None
 
 

@@ -1,6 +1,81 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.28 — Auto-null cascade on worker soft-delete.
+//
+// v58.13.25 Pass 1 answer #8 originally chose (b) leave-as-is on
+// worker soft-delete: keep `linked_worker_id` pointing at a tombstone
+// so the historical link stayed visible. v58.13.26 uncovered a latent
+// `_audit(target_id=…)` TypeError that had never surfaced only
+// because no real link had been written yet; this ship revises the
+// original choice to (a) auto-null cascade because dangling
+// references will bite in future joins (dashboards, exports, the
+// contractor/renewal side eventually), and the audit row preserves
+// the historical link cleanly.
+//
+// Files touched
+//   · `backend/workers.py` — `delete_worker` handler grows a
+//     cascade block AFTER the successful soft-delete $set. Fetches
+//     every hr_employee whose `linked_worker_id == worker_id`,
+//     runs `update_many` to null out both the id + denormalised
+//     name, INFO-logs the affected count, and writes ONE audit row
+//     per affected employee via the existing `hr_employees._audit()`
+//     helper (deferred import inside the handler to avoid load-order
+//     surprises during test harness setup).
+//     · New `request: Request` parameter added to the handler — was
+//       previously request-less. Required for `_audit()` which
+//       captures IP + User-Agent from the request headers. Legacy
+//       DELETE /workers/{id} callers (which never passed a Request
+//       explicitly) are unaffected because FastAPI does the DI.
+//     · Audit `action` = `"worker_unlinked_via_cascade"`. `extra`
+//       captures `prev_worker_id`, `prev_worker_name`, and
+//       `reason="worker_soft_deleted"` so future audit queries can
+//       distinguish this from an explicit unlink.
+//   · No frontend changes. WorkerLinkModal + BulkWorkerLinkWizard
+//     + HrEmployeesPage all keep working — a soft-deleted worker
+//     was already excluded from the active-worker query in
+//     v58.13.26, and the linked-worker chip that references a now
+//     cascaded-null id simply renders as "Link worker…" on next
+//     refetch.
+//
+// Cascade order (documented for future auditors)
+//   1. `db.workers.update_one` — soft-delete the worker.
+//     · If matched_count == 0 → 404. Cascade DOES NOT fire.
+//   2. `db.hr_employees.find({linked_worker_id: id})` — collect
+//      affected rows with their `employee_id` + prior denormalised
+//      name for the audit trail.
+//   3. `db.hr_employees.update_many` — null out `linked_worker_id`
+//      + `linked_worker_name` in one round-trip.
+//   4. Per-employee audit rows via `_audit()`.
+//   5. Return 204 as before.
+//
+// Guardrails held
+//   · No schema change. Existing collections + indexes untouched.
+//   · Uniqueness constraint on `linked_worker_id` unchanged; the
+//     cascade defensively handles N-1 (current linker enforces 1-1
+//     but if the constraint ever loosens the cascade still works).
+//   · v58.13.25 / v58.13.26 link + unlink endpoints UNTOUCHED.
+//   · v58.13.26 bulk endpoints UNTOUCHED.
+//   · v58.13.27 AssetDrawer deep-link path UNTOUCHED.
+//   · v58.13.13 version-sync guardrail: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/backend_unit/`.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_worker_soft_delete_cascade_v58_13_28.py`
+//     — 6 pytests: 0 linked, 1 linked, 3 linked (defensive), regression
+//     guard on unrelated links, idempotent double-delete, 404 unknown
+//     worker never fires cascade.
+//
+// Backend WILL reload once (single `workers.py` edit + one Request
+// import). Drain expected <10s per the v58.13.15 shutdown fix.
+//
+// Deferred (still parked)
+//   · Worker-side view of the linked employee (permission-gated).
+//   · Bulk unlink companion to v58.13.26's bulk link.
+//   · Pre-existing `PlantVehicles.jsx` lint warnings from v58.13.27.
+
+
 // v160.3.9.58.13.27 — Stable AssetDrawer deep-link path.
 //
 // Backlog: multiple prior ships (v58.13.18, v58.13.19, v58.13.23)
@@ -2967,7 +3042,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.27';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.28';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
