@@ -1,6 +1,132 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.12 — Service Log Position-Primary redesign.
+//
+// User feedback on v58.12.10: "the log service record, we already
+// know who the technician position it is the list out of 65 plus
+// employees there i only 1 technician it is this list to chose from
+// i need instead of going throu all the employees just neet a list
+// of positions to chose from."
+//
+// The auto-fill-from-tech UX shipped in v58.12.10 was inverted from
+// what the user wanted. On the Service Log they don't hunt through
+// 68 workers to find "the one Technician" — they want to pick from
+// the 17 distinct Position values FIRST, then pick the (usually
+// unique) tech that holds that position.
+//
+// CHANGED — components/AssetServiceTabs.jsx::RecordEditor
+//   · `posMode` semantics simplified: 'select' | 'freetext'. Chip
+//     mode retired; `technician-position-chip` and
+//     `technician-position-edit` testids removed from the DOM.
+//   · New `filteredTechs` memo: filters `techs` by
+//     `form.technician_position` when set. `effectiveTechs` computed
+//     from that with a zero-match fallback (see below).
+//   · New `techPositionHasNoMatch` boolean: true when a position is
+//     set AND zero workers hold it AND the roster loaded. Triggers a
+//     hint + fallback to the full roster so the user is never
+//     stranded with an empty tech list.
+//   · `onPickTech` no longer overwrites `form.technician_position`.
+//     Position is upstream now; tech follows position.
+//   · Position picker moved to a col-span-2 slot ABOVE the
+//     Cost/Technician row inside the `kind==='service'` grid.
+//   · New hint element `technician-position-hint-no-match` with the
+//     copy "No workers listed with this position — showing all
+//     workers." (Refinement A from the ship brief.)
+//   · "— Type manually —" sentinel on the position select still
+//     works. When picked, the position becomes a free-text input AND
+//     the technician list reverts to the full roster (opaque free
+//     text cannot be a filter key). Refinement B from the brief.
+//
+// UNTOUCHED
+//   · Backend model locked at v58.12.10 shape. `RecordIn` /
+//     `RecordPatch` / `technician_position` schema unchanged. No
+//     `workers.py::workers_directory` shape change (the `position`
+//     projection field remains as widened at v58.12.10).
+//   · Off-roster free-text technician branch (v58.11.2 `techMode`)
+//     still fully functional in parallel — the position picker is
+//     independent of the tech-name mode.
+//   · No existing service log record modified. Legacy records with
+//     a `technician_position` value that doesn't match any Simpro
+//     option render normally — the value stays in state; user can
+//     see & edit it via "— Type manually —".
+//
+// TESTS — 6 jsdom cases in `AssetServiceTabs.techposition.test.jsx`:
+//   · (kept) off-roster free-text tech branch still exposes position picker.
+//   · (a) position selected → tech list filters to matching workers only.
+//   · (b) position with zero-match → hint renders + full-fallback list.
+//   · (c) picking a tech does NOT overwrite the previously-selected position.
+//   · (d) position + off-roster technician both persist to submit payload.
+//   · (e) "— Type manually —" position sentinel → free-text input +
+//         technician list reverts to full roster.
+//
+// PRE/POST SNAPSHOT — expected identical (frontend-only ship, no
+// backend touch): form_submissions_live = 7,690 ·
+// workers_simpro_live = 68 · incidents_live = 4 · inspections_live
+// = 6 · form_templates_live = 96.
+
+
+// v160.3.9.58.12.11 — Bulk-import counter fix (Path A′-a).
+//
+// User report: "Bulk import from URL are showing 2058 and a while ago
+// was 7500 do you think you should write data to the folder as you go
+// because we have gone backwards about 3 weeks now and thousands of
+// tokens?"
+//
+// Diagnostic finding (v58.12.10 diagnostic pause): no data loss, no
+// token waste. The DB had 10,936 live pre_starts and the current job
+// was 100% cache-hits (estimated_cost_usd = $0.00 across 2,650
+// PDFs). The "went backwards" was a UI-counter phenomenon:
+// `_run_job` re-initialised `prog["extracted"]` to 0 on every
+// container restart (auto_resume), so the UI counter walked up from
+// zero even though on-disk writes accumulated via per-PDF
+// cache-driven upserts.
+//
+// CHANGED — bulk_import_prestarts.py::_run_job
+//   · `prog = {...}` initial dict now seeds extracted / matched /
+//     failed / cached_hits / estimated_cost_usd / total / failed_pdfs
+//     from `job.get("progress")` when present (fresh jobs still init
+//     to zero — the `.get(...) or 0` coercion covers both cases).
+//   · Adds `_persisted_processed = int(job.get("processed") or 0)`
+//     as the max-flush guard reference.
+//   · Resume log line: `"bulk_import job {id} resume: initialised
+//     prog from persisted snapshot extracted=%d cached_hits=%d
+//     failed=%d processed=%d"` — one-shot at `_run_job` entry, gives
+//     ops a clean audit record of every resume.
+//   · Flush-write guard: `processed = max(prog["extracted"] +
+//     prog["failed"], int(_persisted_processed or 0))`. Never lets
+//     the persisted value regress if a transient in-memory blip
+//     (mid-restart race etc.) writes a lower number.
+//
+// Idempotent: when current > persisted (normal forward progress),
+// current wins — behaviour unchanged. When current < persisted (only
+// possible at re-entry), persisted wins and the counter holds
+// steady until the loop catches up.
+//
+// UNTOUCHED — no schema change. `job.progress` shape read + written
+// with the same field set as pre-v58.12.11. No new fields, no
+// migration. Running job `0da9f903-…` NOT touched — fix will apply
+// at its next container restart (auto_resume_count 9 → 10 or later).
+// No `bulk_import_job_id` backfill on the 65% of pre_starts lacking
+// it (Path A′-a doesn't need per-doc job linkage).
+//
+// TESTS — 3 pytests in `test_bulk_import_counter_v58_12_11.py`:
+//   · Resume from persisted snapshot: mocks a job doc with progress
+//     {extracted: 1000, cached_hits: 542, failed: 13, processed: 1013},
+//     invokes `_run_job`, captures the resume log line, asserts prog
+//     was seeded to those exact values.
+//   · Fresh job (no progress): asserts the branch still initialises
+//     to zeros.
+//   · Max-flush guard: direct arithmetic contract across the four
+//     scenarios (current > persisted / current == persisted /
+//     current < persisted regression blocked / no persisted).
+//
+// PRE/POST SNAPSHOT — expected identical (backend-only ship,
+// running job untouched, no writes triggered): form_submissions_live
+// = 7,690 · workers_simpro_live = 68 · incidents_live = 4 ·
+// inspections_live = 6 · form_templates_live = 96.
+
+
 // v160.3.9.58.12.10 — Work-item label: v58.12.8 (Technician Position
 // Hybrid picker) — shipped as v58.12.10 after v58.12.9 pre-empted the
 // queue. Precedent going forward: work-item LABELS in briefs (v58.12.8)
@@ -1443,7 +1569,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.10';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.12';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

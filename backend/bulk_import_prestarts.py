@@ -1848,14 +1848,25 @@ async def _run_job(job_id: str, mode: str):
         # Shared mutable progress snapshot — kept in a dict so the
         # closure captures a single reference. Persisted to Mongo on a
         # batched cadence (every N PDFs OR every M seconds).
+        # v58.12.11 (Path A′-a) — resume-safe init. On a container
+        # restart the same job doc's `_run_job` is re-entered; without
+        # this seed, `prog["extracted"]` reset to 0 and the wizard UI
+        # visibly walked backwards even though on-disk writes were
+        # accumulating (writes are per-PDF cache-driven upserts —
+        # restart-safe by design). Seeding `prog` from the persisted
+        # snapshot removes the visible regression. Paired with the
+        # flush-time `max(current, persisted)` guard below so a
+        # transient in-memory blip cannot regress the persisted value.
+        _persisted_prog = (job.get("progress") or {})
+        _persisted_processed = int(job.get("processed") or 0)
         prog = {
-            "total": None,          # set once the producer finishes
-            "extracted": 0,
-            "matched": 0,
-            "failed": 0,
-            "cached_hits": 0,
-            "failed_pdfs": [],
-            "estimated_cost_usd": 0.0,
+            "total": _persisted_prog.get("total"),
+            "extracted": int(_persisted_prog.get("extracted") or 0),
+            "matched": int(_persisted_prog.get("matched") or 0),
+            "failed": int(_persisted_prog.get("failed") or 0),
+            "cached_hits": int(_persisted_prog.get("cached_hits") or 0),
+            "failed_pdfs": list(_persisted_prog.get("failed_pdfs") or []),
+            "estimated_cost_usd": float(_persisted_prog.get("estimated_cost_usd") or 0.0),
             # v58.5.1 — per-run telemetry for silent-hang debugging.
             # Mutated in place by `_claude_call_with_backoff`.
             "429s": 0,
@@ -1863,6 +1874,12 @@ async def _run_job(job_id: str, mode: str):
             "timeouts": 0,
             "retries": 0,
         }
+        log.info(
+            "bulk_import job %s resume: initialised prog from persisted "
+            "snapshot extracted=%d cached_hits=%d failed=%d processed=%d",
+            job_id, prog["extracted"], prog["cached_hits"], prog["failed"],
+            _persisted_processed,
+        )
         last_write_ts = time.monotonic()
         run_started_ts = time.monotonic()
 
@@ -1875,7 +1892,16 @@ async def _run_job(job_id: str, mode: str):
             ):
                 return
             last_write_ts = now
-            processed = prog["extracted"] + prog["failed"]
+            # v58.12.11 (Path A′-a) — never let the persisted `processed`
+            # regress. `max(current, persisted)` defends against a
+            # transient in-memory blip (mid-restart re-entry, race on the
+            # counter, etc.) rewriting a lower value than what's already
+            # on disk. Idempotent: when current > persisted (normal
+            # forward progress), current wins as before.
+            processed = max(
+                prog["extracted"] + prog["failed"],
+                int(_persisted_processed or 0),
+            )
             update = {
                 "$set": {
                     "processed": processed,
