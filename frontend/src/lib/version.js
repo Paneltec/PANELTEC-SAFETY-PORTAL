@@ -1,6 +1,97 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.18 — Due & Generated inbox tab (Service Inbox).
+//
+// Adds a 5th tab to PlantVehicles.jsx that surfaces two org-wide
+// lists in one round-trip:
+//   · DUE       — active `asset_service_schedules` whose live
+//                 `_compute_next_due` status is overdue or due_soon,
+//                 joined with asset name/rego/kind.
+//   · GENERATED — `asset_service_records` where
+//                 `generated_by == "asset_service_generate"`,
+//                 `performed_at is null`, `deleted_at is null` —
+//                 populated only once ASSET_SERVICE_GENERATE_CRON
+//                 is enabled (still env-gated OFF from v58.13.17).
+//
+// Files touched (backend + frontend + tests, no schema change):
+//   · `backend/asset_service.py` — new `GET /service/inbox` handler
+//     inserted immediately before `service_summary`. Reuses
+//     `_compute_next_due` verbatim. Response cap: `?limit=200`
+//     default, hard-max 500. Single per-request `assets.find_one`
+//     cache so multiple schedules on the same asset don't refetch.
+//   · `frontend/src/components/AssetServiceTabs.jsx` — minimal
+//     surface-level refactor: `function RecordEditor` →
+//     `export function RecordEditor`. All internal helpers
+//     (ScheduleEditor / DeleteRecordDialog / RecordRow / mode
+//     state / derived memos) stay module-scoped — the ONLY thing
+//     exposed is the component itself, so the Service Inbox can
+//     reuse the exact same "Log service" modal pre-filled with
+//     `{schedule_id, type}`.
+//   · `frontend/src/pages/ServiceInboxTab.jsx` — new page. Two
+//     shadcn sub-tabs (Due / Generated), each rendering
+//     `GroupedTilesView` grouped by `asset.name` per the Pass 1
+//     brief. v58.13.10 flash-bug guardrail: every action button
+//     calls `e.stopPropagation()` + `e.preventDefault()` before
+//     mutating state. Second sentence of the Generated empty state
+//     is admin-only (checks `USER_KEY.role === "admin"`).
+//   · `frontend/src/pages/PlantVehicles.jsx` — 5th tab
+//     "Service Inbox" wired in violet. Grid cols bumped from
+//     `md:grid-cols-4` → `md:grid-cols-5`. Zero other churn.
+//
+// Actions on tiles
+//   Due tile → "Log service"     → exported `RecordEditor` modal,
+//                                  scheduled with `schedule_id` +
+//                                  `type` pre-filled. POST via the
+//                                  existing per-asset endpoint (no
+//                                  new write endpoints).
+//   Due tile → "Open schedule"   → navigate to
+//                                  `/app/vehicles?assetDrawer=<id>&tab=schedules`
+//                                  (drawer-open hint; if the drawer
+//                                  ignores it the user still lands
+//                                  on the correct asset).
+//   Gen tile → "Mark as performed" → PUT the existing per-asset
+//                                    record endpoint with
+//                                    `{performed_at: now, hours_at,
+//                                    km_at}` from the joined asset.
+//   Gen tile → "Dismiss"          → DELETE the existing per-asset
+//                                    record endpoint (soft-delete;
+//                                    backend already admin-gates).
+//                                    Non-admins see a disabled
+//                                    button with tooltip.
+//
+// Guardrails held / scope-safe items:
+//   · No new endpoints beyond the ONE new `/service/inbox` read.
+//   · Per-asset write endpoints untouched (used by other pages).
+//   · `asset_service_records` / `asset_service_schedules` /
+//     `assets` — schema unchanged.
+//   · v58.13.17 cron code — untouched.
+//   · v58.13.13 version-sync guardrail: PASS.
+//   · v58.13.10 test-placement rule: new pytests placed at
+//     `/app/tests/backend_unit/test_service_inbox_v58_13_18.py`
+//     and `/app/tests/frontend_smoke/test_service_inbox_render_v58_13_18.py`
+//     — NEVER under `/app/backend/`.
+//
+// Tests
+//   · Backend: 8 pytests at
+//     `/app/tests/backend_unit/test_service_inbox_v58_13_18.py`.
+//     Handler-level with a fake `db`, following the v58.13.17
+//     pattern. Empty result, DUE join, GENERATED join, performed
+//     record NOT surfaced, soft-deleted NOT surfaced, ?limit
+//     clamp, missing asset filtered, response shape.
+//   · Frontend smoke: static grep at
+//     `/app/tests/frontend_smoke/test_service_inbox_render_v58_13_18.py`.
+//     Verifies PlantVehicles.jsx has 5 tabs (Service Inbox
+//     testid), ServiceInboxTab imports GroupedTilesView +
+//     RecordEditor, `e.stopPropagation()` present in tile action
+//     handlers, empty-state strings present.
+//
+// Deferred (still parked; NOT touched this ship):
+//   · CsIncidentTab.jsx orphan cleanup.
+//   · CacheBusterBanner stickier UX.
+//   · backend/workers.py F811 warning.
+
+
 // v160.3.9.58.13.17 — Asset-service overnight generation cron.
 // Env-gated OFF (ASSET_SERVICE_GENERATE_CRON=1 to enable). Ships
 // backend/cron_asset_service_generate.py + manual dry-run script at
@@ -2244,7 +2335,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.17';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.18';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -20,6 +20,10 @@ import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
 // v160.3.9.20 — All Maintenance sub-tab.
 import PlantMaintenanceTab from './PlantMaintenanceTab';
+// v58.13.18 — Due & Generated inbox tab (5th tab). Piggy-backs this
+// page so the reminder-email destination (Plant & Vehicles) also
+// surfaces what needs attention.
+import ServiceInboxTab from './ServiceInboxTab';
 import { USER_KEY } from '../lib/api';
 import {
   DropdownMenu, DropdownMenuTrigger, DropdownMenuContent,
@@ -381,8 +385,8 @@ export default function PlantVehicles() {
 
       <Tabs defaultValue="maintenance" className="mt-2" data-testid="vehicles-tabs">
         {/* v160.3.9.21d — Equal-width, colour-coded, active=filled/inactive=ghost tab bar.
-            Order: All Maintenance · Unmatched · Vehicles from Navixy · Dashboard. */}
-        <TabsList className="w-full grid grid-cols-2 md:grid-cols-4 gap-2 bg-transparent p-0 h-auto rounded-none border-0 shadow-none">
+            Order: All Maintenance · Unmatched · Vehicles from Navixy · Dashboard · Service Inbox (v58.13.18). */}
+        <TabsList className="w-full grid grid-cols-2 md:grid-cols-5 gap-2 bg-transparent p-0 h-auto rounded-none border-0 shadow-none">
           {/* Tab 1 — All Maintenance (navy / Paneltec brand) */}
           <TabsTrigger value="maintenance" data-testid="vehicles-tab-maintenance"
             className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
@@ -427,6 +431,18 @@ export default function PlantVehicles() {
               data-[state=active]:bg-amber-500 data-[state=active]:text-white data-[state=active]:hover:bg-amber-500
               data-[state=active]:shadow-sm">
             Dashboard
+          </TabsTrigger>
+
+          {/* v58.13.18 — Tab 5 — Service Inbox (violet / AI-generated accent).
+              Aggregates DUE schedules and GENERATED (cron-created)
+              records org-wide so the mechanic doesn't have to open
+              each asset drawer to see what's overdue. */}
+          <TabsTrigger value="service-inbox" data-testid="vehicles-tab-service-inbox"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
+              border-violet-500 text-violet-700 bg-white hover:bg-violet-50
+              data-[state=active]:bg-violet-500 data-[state=active]:text-white data-[state=active]:hover:bg-violet-500
+              data-[state=active]:shadow-sm">
+            Service Inbox
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-4" data-testid="vehicles-tab-dashboard-content">
@@ -657,6 +673,13 @@ export default function PlantVehicles() {
         </TabsContent>
         <TabsContent value="unmatched" className="mt-4" data-testid="vehicles-tab-unmatched-content">
           <PlantMaintenanceTab user={pmUser} initialPlantFilter="unmatched" />
+        </TabsContent>
+        {/* v58.13.18 — Service Inbox tab: org-wide DUE schedules +
+            GENERATED (cron-created) unperformed records. See
+            /app/frontend/src/pages/ServiceInboxTab.jsx for the full
+            RecordEditor / Mark-as-performed / Dismiss wiring. */}
+        <TabsContent value="service-inbox" className="mt-4" data-testid="vehicles-tab-service-inbox-content">
+          <ServiceInboxTab />
         </TabsContent>
       </Tabs>
 

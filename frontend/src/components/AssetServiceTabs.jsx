@@ -793,7 +793,13 @@ function RecordRow({ record, canEdit, onEdit, onDelete }) {
   );
 }
 
-function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
+// v58.13.18 — Exported so the new Service Inbox tab in
+// PlantVehicles.jsx can reuse the exact same "Log service" flow
+// pre-filled with `{schedule_id, asset_id, type: schedule.task_type}`.
+// Internal helpers (ScheduleEditor / DeleteRecordDialog / RecordRow /
+// state, sub-modes and derived memos) stay module-scoped — only the
+// component itself is exposed.
+export function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
   useLockBodyScroll();
   const isEdit = !!initial;
   const [form, setForm] = useState({

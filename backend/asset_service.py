@@ -1428,6 +1428,116 @@ async def scan_reminders(user: dict = Depends(get_current_user)):
 
 # ────────────────── Dashboard summary ──────────────────
 
+# v58.13.18 — Due & Generated inbox. Org-wide, single round-trip.
+# Combined read for the "Service Inbox" tab in PlantVehicles.jsx.
+# `due`      — active schedules whose `_compute_next_due` status is
+#              overdue or due_soon (no cached-status shortcut — meters
+#              tick between reminder-cron runs, so recompute per call).
+# `generated`— asset_service_records inserted by the v58.13.17 cron
+#              (generated_by == "asset_service_generate", performed_at
+#              is null, deleted_at is null) i.e. cron-created but not
+#              yet acted on. Zero rows until ASSET_SERVICE_GENERATE_CRON
+#              is switched on in env.
+# Asset name/rego/kind is joined server-side so tiles don't need a
+# per-row lookup. Response cap defaults to 200, hard-max 500.
+@router.get("/service/inbox")
+async def service_inbox(
+    limit: int = Query(200, ge=1, le=500),
+    user: dict = Depends(get_current_user),
+):
+    org_id = user["org_id"]
+    # Small per-request asset cache so the DUE loop doesn't refetch
+    # the same asset for multiple schedules on the same vehicle.
+    asset_cache: dict[str, dict] = {}
+
+    async def _asset(aid: str) -> Optional[dict]:
+        if aid in asset_cache:
+            return asset_cache[aid]
+        a = await db.assets.find_one(
+            {"id": aid, "org_id": org_id, "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1, "rego_serial": 1, "kind": 1,
+             "hours_meter": 1, "odo_km": 1},
+        )
+        asset_cache[aid] = a
+        return a
+
+    due: list[dict] = []
+    async for s in db.asset_service_schedules.find(
+        {"org_id": org_id, "status": "active", "deleted_at": None},
+        {"_id": 0},
+    ):
+        a = await _asset(s["asset_id"])
+        if not a:
+            continue
+        nd = _compute_next_due(s, a)
+        if nd["status"] not in {"overdue", "due_soon"}:
+            continue
+        due.append({
+            "schedule_id": s["id"],
+            "asset_id": s["asset_id"],
+            "workspace_id": s.get("workspace_id"),
+            "name": s.get("name"),
+            "task_identification": s.get("task_identification"),
+            "task_type": s.get("task_type"),
+            "priority": s.get("priority"),
+            "interval_kind": s.get("interval_kind"),
+            "calendar_unit": s.get("calendar_unit"),
+            "next_due_value": nd["next_due_value"],
+            "next_due_at": nd["next_due_at"],
+            "next_due_at_primary": nd["next_due_at_primary"],
+            "next_due_at_secondary": nd["next_due_at_secondary"],
+            "next_due_value_secondary": nd["next_due_value_secondary"],
+            "status": nd["status"],
+            "asset": {"id": a["id"], "name": a.get("name"),
+                      "rego_serial": a.get("rego_serial"),
+                      "kind": a.get("kind"),
+                      "hours_meter": a.get("hours_meter"),
+                      "odo_km": a.get("odo_km")},
+        })
+        if len(due) >= limit:
+            break
+    # Overdue first, then due_soon; within a bucket, earliest next_due_at.
+    due.sort(key=lambda r: (
+        0 if r["status"] == "overdue" else 1,
+        r.get("next_due_at") or "9999",
+    ))
+
+    generated: list[dict] = []
+    async for r in db.asset_service_records.find(
+        {"org_id": org_id, "deleted_at": None, "performed_at": None,
+         "generated_by": "asset_service_generate"},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(limit):
+        a = await _asset(r["asset_id"])
+        if not a:
+            continue
+        generated.append({
+            "record_id": r["id"],
+            "asset_id": r["asset_id"],
+            "workspace_id": r.get("workspace_id"),
+            "schedule_id": r.get("schedule_id"),
+            "type": r.get("type"),
+            "title": r.get("title"),
+            "description": r.get("description"),
+            "created_at": r.get("created_at"),
+            "generated_by_run_id": r.get("generated_by_run_id"),
+            "hours_at": r.get("hours_at"),
+            "km_at": r.get("km_at"),
+            "asset": {"id": a["id"], "name": a.get("name"),
+                      "rego_serial": a.get("rego_serial"),
+                      "kind": a.get("kind"),
+                      "hours_meter": a.get("hours_meter"),
+                      "odo_km": a.get("odo_km")},
+        })
+
+    counts = {
+        "overdue":   sum(1 for r in due if r["status"] == "overdue"),
+        "due_soon":  sum(1 for r in due if r["status"] == "due_soon"),
+        "generated": len(generated),
+    }
+    return {"due": due, "generated": generated, "counts": counts}
+
+
 @router.get("/service/summary")
 async def service_summary(user: dict = Depends(get_current_user)):
     org_id = user["org_id"]
