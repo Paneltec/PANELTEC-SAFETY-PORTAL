@@ -165,6 +165,35 @@ def pytest_configure(config):
     )
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _module_prod_writes_gate(request):
+    """v58.13.22 — Module-level `pytestmark = pytest.mark.live_db_writes`
+    pre-flips the guard so module-scoped fixtures like
+    `ephemeral_admin` can perform their inserts during module setup
+    and their deletes during module teardown. The function-scope
+    guard below sees the same marker (via `get_closest_marker`) and
+    skips its `= False` reset when a module-level opt-in is active,
+    so the flag stays True across per-test teardowns until the whole
+    module tears down. Fixes the gap discovered in v58.13.21 where
+    `ephemeral_admin` (module-scope) ran before the function-scope
+    guard and hit the `live-DB-guard` error on its `insert_one`."""
+    global _ALLOW_PROD_WRITES
+    module_marks = getattr(request.module, "pytestmark", None) or []
+    if not isinstance(module_marks, (list, tuple)):
+        module_marks = [module_marks]
+    has_optin = any(getattr(m, "name", None) == "live_db_writes"
+                    for m in module_marks)
+    if has_optin:
+        prev = _ALLOW_PROD_WRITES
+        _ALLOW_PROD_WRITES = True
+        try:
+            yield
+        finally:
+            _ALLOW_PROD_WRITES = prev
+    else:
+        yield
+
+
 @pytest.fixture(autouse=True)
 def production_db_guard(request):
     """Autouse — checks whether the current test declared the
@@ -173,10 +202,24 @@ def production_db_guard(request):
     global _ALLOW_PROD_WRITES
     marker = request.node.get_closest_marker("live_db_writes")
     _ALLOW_PROD_WRITES = bool(marker)
+    # v58.13.22 — When the module opted in via a module-level
+    # `pytestmark = pytest.mark.live_db_writes`, do NOT reset the
+    # flag to False on per-test teardown. Otherwise module-scoped
+    # fixture finalisers (e.g. `ephemeral_admin`'s
+    # `_mongo.users.delete_one(...)` on module teardown) run with
+    # `_ALLOW_PROD_WRITES = False` — the last test's teardown just
+    # clobbered it — and the guard fires spuriously. Module gate
+    # above owns the True/False bookend for opt-in modules.
+    module_marks = getattr(request.node.module, "pytestmark", None) or []
+    if not isinstance(module_marks, (list, tuple)):
+        module_marks = [module_marks]
+    module_optin = any(getattr(m, "name", None) == "live_db_writes"
+                       for m in module_marks)
     try:
         yield
     finally:
-        _ALLOW_PROD_WRITES = False
+        if not module_optin:
+            _ALLOW_PROD_WRITES = False
 
 
 

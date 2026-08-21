@@ -1,6 +1,75 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.22 — Legacy test hygiene + conftest guard hardening.
+//
+// Four small follow-ups from v58.13.21's report, all test-only or
+// test-adjacent — zero production code touched.
+//
+// 1. Bucket-name drift fix in `backend/tests/test_worker_photo_v34.py`
+//    — `_mongo["fs.files"]` → `_mongo["bk_fs.files"]` in
+//    `test_replace_photo_deletes_old_gridfs_blob`. workers.py:574
+//    stores photos in `bk_fs` (co-tenant with backup snapshots); the
+//    test had been silently checking the wrong bucket, falsely
+//    passing the "old gone" check and failing the "new present"
+//    check. Now correctly targeting `bk_fs.files`.
+//
+// 2. Added explicit `DELETE /workers/{id}/photo` at the tail of the
+//    2 tests that uploaded a photo without cleanup:
+//      · `test_upload_valid_jpeg_returns_200_and_updates_worker`
+//      · `test_users_list_reflects_worker_photo_after_upload`
+//    (The other 7 tests in the file either don't upload, or already
+//    delete, or expect a rejection response so no blob is created.
+//    Pre-ship report's "3 tests" estimate was one high — actual = 2.)
+//
+// 3. Conftest guard hardening in `backend/tests/conftest.py`. Two
+//    changes wired together:
+//      · NEW `_module_prod_writes_gate` (module-scoped autouse) —
+//        reads module-level `pytestmark = pytest.mark.live_db_writes`
+//        and pre-flips `_ALLOW_PROD_WRITES = True` for the whole
+//        module lifecycle. Ensures module-scoped fixture SETUP
+//        (`ephemeral_admin`, `eph_worker`) can perform their inserts.
+//      · `production_db_guard` (function-scoped autouse) skip-reset
+//        logic — checks the same module-level marker and, when
+//        present, does NOT reset `_ALLOW_PROD_WRITES` to False on
+//        per-test teardown. Ensures module-scoped fixture TEARDOWN
+//        (which runs after the LAST test's per-function guard has
+//        already fired its finally) still sees True. Fixes the
+//        v58.13.21-flagged teardown error at zero cost to per-test
+//        isolation for non-opted-in modules.
+//    `test_worker_photo_v34.py`'s in-file session-scoped workaround
+//    from v58.13.21 removed as redundant — the conftest fix
+//    supersedes it. `pytestmark = pytest.mark.live_db_writes`
+//    remains — it's the single opt-in point.
+//
+// 4. One-shot sweep of `test_database.users` for phase4d ephemeral
+//    admin residue (leftover from the pre-v58.13.22 teardown error).
+//    Count deleted: 1. Also swept `workers` for photo-worker
+//    residue: 0 (self-cleaning fixture had always worked).
+//
+// Coverage after the ship
+//   · `backend/tests/test_worker_photo_v34.py`: **9/9 PASS**
+//     (was 0/9 before v58.13.21, then 8/9 with 1 teardown error
+//     and 1 real failure).
+//   · `backend/tests/test_phase_4d_v160_3_9_33.py`: still blocked
+//     because the file lacks `pytestmark = pytest.mark.live_db_writes`
+//     at module scope. The conftest fix would activate it as soon
+//     as the marker is added. **Out of scope for this ship** —
+//     adding markers to sibling test files is a separate hygiene
+//     pass; user's brief said "check it", not "fix it".
+//   · `bk_fs.files`: baseline restored to 944 after the full-file
+//     legacy run (was drifting +3 per session before this ship).
+//
+// Guardrails held
+//   · Zero production code touched (workers.py, simpro_zip_import.py,
+//     etc. — unchanged).
+//   · No GridFS blob deleted outside test cleanup.
+//   · Legacy file stays grandfathered under `/app/backend/tests/`.
+//   · v58.13.13 version-sync: PASS.
+//   · Backend did NOT reload (conftest.py is a test-only file the
+//     watcher ignores) — measured drain skipped.
+
+
 // v160.3.9.58.13.21 — Simpro ZIP photo-replace zero-orphan fix +
 // unblocked legacy worker-photo test.
 //
@@ -2540,7 +2609,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.21';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.22';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

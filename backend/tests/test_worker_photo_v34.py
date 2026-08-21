@@ -2,26 +2,12 @@
 
 Ephemeral-worker fixture pattern so no production worker is ever mutated.
 """
-# v58.13.21 — Unblock the 9 fixture-driven tests in this file that
-# were silently blocked by the v57.2 live-DB-guard.
-#
-# Why the obvious fix (`pytestmark = pytest.mark.live_db_writes`) is
-# NOT sufficient here: the shared `ephemeral_admin` fixture in
-# `backend/tests/conftest.py` is `scope="module"`. It runs BEFORE
-# any function-scoped fixture — including the autouse
-# `production_db_guard` that reads the marker. At the moment
-# `ephemeral_admin` calls `_mongo.users.insert_one(...)` for the
-# first time, `_ALLOW_PROD_WRITES` is still False and the guard
-# fires. This is a pre-existing systemic gap in the guard (affects
-# EVERY `ephemeral_admin`-dependent test file — see
-# `test_phase_4d_v160_3_9_33.py` which is also currently 100%
-# blocked). A proper conftest-level fix is scoped for a future ship.
-#
-# In-file workaround: a session-scoped autouse fixture that pre-flips
-# `_ALLOW_PROD_WRITES` before any module-scoped setup runs. Reverts
-# after the session. Kept module-local so we don't perturb any other
-# suite. `pytestmark` is retained so per-function guard evaluation
-# also sees the opt-in (belt-and-braces).
+# v58.13.21 — Module-scoped `live_db_writes` opt-in.
+# v58.13.22 — Conftest guard hardened to respect this module-level
+# marker in BOTH setup and teardown paths of module-scoped fixtures
+# (ephemeral_admin, eph_worker), so the in-file session-scoped
+# workaround from v58.13.21 is no longer needed. The `pytestmark`
+# below is all that's required.
 import io
 import uuid
 import requests
@@ -29,20 +15,6 @@ import requests
 import pytest
 
 pytestmark = pytest.mark.live_db_writes
-
-
-@pytest.fixture(autouse=True, scope="session")
-def _prod_writes_module_optin_v58_13_21():
-    """Pre-flip the guard for this module's session so
-    module-scoped `ephemeral_admin` can perform its inserts. Restore
-    on session teardown. See conftest.py:110-179 for the guard."""
-    from . import conftest as _cf
-    _prev = _cf._ALLOW_PROD_WRITES
-    _cf._ALLOW_PROD_WRITES = True
-    try:
-        yield
-    finally:
-        _cf._ALLOW_PROD_WRITES = _prev
 
 
 from .conftest import API, _login
@@ -97,6 +69,10 @@ def test_upload_valid_jpeg_returns_200_and_updates_worker(
     body = r.json()
     assert body["photo_url"].startswith(f"/api/workers/{eph_worker['id']}/photo/")
     assert body["photo_gridfs_id"]
+    # v58.13.22 — Cleanup the uploaded GridFS blob so the module
+    # session leaves bk_fs.files at baseline.
+    requests.delete(f"{API}/workers/{eph_worker['id']}/photo",
+                    headers=_hdr(tok), timeout=10)
 
 
 # ─── 2. Wrong MIME → 415 ──────────────────────────────────────────────
@@ -200,7 +176,13 @@ def test_replace_photo_deletes_old_gridfs_blob(
     assert gid1 != gid2, "second upload should produce a new blob id"
     # Assert old blob is gone.
     from bson import ObjectId
-    fs_files = _mongo["fs.files"]
+    # v58.13.22 — workers.py stores photos in the `bk_fs` GridFS
+    # bucket (co-tenanted with backup snapshots since the v58.13-era
+    # bucket consolidation). The test previously queried the default
+    # `fs.files` bucket and always returned None for both assertions
+    # → falsely passed the "old gone" check while silently missing
+    # the "new present" check. Now correctly targeting `bk_fs.files`.
+    fs_files = _mongo["bk_fs.files"]
     assert fs_files.find_one({"_id": ObjectId(gid1)}) is None, (
         "OLD GridFS blob still present after replace — orphan leak"
     )
@@ -252,6 +234,10 @@ def test_users_list_reflects_worker_photo_after_upload(
             f"users-list photo-join failed: expected {worker_photo_url}, "
             f"got {target.get('photo_url')}"
         )
+        # v58.13.22 — Cleanup the uploaded GridFS blob so the module
+        # session leaves bk_fs.files at baseline.
+        requests.delete(f"{API}/workers/{eph_worker['id']}/photo",
+                        headers=_hdr(tok), timeout=10)
     finally:
         _mongo.users.delete_one({"id": uid})
 
