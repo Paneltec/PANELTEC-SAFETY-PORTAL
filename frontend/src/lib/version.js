@@ -1,6 +1,16 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.5 — Supervisor `--reload` config.
+// Fixes the class of stale-backend bugs that broke v58.12.10 delivery.
+// /etc/supervisor/conf.d/supervisord.conf now runs uvicorn with
+// `--reload --reload-dir /app/backend`. Smoke-tested: appending a
+// comment to workers.py triggered `WatchFiles detected changes in
+// 'workers.py'. Reloading...` within ~4s of the write. No manual
+// `supervisorctl restart` needed for backend edits going forward.
+// /app/memory/BUILD_STATE.md updated to reflect the new discipline.
+
+
 // v160.3.9.58.13.0 — Periodic Task Templates (v58.13.0-a).
 // Extends ScheduleIn with 5 optional user-facing fields (priority,
 // task_type, task_identification, description_html, assigned_to_position)
@@ -1678,7 +1688,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.0';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.5';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

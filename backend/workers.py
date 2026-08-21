@@ -716,3 +716,4 @@ async def delete_worker_photo(
     })
     return _serialise(updated, viewer=user)
 
+
