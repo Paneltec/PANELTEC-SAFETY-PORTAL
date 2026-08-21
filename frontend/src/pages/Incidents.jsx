@@ -8,6 +8,7 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import GroupedTilesView from '../components/capture/GroupedTilesView';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -18,6 +19,18 @@ const CATS = [
   ['near_miss', 'Near miss'], ['first_aid', 'First aid'], ['medical', 'Medical'],
   ['ltc', 'Lost-time'], ['env', 'Environmental'], ['property', 'Property'],
 ];
+
+// v58.12.7 — Per-CATS-key palette override for GroupedTilesView. Reads
+// as an escalation ladder (near_miss → property). Not merged into the
+// document-folder-scoped folderColors.js (semantically wrong there).
+const INCIDENT_CATEGORY_PALETTE = {
+  near_miss: { header: 'bg-amber-50 border-amber-200',     dot: 'bg-amber-500',   chip: 'bg-amber-100 text-amber-800' },
+  first_aid: { header: 'bg-rose-50 border-rose-200',       dot: 'bg-rose-500',    chip: 'bg-rose-100 text-rose-800' },
+  medical:   { header: 'bg-red-50 border-red-200',         dot: 'bg-red-500',     chip: 'bg-red-100 text-red-800' },
+  ltc:       { header: 'bg-violet-50 border-violet-200',   dot: 'bg-violet-500',  chip: 'bg-violet-100 text-violet-800' },
+  env:       { header: 'bg-emerald-50 border-emerald-200', dot: 'bg-emerald-500', chip: 'bg-emerald-100 text-emerald-800' },
+  property:  { header: 'bg-slate-50 border-slate-200',     dot: 'bg-slate-500',   chip: 'bg-slate-100 text-slate-800' },
+};
 
 export default function IncidentsList() {
   const [items, setItems] = useState([]);
@@ -78,43 +91,48 @@ export default function IncidentsList() {
        : preFiltered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
        : (<>
         <CaptureListToolbar items={preFiltered} onFiltered={setSearchFiltered} testidPrefix="incidents" />
-        {/* v160.3.0-adjust-20c — A1 sticky header. Body scrolls; thead
-            stays pinned. */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <div className="max-h-[70vh] overflow-y-auto" data-testid="incidents-scroll">
-          <table className="zebra-list w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]"><tr><th className="text-left px-4 py-3">Title</th><th className="text-left px-4 py-3">Category</th><th className="text-left px-4 py-3">Status</th><th className="text-left px-4 py-3">Occurred</th></tr></thead>
-            <tbody>
-              {searchFiltered.map((i) => (
-                <tr key={i.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`incident-row-${i.id}`}>
-                  <td className="px-4 py-3"><div className="font-medium">{i.title}</div><div className="text-xs text-slate-500 line-clamp-1">{i.description}</div></td>
-                  <td className="px-4 py-3"><span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">{(CATS.find(([k]) => k === i.category) || [])[1] || i.category}</span></td>
-                  <td className="px-4 py-3"><StatusBadge value={i.follow_up_status} /></td>
-                  <td className="px-4 py-3 text-slate-500">{(i.occurred_at || '').slice(0, 10)}</td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1 items-center">
-                      {/* v160.3.9.10a — In-app viewer entrypoint */}
-                      <button type="button" onClick={() => setViewerRec(i)}
-                        title="View submission"
-                        data-testid={`capture-view-${i.id}`}
-                        className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-                        <Eye size={13} />
-                      </button>
-                      <PdfActions resourceKind="incidents" recordId={i.id} source={i.source} title={i.title} size="sm" />
-                      <EmailButton resourceKind="incidents" recordId={i.id} source={i.source}
-                        subject={`Incident Summary: ${i.title}`}
-                        body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
-                        variant="row" size="sm" label="Email" />
-                      <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} source={i.source} label="Incident" recordTitle={i.title} onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        </div></>
-       )}
+        {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
+            `category` in the fixed CATS escalation order (near_miss →
+            property). The status/category selects above still layer into
+            `preFiltered`, and CaptureListToolbar adds search on top. */}
+        <GroupedTilesView
+          items={searchFiltered}
+          groupBy={(i) => i.category || 'other'}
+          groupLabels={Object.fromEntries(CATS)}
+          groupOrder={CATS.map(([k]) => k)}
+          groupPaletteOverrides={INCIDENT_CATEGORY_PALETTE}
+          testidPrefix="incident"
+          dateFn={(i) => i.occurred_at || i.created_at || ''}
+          emptyMessage="No matching incidents."
+          renderTile={(i) => (
+            <div className="flex flex-col gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 truncate">{i.title}</div>
+                <div className="text-[11px] text-slate-500 line-clamp-1">{i.description}</div>
+              </div>
+              <div className="flex items-center gap-2 text-[11px]">
+                <StatusBadge value={i.follow_up_status} />
+                <span className="text-slate-500">{(i.occurred_at || '').slice(0, 10)}</span>
+              </div>
+              <div className="flex flex-wrap gap-1 items-center">
+                <button type="button" onClick={() => setViewerRec(i)} title="View submission"
+                  data-testid={`capture-view-${i.id}`}
+                  className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                  <Eye size={13} />
+                </button>
+                <PdfActions resourceKind="incidents" recordId={i.id} source={i.source} title={i.title} size="sm" />
+                <EmailButton resourceKind="incidents" recordId={i.id} source={i.source}
+                  subject={`Incident Summary: ${i.title}`}
+                  body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
+                  variant="row" size="sm" label="Email" />
+                <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} source={i.source} label="Incident" recordTitle={i.title}
+                  onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
+              </div>
+            </div>
+          )}
+        />
+       </>)
+      }
         </TabsContent>
       </Tabs>
       {viewerRec && (

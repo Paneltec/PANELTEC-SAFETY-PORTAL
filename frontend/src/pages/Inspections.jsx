@@ -8,6 +8,7 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import GroupedTilesView from '../components/capture/GroupedTilesView';
 import { CaptureSticky } from '../components/CaptureCard';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
@@ -72,58 +73,58 @@ export default function InspectionsList() {
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
        : (<>
         <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="inspections" />
-        {/* v160.3.0-adjust-20c — A1 sticky header. Table body scrolls in
-            its own container so the thead stays anchored during long
-            lists. Same pattern as Pre-Starts / Risk Assessments. */}
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          <div className="max-h-[70vh] overflow-y-auto" data-testid="inspections-scroll">
-          <table className="zebra-list w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider sticky top-0 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]"><tr><th className="text-left px-4 py-3">Template</th><th className="text-left px-4 py-3">Date</th><th className="text-left px-4 py-3">Results</th></tr></thead>
-            <tbody>
-              {filtered.map((it) => {
-                const total = it.checklist_items?.length || 0;
-                const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
-                const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
-                return (
-                  <tr key={it.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`inspection-row-${it.id}`}>
-                    <td className="px-4 py-3 font-medium">
-                      {it.template_name
-                        ? it.template_name
-                        : <span className="text-slate-400 italic">Deleted template</span>}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">{it.date}</td>
-                    <td className="px-4 py-3 text-slate-500"><span className="text-emerald-700 font-medium">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-medium' : ''}>{failed}</span> fail · {total - passed - failed} N/A</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="inline-flex gap-1 items-center">
-                        {/* v160.3.9.10a — In-app viewer entrypoint */}
-                        <button type="button" onClick={() => setViewerRec(it)}
-                          title="View submission"
-                          data-testid={`capture-view-${it.id}`}
-                          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-                          <Eye size={13} />
-                        </button>
-                        {it.template_name && (
-                          <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
-                        )}
-                        <EmailButton resourceKind="inspections" recordId={it.id} source={it.source}
-                          subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
-                          body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
-                          variant="row" size="sm" label="Email" />
-                        <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`}
-                          onDeleted={(id) => {
-                            setItems((prev) => prev.filter((x) => x.id !== id));
-                            setFiltered((prev) => prev.filter((x) => x.id !== id));
-                          }} />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        </div></>
-       )}
+        {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
+            `template_name`; sorts groups alphabetically; sorts rows
+            within each group by `date` DESC. Toolbar filter above still
+            layers its result into `filtered` — the tile view reads that. */}
+        <GroupedTilesView
+          items={filtered}
+          groupBy={(it) => it.template_name || 'Deleted template'}
+          testidPrefix="inspection"
+          dateFn={(it) => it.date || it.created_at || ''}
+          emptyMessage="No matching inspections."
+          renderTile={(it) => {
+            const total = it.checklist_items?.length || 0;
+            const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
+            const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
+            return (
+              <div className="flex flex-col gap-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 truncate">
+                      {it.template_name || <span className="italic text-slate-400">Deleted template</span>}
+                    </div>
+                    <div className="text-[11px] text-slate-500">{it.date}</div>
+                  </div>
+                </div>
+                <div className="text-[11px] text-slate-600">
+                  <span className="text-emerald-700 font-semibold">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-semibold' : ''}>{failed}</span> fail · {total - passed - failed} N/A
+                </div>
+                <div className="flex flex-wrap gap-1 items-center">
+                  <button type="button" onClick={() => setViewerRec(it)} title="View submission"
+                    data-testid={`capture-view-${it.id}`}
+                    className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
+                    <Eye size={13} />
+                  </button>
+                  {it.template_name && (
+                    <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
+                  )}
+                  <EmailButton resourceKind="inspections" recordId={it.id} source={it.source}
+                    subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
+                    body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
+                    variant="row" size="sm" label="Email" />
+                  <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`}
+                    onDeleted={(id) => {
+                      setItems((prev) => prev.filter((x) => x.id !== id));
+                      setFiltered((prev) => prev.filter((x) => x.id !== id));
+                    }} />
+                </div>
+              </div>
+            );
+          }}
+        />
+       </>)
+      }
         </TabsContent>
       </Tabs>
       {viewerRec && (

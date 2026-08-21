@@ -1,6 +1,57 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.7 — Tile-format standardisation for Inspection Reports
+// and Incident Reports. User ask: "could you change the Inspection
+// Reports and Incident Reports be displayed in the tile format, for
+// consistacy". Both pages replace their `<table>` view with the same
+// grouped-tile pattern PreStarts.jsx pioneered.
+//
+// NEW — components/capture/GroupedTilesView.jsx
+//   · Reusable component with the following contract:
+//     items, groupBy, groupLabels, groupOrder, groupPaletteOverrides,
+//     renderTile, dateFn, loading, error, onRetry, emptyMessage,
+//     testidPrefix.
+//   · Groups items by discriminator; sorts rows within each group by
+//     date DESC. Group order: explicit `groupOrder` first, then alpha
+//     for the rest.
+//   · Six-bucket deterministic hash palette (blue/emerald/amber/violet/
+//     teal/rose) — same key → same colour across renders. Kept local so
+//     it doesn't couple to `folderColors.js` (which is scoped to
+//     document folders, semantically wrong here). Callers can override
+//     via `groupPaletteOverrides` for fixed-ladder palettes.
+//   · Empty state (`{prefix}-empty`) + amber error card (`{prefix}-
+//     error-card`, `{prefix}-retry-btn`) with the v58.11.1 auto-retry
+//     cadence (3s / 10s).
+//   · testids: `{prefix}-tile-group-{key}`, `{prefix}-tile-count-{key}`,
+//     `{prefix}-tile-{recordId}`. Sufficient seams for the testing agent.
+//
+// CHANGED — pages/Inspections.jsx
+//   · `<table>` replaced with `<GroupedTilesView>`. Groups by
+//     `template_name` (falls back to "Deleted template"). Toolbar
+//     filter (`CaptureListToolbar`) still layers into `filtered` and
+//     `<GroupedTilesView>` reads that. Per-record action bar
+//     (Eye/PdfActions/EmailButton/DeleteRecordButton) wrapped inside
+//     `renderTile`. Delete still mutates parent state so tiles vanish
+//     after successful deletion.
+//
+// CHANGED — pages/Incidents.jsx
+//   · `<table>` replaced with `<GroupedTilesView>`. Groups by
+//     `category`; explicit `groupOrder = [near_miss, first_aid,
+//     medical, ltc, env, property]` so tiles read as an escalation
+//     ladder. New local `INCIDENT_CATEGORY_PALETTE` gives each CATS
+//     enum its own palette (amber → rose → red → violet → emerald →
+//     slate). Not added to `folderColors.js` (doc-folder scoped).
+//     Existing status/category selects still pre-filter into
+//     `preFiltered`, and `CaptureListToolbar` adds search on top.
+//     Action bar wrapping identical shape to Inspections.
+//
+// UNTOUCHED — PreStarts.jsx (reference implementation preserved for
+// future migration in a later ship), backend endpoints
+// (`/api/incidents`, `/api/inspections`), any record data.
+
+
+
 // v160.3.9.58.12.6 — Dual-track service schedules (D-2). One schedule
 // can now track BOTH hours AND km (or any combo of hours/km/calendar)
 // with "whichever comes first" reminder semantics. User ask: "could you
@@ -1257,7 +1308,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.6';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.7';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
