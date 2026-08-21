@@ -484,3 +484,159 @@ async def reimport(
                         "stats": stats})
     return {"source_bytes": size, "parsed_rows": len(rows),
             "live_total": total, **stats}
+
+
+# v58.13.25 — Employee ↔ Worker linker endpoints.
+# Direction: hr_employees.linked_worker_id → workers.id (field was
+# pre-reserved on the v48 schema; zero migration). Uniqueness enforced
+# by pre-write query (see approved Pass 1 answer #2a). Permission gate
+# reuses `hr_employees.edit` (answer #3). Every link / unlink writes
+# an audit row via the existing `_audit()` helper (answer #7).
+
+from difflib import SequenceMatcher  # noqa: E402
+from pydantic import BaseModel  # noqa: E402  (already imported above; harmless)
+
+
+class LinkWorkerIn(BaseModel):
+    worker_id: str
+
+
+def _norm_name(s: Optional[str]) -> str:
+    return " ".join((s or "").lower().split())
+
+
+def _emp_full_name(e: dict) -> str:
+    return _norm_name(f"{e.get('first_name') or ''} {e.get('last_name') or ''}")
+
+
+def _worker_full_name(w: dict) -> str:
+    return _norm_name(f"{w.get('first_name') or ''} {w.get('last_name') or ''}")
+
+
+@router.patch("/{eid}/link-worker")
+async def link_worker(
+    eid: str,
+    body: LinkWorkerIn,
+    request: Request,
+    user: dict = Depends(require_permission("hr_employees", "edit")),
+):
+    org_id = user["org_id"]
+    emp = await db.hr_employees.find_one({"id": eid, "deleted_at": None})
+    if not emp:
+        raise HTTPException(404, "employee-not-found")
+    worker = await db.workers.find_one({"id": body.worker_id,
+                                        "org_id": org_id,
+                                        "deleted_at": None})
+    if not worker:
+        raise HTTPException(404, "worker-not-found")
+    # Uniqueness: refuse if this worker is already linked to a DIFFERENT
+    # employee. Linking the same worker to the same employee (idempotent
+    # re-link) is a no-op-safe 200.
+    collision = await db.hr_employees.find_one({
+        "linked_worker_id": body.worker_id,
+        "id": {"$ne": eid}, "deleted_at": None,
+    }, {"_id": 0, "id": 1, "first_name": 1, "last_name": 1})
+    if collision:
+        raise HTTPException(409, {
+            "error": "worker-already-linked",
+            "linked_to_employee_id": collision["id"],
+            "linked_to_employee_name": f"{collision.get('first_name','')} {collision.get('last_name','')}".strip(),
+        })
+    worker_name = f"{worker.get('first_name','')} {worker.get('last_name','')}".strip()
+    await db.hr_employees.update_one(
+        {"id": eid},
+        {"$set": {"linked_worker_id": body.worker_id,
+                  "linked_worker_name": worker_name,
+                  "updated_at": _now()}},
+    )
+    await _audit(actor=user, request=request, action="link_worker",
+                 target_id=eid,
+                 extra={"worker_id": body.worker_id,
+                        "worker_name": worker_name})
+    return {"ok": True, "linked_worker_id": body.worker_id,
+            "linked_worker_name": worker_name}
+
+
+@router.patch("/{eid}/unlink-worker")
+async def unlink_worker(
+    eid: str,
+    request: Request,
+    user: dict = Depends(require_permission("hr_employees", "edit")),
+):
+    org_id = user["org_id"]
+    emp = await db.hr_employees.find_one({"id": eid, "deleted_at": None},
+                                         {"_id": 0, "id": 1,
+                                          "linked_worker_id": 1,
+                                          "linked_worker_name": 1})
+    if not emp:
+        raise HTTPException(404, "employee-not-found")
+    prev = emp.get("linked_worker_id")
+    # Idempotent — clearing an already-null link is a 200 no-op.
+    await db.hr_employees.update_one(
+        {"id": eid},
+        {"$set": {"linked_worker_id": None,
+                  "linked_worker_name": None,
+                  "updated_at": _now()}},
+    )
+    if prev:
+        await _audit(actor=user, request=request, action="unlink_worker",
+                     target_id=eid,
+                     extra={"prev_worker_id": prev,
+                            "prev_worker_name": emp.get("linked_worker_name")})
+    return {"ok": True, "was_linked": bool(prev)}
+
+
+@router.get("/{eid}/link-candidates")
+async def link_candidates(
+    eid: str,
+    limit: int = 10,
+    user: dict = Depends(require_permission("hr_employees", "edit")),
+):
+    """Rank unlinked workers by name similarity to this employee.
+
+    Fast path: exact-normalised match → similarity=1.0.
+    Fuzzy path: difflib.SequenceMatcher ≥ 0.75 → ordered desc.
+    """
+    org_id = user["org_id"]
+    limit = max(1, min(int(limit or 10), 50))
+    emp = await db.hr_employees.find_one({"id": eid, "deleted_at": None},
+                                         {"_id": 0, "first_name": 1,
+                                          "last_name": 1})
+    if not emp:
+        raise HTTPException(404, "employee-not-found")
+    target = _emp_full_name(emp)
+
+    # Already-linked worker ids (any employee — one worker
+    # can only be linked to one active employee).
+    linked_cursor = db.hr_employees.find(
+        {"deleted_at": None,
+         "linked_worker_id": {"$ne": None, "$exists": True}},
+        {"_id": 0, "linked_worker_id": 1},
+    )
+    linked_ids = {d["linked_worker_id"] async for d in linked_cursor}
+
+    scored: list[dict] = []
+    async for w in db.workers.find(
+        {"org_id": org_id, "deleted_at": None},
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1,
+         "position": 1, "email": 1, "simpro_employee_id": 1},
+    ):
+        if w["id"] in linked_ids:
+            continue
+        wn = _worker_full_name(w)
+        if not wn or not target:
+            continue
+        ratio = 1.0 if wn == target else SequenceMatcher(None, target, wn).ratio()
+        if ratio >= 0.75:
+            scored.append({
+                "id": w["id"],
+                "name": f"{w.get('first_name','')} {w.get('last_name','')}".strip(),
+                "position": w.get("position"),
+                "email": w.get("email"),
+                "simpro_employee_id": w.get("simpro_employee_id"),
+                "similarity": round(ratio, 3),
+            })
+    scored.sort(key=lambda r: r["similarity"], reverse=True)
+    return {"target": {"first_name": emp.get("first_name"),
+                       "last_name": emp.get("last_name")},
+            "candidates": scored[:limit]}

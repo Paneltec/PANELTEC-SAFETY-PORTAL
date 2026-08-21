@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import api, { apiError } from '../../lib/api';
 import { PageHeader } from '../../components/capture/Ui';
 import HrEmployeeDrawer from './HrEmployeeDrawer';
+// v58.13.25 — Employee ↔ Worker linker modal.
+import WorkerLinkModal from '../../components/WorkerLinkModal';
 
 const FIXED_COLUMNS = [
   { key: 'employee_id',       label: 'ID',           width: 70 },
@@ -40,6 +42,9 @@ export default function HrEmployeesPage() {
   const [isRefreshingSimpro, setIsRefreshingSimpro] = React.useState(false);
   // v160.3.9.49 — Row-level delete confirm target. `null` = closed.
   const [confirmDelete, setConfirmDelete] = React.useState(null);
+  // v58.13.25 — Employee ↔ Worker linker modal state. Holds the
+  // employee row whose link is being edited; null = modal closed.
+  const [linkingEmployee, setLinkingEmployee] = React.useState(null);
   const [deleting, setDeleting] = React.useState(false);
 
   const refreshFromSimpro = async () => {
@@ -265,12 +270,13 @@ export default function HrEmployeesPage() {
                     {c.label}
                   </th>
                 ))}
+                <th className="px-3 py-2 text-left font-semibold border-b border-slate-200">Linked worker</th>
                 <th className="px-3 py-2 text-left font-semibold border-b border-slate-200">Status</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && !loading && (
-                <tr><td colSpan={FIXED_COLUMNS.length + 1} className="px-3 py-6 text-center text-slate-500">
+                <tr><td colSpan={FIXED_COLUMNS.length + 2} className="px-3 py-6 text-center text-slate-500">
                   No {tab} employees.
                 </td></tr>
               )}
@@ -284,6 +290,39 @@ export default function HrEmployeesPage() {
                       {row[c.key] || <span className="text-slate-300">—</span>}
                     </td>
                   ))}
+                  {/* v58.13.25 — Linked worker cell. Linked → chip
+                      with ✕ unlink. Unlinked → "Link worker…" button.
+                      Both action handlers stopPropagation-guarded so
+                      the row-click drawer-open handler doesn't fire. */}
+                  <td className="px-3 py-2" data-testid={`hr-row-linked-worker-${row.employee_id}`}>
+                    {row.linked_worker_id ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-xs font-semibold">
+                        <span className="mr-0.5" aria-hidden>👤</span>
+                        <span className="truncate max-w-[140px]">{row.linked_worker_name || row.linked_worker_id}</span>
+                        <button type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation(); e.preventDefault();
+                            try {
+                              await api.patch(`/hr/employees/${row.id}/unlink-worker`);
+                              toast.success('Unlinked');
+                              load();
+                            } catch (err) { toast.error(apiError(err)); }
+                          }}
+                          data-testid={`hr-row-unlink-${row.employee_id}`}
+                          title="Unlink"
+                          className="text-blue-500 hover:text-rose-600 font-bold ml-0.5">
+                          ×
+                        </button>
+                      </span>
+                    ) : (
+                      <button type="button"
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); setLinkingEmployee(row); }}
+                        data-testid={`hr-row-link-${row.employee_id}`}
+                        className="inline-flex items-center px-2 py-0.5 rounded-lg border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">
+                        Link worker…
+                      </button>
+                    )}
+                  </td>
                   <td className="px-3 py-2">
                     {row.security_flag && (
                       <span className="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 text-xs mr-1"
@@ -321,8 +360,17 @@ export default function HrEmployeesPage() {
       {openId && (
         <HrEmployeeDrawer
           uid={openId}
-          onClose={() => setOpenId(null)}
-          onChanged={load}
+          onClose={() => setOpenId(null)}          onChanged={load}
+        />
+      )}
+      {/* v58.13.25 — Worker link modal. Opens from the "Link worker…"
+          cell button; on success it refetches the employee list so the
+          chip flips over immediately. */}
+      {linkingEmployee && (
+        <WorkerLinkModal
+          employee={linkingEmployee}
+          onClose={() => setLinkingEmployee(null)}
+          onLinked={() => load()}
         />
       )}
 

@@ -1,6 +1,77 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.25 — Employee ↔ Worker record linker (per-record picker).
+//
+// Connects `hr_employees` (HR-managed register, 121 rows) to
+// `workers` (Simpro-imported field workforce, 69 active). Uses the
+// pre-reserved `linked_worker_id` field on the v48 hr_employees
+// schema — zero migration.
+//
+// Files touched
+//   · `backend/hr_employees.py` — 3 new endpoints appended:
+//     · PATCH `/api/hr/employees/{eid}/link-worker` — sets
+//       `linked_worker_id` (+ denormalised `linked_worker_name` for
+//       list rendering). Uniqueness enforced by pre-write query
+//       (409 with `linked_to_employee_id/name` on collision). Every
+//       write emits an audit row via the existing `_audit()`
+//       helper. Gated by `hr_employees.edit` permission.
+//     · PATCH `/api/hr/employees/{eid}/unlink-worker` — idempotent
+//       clear + audit (only writes audit when there was a link to
+//       clear, so accidental repeat calls don't pollute the log).
+//     · GET `/api/hr/employees/{eid}/link-candidates?limit=10` —
+//       returns unlinked workers ranked by name similarity to the
+//       employee. Fast path exact-normalised match → similarity=1.0.
+//       Fuzzy path `difflib.SequenceMatcher` ≥ 0.75, ranked desc.
+//       Zero new deps. Response shape:
+//       `{target:{first_name,last_name}, candidates:[{id, name,
+//       position, email, simpro_employee_id, similarity}]}`.
+//   · `frontend/src/components/WorkerLinkModal.jsx` — NEW (~200 LOC).
+//     Reuses the ChecklistLinkPicker (v58.13.19) pattern:
+//     `useLockBodyScroll`, backdrop-click close, stopPropagation
+//     guards on every action. Auto-suggest strip at top (green
+//     chips for similarity=1.0, amber 0.75-0.99). Below: full
+//     browse list with client-side substring filter. 409-aware
+//     toast tells the user which employee already owns the worker.
+//   · `frontend/src/pages/settings/HrEmployeesPage.jsx` —
+//     · Added "Linked worker" column between the fixed columns and
+//       "Status".
+//     · Unlinked → `Link worker…` button opens the modal.
+//     · Linked → blue chip `👤 <name>` with ✕ that calls
+//       `/unlink-worker` + refetches on success.
+//     · Both action handlers use `e.stopPropagation()` so the
+//       row-click drawer-open doesn't fire (v58.13.10 guardrail).
+//     · Modal mounted alongside the drawer; onLinked refetches.
+//   · NEW `tests/backend_unit/test_link_worker_v58_13_25.py` —
+//     10 handler-level pytests covering happy-path link/unlink,
+//     409 uniqueness collision, idempotent double-unlink, name
+//     matcher (exact=1.0, typo≥0.75), already-linked exclusion,
+//     soft-deleted worker exclusion, permission gate (403), 404s.
+//   · NEW `tests/frontend_smoke/test_link_worker_render_v58_13_25.py`
+//     — static-grep verifying column header + cell testids, chip
+//     unlink handler, WorkerLinkModal exports, similarity threshold
+//     reference, stopPropagation on both button/chip handlers.
+//   · Version files ×3 canonical + this changelog block.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytests under
+//     `/app/tests/{backend_unit,frontend_smoke}/`.
+//   · Zero schema migration — `linked_worker_id` was pre-reserved
+//     on the v48 schema.
+//   · Zero touch to `workers.py` or `simpro_zip_import.py`.
+//   · No auto-cascade on worker soft-delete — link is preserved
+//     (Pass 1 answer #8b).
+//   · Bulk auto-match wizard NOT included (deferred to v58.13.26).
+//   · No new PII exposure on worker-side views — the link is
+//     one-sided (HR-side pointer only).
+//
+// Deferred
+//   · v58.13.26 — bulk auto-match wizard.
+//   · Worker-side view of the linked employee (permission-gated).
+//   · Auto-null cascade on worker soft-delete (if ever needed).
+
+
 // v160.3.9.58.13.24 — CacheBusterBanner stickier UX.
 //
 // The update-available toast landed in v160.3.6w as a soft
@@ -2708,7 +2779,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.24';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.25';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
