@@ -371,14 +371,14 @@ function VehicleNavixyField({ field, value, onChange, readOnly, allFields, allVa
   );
 }
 
-export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues }) {
+export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange, readOnly, allFields, allValues, submissionId }) {
   if (field.type === 'reference_matrix') {
     const { ReferenceMatrixField } = require('../components/forms/BydaFields');
     return <ReferenceMatrixField field={field} />;
   }
   if (field.type === 'attachment') {
     const { AttachmentField } = require('../components/forms/BydaFields');
-    return <AttachmentField field={field} value={value} />;
+    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly={readOnly} />;
   }
   if (field.type === 'actions') {
     const { ActionsField } = require('../components/forms/BydaFields');
@@ -465,6 +465,8 @@ export function FieldRunner({ field, value, onChange, photoFiles, onPhotoChange,
 // implementation lives in `src/lib/isAnswerValid.js` (so the unit-test suite
 // can import it without dragging in this whole page module).
 import { isAnswerValid } from '../lib/isAnswerValid';
+// v58.12.2 — Cross-field validator for the `actions` field. See BydaFields.jsx.
+import { actionsFieldErrors } from '../components/forms/BydaFields';
 export { isAnswerValid };
 
 function _draftKey(template, userId) {
@@ -615,7 +617,19 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
     if (!f.required) return false;
     return !isAnswerValid(f, values[f.id], photoFiles[f.id]);
   }), [template.fields, values, photoFiles]);
-  const requiredOk = missingFields.length === 0;
+  // v58.12.2 — `actions` field: Closed rows without a date_closed
+  // block submit regardless of `f.required`. See BydaFields.jsx.
+  const actionsErrors = useMemo(() => {
+    const out = [];
+    (template.fields || []).forEach((f) => {
+      if (f.type !== 'actions') return;
+      actionsFieldErrors(f, values[f.id]).forEach((e) => out.push({
+        fieldId: f.id, fieldLabel: f.label, rowIndex: e.rowIndex,
+      }));
+    });
+    return out;
+  }, [template.fields, values]);
+  const requiredOk = missingFields.length === 0 && actionsErrors.length === 0;
 
   // v160.1.5 — Show inline red-border + "This field is required" text only
   // AFTER the user has attempted to submit. Editing any field that was
@@ -630,6 +644,22 @@ function FillOutModal({ template, onClose, onSubmitted, initialValues, sourceSca
   const onSubmitClick = () => {
     if (!requiredOk) {
       setSubmitAttempted(true);
+      // v58.12.2 — actions-field errors take precedence over
+      // missing-required so the operator sees the row-level fix
+      // hint (they'd have already filled the field to trigger it).
+      if (actionsErrors.length > 0) {
+        const first = actionsErrors[0];
+        const node = document.querySelector(`[data-testid="field-row-${first.fieldId}"]`);
+        if (node) {
+          node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          node.classList.add('paneltec-field-missing-pulse');
+          setTimeout(() => node.classList.remove('paneltec-field-missing-pulse'), 1500);
+        }
+        toast.error(
+          `"${first.fieldLabel}" — row ${first.rowIndex + 1}: Status = Closed requires Date closed`,
+        );
+        return;
+      }
       const first = missingFields[0];
       const node = document.querySelector(`[data-testid="field-row-${first.id}"]`);
       if (node) {

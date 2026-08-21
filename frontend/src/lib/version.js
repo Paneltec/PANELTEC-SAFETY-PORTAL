@@ -1,6 +1,74 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.12.2 — BYDA v2, ship 2/3 (user-facing critical).
+//   Close-out of the pieces the previous session deferred out of
+//   v58.12.1. Split from the original spec — the TemplateBuilder
+//   admin editors move to v58.12.3.
+//
+//   AttachmentField (components/forms/BydaFields.jsx)
+//     · Full drag-and-drop upload UI (was a placeholder).
+//     · Client MIME pre-flight matches backend/forms.py:1084 (415).
+//     · Client size pre-flight matches backend/forms.py:1088 (413).
+//     · Per-file editable Name (default: filename without ext) +
+//       Description. Immediate multipart POST to
+//       `/forms/submissions/{id}/attachments` on file add (matches
+//       how the photo field works — no deferred-until-submit).
+//     · Pending → uploaded lifecycle with Cancel (aborts in-flight
+//       fetch via AbortController) and Retry on failure.
+//     · Submission-not-yet-created state (`submissionId == null`):
+//       dropzone rendered disabled with an inline
+//       `data-testid="attachment-dropzone-hint-{id}"` hint reading
+//       "Save the form first, then attach files."
+//     · Server-side records are rendered read-only with a download
+//       button routed through the auth'd api client (bare <a href>
+//       would drop the Bearer JWT — same pattern as
+//       PdfPreviewModal / AssetDrawer). Fallback URL constructed
+//       client-side when the record predates the `.url` field.
+//     · Delete of already-uploaded rows tooltipped "Delete lands
+//       in v58.12.3" (bumped from v58.12.2 because the DELETE
+//       endpoint is being split into v58.12.3 alongside the
+//       TemplateBuilder editors).
+//
+//   ActionsField (components/forms/BydaFields.jsx)
+//     · `_off_roster` moved from row payload into component-local
+//       React state so it never gets persisted to Mongo.
+//     · New pure helper `actionsFieldErrors(field, value)` — used
+//       by Forms.jsx FillOutModal `requiredOk` gate. A Closed row
+//       without a `date_closed` now BLOCKS submit (previously the
+//       red border was cosmetic only). Testid
+//       `actions-row-error-{i}` is on the visible error line.
+//     · Saved-row Remove tooltip bumped to v58.12.3.
+//
+//   Forms.jsx
+//     · FieldRunner signature extended with `submissionId`
+//       (undefined for FillOutModal — no submission exists yet).
+//     · `actionsErrors` memo + `requiredOk` gate now considers
+//       cross-field validation, not just per-field `isAnswerValid`.
+//     · onSubmitClick scrolls to the first `actions` error row
+//       when it takes precedence, else falls through to the
+//       existing missing-required path.
+//
+//   SubmissionViewer.jsx
+//     · FieldRow + FieldValue now thread `submissionId` (from the
+//       record root `r.id`) to AttachmentField so downloads can
+//       compose the fallback URL when the record lacks `.url`.
+//
+//   Test infrastructure
+//     · Adds `@testing-library/react` + `-jest-dom` + `-user-event`
+//       to devDependencies. `src/setupTests.js` auto-loaded by
+//       react-scripts wires the jest-dom matchers.
+//     · New jsdom suite
+//       `components/forms/__tests__/BydaFields.test.jsx` covers
+//       every acceptance criterion in the v58.12.2 spec (MIME
+//       reject, size reject, off-roster toggle strip, Closed
+//       blocks submit, dropzone disabled hint, submission-not-yet-
+//       created guard). Playwright walkthrough attempted against
+//       the live preview URL as bonus evidence; jsdom is the
+//       load-bearing evidence pass.
+
+
+
 // v160.3.9.41 — Users & Permissions UX polish.
 //                  Part A — Drag-handle reorder for role sections.
 //                    Replaces the up/down ArrowUp/ArrowDown buttons on
@@ -1010,7 +1078,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.1';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.12.2';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

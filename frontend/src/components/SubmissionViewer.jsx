@@ -28,17 +28,17 @@ function _fileUrl(url) {
   return url.startsWith('http') ? url : `${BACKEND}${url}`;
 }
 
-function FieldRow({ field }) {
+function FieldRow({ field, submissionId }) {
   const label = field.label || field.field_id || '—';
   return (
     <div className="py-2 border-b border-slate-100 last:border-b-0" data-testid={`sv-field-${field.field_id}`}>
       <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-500 mb-0.5">{label}</div>
-      <FieldValue field={field} />
+      <FieldValue field={field} submissionId={submissionId} />
     </div>
   );
 }
 
-function FieldValue({ field }) {
+function FieldValue({ field, submissionId }) {
   const { value, type } = field;
   // v58.12.1 — reference_matrix has no `value` (template-embedded);
   // render the matrix using the field's config regardless of value.
@@ -48,7 +48,7 @@ function FieldValue({ field }) {
   }
   if (type === 'attachment') {
     const { AttachmentField } = require('./forms/BydaFields');
-    return <AttachmentField field={field} value={value} />;
+    return <AttachmentField field={field} value={value} submissionId={submissionId} readOnly />;
   }
   if (type === 'actions') {
     const { ActionsField } = require('./forms/BydaFields');
@@ -212,7 +212,7 @@ export default function SubmissionViewer({ record, resourceKind, apiPath, onClos
           {fields.length > 0 ? (
             <div className="grid sm:grid-cols-2 gap-x-6">
               {fields.map((f) => (
-                <FieldRow key={f.field_id || f.label} field={f} />
+                <FieldRow key={f.field_id || f.label} field={f} submissionId={r.id} />
               ))}
             </div>
           ) : (
