@@ -12,6 +12,11 @@ import api, { apiError } from '../lib/api';
 // service-tab modals (ScheduleEditor, DeleteRecordDialog, RecordEditor)
 // are open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
+// v58.13.14 — Reused for schedule attachments. Same drag-and-drop UI
+// the form-submissions FillOutModal renders; parameterised with
+// `apiBasePath` / `apiDeletePath` so it can POST/DELETE to
+// `/assets/{asset_id}/schedules/{sid}/attachments`.
+import { AttachmentField } from './forms/BydaFields';
 
 function statusPill(status) {
   if (status === 'overdue') return ['OVERDUE', 'bg-rose-50 text-rose-700 border-rose-200'];
@@ -612,6 +617,37 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
                     data-testid="sch-notes"
                     placeholder="Additional notes for this schedule (plain text)." />
                 </div>
+                {/* v58.13.14 — Attachments (v58.13.11-b endpoint).
+                    Only visible in edit mode; new-schedule staging
+                    lands in a follow-up (create the schedule first,
+                    then attach — same 2-step pattern most SaaS forms
+                    use). Reuses the shared BydaFields.AttachmentField
+                    with the schedule-scoped POST/DELETE base paths. */}
+                {isEdit ? (
+                  <div data-testid="sch-attachments">
+                    <label className="block text-xs font-semibold mb-1">Attachments</label>
+                    <AttachmentField
+                      field={{ id: 'attachments', config: { allow_multiple: true } }}
+                      value={form.attachments || []}
+                      submissionId={initial.id}
+                      apiBasePath={`/assets/${asset.id}/schedules`}
+                      apiDeletePath={`/assets/${asset.id}/schedules`}
+                      onServerFileDeleted={(att) => {
+                        setForm((f) => ({
+                          ...f,
+                          attachments: (f.attachments || []).filter(
+                            (a) => (a.stored_name || a.file_id) !== (att.stored_name || att.file_id),
+                          ),
+                        }));
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500 italic"
+                       data-testid="sch-attachments-hint">
+                    Save the schedule first, then reopen it to attach files.
+                  </div>
+                )}
               </div>
             )}
           </div>

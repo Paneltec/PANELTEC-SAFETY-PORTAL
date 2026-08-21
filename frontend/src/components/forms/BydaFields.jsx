@@ -65,12 +65,16 @@ export function actionsFieldErrors(field, value) {
 // Prefer the server-provided `url` (strip its /api prefix since
 // api.get re-prepends the baseURL), fall back to a client-composed
 // path when older records lack the field.
-async function downloadAttachment(submissionId, att) {
+// v58.13.14 — `basePath` param lets callers reuse this component for
+// non-form-submissions parents. Default preserves the historic
+// `/forms/submissions/{id}/attachments` behaviour so every existing
+// callsite is untouched.
+async function downloadAttachment(submissionId, att, basePath = '/forms/submissions') {
   let path;
   if (att && att.url) {
     path = att.url.startsWith('/api/') ? att.url.slice(4) : att.url;
   } else {
-    path = `/forms/submissions/${submissionId}/attachments/${att.stored_name || att.file_id}`;
+    path = `${basePath}/${submissionId}/attachments/${att.stored_name || att.file_id}`;
   }
   const r = await api.get(path, { responseType: 'blob' });
   const url = URL.createObjectURL(r.data);
@@ -127,7 +131,24 @@ export function ReferenceMatrixField({ field }) {
   );
 }
 
-export function AttachmentField({ field, value, submissionId, readOnly, onStageChange }) {
+// v58.13.14 — `apiBasePath` prop makes this component reusable by any
+// parent record that follows the `${basePath}/${id}/attachments`
+// endpoint convention. Default `/forms/submissions` preserves 100%
+// back-compat for every existing FillOutModal callsite. New use:
+// AssetServiceTabs schedule form passes
+// `apiBasePath="/assets/{asset_id}/schedules"` so the sid slots into
+// the same `submissionId` slot without touching the internals.
+// `onDelete` — optional callback fired AFTER a server file is removed
+// (used by AssetServiceTabs to update the parent form state). Default
+// server-file delete just drops the row from local state (previous
+// behaviour). When `apiDeletePath` is provided the row is DELETEd on
+// the server first.
+export function AttachmentField({
+  field, value, submissionId, readOnly, onStageChange,
+  apiBasePath = '/forms/submissions',
+  apiDeletePath,
+  onServerFileDeleted,
+}) {
   const cfg = field.config || {};
   const allowMultiple = cfg.allow_multiple !== false;
   const [serverFiles, setServerFiles] = useState(Array.isArray(value) ? value : []);
@@ -183,7 +204,7 @@ export function AttachmentField({ field, value, submissionId, readOnly, onStageC
     fd.append('descriptions', entry.description);
     try {
       const r = await api.post(
-        `/forms/submissions/${submissionId}/attachments`, fd, { signal: abort.signal },
+        `${apiBasePath}/${submissionId}/attachments`, fd, { signal: abort.signal },
       );
       const saved = r?.data?.attachments?.[0];
       if (!saved) throw new Error('No attachment record returned');
@@ -195,7 +216,7 @@ export function AttachmentField({ field, value, submissionId, readOnly, onStageC
       setPending((p) => p.map((x) => x.tempKey === entry.tempKey
         ? { ...x, status: 'error', error: msg, abort: null } : x));
     }
-  }, [field.id, submissionId]);
+  }, [field.id, submissionId, apiBasePath]);
 
   const addFiles = useCallback((fileList) => {
     if (!canUpload) return;
@@ -257,8 +278,28 @@ export function AttachmentField({ field, value, submissionId, readOnly, onStageC
     setPending((p) => p.map((x) => x.tempKey === tempKey ? { ...x, ...patch } : x));
   };
   const download = async (att) => {
-    try { await downloadAttachment(submissionId, att); }
+    try { await downloadAttachment(submissionId, att, apiBasePath); }
     catch { /* click again — user-facing error is acceptable on network fail */ }
+  };
+  // v58.13.14 — Optional server-side delete. Callers that don't pass
+  // `apiDeletePath` retain the historic behaviour (row disappears
+  // locally only). Callers that do (e.g. AssetServiceTabs) also
+  // hard-delete the blob on the server.
+  const removeServerFile = async (att) => {
+    if (apiDeletePath) {
+      try {
+        await api.delete(
+          `${apiDeletePath}/${submissionId}/attachments/${att.stored_name || att.file_id}`,
+        );
+      } catch (e) {
+        console.warn('attachment-delete failed', e);
+        return;
+      }
+    }
+    setServerFiles((prev) => prev.filter(
+      (f) => (f.stored_name || f.file_id) !== (att.stored_name || att.file_id),
+    ));
+    if (onServerFileDeleted) onServerFileDeleted(att);
   };
 
   const allowedList = (cfg.allowed_mimes || []).join(', ') || 'server default';
@@ -396,10 +437,16 @@ export function AttachmentField({ field, value, submissionId, readOnly, onStageC
                   className="inline-flex items-center gap-1 text-xs text-brand-blue hover:underline">
             <Download size={14} /> Download
           </button>
-          <button type="button" disabled
-                  title="Delete lands in v58.12.5"
+          <button type="button"
+                  onClick={() => removeServerFile(f)}
+                  disabled={readOnly || !apiDeletePath}
+                  title={apiDeletePath ? 'Delete attachment' : 'Delete lands per-parent — pass apiDeletePath to enable'}
                   data-testid={`attachment-row-remove-${f.file_id || f.stored_name}`}
-                  className="p-1 text-slate-300 cursor-not-allowed">
+                  className={
+                    'p-1 ' + (readOnly || !apiDeletePath
+                      ? 'text-slate-300 cursor-not-allowed'
+                      : 'text-red-600 hover:bg-red-50 rounded')
+                  }>
             <Trash2 size={14} />
           </button>
         </div>

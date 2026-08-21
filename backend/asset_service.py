@@ -6,16 +6,47 @@ scanner that fans out via the existing M365 + TextMagic plumbing.
 """
 from __future__ import annotations
 import logging
+import uuid
 import bleach  # v58.13.0-a — server-side rich-text sanitiser (already in requirements)
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
+
+# v58.13.14 — Schedule attachment storage.
+# Filesystem-backed, mirroring the `form_submissions` pattern
+# established at `forms.py:113` (`uploads/form_attachments/…`). GridFS
+# is used elsewhere in the repo (workers.py, backup_service.py) but
+# `form_submissions` — the pattern explicitly named in the ship brief
+# as "REUSE the exact same helper/utility" — writes to local disk
+# under `backend/uploads/form_attachments/{submission_id}/{stored_uuid}`.
+# We follow suit under `schedule_attachments/{sid}/{stored_uuid}`, so
+# ops muscle-memory (backup routes, disk-usage dashboards, path
+# invariants) applies identically.
+#
+# MIME / size caps duplicated from forms.py rather than imported to
+# avoid a cyclic-import risk if forms.py ever needs to reference
+# asset_service. Same values as v58.11.0 forms.py.
+SCHEDULE_ATTACHMENT_ROOT = (
+    Path(__file__).parent / "uploads" / "schedule_attachments"
+)
+SCHEDULE_ATTACHMENT_ROOT.mkdir(parents=True, exist_ok=True)
+SCHEDULE_ATTACHMENT_ALLOWED_MIMES = {
+    "application/pdf", "image/png", "image/jpeg", "image/webp",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/csv", "text/plain",
+}
+MAX_SCHEDULE_ATTACHMENT_BYTES = 25 * 1024 * 1024
 
 log = logging.getLogger("paneltec.assets.service")
 
@@ -903,6 +934,152 @@ async def delete_schedule(asset_id: str, sid: str, user: dict = Depends(get_curr
     )
     if res.matched_count == 0:
         raise HTTPException(404, "Schedule not found")
+    return None
+
+
+# ─── Schedule attachments (v58.13.14 — v58.13.11-b endpoint) ─────
+# Filesystem-backed, mirroring `forms.py` (`upload_submission_attachments`
+# at line 1086). Divergence: this DELETE endpoint HARD-deletes the
+# disk file so schedule attachments do NOT leak orphaned blobs on the
+# volume (the exact issue flagged in the earlier "Areas that need
+# refactoring" list). forms.py uses soft-delete-only — we intentionally
+# do not adopt that here because schedule attachments have a
+# short-lived, per-task relevance and the operator explicitly asked
+# for hard delete.
+#
+# Storage: `backend/uploads/schedule_attachments/{sid}/{stored_uuid}`.
+# Stored filename is a UUID so a malicious `original.pdf/../../etc`
+# cannot traverse. Original display name is preserved on the record
+# only for the UI.
+
+async def _get_schedule(asset_id: str, sid: str, org_id: str) -> dict:
+    doc = await db.asset_service_schedules.find_one(
+        {"id": sid, "asset_id": asset_id, "org_id": org_id, "deleted_at": None},
+        {"_id": 0},
+    )
+    if not doc:
+        raise HTTPException(404, "Schedule not found")
+    return doc
+
+
+@router.post("/{asset_id}/schedules/{sid}/attachments", status_code=201)
+async def upload_schedule_attachments(
+    asset_id: str, sid: str,
+    files: list[UploadFile] = File(...),
+    names: list[str] = Form(default=[]),
+    descriptions: list[str] = Form(default=[]),
+    user: dict = Depends(get_current_user),
+):
+    # Existence + org-tenancy check via the shared helper — same RBAC
+    # gate the schedule create/update endpoints use (no new
+    # permission).
+    await _get_schedule(asset_id, sid, user["org_id"])
+    dest_dir = SCHEDULE_ATTACHMENT_ROOT / sid
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    now = now_iso()
+    saved: list[dict[str, Any]] = []
+    for i, upload in enumerate(files):
+        mime = (upload.content_type or "").lower()
+        if mime not in SCHEDULE_ATTACHMENT_ALLOWED_MIMES:
+            raise HTTPException(415, f"MIME '{mime}' not allowed")
+        data = await upload.read()
+        if len(data) > MAX_SCHEDULE_ATTACHMENT_BYTES:
+            raise HTTPException(
+                413, f"File exceeds {MAX_SCHEDULE_ATTACHMENT_BYTES} bytes",
+            )
+        stored_name = str(uuid.uuid4())
+        (dest_dir / stored_name).write_bytes(data)
+        display_name = (
+            (names[i] if i < len(names) else "")
+            or upload.filename or stored_name
+        )
+        description = descriptions[i] if i < len(descriptions) else ""
+        rec = {
+            "file_id": stored_name,
+            "stored_name": stored_name,
+            "name": str(display_name)[:255],
+            "description": str(description)[:2000],
+            "mime": mime,
+            "size": len(data),
+            "url": f"/api/assets/{asset_id}/schedules/{sid}"
+                   f"/attachments/{stored_name}",
+            "uploaded_by": user.get("id"),
+            "uploaded_at": now,
+        }
+        saved.append(rec)
+    # Defensive: schedules created before v58.13.14 land in Mongo with
+    # `attachments: null` (Pydantic serialises `Optional[...] = None`
+    # to null). `$push` on a null-valued field raises WriteError code
+    # 2. Coerce to an empty array first — idempotent for docs where
+    # it's already an array.
+    await db.asset_service_schedules.update_one(
+        {"id": sid, "asset_id": asset_id, "org_id": user["org_id"],
+         "attachments": None},
+        {"$set": {"attachments": []}},
+    )
+    await db.asset_service_schedules.update_one(
+        {"id": sid, "asset_id": asset_id, "org_id": user["org_id"]},
+        {"$push": {"attachments": {"$each": saved}},
+         "$set": {"updated_at": now}},
+    )
+    return {"attachments": saved}
+
+
+@router.get("/{asset_id}/schedules/{sid}/attachments/{stored_name}")
+async def serve_schedule_attachment(
+    asset_id: str, sid: str, stored_name: str,
+    user: dict = Depends(get_current_user),
+):
+    doc = await _get_schedule(asset_id, sid, user["org_id"])
+    rec = next(
+        (a for a in (doc.get("attachments") or [])
+         if a.get("stored_name") == stored_name),
+        None,
+    )
+    if not rec:
+        raise HTTPException(404, "Attachment not found")
+    path = SCHEDULE_ATTACHMENT_ROOT / sid / stored_name
+    if not path.exists():
+        raise HTTPException(404, "File missing on disk")
+    return FileResponse(
+        str(path),
+        media_type=rec.get("mime") or "application/octet-stream",
+        filename=rec.get("name") or stored_name,
+    )
+
+
+@router.delete(
+    "/{asset_id}/schedules/{sid}/attachments/{stored_name}",
+    status_code=204,
+)
+async def delete_schedule_attachment(
+    asset_id: str, sid: str, stored_name: str,
+    user: dict = Depends(get_current_user),
+):
+    # Pull the record from the array first so a concurrent request
+    # for the same file can't race the disk delete.
+    res = await db.asset_service_schedules.update_one(
+        {"id": sid, "asset_id": asset_id, "org_id": user["org_id"],
+         "deleted_at": None},
+        {"$pull": {"attachments": {"stored_name": stored_name}},
+         "$set": {"updated_at": now_iso()}},
+    )
+    if res.matched_count == 0:
+        raise HTTPException(404, "Schedule not found")
+    # HARD delete of the disk blob — the leak fix. Missing file is
+    # not an error (idempotency: repeated DELETE returns 204).
+    path = SCHEDULE_ATTACHMENT_ROOT / sid / stored_name
+    try:
+        if path.exists():
+            path.unlink()
+    except OSError as e:
+        # File exists but we can't remove it (permissions / race).
+        # Surface the failure loudly rather than silently orphaning.
+        log.exception(
+            "schedule-attachment delete: blob unlink failed sid=%s "
+            "stored_name=%s err=%s", sid, stored_name, e,
+        )
+        raise HTTPException(500, "Attachment blob delete failed")
     return None
 
 

@@ -1,6 +1,115 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.14 — Schedule attachments endpoint + FE wire-up
+// (closes the v58.13.11-b deferred loop).
+//
+// Backend (`backend/asset_service.py`):
+//   · New storage constants (`SCHEDULE_ATTACHMENT_ROOT`,
+//     `SCHEDULE_ATTACHMENT_ALLOWED_MIMES`,
+//     `MAX_SCHEDULE_ATTACHMENT_BYTES`). Filesystem-backed,
+//     mirroring `forms.py:113` (`uploads/form_attachments/…`).
+//     Same disk root convention (`uploads/`), same MIME allow-list,
+//     same 25 MB cap.
+//   · `POST /assets/{asset_id}/schedules/{sid}/attachments`
+//     (multipart) — accepts files + parallel `names[]` +
+//     `descriptions[]`. Stores each as
+//     `uploads/schedule_attachments/{sid}/{uuid}`. Appends
+//     `{file_id, stored_name, name, description, mime, size, url,
+//     uploaded_by, uploaded_at}` to the schedule's `attachments`
+//     array. Returns `{attachments: [...]}`.
+//   · `GET /assets/{asset_id}/schedules/{sid}/attachments/{stored_name}`
+//     — org-tenant + schedule scoped, FileResponse with the
+//     original MIME + display name.
+//   · `DELETE /assets/{asset_id}/schedules/{sid}/attachments/
+//     {stored_name}` — HARD delete. `$pull` the metadata row AND
+//     `path.unlink()` the disk blob. Repeated calls are idempotent
+//     (returns 204). Blob-unlink failure raises 500 explicitly
+//     rather than silently orphaning — the exact leak the
+//     "Areas that need refactoring" list flagged.
+//   · RBAC: `Depends(get_current_user)` on every route — same gate
+//     the schedule create/update/delete endpoints use. No new
+//     permission scope, no permission migration.
+//
+// Frontend:
+//   · `components/forms/BydaFields.jsx` — `AttachmentField` gains
+//     three new props: `apiBasePath` (default `/forms/submissions`
+//     for 100% back-compat), `apiDeletePath`, `onServerFileDeleted`.
+//     `downloadAttachment()` gains a `basePath` param with the same
+//     default. Trash button becomes ENABLED when `apiDeletePath`
+//     is provided (was a permanently-disabled stub with
+//     `title="Delete lands in v58.12.5"` — the placeholder is now
+//     fulfilled). All existing callsites (FillOutModal etc)
+//     untouched because both defaults are 100% back-compat.
+//   · `components/AssetServiceTabs.jsx` — imports `AttachmentField`
+//     and renders it inside the More Details panel below Notes,
+//     ONLY in edit mode. New-schedule flow shows a hint:
+//     "Save the schedule first, then reopen it to attach files."
+//     2-step pattern deliberately chosen over local-staging (the
+//     staging shape works for form-submissions because the parent
+//     POST creates the submission in the same request; the
+//     schedule create/update flow POSTs an already-known payload
+//     shape and adding staged-attachment flush would require
+//     reworking `save()` — out of scope for a "wire it up" ship).
+//     `onServerFileDeleted` callback keeps the local `form.attachments`
+//     array in sync with the server response.
+//
+// Divergence from `forms.py` (intentional, documented):
+//   · Schedule DELETE endpoint HARD-deletes the disk blob;
+//     `forms.py` soft-deletes via `deleted_at` and leaves the file
+//     on disk. This addresses the "orphaned-blob leak" concern
+//     called out in the ship brief. Not back-porting to
+//     form_submissions this turn — that touches a much larger
+//     surface (photos, actions field, reference matrix) and is
+//     properly a separate ticket.
+//
+// Storage NOTE:
+//   The ship brief mentioned "GridFS" but the repo's established
+//   attachment pattern (form_submissions in `forms.py:113`) is
+//   filesystem-backed at `uploads/form_attachments/`. GridFS
+//   exists in workers.py / backup_service.py for other purposes.
+//   The "REUSE the exact same helper/utility, do NOT invent a new
+//   storage path" clause is strictly stronger than the GridFS
+//   hint, so we mirror `form_submissions` (filesystem). Backup,
+//   disk-usage dashboards, and path invariants apply identically.
+//   If GridFS becomes the org-wide standard, a follow-up ticket
+//   can migrate BOTH `form_submissions` and `schedule_attachments`
+//   together.
+//
+// Tests (`tests/backend_unit/test_schedule_attachments_v58_13_14.py`):
+//   · Uses `requests` against the live `http://localhost:8001`
+//     backend (integration-style — schema-only pytest would not
+//     prove the endpoint is actually mounted).
+//   · POST 1 attachment → 201, record shape verified, on-disk
+//     blob exists.
+//   · GET → 200, byte-for-byte round-trip.
+//   · DELETE → 204, `attachments` array shrinks, disk blob gone.
+//   · Multi-attachment: 3 uploaded, 1 deleted, 2 remain.
+//   · Unauthenticated: 401/403.
+//   · Fixture creates + tears down a scratch asset + schedule so
+//     no permanent DB state changes.
+//
+// Backend reload NOTE:
+//   This ship edits `asset_service.py` under `--reload-dir
+//   /app/backend`, so uvicorn WatchFiles reload fires. Same
+//   v58.13.11 pattern — bulk_import job `4f395643-…` orphans, we
+//   restart backend, `auto_resume_orphaned_jobs()` re-picks it up
+//   with `arc` +1. Zero data loss (cache-hit walk continues from
+//   checkpoint).
+//
+// Guardrails held:
+//   · `ScheduleIn` Pydantic model shape UNCHANGED — the
+//     `attachments: Optional[list[dict[str, Any]]]` field from
+//     v58.13.11 is exactly what we persist to.
+//   · bulk_import untouched; form_submissions untouched; SW /
+//     registration / update-poll untouched.
+//   · Version-sync pytest guardrail (v58.13.13) still passing —
+//     `RUNNING_VERSION` updated in step 4 of the ship checklist.
+//   · CsIncidentTab.jsx orphan still not deleted (separate ticket).
+//   · Every new pytest under `/app/tests/backend_unit/`, NEVER
+//     `/app/backend/tests/`.
+
+
 // v160.3.9.58.13.13 — Version-sync bug fix + guardrail.
 //
 // The smoking gun: v58.13.9, .10, .11, and .12 each shipped with
@@ -1968,7 +2077,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.13';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.14';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
