@@ -61,6 +61,7 @@ from simpro_zip_import import (  # noqa: E402
     bulk_router as simpro_zip_bulk_router,
 )
 from cron_simpro_delta import register_simpro_cron  # noqa: E402
+from cron_asset_service_generate import register_asset_service_generate_cron  # noqa: E402
 from integrations_m365 import router as m365_router  # noqa: E402
 from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
@@ -1057,6 +1058,13 @@ async def on_startup():
             log.warning("simpro_delta_cron scheduler hook failed: %s", e)
         scheduler.start()
         app.state.scheduler = scheduler
+        # v58.13.17 — Asset-service overnight generation cron.
+        # Env-gated OFF by default (ASSET_SERVICE_GENERATE_CRON=1 to
+        # enable). Registers only if the env var is set to "1".
+        try:
+            register_asset_service_generate_cron(scheduler)
+        except Exception as e:
+            log.warning("asset_service_generate cron registration failed: %s", e)
         # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
         import asyncio as _asyncio
         _asyncio.create_task(sync_navixy_counters())

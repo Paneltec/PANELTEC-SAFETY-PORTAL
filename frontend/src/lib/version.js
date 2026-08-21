@@ -1,6 +1,16 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.17 — Asset-service overnight generation cron.
+// Env-gated OFF (ASSET_SERVICE_GENERATE_CRON=1 to enable). Ships
+// backend/cron_asset_service_generate.py + manual dry-run script at
+// backend/scripts/run_asset_service_generate_v58_13_17.py. Fires at
+// 02:00 Australia/Sydney (DST-safe). Dual-track advances BOTH
+// counters. Idempotent via natural next_due advancement + compound-
+// unique index (schedule_id, generated_by_run_id). Telemetry: one
+// INFO log line + one doc in asset_service_generate_runs per run.
+// See PRD.md v58.13.17 for the full ship writeup.
+
 // v160.3.9.58.13.16 — Orphan schedule-attachment blob cleanup.
 //
 // Closes the E2 finding from v58.13.14: `DELETE /assets/{aid}
@@ -2234,7 +2244,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.16';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.17';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
