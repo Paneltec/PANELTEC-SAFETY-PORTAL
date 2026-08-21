@@ -257,6 +257,48 @@ async def list_audit(
     return {"items": rows, "total": len(rows)}
 
 
+# v58.13.29 — GET /linked. Enumerates currently-linked employees for
+# the bulk-unlink wizard. Placed BEFORE `/{uid}` (line ~260) so the
+# 1-segment literal path wins the router match against the 1-segment
+# path-param route.
+@router.get("/linked")
+async def list_linked_employees(
+    user: dict = Depends(require_permission("hr_employees", "edit")),
+):
+    """Return every hr_employee with a non-null `linked_worker_id`.
+
+    Shape:
+      {items: [{employee_id, employee_name, worker_id, worker_name,
+                linked_at?}], total: N}
+
+    Excludes soft-deleted employees. Hard-capped at 1000 for safety.
+    Gated by `hr_employees.edit` (same as the linker endpoints).
+    """
+    items: list[dict] = []
+    async for e in db.hr_employees.find(
+        {"deleted_at": None,
+         "linked_worker_id": {"$ne": None, "$exists": True}},
+        {"_id": 0, "id": 1, "employee_id": 1,
+         "first_name": 1, "last_name": 1,
+         "linked_worker_id": 1, "linked_worker_name": 1,
+         "updated_at": 1},
+    ):
+        wid = e.get("linked_worker_id")
+        if not wid:  # defence-in-depth against {"": "..."} edge cases
+            continue
+        items.append({
+            "employee_id": e["id"],
+            "employee_name": f"{e.get('first_name','')} {e.get('last_name','')}".strip(),
+            "worker_id": wid,
+            "worker_name": e.get("linked_worker_name") or wid,
+            "linked_at": e.get("updated_at"),
+        })
+        if len(items) >= 1000:
+            break
+    items.sort(key=lambda r: r["employee_name"].lower())
+    return {"items": items, "total": len(items)}
+
+
 @router.get("/{uid}")
 async def get_employee(
     uid: str, request: Request,
@@ -585,6 +627,15 @@ async def unlink_worker(
     request: Request,
     user: dict = Depends(require_permission("hr_employees", "edit")),
 ):
+    return await _unlink_worker_inner(eid=eid, user=user, request=request)
+
+
+async def _unlink_worker_inner(
+    *, eid: str, user: dict, request: Request,
+) -> dict:
+    """v58.13.29 — Shared implementation for single + bulk unlink.
+    Idempotent: clearing an already-null link is a 200 no-op. Raises
+    HTTPException(404) when the employee doesn't exist."""
     emp = await db.hr_employees.find_one({"id": eid, "deleted_at": None},
                                          {"_id": 0, "id": 1,
                                           "employee_id": 1,
@@ -593,7 +644,6 @@ async def unlink_worker(
     if not emp:
         raise HTTPException(404, "employee-not-found")
     prev = emp.get("linked_worker_id")
-    # Idempotent — clearing an already-null link is a 200 no-op.
     await db.hr_employees.update_one(
         {"id": eid},
         {"$set": {"linked_worker_id": None,
@@ -606,6 +656,39 @@ async def unlink_worker(
                      extra={"prev_worker_id": prev,
                             "prev_worker_name": emp.get("linked_worker_name")})
     return {"ok": True, "was_linked": bool(prev)}
+
+
+class BulkUnlinkIn(BaseModel):
+    employee_ids: list[str]
+
+
+@router.post("/unlink-worker/bulk")
+async def unlink_worker_bulk(
+    body: BulkUnlinkIn,
+    request: Request,
+    user: dict = Depends(require_permission("hr_employees", "edit")),
+):
+    """v58.13.29 — Fan-out unlink via the shared inner handler.
+    Per-item try/except so one 404 doesn't kill the batch. Response
+    mirrors the v58.13.26 bulk-link shape:
+      {succeeded: N, failed: [{employee_id, error}]}
+
+    Already-unlinked employees are counted in `succeeded` (idempotent).
+    """
+    succeeded = 0
+    failed: list[dict] = []
+    for eid in body.employee_ids:
+        try:
+            await _unlink_worker_inner(eid=eid, user=user, request=request)
+            succeeded += 1
+        except HTTPException as e:
+            detail = e.detail
+            err = detail if isinstance(detail, str) else str(detail)
+            failed.append({"employee_id": eid, "error": err})
+        except Exception as e:  # last-resort safety net
+            log.exception("bulk unlink unexpected error")
+            failed.append({"employee_id": eid, "error": str(e)})
+    return {"succeeded": succeeded, "failed": failed}
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,101 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.29 — Bulk unlink companion + final overnight ship.
+//
+// Completes the linker feature set. v58.13.25 shipped single
+// link/unlink. v58.13.26 shipped bulk link (3-tier composite matcher
+// with wizard). v58.13.29 adds the destructive companion so admins
+// can undo linkages en masse — especially useful after a Simpro
+// re-import that changes worker ids.
+//
+// Backend
+//   · `backend/hr_employees.py`:
+//     · NEW `GET /linked` — enumerates every hr_employee with a
+//       non-null `linked_worker_id`, returns
+//       `{items:[{employee_id, employee_name, worker_id,
+//       worker_name, linked_at?}], total: N}`.
+//       INSERTED BEFORE the `/{uid}` GET route so the 1-segment
+//       literal wins the router match against the 1-segment
+//       path-param route. Excludes soft-deleted employees. Hard
+//       cap 1000. Sorted by employee_name.lower().
+//     · NEW `_unlink_worker_inner(*, eid, user, request)` helper —
+//       mirrors v58.13.26's `_link_worker_inner()` extraction so
+//       single + bulk share the exact same code path (404 handling,
+//       idempotent no-op when `prev` is falsy, audit row via the
+//       same `_audit()` call with `action="unlink_worker"`).
+//     · `PATCH /{eid}/unlink-worker` — body identical, now a
+//       one-line pass-through to `_unlink_worker_inner()`.
+//     · NEW `POST /unlink-worker/bulk` body
+//       `{employee_ids: [...]}` — fan-outs via the shared inner
+//       handler with per-item try/except. Response shape mirrors
+//       v58.13.26's bulk link:
+//       `{succeeded: N, failed: [{employee_id, error}]}`.
+//       Already-unlinked ids are counted as `succeeded` (idempotent).
+//     · Both new endpoints gated by `hr_employees.edit`.
+//
+// Frontend
+//   · NEW `components/BulkWorkerUnlinkWizard.jsx` — separate file
+//     rather than a third step of the link wizard because the
+//     destructive UX (rose-600 palette, mandatory confirmation
+//     step, AlertTriangle warning icon) reads more clearly on its
+//     own than as a mode-switched branch. Flow: Load → Review
+//     (select all / deselect all) → Confirm dialog → Fire →
+//     Toast per-employee. Nested confirmation modal at z-[80]
+//     (parent modal at z-[70]) so the confirm can never be
+//     dismissed by a stray backdrop click on the wizard shell.
+//   · `pages/settings/HrEmployeesPage.jsx`:
+//     · New `linkedCount` state, refreshed via `loadLinkedCount()`
+//       polling `/hr/employees/linked`.
+//     · New "Bulk unlink…" outlined rose button in the header,
+//       visible only when `linkedCount > 0`. Sits to the right of
+//       the v58.13.26 blue "Bulk link workers…" button so the
+//       constructive/destructive pair reads left-to-right.
+//     · Wizard mounted alongside the link wizard; both refetch the
+//       list AND both count signals on close so the header
+//       buttons appear/disappear correctly.
+//     · v58.13.10 flash-bug guardrail: every trigger + wizard
+//       handler calls `e.stopPropagation() + e.preventDefault()`
+//       before mutating state.
+//
+// Route ordering note (documented so future forks don't trip)
+//   FastAPI matches routes in registration order. `GET /linked` is
+//   a 1-segment literal; `GET /{uid}` is a 1-segment path parameter.
+//   The literal MUST be registered first to win the match; hence
+//   the new endpoint sits between `/audit` (line ~257) and `/{uid}`
+//   (line ~260) rather than at the tail of the linker block. The
+//   v58.13.26 bulk endpoints avoided this pitfall by having
+//   2-segment paths (`/link-candidates/bulk`, `/link-worker/bulk`)
+//   which don't collide with `/{uid}` regardless of ordering.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_bulk_unlink_v58_13_29.py` — 8
+//     pytests: /linked shape + sort + soft-delete exclusion + empty
+//     case, bulk unlink happy path, mixed valid/invalid, idempotent
+//     already-unlinked, empty body, single-record helper reuse
+//     regression guard.
+//   · NEW `tests/frontend_smoke/test_bulk_unlink_wizard_v58_13_29.py`
+//     — 9 static-grep pytests: exports, selection controls, mandatory
+//     destructive confirmation step, rose destructive styling,
+//     stopPropagation on every handler, backdrop close pattern, page
+//     mount, linkedCount gating on the header button, version-sync.
+//
+// Guardrails held
+//   · Zero schema migration — same `linked_worker_id` field.
+//   · v58.13.13 version-sync guardrail: PASS.
+//   · v58.13.10 test-placement: new pytests under
+//     `/app/tests/{backend_unit,frontend_smoke}/`.
+//   · v58.13.25 / v58.13.26 / v58.13.27 / v58.13.28 endpoints all
+//     UNTOUCHED. Single-record `PATCH /{eid}/unlink-worker` API
+//     shape unchanged.
+//   · Destructive-action-requires-confirmation invariant preserved
+//     (rose colouring alone would not be enough — the wizard
+//     forces a Yes/No modal step before the POST fires).
+//
+// Backend WILL reload once (single hr_employees.py edit). Drain
+// expected <10s per v58.13.15 shutdown fix.
+
+
 // v160.3.9.58.13.28 — Auto-null cascade on worker soft-delete.
 //
 // v58.13.25 Pass 1 answer #8 originally chose (b) leave-as-is on
@@ -3042,7 +3137,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.28';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.29';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

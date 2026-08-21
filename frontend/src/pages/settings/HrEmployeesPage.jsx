@@ -14,6 +14,8 @@ import HrEmployeeDrawer from './HrEmployeeDrawer';
 import WorkerLinkModal from '../../components/WorkerLinkModal';
 // v58.13.26 — Bulk link wizard.
 import BulkWorkerLinkWizard from '../../components/BulkWorkerLinkWizard';
+// v58.13.29 — Bulk unlink wizard (destructive companion).
+import BulkWorkerUnlinkWizard from '../../components/BulkWorkerUnlinkWizard';
 
 const FIXED_COLUMNS = [
   { key: 'employee_id',       label: 'ID',           width: 70 },
@@ -50,6 +52,9 @@ export default function HrEmployeesPage() {
   // v58.13.26 — Bulk link wizard visibility + auto-match presence.
   const [bulkWizardOpen, setBulkWizardOpen] = React.useState(false);
   const [bulkAutoCount, setBulkAutoCount] = React.useState(0);
+  // v58.13.29 — Bulk unlink wizard visibility + linked-count signal.
+  const [bulkUnlinkOpen, setBulkUnlinkOpen] = React.useState(false);
+  const [linkedCount, setLinkedCount] = React.useState(0);
   const [deleting, setDeleting] = React.useState(false);
 
   const refreshFromSimpro = async () => {
@@ -122,6 +127,19 @@ export default function HrEmployeesPage() {
   }, []);
   React.useEffect(() => { loadBulkCounts(); }, [loadBulkCounts]);
 
+  // v58.13.29 — Poll linked-count so the "Bulk unlink" button appears
+  // when there are existing links to remove. Best-effort; failure hides
+  // the button.
+  const loadLinkedCount = React.useCallback(async () => {
+    try {
+      const { data } = await api.get('/hr/employees/linked');
+      setLinkedCount(data.total ?? (data.items || []).length ?? 0);
+    } catch {
+      setLinkedCount(0);
+    }
+  }, []);
+  React.useEffect(() => { loadLinkedCount(); }, [loadLinkedCount]);
+
   // Derive filter options from the current result set. Cheap on <200 rows.
   const businessUnits = React.useMemo(
     () => Array.from(new Set(items.map((r) => r.business_unit).filter(Boolean))).sort(),
@@ -155,6 +173,19 @@ export default function HrEmployeesPage() {
                 <span aria-hidden>🔗</span>
                 Bulk link workers…
                 <span className="ml-1 px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-bold">{bulkAutoCount}</span>
+              </button>
+            )}
+            {linkedCount > 0 && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); setBulkUnlinkOpen(true); }}
+                data-testid="bulk-unlink-open-btn"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white text-rose-700 text-sm font-semibold border border-rose-300 hover:bg-rose-50 focus:outline-none focus:ring-2 focus:ring-rose-300 shadow-sm"
+                title={`${linkedCount} employee${linkedCount === 1 ? '' : 's'} currently linked`}
+              >
+                <span aria-hidden>⛓</span>
+                Bulk unlink…
+                <span className="ml-1 px-1.5 py-0.5 rounded bg-rose-100 text-[10px] font-bold">{linkedCount}</span>
               </button>
             )}
             <button
@@ -410,8 +441,17 @@ export default function HrEmployeesPage() {
       {/* v58.13.26 — Bulk link wizard. Refetches list + counts on close. */}
       {bulkWizardOpen && (
         <BulkWorkerLinkWizard
-          onClose={() => { setBulkWizardOpen(false); load(); loadBulkCounts(); }}
-          onCompleted={() => { load(); loadBulkCounts(); }}
+          onClose={() => { setBulkWizardOpen(false); load(); loadBulkCounts(); loadLinkedCount(); }}
+          onCompleted={() => { load(); loadBulkCounts(); loadLinkedCount(); }}
+        />
+      )}
+
+      {/* v58.13.29 — Bulk unlink wizard (destructive). Refetches list +
+          both count signals on close. */}
+      {bulkUnlinkOpen && (
+        <BulkWorkerUnlinkWizard
+          onClose={() => { setBulkUnlinkOpen(false); load(); loadBulkCounts(); loadLinkedCount(); }}
+          onCompleted={() => { load(); loadBulkCounts(); loadLinkedCount(); }}
         />
       )}
 
