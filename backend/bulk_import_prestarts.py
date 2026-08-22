@@ -1244,6 +1244,56 @@ def _get_prompt_for_category(
     return _PRESTART_SYSTEM, user
 
 
+# v58.13.32 — Category-aware routing decision.
+#
+# Ship 3 of 4 on the SSRA / permit / hazard bulk-import fix path.
+# Ship 1 (v58.13.30) let the classifier pick the correct template.
+# Ship 2 (v58.13.31) gave the extractor category-specific prompts.
+# This ship stops SSRAs / permits / SWMS from polluting `pre_starts`
+# — they still land in `form_submissions` (source of truth) but no
+# longer get the `pre_starts` shim that only exists so the Daily
+# Pre-Starts UI tile renders live records.
+#
+# Recognised pre-start categories that DO get the shim:
+#   · `pre_start`
+#   · `plant_pre_start`
+#
+# Non-pre-start categories that DO NOT get the shim (v58.13.32):
+#   · `hazard`
+#   · `swms`
+#   · `permit`
+#   · anything else in the classifier roster
+#
+# Backward-compat: rows with NO category (pre-v58.10.3 cache entries
+# that never had the field stamped) fall back to the legacy
+# name-based substring check so they don't get accidentally dropped.
+# Unknown / missing category is treated as pre-start-ish and gets
+# the shim — deliberately generous, per the ship's "unknown category
+# → both written" guardrail.
+def _should_write_prestarts_shim(
+    category: str | None, template_name: str | None,
+) -> bool:
+    """Pure helper. Returns True iff a `pre_starts` shim should be
+    written for a row with this `(category, template_name)`.
+
+    Called from the full-run promotion block. Testable in isolation
+    without spinning up Mongo / FastAPI.
+    """
+    cat = (category or "").strip().lower()
+    if cat in ("pre_start", "plant_pre_start"):
+        return True
+    # Explicit non-pre-start categories — no shim.
+    if cat in ("hazard", "swms", "permit"):
+        return False
+    # Backward-compat path — no category stamped. Fall through to the
+    # legacy name-based substring check so pre-v58.10.3 cache entries
+    # still route the same way they did before.
+    name = (template_name or "").lower()
+    return ("pre-start" in name
+            or "pre start" in name
+            or "checklist" in name)
+
+
 # ────────────────── Fuzzy match ──────────────────
 
 def _norm(s: str) -> str:
@@ -2455,8 +2505,29 @@ async def _run_job(job_id: str, mode: str):
                                 # truth (rich `fields` array, audit).
                                 # `pre_starts` shim is a lightweight
                                 # visibility layer keyed on pdf_hash.
-                                _tpl = (_doc.get("template_name_snapshot") or "").lower()
-                                if "pre-start" in _tpl or "pre start" in _tpl or "checklist" in _tpl:
+                                #
+                                # v58.13.32 — Routing decision now
+                                # category-driven via the pure helper
+                                # `_should_write_prestarts_shim()`. SSRAs /
+                                # permits / swms no longer land in the
+                                # shim collection. Backward-compat:
+                                # rows without a `template_category_snapshot`
+                                # fall through to the legacy name-based
+                                # check inside the helper.
+                                _tpl_name = _doc.get("template_name_snapshot") or ""
+                                _tpl = _tpl_name.lower()
+                                _route_to_prestarts = _should_write_prestarts_shim(
+                                    _tpl_cat, _tpl_name,
+                                )
+                                log.info(
+                                    "bulk_import route: pdf_hash=%s category=%s "
+                                    "template=%r → %s",
+                                    _hash, _tpl_cat or "(none)", _tpl_name,
+                                    ("pre_starts + form_submissions"
+                                     if _route_to_prestarts
+                                     else "form_submissions only"),
+                                )
+                                if _route_to_prestarts:
                                     _fname = (_doc.get("metadata") or {}).get("src_filename") or "unknown.pdf"
                                     # v58.10.3 — Enrich the shim so the
                                     # Daily Pre-Starts tile face reads

@@ -1,6 +1,74 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.32 — Category-aware bulk-import routing. Ship 3 of 4
+// on the SSRA / permit / hazard fix path. Ship 1 (v58.13.30) let the
+// classifier PICK the right template. Ship 2 (v58.13.31) gave the
+// extractor the right QUESTIONS to ask. This ship stops non-pre-start
+// records from polluting the `pre_starts` collection at write time.
+//
+// Backend
+//   · `backend/bulk_import_prestarts.py`:
+//     · NEW pure helper `_should_write_prestarts_shim(category,
+//       template_name) -> bool`. Testable in isolation.
+//       · category in {pre_start, plant_pre_start} → True (shim)
+//       · category in {hazard, swms, permit}       → False (no shim)
+//       · unknown / missing category              → backward-compat
+//         fall-back to the legacy name-based substring check
+//         ("pre-start" / "pre start" / "checklist" in name)
+//     · Promotion block at L2451+ now consults the helper instead of
+//       the inline `if "pre-start" in _tpl` gate. Extra INFO log line
+//       stamps the routing decision per PDF hash so future
+//       misclassifications are diagnosable from the logs alone:
+//         `bulk_import route: pdf_hash=<h> category=<cat>
+//          template=<name> → {pre_starts + form_submissions
+//                             | form_submissions only}`
+//
+// Behavioural change on FUTURE imports
+//   · Correctly-classified SSRAs / permits / SWMS forms will land
+//     ONLY in `form_submissions` (source of truth) — no more
+//     `pre_starts` shim rows for them. This stops the 3 776 historical
+//     misclassifications from being reproduced going forward.
+//   · The pre-start families (Daily / CVT / Tip Truck / VT / Weekly /
+//     Plant) continue to dual-write exactly as before.
+//   · Cached-hit rows classified before v58.13.30 (i.e. all 7 619
+//     existing cache entries) still route the same way because
+//     their cache `template_id` maps back to templates_by_id whose
+//     `category` is `pre_start` / `plant_pre_start` (all 6 legacy
+//     templates fall in these categories). Backward-compat wins.
+//
+// Ship boundaries — deliberately NOT in this ship
+//   · No re-extraction of the 11 407 existing records.
+//   · No mutation of existing `pre_starts` rows. The historical 3 776
+//     misclassifications remain in the collection until Ship 4 (or a
+//     manual cleanup) addresses them.
+//   · No changes to `form_submissions` writes. Every category still
+//     gets a form_submissions row — that's the source of truth.
+//   · No changes to the low-confidence short-circuit from Ship 1
+//     (still no shim, no form_submissions insert on low-confidence).
+//   · No changes to the extractor prompts from Ship 2.
+//   · No changes to the legacy no-hash `insert_one(_doc)` fallback
+//     branch.
+//   · bulk_import job `4f395643` UNTOUCHED.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/backend_unit/`.
+//   · v58.13.30 + v58.13.31 pytest suites still pass unchanged.
+//   · Backend WILL reload once (single `bulk_import_prestarts.py`
+//     edit). Drain expected <10s per v58.13.15.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_category_routing_v58_13_32.py`
+//     — 12 pytests covering: pre_start / plant_pre_start (both write
+//     shim), hazard / permit / swms (all suppress shim), no-category
+//     + pre-start-name fallback (writes), no-category + SSRA-name
+//     (no shim), empty inputs, case-insensitive matching, category
+//     wins over name-fallback, unknown category with random name
+//     (no shim), version-sync.
+
+
 // v160.3.9.58.13.31 — Per-category extraction prompts. Ship 2 of 4
 // on the SSRA/permit/hazard bulk-import fix path. Ship 1 (v58.13.30)
 // let the classifier PICK an SSRA / permit template; this ship gives
@@ -3282,7 +3350,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.31';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.32';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
