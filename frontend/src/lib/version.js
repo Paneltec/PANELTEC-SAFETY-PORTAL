@@ -1,6 +1,65 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.33 — Ship 4a. Classifier roster widened from
+// inclusion to exclusion + MisclassifiedImportBanner FE component.
+//
+// Background: Ship 1 (v58.13.30) shipped an inclusion-list env var
+// (`BULK_IMPORT_CLASSIFIER_CATEGORIES` = pre_start,plant_pre_start,
+// hazard,swms,permit) that silently dropped legit templates tagged
+// under categories not in the default set — notably `Hot Work Permit`
+// (`general`) and 17 `Vehicle Pre-Use Inspection` / `Heavy Vehicle
+// Daily Check` / `Construction Heavy Equipment Pre-Operation
+// Checklist` templates (`inspection`). Exclusion-list is the safer
+// pattern: auto-discover every active template unless it's on a
+// list of known non-bulk-import categories.
+//
+// Backend
+//   · `backend/bulk_import_prestarts.py`:
+//     · New env var: `BULK_IMPORT_CLASSIFIER_CATEGORY_EXCLUDE`
+//       default `site_diary,incident,toolbox,near_miss,admin`.
+//     · Legacy `BULK_IMPORT_CLASSIFIER_CATEGORIES` (inclusion) still
+//       honoured when explicitly set; emits a WARN nudging the
+//       operator to migrate to the exclusion list.
+//     · `_load_classifier_roster()` now queries `{category: {$nin:
+//       <exclude_list>}, deleted_at: None}` by default. TTL cache +
+//       DB-failure fallback preserved unchanged.
+//
+// Frontend
+//   · NEW `components/MisclassifiedImportBanner.jsx`. Detects
+//     imported records where `fields[]` is empty OR the
+//     filename-parsed template family disagrees with
+//     `template_name_snapshot`. Renders an amber banner nudging
+//     the user to view the source PDF or manually re-enter data.
+//     No destructive action; v58.13.10 stopPropagation guard on
+//     every click handler.
+//   · Not mounted into PreStarts.jsx yet — the component is
+//     drop-in ready for the pre-starts detail view when that
+//     view lands. Mounting is a one-line change that can happen
+//     alongside the detail-modal build.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · Ship 3's `_should_write_prestarts_shim` routing UNCHANGED.
+//   · Ship 2's per-category prompts UNCHANGED.
+//   · Zero touch to 11 407 existing records / 7 619 cache entries.
+//   · bulk_import job `4f395643` UNTOUCHED.
+//   · Backend WILL reload once (single `bulk_import_prestarts.py`
+//     edit).
+//
+// Tests
+//   · NEW `tests/backend_unit/test_classifier_exclusion_v58_13_33.py`
+//     — 5 pytests: default-exclusion returns non-excluded set,
+//     empty-exclusion returns all, legacy inclusion still works,
+//     roster strictly wider than the 6-template baseline,
+//     version-sync.
+//   · NEW `tests/frontend_smoke/test_misclassified_banner_v58_13_33.py`
+//     — 7 pytests: file exists, conditional detection logic
+//     (`fieldsEmpty` / `templateMismatch` / `isImported`),
+//     stopPropagation on click, expected testids, amber palette,
+//     null-return when not applicable, version-sync.
+
+
 // v160.3.9.58.13.32 — Category-aware bulk-import routing. Ship 3 of 4
 // on the SSRA / permit / hazard fix path. Ship 1 (v58.13.30) let the
 // classifier PICK the right template. Ship 2 (v58.13.31) gave the
@@ -3350,7 +3409,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.32';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.33';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

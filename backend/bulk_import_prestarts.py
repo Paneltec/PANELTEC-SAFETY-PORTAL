@@ -317,29 +317,18 @@ _TEMPLATE_HINTS = {
 
 
 # v58.13.30 — Dynamic classifier roster.
-#
-# Diagnostic (Feb 2026 late-night session) found that ~3 776 of the
-# 11 407 bulk-imported records were misclassified because the hardcoded
-# 6-template roster forced every SSRA, Excavation Permit, Combination
-# VT-CVT and long-tail Simpro form into the least-wrong pre-start slot.
-# This ship expands the classifier's option set to include any
-# form_template in the configured category list, so future imports of
-# SSRAs / hazard / permit / swms templates get classified correctly.
-#
-# Ship boundary (Ship 1 of 4):
-#   · Ship 1 (THIS): classifier roster expansion + low-confidence
-#     escape hatch.
-#   · Ship 2 (later): category-specific extraction prompts.
-#   · Ship 3 (later): category-aware routing (SSRAs → form_submissions
-#     only, don't pollute pre_starts).
-#   · Ship 4 (later): FE fallback + backfill triage.
-#
-# NOTHING in this ship touches existing records, existing cache
-# entries, or existing extraction/routing behaviour.
+# v58.13.33 — Widened to auto-discover every non-excluded active
+# template. See rationale in the changelog block of
+# `frontend/src/lib/version.js`.
 _CLASSIFIER_CATEGORIES = tuple(
     c.strip() for c in (
-        os.environ.get("BULK_IMPORT_CLASSIFIER_CATEGORIES")
-        or "pre_start,plant_pre_start,hazard,swms,permit"
+        os.environ.get("BULK_IMPORT_CLASSIFIER_CATEGORIES") or ""
+    ).split(",") if c.strip()
+)
+_CLASSIFIER_CATEGORY_EXCLUDE = tuple(
+    c.strip() for c in (
+        os.environ.get("BULK_IMPORT_CLASSIFIER_CATEGORY_EXCLUDE")
+        or "site_diary,incident,toolbox,near_miss,admin"
     ).split(",") if c.strip()
 )
 
@@ -360,12 +349,22 @@ _ROSTER_TTL_S = 300
 _ROSTER_CACHE: dict = {"at": 0.0, "hints": None}
 
 
-async def _load_classifier_roster() -> dict[str, str]:
+async def _load_classifier_roster() -> dict:
     """Return `{template_id: template_name}` for every non-deleted
-    `form_templates` doc whose `category` sits in
-    `_CLASSIFIER_CATEGORIES`. 5-min TTL. On DB failure or empty
-    result, falls back to the hardcoded `_TEMPLATE_HINTS` dict so
-    the pipeline stays functional even during a Mongo hiccup."""
+    `form_templates` doc whose `category` is NOT in the exclusion
+    list. 5-min TTL. On DB failure or empty result, falls back to
+    the hardcoded `_TEMPLATE_HINTS` dict so the pipeline stays
+    functional even during a Mongo hiccup.
+
+    v58.13.33 — Widened from an inclusion list to an exclusion list
+    because the previous approach silently dropped legitimate
+    templates tagged under categories not in the default set
+    (Hot Work Permit lives under `general`, Vehicle Pre-Use
+    Inspection lives under `inspection`, etc.). Legacy
+    `BULK_IMPORT_CLASSIFIER_CATEGORIES` env var is still honoured
+    when set for backward-compat, but emits a WARN nudging the
+    operator to migrate to the exclusion list.
+    """
     import time
     now = time.time()
     if _ROSTER_CACHE["hints"] is not None and (
@@ -373,11 +372,22 @@ async def _load_classifier_roster() -> dict[str, str]:
     ) < _ROSTER_TTL_S:
         return _ROSTER_CACHE["hints"]
     try:
-        hints: dict[str, str] = {}
-        cats = list(_CLASSIFIER_CATEGORIES)
+        hints: dict = {}
+        if _CLASSIFIER_CATEGORIES:
+            # Backward-compat: legacy inclusion list wins when explicitly set.
+            log.warning(
+                "v58.13.33 BULK_IMPORT_CLASSIFIER_CATEGORIES is set "
+                "(%s) — using legacy inclusion list. Migrate to "
+                "BULK_IMPORT_CLASSIFIER_CATEGORY_EXCLUDE for auto-discovery.",
+                ",".join(_CLASSIFIER_CATEGORIES),
+            )
+            query = {"category": {"$in": list(_CLASSIFIER_CATEGORIES)},
+                     "deleted_at": None}
+        else:
+            query = {"category": {"$nin": list(_CLASSIFIER_CATEGORY_EXCLUDE)},
+                     "deleted_at": None}
         async for t in db.form_templates.find(
-            {"category": {"$in": cats}, "deleted_at": None},
-            {"_id": 0, "id": 1, "name": 1},
+            query, {"_id": 0, "id": 1, "name": 1},
         ):
             tid = t.get("id")
             tname = (t.get("name") or "").strip()
@@ -388,13 +398,16 @@ async def _load_classifier_roster() -> dict[str, str]:
         _ROSTER_CACHE["hints"] = hints
         _ROSTER_CACHE["at"] = now
         log.info(
-            "v58.13.30 classifier roster loaded: %d templates across %s",
-            len(hints), cats,
+            "v58.13.33 classifier roster loaded: %d templates "
+            "(exclude=%s legacy_include=%s)",
+            len(hints),
+            list(_CLASSIFIER_CATEGORY_EXCLUDE),
+            list(_CLASSIFIER_CATEGORIES) or None,
         )
         return hints
     except Exception as e:
         log.warning(
-            "v58.13.30 classifier roster db-load failed (%s); "
+            "v58.13.33 classifier roster db-load failed (%s); "
             "falling back to hardcoded 6-template list", e,
         )
         return dict(_TEMPLATE_HINTS)

@@ -75,15 +75,24 @@ async def test_roster_pulls_all_configured_categories(monkeypatch):
         _template("t-6", "SWMS – Concrete Cutting", "swms"),
     ]
     def _find(filt, _proj=None):
-        cats = filt.get("category", {}).get("$in", [])
-        rows = [
-            d for d in docs
-            if d["category"] in cats and d["deleted_at"] is None
-        ]
+        # v58.13.33 default path uses $nin; legacy path uses $in.
+        cat_filt = filt.get("category", {})
+        if "$in" in cat_filt:
+            wanted = cat_filt["$in"]
+            rows = [d for d in docs
+                    if d["category"] in wanted and d["deleted_at"] is None]
+        else:
+            excluded = cat_filt.get("$nin", [])
+            rows = [d for d in docs
+                    if d["category"] not in excluded and d["deleted_at"] is None]
         return _Cursor(rows)
     fake_db = MagicMock()
     fake_db.form_templates.find = MagicMock(side_effect=_find)
     monkeypatch.setattr(bip, "db", fake_db)
+    # Force legacy inclusion mode so the test intent is preserved.
+    monkeypatch.setattr(bip, "_CLASSIFIER_CATEGORIES",
+                        ("pre_start", "plant_pre_start", "hazard",
+                         "swms", "permit"))
 
     r = await bip._load_classifier_roster()
     assert len(r) == 6
@@ -105,13 +114,12 @@ async def test_roster_excludes_soft_deleted(monkeypatch):
                   deleted_at="2026-01-01T00:00:00+00:00"),
     ]
     def _find(filt, _proj=None):
-        rows = [d for d in docs
-                if d["deleted_at"] is None
-                and d["category"] in filt["category"]["$in"]]
+        rows = [d for d in docs if d["deleted_at"] is None]
         return _Cursor(rows)
     fake_db = MagicMock()
     fake_db.form_templates.find = MagicMock(side_effect=_find)
     monkeypatch.setattr(bip, "db", fake_db)
+    monkeypatch.setattr(bip, "_CLASSIFIER_CATEGORIES", tuple())
 
     r = await bip._load_classifier_roster()
     assert len(r) == 1
@@ -155,11 +163,11 @@ async def test_roster_ttl_cache_hits_avoid_repeat_queries(monkeypatch):
     call_count = {"n": 0}
     def _find(filt, _proj=None):
         call_count["n"] += 1
-        return _Cursor([d for d in docs
-                        if d["category"] in filt["category"]["$in"]])
+        return _Cursor([d for d in docs if d["deleted_at"] is None])
     fake_db = MagicMock()
     fake_db.form_templates.find = MagicMock(side_effect=_find)
     monkeypatch.setattr(bip, "db", fake_db)
+    monkeypatch.setattr(bip, "_CLASSIFIER_CATEGORIES", tuple())
 
     await bip._load_classifier_roster()
     await bip._load_classifier_roster()
@@ -190,17 +198,15 @@ async def test_roster_preserves_all_six_legacy_pre_start_names(monkeypatch):
 # 7. Env var overrides the category set
 # ---------------------------------------------------------------------------
 def test_categories_are_env_configurable():
-    # The module constant is loaded at import time from
-    # BULK_IMPORT_CLASSIFIER_CATEGORIES. Verify the default is what
-    # we ship, and that the parser strips whitespace + drops empties.
-    default = tuple(
-        c.strip() for c in
-        "pre_start,plant_pre_start,hazard,swms,permit".split(",")
-        if c.strip()
-    )
-    assert bip._CLASSIFIER_CATEGORIES == default
-
-    # Simulate the parse the module does at import time.
+    # v58.13.33 switched the default from an inclusion list to an
+    # exclusion list. The legacy inclusion env var is empty by default
+    # (opt-in), and the exclusion default holds the non-bulk-import
+    # categories.
+    assert bip._CLASSIFIER_CATEGORIES == tuple()
+    assert set(bip._CLASSIFIER_CATEGORY_EXCLUDE) == {
+        "site_diary", "incident", "toolbox", "near_miss", "admin",
+    }
+    # Parse whitespace-tolerant, drop empties.
     raw = " ssra , pre_start , , hazard "
     parsed = tuple(c.strip() for c in raw.split(",") if c.strip())
     assert parsed == ("ssra", "pre_start", "hazard")
