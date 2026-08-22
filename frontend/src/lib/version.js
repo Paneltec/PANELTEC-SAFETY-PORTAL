@@ -1,6 +1,67 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.31 — Per-category extraction prompts. Ship 2 of 4
+// on the SSRA/permit/hazard bulk-import fix path. Ship 1 (v58.13.30)
+// let the classifier PICK an SSRA / permit template; this ship gives
+// the extractor the right QUESTIONS to ask once it knows the category.
+//
+// Backend
+//   · `backend/bulk_import_prestarts.py`:
+//     · New `_get_prompt_for_category(category, template_name, labels)`
+//       helper returning `(system, user)` prompts.
+//     · `_claude_extract()` now reads `template.get("category")` and
+//       dispatches. No signature change — the calling code already
+//       passes the full template dict.
+//     · Recognised categories:
+//       · `pre_start` / `plant_pre_start` → v58.11.0 prompt verbatim
+//         (regression-locked; 5 609 correctly-classified daily
+//         pre-starts produce the exact same prompt as before).
+//       · `hazard` → NEW SSRA-shaped prompt with `hazards[]`,
+//         `crew[]`, `signatures[]`, TAILGATE topics list,
+//         BYDA/TGS numbers, emergency assembly point, GPS coords,
+//         SWMS ids list, photos_present bool.
+//       · `permit` → NEW permit-shaped prompt with `permit_type`,
+//         `checklist{}` (template-label-driven), `hazards[]`,
+//         `signatures[]`.
+//       · `swms` → aliased to `hazard` (schemas overlap; can split
+//         later if the two diverge).
+//       · unknown / empty / None → falls back to the pre-start
+//         prompt so cache-hit rows that never had a category stamped
+//         behave exactly as before.
+//     · Case-insensitive category matching (strip + lower).
+//     · Existing `template.get('name')` / labels list still fed
+//       through — pre-start + permit prompts use them; SSRA prompt
+//       ignores labels (SSRA field set is fixed regardless of the
+//       template row's declared fields).
+//
+// Ship boundaries — deliberately NOT in this ship
+//   · Routing UNCHANGED. Non-pre-start records still traverse the
+//     existing pre_starts shim path. Ship 3 handles the split.
+//   · No re-extraction of the 11 407 existing records. This ship is
+//     forward-only.
+//   · Cache UNTOUCHED. Row count identical pre/post.
+//   · bulk_import job `4f395643` UNTOUCHED (still `state=failed`,
+//     `auto_resume_count=17`).
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/backend_unit/`.
+//   · Pre-start prompt shape byte-locked by the regression test
+//     `test_prestart_prompt_returns_v58_11_0_shape`.
+//   · Backend WILL reload once (single `bulk_import_prestarts.py`
+//     edit). Drain expected <10s per v58.13.15.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_extraction_prompts_v58_13_31.py`
+//     — 12 pytests covering: pre-start regression lock, plant/pre-start
+//     alias, hazard SSRA field set, SWMS→hazard aliasing, permit
+//     field set, unknown/empty/None fallbacks, case-insensitive
+//     matching, `_claude_extract` category dispatch (hazard, missing,
+//     permit), version-sync.
+
+
 // v160.3.9.58.13.30 — Bulk-import classifier expansion + low-confidence
 // escape hatch. Ship 1 of 4 for the SSRA/permit/hazard bulk-import
 // fix path (approved after the Feb 2026 late-night diagnostic
@@ -3221,7 +3282,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.30';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.31';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -1093,24 +1093,20 @@ async def _claude_extract(png_b64s, template: dict) -> dict:
       · nudges Claude to record the answer TYPE it sees on the PDF
         (e.g. "OK", "Satisfactory", "Yes", "N/A") rather than
         forcing everything into Pass/Fail vocabulary.
+
+    v58.13.31 — Prompt is now category-selected. The pre-start /
+    plant_pre_start prompt is UNCHANGED (label-driven; regression-safe).
+    New per-category prompts for `hazard` (SSRA-shaped, with
+    hazards[]/crew[]/TAILGATE/signatures[]), `permit`, and `swms`
+    (aliased to `hazard`). Unknown / missing category falls back to
+    the pre-start prompt so cache-hit code paths that never had a
+    `category` stamped still behave exactly as before.
     """
     from ai import _claude_json
     labels = [f["label"] for f in template.get("fields", [])]
-    system = ("You extract filled values from a multi-page Australian pre-start "
-              "check-sheet exported from Simpro. Scan EVERY page (header, "
-              "checklist body, signatures, photos, notes). Return JSON only.")
-    user = (
-        f"Template: {template.get('name')}. This form spans multiple pages. "
-        f"For EACH of these field labels, look through ALL pages and "
-        f"extract the filled value if visible anywhere in the PDF: "
-        f"{json.dumps(labels)}. "
-        'Return {"date":"YYYY-MM-DD","worker_name":"…","plant_or_vehicle":"…",'
-        '"site":"…","gps_map_present":true|false,"signature_present":true|false,'
-        '"checklist":{"<exact label from template>":"<the answer text you see '
-        'e.g. OK, Satisfactory, Yes, No, N/A, or free text>"},'
-        '"notes":"…"}. Use each template label EXACTLY as given. Include '
-        "EVERY checklist item you can see filled in (usually 15-25 rows). "
-        "Only omit an item if the answer field is genuinely blank on the PDF."
+    category = (template.get("category") or "").strip().lower()
+    system, user = _get_prompt_for_category(
+        category, template.get("name") or "", labels,
     )
     if isinstance(png_b64s, str):
         return await _claude_json(system, user, image_b64=png_b64s)
@@ -1120,6 +1116,132 @@ async def _claude_extract(png_b64s, template: dict) -> dict:
     return await _claude_json(system, user,
                               image_b64=pages[0],
                               images_b64=pages[1:])
+
+
+# v58.13.31 — Per-category extraction prompt selector.
+#
+# Ship 2 of 4 on the SSRA/permit/hazard fix path. Ship 1 (v58.13.30)
+# expanded the classifier's option set so SSRAs get correctly
+# classified. This ship gives the EXTRACTOR the right questions to
+# ask once Claude knows what document type it's looking at.
+#
+# Boundaries:
+#   · Pre-start prompt is the v58.11.0 shape verbatim — no
+#     behavioural change on the 5 609 correctly-classified daily
+#     pre-starts already in the system.
+#   · Hazard / SSRA prompt is NEW. Requests the rich SSRA field set
+#     (hazards[], controls[], crew[], TAILGATE topics, BYDA/TGS,
+#     multiple signatures, emergency assembly point, GPS coords).
+#   · Permit prompt is NEW. Requests the excavation-permit /
+#     hot-work-permit field set (checklist + hazards + controls +
+#     signatures). Simpler shape than SSRA.
+#   · `swms` is aliased to `hazard` — the SWMS form shape overlaps
+#     enough that the SSRA schema captures what's needed for now.
+#     Split later if the two diverge.
+#   · Unknown / empty category falls back to the pre-start prompt.
+#     This preserves behaviour on cache-hits from before v58.13.30
+#     that never got a `category` written into the cache doc.
+_HAZARD_SYSTEM = (
+    "You extract filled values from a multi-page Australian construction "
+    "Site Specific Risk Assessment (SSRA) or Safe Work Method Statement "
+    "(SWMS) exported from Simpro. Scan EVERY page (header, TAILGATE "
+    "briefing panel, hazards + controls table, crew sign-on table, "
+    "signatures, photos, notes). Return JSON only."
+)
+
+_HAZARD_JSON_TEMPLATE = (
+    'Return {"date":"YYYY-MM-DD",'
+    '"site":"…","customer":"…","worker_name":"…",'
+    '"crew":[{"name":"…","role":"…"}],'
+    '"tailgate_topics_discussed":["…","…"],'
+    '"hazards":[{"description":"…","controls":["…","…"]}],'
+    '"byda_number":"…","tgs_number":"…",'
+    '"swms_ids":["…"],'
+    '"signatures":[{"name":"…","role":"…"}],'
+    '"emergency_assembly_point":"…",'
+    '"gps_coords":"…",'
+    '"photos_present":true,'
+    '"notes":"…"}. '
+    "Include EVERY hazard row visible on the PDF (usually 3-8 rows). "
+    "Include EVERY crew member listed in the sign-on table. Include "
+    "EVERY signature block found (crew_lead, site supervisor, workers). "
+    "Only omit a key if the answer field is genuinely blank."
+)
+
+_PERMIT_SYSTEM = (
+    "You extract filled values from a multi-page Australian construction "
+    "work permit (excavation permit, hot work permit, underground asset "
+    "site location form) exported from Simpro. Scan EVERY page (header, "
+    "permit-type panel, pre-conditions checklist, hazards + controls, "
+    "signatures, notes). Return JSON only."
+)
+
+_PERMIT_JSON_TEMPLATE = (
+    'Return {"date":"YYYY-MM-DD",'
+    '"site":"…","worker_name":"…","permit_type":"…",'
+    '"checklist":{"<exact label from template>":"<the answer text you see>"},'
+    '"hazards":[{"description":"…","controls":["…","…"]}],'
+    '"signatures":[{"name":"…","role":"…"}],'
+    '"notes":"…"}. '
+    "Use each template label EXACTLY as given for the checklist keys. "
+    "Include EVERY hazard row and EVERY signature block visible on the PDF."
+)
+
+_PRESTART_SYSTEM = (
+    "You extract filled values from a multi-page Australian pre-start "
+    "check-sheet exported from Simpro. Scan EVERY page (header, "
+    "checklist body, signatures, photos, notes). Return JSON only."
+)
+
+
+def _get_prompt_for_category(
+    category: str, template_name: str, labels: list,
+) -> tuple[str, str]:
+    """Return `(system, user)` prompts for the given category.
+
+    Category matching is case-insensitive and stripped. Recognised
+    values: `pre_start`, `plant_pre_start`, `hazard`, `swms`, `permit`.
+    Anything else falls back to the pre-start prompt for backward-compat.
+    """
+    cat = (category or "").strip().lower()
+
+    if cat in ("hazard", "swms"):
+        user = (
+            f"Template: {template_name}. This form spans multiple pages. "
+            "This is a Site Specific Risk Assessment (SSRA) or SWMS. "
+            "Look through ALL pages and capture the SSRA field set. "
+            f"{_HAZARD_JSON_TEMPLATE}"
+        )
+        return _HAZARD_SYSTEM, user
+
+    if cat == "permit":
+        user = (
+            f"Template: {template_name}. This form spans multiple pages. "
+            "This is a work permit (excavation / hot work / underground "
+            "asset). For the checklist, use EACH of these template "
+            f"field labels: {json.dumps(labels)}. Look through ALL "
+            "pages and extract every filled value. "
+            f"{_PERMIT_JSON_TEMPLATE}"
+        )
+        return _PERMIT_SYSTEM, user
+
+    # Default — pre_start / plant_pre_start / unknown.
+    # This IS the v58.11.0 prompt verbatim. Regression-safe: existing
+    # daily pre-start extractions produce byte-identical prompts.
+    user = (
+        f"Template: {template_name}. This form spans multiple pages. "
+        f"For EACH of these field labels, look through ALL pages and "
+        f"extract the filled value if visible anywhere in the PDF: "
+        f"{json.dumps(labels)}. "
+        'Return {"date":"YYYY-MM-DD","worker_name":"…","plant_or_vehicle":"…",'
+        '"site":"…","gps_map_present":true,"signature_present":true,'
+        '"checklist":{"<exact label from template>":"<the answer text you see '
+        'e.g. OK, Satisfactory, Yes, No, N/A, or free text>"},'
+        '"notes":"…"}. Use each template label EXACTLY as given. Include '
+        "EVERY checklist item you can see filled in (usually 15-25 rows). "
+        "Only omit an item if the answer field is genuinely blank on the PDF."
+    )
+    return _PRESTART_SYSTEM, user
 
 
 # ────────────────── Fuzzy match ──────────────────
