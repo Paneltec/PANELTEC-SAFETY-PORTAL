@@ -1,6 +1,63 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.37 — Ship 4b Path B. Restores `--source zip
+// --zip-root <path>` mode to `backend/scripts/reextract_misclassified_v58_13_35.py`
+// (stripped in v58.13.35 per the user's "keep it clean" directive,
+// now needed for the A-Barbari-2 pilot).
+//
+// Backend (script + tests only — running pipeline UNCHANGED)
+//   · `_build_zip_pdf_index()` walks the top-level ZIPs under
+//     `--zip-root` AND recurses ONE level into nested ZIPs
+//     (Simpro-shape: outer archive contains per-worker inner ZIPs).
+//     All streaming in-memory via `io.BytesIO` — no scratch disk,
+//     no `.extractall()`. Builds `{pdf_sha256: (outer_zip,
+//     inner_zip_or_empty, pdf_name)}` for O(1) per-record lookup.
+//   · `_zip_source_commit()` per record: pulls PDF bytes, renders
+//     via `_pdf_pages_png_b64`, runs `_load_classifier_roster()`
+//     + `_claude_classify` + `_claude_extract` (both via the
+//     existing `_claude_call_with_backoff` machinery),
+//     `_cache_put`s the fresh payload (invalidates the old cache
+//     row), then applies the routing decision:
+//       · migrate → update the existing form_submissions row with
+//         rich `fields[]` + top-level `metadata.hazards`/`crew`/
+//         `signatures`/`tailgate_topics`/`byda`/`tgs`/`gps`/
+//         `photos_present` shortcuts (matched by SubmissionViewer's
+//         `<Sections>` switch in v58.13.36). Clears
+//         `metadata.needs_review`. Bumps `metadata.reextract_reason`
+//         to `"v58_13_37_zip_source_reextract"`.
+//       · update_in_place → refreshes `pre_starts.fields[]` +
+//         template snapshots.
+//   · Cost cap: hard-enforced via `REEXTRACT_COST_CAP_USD`
+//     (default 500) with a pre-flight check every record so a
+//     projected classify+extract pair (2 × $0.082) does not push
+//     cumulative spend over the cap.
+//   · Progress heartbeat: `log.info("progress: processed=…"` every
+//     100 records (env-overridable via `REEXTRACT_PROGRESS_EVERY`).
+//   · Failure isolation: bad ZIP, hash miss, Claude error → audit
+//     `status='failed'`, `needs_review` preserved, batch continues.
+//
+// CLI additions
+//   · `--source {cache-derived|zip}` (default cache-derived)
+//   · `--zip-root <path>` (required when `--source zip`)
+//
+// Tests
+//   · NEW `tests/backend_unit/test_reextract_zip_mode_v58_13_37.py`
+//     — 12 pytests: index build (top-level + nested), routing
+//     preserves needs_review on failure, clears it on success,
+//     rich metadata shortcuts populated, cost cap tripped after N
+//     records, unresolved classifier verdict → status='unresolved',
+//     bad ZIP entry → status='failed' with batch continuing,
+//     version-sync current.
+//
+// Guardrails held
+//   · Zero touch to `bulk_import_prestarts.py`.
+//   · Soft-delete only.
+//   · Original pre_starts IDs preserved.
+//   · Idempotent: post-v58.13.35 records already stamped are
+//     filtered out via `BASE_FILTER: template_name_snapshot=None`.
+
+
 // v160.3.9.58.13.36 — Category-aware SubmissionViewer detail sections.
 // Fixes the "detail modal shows SSRA-shape sections for pre-start
 // records / no checklist for the actual pre-start data" bug the user
@@ -3565,7 +3622,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.36';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.37';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
