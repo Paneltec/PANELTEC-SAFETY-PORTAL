@@ -7,9 +7,9 @@
 // values in two columns, inline photos (click for lightbox), inline
 // signatures, GPS chip, AI analysis callout, and the same PDF /
 // Delete / Edit actions as the card row.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Loader2, Download, Trash2, Edit3, MapPin, Sparkles } from 'lucide-react';
+import { X, Loader2, Download, Trash2, Edit3, MapPin, Sparkles, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import PdfActions from './PdfActions';
 import AuthedImage from './AuthedImage'; // v42 · SEC-004 image wrapper
@@ -18,6 +18,12 @@ import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import { formatDateTime12 } from '../lib/timeFormat';
+import {
+  resolveCategory,
+  paletteForCategory,
+  isPartialCacheOnlyReextract,
+  isMeaningfulValue,
+} from '../lib/detailViewCategory';
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 // v160.3.9.29-2c — Legacy set retained; authoritative gate via useCan below.
@@ -131,6 +137,222 @@ function FieldValue({ field, submissionId }) {
   }
 }
 
+function Section({ title, testid, children, empty }) {
+  return (
+    <section
+      className="mb-5 rounded-xl border border-slate-200 bg-white overflow-hidden"
+      data-testid={testid}
+    >
+      <div className="px-4 py-2 border-b border-slate-100 bg-slate-50 text-[10px] uppercase tracking-wider font-semibold text-slate-600">
+        {title}
+      </div>
+      <div className="p-4">
+        {empty ? (
+          <div
+            className="text-xs text-slate-400 italic"
+            data-testid={`${testid}-empty`}
+          >
+            {empty}
+          </div>
+        ) : children}
+      </div>
+    </section>
+  );
+}
+
+function ChecklistSection({ fields, allFields, submissionId }) {
+  if (!fields || fields.length === 0) {
+    return (
+      <Section
+        title="Checklist"
+        testid="submission-viewer-section-checklist"
+        empty={
+          allFields && allFields.length > 0
+            ? 'All checklist items came back empty on this import. Use "Download PDF" for the rendered form.'
+            : 'This record was captured with the legacy shape and has no per-field breakdown. Use "Download PDF" for the rendered form.'
+        }
+      />
+    );
+  }
+  return (
+    <Section title="Checklist" testid="submission-viewer-section-checklist">
+      <div className="grid sm:grid-cols-2 gap-x-6">
+        {fields.map((f, i) => (
+          <FieldRow
+            key={f.field_id || f.label || `f-${i}`}
+            field={{
+              ...f,
+              label: f.label || f.field_id || `Field ${i + 1}`,
+            }}
+            submissionId={submissionId}
+          />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function HazardsSection({ hazards, testid }) {
+  const raw = hazards?.hazards_discussed;
+  const items = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+  if (items.length === 0) {
+    return (
+      <Section
+        title="Hazards discussed"
+        testid={testid}
+        empty="No hazard details on this record yet."
+      />
+    );
+  }
+  return (
+    <Section title="Hazards discussed" testid={testid}>
+      <ul className="space-y-1.5">
+        {items.map((h, i) => (
+          <li key={i} className="text-sm text-slate-800 flex gap-2">
+            <span className="text-slate-400">·</span>
+            <span className="whitespace-pre-wrap">
+              {typeof h === 'string'
+                ? h
+                : (h?.description || h?.label || JSON.stringify(h))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+function CrewSection({ crew, testid }) {
+  if (!Array.isArray(crew) || crew.length === 0) {
+    return (
+      <Section
+        title="Crew sign-on"
+        testid={testid}
+        empty="No crew sign-ons recorded on this record yet."
+      />
+    );
+  }
+  return (
+    <Section title="Crew sign-on" testid={testid}>
+      <div className="grid sm:grid-cols-2 gap-2">
+        {crew.map((c, i) => {
+          const name = typeof c === 'string' ? c : (c?.name || c?.worker_name || '—');
+          const role = (c && typeof c === 'object') ? (c.role || c.company_label || '') : '';
+          const signedAt = (c && typeof c === 'object') ? (c.signature_ts || c.signed_at) : null;
+          return (
+            <div key={i} className="flex items-center justify-between gap-2 border border-slate-100 rounded-lg px-2.5 py-1.5">
+              <div className="min-w-0">
+                <div className="text-sm text-slate-800 truncate">{name}</div>
+                {role && <div className="text-[11px] text-slate-500 truncate">{role}</div>}
+              </div>
+              {signedAt && (
+                <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full whitespace-nowrap">
+                  Signed
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+function SignaturesSection({ signatures, testid }) {
+  if (!Array.isArray(signatures) || signatures.length === 0) {
+    return (
+      <Section
+        title="Signatures"
+        testid={testid}
+        empty="No signatures attached to this record yet."
+      />
+    );
+  }
+  return (
+    <Section title="Signatures" testid={testid}>
+      <div className="flex flex-wrap gap-3">
+        {signatures.map((s, i) => {
+          const url = typeof s === 'string' ? s : (s?.url || s?.src);
+          if (!url) {
+            return (
+              <div key={i} className="text-xs text-slate-500">
+                {typeof s === 'string' ? s : (s?.name || 'Signature')}
+              </div>
+            );
+          }
+          return (
+            <img
+              key={i}
+              src={url.startsWith('http') ? url : `${BACKEND}${url}`}
+              alt="Signature"
+              className="max-h-24 border border-slate-200 rounded bg-white p-1"
+            />
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * v58.13.36 — Category-aware section switch.
+ *
+ * · pre_start / plant_pre_start / inspection → CHECKLIST only
+ * · hazard / swms                            → HAZARDS + CREW + SIGNATURES + CHECKLIST
+ * · permit                                   → HAZARDS + SIGNATURES + CHECKLIST
+ * · unknown                                  → CHECKLIST only
+ */
+export function Sections({ category, fields, allFields, hazards, record }) {
+  const submissionId = record?.id;
+  const checklist = (
+    <ChecklistSection
+      fields={fields}
+      allFields={allFields}
+      submissionId={submissionId}
+    />
+  );
+
+  if (category === 'hazard' || category === 'swms') {
+    return (
+      <div data-testid={`submission-viewer-sections-${category}`}>
+        <HazardsSection
+          hazards={hazards}
+          testid="submission-viewer-section-hazards"
+        />
+        <CrewSection
+          crew={hazards.sign_ons}
+          testid="submission-viewer-section-crew"
+        />
+        <SignaturesSection
+          signatures={hazards.signatures}
+          testid="submission-viewer-section-signatures"
+        />
+        {checklist}
+      </div>
+    );
+  }
+  if (category === 'permit') {
+    return (
+      <div data-testid="submission-viewer-sections-permit">
+        <HazardsSection
+          hazards={hazards}
+          testid="submission-viewer-section-hazards"
+        />
+        <SignaturesSection
+          signatures={hazards.signatures}
+          testid="submission-viewer-section-signatures"
+        />
+        {checklist}
+      </div>
+    );
+  }
+  return (
+    <div data-testid={`submission-viewer-sections-${category}`}>
+      {checklist}
+    </div>
+  );
+}
+
 export default function SubmissionViewer({ record, resourceKind, apiPath, onClose, onDeleted }) {
   useLockBodyScroll();
   const me = getUser();
@@ -159,6 +381,31 @@ export default function SubmissionViewer({ record, resourceKind, apiPath, onClos
   const fields = r.fields || [];
   const aiAnalysis = r.ai_analysis || r.ai_analysis_output || r.deep_parse_stats;
 
+  // v58.13.36 — category-aware section rendering.
+  const category = useMemo(() => resolveCategory(r), [r]);
+  const catPill = useMemo(() => paletteForCategory(category), [category]);
+  const partialReextract = useMemo(() => isPartialCacheOnlyReextract(r), [r]);
+  const meaningfulFields = useMemo(
+    () => fields.filter((f) => isMeaningfulValue(f?.value)),
+    [fields],
+  );
+  const hazardsFromRecord = useMemo(() => {
+    // Recover hazard/crew/signature side-channels from either the
+    // pre_starts row shape or the form_submissions metadata.
+    const meta = r.metadata || {};
+    return {
+      hazards_discussed: r.hazards_discussed
+        || meta.hazards_discussed
+        || (Array.isArray(meta.hazards) ? meta.hazards : null)
+        || null,
+      sign_ons: (Array.isArray(r.sign_ons) && r.sign_ons)
+        || (Array.isArray(meta.crew) && meta.crew)
+        || (Array.isArray(meta.sign_ons) && meta.sign_ons)
+        || [],
+      signatures: (Array.isArray(meta.signatures) && meta.signatures) || [],
+    };
+  }, [r]);
+
   return createPortal(
     <div className="fixed inset-0 z-[70] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
          onClick={onClose}
@@ -172,7 +419,23 @@ export default function SubmissionViewer({ record, resourceKind, apiPath, onClos
             <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
               {resourceKind?.replace('_', ' ') || 'Submission'} · {r.source || 'manual'}
             </div>
-            <div className="text-lg font-semibold text-slate-900 truncate" title={title}>{title}</div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span
+                className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider"
+                style={{ background: catPill.tint, color: catPill.text,
+                         border: `1px solid ${catPill.hex}22` }}
+                data-testid={`submission-viewer-type-pill-${category}`}
+                title={`Category: ${category}`}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full mr-1.5"
+                  style={{ background: catPill.hex }}
+                  aria-hidden
+                />
+                {catPill.label}
+              </span>
+              <div className="text-lg font-semibold text-slate-900 truncate" title={title}>{title}</div>
+            </div>
             <div className="text-xs text-slate-500 mt-0.5">
               Submitted by <span className="text-slate-700 font-medium">{operator}</span>
               {submittedAt && <span> · {submittedAt}</span>}
@@ -209,18 +472,36 @@ export default function SubmissionViewer({ record, resourceKind, apiPath, onClos
             </div>
           )}
 
-          {fields.length > 0 ? (
-            <div className="grid sm:grid-cols-2 gap-x-6">
-              {fields.map((f) => (
-                <FieldRow key={f.field_id || f.label} field={f} submissionId={r.id} />
-              ))}
-            </div>
-          ) : (
-            <div className="text-sm text-slate-500 italic">
-              This record was captured with the legacy shape and has no per-field breakdown.
-              Use &quot;Download PDF&quot; for the rendered form.
+          {/* v58.13.36 — Partial re-extraction banner */}
+          {partialReextract && (
+            <div
+              className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-3 flex items-start gap-2"
+              data-testid="submission-viewer-partial-reextract-banner"
+            >
+              <AlertTriangle size={14} className="text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-[11px] uppercase tracking-wider font-semibold text-amber-800">
+                  Awaiting full re-extraction
+                </div>
+                <div className="text-xs text-amber-800 mt-0.5 leading-snug">
+                  This record was re-routed to the correct template on
+                  22 Feb 2026 via a filename-only cache-derived
+                  backfill (v58.13.35). SSRA-shape fields (hazards,
+                  crew sign-on, signatures) are pending a full Claude
+                  re-extraction from the source PDF.
+                </div>
+              </div>
             </div>
           )}
+
+          {/* v58.13.36 — Category-aware sections */}
+          <Sections
+            category={category}
+            fields={meaningfulFields}
+            allFields={fields}
+            hazards={hazardsFromRecord}
+            record={r}
+          />
         </div>
 
         {/* Footer actions */}

@@ -1,6 +1,56 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.36 — Category-aware SubmissionViewer detail sections.
+// Fixes the "detail modal shows SSRA-shape sections for pre-start
+// records / no checklist for the actual pre-start data" bug the user
+// has been battling for weeks. Pure FE fix — zero backend touches,
+// zero data churn.
+//
+// Frontend
+//   · NEW `lib/detailViewCategory.js`: `resolveCategory(record)`
+//     returns 'pre_start'|'plant_pre_start'|'hazard'|'swms'|'permit'|
+//     'inspection'|'unknown' via a 3-step fallback:
+//        1. `record.template_category_snapshot` (DB source of truth)
+//        2. keyword-sniff on `template_name_snapshot`/`template_name`
+//        3. parse `work_summary` for the Simpro `::<TEMPLATE>` marker
+//     Also exports `paletteForCategory` (pill colours),
+//     `isPartialCacheOnlyReextract` (v58.13.35 marker sniff),
+//     `isMeaningfulValue` (skips null/'None'/[]/{}/empty strings).
+//   · `SubmissionViewer.jsx`: header now renders a small category
+//     pill (PRE-START blue / HAZARD amber / PERMIT orange / …)
+//     alongside the record title. Content area routes through the
+//     new `<Sections>` switch:
+//        · pre_start / plant_pre_start / inspection / unknown →
+//          single CHECKLIST section (fields[] as label/answer
+//          pairs; empty labels become "Field N").
+//        · hazard / swms → HAZARDS DISCUSSED · CREW SIGN-ON ·
+//          SIGNATURES · CHECKLIST (each with a distinct empty
+//          state; hazards/crew/signatures pulled from either the
+//          pre_starts row shape or form_submissions metadata).
+//        · permit → HAZARDS · SIGNATURES · CHECKLIST.
+//     Records with `metadata.reextract_reason=
+//     'v58_13_35_partial_cache_only'` render an amber banner at the
+//     top explaining that hazards/crew/signatures are pending a
+//     full ZIP-source re-extraction.
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_prestart_detail_display_v58_13_36.py`
+//     — non-JS-jsdom smoke: exercises `resolveCategory` /
+//     `isMeaningfulValue` / `paletteForCategory` /
+//     `isPartialCacheOnlyReextract` by parsing the JS module with
+//     node and asserting on returned values. Also runs the
+//     version-sync pytest guard.
+//
+// Guardrails
+//   · v58.13.10 flash-bug guardrail held — no in-modal fetches
+//     added; category resolution is `useMemo` on the immutable
+//     record prop.
+//   · Zero backend touches; zero DB touches; zero migration.
+//   · Legacy fields[]-only records still render (fall through to
+//     CHECKLIST via 'unknown' category — matches pre-ship behaviour).
+
+
 // v160.3.9.58.13.35 — Ship 4b. Backfill re-extraction of 3 776
 // misclassified pre_starts rows (cache-derived, $0, no Claude
 // calls). Fixes the historical fallout of the pre-v58.13.30
@@ -3515,7 +3565,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.35';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.36';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

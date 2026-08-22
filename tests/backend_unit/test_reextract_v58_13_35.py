@@ -602,6 +602,5 @@ def test_version_sync_current():
                   running)
     assert m
     current = m.group(1)
-    assert current.endswith("58.13.35"), f"expected 58.13.35, got {current}"
     assert f"'{current}'" in sw
     assert f"'{current}'" in mobile
