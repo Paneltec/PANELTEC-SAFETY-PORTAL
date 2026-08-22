@@ -1,6 +1,47 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.34 — Ship 5. list_forms roster expansion. The 6
+// templates the user kept insisting existed (Drain Cleaning SSRA,
+// Excavation Permit NDD, Directional Drill Pre-Start, Telehandler /
+// Loader, Underground Asset Site Location Form, WHSEQ Compliance
+// Audit) live in `list_forms`, not `form_templates`. My Ships 1/4a
+// only queried `form_templates` so they were invisible.
+//
+// Backend
+//   · `bulk_import_prestarts.py::_load_classifier_roster()` now
+//     iterates BOTH `form_templates` (with exclusion filter) AND
+//     `list_forms` (no category filter — it's already the user-visible
+//     catalogue). Merges into a single `{tid: name}` roster. Duplicate
+//     ids resolved form_templates-wins.
+//   · Failure isolation: a `list_forms` query blowup logs WARN but
+//     still returns form_templates entries (defence-in-depth).
+//   · INFO log now stamps the split:
+//       `classifier roster: N from form_templates, M from list_forms
+//        → total=X unique_names=Y`.
+//   · Extractor unchanged — `_claude_extract` already handled an
+//     empty template dict via `template.get('fields', [])` → labels=[]
+//     + `category=""` → pre-start prompt fallback. list_forms entries
+//     that resolve to `templates_by_id.get(tid) or {}` therefore
+//     extract with the pre-start prompt (imperfect but never crashes).
+//     Correct per-category prompts for these will require Ship 6
+//     (migrate list_forms → form_templates with real `fields[]`).
+//
+// Tests
+//   · NEW `tests/backend_unit/test_list_forms_roster_v58_13_34.py`
+//     — 4 pytests + version-sync: roster includes all 6 list_forms
+//     entries, roster strictly wider than form_templates-only,
+//     list_forms failure doesn't break the roster, extractor handles
+//     empty template dict without crashing.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: /app/tests/backend_unit/.
+//   · Zero touch to 11 407 existing records / 7 619 cache entries.
+//   · bulk_import job 4f395643 UNTOUCHED.
+//   · Backend WILL reload once.
+
+
 // v160.3.9.58.13.33 — Ship 4a. Classifier roster widened from
 // inclusion to exclusion + MisclassifiedImportBanner FE component.
 //
@@ -3409,7 +3450,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.33';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.34';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

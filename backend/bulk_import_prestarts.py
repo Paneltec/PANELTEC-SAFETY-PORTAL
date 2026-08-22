@@ -393,16 +393,31 @@ async def _load_classifier_roster() -> dict:
             tname = (t.get("name") or "").strip()
             if tid and tname:
                 hints[tid] = tname
+        n_form_templates = len(hints)
+        # v58.13.34 — Also pull entries from `list_forms`, the broader
+        # user-visible form catalogue (Simpro-shape entries live here,
+        # not in `form_templates`). These rows lack `fields[]` schemas
+        # — the extractor falls back to the pre-start prompt when the
+        # template lookup returns an empty dict.
+        try:
+            async for t in db.list_forms.find(
+                {"deleted_at": None}, {"_id": 0, "id": 1, "name": 1},
+            ):
+                tid = t.get("id")
+                tname = (t.get("name") or "").strip()
+                if tid and tname and tid not in hints:
+                    hints[tid] = tname
+        except Exception as e:
+            log.warning("v58.13.34 list_forms load failed: %s", e)
+        n_list_forms = len(hints) - n_form_templates
         if not hints:
             raise RuntimeError("empty roster from db")
         _ROSTER_CACHE["hints"] = hints
         _ROSTER_CACHE["at"] = now
         log.info(
-            "v58.13.33 classifier roster loaded: %d templates "
-            "(exclude=%s legacy_include=%s)",
-            len(hints),
-            list(_CLASSIFIER_CATEGORY_EXCLUDE),
-            list(_CLASSIFIER_CATEGORIES) or None,
+            "v58.13.34 classifier roster: %d from form_templates, %d from "
+            "list_forms → total=%d unique_names=%d",
+            n_form_templates, n_list_forms, len(hints), len(set(hints.values())),
         )
         return hints
     except Exception as e:
