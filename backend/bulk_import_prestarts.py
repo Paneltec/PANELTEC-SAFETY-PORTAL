@@ -301,6 +301,11 @@ async def ensure_indexes() -> None:
         log.warning("bulk_import index setup: %s", e)
 
 # All 6 pre-start template names + their labels (used by the classifier prompt).
+# v58.13.30 — This hardcoded dict is now the FALLBACK only. The live
+# roster is loaded from `form_templates` via `_load_classifier_roster()`
+# so admins can add SSRA / permit / hazard / swms templates without
+# a code change. Keeping this dict populated so that a DB outage or
+# empty roster still yields a usable set of options for Claude.
 _TEMPLATE_HINTS = {
     "536805af-e397-451f-94f0-30296d8f3a97": "Daily Pre-Start",
     "d9008c00-e3b1-4de1-a909-bdf7db4f262a": "CVT Daily Pre-Start",
@@ -309,6 +314,90 @@ _TEMPLATE_HINTS = {
     "e62bee35-1769-455d-8c30-6200a3c6eb08": "Vacuum Truck (VT) Daily Pre-Start",
     "225cd097-2c2d-4963-9b92-1f8554894db8": "Plant Pre-Start Checklist (Heavy Equipment)",
 }
+
+
+# v58.13.30 — Dynamic classifier roster.
+#
+# Diagnostic (Feb 2026 late-night session) found that ~3 776 of the
+# 11 407 bulk-imported records were misclassified because the hardcoded
+# 6-template roster forced every SSRA, Excavation Permit, Combination
+# VT-CVT and long-tail Simpro form into the least-wrong pre-start slot.
+# This ship expands the classifier's option set to include any
+# form_template in the configured category list, so future imports of
+# SSRAs / hazard / permit / swms templates get classified correctly.
+#
+# Ship boundary (Ship 1 of 4):
+#   · Ship 1 (THIS): classifier roster expansion + low-confidence
+#     escape hatch.
+#   · Ship 2 (later): category-specific extraction prompts.
+#   · Ship 3 (later): category-aware routing (SSRAs → form_submissions
+#     only, don't pollute pre_starts).
+#   · Ship 4 (later): FE fallback + backfill triage.
+#
+# NOTHING in this ship touches existing records, existing cache
+# entries, or existing extraction/routing behaviour.
+_CLASSIFIER_CATEGORIES = tuple(
+    c.strip() for c in (
+        os.environ.get("BULK_IMPORT_CLASSIFIER_CATEGORIES")
+        or "pre_start,plant_pre_start,hazard,swms,permit"
+    ).split(",") if c.strip()
+)
+
+# Confidence floor. Below this, we treat the classification as
+# unusable — DO NOT run extraction, DO NOT write to pre_starts,
+# DO NOT write a form_submission. Cache the verdict so a re-run
+# doesn't burn another Claude call.
+_MIN_CLASSIFIER_CONFIDENCE = float(
+    os.environ.get("BULK_IMPORT_MIN_CLASSIFIER_CONFIDENCE") or "0.7"
+)
+
+# "(none of the above)" escape option. Claude picks this when the PDF
+# doesn't resemble any roster entry. Treated as low-confidence.
+_CLASSIFIER_ESCAPE_LABEL = "(none of the above)"
+
+# 5-min TTL cache on the roster so we don't hit Mongo on every PDF.
+_ROSTER_TTL_S = 300
+_ROSTER_CACHE: dict = {"at": 0.0, "hints": None}
+
+
+async def _load_classifier_roster() -> dict[str, str]:
+    """Return `{template_id: template_name}` for every non-deleted
+    `form_templates` doc whose `category` sits in
+    `_CLASSIFIER_CATEGORIES`. 5-min TTL. On DB failure or empty
+    result, falls back to the hardcoded `_TEMPLATE_HINTS` dict so
+    the pipeline stays functional even during a Mongo hiccup."""
+    import time
+    now = time.time()
+    if _ROSTER_CACHE["hints"] is not None and (
+        now - _ROSTER_CACHE["at"]
+    ) < _ROSTER_TTL_S:
+        return _ROSTER_CACHE["hints"]
+    try:
+        hints: dict[str, str] = {}
+        cats = list(_CLASSIFIER_CATEGORIES)
+        async for t in db.form_templates.find(
+            {"category": {"$in": cats}, "deleted_at": None},
+            {"_id": 0, "id": 1, "name": 1},
+        ):
+            tid = t.get("id")
+            tname = (t.get("name") or "").strip()
+            if tid and tname:
+                hints[tid] = tname
+        if not hints:
+            raise RuntimeError("empty roster from db")
+        _ROSTER_CACHE["hints"] = hints
+        _ROSTER_CACHE["at"] = now
+        log.info(
+            "v58.13.30 classifier roster loaded: %d templates across %s",
+            len(hints), cats,
+        )
+        return hints
+    except Exception as e:
+        log.warning(
+            "v58.13.30 classifier roster db-load failed (%s); "
+            "falling back to hardcoded 6-template list", e,
+        )
+        return dict(_TEMPLATE_HINTS)
 
 
 def _require_admin(user: dict) -> None:
@@ -950,20 +1039,33 @@ async def _cache_put(org_id: str, pdf_hash: str, payload: dict) -> None:
 
 # ────────────────── Claude helpers ──────────────────
 
-async def _claude_classify(png_b64s) -> dict:
-    """Ask Claude which of the 6 templates this PDF page best matches.
+async def _claude_classify(png_b64s, roster: Optional[dict] = None) -> dict:
+    """Ask Claude which of the configured templates this PDF page best matches.
 
     v58.11.0 — Accepts a single base64 PNG (legacy) OR a list of
-    base64 PNGs (multi-page). The classifier only needs page 1 in
-    principle, but passing the full page-set costs nothing extra and
-    helps when the first page is a cover sheet with no template
-    identifier."""
+    base64 PNGs (multi-page).
+
+    v58.13.30 — Options list is now the dynamic `_load_classifier_roster()`
+    result (SSRA / permit / hazard / swms + pre-starts). Includes an
+    explicit "(none of the above)" escape so Claude can signal that the
+    PDF isn't a recognisable form; downstream treats that as
+    low-confidence and skips extraction + pre_starts write."""
     from ai import _claude_json  # reuse the existing helper
-    names = list(_TEMPLATE_HINTS.values())
-    system = ("You classify photos of Australian pre-start check-sheets. "
-              "Return JSON only.")
+    if roster is None:
+        roster = _TEMPLATE_HINTS
+    # v58.13.30 — Dedup by name for the prompt; the roster dict may
+    # carry per-org duplicates (same template name registered under
+    # different template_ids across orgs). Claude picks by NAME only,
+    # so it's sufficient to show each name once. The name→id lookup
+    # downstream still uses the full roster dict.
+    names = sorted(set(roster.values())) + [_CLASSIFIER_ESCAPE_LABEL]
+    system = ("You classify photos of Australian construction site "
+              "safety forms (pre-starts, SSRAs, permits, SWMS, hazard "
+              "reports). Return JSON only.")
     user = ("Which of these template names best matches this multi-page form? "
             f"Options: {json.dumps(names)}. "
+            "Pick the closest match, or pick "
+            f'"{_CLASSIFIER_ESCAPE_LABEL}" if none of the options fit. '
             'Respond as {"template_name": "…", "confidence": 0.0-1.0}.')
     if isinstance(png_b64s, str):
         return await _claude_json(system, user, image_b64=png_b64s)
@@ -1617,6 +1719,25 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
     cached = await _cache_lookup(org_id, pdf_hash)
     try:
         if cached:
+            # v58.13.30 — Re-honour a previously stored low-confidence
+            # verdict so we don't re-extract and don't pollute the
+            # pre_starts shim.
+            if cached.get("classification_low_confidence"):
+                rec = {
+                    "job_id": job["id"], "filename": filename,
+                    "status": "unclassified",
+                    "reason": "cached-low-confidence",
+                    "classifier": cached.get("classifier") or {},
+                    "classification_low_confidence": True,
+                    "pdf_hash": pdf_hash,
+                    "cached": True,
+                    "at": _now_iso(),
+                }
+                await db.bulk_import_dryrun.replace_one(
+                    {"job_id": job["id"], "filename": filename},
+                    rec, upsert=True,
+                )
+                return rec
             cls = cached.get("classifier") or {}
             ext = cached.get("extracted") or {}
             tpl_id = cached.get("template_id")
@@ -1626,11 +1747,51 @@ async def _process_one_pdf(job: dict, filename: str, pdf_bytes: bytes,
             site_match = cached.get("site_match") or {"id": None}
             template = templates_by_id.get(tpl_id) or {}
         else:
+            # v58.13.30 — Load the expanded classifier roster (dynamic
+            # from form_templates, 5-min TTL, falls back to the legacy
+            # 6-template dict on DB failure).
+            roster = await _load_classifier_roster()
             cls = await _claude_call_with_backoff(
-                _claude_classify, png_b64, counters=counters)
-            tpl_name = (cls or {}).get("template_name") or "Daily Pre-Start"
-            tpl_id = next((k for k, v in _TEMPLATE_HINTS.items() if v == tpl_name),
-                          "536805af-e397-451f-94f0-30296d8f3a97")
+                _claude_classify, png_b64, roster, counters=counters)
+            tpl_name = ((cls or {}).get("template_name") or "").strip()
+            confidence = float((cls or {}).get("confidence") or 0.0)
+            # v58.13.30 — Low-confidence / escape-hatch handling. Cache
+            # the verdict so a re-run doesn't spend another classifier
+            # call, and short-circuit BEFORE the extractor (saving one
+            # Claude call + downstream pre_starts pollution).
+            if (not tpl_name
+                    or tpl_name == _CLASSIFIER_ESCAPE_LABEL
+                    or confidence < _MIN_CLASSIFIER_CONFIDENCE):
+                await _cache_put(org_id, pdf_hash, {
+                    "classifier": cls or {"template_name": tpl_name,
+                                          "confidence": confidence},
+                    "classification_low_confidence": True,
+                    "template_id": None,
+                    "template_name": None,
+                })
+                rec = {
+                    "job_id": job["id"], "filename": filename,
+                    "status": "unclassified",
+                    "reason": f"low-confidence: "
+                              f"template={tpl_name!r} "
+                              f"confidence={confidence:.2f}",
+                    "classifier": cls or {},
+                    "classification_low_confidence": True,
+                    "pdf_hash": pdf_hash,
+                    "cached": False,
+                    "at": _now_iso(),
+                }
+                await db.bulk_import_dryrun.replace_one(
+                    {"job_id": job["id"], "filename": filename},
+                    rec, upsert=True,
+                )
+                return rec
+            tpl_id = next(
+                (k for k, v in roster.items() if v == tpl_name),
+                # Legacy fallback: still recognise the original 6.
+                next((k for k, v in _TEMPLATE_HINTS.items() if v == tpl_name),
+                     "536805af-e397-451f-94f0-30296d8f3a97"),
+            )
             template = templates_by_id.get(tpl_id) or {}
             ext = await _claude_call_with_backoff(
                 _claude_extract, png_b64, template, counters=counters)

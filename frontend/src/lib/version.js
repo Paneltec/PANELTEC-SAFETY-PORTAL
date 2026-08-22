@@ -1,6 +1,90 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.30 — Bulk-import classifier expansion + low-confidence
+// escape hatch. Ship 1 of 4 for the SSRA/permit/hazard bulk-import
+// fix path (approved after the Feb 2026 late-night diagnostic
+// established that 3 776 of 11 407 imported records — the 1 779
+// Construction & Excavation SSRAs, 1 452 Viatec SSRAs, 413
+// Combination VT-CVTs, 66 Drain Cleaning SSRAs, 52 Excavation
+// Permits NDD, plus ~14 long-tail — got shoehorned into the
+// hardcoded 6-pre-start-template classifier roster because the
+// pipeline had no other option to pick).
+//
+// Backend
+//   · `backend/bulk_import_prestarts.py`:
+//     · New env-var + defaults:
+//       · `BULK_IMPORT_CLASSIFIER_CATEGORIES`
+//         default `pre_start,plant_pre_start,hazard,swms,permit`
+//       · `BULK_IMPORT_MIN_CLASSIFIER_CONFIDENCE` default `0.7`
+//     · New `_load_classifier_roster()` — 5-min TTL, queries
+//       `form_templates` for `category ∈ configured set` +
+//       `deleted_at = None`. Returns `{template_id: template_name}`.
+//       Falls back to the hardcoded 6-template `_TEMPLATE_HINTS`
+//       dict on DB failure OR on empty result (defence-in-depth so
+//       a bad env var can't blackhole the pipeline).
+//     · New `_CLASSIFIER_ESCAPE_LABEL = "(none of the above)"` —
+//       appended to the option list every classifier call so
+//       Claude can signal "this PDF doesn't match anything".
+//     · `_claude_classify()` grows an optional `roster` param;
+//       defaults to `_TEMPLATE_HINTS` for backward-compat. The
+//       system + user prompts are re-worded to cover pre-starts +
+//       SSRAs + permits + SWMS + hazard reports.
+//     · Fresh-classification path now short-circuits on
+//       low-confidence (no template picked, escape label, or
+//       confidence < 0.7): writes `{classification_low_confidence:
+//       True}` to `bulk_import_pdf_cache` so a re-run doesn't burn
+//       another Claude call, stamps `status="unclassified"` on the
+//       `bulk_import_dryrun` record, and RETURNS BEFORE the
+//       extractor call. Downstream promotion gates (`status == "ok"`
+//       at L2124) naturally skip these, so no `form_submissions`
+//       insert and no `pre_starts` shim gets written.
+//     · Cached-hit path also honours the flag — a previously stored
+//       `classification_low_confidence` verdict re-emits the same
+//       unclassified dryrun record without re-hitting Claude.
+//     · Legacy 6-template roster still resolvable end-to-end
+//       (backward-compat).
+//
+// Deliberately NOT in this ship
+//   · Extraction prompts are UNTOUCHED. `_claude_extract()` still
+//     only knows the pre-start question set. SSRAs classified
+//     correctly will still fail to extract hazards/crew/signatures
+//     — that's Ship 2.
+//   · Routing is UNTOUCHED. Correctly-classified non-pre-start
+//     records still land through the pre_starts shim if they hit
+//     the "pre-start" substring check at L2175. Ship 3 addresses this.
+//   · The 11 407 existing records are UNTOUCHED. No re-extraction,
+//     no cache invalidation, no cache mutation. This ship is
+//     forward-only.
+//   · Two hardcoded pre-start-family strings in the fresh path
+//     ("Daily Pre-Start" fallback when tpl_name is empty, and the
+//     default template_id) are preserved for backward-compat with
+//     older cached rows. Once every cache entry carries an
+//     unambiguous template_id, those fallbacks can be dropped —
+//     out of scope tonight.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS (3 canonical files + this block).
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/backend_unit/`.
+//   · bulk_import job 4f395643 is `state=failed` — untouched, not
+//     restarted, not resumed.
+//   · Backend WILL reload once (single `bulk_import_prestarts.py`
+//     edit). Drain expected <10s per v58.13.15 shutdown fix.
+//   · No cache mutations from this ship. `bulk_import_pdf_cache`
+//     row count identical pre/post.
+//   · No pre_starts / form_submissions row count changes.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_classifier_expansion_v58_13_30.py`
+//     — 10 pytests covering: 5-category roster load, soft-deleted
+//     exclusion, DB-failure fallback, empty-result fallback, TTL
+//     cache reuse, legacy pre-start compatibility, env-configurable
+//     categories, `_claude_classify` escape-label prompt inclusion,
+//     `_claude_classify` roster default, confidence floor default,
+//     version-sync check.
+
+
 // v160.3.9.58.13.29 — Bulk unlink companion + final overnight ship.
 //
 // Completes the linker feature set. v58.13.25 shipped single
@@ -3137,7 +3221,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.29';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.30';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
