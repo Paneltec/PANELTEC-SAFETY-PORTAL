@@ -23,10 +23,10 @@
 // synthetic-event bubble before mutating state so the freshly-mounted
 // View modal cannot receive its own opening click.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Eye } from 'lucide-react';
 import api, { apiError } from '../lib/api';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
-import { PageHeader, EmptyState } from '../components/capture/Ui';
+import CaptureCard from '../components/CaptureCard';
+import { PageHeader, EmptyState, StatusBadge } from '../components/capture/Ui';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import { useCan } from '../lib/permissions';
 import { formatDate, formatDateTime12, formatTime12 } from '../lib/timeFormat';
@@ -244,36 +244,22 @@ export default function CsIncidentsList() {
   }, [items, q, businessUnit, status, issueType]);
 
   const renderTile = (row) => (
-    <div className="flex flex-col gap-1.5" data-testid={`cs-incident-tile-body-${row.issue_number}`}>
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-xs font-semibold text-slate-900">#{row.issue_number}</span>
-        {row.status && <StatusPill value={row.status} />}
-      </div>
-      <div className="text-xs text-slate-700 truncate">
-        {row.issue_type || 'Untyped'}
-        {row.date_of_issue && <> · {renderVal('date_of_issue', row.date_of_issue)}</>}
-      </div>
-      {row.description && (
-        <div className="text-[11px] text-slate-600 line-clamp-2 leading-snug" title={row.description}>
-          {row.description}
-        </div>
-      )}
-      <div className="flex flex-wrap gap-1 items-center pt-1 border-t border-slate-100">
-        <button type="button"
-          onClick={(e) => { e.stopPropagation(); setViewer(row); }}
-          title="View incident"
-          data-testid={`cs-incident-view-${row.issue_number}`}
-          className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-          <Eye size={13} />
-        </button>
-        {canWrite && (
-          <div onClick={(e) => e.stopPropagation()}
-               data-testid={`cs-incident-row-actions-${row.issue_number}`}>
-            {crud.RowActions(row)}
-          </div>
-        )}
-      </div>
-    </div>
+    <CaptureCard
+      record={{
+        id: row.id,
+        template_name_snapshot: `#${row.issue_number} · ${row.issue_type || 'Untyped'}`,
+        submitted_by_name: row.responsible_manager || null,
+        date: row.date_of_issue || row.date_of_entry || '',
+      }}
+      resourceKind="reference_library"
+      apiPath="cs-incident"
+      subtitle={row.description || null}
+      badges={row.status
+        ? [<StatusBadge key="status" value={row.status} />]
+        : []}
+      onView={() => setViewer(row)}
+      onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
+    />
   );
 
   return (

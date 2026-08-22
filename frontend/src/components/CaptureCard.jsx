@@ -52,6 +52,11 @@ export default function CaptureCard({
   hideOperator = false,
   stripeStyle,
   titleNode,
+  // v160.3.9.58.13.38 — Optional external viewer override. When
+  // provided, clicking the Eye button calls `onView(record)` instead
+  // of opening the built-in `<SubmissionViewer>`. Used by pages with
+  // bespoke detail modals (e.g. CS Incidents).
+  onView,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -105,7 +110,7 @@ export default function CaptureCard({
             {/* v160.3.9.10 — View submission inline */}
             <button
               type="button"
-              onClick={() => setViewerOpen(true)}
+              onClick={() => { if (onView) { onView(r); } else { setViewerOpen(true); } }}
               title="View submission"
               aria-label="View submission"
               data-testid={`capture-view-${r.id}`}

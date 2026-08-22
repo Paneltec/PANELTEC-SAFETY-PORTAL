@@ -1,6 +1,69 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.38 — Capture tile-parity ship. Normalises the tile
+// SIZE + COLOUR + STATUS-PALETTE across the 8 tile-shaped Capture
+// pages by migrating the 4 remaining bespoke `renderTile` bodies onto
+// the canonical `<CaptureCard>` shell. Zero chrome changes — page
+// headers, tabs, toolbars, sticky behaviour, filter chips, grouping
+// banners, container widths, sidebar pastels, and `ModuleDashboard`
+// colours are byte-identical to v58.13.37.
+//
+// Pages migrated to the shared shell
+//   · `pages/Incidents.jsx`         — inline JSX → `<CaptureCard>`,
+//     `follow_up_status` moves into `badges`, description into
+//     `subtitle`, occurred-at date into `record.date`. Group banners
+//     (INCIDENT_CATEGORY_PALETTE) untouched.
+//   · `pages/Inspections.jsx`       — inline JSX → `<CaptureCard>`,
+//     pass/fail/N-A counts move into `subtitle`, template palette
+//     preserved via `stripeStyle={{ background: paletteForType(name).hex }}`.
+//   · `pages/SiteSigninList.jsx`    — inline JSX → `<CaptureCard>`,
+//     visitor / worker name in `template_name_snapshot`, site/job in
+//     `subtitle`, `hideOperator` (no operator row on this page).
+//   · `pages/CsIncidentsList.jsx`   — inline JSX → `<CaptureCard>`,
+//     `#issue_number · issue_type` in `template_name_snapshot`,
+//     responsible manager as operator, description in `subtitle`,
+//     status as a shared `<StatusBadge>` (replaces the bespoke
+//     `StatusPill` palette). Bespoke `CsIncidentDetailModal` viewer
+//     preserved via a new `onView` opt-in prop on CaptureCard.
+//
+// Component tweak
+//   · `components/CaptureCard.jsx` — new optional `onView` prop.
+//     When provided, the built-in Eye button calls `onView(record)`
+//     instead of opening the internal `<SubmissionViewer>`. Default
+//     behaviour unchanged for the 5 pages that already use it.
+//
+// Canonical tile spec inherited from CaptureCard (unchanged)
+//   Outer:  rounded-lg bg-white border border-slate-200
+//           hover:shadow-md hover:border-slate-300
+//   Stripe: 4-px left accent from templateColor(record) or stripeStyle
+//   Body:   pl-2.5 pr-1.5 py-1.5
+//   Grid:   sm:2col · lg:4col · xl:5col · 2xl:6col (owner set by page)
+//   Height: ~96 px text-only
+//
+// Out of scope (intentional)
+//   · AI SWMS (`/app/swms`) — table view, not a tile grid.
+//   · Bulk Import from URL (`/app/pre-starts/bulk-import`) — wizard,
+//     no tile list.
+//   · Mobile mirror (`/app/mobile/`) — deferred to `e1_expo_frontend_dev`.
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_tile_size_colour_parity_v58_13_38.py`
+//     — asserts the 4 migrated pages import `CaptureCard` and their
+//     `renderTile` bodies render through `<CaptureCard`, that the
+//     4 already-canonical pages still use `CaptureCard`, and that
+//     `Swms.jsx` + the bulk-import wizard remain intentionally
+//     excluded. Version-sync pytest included.
+//
+// Guardrails held
+//   · Frontend-only ship. Backend hot-reload not triggered — the
+//     v58.13.37 re-extraction script (PID 5343) keeps running.
+//   · Page-specific data preserved verbatim: severity /
+//     follow_up_status / signed-in name / issue# / pass-fail counts.
+//   · Sidebar `submissions/cs-incidents: coral` pastel unchanged.
+//   · Container widths unchanged (`max-w-6xl` / `max-w-7xl`).
+
+
 // v160.3.9.58.13.37 — Ship 4b Path B. Restores `--source zip
 // --zip-root <path>` mode to `backend/scripts/reextract_misclassified_v58_13_35.py`
 // (stripped in v58.13.35 per the user's "keep it clean" directive,
@@ -3622,7 +3685,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.37';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.38';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

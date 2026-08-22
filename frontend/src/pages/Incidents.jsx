@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Eye } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import EmailButton from '../components/EmailButton';
-import PdfActions from '../components/PdfActions';
-import DeleteRecordButton from '../components/DeleteRecordButton';
-import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
+import CaptureCard from '../components/CaptureCard';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
@@ -41,13 +38,13 @@ export default function IncidentsList() {
   // subset feeds into the toolbar; the toolbar then applies text search
   // + sort.
   const [searchFiltered, setSearchFiltered] = useState([]);
-  // v160.3.9.10a — In-app submission viewer state.
-  const [viewerRec, setViewerRec] = useState(null);
   useEffect(() => {
     api.get('/incidents')
       .then((r) => setItems(r.data))
       .finally(() => setLoading(false));
   }, []);
+
+  const evict = (id) => setItems((prev) => prev.filter((x) => x.id !== id));
 
   const preFiltered = useMemo(
     () => items.filter((i) =>
@@ -109,41 +106,26 @@ export default function IncidentsList() {
           dateFn={(i) => i.occurred_at || i.created_at || ''}
           emptyMessage="No matching incidents."
           renderTile={(i) => (
-            <div className="flex flex-col gap-2">
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 truncate">{i.title}</div>
-                <div className="text-[11px] text-slate-500 line-clamp-1">{i.description}</div>
-              </div>
-              <div className="flex items-center gap-2 text-[11px]">
-                <StatusBadge value={i.follow_up_status} />
-                <span className="text-slate-500">{(i.occurred_at || '').slice(0, 10)}</span>
-              </div>
-              <div className="flex flex-wrap gap-1 items-center">
-                <button type="button" onClick={() => setViewerRec(i)} title="View submission"
-                  data-testid={`capture-view-${i.id}`}
-                  className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-                  <Eye size={13} />
-                </button>
-                <PdfActions resourceKind="incidents" recordId={i.id} source={i.source} title={i.title} size="sm" />
-                <EmailButton resourceKind="incidents" recordId={i.id} source={i.source}
-                  subject={`Incident Summary: ${i.title}`}
-                  body={`Incident report.\n\nCategory: ${i.category}\nDescription: ${i.description || ''}\nOccurred at: ${i.occurred_at || ''}`}
-                  variant="row" size="sm" label="Email" />
-                <DeleteRecordButton resourceKind="incidents" apiPath="incidents" recordId={i.id} source={i.source} label="Incident" recordTitle={i.title}
-                  onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-              </div>
-            </div>
+            <CaptureCard
+              record={{
+                ...i,
+                template_name_snapshot: i.title,
+                date: (i.occurred_at || '').slice(0, 10),
+              }}
+              resourceKind="incidents"
+              apiPath="incidents"
+              subtitle={i.description || null}
+              badges={i.follow_up_status
+                ? [<StatusBadge key="fus" value={i.follow_up_status} />]
+                : []}
+              onDeleted={evict}
+            />
           )}
         />
        </>)
       }
         </TabsContent>
       </Tabs>
-      {viewerRec && (
-        <SubmissionViewer record={viewerRec} resourceKind="incidents" apiPath="incidents"
-          onClose={() => setViewerRec(null)}
-          onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))} />
-      )}
     </div>
   );
 }

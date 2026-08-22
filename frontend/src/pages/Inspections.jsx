@@ -1,15 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Trash2, Eye } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import EmailButton from '../components/EmailButton';
-import PdfActions from '../components/PdfActions';
-import DeleteRecordButton from '../components/DeleteRecordButton';
-import SubmissionViewer from '../components/SubmissionViewer';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
-import { CaptureSticky } from '../components/CaptureCard';
+import CaptureCard, { CaptureSticky } from '../components/CaptureCard';
+import { paletteForType } from '../lib/preStartsPalette';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -39,9 +36,6 @@ export default function InspectionsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  // v160.3.9.10a — In-app submission viewer (was missing from this table
-  // page because it renders `<tr>` rows, not shared `CaptureCard`).
-  const [viewerRec, setViewerRec] = useState(null);
   useEffect(() => {
     api.get('/inspections')
       .then((r) => { setItems(r.data); setFiltered(r.data); })
@@ -90,39 +84,24 @@ export default function InspectionsList() {
             const total = it.checklist_items?.length || 0;
             const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
             const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
+            const pal = paletteForType(it.template_name || '');
+            const evict = (id) => {
+              setItems((prev) => prev.filter((x) => x.id !== id));
+              setFiltered((prev) => prev.filter((x) => x.id !== id));
+            };
             return (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 truncate">
-                      {it.template_name || <span className="italic text-slate-400">Deleted template</span>}
-                    </div>
-                    <div className="text-[11px] text-slate-500">{it.date}</div>
-                  </div>
-                </div>
-                <div className="text-[11px] text-slate-600">
-                  <span className="text-emerald-700 font-semibold">{passed}</span> pass · <span className={failed > 0 ? 'text-red-700 font-semibold' : ''}>{failed}</span> fail · {total - passed - failed} N/A
-                </div>
-                <div className="flex flex-wrap gap-1 items-center">
-                  <button type="button" onClick={() => setViewerRec(it)} title="View submission"
-                    data-testid={`capture-view-${it.id}`}
-                    className="w-7 h-7 inline-flex items-center justify-center rounded-md text-slate-500 hover:text-slate-900 hover:bg-slate-100">
-                    <Eye size={13} />
-                  </button>
-                  {it.template_name && (
-                    <PdfActions resourceKind="inspections" recordId={it.id} source={it.source} title={it.template_name || 'Inspection'} size="sm" />
-                  )}
-                  <EmailButton resourceKind="inspections" recordId={it.id} source={it.source}
-                    subject={`Inspection Report: ${it.template_name || 'Inspection'} — ${it.date}`}
-                    body={`Inspection report.\n\nTemplate: ${it.template_name || 'Inspection'}\nDate: ${it.date}\nResults: ${passed} pass · ${failed} fail`}
-                    variant="row" size="sm" label="Email" />
-                  <DeleteRecordButton resourceKind="inspections" apiPath="inspections" recordId={it.id} source={it.source} label="Inspection" recordTitle={`${it.template_name || 'Inspection'} · ${it.date}`}
-                    onDeleted={(id) => {
-                      setItems((prev) => prev.filter((x) => x.id !== id));
-                      setFiltered((prev) => prev.filter((x) => x.id !== id));
-                    }} />
-                </div>
-              </div>
+              <CaptureCard
+                record={{
+                  ...it,
+                  template_name_snapshot: it.template_name || 'Deleted template',
+                  date: it.date,
+                }}
+                resourceKind="inspections"
+                apiPath="inspections"
+                subtitle={`${passed} pass · ${failed} fail · ${total - passed - failed} N/A`}
+                stripeStyle={pal ? { background: pal.hex } : undefined}
+                onDeleted={evict}
+              />
             );
           }}
         />
@@ -130,14 +109,6 @@ export default function InspectionsList() {
       }
         </TabsContent>
       </Tabs>
-      {viewerRec && (
-        <SubmissionViewer record={viewerRec} resourceKind="inspections" apiPath="inspections"
-          onClose={() => setViewerRec(null)}
-          onDeleted={(id) => {
-            setItems((prev) => prev.filter((x) => x.id !== id));
-            setFiltered((prev) => prev.filter((x) => x.id !== id));
-          }} />
-      )}
     </div>
   );
 }
