@@ -1,6 +1,71 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.35 — Ship 4b. Backfill re-extraction of 3 776
+// misclassified pre_starts rows (cache-derived, $0, no Claude
+// calls). Fixes the historical fallout of the pre-v58.13.30
+// pipeline that shoehorned SSRAs / permits / non-pre-start forms
+// into `pre_starts` with `template_name_snapshot=None` and
+// `template_category_snapshot=None`. All 3 776 offenders currently
+// render on the Daily Pre-Starts tile as `Unclassified` (see
+// `preStartsPalette.js::inferTemplateType` fallback).
+//
+// Backend (new files only — running pipeline UNCHANGED)
+//   · NEW `backend/bulk_import_template_inference.py`. Python port
+//     of `preStartsPalette.js::inferTemplateType()` +
+//     `resolve_against_roster()` fuzzy resolver (exact / substring /
+//     token-overlap Jaccard fallback with a 0.75 confidence floor,
+//     env-overridable via `REEXTRACT_ROSTER_MIN_CONFIDENCE`) +
+//     `infer_category_from_name()` keyword rules matching the
+//     pipeline's routing conventions + `should_migrate_out_of_prestarts()`
+//     mirror of `_should_write_prestarts_shim()` (inverted).
+//   · NEW `backend/scripts/reextract_misclassified_v58_13_35.py`.
+//     Cache-derived re-extraction. Reads `pre_starts` rows where
+//     `template_name_snapshot=None`, parses `work_summary` for the
+//     Simpro-appended `::<TEMPLATE> (N) - <date>.pdf` marker,
+//     resolves against the v58.13.34 roster (form_templates ∪
+//     list_forms), then either:
+//        · action=migrate    → soft-delete pre_starts, insert
+//          form_submissions with cache `extracted` payload as
+//          positional fields[] + metadata.needs_review=true +
+//          metadata.reextract_reason="v58_13_35_partial_cache_only".
+//        · action=update_in_place → stamp template_name_snapshot +
+//          template_category_snapshot on pre_starts.
+//        · action=noop_unresolved → audit-only.
+//     CLI: --commit / --dry-run (default) · --limit N · --scope
+//     {all,ssra,ce_ssra,recent_90d}. Batched 50 with configurable
+//     inter-batch sleep. Full audit trail into
+//     `bulk_import_reextract_v58_13_35_audit` (append-only, one doc
+//     per record per attempt). Cost cap via
+//     `REEXTRACT_COST_CAP_USD` env (default 500) — always $0 in
+//     cache-derived mode, retained for the parked ZIP-source ship.
+//
+// Guardrails
+//   · Preserves original `pre_starts._id` and `.id` for audit
+//     continuity — soft-deletes, NEVER hard-deletes.
+//   · Idempotent: a second `--commit` sees zero rows to process
+//     (BASE_FILTER's `template_name_snapshot=None` no longer
+//     matches post-stamp).
+//   · Per-record failure isolation — one record failing does NOT
+//     abort the batch; audit logs the failure with `status=failed`.
+//   · Zero touch to `bulk_import_prestarts.py` — the running
+//     pipeline is byte-identical to v58.13.34.
+//
+// Tests
+//   · NEW `tests/backend_unit/test_reextract_v58_13_35.py` — 16
+//     pytests including version-sync: inference / roster / category
+//     helpers, planner branching (migrate / update_in_place /
+//     noop), dry-run report shape, commit migrate path (preserves
+//     original id, soft-deletes source, stamps needs_review),
+//     commit update-in-place path, failure isolation, cost-cap
+//     enforcement, idempotency, --scope + --limit filters.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: PASS.
+//   · v58.13.10 test-placement: /app/tests/backend_unit/.
+//   · Zero touch to the running bulk_import pipeline.
+
+
 // v160.3.9.58.13.34 — Ship 5. list_forms roster expansion. The 6
 // templates the user kept insisting existed (Drain Cleaning SSRA,
 // Excavation Permit NDD, Directional Drill Pre-Start, Telehandler /
@@ -3450,7 +3515,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.34';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.35';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
