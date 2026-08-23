@@ -6,6 +6,7 @@ import api, { apiError } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard from '../components/CaptureCard';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -38,6 +39,7 @@ export default function IncidentsList() {
   // subset feeds into the toolbar; the toolbar then applies text search
   // + sort.
   const [searchFiltered, setSearchFiltered] = useState([]);
+  const incidentsDensity = useCaptureDensity('incidents', searchFiltered.length);
   useEffect(() => {
     api.get('/incidents')
       .then((r) => setItems(r.data))
@@ -87,7 +89,13 @@ export default function IncidentsList() {
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : preFiltered.length === 0 ? <EmptyState title="No incidents" body="Log your first incident — even a near miss." action={<NewButton to="/app/incidents/new" label="New incident" testid="incident-empty-create" />} />
        : (<>
-        <CaptureListToolbar items={preFiltered} onFiltered={setSearchFiltered} testidPrefix="incidents" />
+        <CaptureListToolbar
+          items={preFiltered}
+          onFiltered={setSearchFiltered}
+          testidPrefix="incidents"
+          densityMode={incidentsDensity.mode}
+          onDensityChange={incidentsDensity.setMode}
+        />
         {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
             `category` in the fixed CATS escalation order (near_miss →
             property). The status/category selects above still layer into
@@ -103,6 +111,8 @@ export default function IncidentsList() {
           groupOrder={CATS.map(([k]) => k)}
           groupPaletteOverrides={INCIDENT_CATEGORY_PALETTE}
           testidPrefix="incident"
+          page="incidents"
+          pageKey="incidents"
           dateFn={(i) => i.occurred_at || i.created_at || ''}
           emptyMessage="No matching incidents."
           renderTile={(i) => (

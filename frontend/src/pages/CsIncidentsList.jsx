@@ -322,6 +322,8 @@ export default function CsIncidentsList() {
           onRetry={() => { toast.info('Retrying…'); load(); }}
           emptyMessage="No incidents match the current filters."
           testidPrefix="cs-incidents"
+          page="cs-incidents"
+          pageKey="cs-incidents"
         />
       )}
 

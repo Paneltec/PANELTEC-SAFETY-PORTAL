@@ -52,11 +52,13 @@ export default function CaptureCard({
   hideOperator = false,
   stripeStyle,
   titleNode,
-  // v160.3.9.58.13.38 — Optional external viewer override. When
-  // provided, clicking the Eye button calls `onView(record)` instead
-  // of opening the built-in `<SubmissionViewer>`. Used by pages with
-  // bespoke detail modals (e.g. CS Incidents).
+  // v160.3.9.58.13.38 — Optional external viewer override.
   onView,
+  // v160.3.9.58.13.40 — Density hooks. `minH` (px string) sets a
+  // uniform card floor; `subtitleLines` clamps the subtitle
+  // (0 → hidden, 1 → line-clamp-1, 2 → line-clamp-2).
+  minH,
+  subtitleLines = 1,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -74,6 +76,7 @@ export default function CaptureCard({
   return (
     <div
       className="group relative rounded-lg bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow"
+      style={minH ? { minHeight: minH } : undefined}
       data-testid={`capture-card-${r.id}`}
     >
       <div
@@ -167,8 +170,8 @@ export default function CaptureCard({
             <>{operator || '—'} <span className="text-slate-300">·</span> {dateStr || '—'}</>
           )}
         </div>
-        {subtitle && (
-          <div className="text-[10.5px] text-slate-500 leading-tight line-clamp-1" title={typeof subtitle === 'string' ? subtitle : undefined}>
+        {subtitle && subtitleLines > 0 && (
+          <div className={`text-[10.5px] text-slate-500 leading-tight line-clamp-${subtitleLines}`} title={typeof subtitle === 'string' ? subtitle : undefined}>
             {subtitle}
           </div>
         )}

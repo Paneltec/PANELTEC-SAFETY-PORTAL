@@ -72,6 +72,8 @@ export default function SiteSigninList() {
         onRetry={() => { toast.info('Retrying…'); load(); }}
         emptyMessage="No sign-ins recorded yet."
         testidPrefix="site-signin"
+        page="site-signin"
+        pageKey="site-signin"
       />
     </div>
   );

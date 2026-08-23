@@ -37,6 +37,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { paletteForType } from '../../lib/preStartsPalette';
+import { resolveGroupPalette } from '../../lib/groupPalette';
+import useCaptureDensity from '../../lib/useCaptureDensity';
 
 // Six deterministic colour buckets keyed by a stable string hash.
 // Kept local to this component so it doesn't couple to folderColors.js
@@ -69,7 +71,14 @@ export default function GroupedTilesView({
   renderTile, dateFn = (r) => r.created_at || r.date || '',
   loading, error, onRetry,
   emptyMessage, testidPrefix,
+  // v58.13.40 — density + palette wiring. Both are opt-in via `page`
+  // (palette source-of-truth key) and `pageKey` (density localStorage
+  // scope). Undefined preserves the pre-v58.13.40 behaviour.
+  page, pageKey,
 }) {
+  // Density hook. `pageKey` defaults to testidPrefix so callers that
+  // don't pass an explicit pageKey still get per-page persistence.
+  const density = useCaptureDensity(pageKey || testidPrefix, (items || []).length);
   // v58.11.1 auto-retry cadence — 3 s then 10 s.
   const [retrying, setRetrying] = useState(false);
   const retriedAtRef = useRef([]);
@@ -132,49 +141,73 @@ export default function GroupedTilesView({
     <div className="space-y-6" data-testid={`${testidPrefix}-tiles`}>
       {groups.map(({ key, rows }) => {
         // Banner palette resolution (in order of precedence):
-        //   1. Explicit `groupPaletteOverrides[key]` — CATS ladder etc.
-        //   2. `getStripeType` first-card tint via `paletteForType`.
-        //   3. Legacy hash palette.
-        const override = groupPaletteOverrides && groupPaletteOverrides[key];
-        const stripeType = !override && getStripeType && rows[0] ? getStripeType(rows[0]) : null;
+        //   1. v58.13.40 `page` → shared `resolveGroupPalette`.
+        //   2. Explicit `groupPaletteOverrides[key]` — CATS ladder etc.
+        //   3. `getStripeType` first-card tint via `paletteForType`.
+        //   4. Legacy hash palette.
+        const sharedPal = page
+          ? resolveGroupPalette({ groupKey: key, page })
+          : null;
+        const override = !sharedPal && groupPaletteOverrides
+          && groupPaletteOverrides[key];
+        const stripeType = !sharedPal && !override && getStripeType && rows[0]
+          ? getStripeType(rows[0]) : null;
         const stripePal = stripeType ? paletteForType(stripeType) : null;
-        const hashPal = !override && !stripePal ? getGroupPalette(key) : null;
+        const hashPal = !sharedPal && !override && !stripePal
+          ? getGroupPalette(key) : null;
 
-        const bannerClass = override ? override.header : hashPal ? hashPal.header : '';
-        const bannerStyle = stripePal
+        const bannerClass = sharedPal ? ''
+          : override ? override.header
+          : hashPal ? hashPal.header : '';
+        const bannerStyle = sharedPal
+          ? { backgroundColor: sharedPal.tint, borderColor: sharedPal.hex + '33' }
+          : stripePal
           ? { backgroundColor: stripePal.tint, borderColor: stripePal.border }
           : undefined;
-        const dotClass = override ? override.dot : hashPal ? hashPal.dot : '';
-        const dotStyle = stripePal ? { backgroundColor: stripePal.hex } : undefined;
-        const chipClass = override ? override.chip : hashPal ? hashPal.chip : '';
-        const chipStyle = stripePal
+        const dotClass = sharedPal ? ''
+          : override ? override.dot
+          : hashPal ? hashPal.dot : '';
+        const dotStyle = sharedPal ? { backgroundColor: sharedPal.hex }
+          : stripePal ? { backgroundColor: stripePal.hex }
+          : undefined;
+        const chipClass = sharedPal ? ''
+          : override ? override.chip
+          : hashPal ? hashPal.chip : '';
+        const chipStyle = sharedPal
+          ? { backgroundColor: sharedPal.hex + '22', color: sharedPal.text }
+          : stripePal
           ? { backgroundColor: stripePal.chipBg, color: stripePal.chipText }
           : undefined;
+        const rowStripeHex = sharedPal ? sharedPal.hex : null;
         const label = (groupLabels && groupLabels[key]) || key || 'Unnamed';
         return (
           <section key={key} data-testid={`${testidPrefix}-tile-group-${key}`}
                    className={`rounded-2xl border overflow-hidden ${bannerClass}`} style={bannerStyle}>
             <header className={`flex items-center gap-2 px-4 py-3 border-b ${bannerClass}`} style={bannerStyle}>
               <span className={`w-2.5 h-2.5 rounded-full ${dotClass}`} style={dotStyle} />
-              <h3 className="text-sm font-semibold text-slate-900">{label}</h3>
+              <h3 className="text-sm font-semibold text-slate-900" style={sharedPal ? { color: sharedPal.text } : undefined}>{label}</h3>
               <span data-testid={`${testidPrefix}-tile-count-${key}`}
                     className={`ml-auto text-[11px] font-semibold px-2 py-0.5 rounded-full ${chipClass}`}
                     style={chipStyle}>
                 {rows.length}
               </span>
             </header>
-            <div className="p-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 bg-white">
+            <div className={`p-3 ${density.gridClass} bg-white`} data-testid={`${testidPrefix}-tile-grid-${density.effectiveMode}`}>
               {rows.map((rec) => {
-                const rowStripe = getStripeType ? paletteForType(getStripeType(rec)) : null;
+                // Stripe precedence: rowStripeHex (from sharedPal) > getStripeType.
+                const rowStripe = rowStripeHex
+                  ? { hex: rowStripeHex }
+                  : (getStripeType ? paletteForType(getStripeType(rec)) : null);
                 return (
                   <div key={rec.id} data-testid={`${testidPrefix}-tile-${rec.id}`}
+                       style={{ minHeight: density.cardMinH }}
                        className="group relative rounded-lg bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow">
                     {rowStripe && (
                       <div className="absolute left-0 top-0 bottom-0 w-1"
                            style={{ backgroundColor: rowStripe.hex }} aria-hidden />
                     )}
                     <div className={rowStripe ? 'pl-2.5 pr-1.5 py-1.5' : 'p-3'}>
-                      {renderTile(rec)}
+                      {renderTile(rec, { subtitleLines: density.subtitleLines, minH: density.cardMinH })}
                     </div>
                   </div>
                 );

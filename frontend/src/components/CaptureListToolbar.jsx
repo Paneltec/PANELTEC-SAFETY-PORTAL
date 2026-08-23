@@ -2,6 +2,7 @@
 // Client-side search + template chip filter + sort dropdown.
 // Used by Pre-Starts, Hazards, Site Diary, Inspections, Incidents, Risk Assessments.
 import React, { useMemo, useState, useEffect } from 'react';
+import { Wand2, Rows3, LayoutGrid, LayoutList } from 'lucide-react';
 
 function useDebounced(value, ms = 200) {
   const [v, setV] = useState(value);
@@ -18,7 +19,11 @@ function useDebounced(value, ms = 200) {
  *   onFiltered: (filtered) => void
  *   testidPrefix: for data-testid stability
  */
-export function CaptureListToolbar({ items, onFiltered, testidPrefix = 'capture' }) {
+export function CaptureListToolbar({
+  items, onFiltered, testidPrefix = 'capture',
+  // v58.13.40 — opt-in density segmented control.
+  densityMode, onDensityChange,
+}) {
   const [q, setQ] = useState('');
   const [tpl, setTpl] = useState('All');
   const [sort, setSort] = useState('date_desc');
@@ -87,6 +92,43 @@ export function CaptureListToolbar({ items, onFiltered, testidPrefix = 'capture'
           <option value="operator">Operator A-Z</option>
           <option value="template">Template A-Z</option>
         </select>
+        {/* v58.13.40 — density segmented control. Rendered only when
+            the parent page passes `densityMode` + `onDensityChange`
+            (i.e. wired to `useCaptureDensity`). Legacy pages that
+            don't supply these props keep their pre-v58.13.40 UI. */}
+        {typeof onDensityChange === 'function' && (
+          <div
+            role="radiogroup"
+            aria-label="Tile density"
+            data-testid="capture-density-control"
+            className="inline-flex items-center rounded-full border border-slate-200 bg-white p-0.5 shadow-sm"
+          >
+            {[
+              { m: 'auto',        Icon: Wand2,      title: 'Auto (by volume)' },
+              { m: 'compact',     Icon: Rows3,      title: 'Compact' },
+              { m: 'comfortable', Icon: LayoutGrid, title: 'Comfortable' },
+              { m: 'spacious',    Icon: LayoutList, title: 'Spacious' },
+            ].map(({ m, Icon, title }) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                aria-checked={densityMode === m}
+                title={title}
+                onClick={() => onDensityChange(m)}
+                data-testid={`capture-density-${m}`}
+                className={
+                  'inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors ' +
+                  (densityMode === m
+                    ? 'bg-slate-900 text-white'
+                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
+                }
+              >
+                <Icon size={13} />
+              </button>
+            ))}
+          </div>
+        )}
         <div className="text-xs text-slate-500" data-testid={`${testidPrefix}-count`}>
           {filtered.length} / {(items || []).length}
         </div>

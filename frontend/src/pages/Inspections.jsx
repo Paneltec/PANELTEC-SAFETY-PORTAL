@@ -78,6 +78,8 @@ export default function InspectionsList() {
           groupBy={(it) => it.template_name || 'Deleted template'}
           getStripeType={(it) => it.template_name || ''}
           testidPrefix="inspection"
+          page="inspections"
+          pageKey="inspections"
           dateFn={(it) => it.date || it.created_at || ''}
           emptyMessage="No matching inspections."
           renderTile={(it) => {

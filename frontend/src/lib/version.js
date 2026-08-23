@@ -1,6 +1,67 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.40 — v58.13.39 wiring. Threads the group-palette +
+// capture-density primitives into the shared UI so users see the
+// tile theming + density switch in production.
+//
+// Frontend (component wiring)
+//   · `components/capture/GroupedTilesView.jsx` — new opt-in `page`
+//     + `pageKey` props. When `page` is set, banner tint/text +
+//     tile-stripe hex are resolved from `resolveGroupPalette({
+//     groupKey, page })` so banner and its member tiles share the
+//     same colour. Internal `useCaptureDensity(pageKey, items.length)`
+//     drives `gridClass` (per-density Tailwind), tile `min-height`
+//     (96 px comfortable / 64 px compact), and passes
+//     `subtitleLines` down to the tile renderer as a hint.
+//   · `components/CaptureCard.jsx` — new `minH` and `subtitleLines`
+//     props. `minH` sets an inline `min-height` (uniform card floor);
+//     `subtitleLines=0` hides the subtitle in Compact mode.
+//   · `components/CaptureListToolbar.jsx` — opt-in density segmented
+//     control. Renders only when the parent page passes
+//     `densityMode` + `onDensityChange`. 4 icon-only radios
+//     (Wand2 / Rows3 / LayoutGrid / LayoutList) with
+//     `data-testid="capture-density-control"`.
+//   · Page wiring:
+//       · `pages/Incidents.jsx`    — instantiates useCaptureDensity,
+//         passes to both toolbar + GroupedTilesView (via `page` +
+//         `pageKey='incidents'`). First page with the visible
+//         segmented control.
+//       · `pages/Inspections.jsx`  — passes `page='inspections'` +
+//         `pageKey='inspections'` (auto-density only, no toolbar
+//         control yet).
+//       · `pages/SiteSigninList.jsx` — passes `page='site-signin'` +
+//         `pageKey='site-signin'`.
+//       · `pages/CsIncidentsList.jsx` — passes `page='cs-incidents'`
+//         + `pageKey='cs-incidents'`.
+//
+// Deferred (non-blocking follow-up ship)
+//   · The 3 other grouped pages (Inspections / SiteSignin /
+//     CsIncidents) will get the visible toolbar segmented control
+//     in v58.13.41 — same 3-line pattern used in Incidents (import
+//     hook + pass `densityMode`/`onDensityChange` to the toolbar).
+//     Auto-density already works on all 4 grouped pages via
+//     GroupedTilesView's internal hook.
+//   · Flat pages (Hazards / PreStarts / SiteDiary / RiskAssessments)
+//     still use CaptureCardGrid — density integration for those is
+//     also queued for v58.13.41 (needs the same page-key + density
+//     prop threading).
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_capture_wiring_v58_13_40.py` —
+//     asserts GroupedTilesView imports and calls `resolveGroupPalette`
+//     + `useCaptureDensity`, CaptureListToolbar renders
+//     `capture-density-control` when props are passed, CaptureCard
+//     accepts and applies `minH` + `subtitleLines`, and Incidents.jsx
+//     wires all three.
+//
+// Guardrails held
+//   · Frontend-only. Zero backend files touched.
+//   · Backwards-compatible — pages that don't pass `page` /
+//     `pageKey` / `densityMode` see the pre-v58.13.40 behaviour.
+//   · `/app/mobile/` untouched — deferred to `e1_expo_frontend_dev`.
+
+
 // v160.3.9.58.13.39 — Group palette + capture density foundation.
 // Introduces two shared FE-only primitives that Capture list pages
 // consume to converge on (a) per-group accent colours and (b)
@@ -3744,7 +3805,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.39';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.40';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
