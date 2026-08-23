@@ -35,9 +35,22 @@ def test_capture_density_control_component_exists():
     assert "aria-label=\"Tile density\"" in src
     for mode in ("auto", "compact", "comfortable", "spacious"):
         assert f"m: '{mode}'" in src, f"missing option {mode!r}"
-    # testidPrefix pattern must be preserved so callers can namespace
-    # (grouped pages emit `cs-incidents-density-<mode>`, etc.).
-    assert "${testidPrefix}-density-control" in src
+    # v58.13.42 — wrapper testid restored to the canonical
+    # `capture-density-control` (v58.13.40 contract). Per-page
+    # scoping is done via `data-density-page="${testidPrefix}"`
+    # so Playwright can still target one instance when a page
+    # renders more than one control (none currently do, but the
+    # attribute is present for forward compatibility).
+    assert 'data-testid="capture-density-control"' in src, (
+        "Wrapper testid must be the canonical `capture-density-control` "
+        "string — the v58.13.41 dynamic template was reverted in "
+        "v58.13.42 after the tester flagged the missing testid on "
+        "SiteSignin/CsIncidents/PreStarts."
+    )
+    assert "data-density-page={testidPrefix}" in src, (
+        "Wrapper must also emit `data-density-page` for scoped queries."
+    )
+    # Radio buttons remain testidPrefix-namespaced.
     assert "${testidPrefix}-density-${m}" in src
 
 
@@ -47,10 +60,12 @@ def test_capture_list_toolbar_delegates_to_shared_control():
         "CaptureListToolbar must import the shared density control "
         "so the pill visuals are a single source of truth."
     )
-    # And the inline old-form radiogroup <div> block must be gone.
-    assert "aria-label=\"Tile density\"" not in src, (
-        "Inline density block should have been removed — "
-        "CaptureListToolbar now delegates to <CaptureDensityControl>."
+    # v58.13.42 — the toolbar must NOT emit its own copy of the
+    # radiogroup wrapper (that would produce a duplicate canonical
+    # testid on the page). It only renders <CaptureDensityControl>.
+    assert 'data-testid="capture-density-control"' not in src, (
+        "CaptureListToolbar must not emit `capture-density-control` "
+        "itself — that string lives in <CaptureDensityControl>."
     )
 
 
@@ -180,12 +195,13 @@ def test_flat_pages_expose_density_control():
 # ─── Version sync ───────────────────────────────────────────────────
 
 def test_version_sync_current_v58_13_41():
+    # v58.13.42 note: only `version.js` carries the append-only
+    # changelog blocks; `version.ts` and `service-worker.js` only
+    # hold the CURRENT version constant. So this guard just asserts
+    # the v58.13.41 changelog header remained in `version.js` after
+    # the hotfix bump.
     v_js = (FRONTEND / "lib" / "version.js").read_text()
-    m_ts = Path("/app/mobile/src/lib/version.ts").read_text()
-    sw_js = Path("/app/frontend/public/service-worker.js").read_text()
-    expected = "paneltec-v160.3.9.58.13.41"
-    for label, blob in [("version.js", v_js), ("version.ts", m_ts), ("service-worker.js", sw_js)]:
-        assert expected in blob, (
-            f"{label}: expected {expected!r} constant not found — "
-            "did the version bump get missed?"
-        )
+    assert "v160.3.9.58.13.41 —" in v_js, (
+        "The v58.13.41 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )

@@ -1,6 +1,59 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.42 — Hotfix: `capture-density-control` canonical
+// testid restored. Tester found `/app/site-signin` was missing the
+// canonical wrapper testid — same on `/app/submissions/cs-incidents`
+// and `/app/pre-starts`. Root cause: v58.13.41's extraction of the
+// density segmented control into `CaptureDensityControl.jsx` made
+// the wrapper `data-testid` a template literal (`${testidPrefix}-
+// density-control`), which meant pages that render the control
+// inline with a namespaced prefix (Site Sign-In, CS Incidents, Pre-
+// Starts) emitted `site-signin-density-control` etc. instead of the
+// canonical `capture-density-control` the v58.13.40 regression
+// tests + Playwright selectors depend on. `CaptureListToolbar`
+// consumers (Incidents, Inspections, Hazards, Site Diary, Risk
+// Assessments) were unaffected because the toolbar uses the default
+// `testidPrefix='capture'`.
+//
+// Fix: `CaptureDensityControl` now always emits
+// `data-testid="capture-density-control"` on the wrapper (v58.13.40
+// contract) and additionally emits `data-density-page="${testidPrefix}"`
+// so scoped Playwright queries (e.g. `[data-testid=capture-density-
+// control][data-density-page=site-signin]`) still work when a page
+// needs to disambiguate. Per-mode radio testids remain namespaced
+// (`${testidPrefix}-density-${m}`) because the mode buttons already
+// had per-page uniqueness in v58.13.40 (Site Sign-In lacked the
+// mode buttons back then, so nothing legacy is coupled to those
+// testids).
+//
+// Verified live via Playwright against all 8 Capture pages: every
+// page emits exactly one `capture-density-control` element. Pre-
+// Starts required a longer wait (~30 s) to render its 9,182 tiles
+// but the control is present.
+//
+// Guardrails held
+//   · Frontend-only ship. Zero backend files touched.
+//   · `/app/mobile/` untouched except for the `MOBILE_BUNDLE_VERSION`
+//     bump.
+//   · v58.13.13 version-sync: all three canonical strings +
+//     top-changelog reference match `paneltec-v160.3.9.58.13.42`.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion — not touched.
+//
+// Tests
+//   · UPDATED `tests/frontend_smoke/test_capture_wiring_v58_13_41.py`
+//     — `test_capture_density_control_component_exists` now asserts
+//     the canonical `data-testid="capture-density-control"` wrapper
+//     and the `data-density-page` attribute pattern.
+//   · NEW `tests/frontend_smoke/test_capture_wiring_v58_13_42.py`
+//     — regression test asserting (a) SiteSigninList imports and
+//     renders CaptureDensityControl, (b) every one of the 8
+//     Capture pages either uses CaptureListToolbar (which delegates)
+//     or imports+renders CaptureDensityControl directly, so the
+//     canonical wrapper testid will be present on every page.
+
+
 // v160.3.9.58.13.41 — Ship 4b bugfixes + deferred density wiring.
 // Completes the v58.13.39/40 group-palette + capture-density rollout
 // by wiring the visible segmented control across every Capture list
@@ -3891,7 +3944,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.41';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.42';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

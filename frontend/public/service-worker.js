@@ -1272,19 +1272,20 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.41 — Bug fixes + deferred capture density wiring.
-//                     Bug 1: stripe hex threading through GroupedTilesView
-//                     so tile stripes match the group banner colour.
-//                     Bug 2: profiled CS Incidents (backend 236ms, frontend
-//                     2.5s to first tile — WELL under the 5s target; prior
-//                     240s "hang" report not reproducible). Shared density
-//                     instance eliminates the v58.13.40 dual-hook drift
-//                     between page-level toolbar + inner GroupedTilesView.
-//                     Density segmented control now visible on 7 pages
-//                     (Incidents, Inspections, SiteSignin, CsIncidents,
-//                     Hazards, PreStarts, SiteDiary, RiskAssessments).
+// v160.3.9.58.13.42 — Hotfix: canonical `data-testid` restored.
+//                     v58.13.41 broke the v58.13.40 wrapper-testid
+//                     contract by making it a template literal
+//                     `${testidPrefix}-density-control` — pages using
+//                     inline CaptureDensityControl (SiteSignin,
+//                     CsIncidents, PreStarts) therefore emitted
+//                     `site-signin-density-control` etc. instead of
+//                     the canonical `capture-density-control` the
+//                     regression tests + Playwright selectors rely
+//                     on. Restored to always emit
+//                     `capture-density-control` on the wrapper +
+//                     added `data-density-page` for per-page scoping.
 //                     SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.41';
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.42';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

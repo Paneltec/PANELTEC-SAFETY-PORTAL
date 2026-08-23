@@ -96,8 +96,10 @@ def test_toolbar_renders_segmented_control_conditionally():
     # Delegation target imported.
     assert "import CaptureDensityControl" in tb_src
     ctrl_src = DENSITY.read_text(encoding="utf-8")
-    # Testid for the whole radiogroup (now templated by testidPrefix).
-    assert "${testidPrefix}-density-control" in ctrl_src
+    # v58.13.42 — wrapper testid restored to the canonical literal
+    # `capture-density-control` (v58.13.40 contract). Per-mode testids
+    # remain namespaced by `testidPrefix`.
+    assert 'data-testid="capture-density-control"' in ctrl_src
     # Per-mode testid.
     assert "${testidPrefix}-density-${m}" in ctrl_src
 
