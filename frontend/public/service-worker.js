@@ -1272,20 +1272,18 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.42 — Hotfix: canonical `data-testid` restored.
-//                     v58.13.41 broke the v58.13.40 wrapper-testid
-//                     contract by making it a template literal
-//                     `${testidPrefix}-density-control` — pages using
-//                     inline CaptureDensityControl (SiteSignin,
-//                     CsIncidents, PreStarts) therefore emitted
-//                     `site-signin-density-control` etc. instead of
-//                     the canonical `capture-density-control` the
-//                     regression tests + Playwright selectors rely
-//                     on. Restored to always emit
-//                     `capture-density-control` on the wrapper +
-//                     added `data-density-page` for per-page scoping.
-//                     SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.42';
+// v160.3.9.58.13.43 — Hygiene bundle.
+//   · Pydantic v2 ConfigDict fix at backend/hr_employees.py:388 —
+//     class-based `Config` → `model_config = ConfigDict(extra="allow")`.
+//     Silences the last PydanticDeprecatedSince20 warning in pytest.
+//   · PlantVehicles.jsx:497 — `AttentionRowActions` extracted to
+//     module scope + 3 stale eslint-disable directives removed
+//     (react/no-unstable-nested-components + exhaustive-deps).
+//   · New static pytest sweep across all 8 Capture list pages
+//     (tests/frontend_smoke/test_capture_density_all_pages_v58_13_43.py)
+//     — would have caught the v58.13.41 testid regression.
+//   · SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.43';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

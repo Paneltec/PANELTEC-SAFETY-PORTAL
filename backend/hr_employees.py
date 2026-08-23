@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Form
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from auth import get_current_user  # noqa: F401 — kept for future non-gated helpers
 from db import db
@@ -386,8 +386,10 @@ async def reveal_next_of_kin(
 
 
 class RowPatch(BaseModel):
-    class Config:
-        extra = "allow"
+    # v58.13.43 — Pydantic v2 idiom. The class-based `Config` form
+    # was deprecated in v2.0 (removal slated for v3.0) and emitted a
+    # `PydanticDeprecatedSince20` warning on every pytest run.
+    model_config = ConfigDict(extra="allow")
 
 
 @router.patch("/{uid}")

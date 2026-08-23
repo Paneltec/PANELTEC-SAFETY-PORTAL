@@ -101,6 +101,45 @@ function PairingChips({ asset }) {
   );
 }
 
+// v58.13.43 — Attention-row action buttons extracted to module scope
+// (was `no-unstable-nested-components` on PlantVehicles.jsx:497). The
+// arrow function passed to `attentionActions` still lives inside
+// `PlantVehicles` because ModuleDashboard invokes it per-row, but it
+// now instantiates this stable component type instead of returning a
+// fresh Fragment tree — so React's reconciler no longer sees a new
+// component type on every render and the underlying perf concern the
+// ESLint rule was flagging is genuinely resolved. The one remaining
+// inline arrow is an intentional render-prop callback; documented
+// disable on that specific line.
+function AttentionRowActions({ row, canEdit, onView, onArchive }) {
+  return (
+    <>
+      <button type="button" title="View"
+        onClick={() => onView(row)}
+        data-testid={`attention-view-${row.id}`}
+        className="p-1.5 rounded-md hover:bg-slate-200 text-slate-600 hover:text-slate-900">
+        <EyeIcon />
+      </button>
+      {canEdit && (
+        <button type="button" title="Edit"
+          onClick={() => onView(row)}
+          data-testid={`attention-edit-${row.id}`}
+          className="p-1.5 rounded-md hover:bg-blue-100 text-slate-600 hover:text-blue-700">
+          <Edit3 />
+        </button>
+      )}
+      {canEdit && (
+        <button type="button" title="Archive (soft-delete)"
+          onClick={() => onArchive({ id: row.id, label: row.label })}
+          data-testid={`attention-delete-${row.id}`}
+          className="p-1.5 rounded-md hover:bg-rose-100 text-slate-600 hover:text-rose-700">
+          <DeleteIcon />
+        </button>
+      )}
+    </>
+  );
+}
+
 function PrintLabelsModal({ assetIds, onClose }) {
   useLockBodyScroll();
   const [layout, setLayout] = useState('a6');
@@ -223,11 +262,10 @@ export default function PlantVehicles() {
     finally { setBusy(false); setRefreshing(false); }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [kind, assetType]);
+  useEffect(() => { load(); }, [kind, assetType]);
   useEffect(() => {
     const t = setTimeout(load, q ? 300 : 0);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
   // v58.13.27 — Deep-link opener. Reads `?assetDrawer=<id>&tab=<tab>`
@@ -260,7 +298,6 @@ export default function PlantVehicles() {
       }
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [_location.search]);
 
   const typeCounts = useMemo(() => {
@@ -494,32 +531,17 @@ export default function PlantVehicles() {
               { label: 'Add Asset', onClick: openCreate },
               { label: 'Integrations', route: '/app/settings/integrations' },
             ] : []}
-            attentionActions={(row) => (
-              <>
-                <button type="button" title="View"
-                  onClick={() => openAttentionAsset(row)}
-                  data-testid={`attention-view-${row.id}`}
-                  className="p-1.5 rounded-md hover:bg-slate-200 text-slate-600 hover:text-slate-900">
-                  <EyeIcon />
-                </button>
-                {canEdit && (
-                  <button type="button" title="Edit"
-                    onClick={() => openAttentionAsset(row)}
-                    data-testid={`attention-edit-${row.id}`}
-                    className="p-1.5 rounded-md hover:bg-blue-100 text-slate-600 hover:text-blue-700">
-                    <Edit3 />
-                  </button>
-                )}
-                {canEdit && (
-                  <button type="button" title="Archive (soft-delete)"
-                    onClick={() => setDeletePending({ id: row.id, label: row.label })}
-                    data-testid={`attention-delete-${row.id}`}
-                    className="p-1.5 rounded-md hover:bg-rose-100 text-slate-600 hover:text-rose-700">
-                    <DeleteIcon />
-                  </button>
-                )}
-              </>
-            )}
+            attentionActions={
+              // eslint-disable-next-line react/no-unstable-nested-components -- render-prop callback returns a stable, module-scope component (AttentionRowActions); the reconciler sees the same type across renders. v58.13.43.
+              (row) => (
+                <AttentionRowActions
+                  row={row}
+                  canEdit={canEdit}
+                  onView={openAttentionAsset}
+                  onArchive={setDeletePending}
+                />
+              )
+            }
           />
         </TabsContent>
         <TabsContent value="list" className="mt-4" data-testid="vehicles-tab-list-content">

@@ -110,10 +110,13 @@ def test_sitesignin_hotfix_specifically():
 
 
 def test_version_sync_current_v58_13_42():
-    expected = "paneltec-v160.3.9.58.13.42"
+    # v58.13.43 note: same rationale as v58.13.41's version-sync
+    # relaxation — `version.js` carries the append-only changelog,
+    # so this guard checks the v58.13.42 changelog block remained
+    # after subsequent bumps. `test_version_sync_v58_13_13.py`
+    # enforces cross-file identity of the current version constant.
     v_js = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
-    m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
-    assert f"'{expected}'" in v_js, "version.js RUNNING_VERSION not bumped."
-    assert f"'{expected}'" in m_ts, "mobile version.ts not bumped."
-    assert f"'{expected}'" in sw_js, "service-worker CACHE_VERSION not bumped."
+    assert "v160.3.9.58.13.42 —" in v_js, (
+        "The v58.13.42 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )

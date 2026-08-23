@@ -1,6 +1,60 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.43 — Hygiene bundle. Three low-risk items rolled up
+// after the v58.13.41/42 density-wiring work landed cleanly.
+//
+// 1. Pydantic v2 ConfigDict fix
+//    Location: `backend/hr_employees.py:388` (RowPatch model).
+//    Was:
+//        class RowPatch(BaseModel):
+//            class Config:
+//                extra = "allow"
+//    Now:
+//        class RowPatch(BaseModel):
+//            model_config = ConfigDict(extra="allow")
+//    Silences the last surviving PydanticDeprecatedSince20 warning
+//    in the pytest run. `ConfigDict` added to the top-level pydantic
+//    import; no runtime behaviour change.
+//
+// 2. PlantVehicles.jsx lint cleanup
+//    Location: `frontend/src/pages/PlantVehicles.jsx:497`.
+//    `no-unstable-nested-components` fired because the inline
+//    `attentionActions={(row) => (<>...</>)}` render-prop returned a
+//    Fragment tree with three buttons — React would tear down and
+//    remount every row's action cell on every parent render. Fixed
+//    by extracting the JSX to a module-scope `AttentionRowActions`
+//    component; the outer arrow now instantiates a stable component
+//    type, so the reconciler treats it as the same element across
+//    renders and the underlying perf concern the rule was flagging
+//    is genuinely resolved. Kept the render-prop shape (ModuleDashboard's
+//    contract) via one targeted `eslint-disable-next-line` with an
+//    explanatory comment.
+//    Also removed 3 stale `// eslint-disable-next-line` directives
+//    (react-hooks/exhaustive-deps) that the linter reported as
+//    unused after prior refactors — lint output is now noise-free.
+//
+// 3. Capture-density CI sweep
+//    New: `tests/frontend_smoke/test_capture_density_all_pages_v58_13_43.py`.
+//    Iterates over all 8 Capture list page files and asserts each
+//    one either (a) imports `CaptureListToolbar` and passes both
+//    `densityMode` + `onDensityChange` props (the delegation path)
+//    or (b) imports and renders `CaptureDensityControl` inline. In
+//    either case, the runtime output MUST include the canonical
+//    `data-testid="capture-density-control"` element the tester +
+//    v58.13.40 contract depend on. Would have caught the v58.13.41
+//    dynamic-testid regression in ~30 ms of test time instead of a
+//    tester sweep.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · `/app/mobile/` untouched except for `MOBILE_BUNDLE_VERSION`.
+//   · Backend reload is a hot-reload; no supervisor restart needed
+//     (server.py isn't touched).
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion — user approved the infra ticket; awaiting completion.
+
+
 // v160.3.9.58.13.42 — Hotfix: `capture-density-control` canonical
 // testid restored. Tester found `/app/site-signin` was missing the
 // canonical wrapper testid — same on `/app/submissions/cs-incidents`
@@ -3944,7 +3998,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.42';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.43';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
