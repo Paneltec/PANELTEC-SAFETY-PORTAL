@@ -1,6 +1,98 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.46 — P1 UI bugfix: CS Incidents "file icon" flashes
+// and disappears when clicked. Reported by user against
+// `/app/submissions/cs-incidents`.
+//
+// Which icon was broken
+//   The lucide `<FileText>` icon in `PdfActions` (data-testid
+//   `pdf-open-<recordId>`) — rendered by `CaptureCard`'s action row
+//   between the Eye and Delete buttons. The Eye + Delete buttons
+//   are fine.
+//
+// Root cause
+//   CS Incidents are XLSX-sourced DB rows in the `reference_library`
+//   permission domain (see `/app/backend/cs_incident.py:107` — every
+//   endpoint gated by `require_permission("reference_library", ...)`).
+//   They have NO PDF backend representation — the master
+//   `RESOURCE_TO_PATH` map in `/app/backend/pdf_routes.py:32-39` only
+//   lists the six kinds that actually have a `pdf_renderer.py`
+//   entry (swms, pre_starts, site_diary, hazards, incidents,
+//   inspections). But `PdfActions` was rendered unconditionally in
+//   every `CaptureCard.jsx` action row.
+//
+//   Click sequence (verified by curl against $REACT_APP_BACKEND_URL):
+//     1. `PdfActions.open()` calls `window.open('about:blank',
+//        'paneltec-pdf', 'popup=yes,...')` — browser pops the window.
+//     2. `POST /api/pdf-token` with `resource="reference_library"` →
+//        backend line 63 raises `HTTPException(400, "Unknown resource")`.
+//     3. Catch block at line 52 fires `win.close()` — the popup
+//        window we just opened is closed programmatically. That's
+//        the "blink and disappear" behaviour the user saw.
+//     4. Toast surfaces `apiError(err)` in the corner. Some users
+//        miss it because the popup blink grabs their attention.
+//
+// Why the previous v58.13.10 "flash-bug guardrail" didn't catch it
+//   That guardrail was scoped to synthetic-event bubble suppression
+//   on tile action buttons (making sure the freshly-mounted View
+//   modal doesn't receive its own opening click). This bug isn't
+//   about event bubbling at all — PdfActions.open already
+//   `e.stopPropagation()`s on line 28 — it's about a backend
+//   contract mismatch. Different failure mode, different fix.
+//
+// Fix (surgical, defaults preserve every existing callsite)
+//   1. `CaptureCard` gains an optional `showPdf` prop with
+//      `default = true`. When false, PdfActions receives
+//      `enabled={false}`.
+//   2. `PdfActions` gains an `enabled` prop; when `enabled === false`
+//      it returns `null` (no button rendered, no popup possible).
+//   3. `CsIncidentsList.jsx` renderTile passes `showPdf={false}`.
+//
+//   Defence in depth: even if someone later flips `showPdf={true}`
+//   on CS Incidents, the icon would still 400 — but we're not
+//   silencing the bug, we're removing the button that shouldn't
+//   exist. Backend RESOURCE_TO_PATH is the authoritative list of
+//   what has a PDF.
+//
+// Sibling reference_library kinds
+//   Grepped for other pages that use `resourceKind="reference_library"`
+//   with `CaptureCard`. Only CS Incidents does today. `companies`,
+//   `completed_training`, `incident_root_causes`, `list_roles`,
+//   `list_forms`, `master_risks` all render bespoke tables — none
+//   go through CaptureCard, so none of them have the file icon
+//   surfaced. Nothing else to sweep in this ship.
+//
+// Tests
+//   NEW `tests/frontend_smoke/test_cs_incidents_file_icon_v58_13_46.py`
+//     · Playwright: log in, navigate to
+//       `/app/submissions/cs-incidents`, wait for the first tile,
+//       assert `pdf-open-<id>` element is NOT rendered on any tile
+//       (the button is now suppressed at the source, so it can't
+//       even be clicked).
+//     · Belt-and-braces static assertion: CsIncidentsList.jsx
+//       passes `showPdf={false}` on its `<CaptureCard>` and
+//       CaptureCard exposes the `showPdf` prop with a truthy
+//       default.
+//     · Regression guard: `resource_library` (typo variant) not
+//       accidentally used — matches only the correct
+//       `reference_library` string, no drift.
+//
+// Guardrails held
+//   · Frontend-only ship. Zero backend files touched (the 400 on
+//     unknown resource is the correct backend behaviour; we're
+//     removing the button that shouldn't be rendered).
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · Every prior guard (density wiring / canonical density testid
+//     / double-stripe / Pydantic ConfigDict / hr_employees import)
+//     preserved.
+//   · Density telemetry (previously planned as v58.13.46) bumped
+//     to v58.13.47 per user instruction — NOT touched here.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion.
+
+
 // v160.3.9.58.13.45 — P1 UI bugfix: double-stripe on grouped tile
 // pages. Reported by user with a screenshot of `/app/inspections`
 // under the "Daily Site Inspection" group showing two overlapping
@@ -4156,7 +4248,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.45';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.46';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

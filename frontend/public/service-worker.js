@@ -1272,16 +1272,17 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.45 — Double-stripe bugfix on grouped tile pages.
-//   GroupedTilesView's outer wrapper used to render its own card
-//   chrome + left stripe on top of CaptureCard's own card chrome +
-//   left stripe — producing a card-within-a-card with TWO visible
-//   stripes. Outer chrome + stripe removed; CaptureCard is now the
-//   sole visible tile. Also removed Inspections' legacy
-//   `paletteForType` fallback so `ctx.stripeHex` is the single
-//   source of truth across all 4 grouped pages. SW bumped so
-//   caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.45';
+// v160.3.9.58.13.46 — P1 UI bugfix: CS Incidents file icon flashes
+//   and disappears. Root cause: CS Incidents rows are XLSX-sourced
+//   reference_library records with no PDF representation, but
+//   PdfActions was rendered unconditionally in every CaptureCard.
+//   Click → popup opens → POST /api/pdf-token returns 400 for
+//   unknown resource `reference_library` → popup closed via
+//   `win.close()`. Fix: CaptureCard gains optional `showPdf` prop
+//   (default true — every existing callsite untouched). CS Incidents
+//   passes `showPdf={false}`. PdfActions renders `null` when
+//   `enabled={false}`. SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.46';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

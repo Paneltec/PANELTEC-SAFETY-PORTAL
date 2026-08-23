@@ -219,10 +219,14 @@ def test_inspections_no_longer_imports_palette_for_type():
 
 
 def test_version_sync_current_v58_13_45():
-    expected = "paneltec-v160.3.9.58.13.45"
+    # v58.13.46 note: relaxed from `expected in <all three files>`
+    # to the append-only-changelog pattern. Cross-file identity of
+    # the CURRENT version constant is enforced by
+    # `test_version_sync_v58_13_13.py`; this test just guards that
+    # the v58.13.45 changelog block remains present in `version.js`
+    # after subsequent bumps.
     v_js = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
-    m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
-    assert f"'{expected}'" in v_js, "version.js RUNNING_VERSION not bumped."
-    assert f"'{expected}'" in m_ts, "mobile version.ts not bumped."
-    assert f"'{expected}'" in sw_js, "service-worker CACHE_VERSION not bumped."
+    assert "v160.3.9.58.13.45 —" in v_js, (
+        "The v58.13.45 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )

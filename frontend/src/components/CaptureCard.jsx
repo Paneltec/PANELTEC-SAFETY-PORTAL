@@ -59,6 +59,15 @@ export default function CaptureCard({
   // (0 → hidden, 1 → line-clamp-1, 2 → line-clamp-2).
   minH,
   subtitleLines = 1,
+  // v160.3.9.58.13.46 — Opt out of the PDF-open action. Defaults to
+  // `true` so every existing Capture callsite keeps its file icon.
+  // CS Incidents (and other `reference_library` DB-row entities that
+  // don't have a PDF representation) pass `showPdf={false}` — the
+  // backend's `POST /api/pdf-token` rejects unknown resource kinds
+  // with a 400, which was surfacing as the "file icon flashes and
+  // disappears" bug because `PdfActions.open` popped a window, hit
+  // the 400, and immediately closed it.
+  showPdf = true,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -127,6 +136,7 @@ export default function CaptureCard({
               title={title}
               size="sm"
               iconOnly
+              enabled={showPdf}
             />
             <DeleteRecordButton
               resourceKind={resourceKind}

@@ -20,9 +20,17 @@ import api, { apiError } from '../lib/api';
 const POPUP_NAME = 'paneltec-pdf';
 const POPUP_FEATURES = 'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes,toolbar=no,location=no,menubar=no,status=no';
 
-export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm', source, iconOnly = false }) {
+export default function PdfActions({ resourceKind, recordId, title = '', size = 'sm', source, iconOnly = false, enabled = true }) {
   const [busy, setBusy] = useState(false);
   const isMirrored = source === 'form_submission';
+
+  // v160.3.9.58.13.46 — Opt out. Some Capture kinds (CS Incidents +
+  // other `reference_library` DB rows) don't have a PDF backend
+  // representation; rendering the button anyway causes the "file
+  // icon flashes and disappears" bug because `POST /api/pdf-token`
+  // rejects the resource with a 400 and we close the popup we just
+  // opened. When `enabled === false`, render nothing at all.
+  if (!enabled) return null;
 
   const open = async (e) => {
     e?.stopPropagation();
