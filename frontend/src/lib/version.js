@@ -1,6 +1,65 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.49 — CS Incidents PDF popup stayed on about:blank.
+// v58.13.48 shipped the renderer + registry wiring correctly (5463 B
+// `%PDF-1.4` served with `Content-Type: application/pdf` +
+// `Content-Disposition: inline`) but the popup received the response
+// without rendering it inline. Live network trace confirmed the
+// popup fetched the URL and got a 200 — but its URL bar stayed on
+// `about:blank`. Headers were byte-identical to Hazards' working
+// path. Only difference: URL SHAPE.
+//   Hazards (mirrored): `/api/forms/submissions/<id>/pdf?token=<jwt>`
+//   CS Incidents:       `/api/files/pdf/<jwt>.pdf`
+// `mint_pdf_token` had been returning the JWT-in-path shape since
+// v3.9 to sidestep ad-blockers that flag long query params. Turns
+// out Cloudflare in front of the ingress (`cf-ray` header on the
+// response) treats the `.pdf` suffix in the path as a static asset
+// and appears to strip Content-Disposition or otherwise interfere
+// with inline rendering.
+//
+// Fix
+//   `backend/pdf_routes.py::mint_pdf_token` — changed the returned
+//   `url` shape to
+//     `/api/{RESOURCE_TO_PATH[resource]}/{record_id}/pdf?token=<jwt>`
+//   the same query-param shape Hazards uses and that has been in
+//   production for months without incident. `action=download` gets
+//   `&download=1` appended. The `_build`-registered resource-scoped
+//   route already exists for every resource in `RESOURCE_TO_PATH`
+//   (including `cs_incidents` from v58.13.48), so no new endpoints
+//   needed.
+//
+// Backwards compatibility
+//   The legacy `/api/files/pdf/{token}.pdf` handler stays in place.
+//   Any tokens minted before this ship (90 s TTL) still resolve
+//   until they expire — no mid-deploy popup breakage.
+//
+// Tests
+//   NEW `tests/backend_unit/test_pdf_token_url_shape_v58_13_49.py`
+//     · `mint_pdf_token` returns the query-param URL shape (not
+//       JWT-in-path).
+//     · `action="download"` appends `&download=1`.
+//     · The legacy JWT-in-path endpoint remains registered
+//       (backwards-compat).
+//     · The `_build`-registered `/{path}/{record_id}/pdf` route is
+//       present in the router — otherwise `mint_pdf_token` would
+//       hand out 404 URLs.
+//
+// Live E2E verification
+//   `curl POST /api/pdf-token {resource:"cs_incidents"}` →
+//   `.url = ".../api/cs-incidents/<uuid>/pdf?token=<jwt>"`.
+//   `curl GET <that url>` → HTTP 200, 5463 bytes, `%PDF-1.4`,
+//   `Content-Type: application/pdf`.
+//
+// Guardrails held
+//   · Backend restart required; `/api/openapi.json` → 200 post-boot.
+//   · Frontend-safe (PdfActions uses `data.url` unchanged).
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Density telemetry (v58.13.47) + hr_employees ConfigDict
+//     (v58.13.43) + double-stripe fix (v58.13.45) + CS renderer
+//     (v58.13.48) all preserved.
+
+
 // v160.3.9.58.13.48 — CS Incidents PDF restore + 7-page audit +
 // action-availability contract test. Reverses the wrong-direction
 // v58.13.46 hide.
@@ -4456,7 +4515,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.48';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.49';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

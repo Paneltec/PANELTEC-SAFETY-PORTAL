@@ -1272,17 +1272,18 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.48 — CS Incidents PDF restore + 7-page audit +
-//   action-availability contract test. Reverses the wrong-direction
-//   v58.13.46 hide by adding a proper `render_cs_incident_pdf`
-//   renderer + `pdf_routes.py` permission/org-scope overrides +
-//   frontend `pdfResourceKind` prop. Audit confirmed only CS
-//   Incidents was broken — the other 7 Capture pages route their
-//   file icons correctly via the mirrored form_submission branch or
-//   directly through RESOURCE_TO_PATH. New static contract test
-//   would have caught the CS Incidents regression automatically.
-//   Backend restart required. SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.48';
+// v160.3.9.58.13.49 — CS Incidents PDF popup stayed on about:blank.
+//   Root cause: `mint_pdf_token` returned `/api/files/pdf/<jwt>.pdf`
+//   (JWT-in-path shape) while Hazards' mirrored branch returned
+//   `/api/{path}/{id}/pdf?token=<jwt>` (query-param shape). Headers
+//   were byte-identical (inline application/pdf, %PDF-1.4, 5465 B)
+//   but the JWT-in-path variant did not render inline. Aligning
+//   both branches on the query-param shape (`_build`-registered
+//   route that has been production-proven for months via Hazards)
+//   fixes the popup. Backwards-compatible: the legacy
+//   `/files/pdf/{token}.pdf` handler is preserved so any tokens
+//   in-flight still resolve. SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.49';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

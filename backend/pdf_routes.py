@@ -129,10 +129,22 @@ async def mint_pdf_token(body: PdfTokenIn, request: Request,
         "type": "pdf-token",
     }
     token = jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
-    # New URL pattern looks like a normal static .pdf fetch — sidesteps ad-blockers
-    # (Edge/Brave/etc.) that flag long ?token= query params as tracker beacons.
-    # Action (view/download) is embedded in the JWT claim, no query string needed.
-    path = f"/api/files/pdf/{token}.pdf"
+    # v58.13.49 — Use the resource-scoped `_build`-registered path
+    # (matches the mirrored form_submission URL shape that has been
+    # in production for months). The previous JWT-in-path shape
+    # (`/api/files/pdf/<jwt>.pdf`) was intended to sidestep ad-
+    # blockers that flag long `?token=` query params, but empirically
+    # it caused CS Incidents popups to receive the 200 application/
+    # pdf response WITHOUT the browser rendering it inline (headers
+    # identical to the working Hazards flow — only the URL shape
+    # differed). Aligning both branches on the query-param pattern
+    # eliminates the divergence and restores inline rendering. The
+    # bare `/files/pdf/{token}.pdf` handler is kept in place so any
+    # already-minted tokens still resolve during the transition.
+    q = f"?token={token}"
+    if body.action == "download":
+        q += "&download=1"
+    path = f"/api/{RESOURCE_TO_PATH[body.resource]}/{body.record_id}/pdf{q}"
     return {
         "token": token,
         "url": _build_absolute_url(request, path),
