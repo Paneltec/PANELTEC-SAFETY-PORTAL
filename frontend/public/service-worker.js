@@ -1272,15 +1272,16 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.44 — Regression guard for v58.13.43's Pydantic
-//   ConfigDict change. New backend_unit test that reload-imports
-//   `hr_employees` + asserts `RowPatch.model_config == ConfigDict(
-//   extra='allow')` + asserts arbitrary extras still round-trip
-//   through `model_dump()`. The reported 502 was a transient during
-//   the v58.13.43 supervisor restart window; backend is healthy —
-//   /api/openapi.json returns 200 in ~245 ms via external ingress.
-//   SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.44';
+// v160.3.9.58.13.45 — Double-stripe bugfix on grouped tile pages.
+//   GroupedTilesView's outer wrapper used to render its own card
+//   chrome + left stripe on top of CaptureCard's own card chrome +
+//   left stripe — producing a card-within-a-card with TWO visible
+//   stripes. Outer chrome + stripe removed; CaptureCard is now the
+//   sole visible tile. Also removed Inspections' legacy
+//   `paletteForType` fallback so `ctx.stripeHex` is the single
+//   source of truth across all 4 grouped pages. SW bumped so
+//   caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.45';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

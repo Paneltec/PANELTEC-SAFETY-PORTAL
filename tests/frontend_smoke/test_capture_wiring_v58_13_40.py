@@ -39,8 +39,15 @@ def test_grouped_tiles_view_wires_density_hook():
 
 
 def test_grouped_tiles_view_tile_min_height_applied():
+    """v58.13.45: min-height moved off the outer wrapper (which no
+    longer paints its own card chrome) into CaptureCard via the
+    `minH` prop. The context object passed to `renderTile` still
+    carries `density.cardMinH` — that's what this test guards."""
     src = GTV.read_text(encoding="utf-8")
-    assert "minHeight: density.cardMinH" in src
+    assert "minH: density.cardMinH" in src, (
+        "renderTile ctx must still carry `minH: density.cardMinH` — "
+        "CaptureCard reads that and applies `style={{ minHeight }}`."
+    )
 
 
 # ─── CaptureCard props ──────────────────────────────────────────────

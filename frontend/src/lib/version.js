@@ -1,6 +1,92 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.45 — P1 UI bugfix: double-stripe on grouped tile
+// pages. Reported by user with a screenshot of `/app/inspections`
+// under the "Daily Site Inspection" group showing two overlapping
+// left stripes per tile.
+//
+// Root cause
+//   `GroupedTilesView` wrapped every rendered tile in a full card
+//   container:
+//     <div class="group relative rounded-lg bg-white border ...
+//                 overflow-hidden hover:shadow-md ...">
+//       {rowStripe && <div class="absolute left-0 top-0 bottom-0 w-1"
+//                          style={{ backgroundColor: rowStripe.hex }} />}
+//       <div class={rowStripe ? 'pl-2.5 pr-1.5 py-1.5' : 'p-3'}>
+//         {renderTile(rec, { stripeHex: rowStripe?.hex, ... })}
+//       </div>
+//     </div>
+//   The problem: every current caller (Incidents, Inspections,
+//   SiteSignin, CsIncidents) returns a `<CaptureCard>` from
+//   `renderTile`, and CaptureCard is ITSELF a full card container
+//   with its own rounded border + its own `<div class="absolute
+//   left-0 top-0 bottom-0 w-1">` stripe painted from `stripeStyle`.
+//   The two containers stacked into a card-within-a-card and the
+//   inner CaptureCard's stripe sat 10 px right of the outer
+//   wrapper's stripe (because of the outer's `pl-2.5` content
+//   padding). Before v58.13.40 both stripes were the same colour
+//   so the overlap was noise; v58.13.40 introduced strong per-group
+//   hexes via `resolveGroupPalette` and made the double-stripe
+//   visually loud.
+//
+// Fix
+//   `GroupedTilesView` outer wrapper stripped to a minimal
+//   positioning container that keeps ONLY the
+//   `${testidPrefix}-tile-${rec.id}` testid — no rounded, no border,
+//   no bg-white, no hover shadow, no stripe, no padding. CaptureCard
+//   is now the sole visible tile chrome and paints the sole visible
+//   stripe from `ctx.stripeHex` (v58.13.41 wiring intact — group
+//   palette is still the single source of truth). `rowStripe` is
+//   still computed inside GroupedTilesView because it's the closure
+//   feeding `ctx.stripeHex` — but no longer painted as a separate
+//   DOM element.
+//
+// Sweep — same shape confirmed identical across all 4 grouped
+// pages (grep -n "stripeStyle" pages/{Incidents,Inspections,
+// SiteSigninList,CsIncidentsList}.jsx):
+//     Incidents.jsx        — already `stripeStyle={ctx.stripeHex ...}` (clean).
+//     Inspections.jsx      — had legacy `paletteForType` fallback;
+//                            removed in this ship + `paletteForType`
+//                            import dropped.
+//     SiteSigninList.jsx   — already `stripeStyle={ctx.stripeHex ...}` (clean).
+//     CsIncidentsList.jsx  — already `stripeStyle={ctx.stripeHex ...}` (clean).
+//
+// Rule going forward
+//   When `page=<grouped-page>` is passed to `GroupedTilesView`,
+//   `resolveGroupPalette({groupKey, page}).hex` is the ONLY stripe
+//   source and reaches the tile via `ctx.stripeHex`. Legacy
+//   `paletteForType` / `templateColor` fallbacks in the grouped-
+//   page render functions are banned — enforced by the new pytest
+//   below.
+//
+// Tests
+//   NEW `tests/frontend_smoke/test_no_double_stripe_v58_13_45.py`
+//     · GroupedTilesView renders exactly ONE stripe element per
+//       tile — parametrised assertion (a) that the outer wrapper
+//       no longer contains an `absolute left-0` stripe `<div>`,
+//       (b) that CaptureCard remains the only stripe painter.
+//     · Parametrised across the 4 grouped page files: each
+//       `renderTile` uses `ctx.stripeHex` as the sole `stripeStyle`
+//       input and does NOT import legacy stripe helpers
+//       (`paletteForType` / `templateColor`) for stripe purposes.
+//     · Regression asserts on GroupedTilesView's outer wrapper —
+//       no `rounded-lg` / no `border-slate-200` / no `hover:shadow`
+//       / no `pl-2.5` padding (any of these coming back = the
+//       card-within-a-card bug).
+//
+// Guardrails held
+//   · Frontend-only ship. Zero backend files touched.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · Density wiring / group palette / canonical density testid /
+//     Pydantic ConfigDict / hr_employees regression guard — all
+//     preserved.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion. Track — capture-density telemetry queued as
+//     v58.13.46 per user instruction; NOT touched in this ship.
+
+
 // v160.3.9.58.13.44 — 502 investigation + Pydantic regression guard.
 //
 // Reported issue
@@ -4070,7 +4156,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.44';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.45';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

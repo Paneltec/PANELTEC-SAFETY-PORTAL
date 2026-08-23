@@ -6,7 +6,10 @@ import api, { apiError } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import CaptureCard, { CaptureSticky } from '../components/CaptureCard';
-import { paletteForType } from '../lib/preStartsPalette';
+// v58.13.45 — `paletteForType` no longer imported here. Group palette
+// (via ctx.stripeHex from GroupedTilesView) is the single stripe
+// source; the legacy per-template fallback was removed together with
+// GroupedTilesView's outer stripe to fix the double-stripe bug.
 import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
@@ -95,13 +98,15 @@ export default function InspectionsList() {
             const total = it.checklist_items?.length || 0;
             const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
             const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
-            const pal = paletteForType(it.template_name || '');
             const evict = (id) => {
               setItems((prev) => prev.filter((x) => x.id !== id));
               setFiltered((prev) => prev.filter((x) => x.id !== id));
             };
-            // v58.13.41 — group palette wins over template palette.
-            const stripe = ctx.stripeHex || (pal ? pal.hex : null);
+            // v58.13.45 — group palette (ctx.stripeHex) is the sole
+            // stripe source. Legacy `paletteForType(template_name)`
+            // fallback removed to match the other 3 grouped pages
+            // and prevent any future colour-drift between banner
+            // and tile stripe.
             return (
               <CaptureCard
                 record={{
@@ -114,7 +119,7 @@ export default function InspectionsList() {
                 subtitle={`${passed} pass · ${failed} fail · ${total - passed - failed} N/A`}
                 subtitleLines={ctx.subtitleLines}
                 minH={ctx.minH}
-                stripeStyle={stripe ? { background: stripe } : undefined}
+                stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
                 onDeleted={evict}
               />
             );

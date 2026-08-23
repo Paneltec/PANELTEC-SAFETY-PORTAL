@@ -202,28 +202,39 @@ export default function GroupedTilesView({
             </header>
             <div className={`p-3 ${density.gridClass} bg-white`} data-testid={`${testidPrefix}-tile-grid-${density.effectiveMode}`}>
               {rows.map((rec) => {
-                // Stripe precedence: rowStripeHex (from sharedPal) > getStripeType.
+                // v58.13.45 — Double-stripe bugfix.
+                //
+                // Before: this wrapper rendered its own card chrome
+                // (rounded, border, bg-white, hover-shadow) AND its
+                // own left stripe using `rowStripe.hex`. `renderTile`
+                // then returned a `<CaptureCard>` which is ALSO a
+                // full card with its own stripe — producing a
+                // card-within-a-card and TWO visible stripes (outer
+                // at px 0-4, inner at px 10-14 after the `pl-2.5`
+                // padding). User caught it on Inspections after
+                // v58.13.40 introduced strong per-group hexes that
+                // made the double-stripe visually loud.
+                //
+                // After: this wrapper is a minimal positioning
+                // container (testid only). CaptureCard becomes the
+                // sole visible tile chrome, and its own stripe is
+                // painted from `ctx.stripeHex` (see below) — group
+                // palette is now the single source of truth.
                 const rowStripe = rowStripeHex
                   ? { hex: rowStripeHex }
                   : (getStripeType ? paletteForType(getStripeType(rec)) : null);
                 return (
-                  <div key={rec.id} data-testid={`${testidPrefix}-tile-${rec.id}`}
-                       style={{ minHeight: density.cardMinH }}
-                       className="group relative rounded-lg bg-white border border-slate-200 overflow-hidden hover:shadow-md hover:border-slate-300 transition-shadow">
-                    {rowStripe && (
-                      <div className="absolute left-0 top-0 bottom-0 w-1"
-                           style={{ backgroundColor: rowStripe.hex }} aria-hidden />
-                    )}
-                    <div className={rowStripe ? 'pl-2.5 pr-1.5 py-1.5' : 'p-3'}>
-                      {renderTile(rec, {
-                        subtitleLines: density.subtitleLines,
-                        minH: density.cardMinH,
-                        // v58.13.41 — pass the group palette hex down
-                        // so `<CaptureCard>`'s own left stripe agrees
-                        // with the outer wrapper + the group banner.
-                        stripeHex: rowStripe ? rowStripe.hex : null,
-                      })}
-                    </div>
+                  <div key={rec.id} data-testid={`${testidPrefix}-tile-${rec.id}`}>
+                    {renderTile(rec, {
+                      subtitleLines: density.subtitleLines,
+                      minH: density.cardMinH,
+                      // v58.13.41 — pass the group palette hex down
+                      // so `<CaptureCard>`'s own left stripe agrees
+                      // with the group banner. v58.13.45 — this is
+                      // now the ONLY stripe source (the outer
+                      // wrapper no longer draws one).
+                      stripeHex: rowStripe ? rowStripe.hex : null,
+                    })}
                   </div>
                 );
               })}
