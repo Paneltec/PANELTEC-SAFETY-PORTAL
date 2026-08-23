@@ -1272,17 +1272,17 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.46 — P1 UI bugfix: CS Incidents file icon flashes
-//   and disappears. Root cause: CS Incidents rows are XLSX-sourced
-//   reference_library records with no PDF representation, but
-//   PdfActions was rendered unconditionally in every CaptureCard.
-//   Click → popup opens → POST /api/pdf-token returns 400 for
-//   unknown resource `reference_library` → popup closed via
-//   `win.close()`. Fix: CaptureCard gains optional `showPdf` prop
-//   (default true — every existing callsite untouched). CS Incidents
-//   passes `showPdf={false}`. PdfActions renders `null` when
-//   `enabled={false}`. SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.46';
+// v160.3.9.58.13.48 — CS Incidents PDF restore + 7-page audit +
+//   action-availability contract test. Reverses the wrong-direction
+//   v58.13.46 hide by adding a proper `render_cs_incident_pdf`
+//   renderer + `pdf_routes.py` permission/org-scope overrides +
+//   frontend `pdfResourceKind` prop. Audit confirmed only CS
+//   Incidents was broken — the other 7 Capture pages route their
+//   file icons correctly via the mirrored form_submission branch or
+//   directly through RESOURCE_TO_PATH. New static contract test
+//   would have caught the CS Incidents regression automatically.
+//   Backend restart required. SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.48';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

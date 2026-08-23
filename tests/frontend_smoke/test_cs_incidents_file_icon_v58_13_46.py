@@ -60,31 +60,43 @@ def test_pdf_actions_returns_null_when_disabled():
 
 
 def test_cs_incidents_passes_show_pdf_false():
+    """v58.13.48 REVERSAL — the v58.13.46 fix hid the icon. User
+    complained the feature they wanted was gone. v58.13.48 restored
+    the icon + shipped a proper backend renderer. So this test's
+    assertion INVERTED: CS Incidents must NOT pass `showPdf={false}`
+    anymore, and MUST pass `pdfResourceKind="cs_incidents"` so the
+    /pdf-token POST goes out with the correct backend renderer key
+    while the `<Can>` gate stays on `reference_library`.
+
+    The full contract is enforced by the parametrised test in
+    `tests/backend_unit/test_action_availability_contract_v58_13_48.py`
+    — this test is kept as a per-page callsite anchor."""
     src = CS_LIST.read_text(encoding="utf-8")
-    assert "showPdf={false}" in src, (
-        "CsIncidentsList renderTile must pass `showPdf={false}` on its "
-        "<CaptureCard> — the file icon is the P1 bug this ship fixes."
+    assert "showPdf={false}" not in src, (
+        "CsIncidentsList.jsx must NOT set `showPdf={false}` — "
+        "v58.13.48 restored the icon now that the backend has a "
+        "dedicated `render_cs_incident_pdf` renderer."
     )
-    # And still uses the correct permission domain string (no typo).
-    assert 'resourceKind="reference_library"' in src, (
-        "resourceKind must stay `reference_library` — that's the "
-        "permission domain gating CS Incident endpoints backend-side."
+    assert 'pdfResourceKind="cs_incidents"' in src, (
+        "CsIncidentsList.jsx must pass `pdfResourceKind=\"cs_incidents\"` "
+        "so the /pdf-token POST resolves against the CS incident "
+        "renderer while the permission gate stays on reference_library."
     )
-    # Guard against a typo variant that would silently break perms.
-    assert "resource_library" not in src, (
-        "Typo `resource_library` detected in CsIncidentsList.jsx — "
-        "must be `reference_library` (backend permission key)."
-    )
+    assert 'resourceKind="reference_library"' in src
+    assert "resource_library" not in src  # typo guard from v58.13.46
 
 
 def test_version_sync_current_v58_13_46():
-    expected = "paneltec-v160.3.9.58.13.46"
+    # v58.13.47 note: relaxed to the append-only-changelog pattern.
+    # Cross-file identity of the CURRENT version constant is
+    # enforced by `test_version_sync_v58_13_13.py`; this just guards
+    # that the v58.13.46 changelog block remains present in
+    # `version.js` after subsequent bumps.
     v_js = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
-    m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
-    assert f"'{expected}'" in v_js, "version.js RUNNING_VERSION not bumped."
-    assert f"'{expected}'" in m_ts, "mobile version.ts not bumped."
-    assert f"'{expected}'" in sw_js, "service-worker CACHE_VERSION not bumped."
+    assert "v160.3.9.58.13.46 —" in v_js, (
+        "The v58.13.46 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )
 
 
 # ─── Playwright runtime assertion (opt-in via env var) ──────────────
@@ -151,16 +163,21 @@ def test_cs_incidents_tile_hides_pdf_open_button():
             # and PdfActions was previously mounted on each one.
             time.sleep(0.5)
 
+            # v58.13.48 REVERSAL — the icon is now expected to be
+            # present again (feature restored). The v58.13.46 assertion
+            # of `== 0` inverts to "> 0". The real regression this
+            # Playwright hook guards against post-reversal is that
+            # clicking the icon does NOT produce a 400 unknown-resource
+            # response (verified via network idle + no toast).
             pdf_open_count = page.evaluate(
                 "() => document.querySelectorAll('"
                 "[data-testid^=\"pdf-open-\"]"
                 "').length"
             )
-            assert pdf_open_count == 0, (
-                f"Expected 0 `pdf-open-*` buttons on CS Incidents, "
-                f"found {pdf_open_count}. The file icon was supposed "
-                "to be suppressed via `showPdf={{false}}` in "
-                "v58.13.46 — regression."
+            assert pdf_open_count > 0, (
+                f"Expected > 0 `pdf-open-*` buttons on CS Incidents, "
+                f"found {pdf_open_count}. v58.13.48 restored the file "
+                "icon — regression."
             )
 
             # Belt-and-braces: verify Eye + Delete buttons are still

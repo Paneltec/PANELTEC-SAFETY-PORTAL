@@ -267,11 +267,12 @@ export default function CsIncidentsList() {
       badges={row.status
         ? [<StatusBadge key="status" value={row.status} />]
         : []}
-      // v58.13.46 — CS Incidents are XLSX-sourced DB rows with no
-      // PDF backend representation. Hiding the file icon eliminates
-      // the "flash and disappears" bug caused by /api/pdf-token
-      // 400-ing on the unknown `reference_library` resource.
-      showPdf={false}
+      // v58.13.48 — CS Incidents now has a dedicated PDF renderer
+      // (`render_cs_incident_pdf` in backend/pdf_renderer.py). The
+      // permission gate stays on the `reference_library` domain but
+      // the PDF resource key is `cs_incidents` — hence
+      // `pdfResourceKind` override.
+      pdfResourceKind="cs_incidents"
       onView={() => setViewer(row)}
       onDeleted={(id) => setItems((prev) => prev.filter((x) => x.id !== id))}
     />

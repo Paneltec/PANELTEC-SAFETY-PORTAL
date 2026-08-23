@@ -285,6 +285,28 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    request: Request,
+    creds: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[dict]:
+    """v58.13.47 — Optional-auth variant for telemetry endpoints.
+    Returns the resolved user dict when a valid Bearer token is
+    present; returns `None` on ANY failure (missing token, expired,
+    invalid, revoked, idle timeout, unknown user). NEVER raises —
+    analytics endpoints that Depends() on this stay open to
+    anonymous traffic.
+
+    Do NOT use this for anything that reads or writes user data.
+    It's a pass-through capture used only to enrich telemetry rows
+    with a `user_id` when we happen to have one."""
+    try:
+        return await get_current_user(request, creds)
+    except HTTPException:
+        return None
+    except Exception:  # noqa: BLE001 — telemetry must never throw
+        return None
+
+
 def require_roles(*roles: str):
     """DEPRECATED (Phase 5 · v160.3.9.36). Prefer
     `permissions.require_permission(resource, action)` — this legacy

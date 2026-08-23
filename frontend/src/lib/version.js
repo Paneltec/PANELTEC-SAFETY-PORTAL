@@ -1,6 +1,214 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.48 — CS Incidents PDF restore + 7-page audit +
+// action-availability contract test. Reverses the wrong-direction
+// v58.13.46 hide.
+//
+// Why the reversal
+//   User clarified: they wanted the PDF view button to WORK, not
+//   to be hidden. The original bug report ("file icon flashes and
+//   disappears") was a request to fix the feature, not remove it.
+//   v58.13.46 killed a feature the user actively uses.
+//
+// Diagnosis (live Mongo introspection + curl)
+//   · CS Incident records have NO attachment / pdf_url / file_id /
+//     document_ref fields. Purely structured data imported from
+//     XLSX — ~65 populated fields per row (issue meta, timeline,
+//     categorisation, free-text descriptions, immediate actions,
+//     environmental flags, near-miss booleans).
+//   · Correct fix path = generated PDF report (option a). Same
+//     printable-audit UX the sibling `incidents` page produces,
+//     sourced from the fields the record already carries.
+//
+// 7-page file-icon audit (all Capture pages EXCEPT CS Incidents)
+//   Confirmed via live curl of $REACT_APP_BACKEND_URL and inspection
+//   of each page's `<CaptureCard resourceKind="X">` value:
+//     Page                | resourceKind      | Live source        | Verdict
+//     Hazards             | hazards           | form_submission    | OK (mirrored)
+//     Incidents           | incidents         | form_submission    | OK (mirrored)
+//     Inspections         | inspections       | form_submission    | OK (mirrored)
+//     Pre-Starts          | pre_starts        | (no source)        | OK (direct RESOURCE_TO_PATH)
+//     Site Diary          | site_diary        | form_submission    | OK (mirrored)
+//     Risk Assessments    | risk_assessments  | form_submission    | OK (mirrored)
+//     Site Sign-In        | forms             | form_submission    | OK (mirrored)
+//     CS Incidents        | reference_library | (no source)        | BROKEN → 400 unknown resource
+//   The mirrored branch of `PdfActions` (source === "form_submission")
+//   routes to `POST /api/forms/submissions/pdf-token` which resolves
+//   by `submission_id` regardless of the `resourceKind` value. That's
+//   why "risk_assessments" and "forms" work despite not being in
+//   `RESOURCE_TO_PATH` — they've been running on the mirrored path
+//   the whole time. Documented as `MIRRORED_ONLY_KINDS` in
+//   `pdf_routes.py` for the contract test below.
+//
+// Backend changes
+//   `pdf_renderer.py`
+//     · NEW `render_cs_incident_pdf(row: dict) -> bytes` — section-
+//       grouped audit-style layout using the shared `pdf_template`
+//       helpers so the visual language matches the other WHS PDFs.
+//       Sections: title block, Overview, Timeline & parties,
+//       Location & activity, Categorisation, Descriptions (only
+//       non-empty free-text fields), Immediate actions,
+//       Environmental impact (only when any env flag is truthy),
+//       Near-miss (only "Yes" flags surfaced), Alerts & response.
+//       Empty / None / blank / False (in descriptive contexts)
+//       skipped. Sparse records get a "No populated fields on
+//       this record." paragraph instead of an empty PDF.
+//     · `filename_for(..., kind="cs_incidents")` — emits
+//       `CSIncident-<issue-number>-<date-of-issue>.pdf`.
+//     · `RENDERERS["cs_incidents"] = (render_cs_incident_pdf,
+//       "cs_incident_issues")`.
+//   `pdf_routes.py`
+//     · `RESOURCE_TO_PATH["cs_incidents"] = "cs-incidents"`.
+//     · NEW `RESOURCE_TO_PERMISSION` (default = resource key). CS
+//       Incidents maps to `reference_library` so the existing
+//       permission matrix stays untouched.
+//     · NEW `RESOURCE_ORG_SCOPED` (default True). CS Incidents is
+//       False — records are XLSX-imported globals with no `org_id`.
+//     · NEW helpers `_perm_for(resource)` / `_org_scoped(resource)`
+//       / `_doc_query(resource, record_id, user)` centralise the
+//       override logic. Used from `mint_pdf_token`, `_build`, and
+//       `pdf_by_token` — no duplicated conditionals.
+//     · `_build("cs_incidents", "cs-incidents")` registers the
+//       legacy path `/api/cs-incidents/{id}/pdf` for parity with
+//       the other kinds.
+//     · NEW `MIRRORED_ONLY_KINDS = frozenset({"forms",
+//       "risk_assessments"})` — resource kinds valid on
+//       `<CaptureCard>` because their PDFs are served via the
+//       mirrored form_submissions endpoint.
+//
+// Frontend changes
+//   `PdfActions.jsx`
+//     · New optional `pdfResourceKind` prop (default `resourceKind`).
+//       Used ONLY for the `POST /api/pdf-token` body's `resource`
+//       field. `resourceKind` continues to gate the `<Can>` wrapper
+//       + drive testids.
+//   `CaptureCard.jsx`
+//     · New `pdfResourceKind` prop, threaded to `PdfActions`.
+//   `CsIncidentsList.jsx`
+//     · Removed the v58.13.46 `showPdf={false}` (feature restored).
+//     · Added `pdfResourceKind="cs_incidents"` so the PDF request
+//       goes out with the correct resource key while keeping the
+//       existing `reference_library` permission scope.
+//
+// Tests
+//   NEW `tests/backend_unit/test_pdf_cs_incident_renderer_v58_13_48.py`
+//     · Renderer produces non-empty bytes with a %PDF header.
+//     · Sparse record (only issue_number + status) still renders.
+//     · Overview + descriptions sections appear when the fields are
+//       populated (grep the rendered stream for the section labels).
+//     · `RENDERERS["cs_incidents"]` maps to the CS renderer +
+//       `cs_incident_issues` collection.
+//     · `filename_for` case emits the expected pattern.
+//     · `RESOURCE_TO_PATH["cs_incidents"] == "cs-incidents"`.
+//     · `RESOURCE_TO_PERMISSION["cs_incidents"] == "reference_library"`.
+//     · `RESOURCE_ORG_SCOPED["cs_incidents"] is False`.
+//     · `_doc_query("cs_incidents", ...)` omits `org_id`.
+//     · `_doc_query("hazards", ...)` includes `org_id`.
+//   NEW `tests/backend_unit/test_action_availability_contract_v58_13_48.py`
+//     · Static grep of every `<CaptureCard resourceKind="X">` in
+//       `/app/frontend/src/pages/*.jsx` and
+//       `/app/frontend/src/components/**/*.jsx`.
+//     · For each callsite: X must be in
+//       `RESOURCE_TO_PATH ∪ MIRRORED_ONLY_KINDS`, unless the
+//       callsite passes `showPdf={false}` in the same JSX block.
+//     · Belt-and-braces: assert the current 8-Capture-page census
+//       is exhaustive (parametrized fixture of 8; contract test is
+//       agnostic — reads the frontend source).
+//
+// Guardrails held
+//   · Backend restart required (new module + startup index setup
+//     for the v58.13.47 telemetry TTL). Restart verified via
+//     `/api/openapi.json` → 200 post-boot.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · v58.13.47 (density telemetry) already shipped and green
+//     BEFORE this ship — 381 passed + 1 skipped, live anon POST
+//     confirmed. No changes to those endpoints.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion.
+
+
+// v160.3.9.58.13.47 — Capture-density telemetry (Ship 1 of a
+// back-to-back pair; v58.13.48 follows). Purpose: retune the
+// gut-estimate auto-thresholds (12/48) from real usage on
+// high-volume pages (Pre-Starts 9,182 rows, CS Incidents 201).
+//
+// Backend
+//   NEW `backend/metrics_routes.py`
+//     · `POST /api/metrics/capture-density` — auth-optional
+//       (Depends on new `get_current_user_optional` in auth.py that
+//       returns None instead of raising when the bearer is
+//       missing/expired/invalid). Body: Pydantic model with
+//       `ConfigDict(extra="ignore")` so unknown fields drop
+//       silently. Persists to `metrics_capture_density` with the
+//       requester's `user_id` / `org_id` when authenticated, plus
+//       ip, ua (first 200 chars), and the `X-Session-Id` header
+//       when supplied. Wraps the insert in try/except and returns
+//       `{ok: false, reason: "insert-failed"}` on any DB error —
+//       analytics NEVER throws.
+//     · `ensure_indexes()` — TTL index on `ts`
+//       (`expireAfterSeconds=30 * 24 * 60 * 60`) + compound
+//       `(page ASC, ts DESC)` for the per-page threshold-tuning
+//       query pattern.
+//   Server wiring: `metrics_routes.router` mounted after
+//   `pdf_router`; `metrics_ensure_indexes()` invoked in the
+//   `@app.on_event("startup")` handler after the core index
+//   ensures.
+//   Auth: `get_current_user_optional` added at
+//   `/app/backend/auth.py:288`. Delegates to `get_current_user`
+//   and swallows every HTTPException / Exception → None. Do NOT
+//   use it for anything that reads or writes user data.
+//
+// Frontend
+//   `useCaptureDensity.js` — new `_emit(payload)` helper (bare
+//   axios, 2 s timeout, no-op `.catch`, wrapped in try/catch).
+//     · setMode: emits `{page, mode, previous_mode, effective_mode,
+//       item_count, ts, event: 'setMode'}` on transition
+//       (`next !== prev`), debounced 500 ms via a `useRef`
+//       clearTimeout dance.
+//     · one-shot mount ping: emits `{event: 'resolved_from_auto'}`
+//       once per hook instance, only after `itemCount` becomes
+//       non-zero (avoids emitting during initial `items = []`
+//       render pass). Tracked via `initialPingSentRef`.
+//   Uses bare `axios` (NOT the authed `/lib/api` client) so a
+//   401-redirect interceptor can't fire on preview / anonymous
+//   traffic.
+//
+// Tests
+//   NEW `tests/backend_unit/test_metrics_capture_density_v58_13_47.py`
+//     · Minimal body → 200 + row written.
+//     · Full body → 200 + row written.
+//     · Unknown field → 200 (extra="ignore" honoured).
+//     · Garbage mode value → 200 (server never validates — dirty-
+//       data-tolerant by design).
+//     · Anonymous POST → 200 with `user_id: null` in the persisted
+//       row + `ts` is a BSON date (TTL prerequisite).
+//     · TTL index present with the expected `expireAfterSeconds`.
+//     · Compound (page, ts) index present.
+//   NEW `tests/frontend_smoke/test_capture_density_telemetry_v58_13_47.py`
+//     · Hook imports axios directly (not `/lib/api`).
+//     · POST target = `/api/metrics/capture-density` composed from
+//       `REACT_APP_BACKEND_URL`.
+//     · 500 ms debounce constant + clearTimeout plumbing present.
+//     · Failure silently swallowed — `.catch(() => {})` chain,
+//       no toast / alert / notify / console.error inside _emit.
+//     · Persistence contract from v58.13.39 preserved
+//       (localStorage getItem + setItem still called).
+//     · Initial `resolved_from_auto` ping present + guarded by
+//       `initialPingSentRef` so it fires exactly once.
+//
+// Guardrails held
+//   · Backend restart WILL happen — brief (~3 s), no code change
+//     that would break startup. Restart verified via openapi.json
+//     returning 200 post-boot.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · No changes to existing endpoints — pure additive.
+//   · v58.13.48 (action-availability contract test) queued to
+//     ship IMMEDIATELY after this ship verifies green.
+
+
 // v160.3.9.58.13.46 — P1 UI bugfix: CS Incidents "file icon" flashes
 // and disappears when clicked. Reported by user against
 // `/app/submissions/cs-incidents`.
@@ -4248,7 +4456,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.46';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.48';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

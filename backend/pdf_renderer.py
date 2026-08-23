@@ -516,6 +516,236 @@ def render_site_diary_pdf(d: dict) -> bytes:
     return buf.getvalue()
 
 
+# ---------- CS Incident (reference_library XLSX-import) ---------- #
+#
+# v58.13.48 — CS Incidents are XLSX-imported reference_library rows
+# with no attachments and no field-schema in common with the mobile
+# `incidents` collection. They carry ~65 structured fields (issue
+# meta, timeline, categorisation, free-text descriptions, immediate
+# actions, environmental flags, near-miss booleans). This renderer
+# lays those into an audit-style printable report using the shared
+# `pdf_template` helpers so the visual language matches the rest of
+# the WHS PDFs (title block, section labels, field grids, timeline).
+#
+# Empty/None/blank string values are dropped everywhere so the PDF
+# stays lean on sparse records. Boolean False values are dropped
+# from the descriptive sections but preserved in the near-miss/
+# environmental flag summaries (False is informative there).
+
+_CS_LABEL = {
+    "issue_number":              "Issue #",
+    "issue_type":                "Issue type",
+    "business_unit":             "Business unit",
+    "status":                    "Status",
+    "company":                   "Company",
+    "date_of_issue":             "Date of issue",
+    "date_reported":             "Date reported",
+    "date_of_entry":             "Date of entry",
+    "date_closed":               "Date closed",
+    "time_of_issue":             "Time of issue",
+    "hours_into_shift":          "Hours into shift",
+    "shift_length":              "Shift length",
+    "entered_by":                "Entered by",
+    "identified_by":             "Identified by",
+    "employee_reporting":        "Employee reporting",
+    "responsible_manager":       "Responsible manager",
+    "closeout_manager":          "Closeout manager",
+    "supervisor":                "Supervisor",
+    "employment_status":         "Employment status",
+    "injured_employee":          "Injured employee",
+    "location_2":                "Location",
+    "work_activity_performed":   "Work activity performed",
+    "incident_categories":       "Incident category",
+    "actual_incident_category":  "Actual severity",
+    "potential_incident_category": "Potential severity",
+    "primary_hazard":            "Primary hazard",
+    "sources_of_hazard":         "Sources of hazard",
+    "identified_hazards":        "Identified hazards",
+    "hazard_report_type":        "Hazard report type",
+    "injury_severity":           "Injury severity",
+    "injury_agency":             "Injury agency",
+    "injury_mechanism":          "Injury mechanism",
+    "injury_nature":             "Injury nature",
+    "was_first_aid_provided":    "First aid provided",
+    "alert_generated":           "Alert generated",
+}
+_CS_DESCRIPTION_FIELDS = [
+    ("description",                    "Description"),
+    ("hazard_description",             "Hazard description"),
+    ("near_miss_description",          "Near-miss description"),
+    ("property_description",           "Property description"),
+    ("plant_description",              "Plant description"),
+    ("other_description",              "Other description"),
+    ("first_aid_description",          "First aid description"),
+    ("environment_report_description", "Environmental description"),
+]
+_CS_ACTION_FIELDS = [
+    ("immediate_action",   "Immediate action"),
+    ("immediate_action_2", "Immediate action (2)"),
+    ("immediate_action_3", "Immediate action (3)"),
+]
+_CS_ENV_FLAGS = [
+    ("erosion_and_sediment",           "Erosion & sediment"),
+    ("receiving_environment_erosion",  "Receiving-environment erosion"),
+    ("type_erosion",                   "Erosion type"),
+    ("land_contamination",             "Land contamination"),
+    ("water_contamination_discharge",  "Water contamination / discharge"),
+    ("solid_or_other_waste_effects",   "Solid / other waste effects"),
+    ("spill_recovered",                "Spill recovered"),
+    ("recovered",                      "Recovered"),
+    ("contaminant_remediated",         "Contaminant remediated"),
+    ("contaminated_material_remediated", "Contaminated material remediated"),
+    ("flora_affected",                 "Flora affected"),
+    ("fauna_affected",                 "Fauna affected"),
+    ("archaeological_or_cultural",     "Archaeological / cultural"),
+    ("indigenous",                     "Indigenous"),
+]
+_CS_NEAR_MISS_FLAGS = [
+    ("is_injury_near_miss",        "Injury near miss"),
+    ("is_environmental_near_miss", "Environmental near miss"),
+    ("is_plant_near_miss",         "Plant near miss"),
+    ("is_other_near_miss",         "Other near miss"),
+]
+
+
+def _cs_truthy(v):
+    if v is None: return False
+    if isinstance(v, bool): return v
+    if isinstance(v, (int, float)): return bool(v)
+    return bool(str(v).strip())
+
+
+def _cs_fmt(v):
+    if isinstance(v, bool):
+        return "Yes" if v else "No"
+    if v is None:
+        return ""
+    # ISO datetime → date only when time is midnight
+    s = str(v)
+    if len(s) >= 19 and s[10] == "T" and s.endswith(("00:00:00", "00:00:00Z")):
+        return s[:10]
+    return s
+
+
+def render_cs_incident_pdf(row: dict) -> bytes:
+    """v58.13.48 — CS Incident (reference_library XLSX-import) PDF.
+
+    Section-based layout that mirrors the printable audit format
+    the sibling `incidents` renderer produces, but sourced from the
+    XLSX-import schema (~65 fields, no attachments, no timeline
+    array — synthesised from timeline dates + parties)."""
+    import pdf_template as P
+    import io as _io
+    buf = _io.BytesIO()
+    status = _cs_fmt(row.get("status")) or "open"
+    title = f"WHS · CS Incident #{row.get('issue_number') or '—'}"
+    doc = P.make_doc(buf, title, status, doc_id=row.get("id"))
+    story: list = []
+
+    subtitle = row.get("issue_type") or "CS Incident record"
+    story += P.title_block(
+        f"Issue #{row.get('issue_number') or '—'} — {row.get('issue_type') or ''}".strip(" —"),
+        (row.get("business_unit") or "") + (" · " + subtitle if subtitle else ""),
+    )
+
+    # ── Overview grid ────────────────────────────────────────────
+    def _row(field):
+        v = row.get(field)
+        return (_CS_LABEL.get(field, field), _cs_fmt(v)) if _cs_truthy(v) else None
+    overview = list(filter(None, [
+        _row("issue_number"), _row("issue_type"),
+        _row("business_unit"), _row("status"), _row("company"),
+    ]))
+    if overview:
+        story += P.section_label("Overview")
+        story += [P.field_grid(overview)]
+
+    # ── Timeline & parties ───────────────────────────────────────
+    timeline = list(filter(None, [
+        _row("date_of_issue"),  _row("date_reported"),
+        _row("date_of_entry"),  _row("date_closed"),
+        _row("time_of_issue"),  _row("hours_into_shift"),
+        _row("shift_length"),
+    ]))
+    parties = list(filter(None, [
+        _row("entered_by"), _row("identified_by"),
+        _row("employee_reporting"), _row("responsible_manager"),
+        _row("closeout_manager"), _row("supervisor"),
+        _row("employment_status"), _row("injured_employee"),
+    ]))
+    if timeline or parties:
+        story += P.section_label("Timeline & parties")
+        if timeline: story += [P.field_grid(timeline)]
+        if parties:  story += [P.field_grid(parties)]
+
+    # ── Location & activity ──────────────────────────────────────
+    loc = list(filter(None, [_row("location_2"), _row("work_activity_performed")]))
+    if loc:
+        story += P.section_label("Location & activity")
+        story += [P.field_grid(loc)]
+
+    # ── Categorisation ───────────────────────────────────────────
+    cats = list(filter(None, [
+        _row("incident_categories"),
+        _row("actual_incident_category"),
+        _row("potential_incident_category"),
+        _row("primary_hazard"), _row("sources_of_hazard"),
+        _row("identified_hazards"), _row("hazard_report_type"),
+        _row("injury_severity"), _row("injury_agency"),
+        _row("injury_mechanism"), _row("injury_nature"),
+    ]))
+    if cats:
+        story += P.section_label("Categorisation")
+        story += [P.field_grid(cats)]
+
+    # ── Descriptions ─────────────────────────────────────────────
+    desc_rows = [(lbl, str(row.get(k)).strip())
+                 for k, lbl in _CS_DESCRIPTION_FIELDS
+                 if _cs_truthy(row.get(k)) and not isinstance(row.get(k), bool)]
+    if desc_rows:
+        story += P.section_label("Descriptions")
+        for lbl, txt in desc_rows:
+            story += [P.Paragraph(f"<b>{lbl}</b>", P.BODY)]
+            story += P.description(txt)
+
+    # ── Immediate actions ────────────────────────────────────────
+    actions = [(lbl, str(row.get(k)).strip())
+               for k, lbl in _CS_ACTION_FIELDS if _cs_truthy(row.get(k))]
+    if actions:
+        story += P.section_label("Immediate actions")
+        for lbl, txt in actions:
+            story += [P.Paragraph(f"<b>{lbl}</b>", P.BODY)]
+            story += P.description(txt)
+
+    # ── Environmental impact (only show if any flag is set) ──────
+    if any(_cs_truthy(row.get(k)) for k, _ in _CS_ENV_FLAGS):
+        env_rows = [(lbl, _cs_fmt(row.get(k)))
+                    for k, lbl in _CS_ENV_FLAGS if _cs_truthy(row.get(k))]
+        story += P.section_label("Environmental impact")
+        story += [P.field_grid(env_rows)]
+
+    # ── Near-miss flags summary ──────────────────────────────────
+    nm_rows = [(lbl, _cs_fmt(row.get(k))) for k, lbl in _CS_NEAR_MISS_FLAGS]
+    if any(v == "Yes" for _, v in nm_rows):
+        story += P.section_label("Near-miss")
+        story += [P.field_grid([r for r in nm_rows if r[1] == "Yes"])]
+
+    # ── Alerts / first aid ───────────────────────────────────────
+    alerts = list(filter(None, [_row("was_first_aid_provided"),
+                                _row("alert_generated")]))
+    if alerts:
+        story += P.section_label("Alerts & response")
+        story += [P.field_grid(alerts)]
+
+    if not story or len(story) < 3:
+        # Extremely sparse record — still produce a valid PDF.
+        story += [P.Paragraph("No populated fields on this record.",
+                              P.BODY_MUTED)]
+
+    doc.build(story)
+    return buf.getvalue()
+
+
 def render_incident_pdf(inc: dict) -> bytes:
     """Phase 3.22b — migrated to shared `pdf_template`."""
     import pdf_template as P
@@ -755,14 +985,23 @@ def filename_for(record: dict, kind: str) -> str:
         return f"Incident-{_slugify(record.get('title', ''))}.pdf"
     if kind == "inspections":
         return f"Inspection-{_slugify(record.get('template_name', ''))}-{record.get('date', '')}.pdf"
+    if kind == "cs_incidents":
+        # v58.13.48 — filename mirrors the audit-report shape:
+        #   `CSIncident-<issue-number>-<date-of-issue>.pdf`.
+        return (
+            f"CSIncident-{_slugify(str(record.get('issue_number') or 'x'))}"
+            f"-{str(record.get('date_of_issue') or '')[:10]}.pdf"
+        )
     return f"record-{record.get('id', 'x')[:8]}.pdf"
 
 
 RENDERERS = {
-    "swms":        (render_swms_pdf,       "swms"),
-    "pre_starts":  (render_pre_start_pdf,  "pre_starts"),
-    "site_diary":  (render_site_diary_pdf, "site_diary_entries"),
-    "hazards":     (render_hazard_pdf,     "hazards"),
-    "incidents":   (render_incident_pdf,   "incidents"),
-    "inspections": (render_inspection_pdf, "inspections"),
+    "swms":         (render_swms_pdf,         "swms"),
+    "pre_starts":   (render_pre_start_pdf,    "pre_starts"),
+    "site_diary":   (render_site_diary_pdf,   "site_diary_entries"),
+    "hazards":      (render_hazard_pdf,       "hazards"),
+    "incidents":    (render_incident_pdf,     "incidents"),
+    "inspections":  (render_inspection_pdf,   "inspections"),
+    # v58.13.48 — CS Incidents (reference_library XLSX-import).
+    "cs_incidents": (render_cs_incident_pdf,  "cs_incident_issues"),
 }

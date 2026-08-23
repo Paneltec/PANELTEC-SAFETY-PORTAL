@@ -67,7 +67,12 @@ export default function CaptureCard({
   // with a 400, which was surfacing as the "file icon flashes and
   // disappears" bug because `PdfActions.open` popped a window, hit
   // the 400, and immediately closed it.
+  // v160.3.9.58.13.48 — CS Incidents now HAS a PDF backend renderer;
+  // it passes `showPdf={true}` (default) + `pdfResourceKind=
+  // "cs_incidents"` to override the permission-scoped `resourceKind`
+  // ("reference_library") for the pdf-token POST body.
   showPdf = true,
+  pdfResourceKind,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -131,6 +136,7 @@ export default function CaptureCard({
             </button>
             <PdfActions
               resourceKind={resourceKind}
+              pdfResourceKind={pdfResourceKind}
               recordId={r.id}
               source={r.source}
               title={title}

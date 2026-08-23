@@ -36,7 +36,50 @@ RESOURCE_TO_PATH = {
     "hazards": "hazards",
     "incidents": "incidents",
     "inspections": "inspections",
+    # v58.13.48 — CS Incidents (XLSX-import reference_library rows).
+    "cs_incidents": "cs-incidents",
 }
+
+# v58.13.48 — Some resources use a permission domain that differs
+# from the resource key itself. Defaults to the resource key when
+# absent — every legacy kind keeps its 1:1 mapping.
+RESOURCE_TO_PERMISSION = {
+    "cs_incidents": "reference_library",
+}
+
+# v58.13.48 — Some resources are org-scoped (records carry an
+# `org_id`); others are global reference-library rows. Defaults to
+# True. CS Incidents are XLSX-imported globals with no org_id, so
+# the doc lookup must not filter on it.
+RESOURCE_ORG_SCOPED = {
+    "cs_incidents": False,
+}
+
+# v58.13.48 — Resource kinds that reach the PDF via the mirrored
+# `POST /api/forms/submissions/pdf-token` branch instead of the
+# direct `/pdf-token` endpoint (frontend `PdfActions` inspects
+# `record.source === 'form_submission'` and switches paths). These
+# kinds are NOT in `RESOURCE_TO_PATH` because they don't need a
+# dedicated renderer — the form_submission renderer covers them —
+# but the frontend contract test in
+# `tests/backend_unit/test_action_availability_contract_v58_13_48.py`
+# accepts them as valid `<CaptureCard resourceKind="X">` values.
+MIRRORED_ONLY_KINDS = frozenset({"forms", "risk_assessments"})
+
+
+def _perm_for(resource: str) -> str:
+    return RESOURCE_TO_PERMISSION.get(resource, resource)
+
+
+def _org_scoped(resource: str) -> bool:
+    return RESOURCE_ORG_SCOPED.get(resource, True)
+
+
+def _doc_query(resource: str, record_id: str, user: dict) -> dict:
+    q = {"id": record_id}
+    if _org_scoped(resource):
+        q["org_id"] = user["org_id"]
+    return q
 
 
 # ---------- PDF token mint ----------
@@ -61,13 +104,16 @@ async def mint_pdf_token(body: PdfTokenIn, request: Request,
                          user: dict = Depends(get_current_user)):
     if body.resource not in RESOURCE_TO_PATH:
         raise HTTPException(400, "Unknown resource")
-    if not await can(user, body.resource, "view"):
-        raise HTTPException(403, f"Permission denied: {body.resource}.view")
+    # v58.13.48 — permission alias (cs_incidents → reference_library).
+    if not await can(user, _perm_for(body.resource), "view"):
+        raise HTTPException(403, f"Permission denied: {_perm_for(body.resource)}.view")
 
     # Confirm the record exists in this org (defence in depth).
+    # v58.13.48 — org_id filter is now opt-out for global reference-
+    # library resources (see `RESOURCE_ORG_SCOPED`).
     _renderer, collection = RENDERERS[body.resource]
     doc = await db[collection].find_one(
-        {"id": body.record_id, "org_id": user["org_id"]}, {"id": 1})
+        _doc_query(body.resource, body.record_id, user), {"id": 1})
     if not doc:
         raise HTTPException(404, "Record not found")
 
@@ -138,11 +184,12 @@ def _build(resource: str, path_prefix: str):
             user = await _user_from_pdf_token(token, resource, record_id)
         else:
             user = await get_current_user(request, creds=None)
-            if not await can(user, resource, "view"):
-                raise HTTPException(403, f"Permission denied: {resource}.view")
+            # v58.13.48 — permission alias.
+            if not await can(user, _perm_for(resource), "view"):
+                raise HTTPException(403, f"Permission denied: {_perm_for(resource)}.view")
 
         doc = await db[collection].find_one(
-            {"id": record_id, "org_id": user["org_id"]}, {"_id": 0})
+            _doc_query(resource, record_id, user), {"_id": 0})
         if not doc:
             raise HTTPException(404, "Record not found")
         # Phase 4.x — SWMS endpoint honours ?layout=civil|original. Other
@@ -166,12 +213,14 @@ def _build(resource: str, path_prefix: str):
     )
 
 
-_build("swms",        "swms")
-_build("pre_starts",  "pre-starts")
-_build("site_diary",  "site-diary")
-_build("hazards",     "hazards")
-_build("incidents",   "incidents")
-_build("inspections", "inspections")
+_build("swms",         "swms")
+_build("pre_starts",   "pre-starts")
+_build("site_diary",   "site-diary")
+_build("hazards",      "hazards")
+_build("incidents",    "incidents")
+_build("inspections",  "inspections")
+# v58.13.48 — CS Incidents legacy path (mirrors the sibling routes).
+_build("cs_incidents", "cs-incidents")
 
 
 # ---------- Path-based PDF endpoint (ad-blocker friendly) ----------
@@ -200,12 +249,12 @@ async def pdf_by_token(token: str):
     user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0, "password_hash": 0})
     if not user or user.get("status") == "disabled":
         raise HTTPException(status_code=404, detail="Not found")
-    if not await can(user, resource, "view"):
+    if not await can(user, _perm_for(resource), "view"):
         raise HTTPException(status_code=404, detail="Not found")
 
     renderer, collection = RENDERERS[resource]
     doc = await db[collection].find_one(
-        {"id": record_id, "org_id": user["org_id"]}, {"_id": 0})
+        _doc_query(resource, record_id, user), {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Not found")
 

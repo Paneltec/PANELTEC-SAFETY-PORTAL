@@ -65,6 +65,10 @@ from cron_asset_service_generate import register_asset_service_generate_cron  # 
 from integrations_m365 import router as m365_router  # noqa: E402
 from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
+from metrics_routes import (  # noqa: E402
+    router as metrics_router,
+    ensure_indexes as metrics_ensure_indexes,
+)
 from renewals import public_router as renewals_public_router, router as renewals_router  # noqa: E402
 from seed import ensure_indexes, seed_all  # noqa: E402
 from users import router as users_router  # noqa: E402
@@ -311,6 +315,8 @@ api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(comms_safe_mode_router)  # Phase 4.7.3
 api.include_router(pdf_router)
+# v160.3.9.58.13.47 — Capture-density telemetry endpoint.
+api.include_router(metrics_router)
 api.include_router(document_library_router)
 api.include_router(supplier_folders_router)
 api.include_router(suppliers_router)
@@ -403,6 +409,12 @@ install_backup(app, _mongo_db, require_roles("admin"))
 async def on_startup():
     await ensure_indexes()
     await session_history_ensure_indexes()
+    # v160.3.9.58.13.47 — TTL + query indexes for capture-density
+    # telemetry. Best-effort, silent on failure (idempotent).
+    try:
+        await metrics_ensure_indexes()
+    except Exception:  # noqa: BLE001
+        pass
     # v160.3.9.12a — Bulk-import Pre-Starts index setup.
     try:
         await bulk_import_ensure_indexes()
