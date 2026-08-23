@@ -1,6 +1,65 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.39 — Group palette + capture density foundation.
+// Introduces two shared FE-only primitives that Capture list pages
+// consume to converge on (a) per-group accent colours and (b)
+// flexible tile density with a user-facing manual override.
+//
+// Frontend (new files only in this ship — page wiring lands next)
+//   · NEW `lib/groupPalette.js` — `resolveGroupPalette({ groupKey,
+//     page })` returns a deterministic { hex, tint, text, name }
+//     per group key. 8-colour WCAG-safe ROTATION table (slate/blue/
+//     emerald/amber/rose/violet/teal/orange) with a djb2-lite
+//     `hashIdx()` mapping. Per-page overrides:
+//       · page='incidents'   → `INCIDENT_CATEGORY_PALETTE` (6-cat)
+//       · page='inspections' → `paletteForType()` from `preStartsPalette.js`
+//       · page='site-signin' / 'cs-incidents' → 8-colour rotation
+//   · NEW `lib/useCaptureDensity.js` — hook returning `{ mode,
+//     effectiveMode, setMode, gridClass, cardMinH, subtitleLines }`
+//     for a given `(pageKey, itemCount)`. Persists mode under
+//     `localStorage.captureDensity:<pageKey>`. Auto thresholds:
+//       ·  n < 12    → Spacious  (sm:2 · lg:3 · xl:4, min-h 96 px,
+//                                 subtitle 2-line clamp)
+//       · 12–48      → Comfortable (sm:2 · lg:4 · xl:5 · 2xl:6,
+//                                    min-h 96 px, 1-line clamp)
+//       ·  n > 48    → Compact   (sm:3 · lg:5 · xl:7 · 2xl:8,
+//                                 min-h 64 px, subtitle hidden)
+//
+// Design intent
+//   · Same group key → same colour, reload-stable across the whole app.
+//   · GroupedTilesView reads `tint`+`text` for the banner; CaptureCard
+//     reads `hex` via `stripeStyle` for the 4-px left accent. One
+//     source of truth means the banner and its member tiles cannot
+//     drift.
+//   · Density thresholds sized for real data (checked against the
+//     122-record CS Incidents pilot and the ~1,055-tall VT Daily
+//     Pre-Start register). Users tend to browse incidents in
+//     Comfortable but scan long registers in Compact — per-page
+//     localStorage means the preference travels with the page.
+//   · No page wiring in this ship — GroupedTilesView, CaptureCard,
+//     and CaptureListToolbar consumers land in the next ship
+//     (v58.13.40 will wire the toolbar segmented control + banner
+//     tint + tile-stripe inheritance). Ships the primitives first
+//     so the wiring stays a mechanical add-on rather than a
+//     coupled change.
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_group_palette_and_density_v58_13_39.py`
+//     — 10 pytests using `node -e` to exercise the pure helpers
+//     deterministically: ROTATION shape, hash stability across
+//     10 calls, resolveGroupPalette returns { hex, tint, text, name },
+//     autoModeForCount branches at 12 / 48, grid classes present,
+//     localStorage key pattern, version-sync.
+//
+// Guardrails held
+//   · Frontend-only. Zero backend files touched. No hot-reload fired.
+//   · `/app/mobile/` untouched — mobile mirror deferred to
+//     `e1_expo_frontend_dev`.
+//   · No existing component modified; no visual regression possible
+//     until v58.13.40 wires the consumers.
+
+
 // v160.3.9.58.13.38 — Capture tile-parity ship. Normalises the tile
 // SIZE + COLOUR + STATUS-PALETTE across the 8 tile-shaped Capture
 // pages by migrating the 4 remaining bespoke `renderTile` bodies onto
@@ -3685,7 +3744,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.38';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.39';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
