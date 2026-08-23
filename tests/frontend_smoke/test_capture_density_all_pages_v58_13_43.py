@@ -117,10 +117,11 @@ def test_pages_count_stays_at_eight():
 
 
 def test_version_sync_current_v58_13_43():
-    expected = "paneltec-v160.3.9.58.13.43"
+    # v58.13.44 note: same relaxation pattern as v58.13.41/42 —
+    # append-only changelog block presence, not current-string
+    # identity (that's `test_version_sync_v58_13_13.py`'s job).
     v_js = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
-    m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
-    assert f"'{expected}'" in v_js, "version.js RUNNING_VERSION not bumped."
-    assert f"'{expected}'" in m_ts, "mobile version.ts not bumped."
-    assert f"'{expected}'" in sw_js, "service-worker CACHE_VERSION not bumped."
+    assert "v160.3.9.58.13.43 —" in v_js, (
+        "The v58.13.43 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )

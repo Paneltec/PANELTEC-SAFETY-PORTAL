@@ -1,6 +1,78 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.44 — 502 investigation + Pydantic regression guard.
+//
+// Reported issue
+//   User saw `AxiosError: Request failed with status code 502` shortly
+//   after v58.13.43 shipped. Concern: the Pydantic v2 ConfigDict
+//   refactor at `backend/hr_employees.py:388` broke the FastAPI
+//   startup import chain.
+//
+// Investigation results (all evidence backend is HEALTHY)
+//   · `sudo supervisorctl status backend`
+//       → `RUNNING pid 4207 uptime 0:00:59` at report time.
+//   · `curl http://localhost:8001/api/openapi.json`
+//       → HTTP 200 (backend itself is up on the pod).
+//   · `curl $REACT_APP_BACKEND_URL/api/openapi.json` (EXTERNAL
+//     ingress, i.e. what the browser hits)
+//       → HTTP 200 in 245 ms. Rules out an ingress-routing regression.
+//   · `curl -X POST $REACT_APP_BACKEND_URL/api/auth/login` with a
+//     bad payload
+//       → HTTP 422. Confirms Pydantic v2 request validation is
+//         loading + running correctly.
+//   · Env-loaded `python -c "import hr_employees; RowPatch(...)"`
+//       → clean import, no PydanticDeprecatedSince20 raised, extras
+//         round-trip through `model_dump()`.
+//   · `pytest tests/backend_unit/test_bulk_link_v58_13_26.py`
+//       → 21/21 pass, only the unrelated upstream starlette
+//         `python_multipart` PendingDeprecationWarning present.
+//   · Backend log tail — NO ImportError, NO ValidationError, NO
+//     traceback. Last entries are routine Navixy sync, meter-history
+//     backfill, and health-check pings.
+//
+// Conclusion
+//   The 502 was a TRANSIENT window (~3-4 s) during the
+//   `sudo supervisorctl restart backend` I ran as part of the
+//   v58.13.43 verification step. During that window a live axios
+//   request from the browser would have hit the ingress before the
+//   backend re-opened its listener → 502 bubbled to the client.
+//   Backend is now stable and has been serving for 60+ seconds
+//   without incident.
+//
+// Rollback decision
+//   NONE. The Pydantic ConfigDict change at hr_employees.py:388 is
+//   correct, imports cleanly, is exercised by pytest, and eliminated
+//   the `PydanticDeprecatedSince20` warning as intended.
+//
+// Regression guard (new)
+//   `tests/backend_unit/test_hr_employees_import_v58_13_44.py`
+//     · `test_hr_employees_imports_cleanly` — reload-imports the
+//       module; asserts `router` attribute present.
+//     · `test_row_patch_uses_configdict_not_deprecated_class_form` —
+//       asserts `model_config == ConfigDict(extra='allow')` AND the
+//       nested `Config` class is gone from `__dict__`.
+//     · `test_row_patch_accepts_extra_fields_without_deprecation_warning`
+//       — constructs RowPatch with 4 arbitrary keys inside a
+//       `warnings.catch_warnings` block; asserts round-trip via
+//       `model_dump(exclude_unset=True)` AND zero pydantic
+//       deprecation warnings.
+//     · `test_backend_router_prefix_still_gated_under_api` — defence-
+//       in-depth: `router.prefix == "/hr/employees"` (ingress
+//       prepends `/api`).
+//   These would ALL fail loudly if hr_employees.py ever regresses
+//   to the class-based `Config` form OR the ConfigDict import goes
+//   missing OR the model stops accepting extras.
+//
+// Guardrails held
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Zero code changes to hr_employees.py itself — the Pydantic
+//     fix from v58.13.43 stands.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion — no change.
+
+
 // v160.3.9.58.13.43 — Hygiene bundle. Three low-risk items rolled up
 // after the v58.13.41/42 density-wiring work landed cleanly.
 //
@@ -3998,7 +4070,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.43';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.44';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

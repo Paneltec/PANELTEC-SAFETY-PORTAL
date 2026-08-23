@@ -1272,18 +1272,15 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.43 — Hygiene bundle.
-//   · Pydantic v2 ConfigDict fix at backend/hr_employees.py:388 —
-//     class-based `Config` → `model_config = ConfigDict(extra="allow")`.
-//     Silences the last PydanticDeprecatedSince20 warning in pytest.
-//   · PlantVehicles.jsx:497 — `AttentionRowActions` extracted to
-//     module scope + 3 stale eslint-disable directives removed
-//     (react/no-unstable-nested-components + exhaustive-deps).
-//   · New static pytest sweep across all 8 Capture list pages
-//     (tests/frontend_smoke/test_capture_density_all_pages_v58_13_43.py)
-//     — would have caught the v58.13.41 testid regression.
-//   · SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.43';
+// v160.3.9.58.13.44 — Regression guard for v58.13.43's Pydantic
+//   ConfigDict change. New backend_unit test that reload-imports
+//   `hr_employees` + asserts `RowPatch.model_config == ConfigDict(
+//   extra='allow')` + asserts arbitrary extras still round-trip
+//   through `model_dump()`. The reported 502 was a transient during
+//   the v58.13.43 supervisor restart window; backend is healthy —
+//   /api/openapi.json returns 200 in ~245 ms via external ingress.
+//   SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.44';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',
