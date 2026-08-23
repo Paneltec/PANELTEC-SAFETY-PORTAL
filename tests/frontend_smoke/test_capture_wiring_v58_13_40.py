@@ -66,11 +66,21 @@ def test_capture_card_subtitle_lines_zero_hides_subtitle():
 
 
 # ─── CaptureListToolbar segmented control ───────────────────────────
+# v58.13.41 note: the segmented control moved OUT of CaptureListToolbar
+# into the shared `CaptureDensityControl` component. The toolbar now
+# delegates to it. These tests were rewritten in v58.13.41 to guard
+# the same contract at its new location.
+
+DENSITY = APP / "frontend/src/components/CaptureDensityControl.jsx"
+
 
 def test_toolbar_imports_density_icons():
-    src = TB.read_text(encoding="utf-8")
+    src = DENSITY.read_text(encoding="utf-8")
     for icon in ("Wand2", "Rows3", "LayoutGrid", "LayoutList"):
-        assert icon in src
+        assert icon in src, (
+            f"CaptureDensityControl must import {icon} from lucide-react — "
+            "the shared segmented control is the v58.13.41 delegation target."
+        )
 
 
 def test_toolbar_accepts_density_props():
@@ -80,21 +90,24 @@ def test_toolbar_accepts_density_props():
 
 
 def test_toolbar_renders_segmented_control_conditionally():
-    src = TB.read_text(encoding="utf-8")
+    tb_src = TB.read_text(encoding="utf-8")
     # Guard: control only renders when onDensityChange is a function.
-    assert "typeof onDensityChange === 'function'" in src
-    # Testid for the whole radiogroup.
-    assert 'data-testid="capture-density-control"' in src
-    # Per-mode testid uses a template literal interpolation.
-    assert "`capture-density-${m}`" in src
+    assert "typeof onDensityChange === 'function'" in tb_src
+    # Delegation target imported.
+    assert "import CaptureDensityControl" in tb_src
+    ctrl_src = DENSITY.read_text(encoding="utf-8")
+    # Testid for the whole radiogroup (now templated by testidPrefix).
+    assert "${testidPrefix}-density-control" in ctrl_src
+    # Per-mode testid.
+    assert "${testidPrefix}-density-${m}" in ctrl_src
 
 
 def test_toolbar_control_has_radiogroup_a11y():
-    src = TB.read_text(encoding="utf-8")
+    src = DENSITY.read_text(encoding="utf-8")
     assert 'role="radiogroup"' in src
     assert 'aria-label="Tile density"' in src
     assert 'role="radio"' in src
-    assert "aria-checked={densityMode === m}" in src
+    assert "aria-checked={mode === m}" in src
 
 
 # ─── Page wiring ────────────────────────────────────────────────────
@@ -128,16 +141,15 @@ def test_grouped_pages_pass_page_and_page_key():
 
 
 # ─── Version-sync ───────────────────────────────────────────────────
+# v58.13.41 note: the strict `endswith('58.13.40')` check was retired
+# because RUNNING_VERSION advances every ship. Cross-file identity is
+# guarded by `test_version_sync_v58_13_13.py`; the assertion below
+# just confirms that this ship's changelog block hasn't been torn out
+# of `version.js` (a common merge-conflict casualty).
 
 def test_version_sync_current():
     running = (APP / "frontend/src/lib/version.js").read_text(encoding="utf-8")
-    sw = (APP / "frontend/public/service-worker.js").read_text(encoding="utf-8")
-    mobile = (APP / "mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+)'",
-                  running)
-    assert m
-    current = m.group(1)
-    assert current.endswith("58.13.40"), \
-        f"expected 58.13.40, got {current}"
-    assert f"'{current}'" in sw
-    assert f"'{current}'" in mobile
+    assert "v160.3.9.58.13.40 —" in running, (
+        "The v58.13.40 changelog block must remain in version.js — "
+        "history is append-only per the ship-checklist."
+    )

@@ -26,6 +26,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import api, { apiError } from '../lib/api';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import CaptureCard from '../components/CaptureCard';
+import CaptureDensityControl from '../components/CaptureDensityControl';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { PageHeader, EmptyState, StatusBadge } from '../components/capture/Ui';
 import useCrudModal from '../components/riskAssessments/useCrudModal';
 import { useCan } from '../lib/permissions';
@@ -243,7 +245,12 @@ export default function CsIncidentsList() {
     });
   }, [items, q, businessUnit, status, issueType]);
 
-  const renderTile = (row) => (
+  // v58.13.41 — shared density hook. Drives both the toolbar
+  // segmented control AND the tile grid inside GroupedTilesView
+  // (via the `density` prop). Item count feeds `auto` sizing.
+  const density = useCaptureDensity('cs-incidents', filtered.length);
+
+  const renderTile = (row, ctx = {}) => (
     <CaptureCard
       record={{
         id: row.id,
@@ -254,6 +261,9 @@ export default function CsIncidentsList() {
       resourceKind="reference_library"
       apiPath="cs-incident"
       subtitle={row.description || null}
+      subtitleLines={ctx.subtitleLines}
+      minH={ctx.minH}
+      stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
       badges={row.status
         ? [<StatusBadge key="status" value={row.status} />]
         : []}
@@ -296,6 +306,11 @@ export default function CsIncidentsList() {
         <div className="text-xs text-slate-500 ml-auto" data-testid="cs-incidents-count">
           {filtered.length} of {items.length}
         </div>
+        <CaptureDensityControl
+          mode={density.mode}
+          onChange={density.setMode}
+          testidPrefix="cs-incidents"
+        />
         {canWrite && crud.AddButton}
         {canWrite && (
           <button onClick={() => setImportOpen(true)}
@@ -314,6 +329,7 @@ export default function CsIncidentsList() {
       ) : (
         <GroupedTilesView
           items={filtered}
+          density={density}
           groupBy={(r) => r.business_unit || 'Unassigned business unit'}
           renderTile={renderTile}
           dateFn={(r) => r.date_of_issue || r.date_of_entry || ''}

@@ -106,6 +106,7 @@ export default function IncidentsList() {
             — semantically stronger than a `preStartsPalette` map. */}
         <GroupedTilesView
           items={searchFiltered}
+          density={incidentsDensity}
           groupBy={(i) => i.category || 'other'}
           groupLabels={Object.fromEntries(CATS)}
           groupOrder={CATS.map(([k]) => k)}
@@ -115,7 +116,7 @@ export default function IncidentsList() {
           pageKey="incidents"
           dateFn={(i) => i.occurred_at || i.created_at || ''}
           emptyMessage="No matching incidents."
-          renderTile={(i) => (
+          renderTile={(i, ctx = {}) => (
             <CaptureCard
               record={{
                 ...i,
@@ -125,6 +126,9 @@ export default function IncidentsList() {
               resourceKind="incidents"
               apiPath="incidents"
               subtitle={i.description || null}
+              subtitleLines={ctx.subtitleLines}
+              minH={ctx.minH}
+              stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
               badges={i.follow_up_status
                 ? [<StatusBadge key="fus" value={i.follow_up_status} />]
                 : []}

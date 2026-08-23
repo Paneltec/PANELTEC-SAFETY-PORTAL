@@ -4,6 +4,8 @@ import { Plus, Trash2, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import CaptureDensityControl from '../components/CaptureDensityControl';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 import { inferTemplateType, paletteForType } from '../lib/preStartsPalette';
@@ -193,6 +195,11 @@ export default function PreStartsList() {
   const totalCount = decorated.length;
   const filteredCount = filtered.length;
 
+  // v58.13.41 — density hook. Drives the per-group grid class + card
+  // min-height + subtitle clamp. Manual override via the segmented
+  // control in the toolbar row.
+  const density = useCaptureDensity('pre-starts', filteredCount);
+
   const clearAll = () => {
     setQ(''); setDateFrom(''); setDateTo(''); setTypeFilter('All');
   };
@@ -266,6 +273,11 @@ export default function PreStartsList() {
               <div className="text-xs text-slate-500 tabular-nums ml-auto" data-testid="prestarts-count">
                 Showing {filteredCount} of {totalCount} pre-starts
               </div>
+              <CaptureDensityControl
+                mode={density.mode}
+                onChange={density.setMode}
+                testidPrefix="pre-starts"
+              />
             </div>
             {/* Row 2 — coloured type chips */}
             {typeIndex.length > 0 && (
@@ -365,7 +377,7 @@ export default function PreStartsList() {
                     </span>
                   </h2>
                 </div>
-                <CaptureCardGrid testid={`prestarts-grid-${g.palette.key}`}>
+                <CaptureCardGrid testid={`prestarts-grid-${g.palette.key}`} gridClass={density.gridClass}>
                   {g.rows.map((p) => {
                     const ws = p.work_summary || '';
                     const shortSummary = ws.length > 90 ? ws.substring(0, 87) + '…' : ws;
@@ -378,6 +390,8 @@ export default function PreStartsList() {
                         subject={`Daily Pre-Start — ${p.date}`}
                         body={`Daily pre-start summary.\n\nDate: ${p.date}\nType: ${g.type}\nWork: ${ws}`}
                         subtitle={shortSummary ? <Highlight text={shortSummary} tokens={tokens} /> : null}
+                        subtitleLines={density.subtitleLines}
+                        minH={density.cardMinH}
                         titleNode={<Highlight text={g.type} tokens={tokens} />}
                         hideOperator
                         stripeStyle={{ backgroundColor: g.palette.hex }}

@@ -2,7 +2,7 @@
 // Client-side search + template chip filter + sort dropdown.
 // Used by Pre-Starts, Hazards, Site Diary, Inspections, Incidents, Risk Assessments.
 import React, { useMemo, useState, useEffect } from 'react';
-import { Wand2, Rows3, LayoutGrid, LayoutList } from 'lucide-react';
+import CaptureDensityControl from './CaptureDensityControl';
 
 function useDebounced(value, ms = 200) {
   const [v, setV] = useState(value);
@@ -95,39 +95,16 @@ export function CaptureListToolbar({
         {/* v58.13.40 — density segmented control. Rendered only when
             the parent page passes `densityMode` + `onDensityChange`
             (i.e. wired to `useCaptureDensity`). Legacy pages that
-            don't supply these props keep their pre-v58.13.40 UI. */}
+            don't supply these props keep their pre-v58.13.40 UI.
+            v58.13.41 — delegated to shared `CaptureDensityControl`
+            so pages without CaptureListToolbar can reuse the same
+            visuals. */}
         {typeof onDensityChange === 'function' && (
-          <div
-            role="radiogroup"
-            aria-label="Tile density"
-            data-testid="capture-density-control"
-            className="inline-flex items-center rounded-full border border-slate-200 bg-white p-0.5 shadow-sm"
-          >
-            {[
-              { m: 'auto',        Icon: Wand2,      title: 'Auto (by volume)' },
-              { m: 'compact',     Icon: Rows3,      title: 'Compact' },
-              { m: 'comfortable', Icon: LayoutGrid, title: 'Comfortable' },
-              { m: 'spacious',    Icon: LayoutList, title: 'Spacious' },
-            ].map(({ m, Icon, title }) => (
-              <button
-                key={m}
-                type="button"
-                role="radio"
-                aria-checked={densityMode === m}
-                title={title}
-                onClick={() => onDensityChange(m)}
-                data-testid={`capture-density-${m}`}
-                className={
-                  'inline-flex items-center justify-center h-7 w-7 rounded-full transition-colors ' +
-                  (densityMode === m
-                    ? 'bg-slate-900 text-white'
-                    : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100')
-                }
-              >
-                <Icon size={13} />
-              </button>
-            ))}
-          </div>
+          <CaptureDensityControl
+            mode={densityMode}
+            onChange={onDensityChange}
+            testidPrefix="capture"
+          />
         )}
         <div className="text-xs text-slate-500" data-testid={`${testidPrefix}-count`}>
           {filtered.length} / {(items || []).length}

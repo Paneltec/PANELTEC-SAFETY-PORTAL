@@ -16,6 +16,8 @@ import api, { apiError } from '../lib/api';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import { PageHeader } from '../components/capture/Ui';
 import CaptureCard from '../components/CaptureCard';
+import CaptureDensityControl from '../components/CaptureDensityControl';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { toast } from 'sonner';
 
 const TEMPLATE_ID = 'e8873f7e-6fd4-44c9-961a-d68e6ffecd8d';
@@ -24,6 +26,7 @@ export default function SiteSigninList() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const density = useCaptureDensity('site-signin', items.length);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -44,7 +47,7 @@ export default function SiteSigninList() {
   // context lands in the `subtitle` prop. The `record` shape below
   // adapts the `forms/submissions` payload to CaptureCard's expected
   // keys without mutating the source array (zero data change).
-  const renderTile = (rec) => (
+  const renderTile = (rec, ctx = {}) => (
     <CaptureCard
       record={{
         ...rec,
@@ -54,6 +57,9 @@ export default function SiteSigninList() {
       resourceKind="forms"
       apiPath="forms/submissions"
       subtitle={rec.site_name || rec.job_label || null}
+      subtitleLines={ctx.subtitleLines}
+      minH={ctx.minH}
+      stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
       hideOperator
       onDeleted={removeLocal}
     />
@@ -62,8 +68,19 @@ export default function SiteSigninList() {
   return (
     <div className="max-w-6xl mx-auto p-4 space-y-4" data-testid="site-signin-page">
       <PageHeader title="Site Sign-In / Visitor Register" subtitle="Recent visitor sign-ins across all sites." />
+      {/* v58.13.41 — density toolbar (this page has no search/filter row) */}
+      {items.length > 0 && (
+        <div className="flex items-center justify-end" data-testid="site-signin-toolbar">
+          <CaptureDensityControl
+            mode={density.mode}
+            onChange={density.setMode}
+            testidPrefix="site-signin"
+          />
+        </div>
+      )}
       <GroupedTilesView
         items={items}
+        density={density}
         groupBy={(r) => r.submitted_by_name || 'Unknown signer'}
         renderTile={renderTile}
         dateFn={(r) => r.submitted_at || ''}

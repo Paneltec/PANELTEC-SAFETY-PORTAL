@@ -11,6 +11,7 @@ import api from '../lib/api';
 import { TOKEN_KEY, USER_KEY } from '../lib/api';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { PageHeader, EmptyState } from '../components/capture/Ui';
 import MasterRisksTab from './MasterRisksTab';
 import ListFormsTab from './ListFormsTab';
@@ -40,6 +41,7 @@ export default function RiskAssessments() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user] = useState(loadUser);
+  const density = useCaptureDensity('risk-assessments', filtered.length);
   // Reference to TOKEN_KEY to keep tree-shaking honest on the named import.
   void TOKEN_KEY;
 
@@ -98,7 +100,10 @@ export default function RiskAssessments() {
         </div>
 
         {tab === 'submissions' && items.length > 0 && (
-          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="risk-assessments" />
+          <CaptureListToolbar
+            items={items} onFiltered={setFiltered} testidPrefix="risk-assessments"
+            densityMode={density.mode} onDensityChange={density.setMode}
+          />
         )}
       </CaptureSticky>
 
@@ -113,7 +118,7 @@ export default function RiskAssessments() {
                 body="Workers submit a Risk Assessment from the mobile Forms Library (TTM Register, Construction & Excavation SSRA, Viatec Traffic Solutions SSRA). They land here."
               />
             ) : (
-              <CaptureCardGrid testid="risk-assessments-grid">
+              <CaptureCardGrid testid="risk-assessments-grid" gridClass={density.gridClass}>
                 {filtered.map((r) => (
                   <CaptureCard
                     key={r.id}
@@ -122,6 +127,8 @@ export default function RiskAssessments() {
                     apiPath="risk-assessments"
                     subject={`Risk Assessment: ${r.template_name_snapshot || 'Risk assessment'} — ${r.date || ''}`}
                     body={`Risk assessment.\n\nTemplate: ${r.template_name_snapshot || ''}\nDate: ${r.date || ''}`}
+                    subtitleLines={density.subtitleLines}
+                    minH={density.cardMinH}
                     onDeleted={evict}
                   />
                 ))}

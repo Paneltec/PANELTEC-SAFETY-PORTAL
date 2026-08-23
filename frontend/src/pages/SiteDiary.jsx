@@ -10,6 +10,7 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, AiButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -25,6 +26,7 @@ export default function SiteDiaryList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  const density = useCaptureDensity('site-diary', filtered.length);
 
   useEffect(() => {
     api.get('/site-diary')
@@ -44,14 +46,17 @@ export default function SiteDiaryList() {
           subtitle="Daily site diaries — imported audits from mobile Forms and free-form notes structured by AI."
           action={<NewButton to="/app/site-diary/new" label="New diary entry" testid="diary-create-btn" />} />
         {items.length > 0 && (
-          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="site-diary" />
+          <CaptureListToolbar
+            items={items} onFiltered={setFiltered} testidPrefix="site-diary"
+            densityMode={density.mode} onDensityChange={density.setMode}
+          />
         )}
       </CaptureSticky>
       <div className="mt-3">
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No diary entries yet" body="Capture your first daily diary entry." action={<NewButton to="/app/site-diary/new" label="New entry" testid="diary-empty-create" />} />
        : (
-        <CaptureCardGrid testid="site-diary-grid">
+        <CaptureCardGrid testid="site-diary-grid" gridClass={density.gridClass}>
           {filtered.map((d) => {
             const isSub = d.source === 'form_submission';
             if (isSub) {
@@ -64,6 +69,8 @@ export default function SiteDiaryList() {
                   subject={`Site Diary — ${d.template_name_snapshot || 'entry'} — ${d.date || ''}`}
                   body={`Site diary from ${d.submitted_by_name || 'the field'} on ${d.date || ''}.`}
                   subtitle={siteAddress(d)}
+                  subtitleLines={density.subtitleLines}
+                  minH={density.cardMinH}
                   onDeleted={evict}
                 />
               );

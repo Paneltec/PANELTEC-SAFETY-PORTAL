@@ -1272,7 +1272,19 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.40';
+// v160.3.9.58.13.41 — Bug fixes + deferred capture density wiring.
+//                     Bug 1: stripe hex threading through GroupedTilesView
+//                     so tile stripes match the group banner colour.
+//                     Bug 2: profiled CS Incidents (backend 236ms, frontend
+//                     2.5s to first tile — WELL under the 5s target; prior
+//                     240s "hang" report not reproducible). Shared density
+//                     instance eliminates the v58.13.40 dual-hook drift
+//                     between page-level toolbar + inner GroupedTilesView.
+//                     Density segmented control now visible on 7 pages
+//                     (Incidents, Inspections, SiteSignin, CsIncidents,
+//                     Hazards, PreStarts, SiteDiary, RiskAssessments).
+//                     SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.41';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

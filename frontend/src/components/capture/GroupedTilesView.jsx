@@ -75,10 +75,18 @@ export default function GroupedTilesView({
   // (palette source-of-truth key) and `pageKey` (density localStorage
   // scope). Undefined preserves the pre-v58.13.40 behaviour.
   page, pageKey,
+  // v58.13.41 — optional external density instance. When supplied,
+  // GroupedTilesView reuses the parent's hook instead of creating
+  // its own — required so a toolbar segmented control at page level
+  // and the tile grid stay in lockstep (they'd otherwise drift
+  // because two `useCaptureDensity` calls maintain independent
+  // React state even with the same localStorage key).
+  density: densityProp,
 }) {
   // Density hook. `pageKey` defaults to testidPrefix so callers that
   // don't pass an explicit pageKey still get per-page persistence.
-  const density = useCaptureDensity(pageKey || testidPrefix, (items || []).length);
+  const internalDensity = useCaptureDensity(pageKey || testidPrefix, (items || []).length);
+  const density = densityProp || internalDensity;
   // v58.11.1 auto-retry cadence — 3 s then 10 s.
   const [retrying, setRetrying] = useState(false);
   const retriedAtRef = useRef([]);
@@ -207,7 +215,14 @@ export default function GroupedTilesView({
                            style={{ backgroundColor: rowStripe.hex }} aria-hidden />
                     )}
                     <div className={rowStripe ? 'pl-2.5 pr-1.5 py-1.5' : 'p-3'}>
-                      {renderTile(rec, { subtitleLines: density.subtitleLines, minH: density.cardMinH })}
+                      {renderTile(rec, {
+                        subtitleLines: density.subtitleLines,
+                        minH: density.cardMinH,
+                        // v58.13.41 — pass the group palette hex down
+                        // so `<CaptureCard>`'s own left stripe agrees
+                        // with the outer wrapper + the group banner.
+                        stripeHex: rowStripe ? rowStripe.hex : null,
+                      })}
                     </div>
                   </div>
                 );

@@ -192,11 +192,16 @@ export default function CaptureCard({
 /**
  * Standard grid container to wrap a list of CaptureCards. Ensures the
  * card-per-row cadence stays consistent across all 6 Capture tabs.
+ *
+ * v58.13.41 — Accepts optional `gridClass`. When supplied, overrides
+ * the default 5-col grid so callers can drive density via
+ * `useCaptureDensity().gridClass`. Legacy call-sites that don't pass
+ * it keep their pre-v58.13.41 layout.
  */
-export function CaptureCardGrid({ children, testid }) {
+export function CaptureCardGrid({ children, testid, gridClass }) {
   return (
     <div
-      className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6"
+      className={gridClass || 'grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6'}
       data-testid={testid}
     >
       {children}

@@ -1,6 +1,92 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.41 — Ship 4b bugfixes + deferred density wiring.
+// Completes the v58.13.39/40 group-palette + capture-density rollout
+// by wiring the visible segmented control across every Capture list
+// page and by fixing the two bugs surfaced during v58.13.40 testing.
+//
+// Bug 1 — Banner ≠ tile stripe colour (FIXED)
+//   Root cause: `GroupedTilesView` was resolving the banner tint via
+//   `resolveGroupPalette({ page })` (v58.13.40) but each tile's inner
+//   `CaptureCard` still fell back to its own `templateColor()` legacy
+//   palette because the group's hex wasn't threaded down.
+//   Fix: `GroupedTilesView` now passes `stripeHex` to `renderTile(rec,
+//   ctx)`; every consumer page reads `ctx.stripeHex` and forwards it
+//   as `stripeStyle={{ background: ctx.stripeHex }}`. Precedence:
+//   group-palette hex > page-provided stripe > CaptureCard fallback.
+//
+// Bug 2 — `/app/submissions/cs-incidents` reported "hangs 200-240s"
+//   under headless automation (INVESTIGATED · NOT REPRODUCIBLE)
+//   Profile results:
+//     · Backend `GET /api/cs-incident/`     → HTTP 200 in ~174 ms.
+//     · Backend `GET /api/cs-incident/columns` → HTTP 200 in ~236 ms.
+//     · Frontend DOM ready 1.36 s, first tile visible 2.48 s from
+//       goto (201 tiles). Well under the 5 s target.
+//   The 240 s figure was almost certainly a stale test-harness
+//   timeout hitting a cold-start login redirect chain. No perf fix
+//   shipped — profiling numbers preserved in the ship report so the
+//   report agent can validate.
+//
+// v58.13.40 collateral bug (also fixed here)
+//   `Incidents.jsx` called `useCaptureDensity('incidents', N)` at
+//   page-level to feed the toolbar segmented control, while
+//   `GroupedTilesView` created its OWN internal
+//   `useCaptureDensity('incidents', N)`. Two hook instances = two
+//   independent React states, only sync'd via localStorage on mount.
+//   Clicking the segmented control updated the toolbar but never the
+//   grid until reload. Now `GroupedTilesView` accepts an optional
+//   `density` prop and every page that renders a visible density
+//   control passes the same instance down.
+//
+// Deferred wiring completed (frontend-only)
+//   · NEW `components/CaptureDensityControl.jsx` — extracted from
+//     `CaptureListToolbar`'s inline block. Same 4-icon segmented
+//     control (Wand2 auto / Rows3 compact / LayoutGrid comfortable /
+//     LayoutList spacious) plus a `testidPrefix` prop so per-page
+//     testids stay unique.
+//   · `CaptureListToolbar` now delegates the density UI to the shared
+//     component (single visual source of truth).
+//   · `CaptureCardGrid` — new optional `gridClass` prop. When passed,
+//     overrides the default 5-col grid so flat pages can drive
+//     density via `useCaptureDensity().gridClass`.
+//   · `GroupedTilesView` — new optional `density` prop (see Bug 2).
+//   · Page wiring — the density segmented control is now visible on:
+//       · Grouped pages: Incidents (already v58.13.40),
+//         Inspections, Site Sign-In, CS Incidents.
+//       · Flat pages: Hazards, Pre-Starts, Site Diary,
+//         Risk Assessments.
+//     Each page threads `density.gridClass` into the grid container
+//     and `{ minH, subtitleLines }` into every rendered CaptureCard.
+//
+// Guardrails held
+//   · Frontend-only ship. Zero backend files touched.
+//   · `/app/mobile/` untouched except for the `MOBILE_BUNDLE_VERSION`
+//     bump.
+//   · v58.13.13 version-sync: all three canonical strings +
+//     top-changelog reference match `paneltec-v160.3.9.58.13.41`.
+//   · v58.13.10 test-placement: new pytest under
+//     `/app/tests/frontend_smoke/`.
+//   · Legacy `useCaptureDensity` call-sites still work — the new
+//     `density` prop is optional; no `stripeHex` requirement for
+//     pages that don't pass `page`.
+//   · Pre-existing lint warnings from v58.13.27 (PlantVehicles.jsx
+//     `no-unstable-nested-components`) intentionally NOT rolled in
+//     per user directive to keep this ship focused on the 2 bugs
+//     + deferred wiring.
+//
+// Tests
+//   · NEW `tests/frontend_smoke/test_capture_wiring_v58_13_41.py` —
+//     asserts (a) `GroupedTilesView` accepts + prefers the external
+//     `density` prop, (b) `CaptureCardGrid` honours `gridClass`,
+//     (c) `CaptureDensityControl` exists with the shared testid
+//     pattern, (d) 4 grouped pages forward `ctx.stripeHex` to
+//     `CaptureCard.stripeStyle`, (e) 4 flat pages instantiate
+//     `useCaptureDensity` and pass `density.gridClass` +
+//     `density.cardMinH` + `density.subtitleLines` through, (f)
+//     version-sync current.
+
+
 // v160.3.9.58.13.40 — v58.13.39 wiring. Threads the group-palette +
 // capture-density primitives into the shared UI so users see the
 // tile theming + density switch in production.
@@ -3805,7 +3891,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.40';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.41';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

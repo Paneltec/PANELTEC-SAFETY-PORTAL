@@ -9,6 +9,7 @@ import PdfActions from '../components/PdfActions';
 import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -22,6 +23,7 @@ export default function HazardsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  const density = useCaptureDensity('hazards', filtered.length);
   useEffect(() => { api.get('/hazards').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
@@ -35,7 +37,10 @@ export default function HazardsList() {
           subtitle="Snap a hazard — AI classifies severity and drafts the report."
           action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-create-btn" />} />
         {items.length > 0 && (
-          <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="hazards" />
+          <CaptureListToolbar
+            items={items} onFiltered={setFiltered} testidPrefix="hazards"
+            densityMode={density.mode} onDensityChange={density.setMode}
+          />
         )}
       </CaptureSticky>
       <Tabs defaultValue="list" className="mt-2" data-testid="hazards-tabs">
@@ -57,7 +62,7 @@ export default function HazardsList() {
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No hazards reported" body="Report your first hazard with a photo and AI classification." action={<NewButton to="/app/hazards/new" label="Report hazard" testid="hazard-empty-create" />} />
        : (<>
-          <CaptureCardGrid testid="hazards-grid">
+          <CaptureCardGrid testid="hazards-grid" gridClass={density.gridClass}>
             {filtered.map((h) => {
               // v160.3.0-adjust-17b — Real hazard reports (not legacy)
               // with a photo still get the photo header; legacy SSRA
@@ -80,6 +85,8 @@ export default function HazardsList() {
                       resourceKind="hazards"
                       apiPath="hazards"
                       subtitle={h.description}
+                      subtitleLines={density.subtitleLines}
+                      minH={density.cardMinH}
                       badges={extraBadges}
                       onDeleted={evict}
                     />
@@ -93,6 +100,8 @@ export default function HazardsList() {
                   resourceKind="hazards"
                   apiPath="hazards"
                   subtitle={h.description || null}
+                  subtitleLines={density.subtitleLines}
+                  minH={density.cardMinH}
                   badges={extraBadges}
                   onDeleted={evict}
                 />

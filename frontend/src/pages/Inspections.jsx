@@ -7,6 +7,7 @@ import CaptureListToolbar from '../components/CaptureListToolbar';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
 import CaptureCard, { CaptureSticky } from '../components/CaptureCard';
 import { paletteForType } from '../lib/preStartsPalette';
+import useCaptureDensity from '../lib/useCaptureDensity';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -36,6 +37,7 @@ export default function InspectionsList() {
   const [items, setItems] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
+  const inspectionsDensity = useCaptureDensity('inspections', filtered.length);
   useEffect(() => {
     api.get('/inspections')
       .then((r) => { setItems(r.data); setFiltered(r.data); })
@@ -66,7 +68,13 @@ export default function InspectionsList() {
       {loading ? <div className="text-sm text-slate-500">Loading…</div>
        : items.length === 0 ? <EmptyState title="No inspections yet" body="Run your first inspection." action={<NewButton to="/app/inspections/new" label="New inspection" testid="inspection-empty-create" />} />
        : (<>
-        <CaptureListToolbar items={items} onFiltered={setFiltered} testidPrefix="inspections" />
+        <CaptureListToolbar
+          items={items}
+          onFiltered={setFiltered}
+          testidPrefix="inspections"
+          densityMode={inspectionsDensity.mode}
+          onDensityChange={inspectionsDensity.setMode}
+        />
         {/* v58.12.7 — Tile format via shared GroupedTilesView. Groups by
             `template_name`; sorts groups alphabetically; sorts rows
             within each group by `date` DESC. Toolbar filter above still
@@ -75,6 +83,7 @@ export default function InspectionsList() {
             + first-card-tint group banners via `preStartsPalette`. */}
         <GroupedTilesView
           items={filtered}
+          density={inspectionsDensity}
           groupBy={(it) => it.template_name || 'Deleted template'}
           getStripeType={(it) => it.template_name || ''}
           testidPrefix="inspection"
@@ -82,7 +91,7 @@ export default function InspectionsList() {
           pageKey="inspections"
           dateFn={(it) => it.date || it.created_at || ''}
           emptyMessage="No matching inspections."
-          renderTile={(it) => {
+          renderTile={(it, ctx = {}) => {
             const total = it.checklist_items?.length || 0;
             const passed = it.checklist_items?.filter((c) => c.response === 'pass').length || 0;
             const failed = it.checklist_items?.filter((c) => c.response === 'fail').length || 0;
@@ -91,6 +100,8 @@ export default function InspectionsList() {
               setItems((prev) => prev.filter((x) => x.id !== id));
               setFiltered((prev) => prev.filter((x) => x.id !== id));
             };
+            // v58.13.41 — group palette wins over template palette.
+            const stripe = ctx.stripeHex || (pal ? pal.hex : null);
             return (
               <CaptureCard
                 record={{
@@ -101,7 +112,9 @@ export default function InspectionsList() {
                 resourceKind="inspections"
                 apiPath="inspections"
                 subtitle={`${passed} pass · ${failed} fail · ${total - passed - failed} N/A`}
-                stripeStyle={pal ? { background: pal.hex } : undefined}
+                subtitleLines={ctx.subtitleLines}
+                minH={ctx.minH}
+                stripeStyle={stripe ? { background: stripe } : undefined}
                 onDeleted={evict}
               />
             );
