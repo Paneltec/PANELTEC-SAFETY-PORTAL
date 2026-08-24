@@ -23,6 +23,10 @@ import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal
 // Ships the semantic labels ("Health & Hazards", "SWMS & Competencies", …)
 // that replace the old cosmetic pastel names.
 import { FOLDER_COLORS, FOLDER_COLOR_LABELS, folderColor } from '../lib/folderColors';
+// v58.13.52 — Same deterministic 8-colour rotation the Capture pages
+// already use for grouped-tile stripes/banners. Consumed below to
+// colour-divide the file rows inside a folder-detail view.
+import { resolveGroupPalette } from '../lib/groupPalette';
 
 // Phase 3.20 Wave 2 — lucide row-action/toolbar icons swapped
 // to @fluentui/react-icons. Aliased back to the original lucide
@@ -152,6 +156,76 @@ function SubfolderCard({ sf, canEdit, onOpen, onChanged }) {
     </div>
   );
 }
+
+// ────────────────────── v58.13.52 · group-by-key helpers ─────────────────────
+//
+// Rows inside a folder-detail view now render inside a colour-coded
+// group. Group key resolution is a strict fallback chain per the
+// v58.13.52 spec:
+//   1. IMS-NN prefix parsed from the filename        (e.g. `IMS-04`)
+//   2. First `ai_tags[0]` (already populated at upload time)
+//   3. Coarse mime bucket (`pdf` / `docx` / `xlsx` / `img` / `text`)
+//   4. Literal string `"Other"` — always sorts last
+//
+// The chosen key is fed to `resolveGroupPalette({ groupKey, page:
+// 'document-library' })` for the 8-colour rotation (djb2 hash → stable
+// across reloads). Adding new IMS numbers (`IMS-11`, …) or brand-new
+// tag families requires zero code changes — they slot into the
+// rotation automatically.
+
+const IMS_PREFIX_RE = /IMS-(\d{1,3})(?:\.\d+[a-z]?)?/i;
+
+function _mimeBucket(mime) {
+  const m = String(mime || '').toLowerCase();
+  if (m.includes('pdf')) return 'pdf';
+  if (m.includes('word') || m.includes('officedocument.wordprocessing')) return 'docx';
+  if (m.includes('sheet') || m.includes('excel') || m.includes('csv')) return 'xlsx';
+  if (m.startsWith('image/')) return 'img';
+  if (m.startsWith('text/')) return 'text';
+  return '';
+}
+
+/**
+ * v58.13.52 fallback chain: IMS regex → first ai_tag → mime bucket → "Other".
+ * Exported (via named import from the same file) is unnecessary — the
+ * helper is only used inside `DocumentLibraryFolder`. It IS covered by
+ * the smoke test in `tests/frontend_smoke/test_document_library_grouping_v58_13_52.py`
+ * which greps for these exact tokens.
+ */
+function docLibraryGroupKey(f) {
+  const m = IMS_PREFIX_RE.exec(f.filename || '');
+  if (m && m[1]) return `IMS-${m[1].padStart(2, '0')}`;
+  const tag = ((f.ai_tags || [])[0] || '').trim();
+  if (tag) return tag.toLowerCase();
+  const bucket = _mimeBucket(f.mime);
+  if (bucket) return bucket;
+  return 'Other';
+}
+
+/**
+ * Groups files by `docLibraryGroupKey`, sorts within each group by
+ * `uploaded_at` DESC, and returns an array of `[groupKey, files[]]`
+ * tuples ordered by group key ascending — with "Other" always last.
+ */
+function groupFilesForDisplay(files) {
+  const buckets = new Map();
+  for (const f of files || []) {
+    const k = docLibraryGroupKey(f);
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(f);
+  }
+  for (const arr of buckets.values()) {
+    arr.sort((a, b) => String(b.uploaded_at || '').localeCompare(String(a.uploaded_at || '')));
+  }
+  const entries = Array.from(buckets.entries());
+  entries.sort(([a], [b]) => {
+    if (a === 'Other' && b !== 'Other') return 1;
+    if (b === 'Other' && a !== 'Other') return -1;
+    return String(a).localeCompare(String(b), 'en', { numeric: true });
+  });
+  return entries;
+}
+
 
 // ────────────────────── Folder list page ──────────────────────
 
@@ -844,85 +918,113 @@ export function DocumentLibraryFolder() {
               </tr>
             </thead>
             <tbody>
-              {files.map((f) => (
-                <tr key={f.id} className="border-t border-slate-100 hover:bg-slate-50" data-testid={`file-row-${f.id}`}>
-                  <td className="px-4 py-3">
-                    <div className="inline-flex items-center gap-2">
-                      <span className="text-slate-400 shrink-0">{fileIcon(f.mime)}</span>
-                      <button onClick={() => downloadFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]" title={f.filename}>
-                        {f.filename}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{humanSize(f.size)}</td>
-                  <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{f.uploaded_by_name || '—'}</td>
-                  <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{(f.uploaded_at || '').slice(0, 10)}</td>
-                  <td className="px-4 py-3 hidden xl:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {(f.ai_tags || []).slice(0, 4).map((t) => (
-                        <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#ece6f4] text-[#4f3a8c] uppercase tracking-wider font-semibold">{t}</span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-1">
-                      {(() => {
-                        const ok = isPdfPreviewable(f.mime, f.filename);
-                        const tip = ok ? 'View as PDF' : 'PDF preview not available for this format';
-                        return (
-                          <button onClick={() => ok && setPreviewFile(f)} disabled={!ok}
-                            data-testid={`file-view-pdf-${f.id}`} title={tip}
-                            className={`p-1.5 rounded ${ok
-                              ? 'text-slate-500 hover:text-brand-blue hover:bg-slate-100'
-                              : 'text-slate-300 cursor-not-allowed'}`}>
-                            <Eye />
-                          </button>
-                        );
-                      })()}
-                      {(() => {
-                        const ok = isPdfPreviewable(f.mime, f.filename);
-                        const tip = ok ? 'Download as PDF' : 'PDF preview not available for this format';
-                        const onClick = async () => {
-                          if (!ok) return;
-                          try {
-                            const res = await fetch(`${API_BASE}/files/${f.id}/pdf?dl=1`, {
-                              headers: { Authorization: `Bearer ${getToken()}` },
-                            });
-                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                            const blob = await res.blob();
-                            // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
-                            const filename = (f.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
-                            const { src } = await stashInlinePdf(blob, filename);
-                            const a = document.createElement('a');
-                            a.href = src;
-                            a.download = filename;
-                            document.body.appendChild(a); a.click(); a.remove();
-                          } catch (e) { toast.error(e.message || 'Could not download PDF'); }
-                        };
-                        return (
-                          <button onClick={onClick} disabled={!ok}
-                            data-testid={`file-download-pdf-${f.id}`} title={tip}
-                            className={`p-1.5 rounded ${ok
-                              ? 'text-slate-500 hover:text-purple-700 hover:bg-slate-100'
-                              : 'text-slate-300 cursor-not-allowed'}`}>
-                            <FileText size={14} />
-                          </button>
-                        );
-                      })()}
-                      <button onClick={() => downloadFile(f)} data-testid={`file-download-${f.id}`}
-                        className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
-                        <Download />
-                      </button>
-                      {canEdit && (
-                        <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
-                          className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
-                          <Trash2 />
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {/* v58.13.52 — Rows now grouped by IMS-NN / ai_tag /
+                  mime bucket → "Other". Each group gets a header
+                  row + a 4-px left stripe on every data row. */}
+              {groupFilesForDisplay(files).map(([groupKey, groupFiles]) => {
+                const palette = resolveGroupPalette({ groupKey, page: 'document-library' });
+                return (
+                  <React.Fragment key={`grp-${groupKey}`}>
+                    <tr
+                      data-testid={`doc-library-group-${groupKey}`}
+                      style={{ backgroundColor: palette.tint, borderLeft: `3px solid ${palette.hex}` }}
+                    >
+                      <td colSpan={6} className="px-4 py-2">
+                        <span
+                          className="text-[10px] uppercase tracking-[0.16em] font-semibold"
+                          style={{ color: palette.text }}
+                        >
+                          {groupKey} · {groupFiles.length} {groupFiles.length === 1 ? 'file' : 'files'}
+                        </span>
+                      </td>
+                    </tr>
+                    {groupFiles.map((f) => (
+                      <tr
+                        key={f.id}
+                        className="border-t border-slate-100 hover:bg-slate-50"
+                        data-testid={`file-row-${f.id}`}
+                        style={{ borderLeft: `4px solid ${palette.hex}` }}
+                      >
+                        <td className="px-4 py-3">
+                          <div className="inline-flex items-center gap-2">
+                            <span className="shrink-0" style={{ color: palette.hex }}>{fileIcon(f.mime)}</span>
+                            <button onClick={() => downloadFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]" title={f.filename}>
+                              {f.filename}
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 hidden md:table-cell">{humanSize(f.size)}</td>
+                        <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{f.uploaded_by_name || '—'}</td>
+                        <td className="px-4 py-3 text-slate-500 hidden lg:table-cell">{(f.uploaded_at || '').slice(0, 10)}</td>
+                        <td className="px-4 py-3 hidden xl:table-cell">
+                          <div className="flex flex-wrap gap-1">
+                            {(f.ai_tags || []).slice(0, 4).map((t) => (
+                              <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[#ece6f4] text-[#4f3a8c] uppercase tracking-wider font-semibold">{t}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex gap-1">
+                            {(() => {
+                              const ok = isPdfPreviewable(f.mime, f.filename);
+                              const tip = ok ? 'View as PDF' : 'PDF preview not available for this format';
+                              return (
+                                <button onClick={() => ok && setPreviewFile(f)} disabled={!ok}
+                                  data-testid={`file-view-pdf-${f.id}`} title={tip}
+                                  className={`p-1.5 rounded ${ok
+                                    ? 'text-slate-500 hover:text-brand-blue hover:bg-slate-100'
+                                    : 'text-slate-300 cursor-not-allowed'}`}>
+                                  <Eye />
+                                </button>
+                              );
+                            })()}
+                            {(() => {
+                              const ok = isPdfPreviewable(f.mime, f.filename);
+                              const tip = ok ? 'Download as PDF' : 'PDF preview not available for this format';
+                              const onClick = async () => {
+                                if (!ok) return;
+                                try {
+                                  const res = await fetch(`${API_BASE}/files/${f.id}/pdf?dl=1`, {
+                                    headers: { Authorization: `Bearer ${getToken()}` },
+                                  });
+                                  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                                  const blob = await res.blob();
+                                  // v148 — stashInlinePdf → same-origin URL (ad-blocker-safe)
+                                  const filename = (f.filename || 'document').replace(/\.[^.]+$/, '') + '.pdf';
+                                  const { src } = await stashInlinePdf(blob, filename);
+                                  const a = document.createElement('a');
+                                  a.href = src;
+                                  a.download = filename;
+                                  document.body.appendChild(a); a.click(); a.remove();
+                                } catch (e) { toast.error(e.message || 'Could not download PDF'); }
+                              };
+                              return (
+                                <button onClick={onClick} disabled={!ok}
+                                  data-testid={`file-download-pdf-${f.id}`} title={tip}
+                                  className={`p-1.5 rounded ${ok
+                                    ? 'text-slate-500 hover:text-purple-700 hover:bg-slate-100'
+                                    : 'text-slate-300 cursor-not-allowed'}`}>
+                                  <FileText size={14} />
+                                </button>
+                              );
+                            })()}
+                            <button onClick={() => downloadFile(f)} data-testid={`file-download-${f.id}`}
+                              className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
+                              <Download />
+                            </button>
+                            {canEdit && (
+                              <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
+                                className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">
+                                <Trash2 />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

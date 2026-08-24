@@ -1038,6 +1038,12 @@ async def stream_cert_file(
     worker_id: str,
     cert_id: str,
     request: Request,
+    # v58.13.51 — Default to INLINE on the disk branch so the behaviour
+    # matches the GridFS branch (which already emits inline via
+    # `_stream_gridfs`). Prior to this ship the disk branch triggered
+    # a "Save As" prompt because Starlette's default disposition for
+    # `FileResponse(filename=...)` is `attachment`.
+    download: int = Query(0, ge=0, le=1),
     user: dict = Depends(require_roles("admin", "hseq_lead", "hr_lead",
                                          "supervisor", "auditor", "worker")),
 ):
@@ -1076,6 +1082,7 @@ async def stream_cert_file(
         str(path),
         media_type=df.get("mime") or "application/octet-stream",
         filename=df.get("filename"),
+        content_disposition_type="attachment" if download else "inline",
     )
 
 

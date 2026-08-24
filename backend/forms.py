@@ -1140,6 +1140,9 @@ async def upload_submission_attachments(
 
 @router.get("/submissions/{submission_id}/attachments/{stored_name}")
 async def serve_submission_attachment(submission_id: str, stored_name: str,
+                                       # v58.13.51 — Default to INLINE. See
+                                       # note on `serve_schedule_attachment`.
+                                       download: int = Query(0, ge=0, le=1),
                                        user: dict = Depends(get_current_user)):
     sub = await db.form_submissions.find_one(
         {"id": submission_id, "org_id": user["org_id"], "deleted_at": None},
@@ -1163,7 +1166,8 @@ async def serve_submission_attachment(submission_id: str, stored_name: str,
     if not path.exists():
         raise HTTPException(404, "File missing on disk")
     return FileResponse(str(path), media_type=rec.get("mime") or "application/octet-stream",
-                        filename=rec.get("name") or stored_name)
+                        filename=rec.get("name") or stored_name,
+                        content_disposition_type="attachment" if download else "inline")
 
 
 # ──────────────── Submission photos ────────────────

@@ -1,6 +1,133 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.52 — Document Library folder-detail colour grouping.
+//
+// ── Problem ────────────────────────────────────────────────────────
+//   Inside a Document Library folder ("Compliance / Document Library
+//   / 1. Management & Quality Procedures V10.0 2025", 11 files) the
+//   file table showed 11 visually-identical grey rows. The user
+//   asked to "divide them with different colour" so the underlying
+//   IMS section clusters (IMS-01…IMS-10) are readable at a glance.
+//
+// ── Fix ────────────────────────────────────────────────────────────
+//   `DocumentLibraryFolder` (`pages/DocumentLibrary.jsx`) now groups
+//   its file rows using a strict fallback chain:
+//     1. IMS-NN prefix parsed from `filename` (regex
+//        `/IMS-(\d{1,3})(?:\.\d+[a-z]?)?/i`) → key like `IMS-04`
+//        (zero-padded, so `IMS-4.01` groups with `IMS-4` sibs).
+//     2. First `ai_tags[0]` (already denormalised at upload).
+//     3. Coarse mime bucket (`pdf` / `docx` / `xlsx` / `img` / `text`).
+//     4. Literal `"Other"` — always sorts last.
+//   Each group runs through
+//     `resolveGroupPalette({ groupKey, page: 'document-library' })`
+//   → same 8-colour djb2-hash rotation the Capture pages already
+//   consume. Adding IMS-11 next year auto-slots into the rotation
+//   with zero code changes.
+//
+// ── Visual ─────────────────────────────────────────────────────────
+//   · One tinted group-header row per group (bg = palette.tint,
+//     3-px palette.hex left border, uppercase palette.text label).
+//   · Each data row gets a 4-px palette.hex left stripe (same
+//     idiom as `CaptureCard#stripeStyle`).
+//   · The file-type glyph inherits `color: palette.hex` (was
+//     `text-slate-400`) — the icon itself carries the accent.
+//   · Sorting: within a group by `uploaded_at` DESC; between
+//     groups by key ASC with numeric-aware collation (so IMS-10
+//     sorts AFTER IMS-2), "Other" last.
+//   · Zero changes to columns, action icons, upload flow,
+//     permissions, backend, or DB.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_document_library_grouping_v58_13_52.py`
+//     · Import wire-up (`resolveGroupPalette`).
+//     · IMS_PREFIX_RE literal shape.
+//     · Fallback chain intact (IMS → ai_tags → mime → Other).
+//     · "Other" sorted last with numeric-aware collation.
+//     · Group-header rows carry `data-testid="doc-library-group-*"`.
+//     · Data rows apply 4-px left stripe + tinted file icon.
+//     · Version-sync pin.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) parked, untouched.
+//   · Heartbeat design stays on ice.
+
+// v160.3.9.58.13.51 — PDF open-inline default on view-oriented
+// file-serving endpoints.
+//
+// ── Problem ────────────────────────────────────────────────────────
+//   User reported: "with the document could we have the pdf open
+//   directly not save it" — clicking a file icon in the UI popped
+//   a "Save As" prompt rather than opening the PDF inline.
+//
+// ── Root cause ─────────────────────────────────────────────────────
+//   Starlette 0.37.2 `FileResponse(filename=...)` defaults to
+//   `Content-Disposition: attachment; filename="..."` when a
+//   filename kwarg is supplied. Three view-oriented endpoints
+//   were emitting `attachment` and triggering the download.
+//
+// ── Audit table (every `Content-Disposition` in the codebase) ──────
+//   VIEW endpoints — MUST default to `inline`:
+//     · asset_service.serve_schedule_attachment              FIXED
+//         GET /api/assets/{asset_id}/schedules/{sid}/attachments/{stored_name}
+//     · forms.serve_submission_attachment                    FIXED
+//         GET /api/forms/submissions/{submission_id}/attachments/{stored_name}
+//     · simpro_zip_import.stream_cert_file (disk branch)     FIXED
+//         GET /api/workers/{worker_id}/certifications/{cert_id}/file
+//     · simpro_zip_import._stream_gridfs (GridFS)            OK (inline)
+//     · simpro_zip_import.stream_unmatched_document          OK (inline)
+//     · suppliers_qr QR label PDF                            OK (inline)
+//     · pdf_routes capture PDF (`?download=0`)               OK (inline)
+//     · forms.serve_field_photo                              OK (no filename → inline)
+//     · help_routes reference image                          OK (inline)
+//   DOWNLOAD endpoints — CORRECTLY keep `attachment`:
+//     · document_library.download_file    (`/files/{id}/download`)
+//     · sites_signon_v127 CSV/PDF export
+//     · backup_service snapshot zip export
+//     · workers_inductions matrix XLSX export
+//     · file_pdf pdf-bundle download endpoint
+//     · pdf_routes capture PDF (`?download=1` opt-in)
+//
+// ── Fix shape ──────────────────────────────────────────────────────
+//   Each of the 3 fixed endpoints now:
+//     · accepts `?download: int = Query(0, ge=0, le=1)`
+//     · passes `content_disposition_type="inline"` by default
+//     · passes `content_disposition_type="attachment"` when
+//       `?download=1` — preserves an explicit save-to-disk path
+//   Zero behavioural change to any GridFS branch (already inline)
+//   or any explicit download route (still attachment).
+//
+// ── Frontend ───────────────────────────────────────────────────────
+//   No frontend changes required. `PdfActions.jsx` already sends
+//   `action: 'view'` when minting the token and the "Download
+//   original" button in the Document Library still uses the
+//   dedicated `/files/{id}/download` endpoint.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_pdf_inline_default_v58_13_51.py`
+//     · 3 fix-guard tests (one per patched endpoint)
+//     · 1 cross-cut test pinning `attachment` on the 3 endpoints
+//       that MUST stay attachment (document-library download,
+//       sites-signon export, backup snapshot).
+//   Existing `test_schedule_attachments_v58_13_14.py` continues
+//   to pass — the endpoint still returns 200 with the file body,
+//   only the Content-Disposition header changed.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) parked, untouched.
+//   · Heartbeat design in `/app/memory/v58_13_51_heartbeat_design.md`
+//     stays on ice — this ship is the PDF-inline fix only.
+
 // v160.3.9.58.13.50 — Bundle: P0 bulk-import watchdog + P1 Site
 // Sign-In PDF fix + P2 legacy `.pdf` handler retirement.
 //
@@ -4613,7 +4740,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.50';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.52';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

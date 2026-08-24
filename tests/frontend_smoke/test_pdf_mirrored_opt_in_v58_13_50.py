@@ -80,10 +80,24 @@ def test_risk_assessments_does_not_need_pdf_mirrored():
 
 
 def test_version_sync_current_v58_13_50():
+    # v58.13.51 note: this ship's file DID land unchanged; the check
+    # below now only proves the .50 strings HAVE been superseded (no
+    # longer the current `RUNNING_VERSION`). See the parallel
+    # forward-looking assertion in
+    # `test_pdf_inline_default_v58_13_51.py` for the .51 pin.
     expected = "paneltec-v160.3.9.58.13.50"
     v_js = (FRONTEND / "lib" / "version.js").read_text(encoding="utf-8")
     m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
     sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
-    assert f"'{expected}'" in v_js
-    assert f"'{expected}'" in m_ts
-    assert f"'{expected}'" in sw_js
+    # The .50 literal MAY still appear in the changelog block of
+    # version.js (as prior-ship reference) — that's fine.
+    # RUNNING_VERSION however must no longer be .50.
+    assert f"RUNNING_VERSION = '{expected}'" not in v_js, (
+        "RUNNING_VERSION still pinned to .50 after subsequent ship"
+    )
+    assert f"'{expected}'" not in m_ts, (
+        "mobile MOBILE_BUNDLE_VERSION still on .50 after subsequent ship"
+    )
+    assert f"'{expected}'" not in sw_js, (
+        "service-worker CACHE_VERSION still on .50 after subsequent ship"
+    )

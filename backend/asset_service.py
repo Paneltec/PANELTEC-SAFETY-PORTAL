@@ -1059,6 +1059,10 @@ async def upload_schedule_attachments(
 @router.get("/{asset_id}/schedules/{sid}/attachments/{stored_name}")
 async def serve_schedule_attachment(
     asset_id: str, sid: str, stored_name: str,
+    # v58.13.51 — Default to INLINE so the browser opens the PDF in a tab
+    # instead of triggering a "Save As". Callers who explicitly want a
+    # download (e.g. bulk-export flows) pass `?download=1`.
+    download: int = Query(0, ge=0, le=1),
     user: dict = Depends(get_current_user),
 ):
     doc = await _get_schedule(asset_id, sid, user["org_id"])
@@ -1076,6 +1080,7 @@ async def serve_schedule_attachment(
         str(path),
         media_type=rec.get("mime") or "application/octet-stream",
         filename=rec.get("name") or stored_name,
+        content_disposition_type="attachment" if download else "inline",
     )
 
 
