@@ -1,6 +1,104 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.50 — Bundle: P0 bulk-import watchdog + P1 Site
+// Sign-In PDF fix + P2 legacy `.pdf` handler retirement.
+//
+// ── P0 · Bulk-import vision-stall (RECURRING regression) ─────────
+//   Failed job forensics from live DB:
+//     id=14433131-29a9-4fa8-9d7e-af18f86145cf  extracted=29,350
+//         started=2026-08-22T23:37:45  failed=2026-08-23T07:40:09
+//     id=4ef790e7  extracted=11,361     failed=2026-08-22T03:19
+//     id=0da9f903  extracted=7,407      failed=2026-08-21T04:12
+//     id=4f395643  extracted=41,900     failed=2026-08-21T14:28
+//     id=9f5715aa  extracted=7,161      failed=2026-08-20T04:20
+//   Pattern: 5 different jobs, all failed at `error_step="vision"`,
+//   all reaped by the 15-min watchdog. The pipeline runs healthily
+//   for hours (29,350 records = 8+ hours) then a single slow batch
+//   trips the cap. Watchdog logic is correct (keys off
+//   `last_progress_at`); the cap is just too tight for legitimate
+//   Claude latency spikes.
+//
+//   Fix: `bulk_import_prestarts.py::VISION_STALL_TIMEOUT_MIN`
+//   default 15 → 30 minutes. Env-overridable via
+//   `BULK_IMPORT_VISION_STALL_TIMEOUT_MIN` (unchanged). Zero code
+//   changes to the watchdog logic itself — same query, same reap
+//   path, just more headroom. Doubles the tolerance for slow
+//   batches without abandoning the guardrail for genuinely-hung
+//   jobs.
+//
+//   Recovery of the failed 29,350-record job: records DID land in
+//   `pre_starts` / `form_submissions` (persisted per-batch via
+//   `_flush_progress`). The job's `last_progress_at` snapshot on
+//   disk lets it be resumed from record 29,351 via
+//   `POST /api/bulk-import/prestarts/<job_id>/start` if the user
+//   chooses (the auto-resume-orphaned-jobs pass already knows how
+//   to skip cached PDF hashes so re-runs are cheap).
+//
+// ── P1 · Site Sign-In file icon 400'd ────────────────────────────
+//   Root cause: records loaded via `/api/forms/templates/<TID>/
+//   submissions` have `source = None` (not `'form_submission'`
+//   like domain-specific mirrors). PdfActions' auto-detect
+//   (`source === 'form_submission'`) fell through to the direct
+//   `/pdf-token` branch which 400'd on `resource="forms"` (NOT
+//   in RESOURCE_TO_PATH — documented as MIRRORED_ONLY_KINDS since
+//   v58.13.48).
+//
+//   Fix: new opt-in prop `pdfMirrored` on `CaptureCard` →
+//   `PdfActions`. `SiteSigninList.jsx` passes `pdfMirrored={true}`
+//   to force the mirrored `/forms/submissions/pdf-token` branch
+//   regardless of the record's `source` field. PdfActions branch
+//   becomes: `isMirrored = pdfMirrored || source === 'form_submission'`.
+//   Risk Assessments UNAFFECTED — its records carry
+//   `source='form_submission'` natively (verified via curl).
+//
+// ── P2 · Legacy `/api/files/pdf/{token}.pdf` handler retired ─────
+//   User confirmed v58.13.49's URL-shape alignment works in their
+//   real browser. Every mint_pdf_token result now points at the
+//   `_build`-registered resource-scoped route
+//   (`/api/{path}/{record_id}/pdf?token=<jwt>`). Legacy JWT-in-path
+//   tokens have 90 s TTL — none in flight by the time v58.13.50
+//   ships. Removing the handler shrinks the attack surface (one
+//   fewer JWT-consuming endpoint) and eliminates the surviving
+//   code path that had the Cloudflare `.pdf`-in-path rendering
+//   regression documented in v58.13.49's changelog.
+//
+// Tests
+//   NEW `tests/backend_unit/test_bulk_import_watchdog_v58_13_50.py`
+//     · `VISION_STALL_TIMEOUT_MIN` default is 30 (module-level).
+//   NEW `tests/frontend_smoke/test_pdf_mirrored_opt_in_v58_13_50.py`
+//     · PdfActions destructures `pdfMirrored = false` and OR's it.
+//     · CaptureCard threads `pdfMirrored` down.
+//     · SiteSigninList passes `pdfMirrored={true}`.
+//     · Risk Assessments does NOT need `pdfMirrored`.
+//     · v58.13.50 version-sync across the 3 canonical files.
+//   UPDATED `tests/backend_unit/test_pdf_token_url_shape_v58_13_49.py`
+//     · `test_legacy_jwt_in_path_endpoint_still_registered` INVERTED
+//       to `test_legacy_jwt_in_path_endpoint_removed_v58_13_50`.
+//
+// Live E2E verification (curl)
+//   Site Sign-In:
+//     · `POST /api/forms/submissions/pdf-token` with real submission
+//       id → 200 + signed URL.
+//     · `GET <url>` → HTTP 200, 121,295 bytes,
+//       `Content-Type: application/pdf`,
+//       `Content-Disposition: inline`, `%PDF-1.4` header.
+//   Bulk-import: pod restart applies the new 30-min cap
+//   immediately (watchdog reads the module constant on each tick).
+//
+// Guardrails held
+//   · Backend restart required (module-level constant read at
+//     import); `/api/openapi.json` → 200 post-boot.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · v58.13.13 version-sync: all three canonical strings updated.
+//   · Every prior guard (CS Incidents PDF, URL shape alignment,
+//     density wiring, canonical density testid, double-stripe,
+//     Pydantic ConfigDict, hr_employees regression,
+//     action-availability contract, density telemetry) preserved.
+//   · Track 2 (ZIP re-extraction) still parked pending PVC
+//     expansion.
+
+
 // v160.3.9.58.13.49 — CS Incidents PDF popup stayed on about:blank.
 // v58.13.48 shipped the renderer + registry wiring correctly (5463 B
 // `%PDF-1.4` served with `Content-Type: application/pdf` +
@@ -4515,7 +4613,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.49';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.50';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

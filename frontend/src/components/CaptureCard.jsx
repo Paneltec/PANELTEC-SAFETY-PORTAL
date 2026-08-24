@@ -71,8 +71,13 @@ export default function CaptureCard({
   // it passes `showPdf={true}` (default) + `pdfResourceKind=
   // "cs_incidents"` to override the permission-scoped `resourceKind`
   // ("reference_library") for the pdf-token POST body.
+  // v160.3.9.58.13.50 — `pdfMirrored` opt-in forces the mirrored
+  // `/forms/submissions/pdf-token` branch when the record's
+  // `.source` field is falsy (e.g. Site Sign-In records loaded
+  // straight from the form_submissions collection).
   showPdf = true,
   pdfResourceKind,
+  pdfMirrored = false,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -137,6 +142,7 @@ export default function CaptureCard({
             <PdfActions
               resourceKind={resourceKind}
               pdfResourceKind={pdfResourceKind}
+              pdfMirrored={pdfMirrored}
               recordId={r.id}
               source={r.source}
               title={title}

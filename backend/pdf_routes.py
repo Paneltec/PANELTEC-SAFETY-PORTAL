@@ -237,44 +237,13 @@ _build("cs_incidents", "cs-incidents")
 
 # ---------- Path-based PDF endpoint (ad-blocker friendly) ----------
 #
-# Looks like a clean static file fetch ("...pdf"), no ?token= query, no varied
-# resource path — sidesteps Edge/Brave/uBlock heuristics that flag long-token
-# query strings as analytics beacons. The JWT carries the resource + record_id
-# + action so we don't need them in the URL.
-@router.get("/files/pdf/{token}.pdf")
-async def pdf_by_token(token: str):
-    try:
-        payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
-    except jwt.InvalidTokenError:
-        # 404 (not 401/403) — ad-blockers escalate from anything that looks
-        # like an auth failure on a "static" URL.
-        raise HTTPException(status_code=404, detail="Not found")
-    if payload.get("type") != "pdf-token":
-        raise HTTPException(status_code=404, detail="Not found")
-
-    resource = payload.get("resource")
-    record_id = payload.get("record_id")
-    action = payload.get("action") or "view"
-    if resource not in RENDERERS or not record_id:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    user = await db.users.find_one({"id": payload.get("sub")}, {"_id": 0, "password_hash": 0})
-    if not user or user.get("status") == "disabled":
-        raise HTTPException(status_code=404, detail="Not found")
-    if not await can(user, _perm_for(resource), "view"):
-        raise HTTPException(status_code=404, detail="Not found")
-
-    renderer, collection = RENDERERS[resource]
-    doc = await db[collection].find_one(
-        _doc_query(resource, record_id, user), {"_id": 0})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Not found")
-
-    pdf_bytes = renderer(doc)
-    fname = filename_for(doc, resource)
-    disp = "attachment" if action == "download" else "inline"
-    return Response(
-        content=pdf_bytes,
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'{disp}; filename="{fname}"'},
-    )
+# v58.13.50 — Legacy `/api/files/pdf/{token}.pdf` handler RETIRED.
+# The v58.13.49 URL-shape alignment moved every mint_pdf_token result
+# onto the `_build`-registered resource-scoped shape
+# (`/api/{path}/{record_id}/pdf?token=<jwt>`), which is what all
+# in-flight browsers use. Legacy tokens minted before that ship
+# expire at 90 s TTL — none of them can still be alive by the time
+# v58.13.50 ships. Removing the handler shrinks the attack surface
+# (one fewer JWT-consuming endpoint) and eliminates the surviving
+# code path that had the Cloudflare `.pdf`-in-path rendering
+# regression documented in v58.13.49.

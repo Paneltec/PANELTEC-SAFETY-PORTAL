@@ -61,6 +61,14 @@ export default function SiteSigninList() {
       minH={ctx.minH}
       stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
       hideOperator
+      // v58.13.50 — Site Sign-In records come from the raw
+      // `form_submissions` collection and don't carry a `source`
+      // field, so PdfActions' auto-detect
+      // (`source === 'form_submission'`) fails and falls back to
+      // the direct `/pdf-token` branch which 400s on
+      // `resource="forms"`. Explicit opt-in forces the mirrored
+      // `/forms/submissions/pdf-token` path (which works fine).
+      pdfMirrored={true}
       onDeleted={removeLocal}
     />
   );

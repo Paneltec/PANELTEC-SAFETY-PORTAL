@@ -1272,18 +1272,19 @@
 //                    actions field types (backend + seed script).
 //                    SW bumped so clients pick up the new type enum.
 // v160.3.9.58.12.1 — BYDA frontend render arms in Forms + Viewer.
-// v160.3.9.58.13.49 — CS Incidents PDF popup stayed on about:blank.
-//   Root cause: `mint_pdf_token` returned `/api/files/pdf/<jwt>.pdf`
-//   (JWT-in-path shape) while Hazards' mirrored branch returned
-//   `/api/{path}/{id}/pdf?token=<jwt>` (query-param shape). Headers
-//   were byte-identical (inline application/pdf, %PDF-1.4, 5465 B)
-//   but the JWT-in-path variant did not render inline. Aligning
-//   both branches on the query-param shape (`_build`-registered
-//   route that has been production-proven for months via Hazards)
-//   fixes the popup. Backwards-compatible: the legacy
-//   `/files/pdf/{token}.pdf` handler is preserved so any tokens
-//   in-flight still resolve. SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.49';
+// v160.3.9.58.13.50 — Site Sign-In file icon 400'd. Root cause: raw
+//   form_submissions records (as SiteSigninList loads via
+//   `/api/forms/templates/<tid>/submissions`) have `source = null`
+//   — not `'form_submission'` like the domain-specific mirrors
+//   (hazards/incidents/etc). PdfActions' auto-detect
+//   (`source === 'form_submission'`) therefore fell back to the
+//   direct `/pdf-token` branch which 400'd on the "forms" resource
+//   (not in RESOURCE_TO_PATH). Fix: new opt-in prop `pdfMirrored`
+//   on CaptureCard / PdfActions; SiteSigninList passes `true`.
+//   Risk Assessments unaffected (its records ARE mirrored with
+//   `source = 'form_submission'`). Frontend-only, backend
+//   unchanged. SW bumped so caches roll.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.50';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

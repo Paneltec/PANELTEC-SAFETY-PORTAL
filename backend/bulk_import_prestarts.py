@@ -107,7 +107,7 @@ def _env_bool(name: str, default: bool) -> bool:
 #                       making forward progress)
 DOWNLOAD_TIMEOUT_MIN = _env_int("BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN", 10)
 EXTRACT_TIMEOUT_MIN = _env_int("BULK_IMPORT_EXTRACT_TIMEOUT_MIN", 30)
-VISION_STALL_TIMEOUT_MIN = _env_int("BULK_IMPORT_VISION_STALL_TIMEOUT_MIN", 15)
+VISION_STALL_TIMEOUT_MIN = _env_int("BULK_IMPORT_VISION_STALL_TIMEOUT_MIN", 30)
 
 # v58.8 — Every N successful commits, write a checkpoint line to the
 # logs and append a `{batch, processed, at}` entry to `job.checkpoints`.

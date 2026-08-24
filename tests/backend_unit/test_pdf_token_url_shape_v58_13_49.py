@@ -101,15 +101,18 @@ async def test_mint_pdf_token_download_action_carries_download_flag(monkeypatch)
     assert re.search(r"\?token=[^&]+&download=1$", result["url"])
 
 
-def test_legacy_jwt_in_path_endpoint_still_registered():
-    """Backwards-compat guard: the `_build`-side `/files/pdf/{token}.pdf`
-    endpoint stays in place for any tokens already minted before the
-    ship. Preserves 90 s TTL migrations without invalidating in-flight
-    popups mid-deploy."""
+def test_legacy_jwt_in_path_endpoint_removed_v58_13_50():
+    """v58.13.50 retired the legacy `/files/pdf/{token}.pdf` handler.
+    All in-flight tokens minted before v58.13.49 have expired
+    (90 s TTL), so no popup mid-deploy could still be pointing at it.
+    Removing it shrinks the attack surface and eliminates the
+    Cloudflare `.pdf`-in-path rendering regression once and for all.
+    """
     routes = {r.path for r in pdf_routes.router.routes if hasattr(r, "path")}
-    assert "/files/pdf/{token}.pdf" in routes, (
-        "Legacy JWT-in-path endpoint disappeared — that will break "
-        "any popups holding pre-v58.13.49 tokens mid-deploy."
+    assert "/files/pdf/{token}.pdf" not in routes, (
+        "Legacy `/files/pdf/{token}.pdf` endpoint reappeared — v58.13.50 "
+        "retired it. If you need to reintroduce, document why the "
+        "URL-shape mismatch from v58.13.49 has been resolved."
     )
 
 
