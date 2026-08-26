@@ -1,6 +1,88 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.57 — HR Employees UI retired (Ship B of the merge).
+//
+// ── Context ────────────────────────────────────────────────────────
+//   v58.13.56 merged 4 HR flags (Employee ID, Hired, Working Visa,
+//   Do Not Rehire) onto the Worker record and shipped a permission-
+//   gated "HR Info" section on WorkerViewModal. The `--commit` run
+//   populated 67 of 69 workers on preview. Ship B (this) retires
+//   the standalone HR Employees UI + the PII reveal endpoints now
+//   that the register is redundant.
+//
+// ── Frontend — deleted ─────────────────────────────────────────────
+//   · `pages/settings/HrEmployeesPage.jsx`
+//   · `pages/settings/HrEmployeeDrawer.jsx`
+//   · `components/BulkWorkerLinkWizard.jsx`
+//   · `components/BulkWorkerUnlinkWizard.jsx`
+//   · `components/WorkerLinkModal.jsx`
+//   `settingsNavRegistry.js` — `hr_employees` entry removed.
+//   `App.js` — `HrEmployeesPage` import removed;
+//     `/app/settings/hr-employees` now `<Navigate to="/app" replace />`
+//     for a 90-day grace window. REMOVE AFTER 2026-11-25.
+//
+// ── Backend — reveal endpoints deleted, router stays live ──────────
+//   `backend/hr_employees.py`:
+//     · `POST /{uid}/reveal-dob` — DELETED.
+//     · `POST /{uid}/reveal-address` — DELETED.
+//     · `POST /{uid}/reveal-next-of-kin` — DELETED.
+//   Kept live for the 90-day grace window:
+//     · `GET /` (list, masked shape)
+//     · `GET /{uid}` (get)
+//     · `GET /audit` (audit trail, `hr_employees.audit_view` gated)
+//     · `POST /refresh-from-source`
+//     · `PATCH /{uid}` (still edits non-PII fields)
+//     · `POST /soft-delete` + linker helpers
+//   Rationale: any external integration or bookmarked API URL keeps
+//   working; only the surface that the deleted UI consumed is gone.
+//
+// ── Permissions ────────────────────────────────────────────────────
+//   · `hr_employees.view` — KEPT. Still gates the new HR Info
+//     section on Workers (see v58.13.56 backend scrub).
+//   · `hr_employees.audit_view` — KEPT. Still referenced by
+//     `hr_employees.py` line ~250 (the `/audit` endpoint) and
+//     the auditor-carve tests in `test_v49_endpoints.py`. Removing
+//     it would break the audit-view surface which is a legitimate
+//     P90-window use-case.
+//   · `hr_employees.reveal_pii` — Left registered in `permissions.py`
+//     but is now orphaned (no endpoint checks it). Safe to leave;
+//     future ship v58.13.58 candidate can clean up the enum once
+//     the 90-day window closes.
+//
+// ── Data preservation guarantee ────────────────────────────────────
+//   `hr_employees` collection UNTOUCHED (count 121 unchanged).
+//   `hr_employees_audit` UNTOUCHED. The additive Ship A merge means
+//   no data is lost by retiring the UI — the 4 useful HR flags now
+//   live on Workers, so the register is redundant not authoritative.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   Deleted (surface-specific, obsolete under retirement):
+//     · `backend/tests/test_hr_employees_v48.py`
+//       (PII reveal + auditor-carve integration tests).
+//     · `tests/frontend_smoke/test_bulk_link_wizard_v58_13_26.py`
+//     · `tests/frontend_smoke/test_bulk_unlink_wizard_v58_13_29.py`
+//     · `tests/frontend_smoke/test_link_worker_render_v58_13_25.py`
+//   Added:
+//     · `tests/backend_unit/test_hr_employees_retired_v58_13_57.py`
+//       — 8 guards (nav gone, redirect present, retired files
+//       deleted, PII reveal endpoints gone, retirement header in
+//       hr_employees.py, kept-live endpoints still registered,
+//       `hr_employees` count preserved, WorkerPatch HR fields
+//       regression, forward-safe version-sync).
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except MOBILE_BUNDLE_VERSION.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · `hr_employees` collection + `hr_employees_audit` UNTOUCHED.
+//   · Docker / K8s / requirements.txt / package.json unchanged.
+//   · Backend restart REQUIRED — 3 endpoints removed from the
+//     router; brief 200 blip is expected.
+
 // v160.3.9.58.13.56 — HR-merge lite (Ship A · additive-only).
 //
 // User asked for the 4 HR flags to live on the Worker record so
@@ -5075,7 +5157,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.56';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.57';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

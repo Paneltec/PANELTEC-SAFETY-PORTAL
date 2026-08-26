@@ -74,7 +74,9 @@ import SimproImportGuidePage from '@/pages/help/SimproImportGuidePage';
 // v160.3.7q — Program-wide visual schematic
 import ProgramSchematicPage from '@/pages/settings/ProgramSchematicPage';
 // v160.3.9.48 — HR Employees register.
-import HrEmployeesPage from '@/pages/settings/HrEmployeesPage';
+// v58.13.57 — `HrEmployeesPage` import retired. Route below redirects
+// `/app/settings/hr-employees` → `/app` for a 90-day grace window.
+// REMOVE AFTER 2026-11-25.
 
 // Phase 4.13 (paneltec-v129) — `/login` is deprecated. Cover.jsx (mounted
 // at `/`) is the single sign-in surface. `<LoginRedirect />` forwards any
@@ -187,7 +189,12 @@ function App() {
               <Route path="settings/roles-admin" element={<RolesAdmin />} />
               <Route path="settings/workers" element={<Workers />} />
               {/* v160.3.9.48 — HR Employees register. Gated by `hr_employees.view`. */}
-              <Route path="settings/hr-employees" element={<HrEmployeesPage />} />
+              {/* v58.13.57 — HR Employees page retired. The 4 HR
+                  flags now live on the Worker record (merged in
+                  v58.13.56). Backend `/api/hr/employees` list+get
+                  stays live in read-only shape for a 90-day grace
+                  window. REMOVE AFTER 2026-11-25 and flip to 410. */}
+              <Route path="settings/hr-employees" element={<Navigate to="/app" replace />} />
               <Route path="settings/form-assignments" element={<FormAssignmentsAdmin />} />
               <Route path="settings/swms-assignments" element={<SwmsAssignmentsAdmin />} />
               <Route path="settings/system" element={<SystemSettings />} />

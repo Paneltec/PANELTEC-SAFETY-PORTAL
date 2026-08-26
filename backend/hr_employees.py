@@ -1,4 +1,21 @@
-"""v160.3.9.48 — HR Employees register (Active + Archived).
+"""HR Employees router — v58.13.57 retirement note.
+
+v58.13.57 — HR Employees UI retired. Merged into Workers via v58.13.56.
+This router stays live in READ-ONLY shape for a 90-day grace window
+(REMOVE AFTER 2026-11-25). Retired from this file:
+  · `POST /reveal-dob` / `/reveal-address` / `/reveal-next-of-kin` —
+    the PII reveal surface is gone alongside the UI that consumed it.
+Kept live:
+  · `GET /`, `GET /{uid}`, `GET /audit`, `POST /refresh-from-source`,
+    `PATCH /{uid}`, `POST /soft-delete`, and the linker helpers.
+  External integrations or bookmarked API URLs keep read + refresh +
+  audit-view working. `hr_employees` collection and `hr_employees_audit`
+  are untouched — the merge in v58.13.56 was additive, so retiring the
+  reveal endpoints does NOT lose any data.
+
+── Original module docstring below (kept for context) ────────────
+
+v160.3.9.48 — HR Employees register (Active + Archived).
 
 STRICT PII controls (v48 rewrite):
   - Every endpoint is gated by `require_permission("hr_employees", <action>)`.
@@ -314,75 +331,14 @@ async def get_employee(
     return _redact_record(doc)
 
 
-@router.post("/{uid}/reveal-dob")
-async def reveal_dob(
-    uid: str, request: Request,
-    user: dict = Depends(require_permission("hr_employees", "reveal_pii")),
-):
-    doc = await db.hr_employees.find_one(
-        {"$or": [{"id": uid}, {"employee_id": uid}], "deleted_at": None},
-        {"_id": 0, "id": 1, "employee_id": 1, "date_of_birth": 1})
-    if not doc:
-        raise HTTPException(404, "not-found")
-    await _audit(actor=user, request=request, action="reveal-dob",
-                 employee_id=doc.get("employee_id"), target_uid=doc.get("id"))
-    return {"employee_id": doc.get("employee_id"),
-            "date_of_birth": doc.get("date_of_birth")}
-
-
-@router.post("/{uid}/reveal-address")
-async def reveal_address(
-    uid: str, request: Request,
-    user: dict = Depends(require_permission("hr_employees", "reveal_pii")),
-):
-    doc = await db.hr_employees.find_one(
-        {"$or": [{"id": uid}, {"employee_id": uid}], "deleted_at": None},
-        {"_id": 0, "id": 1, "employee_id": 1,
-         "address_line_1": 1, "address_line_2": 1,
-         "suburb": 1, "postcode": 1, "state": 1, "country": 1})
-    if not doc:
-        raise HTTPException(404, "not-found")
-    await _audit(actor=user, request=request, action="reveal-address",
-                 employee_id=doc.get("employee_id"), target_uid=doc.get("id"))
-    return {
-        "employee_id": doc.get("employee_id"),
-        "address_line_1": doc.get("address_line_1"),
-        "address_line_2": doc.get("address_line_2"),
-        "suburb": doc.get("suburb"),
-        "postcode": doc.get("postcode"),
-        "state": doc.get("state"),
-        "country": doc.get("country"),
-    }
-
-
-@router.post("/{uid}/reveal-next-of-kin")
-async def reveal_next_of_kin(
-    uid: str, request: Request,
-    user: dict = Depends(require_permission("hr_employees", "reveal_pii")),
-):
-    """v48 — Reveal next-of-kin PII (phone numbers unmasked). Name /
-    relationship stay visible in the list projection; this endpoint
-    returns the raw phone numbers plus a defence-in-depth full block."""
-    doc = await db.hr_employees.find_one(
-        {"$or": [{"id": uid}, {"employee_id": uid}], "deleted_at": None},
-        {"_id": 0, "id": 1, "employee_id": 1,
-         "next_of_kin_first_name": 1, "next_of_kin_last_name": 1,
-         "next_of_kin_relationship": 1,
-         "next_of_kin_phone_number": 1,
-         "next_of_kin_secondary_phone_number": 1})
-    if not doc:
-        raise HTTPException(404, "not-found")
-    await _audit(actor=user, request=request, action="reveal-next-of-kin",
-                 employee_id=doc.get("employee_id"), target_uid=doc.get("id"))
-    return {
-        "employee_id": doc.get("employee_id"),
-        "next_of_kin_first_name": doc.get("next_of_kin_first_name"),
-        "next_of_kin_last_name": doc.get("next_of_kin_last_name"),
-        "next_of_kin_relationship": doc.get("next_of_kin_relationship"),
-        "next_of_kin_phone_number": doc.get("next_of_kin_phone_number"),
-        "next_of_kin_secondary_phone_number": doc.get(
-            "next_of_kin_secondary_phone_number"),
-    }
+# v58.13.57 — The three PII reveal endpoints (`/reveal-dob`,
+# `/reveal-address`, `/reveal-next-of-kin`) were deleted here. The
+# UI that consumed them (HrEmployeeDrawer.jsx) is retired. Any
+# lingering client that hits these paths now gets FastAPI's default
+# 404 automatically — no explicit handler needed. Related tests in
+# `backend/tests/test_hr_employees_v48.py` were removed with the
+# ship. Coverage of the retirement lives in
+# `tests/backend_unit/test_hr_employees_retired_v58_13_57.py`.
 
 
 class RowPatch(BaseModel):
