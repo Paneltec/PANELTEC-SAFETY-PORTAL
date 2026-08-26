@@ -2,7 +2,7 @@ import React from 'react';
 import '@/App.css';
 import '@/lib/clipboard';   // v154.1 — arms the navigator.clipboard.writeText safety-net at app boot
 import '@/lib/download';    // v154.2 — arms the HTMLAnchorElement.click safety-net at app boot
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
 import Cover from '@/pages/Cover';
@@ -45,6 +45,43 @@ import MyApps from '@/pages/MyApps';
 import PermissionPresetsAdmin from '@/pages/PermissionPresetsAdmin';
 // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
 import RolesAdmin from '@/pages/RolesAdmin';
+// v58.13.61 — Users + Roles merged into a single tabbed shell.
+// The old `/app/settings/roles-admin` URL redirects to
+// `/app/settings/users?tab=roles` for a 90-day grace window.
+// REMOVE AFTER 2026-11-27 and flip to 410.
+function UsersAndRolesShell() {
+  const [sp, setSp] = useSearchParams();
+  const tab = sp.get('tab') === 'roles' ? 'roles' : 'users';
+  return (
+    <div data-testid="users-and-roles-shell">
+      <div className="flex gap-2 border-b border-slate-200 mb-4 px-6 pt-4">
+        <button
+          data-testid="users-and-roles-tab-users"
+          onClick={() => { const n = new URLSearchParams(sp); n.delete('tab'); setSp(n); }}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            tab === 'users'
+              ? 'border-brand-blue text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Users
+        </button>
+        <button
+          data-testid="users-and-roles-tab-roles"
+          onClick={() => { const n = new URLSearchParams(sp); n.set('tab', 'roles'); setSp(n); }}
+          className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
+            tab === 'roles'
+              ? 'border-brand-blue text-slate-900'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          Roles
+        </button>
+      </div>
+      {tab === 'roles' ? <RolesAdmin /> : <UsersManagement />}
+    </div>
+  );
+}
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
@@ -176,7 +213,7 @@ function App() {
               <Route path="settings/integrations/simpro" element={<SimproAdmin />} />
               <Route path="settings/integrations/microsoft365" element={<Microsoft365Admin />} />
               <Route path="settings/integrations/textmagic" element={<TextMagicAdmin />} />
-              <Route path="settings/users" element={<UsersManagement />} />
+              <Route path="settings/users" element={<UsersAndRolesShell />} />
               {/* v160.3.7i — dedicated help page for the Simpro ZIP import walkthrough. */}
               <Route path="settings/help/simpro-import" element={<SimproImportGuidePage />} />
               {/* v160.3.7q — Program-wide visual schematic diagram. */}
@@ -186,7 +223,10 @@ function App() {
               <Route path="settings/my-apps" element={<MyApps />} />
               <Route path="settings/permission-presets" element={<PermissionPresetsAdmin />} />
               {/* v160.3.9.31-4a — Phase 4a: Roles Admin page. */}
-              <Route path="settings/roles-admin" element={<RolesAdmin />} />
+              {/* v58.13.61 — Roles Admin merged as a tab under
+                  Users & Permissions. Old URL redirects for a
+                  90-day grace window. REMOVE AFTER 2026-11-27. */}
+              <Route path="settings/roles-admin" element={<Navigate to="/app/settings/users?tab=roles" replace />} />
               <Route path="settings/workers" element={<Workers />} />
               {/* v160.3.9.48 — HR Employees register. Gated by `hr_employees.view`. */}
               {/* v58.13.57 — HR Employees page retired. The 4 HR

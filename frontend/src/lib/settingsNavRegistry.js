@@ -47,7 +47,11 @@ export const SETTINGS_NAV_REGISTRY = [
   { key: 'users_permissions',  label: 'Users & Permissions', route: '/app/settings/users',              icon: PeopleSettings24Regular,  iconActive: PeopleSettings24Filled,  testid: 'nav-settings-users',              requiresCan: ['users', 'edit'],               description: 'Manage user accounts, roles, and tri-state permission matrix' },
   { key: 'permission_presets', label: 'Permission presets',  route: '/app/settings/permission-presets', icon: Trophy24Regular,          iconActive: Trophy24Filled,          testid: 'nav-settings-permission-presets', requiresCan: ['users', 'edit'],               description: 'Reusable permission templates for common roles' },
   // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).
-  { key: 'roles_admin',        label: 'Roles Admin',         route: '/app/settings/roles-admin',        icon: ShieldTask24Regular,      iconActive: ShieldTask24Filled,      testid: 'nav-settings-roles-admin',        requiresCan: ['users', 'edit'],               description: 'View system role permission matrices and manage custom roles' },
+  // v58.13.61 — Roles Admin sidebar entry retired. Roles now live as
+  // a tab under `Users & Permissions` (see App.js `UsersAndRolesShell`).
+  // Route `/app/settings/roles-admin` redirects to
+  // `/app/settings/users?tab=roles` for a 90-day grace window
+  // (REMOVE AFTER 2026-11-27).
   { key: 'workers',            label: 'Workers',             route: '/app/settings/workers',            icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-settings-workers',                                                          description: 'Worker directory settings — inductions, roles, statuses' },
   // v58.13.57 — HR Employees settings entry retired. The 4 HR flags
   // (Employee ID, Hired, Working Visa, Do Not Rehire) now live on

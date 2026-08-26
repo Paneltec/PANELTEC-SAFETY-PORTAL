@@ -1,5 +1,106 @@
-// Paneltec Civil · v159 — single-source-of-truth version constant
-// for the currently running JS bundle.
+// Paneltec Civil · v159 — single-source-of-truth version constant.
+
+// v160.3.9.58.13.61 — Roles Admin merged as tab under Users & Permissions.
+//
+// ── UX ─────────────────────────────────────────────────────────────
+//   `/app/settings/users` now renders `UsersAndRolesShell` (defined
+//   inline in `App.js`), a small stateless wrapper that shows a
+//   two-tab header (Users | Roles) and delegates the tab body to
+//   the existing `UsersManagement.jsx` or `RolesAdmin.jsx` page
+//   component depending on `?tab` query param.
+//   · `Users` tab (default, no `?tab`) — UsersManagement.jsx.
+//   · `Roles` tab (`?tab=roles`)      — RolesAdmin.jsx.
+//   Every RolesAdmin capability (permission-matrix modal, Simpro
+//   sync, custom-role creation, drift banner) is preserved because
+//   the component is unchanged — only the router entry moves.
+//
+// ── Sidebar / route ────────────────────────────────────────────────
+//   · `nav-settings-roles-admin` sidebar entry removed from
+//     `settingsNavRegistry.js`.
+//   · `/app/settings/roles-admin` route now
+//     `<Navigate to="/app/settings/users?tab=roles" replace />`
+//     for a 90-day grace window. REMOVE AFTER 2026-11-27.
+//
+// ── Backend UNCHANGED ──────────────────────────────────────────────
+//   Every `/api/admin/roles/*` endpoint remains identical. Both
+//   frontend page components read/write against the same URLs
+//   they did pre-merge. No permission or contract change.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_roles_admin_merged_v58_13_61.py`:
+//     · Sidebar entry gone.
+//     · `UsersAndRolesShell` mounted, both tab testids present,
+//       both underlying page components still imported.
+//     · `/app/settings/roles-admin` redirects to `?tab=roles`
+//       with the removal-date marker.
+//     · Forward-safe version-sync pin.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · Version bumped in 3 canonical files.
+//   · /app/mobile/ untouched except MOBILE_BUNDLE_VERSION.
+//   · Running bulk-import job untouched, Track 2 untouched.
+//   · Backend restart NOT required (frontend-only ship).
+
+// v160.3.9.58.13.60 — RBAC tidy pass (P2/P3 bundle).
+//
+// User approved option C on the P1 (`custom_precast_panel_employee`
+// role + its 2 auto-created Simpro-sync users) — LEAVE UNTOUCHED,
+// deferred to a follow-up ship. This bundle covers the safe P2/P3
+// fixes only.
+//
+// ── Data migrations executed once, idempotent ──────────────────────
+//   1. Backfilled `role_id` FK on 3 legacy-only test users
+//      (all `role='admin'`, testagent/tester/testuser accounts).
+//      3 `user_audit` rows written with action
+//      `v58_13_60_legacy_role_backfill`.
+//   2. Archived 6 test-artifact roles (`custom_cachebust_*` × 3,
+//      `custom_fallback_test_*` × 3) → `is_active=False` +
+//      `archive_reason` field. 6 `role_audit` rows written with
+//      action `v58_13_60_archive_test_artifact`. Zero users were
+//      assigned to any of these roles (pre-checked).
+//   3. Seeded `app_state.simpro_position_role_sync` row so the
+//      bookkeeping key exists even before the next sync run.
+//
+// ── Code change ────────────────────────────────────────────────────
+//   `roles_catalogue.py::sync_roles_from_simpro_positions` now
+//   writes `app_state.simpro_position_role_sync` at the end of
+//   every run with: `last_run_at`, `last_run_status`,
+//   `last_run_created_count`, `last_run_updated_count`,
+//   `last_run_actor`, `last_run_org_id`. Fixes the observability
+//   gap flagged in the v58.13.59 RBAC audit.
+//
+// ── NOT changed ────────────────────────────────────────────────────
+//   · `custom_precast_panel_employee` role — untouched (P1 deferred).
+//   · The 2 Simpro-imported Precast Panel users — untouched.
+//   · Whitespace typos flagged in the audit were all in COMMENTS,
+//     not real `require_permission` calls — nothing to fix. Audit
+//     P3 line closed as "no-op / audit reading error".
+//   · CS Incidents resource-key drift — deferred. The gate uses
+//     `reference_library` today and no user has been observed to
+//     lose access. Follow-up ship candidate once we've decided
+//     whether to promote `cs_incidents` to a schema entry proper.
+//   · No permission semantics changed on any active role.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_rbac_tidy_v58_13_60.py`:
+//     · No active user lacks `role_id` FK.
+//     · `app_state.simpro_position_role_sync` row exists with the
+//       four required keys.
+//     · Sync endpoint body contains the bookkeeping write (source
+//       assertion — no live sync run needed to verify).
+//     · Test-artifact roles are archived AND carry `archive_reason`.
+//     · No user is assigned to any archived test-artifact role.
+//     · Forward-safe version-sync pin.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · frontend/src/lib/version.js#RUNNING_VERSION bumped.
+//   · frontend/public/service-worker.js#CACHE_VERSION bumped.
+//   · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION bumped.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · /app/mobile/ untouched except MOBILE_BUNDLE_VERSION.
+//   · Docker / K8s / requirements.txt / package.json unchanged.
+//   · Backend restart REQUIRED (roles_catalogue.py touched).
 
 // v160.3.9.58.13.58 — P1 avatar regression fix.
 //
@@ -5232,7 +5333,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.58';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.61';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

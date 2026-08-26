@@ -18,6 +18,9 @@ from fastapi import APIRouter, Depends, HTTPException
 
 import re
 
+# v58.13.60 — Simpro sync bookkeeping timestamp.
+from datetime import datetime, timezone
+
 from pydantic import BaseModel, Field
 
 from auth import require_roles
@@ -781,12 +784,27 @@ async def sync_roles_from_simpro_positions(
             created.append(rid)
         else:
             skipped.append(rid)
-    return {
+    result = {
         "created": sorted(created),
         "skipped": sorted(skipped),
         "user_count_per_role": per_role,
         "summary": f"Created {len(created)} roles, skipped {len(skipped)} that already existed.",
     }
+    # v58.13.60 — Persist a bookkeeping row so operators can answer
+    # "when did the Simpro sync last run and what did it do".
+    await db.app_state.update_one(
+        {"_id": "simpro_position_role_sync"},
+        {"$set": {
+            "last_run_at": datetime.now(timezone.utc).isoformat(),
+            "last_run_status": "ok",
+            "last_run_created_count": len(created),
+            "last_run_updated_count": len(skipped),
+            "last_run_actor": user.get("email"),
+            "last_run_org_id": org_id,
+        }},
+        upsert=True,
+    )
+    return result
 
 
 
