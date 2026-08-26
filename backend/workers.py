@@ -78,6 +78,18 @@ def _serialise(doc: dict, viewer: Optional[dict] = None) -> dict:
             snap_view = {k: v for k, v in snap.items() if k != "pii"}
             snap_view["_pii_available"] = bool(pii)
             out["simpro_sync_snapshot"] = snap_view
+    # v58.13.56 — HR-merge lite. Strip the 4 HR fields from the
+    # response unless the viewer holds `hr_employees.view`.
+    _hr_fields = ("employee_id", "date_employee_added",
+                  "working_visa", "do_not_rehire")
+    if any(k in out for k in _hr_fields):
+        viewer_role_l = ((viewer or {}).get("role") or "").lower()
+        viewer_perms = ((viewer or {}).get("permissions") or {})
+        hr_grant = viewer_perms.get("hr_employees") or {}
+        privileged_hr = viewer_role_l in {"admin", "hr_lead"} or bool(hr_grant.get("view"))
+        if not privileged_hr:
+            for k in _hr_fields:
+                out.pop(k, None)
     return out
 
 
@@ -166,6 +178,14 @@ class WorkerPatch(BaseModel):
     additional_notes: Optional[str] = Field(default=None, max_length=2000)
     availability: Optional[dict] = None
     client_ids: Optional[list[str]] = None
+    # v58.13.56 — HR-merge lite. Four flags migrated off `hr_employees`
+    # so the Worker detail view can carry the HR context without a
+    # separate register. Gate is `hr_employees.view` (see `_serialise`
+    # PII-scrub below) — non-holders never see these fields in a GET.
+    employee_id: Optional[str] = Field(default=None, max_length=40)
+    date_employee_added: Optional[str] = Field(default=None, max_length=10)
+    working_visa: Optional[bool] = None
+    do_not_rehire: Optional[bool] = None
 
     @field_validator("birth_date")
     @classmethod

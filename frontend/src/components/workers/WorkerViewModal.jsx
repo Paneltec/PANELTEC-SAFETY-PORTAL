@@ -564,6 +564,46 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
                 </dl>
               </section>
 
+              {/* v58.13.56 — HR Info section. Renders only when the
+                  viewer holds `hr_employees.view` AND the worker
+                  carries any of the 4 merged HR flags (backend
+                  scrubs the fields from the GET response for
+                  callers without the grant, so a plain existence
+                  check on the fields is sufficient). Working Visa
+                  + Do Not Rehire show as coloured badges when
+                  true. */}
+              {_can('hr_employees', 'view') && (worker.employee_id || worker.date_employee_added
+                || worker.working_visa != null || worker.do_not_rehire != null) && (
+                <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-hr-info">
+                  <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
+                    <Users size={14} className="text-slate-500" /> HR Info
+                    <SummaryPill tone="hr" testid="section-hr-info-source">from HR register</SummaryPill>
+                  </div>
+                  <dl className="grid grid-cols-2 gap-y-1.5 gap-x-4 text-sm">
+                    <dt className="text-slate-500 text-xs">Employee ID</dt>
+                    <dd className="text-slate-800 font-mono text-xs" data-testid="hr-info-employee-id">{worker.employee_id || '—'}</dd>
+                    <dt className="text-slate-500 text-xs">Hired</dt>
+                    <dd className="text-slate-800" data-testid="hr-info-hired">{shortDate(worker.date_employee_added) || '—'}</dd>
+                    <dt className="text-slate-500 text-xs">Working visa</dt>
+                    <dd data-testid="hr-info-working-visa">
+                      {worker.working_visa ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full bg-[#fef3c7] text-[#92400e] font-semibold uppercase tracking-wider">
+                          Visa required
+                        </span>
+                      ) : <span className="text-slate-500 text-xs">No</span>}
+                    </dd>
+                    <dt className="text-slate-500 text-xs">Do not rehire</dt>
+                    <dd data-testid="hr-info-do-not-rehire">
+                      {worker.do_not_rehire ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded-full bg-[#ffe4e6] text-[#9f1239] font-semibold uppercase tracking-wider">
+                          Do not rehire
+                        </span>
+                      ) : <span className="text-slate-500 text-xs">No</span>}
+                    </dd>
+                  </dl>
+                </section>
+              )}
+
               {/* Availability */}
               <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-availability">
                 <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">

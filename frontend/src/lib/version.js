@@ -1,6 +1,77 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.56 — HR-merge lite (Ship A · additive-only).
+//
+// User asked for the 4 HR flags to live on the Worker record so
+// the standalone HR Employees register can be retired without
+// losing the visa/rehire/employment-date signal. Phased into two
+// sequential ships so the merge can be validated BEFORE any
+// deletion — see v58.13.54 lesson.
+//
+// ── Backend (`workers.py`) ─────────────────────────────────────────
+//   · `WorkerPatch` gained 4 optional fields:
+//       employee_id, date_employee_added, working_visa,
+//       do_not_rehire
+//   · `_serialise()` strips those 4 fields from the response
+//     unless the viewer holds `hr_employees.view` (permission
+//     grant OR role in {admin, hr_lead}). Non-holders see the
+//     Worker doc exactly as they did pre-ship.
+//   · Existing PATCH endpoint accepts the new fields; write path
+//     is gated by the pre-existing `_require_write` (admin +
+//     hseq_lead) plus record-level `require_scoped_access`.
+//   · No new endpoint. No collection changes. `hr_employees` is
+//     read-only from this ship's perspective.
+//
+// ── Migration script ───────────────────────────────────────────────
+//   `/app/backend/scripts/merge_hr_to_workers_v58_13_56.py`
+//     · Idempotent, `--dry-run` by default.
+//     · Match precedence: `linked_worker_id` → email → name.
+//     · Report persisted to `app_state.hr_merge_v58_13_56`:
+//         hr_scanned / matched_by_link / matched_by_email /
+//         matched_by_name / conflicts / no_match / would_update
+//         / written / unmatched_samples[:10].
+//     · Does NOT touch `hr_employees` — additive-only.
+//
+// ── Frontend (`WorkerViewModal.jsx`) ───────────────────────────────
+//   New "HR Info" section (below Personal, above Availability)
+//   with testid `view-section-hr-info`. Renders ONLY when:
+//     (a) `_can('hr_employees','view')` returns true, AND
+//     (b) the worker carries at least one of the 4 HR flags
+//         (guaranteed by the backend scrub — if the field isn't
+//         in the response, the section is invisible even to
+//         admin, keeping the empty state clean).
+//   Working Visa true → amber badge "Visa required".
+//   Do Not Rehire true → rose badge "Do not rehire".
+//   Zero changes to the Personal, Availability, Clients, or
+//   Certifications sections.
+//
+// ── Ship B (NOT this ship) ─────────────────────────────────────────
+//   v58.13.57 will retire the HR Employees page + drawer + 3
+//   linker wizards + PII reveal endpoints. That ship is on hold
+//   until user confirms the merge on Workers looks right and
+//   green-lights a `--commit` migration run.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_hr_merge_lite_v58_13_56.py`:
+//     · Schema — WorkerPatch has the 4 new fields.
+//     · Serialiser — scrubs fields for non-hr viewer.
+//     · Serialiser — retains fields for admin viewer.
+//     · Migration script — importable, exposes main + helpers.
+//     · Migration `--dry-run` writes nothing (state check pre/post).
+//     · Version-sync pin.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except MOBILE_BUNDLE_VERSION.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · `hr_employees` collection + audit + PII reveal endpoints
+//     UNTOUCHED — Ship A is strictly additive.
+//   · Docker / K8s / requirements.txt / package.json unchanged.
+
 // v160.3.9.58.13.55 — CS Incidents feature RESTORED (revert of .54).
 //
 // ── What happened ──────────────────────────────────────────────────
@@ -5004,7 +5075,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.55';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.56';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
