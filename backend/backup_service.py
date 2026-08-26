@@ -401,23 +401,21 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
 
 async def _sweep_orphan_gridfs_blobs(db_, fs_) -> Tuple[int, int]:
     """v58.13.53 — Root-cause fix for the disk-bloat regression.
+    v58.13.58 — Tightened to a POSITIVE filter: only sweep blobs
+    that positively identify as backup snapshots (filename matches
+    `paneltec-snapshot-*.zip` OR metadata carries `snapshot_id`).
 
-    Prior to this ship, `_apply_retention_policy` deleted the
-    `bk_snapshots` metadata row and *attempted* a `fs_.delete()` on
-    the referenced GridFS blob. The `except` at line ~369 swallowed
-    any GridFS delete failure (network glitch, race), leaving the
-    chunks stranded. Over ~40 daily runs this accumulated 922 orphan
-    blobs = 405 MB on preview alone, blocking a production deploy.
+    Prior to v58.13.58 this helper deleted every `bk_fs.files` blob
+    whose `_id` was not in `bk_snapshots.gridfs_id` — but the same
+    `bk_fs` bucket is also used by `workers.py::_fs_bucket()` for
+    Worker profile photos (v160.3.9.34.3 moved them there to align
+    with the Simpro-ZIP writer). Result: the sweep wiped 25 worker
+    photos on preview and the avatar surface 404'd. This positive-
+    filter version cannot repeat that mistake — a Worker photo has
+    neither the snapshot filename shape nor the `snapshot_id`
+    metadata field, so it never enters the deletion set.
 
-    This sweep is idempotent and read-mostly: it lists every
-    `bk_fs.files` blob whose `_id` has no matching `gridfs_id` in
-    `bk_snapshots`, then deletes it via the GridFS bucket. Returns
-    `(deleted_count, bytes_freed)` so the retention run summary can
-    log both.
-
-    Runs on every retention execution AND on every backend boot
-    (defence in depth — a snapshot creation isn't a prerequisite
-    for orphans to accumulate).
+    Idempotent. Returns `(deleted_count, bytes_freed)`.
     """
     valid = set()
     async for r in db_.bk_snapshots.find({}, {"_id": 0, "gridfs_id": 1}):
@@ -425,14 +423,23 @@ async def _sweep_orphan_gridfs_blobs(db_, fs_) -> Tuple[int, int]:
         if gid:
             valid.add(str(gid))
     if not valid:
-        # Never sweep when there's zero valid metadata — this
-        # would delete EVERYTHING and destroy real backups on a
-        # freshly-provisioned cluster. Fail safe.
+        # Fail-safe: never sweep with empty metadata.
         return (0, 0)
-    from bson import ObjectId
+    from bson import ObjectId  # noqa: F401  (kept for parity with older callers)
     deleted = 0
     bytes_freed = 0
-    async for r in db_["bk_fs.files"].find({}, {"_id": 1, "length": 1}):
+    # POSITIVE FILTER: only enumerate blobs that positively look like
+    # backup snapshots. Anything else (worker photos, future
+    # non-backup consumers of this bucket) is inherently safe.
+    snapshot_query = {
+        "$or": [
+            {"filename": {"$regex": r"^paneltec-snapshot-.*\.zip$"}},
+            {"metadata.snapshot_id": {"$exists": True}},
+        ],
+    }
+    async for r in db_["bk_fs.files"].find(
+        snapshot_query, {"_id": 1, "length": 1},
+    ):
         if str(r["_id"]) in valid:
             continue
         try:
@@ -443,8 +450,8 @@ async def _sweep_orphan_gridfs_blobs(db_, fs_) -> Tuple[int, int]:
             logger.warning("orphan GridFS sweep failed for %s: %s", r["_id"], e)
     if deleted:
         logger.info(
-            "v58.13.53 orphan-GridFS sweep: deleted %d orphaned bk_fs "
-            "blob(s) totalling %d bytes",
+            "v58.13.53/.58 orphan-GridFS sweep: deleted %d orphaned "
+            "bk_fs backup blob(s) totalling %d bytes",
             deleted, bytes_freed,
         )
     return (deleted, bytes_freed)

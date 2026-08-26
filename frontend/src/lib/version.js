@@ -1,6 +1,81 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.58 — P1 avatar regression fix.
+//
+// ── Reported ───────────────────────────────────────────────────────
+//   User: "we have lost the avatar in the worker and the users and
+//   permissions". Two surfaces showed a broken image:
+//     · WorkerViewModal `<WorkerPhoto>` — the profile photo tile.
+//     · Users & Permissions rows — the `photo_url` from each
+//       linked worker.
+//
+// ── Root cause (NOT the HR ships) ──────────────────────────────────
+//   v58.13.53's `_sweep_orphan_gridfs_blobs` used a NEGATIVE
+//   filter: "delete every `bk_fs.files` blob whose `_id` is not
+//   in `bk_snapshots.gridfs_id`". But `workers.py::_fs_bucket()`
+//   writes Worker photos into the SAME `bk_fs` bucket
+//   (v160.3.9.34.3 aligned the writer with the Simpro-ZIP
+//   reader). Result: every Worker photo blob was classified as an
+//   orphan and deleted. 25 preview workers lost their photos.
+//   The boot-time defensive hook that the same ship added runs
+//   the sweep on every backend restart, so every deploy repeated
+//   the deletion.
+//
+// ── Fix (this ship) ────────────────────────────────────────────────
+//   1. `_sweep_orphan_gridfs_blobs` (backup_service.py) rewritten
+//      to a POSITIVE filter: only blobs whose filename matches
+//      `paneltec-snapshot-*.zip` OR whose metadata carries
+//      `snapshot_id` are considered for deletion. Worker photos
+//      match neither condition and are inherently safe.
+//   2. `scripts/emergency_disk_cleanup_v58_13_53.py::_sweep_orphan_bk_fs`
+//      updated with the same positive filter — the mirror
+//      one-shot runner cannot repeat the mistake either.
+//   3. Data cleanup on the 25 affected workers: nulled
+//      `photo_url` and `photo_gridfs_id` on rows whose blob was
+//      confirmed missing from both `bk_fs.files` and `fs.files`.
+//      This makes `<WorkerPhoto>` render the placeholder
+//      immediately instead of flashing a broken-image icon
+//      before the `onError` fallback fires. Users can re-upload
+//      via the existing `POST /api/workers/{id}/photo` flow.
+//   4. NO frontend changes needed. The HR Info section shipped in
+//      v58.13.56 is completely untouched — it was NEVER the
+//      cause. Users & Permissions component untouched.
+//
+// ── Ships mistakenly implicated ─────────────────────────────────────
+//   User attribution was v58.13.56 or v58.13.57 (the HR merge ships).
+//   Actual culprit was v58.13.53 (disk-bloat hardening). The HR
+//   ships only edited `WorkerViewModal.jsx` to add the HR Info
+//   section BELOW Personal — they never touched `WorkerPhoto`,
+//   `photo_url`, or the GridFS layer.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_avatar_regression_v58_13_58.py`:
+//     · Sweep helper carries the positive snapshot filter.
+//     · Emergency cleanup script carries the same filter.
+//     · Live regression: plant a `worker_photo` blob in `bk_fs`,
+//       run the sweep, assert the blob survives.
+//     · Forward-safe version-sync pin.
+//
+// ── Data loss ──────────────────────────────────────────────────────
+//   Cannot be undone from within Mongo — the 25 blobs are gone.
+//   Recovery paths: (a) users re-upload via the existing photo
+//   upload endpoint, (b) re-run the Simpro ZIP importer for
+//   workers whose photos came from a Simpro export. This ship
+//   does NEITHER — it just stops the bleeding.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except MOBILE_BUNDLE_VERSION.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · `hr_employees` collection untouched. Ship A + B still hold.
+//   · HR Info section on Workers untouched.
+//   · Docker / K8s / requirements.txt / package.json unchanged.
+//   · Backend restart REQUIRED (sweep helper is called on boot).
+
 // v160.3.9.58.13.57 — HR Employees UI retired (Ship B of the merge).
 //
 // ── Context ────────────────────────────────────────────────────────
@@ -5157,7 +5232,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.57';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.58';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

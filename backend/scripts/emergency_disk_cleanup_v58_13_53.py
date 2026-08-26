@@ -89,7 +89,16 @@ async def _sweep_orphan_bk_fs(db, dry: bool) -> Dict[str, int]:
         return {"orphans_swept": 0, "orphan_bytes": 0, "skipped": True}
     fs = AsyncIOMotorGridFSBucket(db, bucket_name="bk_fs")
     swept, freed = 0, 0
-    async for r in db["bk_fs.files"].find({}, {"_id": 1, "length": 1}):
+    # v58.13.58 — POSITIVE FILTER for backup snapshots only.
+    # `bk_fs` is also used for Worker photos; the earlier
+    # negative filter caused the v58.13.58 avatar regression.
+    snapshot_query = {
+        "$or": [
+            {"filename": {"$regex": r"^paneltec-snapshot-.*\.zip$"}},
+            {"metadata.snapshot_id": {"$exists": True}},
+        ],
+    }
+    async for r in db["bk_fs.files"].find(snapshot_query, {"_id": 1, "length": 1}):
         if str(r["_id"]) in valid:
             continue
         if dry:
