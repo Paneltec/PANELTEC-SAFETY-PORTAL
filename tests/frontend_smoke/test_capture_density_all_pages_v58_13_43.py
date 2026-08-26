@@ -32,7 +32,7 @@ _PAGES = [
     ("pages/SiteDiary.jsx",       "site-diary"),
     ("pages/RiskAssessments.jsx", "risk-assessments"),
     ("pages/SiteSigninList.jsx",  "site-signin"),
-    ("pages/CsIncidentsList.jsx", "cs-incidents"),
+    # v58.13.54 — CsIncidentsList.jsx retired.
     ("pages/PreStarts.jsx",       "pre-starts"),
 ]
 
@@ -106,12 +106,13 @@ def test_shared_control_still_emits_canonical_testid():
     )
 
 
-def test_pages_count_stays_at_eight():
+def test_pages_count_stays_at_seven():
     """If a new Capture list page is added, wire it up here + in the
     _PAGES parametrize list. Guarding the count prevents someone
-    from silently landing a 9th page that skips density wiring."""
-    assert len(_PAGES) == 8, (
-        "Expected exactly 8 Capture list pages. Update _PAGES + add "
+    from silently landing an 8th page that skips density wiring.
+    v58.13.54 dropped the count from 8 → 7 (CsIncidentsList retired)."""
+    assert len(_PAGES) == 7, (
+        "Expected exactly 7 Capture list pages. Update _PAGES + add "
         "the new page's `useCaptureDensity` wiring before landing."
     )
 

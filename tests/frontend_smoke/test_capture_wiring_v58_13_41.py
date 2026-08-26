@@ -104,7 +104,7 @@ _GROUPED_STRIPE_CONSUMERS = (
     "pages/Incidents.jsx",
     "pages/Inspections.jsx",
     "pages/SiteSigninList.jsx",
-    "pages/CsIncidentsList.jsx",
+    # v58.13.54 — CsIncidentsList.jsx retired.
 )
 
 
@@ -127,7 +127,7 @@ _GROUPED_DENSITY_SHARING = {
     "pages/Incidents.jsx":       "incidentsDensity",
     "pages/Inspections.jsx":     "inspectionsDensity",
     "pages/SiteSigninList.jsx":  "density",
-    "pages/CsIncidentsList.jsx": "density",
+    # v58.13.54 — CsIncidentsList.jsx retired.
 }
 
 

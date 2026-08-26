@@ -1,6 +1,81 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.54 — CS Incidents feature retired (frontend only).
+//
+// ── User decisions ─────────────────────────────────────────────────
+//   · Keep the 201 records safely in Mongo — data preservation is
+//     the core guarantee of this ship. NO drop, NO purge.
+//   · Delete the sidebar entry.
+//   · Delete the `/app/submissions/cs-incidents` route.
+//   · Do NOT surface the CS Incidents data anywhere else (no new
+//     Workers-detail tab).
+//   · Redirect the old URL to `/app` for a 90-day grace window.
+//
+// ── Frontend changes ───────────────────────────────────────────────
+//   · `components/layout/AppShell.jsx` — retired the nav item
+//     `nav-submissions-cs-incidents`. The item lived inside the
+//     "Capture" section (not a separate "Submissions" section — the
+//     "Submissions bucket" was only a code-comment concept, never
+//     a real sidebar heading). No section heading needed removing.
+//   · `App.js` — deleted the `CsIncidentsList` import + route.
+//     Both `/app/submissions` and `/app/submissions/cs-incidents`
+//     now `<Navigate to="/app" replace />`. Removal comment carries
+//     the explicit 2026-11-24 date so a follow-up ship can flip
+//     both redirects to 410 without archaeology.
+//   · `pages/CsIncidentsList.jsx` — DELETED. Bespoke
+//     `CsIncidentDetailModal` (defined inline in the same file)
+//     went with it — no orphan references remain in the codebase.
+//   · `PdfActions.jsx` `pdfMirrored={true}` prop on the retired
+//     page went with the file — no orphan wiring.
+//
+// ── Backend UNCHANGED ──────────────────────────────────────────────
+//   · `cs_incident.py` router still mounted at `/api/cs-incidents/*`
+//     for the 90-day grace window (integrations, bookmarked URLs).
+//   · `pdf_renderer.py::render_cs_incident_pdf` + `RESOURCE_TO_PATH
+//     ["cs_incidents"]` untouched.
+//   · Mongo collection `cs_incident_issues` untouched. Preview
+//     count = 257 records. Production count = 201 records per user
+//     brief. Data is preserved and inspectable via the still-live
+//     API for anyone who wants to consume it.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   Deleted (obsolete — asserted CS Incidents renders):
+//     · `test_cs_incidents_migration_v58_13_12.py`
+//     · `test_cs_incidents_file_icon_v58_13_46.py`
+//   Updated (removed the retired page from parity/wiring lists —
+//   6 files, minimal diffs, comments preserved):
+//     · `test_no_double_stripe_v58_13_45.py`
+//     · `test_tile_size_colour_parity_v58_13_38.py`
+//     · `test_capture_wiring_v58_13_40.py`
+//     · `test_capture_wiring_v58_13_41.py`
+//     · `test_capture_wiring_v58_13_42.py`
+//     · `test_capture_density_all_pages_v58_13_43.py`
+//   Added:
+//     · `test_cs_incidents_retired_v58_13_54.py` — 5 tests:
+//         1. Sidebar has NO `nav-submissions-cs-incidents` testid.
+//         2. App.js has NO `CsIncidentsList` mount.
+//         3. `pages/CsIncidentsList.jsx` file is deleted.
+//         4. Both `submissions` and `submissions/cs-incidents`
+//            routes redirect to `/app`, with the explicit removal
+//            date `REMOVE AFTER 2026-11-24` present.
+//         5. Backend `cs_incident.py` + `pdf_renderer.py` still
+//            reference the collection + renderer (grace window).
+//         6. `db.cs_incident_issues.count_documents({}) > 0` on
+//            the preview cluster (data-preservation guard). Soft-
+//            skips if Mongo is unreachable so CI doesn't wedge in
+//            a sandbox without DB access.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · Backend restart NOT required (frontend-only ship + tests).
+//   · v58.13.51 heartbeat design still on ice.
+
 // v160.3.9.58.13.53 — Disk-bloat hardening (P0 deploy blocker).
 //
 // ── Trigger ────────────────────────────────────────────────────────
@@ -4860,7 +4935,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.53';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.54';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

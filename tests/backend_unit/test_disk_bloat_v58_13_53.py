@@ -137,15 +137,16 @@ def test_emergency_cleanup_uses_iso_string_lex_compare_correctly():
 
 
 # ── 3. Version-sync pin ──────────────────────────────────────────────
+# Forward-safe pattern — see v58.13.51 recurrence note.
 
 
-def test_version_sync_pins_v58_13_53_across_three_files():
-    expected = "paneltec-v160.3.9.58.13.53"
+def test_version_sync_moved_past_v58_13_52():
     v_js = Path("/app/frontend/src/lib/version.js").read_text(encoding="utf-8")
     m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    sw_js = Path(
-        "/app/frontend/public/service-worker.js",
-    ).read_text(encoding="utf-8")
-    assert f"RUNNING_VERSION = '{expected}'" in v_js
-    assert f"MOBILE_BUNDLE_VERSION = '{expected}'" in m_ts
-    assert f"CACHE_VERSION = '{expected}'" in sw_js
+    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
+    assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.52'" not in v_js
+    assert "'paneltec-v160.3.9.58.13.52'" not in m_ts
+    assert "'paneltec-v160.3.9.58.13.52'" not in sw_js
+    assert "v160.3.9.58.13.53" in v_js, (
+        "v58.13.53 changelog block missing from version.js"
+    )

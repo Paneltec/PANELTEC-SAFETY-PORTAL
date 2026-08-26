@@ -54,7 +54,7 @@ _GROUPED_PAGES = [
     ("pages/Incidents.jsx",       "incidents"),
     ("pages/Inspections.jsx",     "inspections"),
     ("pages/SiteSigninList.jsx",  "site-signin"),
-    ("pages/CsIncidentsList.jsx", "cs-incidents"),
+    # v58.13.54 — `CsIncidentsList.jsx` retired; entry removed.
 ]
 
 

@@ -124,7 +124,7 @@ def test_toolbar_control_has_radiogroup_a11y():
 INCIDENTS = APP / "frontend/src/pages/Incidents.jsx"
 INSPECTIONS = APP / "frontend/src/pages/Inspections.jsx"
 SITESIGNIN = APP / "frontend/src/pages/SiteSigninList.jsx"
-CSINCIDENTS = APP / "frontend/src/pages/CsIncidentsList.jsx"
+# v58.13.54 — CSINCIDENTS constant removed with the retired page.
 
 
 def test_incidents_page_full_wiring():
@@ -142,7 +142,7 @@ def test_grouped_pages_pass_page_and_page_key():
     for path, tag in (
         (INSPECTIONS, "inspections"),
         (SITESIGNIN, "site-signin"),
-        (CSINCIDENTS, "cs-incidents"),
+        # v58.13.54 — CsIncidentsList.jsx retired; entry removed.
     ):
         src = path.read_text(encoding="utf-8")
         assert f'page="{tag}"' in src, f"{path.name} missing page='{tag}'"
