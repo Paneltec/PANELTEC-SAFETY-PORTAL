@@ -24,9 +24,7 @@ import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 // v58.13.6 — Site Sign-In / Visitor Register capture page.
 import SiteSigninList from '@/pages/SiteSigninList';
 import RiskAssessments from '@/pages/RiskAssessments';
-// v58.13.54 — `CsIncidentsList` import removed (page retired). Route
-// below now redirects `/app/submissions/cs-incidents` → `/app` for a
-// 90-day grace window before flipping to 410.
+import CsIncidentsList from '@/pages/CsIncidentsList';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
 import Renewals from '@/pages/Renewals';
 import AuditExports from '@/pages/AuditExports';
@@ -144,19 +142,12 @@ function App() {
               <Route path="site-signin" element={<SiteSigninList />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
-              {/* v58.13.54 — CS Incidents feature retired.
-                  · Sidebar entry deleted (AppShell.jsx).
-                  · `/app/submissions/cs-incidents` and the bare
-                    `/app/submissions` both redirect to the app
-                    dashboard for a 90-day grace window so any
-                    bookmarked URL still lands somewhere sane.
-                  · Backend routes at `/api/cs-incidents/*` stay
-                    live — data in `cs_incident_issues` collection
-                    is preserved untouched.
-                  · REMOVE AFTER 2026-11-24 (90 d from ship) and
-                    flip both redirects to 410. */}
-              <Route path="submissions" element={<Navigate to="/app" replace />} />
-              <Route path="submissions/cs-incidents" element={<Navigate to="/app" replace />} />
+              {/* v58.13.12 — Submissions bucket. CS Incidents migrated
+                  out of the "Risk Assessments" tab into its own tiled
+                  list. Old bookmarks with `?tab=cs_incident` get a
+                  soft redirect from RiskAssessments.jsx. */}
+              <Route path="submissions" element={<Navigate to="/app/submissions/cs-incidents" replace />} />
+              <Route path="submissions/cs-incidents" element={<CsIncidentsList />} />
               <Route path="inspections/new" element={<InspectionNew />} />
 
               <Route path="contractors" element={<ContractorsList />} />

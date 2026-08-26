@@ -123,10 +123,23 @@ def test_capturecard_kind_is_pdf_safe_or_opted_out(
     )
 
 
-# v58.13.54 — `test_cs_incidents_specifically_now_pdf_safe` removed.
-# The CsIncidentsList.jsx page has been retired (see
-# `test_cs_incidents_retired_v58_13_54.py`). The backend's
-# `pdf_resource` / `RESOURCE_TO_PATH["cs_incidents"]` registration is
-# preserved though — the /pdf-token endpoint still knows how to mint
-# a token for the `cs_incidents` kind (used by anyone calling the
-# still-live `/api/cs-incidents/*` API for a 90-day grace window).
+def test_cs_incidents_specifically_now_pdf_safe():
+    """Explicit regression assertion for the reported bug —
+    CsIncidentsList.jsx must NOT set showPdf={false} anymore, must
+    use `resourceKind="reference_library"` (unchanged permission
+    scope), AND must set `pdfResourceKind="cs_incidents"` for the
+    /pdf-token override."""
+    src = (FRONTEND / "pages" / "CsIncidentsList.jsx").read_text(encoding="utf-8")
+    assert "showPdf={false}" not in src, (
+        "CsIncidentsList.jsx still hides the file icon — v58.13.48 "
+        "restored it now that the backend has a proper renderer."
+    )
+    assert 'pdfResourceKind="cs_incidents"' in src, (
+        "CsIncidentsList.jsx must pass `pdfResourceKind=\"cs_incidents\"` "
+        "so the /pdf-token POST goes out with the correct resource "
+        "key while the `<Can>` gate stays on `reference_library`."
+    )
+    assert 'resourceKind="reference_library"' in src, (
+        "Permission scope must stay on `reference_library` — that's "
+        "the domain gating CS incident CRUD endpoints backend-side."
+    )

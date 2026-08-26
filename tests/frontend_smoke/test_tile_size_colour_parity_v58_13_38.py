@@ -30,7 +30,7 @@ MIGRATED = [
     "Incidents.jsx",
     "Inspections.jsx",
     "SiteSigninList.jsx",
-    # v58.13.54 — CsIncidentsList.jsx retired.
+    "CsIncidentsList.jsx",
 ]
 ALREADY_CANONICAL = [
     "Hazards.jsx",
@@ -99,10 +99,17 @@ def test_site_signin_uses_capture_card():
     assert "hideOperator" in src
 
 
-# v58.13.54 — `test_cs_incidents_uses_capture_card_with_bespoke_viewer`
-# removed. CsIncidentsList.jsx retired (page deleted, route redirects
-# to `/app`). See `test_cs_incidents_retired_v58_13_54.py` for the
-# guard that the page + sidebar are gone.
+def test_cs_incidents_uses_capture_card_with_bespoke_viewer():
+    src = _src("CsIncidentsList.jsx")
+    assert "import CaptureCard from '../components/CaptureCard'" in src
+    assert "<CaptureCard" in src
+    # Bespoke detail modal still wired via CaptureCard's onView opt-in.
+    assert "onView" in src
+    assert "CsIncidentDetailModal" in src  # bespoke modal preserved
+    # The old bespoke `StatusPill` renderer is retained inside the
+    # detail modal but NO LONGER used by the tile — the tile now
+    # uses the shared `StatusBadge`.
+    assert "StatusBadge" in src
 
 
 # ─── Already-canonical pages ────────────────────────────────────────
@@ -162,9 +169,17 @@ def test_site_signin_chrome_untouched():
     assert "groupBy={(r) => r.submitted_by_name" in src
 
 
-# v58.13.54 — `test_cs_incidents_chrome_untouched` removed. The
-# retired CsIncidentsList.jsx page no longer exists on disk; see
-# `test_cs_incidents_retired_v58_13_54.py` for the retirement guard.
+def test_cs_incidents_chrome_untouched():
+    src = _src("CsIncidentsList.jsx")
+    # Three pre-toolbar selects still present.
+    assert "cs-incidents-bu-select" in src
+    assert "cs-incidents-status-select" in src
+    assert "cs-incidents-type-select" in src
+    # Import XLSX button + CsIncidentImportModal preserved.
+    assert "cs-incidents-import-open" in src
+    assert "CsIncidentImportModal" in src
+    # Container width unchanged.
+    assert "max-w-6xl" in src
 
 
 # ─── Flash-bug guardrail — no new in-tile fetches ───────────────────

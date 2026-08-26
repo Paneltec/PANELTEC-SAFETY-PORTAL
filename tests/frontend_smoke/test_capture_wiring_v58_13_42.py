@@ -39,7 +39,7 @@ _VIA_TOOLBAR = (
 )
 _INLINE = (
     "pages/SiteSigninList.jsx",
-    # v58.13.54 — CsIncidentsList.jsx retired.
+    "pages/CsIncidentsList.jsx",
     "pages/PreStarts.jsx",
 )
 

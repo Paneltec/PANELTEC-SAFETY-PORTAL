@@ -137,7 +137,8 @@ def test_emergency_cleanup_uses_iso_string_lex_compare_correctly():
 
 
 # ── 3. Version-sync pin ──────────────────────────────────────────────
-# Forward-safe pattern — see v58.13.51 recurrence note.
+# Forward-safe pattern — see v58.13.51 recurrence note. Assert only
+# that we've moved past .52 and that the .53 changelog block landed.
 
 
 def test_version_sync_moved_past_v58_13_52():

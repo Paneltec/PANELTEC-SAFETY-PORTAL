@@ -1,6 +1,75 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.55 — CS Incidents feature RESTORED (revert of .54).
+//
+// ── What happened ──────────────────────────────────────────────────
+//   v58.13.54 retired the CS Incidents feature end-to-end (nav item
+//   deleted, `pages/CsIncidentsList.jsx` deleted, route redirected).
+//   User feedback immediately after the ship:
+//     "i still want the ce incesdents i fdont know wehere i asked
+//      for them that to be removed"
+//   The earlier multi-part instruction was mis-read as approval —
+//   the CS Incidents surface was NEVER meant to be removed. This
+//   ship is a full restore.
+//
+// ── Restored from git (HEAD~1, pre-.54 state) ──────────────────────
+//   · `pages/CsIncidentsList.jsx` (367 LOC, incl. inline
+//     `CsIncidentDetailModal`)
+//   · `tests/frontend_smoke/test_cs_incidents_migration_v58_13_12.py`
+//   · `tests/frontend_smoke/test_cs_incidents_file_icon_v58_13_46.py`
+//   · `frontend/src/App.js` — CsIncidentsList import + route +
+//     `/app/submissions` → `/app/submissions/cs-incidents` redirect
+//   · `frontend/src/components/layout/AppShell.jsx` — nav item
+//     `nav-submissions-cs-incidents` (icon Alert24Regular, pastel
+//     `coral`, resource `reference_library`) back in the Capture
+//     section
+//   · Test lists restored across 6 files (parity + wiring + density
+//     + action-availability contract). Density-page count back to 8.
+//
+// ── Deleted (was only meaningful under retirement) ─────────────────
+//   · `tests/frontend_smoke/test_cs_incidents_retired_v58_13_54.py`
+//
+// ── Backend / DB — untouched throughout ────────────────────────────
+//   · `cs_incident.py` router at `/api/cs-incidents/*` — unchanged,
+//     never modified in .54, still live.
+//   · `pdf_renderer.render_cs_incident_pdf` +
+//     `RESOURCE_TO_PATH["cs_incidents"]` — unchanged.
+//   · Mongo `cs_incident_issues` collection — 257 records on
+//     preview, 201 on production per user brief. NEVER touched.
+//
+// ── Data preservation guarantee ────────────────────────────────────
+//   Because the retirement ship deliberately kept the backend +
+//   collection intact, the restore is a pure frontend surface roll-
+//   back. Nothing else has to change and nothing was lost.
+//
+// ── Lesson for the next session ────────────────────────────────────
+//   Multi-part user messages with mixed "keep X / delete Y / redirect
+//   Z" wording need an explicit checkpoint BEFORE deletion of any
+//   user-visible page. A single follow-up ask_human "you want me to
+//   DELETE this feature completely — is that right?" would have
+//   caught the misinterpretation.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   No new test file. Restoration is guarded by the restored-state
+//   assertions in the six existing test files (route present, nav
+//   entry present, density-page count 8, action-availability
+//   contract asserts showPdf semantics on the page again).
+//   `test_disk_bloat_v58_13_53.py` version-sync assertion flipped to
+//   the forward-safe pattern so future bumps don't self-invalidate
+//   (RECURRENCE tamed for v58.13.53 as well).
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Running bulk-import job `14433131-…` untouched.
+//   · Track 2 (SSRA re-extraction) untouched.
+//   · HR Employees NOT touched — separate follow-up per user.
+//   · Docker / K8s / requirements.txt / package.json unchanged.
+//   · Backend restart NOT required (frontend-only ship).
+
 // v160.3.9.58.13.54 — CS Incidents feature retired (frontend only).
 //
 // ── User decisions ─────────────────────────────────────────────────
@@ -4935,7 +5004,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.54';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.55';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
