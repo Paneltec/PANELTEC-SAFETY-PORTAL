@@ -1,6 +1,126 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant
 // for the currently running JS bundle.
 
+// v160.3.9.58.13.53 — Disk-bloat hardening (P0 deploy blocker).
+//
+// ── Trigger ────────────────────────────────────────────────────────
+//   Production deploy of `whs-compliance` failed at the deployer's
+//   `MONGODB_MIGRATE` step:
+//     drop databases: drop whs-compliance-test_database:
+//       (UserWritesBlocked) User writes blocked,
+//       reason: DiskUseThresholdExceeded
+//   Downstream `MANAGE_SECRETS`, `HEALTH_CHECK`, and `DEPLOY` all
+//   short-circuited to "not run".
+//
+// ── Investigation (preview cluster) ────────────────────────────────
+//   test_database sizeOnDisk = 2.18 GB. Top offender by a mile:
+//     bk_fs.chunks           1.79 GB  (7,403 chunks / 950 files)
+//     bulk_import_failed_pdfs.chunks   316 MB  (3,751 files, most
+//                                        tied to the running job
+//                                        14433131-…)
+//     bulk_import_dryrun            20 MB
+//     doc_files_pdf_cache           13 MB
+//     form_submissions               7 MB   (expected)
+//     pre_starts                     5 MB   (expected)
+//     bulk_import_reextract_v58_13_35_audit  3 MB
+//     bulk_import_pdf_cache          3 MB
+//   `bk_snapshots` had 28 valid rows; `bk_fs.files` had 950 rows →
+//   **922 orphan GridFS blobs = 405 MB stranded.**
+//
+// ── Root cause ─────────────────────────────────────────────────────
+//   `backup_service._apply_retention_policy` deleted the metadata
+//   row but wrapped the paired `fs_.delete(gridfs_id)` in a
+//   try/except that logged a warning and continued. Every failed
+//   GridFS delete (network glitch, race) left the chunks stranded.
+//   Over ~40 daily runs the leak grew to 405 MB — enough to push
+//   the production cluster past its disk threshold and block all
+//   user writes.
+//
+// ── Fix (backend) ──────────────────────────────────────────────────
+//   1. NEW helper `_sweep_orphan_gridfs_blobs(db_, fs_)` in
+//      `backup_service.py`:
+//        · Collects every `bk_snapshots.gridfs_id` as the valid set.
+//        · Iterates `bk_fs.files`; anything NOT in the valid set is
+//          deleted via the GridFS bucket.
+//        · FAIL-SAFE: if `bk_snapshots` is empty the sweep is a
+//          no-op — a freshly-provisioned cluster must not have its
+//          real backups deleted.
+//        · Logs `(deleted_count, bytes_freed)`.
+//   2. `_apply_retention_policy` now calls the sweep at the end of
+//      every run. The run stamp gains
+//      `last_run_orphans_swept` + `last_run_orphan_bytes_freed`.
+//   3. `install(app, db, require_admin)` now registers a
+//      `@app.on_event("startup")` hook that runs the sweep on
+//      every backend boot — try/except-guarded so a transient DB
+//      glitch never blocks boot.
+//
+// ── Emergency migration script ─────────────────────────────────────
+//   `/app/backend/scripts/emergency_disk_cleanup_v58_13_53.py` —
+//   one-shot idempotent runner covering:
+//     · Orphan-`bk_fs` sweep (identical logic to the runtime helper).
+//     · Prune `bulk_import_pdf_cache` (`cached_at` ISO string, 30 d).
+//     · Prune `bulk_import_dryrun` (`at` ISO string, 30 d).
+//     · Prune `bulk_import_reextract_v58_13_35_audit` (`at` ISO, 90 d).
+//     · Prune `bulk_import_failed_pdfs` GridFS blobs older than 30 d
+//       for jobs NOT in state=processing/queued AND not the known
+//       running job id `14433131-…`.
+//     · `compact` on GridFS chunk collections (returns disk to OS).
+//   Guardrails: `--dry-run` flag, `write_check` probe, ISO
+//   lexicographic compare (year-first sorts naturally).
+//
+// ── Preview-cluster verification ───────────────────────────────────
+//   Manual run of the sweep + compact returned 359 MB to the OS
+//   (test_database sizeOnDisk 2.18 GB → 1.70 GB). Writes were
+//   permitted throughout — preview is NOT the blocked cluster.
+//
+// ── TTL indexes ────────────────────────────────────────────────────
+//   All candidate collections
+//   (`bulk_import_pdf_cache.cached_at`, `bulk_import_dryrun.at`,
+//    `bulk_import_reextract_v58_13_35_audit.at`,
+//    `plant_maintenance_audit.at`, `asset_reminders_sent`,
+//    `asset_service_generate_runs`, `email_outbox`) currently
+//   store timestamps as ISO 8601 STRINGS, not BSON Dates. A
+//   MongoDB TTL index requires a BSON Date field. Rather than
+//   ship a half-working TTL that silently never fires, this
+//   ship uses the migration script above for the immediate
+//   sweep, and defers the `expires_at` BSON Date field
+//   migration + TTL index creation to a follow-up ship
+//   (v58.13.54 candidate) once we've confirmed the string→Date
+//   migration is safe against all read paths.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_disk_bloat_v58_13_53.py`:
+//     · `_sweep_orphan_gridfs_blobs` helper present + fail-safe.
+//     · Retention policy invokes the sweep and stamps counters.
+//     · Startup hook `_v58_13_53_orphan_gridfs_sweep` mounted +
+//       try/except-guarded.
+//     · Emergency cleanup script importable, protects running
+//       bulk-import job id, uses ISO string compare.
+//     · Version-sync pin.
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · `frontend/src/lib/version.js#RUNNING_VERSION` bumped.
+//   · `frontend/public/service-worker.js#CACHE_VERSION` bumped.
+//   · `mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION` bumped.
+//   · `/app/mobile/` untouched except `MOBILE_BUNDLE_VERSION`.
+//   · Running bulk-import job `14433131-…` untouched (its
+//     `bulk_import_failed_pdfs` blobs are in the migration
+//     script's protected set).
+//   · Track 2 (SSRA re-extraction) parked, untouched.
+//   · Heartbeat design stays on ice.
+//   · Docker / Kubernetes config UNCHANGED.
+//   · requirements.txt / package.json UNCHANGED.
+//
+// ── Production deploy escalation (NOT resolvable from preview) ─────
+//   The failed deploy is against the PRODUCTION Mongo cluster
+//   (target DB `whs-compliance-test_database`), which is separate
+//   from the preview cluster. We cannot reach it from here. See
+//   the escalation message drafted in the finish summary — infra
+//   must either expand the production Mongo disk or manually
+//   unblock writes on that cluster. Once writes are unblocked,
+//   running this ship's migration script against the production
+//   DB will reclaim the same class of bloat.
+
 // v160.3.9.58.13.52 — Document Library folder-detail colour grouping.
 //
 // ── Problem ────────────────────────────────────────────────────────
@@ -4740,7 +4860,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.52';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.53';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -375,6 +375,13 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
         "last_run_dropped": len(drop_ids),
         "last_run_bytes_freed": bytes_freed,
     }
+    # v58.13.53 — Belt-and-braces: after processing metadata-driven
+    # deletions, sweep any GridFS blob whose metadata row has
+    # already been removed. This closes the "orphan chunks" leak
+    # where a prior failed `fs_.delete()` left ~400 MB stranded.
+    orphans_swept, orphan_bytes = await _sweep_orphan_gridfs_blobs(db_, fs_)
+    stamp["last_run_orphans_swept"] = orphans_swept
+    stamp["last_run_orphan_bytes_freed"] = orphan_bytes
     await db_.app_state.update_one(
         {"_id": "backup_retention"},
         {"$set": stamp},
@@ -385,9 +392,62 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
         "kept": len(keep_ids),
         "dropped": len(drop_ids),
         "bytes_freed": bytes_freed,
+        "orphans_swept": orphans_swept,
+        "orphan_bytes_freed": orphan_bytes,
         "policy": policy,
         "debug": debug,
     }
+
+
+async def _sweep_orphan_gridfs_blobs(db_, fs_) -> Tuple[int, int]:
+    """v58.13.53 — Root-cause fix for the disk-bloat regression.
+
+    Prior to this ship, `_apply_retention_policy` deleted the
+    `bk_snapshots` metadata row and *attempted* a `fs_.delete()` on
+    the referenced GridFS blob. The `except` at line ~369 swallowed
+    any GridFS delete failure (network glitch, race), leaving the
+    chunks stranded. Over ~40 daily runs this accumulated 922 orphan
+    blobs = 405 MB on preview alone, blocking a production deploy.
+
+    This sweep is idempotent and read-mostly: it lists every
+    `bk_fs.files` blob whose `_id` has no matching `gridfs_id` in
+    `bk_snapshots`, then deletes it via the GridFS bucket. Returns
+    `(deleted_count, bytes_freed)` so the retention run summary can
+    log both.
+
+    Runs on every retention execution AND on every backend boot
+    (defence in depth — a snapshot creation isn't a prerequisite
+    for orphans to accumulate).
+    """
+    valid = set()
+    async for r in db_.bk_snapshots.find({}, {"_id": 0, "gridfs_id": 1}):
+        gid = r.get("gridfs_id")
+        if gid:
+            valid.add(str(gid))
+    if not valid:
+        # Never sweep when there's zero valid metadata — this
+        # would delete EVERYTHING and destroy real backups on a
+        # freshly-provisioned cluster. Fail safe.
+        return (0, 0)
+    from bson import ObjectId
+    deleted = 0
+    bytes_freed = 0
+    async for r in db_["bk_fs.files"].find({}, {"_id": 1, "length": 1}):
+        if str(r["_id"]) in valid:
+            continue
+        try:
+            await fs_.delete(r["_id"])
+            deleted += 1
+            bytes_freed += int(r.get("length") or 0)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("orphan GridFS sweep failed for %s: %s", r["_id"], e)
+    if deleted:
+        logger.info(
+            "v58.13.53 orphan-GridFS sweep: deleted %d orphaned bk_fs "
+            "blob(s) totalling %d bytes",
+            deleted, bytes_freed,
+        )
+    return (deleted, bytes_freed)
 
 
 
@@ -471,6 +531,23 @@ def install(app, db, require_admin):
     # Expose the bucket on app.state so background tasks in server.py
     # (e.g. the retention scheduler) can reach it without re-importing.
     app.state.bk_fs = fs
+
+    # v58.13.53 — Defensive orphan-GridFS sweep at startup so a
+    # deployment inheriting a bloated DB self-heals on first boot.
+    # Idempotent and no-op when no orphans exist. Guarded so a
+    # transient failure never blocks backend boot.
+    @app.on_event("startup")
+    async def _v58_13_53_orphan_gridfs_sweep():
+        try:
+            deleted, bytes_freed = await _sweep_orphan_gridfs_blobs(db, fs)
+            if deleted:
+                logger.info(
+                    "v58.13.53 boot-time orphan-GridFS sweep: freed "
+                    "%d blob(s) / %d bytes",
+                    deleted, bytes_freed,
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("v58.13.53 boot-time orphan sweep failed: %s", e)
 
     # v160.3.9.38 — Auto-run the plaintext-password migration ONCE at
     # startup, guarded by a marker doc in `bk_migrations`. Manual

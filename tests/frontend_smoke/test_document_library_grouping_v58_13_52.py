@@ -134,19 +134,18 @@ def test_resolve_group_palette_receives_document_library_page_slug():
 
 
 # ── 7. version-sync pin for this ship ───────────────────────────────
+# Forward-safe pattern (see v58.13.51 recurrence note): only pin
+# what THIS ship was born with. The next ship's own test-file will
+# assert its own version.
 
 
-def test_version_sync_pins_v58_13_52_across_three_files():
-    expected = "paneltec-v160.3.9.58.13.52"
-    v_js = (Path("/app/frontend/src/lib/version.js")).read_text(encoding="utf-8")
-    m_ts = (Path("/app/mobile/src/lib/version.ts")).read_text(encoding="utf-8")
-    sw_js = (Path("/app/frontend/public/service-worker.js")).read_text(encoding="utf-8")
-    assert f"RUNNING_VERSION = '{expected}'" in v_js, (
-        "frontend RUNNING_VERSION did not bump to v58.13.52"
-    )
-    assert f"MOBILE_BUNDLE_VERSION = '{expected}'" in m_ts, (
-        "mobile MOBILE_BUNDLE_VERSION did not bump to v58.13.52"
-    )
-    assert f"CACHE_VERSION = '{expected}'" in sw_js, (
-        "service-worker CACHE_VERSION did not bump to v58.13.52"
+def test_version_sync_moved_past_v58_13_51():
+    v_js = Path("/app/frontend/src/lib/version.js").read_text(encoding="utf-8")
+    m_ts = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
+    sw_js = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
+    assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.51'" not in v_js
+    assert "'paneltec-v160.3.9.58.13.51'" not in m_ts
+    assert "'paneltec-v160.3.9.58.13.51'" not in sw_js
+    assert "v160.3.9.58.13.52" in v_js, (
+        "v58.13.52 changelog block missing from version.js — history rewrite?"
     )
