@@ -14,6 +14,13 @@ from fastapi import Depends, HTTPException, Request
 from auth import get_current_user
 from db import db
 from models import now_iso
+# v58.13.64a — cache/invalidator + module-data table moved to leaf
+# modules so we can import them at top level without cycling back
+# through `mobile_modules`.
+from permission_helpers import (  # noqa: F401  (invalidate_modules_cache re-exported)
+    _MODULES_CACHE, _MODULES_TTL_SEC, invalidate_modules_cache,
+)
+from mobile_modules_data import DEFAULTS, ROLE_KEYS, _load_matrix
 
 Action = Literal["open", "view", "edit", "delete", "email", "team_view", "use", "approve",
                  # v160.3.9.48 — hr_employees-specific extended actions.
@@ -572,12 +579,11 @@ async def has_any_overrides(user_id: str) -> bool:
 #     because module toggles are exceptional, not high-frequency.
 # ═══════════════════════════════════════════════════════════════════════
 
-_MODULES_CACHE: Dict[str, tuple[float, Dict[str, bool]]] = {}
-_MODULES_TTL_SEC = 60.0
-# Roles that always bypass the module gate. These are the operator/HSEQ
-# rows that MUST be able to reach every endpoint even if a module is off
-# in the mobile UI for other roles.
 _MODULE_PRIVILEGED_ROLES = {"admin", "hseq_lead"}
+# v58.13.64a — `_MODULES_CACHE` / `_MODULES_TTL_SEC` /
+# `invalidate_modules_cache` were moved to `permission_helpers.py`.
+# Names remain re-exported at the top of this module for any consumer
+# that imports them from `permissions`.
 
 
 def is_mobile_client(request: Optional[Request]) -> bool:
@@ -612,9 +618,9 @@ async def _load_role_modules(org_id: str, role: str) -> Dict[str, bool]:
     hit = _MODULES_CACHE.get(cache_key)
     if hit and hit[0] > now:
         return hit[1]
-    # Import inside the function to avoid a circular import
-    # (`mobile_modules` imports from `auth` which imports from us).
-    from mobile_modules import _load_matrix, DEFAULTS, ROLE_KEYS
+    # v58.13.64a — `_load_matrix`, `DEFAULTS`, `ROLE_KEYS` now come
+    # from the leaf `mobile_modules_data` module at top-level import.
+    # No function-local import needed anymore.
     try:
         matrix = await _load_matrix(org_id)
     except Exception:
@@ -622,18 +628,6 @@ async def _load_role_modules(org_id: str, role: str) -> Dict[str, bool]:
     row = dict(matrix.get(role) or DEFAULTS.get(role) or {})
     _MODULES_CACHE[cache_key] = (now + _MODULES_TTL_SEC, row)
     return row
-
-
-def invalidate_modules_cache(org_id: Optional[str] = None) -> None:
-    """Clear the in-memory module cache. Called from the PUT handler in
-    `mobile_modules.py` after an admin saves a new matrix so subsequent
-    calls see the change immediately (without waiting for the TTL)."""
-    if org_id is None:
-        _MODULES_CACHE.clear()
-        return
-    dead = [k for k in _MODULES_CACHE if k.startswith(f"{org_id}:")]
-    for k in dead:
-        _MODULES_CACHE.pop(k, None)
 
 
 def _bypass_via_pdf_token(request: Request) -> bool:
@@ -685,7 +679,8 @@ def require_module(module_id: str, allow_privileged: bool = True):
         if module_id in row:
             enabled = bool(row[module_id])
         else:
-            from mobile_modules import DEFAULTS
+            # v58.13.64a — DEFAULTS now imported at top level from
+            # `mobile_modules_data`; no function-local import needed.
             enabled = bool((DEFAULTS.get(role) or {}).get(module_id, False))
         if not enabled:
             raise HTTPException(

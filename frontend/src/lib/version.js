@@ -1,5 +1,72 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.64 — Circular imports: structural fix (sub-ship 64a).
+//
+// ── Cycles resolved ───────────────────────────────────────────────
+//   1. auth ↔ auth_invite (the logical cycle previously handled by
+//      a function-local `from auth_invite import is_locked,
+//      record_login_attempt` inside `auth.login`).
+//   2. permissions ↔ mobile_modules (the module-cache logical cycle
+//      previously handled by two function-local
+//      `from mobile_modules import DEFAULTS, ...` inside
+//      `permissions._load_role_modules` + `require_module`, and by
+//      three function-local `from permissions import
+//      invalidate_modules_cache` inside `mobile_modules` write
+//      handlers).
+//
+// ── New leaf modules (all upstream-only, zero cycles) ────────────
+//   · `backend/auth_lockout.py`         — hosts `LOCKOUT_FAILS`,
+//     `LOCKOUT_MINUTES`, `is_locked`, `record_login_attempt`. Deps:
+//     `db`, `models` only.
+//   · `backend/mobile_modules_data.py`  — hosts `MODULE_KEYS`,
+//     `ROLE_KEYS`, `_RETIRED_MODULE_KEYS`, `DEFAULTS`,
+//     `DEFAULTS_VERSION`, `_normalise`, `_load_matrix`. Deps: `db`,
+//     `models` only.
+//   · `backend/permission_helpers.py`   — hosts `_MODULES_CACHE`,
+//     `_MODULES_TTL_SEC`, `invalidate_modules_cache`. Zero backend deps.
+//
+// ── Files modified (top-level imports switched) ──────────────────
+//   · `backend/auth.py`         — top-level `from auth_lockout import
+//     is_locked, record_login_attempt`; function-local variant deleted.
+//   · `backend/auth_invite.py`  — top-level `from auth_lockout import
+//     LOCKOUT_FAILS, LOCKOUT_MINUTES, is_locked, record_login_attempt`
+//     for back-compat; original definitions removed.
+//   · `backend/permissions.py`  — top-level imports from
+//     `permission_helpers` + `mobile_modules_data`. Function-local
+//     `from mobile_modules import …` removed from two callsites.
+//   · `backend/mobile_modules.py` — top-level imports from
+//     `mobile_modules_data` + `permission_helpers`. Function-local
+//     `from permissions import invalidate_modules_cache` removed from
+//     three handler bodies.
+//
+// ── Invariants pinned by the new guard test ──────────────────────
+//   `tests/backend_unit/test_no_circular_imports_v58_13_64.py`:
+//     · Zero top-level cycles in `backend/*.py`.
+//     · Three "no function-local reverse-edge" pins for the two
+//       target cycles.
+//     · Leaf-module invariants for the three new modules.
+//     · Forward-safe version-sync pin (moved past .63).
+//
+// ── Out-of-scope logical cycles ──────────────────────────────────
+//   21 function-local logical cycles remain elsewhere in the backend
+//   (auth ↔ session_timeout, auth ↔ integrations, auth ↔ workers,
+//   etc.). All are handled today by deferred imports and none block
+//   the two headline pairs the reviewer flagged. Follow-up ship
+//   candidate — not shipped here.
+//
+// ── NOT touched ──────────────────────────────────────────────────
+//   · Running bulk-import job `14433131-…`
+//   · Track 2 SSRA re-extraction
+//   · `custom_precast_panel_employee` role + its users
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump)
+//   · Docker / K8s / requirements.txt / package.json
+//   · Any RBAC / permission / model schema
+//
+// ── SOP ──────────────────────────────────────────────────────────
+//   · `sudo supervisorctl restart backend` (import graph changed).
+//   · `openapi.json` returned HTTP 200 post-restart.
+//   · All 3 canonical version strings bumped in this ship.
+
 // v160.3.9.58.13.63 — localStorage whitelist enforcement (no UX change).
 //
 // ── Read-only audit outcome ───────────────────────────────────────
@@ -5439,7 +5506,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.63';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.64';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

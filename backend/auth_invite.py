@@ -21,6 +21,12 @@ from pydantic import BaseModel, EmailStr
 
 from auth import (JWT_ALGORITHM, _secret, create_access_token,
                   get_current_user, hash_password)
+# v58.13.64a — Lockout helpers moved to `auth_lockout`. Re-exported
+# below so any consumer that historically reached for these names on
+# `auth_invite` keeps working.
+from auth_lockout import (  # noqa: F401  (re-exported for back-compat)
+    LOCKOUT_FAILS, LOCKOUT_MINUTES, is_locked, record_login_attempt,
+)
 from db import db
 from models import now_iso
 
@@ -30,8 +36,6 @@ log = logging.getLogger("paneltec.auth_invite")
 INVITE_TTL_DAYS  = 7
 RESET_TTL_HOURS  = 24
 PIN_TTL_HOURS    = 24
-LOCKOUT_FAILS    = 5
-LOCKOUT_MINUTES  = 15
 
 # ───── Rate-limit bucket (per IP, in-memory) ─────────────────────────
 _RL: dict[str, list[float]] = {}
@@ -448,34 +452,10 @@ async def pin_redeem(body: PinRedeemIn, request: Request):
 
 
 # ───── Lockout helpers (invoked from `auth.login`) ───────────────────
-async def record_login_attempt(email: str, success: bool):
-    """Called from the existing login endpoint. Tracks failed attempts
-    and locks the account after `LOCKOUT_FAILS` consecutive failures."""
-    user = await db.users.find_one({"email": email}, {"_id": 0, "id": 1,
-                                                       "failed_login_attempts": 1,
-                                                       "locked_until": 1})
-    if not user:
-        return
-    if success:
-        await db.users.update_one({"id": user["id"]}, {"$set": {
-            "failed_login_attempts": 0, "locked_until": None,
-        }})
-        return
-    fails = int(user.get("failed_login_attempts") or 0) + 1
-    update = {"failed_login_attempts": fails}
-    if fails >= LOCKOUT_FAILS:
-        update["locked_until"] = (datetime.now(timezone.utc)
-                                  + timedelta(minutes=LOCKOUT_MINUTES)).isoformat()
-        log.warning("auth.lockout user=%s fails=%d", user["id"], fails)
-    await db.users.update_one({"id": user["id"]}, {"$set": update})
-
-
-async def is_locked(email: str) -> bool:
-    u = await db.users.find_one({"email": email}, {"_id": 0, "locked_until": 1})
-    lu = (u or {}).get("locked_until")
-    if not lu:
-        return False
-    return lu > now_iso()
+# v58.13.64a — Definitions moved to `backend/auth_lockout.py` so
+# `auth.py` can import them at top level without cycling back through
+# `auth_invite`. Names remain importable from here for back-compat via
+# the top-level `from auth_lockout import …` above.
 
 
 @router.post("/users/{user_id}/unlock")

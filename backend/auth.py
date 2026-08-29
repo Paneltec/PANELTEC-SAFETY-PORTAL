@@ -13,6 +13,11 @@ from pydantic import BaseModel
 
 from db import db
 from models import LoginIn, SignupIn, TokenOut, UserOut, new_id, now_iso
+# v58.13.64a — Lockout helpers extracted to a leaf module so login can
+# call `is_locked` / `record_login_attempt` from a top-level import
+# instead of the function-local `from auth_invite import …` that
+# used to sit inside `login()`. See `backend/auth_lockout.py`.
+from auth_lockout import is_locked, record_login_attempt
 
 JWT_ALGORITHM = "HS256"
 JWT_EXP_DAYS = 30
@@ -361,7 +366,6 @@ async def login(body: LoginIn, request: Request):
     email = body.email.lower()
     # Phase 4.7 — lockout pre-check. Locked accounts return 423 with a
     # friendly message; admins can unlock via /api/users/{id}/unlock.
-    from auth_invite import is_locked, record_login_attempt
     if await is_locked(email):
         raise HTTPException(status_code=423,
                             detail="Account temporarily locked after too many failed attempts. "
