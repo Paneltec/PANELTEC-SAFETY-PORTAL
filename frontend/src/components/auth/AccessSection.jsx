@@ -1,5 +1,5 @@
 // Phase 4.7 — AccessSection: invite / PIN / reset / unlock controls for a user.
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import api, { apiError } from '@/lib/api';
 import { PinRevealModal, ChannelPickerDialog } from '@/components/auth/AuthBundle';
@@ -17,11 +17,16 @@ export default function AccessSection({ userId, compact = false }) {
   const [busy, setBusy] = useState(false);
   const [pin, setPin] = useState(null);
 
-  const refresh = async () => {
+  // v58.13.66 — `refresh` wrapped in `useCallback` so its identity is
+  // stable across renders that don't change `userId`. Previously we
+  // suppressed the exhaustive-deps warning with an eslint-disable
+  // comment; the useCallback + honest deps pattern is safer against
+  // future maintainers who might add stateful reads to `refresh`.
+  const refresh = useCallback(async () => {
     try { const { data } = await api.get(`/users/${userId}/access-status`); setStatus(data); }
     catch (e) { toast.error(apiError(e)); }
-  };
-  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, [userId]);
+  }, [userId]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   const fireChannelAction = async (path, label, channel) => {
     setBusy(true);

@@ -391,13 +391,17 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
     // v160.3.9.29-2c — Decision #4: documents.view gates the fetch; HR-scope
     // filtering happens server-side (Phase 3d follow-up). No more hardcoded
     // `hr_lead` checks in the FE.
+    // v58.13.66 — Include `canViewHrDocs` in deps so the fetch reruns when
+    // the caller's permission flips (previously stale-closed on the initial
+    // mount value, meaning a permission change while the modal was open
+    // never re-fired the fetch).
     if (!canViewHrDocs) { setHrDocCount(null); return; }
     let alive = true;
     api.get(`/workers/${workerId}/hr-documents`)
       .then((r) => { if (alive) setHrDocCount((r.data?.documents || []).length); })
       .catch(() => { if (alive) setHrDocCount(null); });
     return () => { alive = false; };
-  }, [workerId, currentUser]);
+  }, [workerId, canViewHrDocs]);
 
   useEffect(() => {
     let alive = true;

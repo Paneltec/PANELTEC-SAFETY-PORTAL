@@ -1,5 +1,76 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.66 — Category-A hook-deps stale-closure fixes (3 sites).
+//
+// Part 1 of the hook-deps 4-ship chain (66/67/68/69). This ship
+// addresses ONLY the 3 sites where a missing dep would produce a
+// real UX bug (not the 15 cosmetic "load in mount-only" idiom, not
+// the 8 "wrap in useMemo" micro-perf, not the 7 parent-callback
+// per-site judgment calls — those ship as 67/68/69 respectively).
+//
+// ── Sites fixed ──────────────────────────────────────────────────
+//   1. `components/workers/WorkerViewModal.jsx:390` — HR-docs fetch
+//      effect. Was `[workerId, currentUser]`; now
+//      `[workerId, canViewHrDocs]`. A permission flip while the
+//      modal is open now re-fires the fetch. Previously the effect
+//      stale-closed on the initial `canViewHrDocs` value.
+//   2. `components/auth/AccessSection.jsx:24` — mount-only refresh
+//      effect. Was `useEffect(() => { refresh(); /*eslint-
+//      disable-next-line*/ }, [userId])`; now
+//      `refresh = useCallback(async () => …, [userId])` +
+//      `useEffect(() => { refresh(); }, [refresh])`. Honest deps,
+//      no suppressor.
+//   3. `components/forms/PickerFields.jsx:144` — universal picker
+//      fetch effect. Was `[open, debounced,
+//      JSON.stringify(fetchParams || {})]` (complex expression) and
+//      omitted `fetchUrl` / `readOnly`. Now computes
+//      `paramsKey = useMemo(() => JSON.stringify(fetchParams || {}),
+//      [fetchParams])` outside the effect, and honest deps
+//      `[open, debounced, paramsKey, fetchUrl, readOnly, fetchParams]`.
+//      This was the highest-impact fix — the picker is mounted in
+//      every form and a mid-open endpoint flip previously left the
+//      dropdown showing stale options.
+//
+// ── ESLint audit run ────────────────────────────────────────────
+//   Before ship: 36 `react-hooks/exhaustive-deps` warnings.
+//   After ship:  32 warnings (4 warnings removed — WorkerViewModal 1,
+//                AccessSection 1, PickerFields 2 [missing deps +
+//                complex expression]).
+//   Targeted-file rerun on the 3 files: 0 warnings.
+//
+// ── New tooling ─────────────────────────────────────────────────
+//   · `frontend/eslint.hooks.audit.mjs` — flat-config ESLint config
+//     that enables ONLY the two `react-hooks/*` rules. Reused by
+//     the 66/67/68/69 chain. Documented in `frontend/README.md`.
+//   · `frontend/README.md` (NEW) — notes the two audit configs
+//     (`eslint.audit.config.mjs` from 64b + `eslint.hooks.audit.mjs`
+//     from 66) so a future maintainer doesn't wonder what they are.
+//
+// ── Tests ───────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_hook_deps_real_bugs_v58_13_66.py`:
+//     · Runs the hooks audit config against the 3 target files and
+//       asserts zero `react-hooks/*` warnings.
+//     · Per-site source pins to prevent a maintainer from
+//       silently deleting the fix (dep-array shape, useCallback
+//       presence, useMemo presence).
+//     · Forward-safe version-sync pin (moved past .65).
+//
+// ── NOT touched ─────────────────────────────────────────────────
+//   · The other 32 `exhaustive-deps` warnings — deferred to
+//     v58.13.67 (Categories B + D, 18 uniform sites), v58.13.68
+//     (Category C, 8 useMemo wrappers), v58.13.69 (Category E, 7
+//     per-site parent-callback audits).
+//   · Running bulk-import job `14433131-…`, Track 2, Precast Panel
+//     role/users, /app/mobile/ (except MOBILE_BUNDLE_VERSION),
+//     Docker / K8s / requirements / package.json.
+//
+// ── SOP ─────────────────────────────────────────────────────────
+//   · Backend restart NOT required (frontend-only change).
+//   · Frontend hot-reload picks up all 3 files on next dev refresh.
+//   · All 3 canonical version strings bumped.
+//   · Ship-per-version strategy per user: 66/67/68/69 each get own
+//     version bump; then chain continues 70 (65a), 71 (65b), etc.
+
 // v160.3.9.58.13.65 — Undefined-name cleanup (Phase 2 · sub-ship 64b).
 //
 // ── Findings ─────────────────────────────────────────────────────
@@ -5565,7 +5636,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.65';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.66';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

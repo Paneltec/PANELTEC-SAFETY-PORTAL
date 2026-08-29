@@ -140,6 +140,18 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  // v58.13.66 — Extracted `paramsKey` via useMemo so:
+  //   (1) the useEffect below has a static-checkable dep array (no more
+  //       "complex expression" ESLint warning), and
+  //   (2) all previously-missing deps (`fetchUrl`, `fetchParams`,
+  //       `readOnly`) are now honestly declared. A change to any of
+  //       them re-fires the fetch, fixing the stale-data bug when a
+  //       parent flips the picker's endpoint mid-open.
+  const paramsKey = useMemo(
+    () => JSON.stringify(fetchParams || {}),
+    [fetchParams],
+  );
+
   // Fetch when open or filters/search change.
   useEffect(() => {
     if (!open || readOnly) return;
@@ -157,7 +169,7 @@ function PickerInput({ field, value, onChange, readOnly, icon, displayPrimary,
       .catch(() => { if (!cancelled) setItems([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [open, debounced, JSON.stringify(fetchParams || {})]);
+  }, [open, debounced, paramsKey, fetchUrl, readOnly, fetchParams]);
 
   if (value && typeof value === 'object' && value.id) {
     return (
