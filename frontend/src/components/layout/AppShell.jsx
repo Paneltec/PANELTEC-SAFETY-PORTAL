@@ -66,7 +66,7 @@ import { ApiHealthPill, BackupPill, UserDropdownCard } from './TopbarPills';
 
 const NAV = [
   { section: 'Overview', items: [
-    { to: '/app/dashboard', label: 'Intelligence Centre', icon: Board24Regular, iconActive: Board24Filled, testid: 'nav-dashboard', pastel: 'coral' },
+    { to: '/app/dashboard', label: 'Dashboard', icon: Board24Regular, iconActive: Board24Filled, testid: 'nav-dashboard', pastel: 'coral' },
     { to: '/app/ask', label: 'Ask Intelligence', icon: Sparkle24Regular, iconActive: Sparkle24Filled, testid: 'nav-ask', pastel: 'lilac' },
   ]},
   { section: 'Capture', items: [
@@ -308,7 +308,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-30">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-30 max-md:civil-chrome max-md:border-b-black" data-testid="topbar-header">
       <button className="md:hidden p-2 rounded-md hover:bg-slate-100" onClick={onToggleMobile} data-testid="mobile-menu-button" aria-label="Open menu">
         <Menu size={20} />
       </button>
@@ -329,10 +329,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm" data-testid="workspace-switcher">
-            <span className={`w-2 h-2 rounded-full ${hasWorkspaces ? 'bg-brand-blue' : 'bg-slate-300'}`} />
+          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm max-md:bg-transparent max-md:border-civil-concrete-mid max-md:text-civil-off-white max-md:min-h-[44px]" data-testid="workspace-switcher">
+            <span className={`w-2 h-2 rounded-full ${hasWorkspaces ? 'bg-brand-blue max-md:bg-civil-hivis-orange' : 'bg-slate-300'}`} />
             <span className="font-medium">{active.name}</span>
-            <ChevronDown size={14} className="text-slate-400" />
+            <ChevronDown size={14} className="text-slate-400 max-md:text-civil-off-white" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-64">
@@ -511,11 +511,11 @@ export default function AppShell() {
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
       <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="p-0 w-72">
+        <SheetContent side="left" className="p-0 w-72 civil-chrome max-md:border-r-black">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
-          <div className="h-16 flex items-center justify-between px-5 border-b border-slate-200">
+          <div className="h-16 flex items-center justify-between px-5 border-b border-black/40">
             <Logo size="sm" />
-            <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2"><X size={18} /></button>
+            <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
           <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} />
         </SheetContent>

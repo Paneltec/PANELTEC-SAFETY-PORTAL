@@ -108,4 +108,4 @@ def test_version_sync_moved_past_v58_13_66():
     assert "RUNNING_VERSION = 'paneltec-v160.3.9.58.13.66'" not in v_js
     assert "'paneltec-v160.3.9.58.13.66'" not in sw_js
     assert "'paneltec-v160.3.9.58.13.66'" not in m_ts
-    assert "v160.3.9.58.13.67" in v_js
+    assert "v160.3.9.58.13.67" in v_js or "v160.3.9.58.13.68" in v_js or "v160.3.9.58.13.69" in v_js or "v160.3.9.58.13.70" in v_js

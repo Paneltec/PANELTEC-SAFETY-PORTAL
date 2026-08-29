@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import '@/App.css';
 import '@/lib/clipboard';   // v154.1 — arms the navigator.clipboard.writeText safety-net at app boot
 import '@/lib/download';    // v154.2 — arms the HTMLAnchorElement.click safety-net at app boot
+import { hydratePalette } from '@/lib/civilPalette';   // v58.13.67-palette-switcher
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Toaster } from 'sonner';
 
@@ -125,6 +126,10 @@ function LoginRedirect() {
 }
 
 function App() {
+  // v58.13.67-palette-switcher — hydrate the persisted CIVIL palette onto
+  // <html data-palette="…"> before any page renders, so first paint is
+  // already in the palette the user picked last time.
+  useEffect(() => { hydratePalette(); }, []);
   return (
     <div className="App">
       <BrowserRouter>

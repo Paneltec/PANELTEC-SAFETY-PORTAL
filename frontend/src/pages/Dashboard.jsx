@@ -6,6 +6,7 @@ import api from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
+import PaletteSwitcher from '../components/civil/PaletteSwitcher';   // v58.13.67-palette-switcher
 import { AnimatedNumber, TrendDelta } from '../components/ui/polish';
 import { getUser } from '../lib/auth';
 
@@ -587,7 +588,9 @@ export default function Dashboard() {
           time-of-day salutation + logged-in user's first name + today's date.
           Includes a slow-drifting orange/blue radial glow for premium feel
           (opacity kept ≤ 0.08 per spec — not distracting). */}
-      <div className="mb-6 rounded-2xl overflow-hidden relative border border-slate-800/60"
+      {/* v58.13.67 — Desktop keeps the marketing hero (blue gradient + greeting).
+          Phone (<md) hides it entirely — supervisors want status + actions, not brochure. */}
+      <div className="hidden md:block mb-6 rounded-2xl overflow-hidden relative border border-slate-800/60"
            style={{ background: 'linear-gradient(135deg, #0B1220 0%, #0F1B33 55%, #1A2B4D 100%)' }}
            data-testid="dashboard-hero-v157">
         <div className="hero-drift-glow" aria-hidden />
@@ -635,6 +638,10 @@ export default function Dashboard() {
             top-aligned, on the right. */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex-1 min-w-0">
+            {/* v58.13.67-palette-switcher — phone-only 3-chip palette switcher. */}
+            <div className="md:hidden mb-3">
+              <PaletteSwitcher />
+            </div>
             {/* v58.13.67 — Phone-viewport: plain "DASHBOARD" chrome label +
                 "Dashboard" title, no Intelligence-Centre marketing gloss.
                 Desktop (md+) keeps the fuller SaaS heading below. */}

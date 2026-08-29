@@ -6,6 +6,7 @@ import { apiError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 import PaneltecHero from '../components/marketing/PaneltecHero';
+import PaletteSwitcher from '../components/civil/PaletteSwitcher';   // v58.13.67-palette-switcher
 // v160.3.7k — Inoculation sweep: lock body scroll while the iOS install
 // instructions modal is open on the Cover page.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -154,6 +155,11 @@ export default function Cover() {
                   not wellness — lean sign-in only). Desktop layout
                   above still renders PaneltecHero in the two-column
                   grid at md+. */}
+
+              {/* v58.13.67-palette-switcher — 3-chip palette switcher, phone only. */}
+              <div className="md:hidden mb-4">
+                <PaletteSwitcher />
+              </div>
 
               {/* The elevated login card */}
               <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-10 overflow-hidden max-md:rounded-md max-md:shadow-none max-md:border-civil-concrete-mid max-md:bg-civil-off-white" data-testid="cover-card">

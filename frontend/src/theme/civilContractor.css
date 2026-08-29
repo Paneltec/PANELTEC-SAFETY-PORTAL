@@ -27,29 +27,135 @@
   --civil-hivis-orange:   #FF6A00;
   --civil-hivis-yellow:   #F5C400;
   --civil-off-white:      #FAF9F6;
+  /* Semantic palette-role tokens — every utility class reads
+     these, so swapping a palette is a matter of pointing the
+     `html[data-palette="…"]` block below at a new set of hex
+     values. `bitumen` is the default. */
+  --civil-chrome-bg:      #1A1A1A;
+  --civil-chrome-fg:      #FAF9F6;
+  --civil-page-bg:        #E6E4DF;
+  --civil-surface-bg:     #FAF9F6;
+  --civil-surface-border: #C4C0B6;
+  --civil-cta-bg:         #FF6A00;
+  --civil-cta-fg:         #FFFFFF;
+  --civil-cta-border:     #B84D00;
+  --civil-alert-bg:       #F5C400;
+  --civil-alert-border:   #C99F00;
+  --civil-label-fg:       #1A1A1A;
+}
+
+/* v58.13.67-palette-switcher — 3 palette variants selectable via
+   `document.documentElement.dataset.palette`. Bitumen is `:root`
+   defaults above; the two selectors below repoint the semantic
+   role tokens. Utility classes are unchanged — they read the role
+   tokens so switching a palette is instant + zero-JS beyond the
+   attribute flip.
+
+   Persisted client-side under `localStorage.civil_palette`. Phone
+   only — desktop keeps `brand.*` per the ship guardrail. */
+
+html[data-palette="roadwork"] {
+  --civil-chrome-bg:      #111111;
+  --civil-chrome-fg:      #FAF9F6;
+  --civil-page-bg:        #F3F1E8;
+  --civil-surface-bg:     #FFFFFF;
+  --civil-surface-border: #D6D2C4;
+  --civil-cta-bg:         #FFD100;
+  --civil-cta-fg:         #111111;
+  --civil-cta-border:     #C9A100;
+  --civil-alert-bg:       #FF6A00;
+  --civil-alert-border:   #B84D00;
+  --civil-label-fg:       #111111;
+}
+
+html[data-palette="earthworks"] {
+  --civil-chrome-bg:      #2B2A26;
+  --civil-chrome-fg:      #FAF9F6;
+  --civil-page-bg:        #EFE6D6;
+  --civil-surface-bg:     #FAF3E1;
+  --civil-surface-border: #C4B49A;
+  --civil-cta-bg:         #C45C26;
+  --civil-cta-fg:         #FFFFFF;
+  --civil-cta-border:     #93401A;
+  --civil-alert-bg:       #E3B23C;
+  --civil-alert-border:   #A67F1D;
+  --civil-label-fg:       #5C5346;
 }
 
 /* ── Surfaces ──────────────────────────────────────────────────── */
 
+/* v58.13.67-palette-switcher fix — Cover / Dashboard classNames use
+   Tailwind's `max-md:civil-*` prefix so the CIVIL styles only kick in
+   at phone widths. But `civil-*` isn't a known Tailwind utility, so
+   Tailwind's JIT never emits CSS for those prefixed classes. We
+   provide the escaped-colon selectors here, wrapped in the same media
+   query, with `!important` to beat Tailwind's `bg-orange-500` etc. */
+@media (max-width: 767px) {
+  .max-md\:civil-chrome {
+    background: var(--civil-chrome-bg) !important;
+    color: var(--civil-chrome-fg) !important;
+    border-bottom: 1px solid #000;
+  }
+  .max-md\:civil-page {
+    background: var(--civil-page-bg) !important;
+    color: var(--civil-label-fg) !important;
+  }
+  .max-md\:civil-surface {
+    background: var(--civil-surface-bg) !important;
+    border: 1px solid var(--civil-surface-border) !important;
+    border-radius: 6px !important;
+  }
+  .max-md\:civil-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--civil-label-fg) !important;
+  }
+  .max-md\:civil-btn {
+    min-height: 48px !important;
+    min-width: 48px !important;
+    padding: 12px 20px !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.02em !important;
+    border-radius: 4px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+  }
+  .max-md\:civil-cta {
+    background: var(--civil-cta-bg) !important;
+    color: var(--civil-cta-fg) !important;
+    border: 1px solid var(--civil-cta-border) !important;
+  }
+  .max-md\:civil-alert {
+    background: var(--civil-alert-bg) !important;
+    color: var(--civil-label-fg) !important;
+    border: 1px solid var(--civil-alert-border) !important;
+  }
+}
+
 .civil-page {
-  background: var(--civil-concrete-light);
-  color: var(--civil-bitumen);
+  background: var(--civil-page-bg) !important;
+  color: var(--civil-label-fg) !important;
 }
 
 .civil-chrome {
-  background: var(--civil-bitumen);
-  color: var(--civil-off-white);
+  background: var(--civil-chrome-bg) !important;
+  color: var(--civil-chrome-fg) !important;
   border-bottom: 1px solid #000;
 }
 
 .civil-surface {
-  background: var(--civil-off-white);
-  border: 1px solid var(--civil-concrete-mid);
+  background: var(--civil-surface-bg);
+  border: 1px solid var(--civil-surface-border);
   border-radius: 6px;   /* sharper than SaaS rounded-2xl */
 }
 
 .civil-divider {
-  border-color: var(--civil-concrete-mid);
+  border-color: var(--civil-surface-border);
 }
 
 /* ── Chrome labels — small all-caps like site signage ──────────── */
@@ -59,7 +165,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--civil-bitumen);
+  color: var(--civil-label-fg);
 }
 
 .civil-label-inverse {
@@ -67,7 +173,7 @@
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: var(--civil-off-white);
+  color: var(--civil-chrome-fg);
 }
 
 /* ── Buttons — 48×48 min, sharp corners ────────────────────────── */
@@ -89,26 +195,26 @@
 .civil-btn:active { transform: translateY(1px); }
 
 .civil-cta {
-  background: var(--civil-hivis-orange);
-  color: #fff;
-  border: 1px solid #B84D00;
+  background: var(--civil-cta-bg) !important;
+  color: var(--civil-cta-fg) !important;
+  border: 1px solid var(--civil-cta-border) !important;
 }
 .civil-cta:hover:not(:disabled) { filter: brightness(1.05); }
 .civil-cta:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .civil-btn-ghost {
   background: transparent;
-  color: var(--civil-bitumen);
-  border: 1px solid var(--civil-concrete-mid);
+  color: var(--civil-label-fg);
+  border: 1px solid var(--civil-surface-border);
 }
 .civil-btn-ghost:hover { background: rgba(0,0,0,0.04); }
 
-/* ── Alerts — hi-vis yellow ────────────────────────────────────── */
+/* ── Alerts — palette-specific alert accent ────────────────────── */
 
 .civil-alert {
-  background: var(--civil-hivis-yellow);
-  color: var(--civil-bitumen);
-  border: 1px solid #C99F00;
+  background: var(--civil-alert-bg);
+  color: var(--civil-label-fg);
+  border: 1px solid var(--civil-alert-border);
   padding: 10px 14px;
   font-weight: 600;
 }
@@ -119,16 +225,16 @@
   min-height: 48px;
   padding: 10px 12px;
   background: #fff;
-  border: 1px solid var(--civil-concrete-mid);
+  border: 1px solid var(--civil-surface-border);
   border-radius: 4px;
   font-size: 15px;
-  color: var(--civil-bitumen);
+  color: var(--civil-label-fg);
   width: 100%;
 }
 .civil-input:focus {
   outline: none;
-  border-color: var(--civil-hivis-orange);
-  box-shadow: 0 0 0 2px rgba(255,106,0,0.25);
+  border-color: var(--civil-cta-bg);
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.15);
 }
 
 /* ── Nav row — 48×48 target for gloved thumbs ──────────────────── */
@@ -139,14 +245,39 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  color: var(--civil-off-white);
+  color: var(--civil-chrome-fg);
   border-bottom: 1px solid rgba(255,255,255,0.06);
 }
 .civil-nav-row:active {
   background: rgba(255,255,255,0.08);
 }
 .civil-nav-row[data-active="true"] {
-  background: rgba(255,106,0,0.12);
-  border-left: 3px solid var(--civil-hivis-orange);
+  background: color-mix(in srgb, var(--civil-cta-bg) 12%, transparent);
+  border-left: 3px solid var(--civil-cta-bg);
   padding-left: 13px;
+}
+
+/* ── Palette switcher chips — 48×48 min tap ────────────────────── */
+
+.civil-chip {
+  min-height: 48px;
+  padding: 10px 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid var(--civil-surface-border);
+  background: var(--civil-surface-bg);
+  color: var(--civil-label-fg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 120ms linear, border-color 120ms linear;
+}
+.civil-chip[aria-pressed="true"] {
+  background: var(--civil-cta-bg);
+  color: var(--civil-cta-fg);
+  border-color: var(--civil-cta-border);
 }

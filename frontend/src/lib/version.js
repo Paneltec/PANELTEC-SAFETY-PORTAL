@@ -1,5 +1,108 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.70 — CIVIL 3-palette phone-only switcher (Bitumen / Roadwork / Earthworks).
+//
+// Bundled follow-up to v58.13.67 (CIVIL contractor phone-first
+// redesign) and v58.13.69 (dashboard + shell chrome completion).
+// Ships a 3-chip palette switcher on the two phone-visible entry
+// screens (Cover login + Dashboard) plus the semantic role-token
+// layer that lets each palette re-skin every civil-* utility with
+// a single `document.documentElement.dataset.palette = "…"` flip.
+//
+// ── Palettes (hex tokens, from user brief) ───────────────────────
+//   Bitumen (default):
+//     chrome #1A1A1A  surface #E6E4DF  mid #C4C0B6
+//     CTA #FF6A00  alert #F5C400  CTA-text #FFFFFF
+//   Roadwork:
+//     chrome #111111  surface #F3F1E8  mid #D6D2C4
+//     CTA #FFD100  alert #FF6A00  CTA-text #111111
+//   Earthworks:
+//     chrome #2B2A26  surface #EFE6D6  mid #C4B49A
+//     CTA #C45C26  alert #E3B23C  labels #5C5346  CTA-text #FFFFFF
+//
+// ── Files shipped ────────────────────────────────────────────────
+//   · `frontend/src/theme/civilContractor.css` — new semantic role
+//     tokens (`--civil-chrome-bg/fg`, `--civil-page-bg`,
+//     `--civil-surface-bg/border`, `--civil-cta-bg/fg/border`,
+//     `--civil-alert-bg/border`, `--civil-label-fg`) + two
+//     `html[data-palette="…"]` overrides for Roadwork + Earthworks.
+//     Every existing `.civil-*` utility now reads role tokens, so
+//     palette-switch = swap the html attribute, zero JS re-render.
+//     NEW `.civil-chip` utility for the switcher itself (48×48
+//     min tap, aria-pressed = palette CTA fill).
+//   · `frontend/src/lib/civilPalette.js` (NEW) — persistence layer.
+//     `getPalette()` / `setPalette(name)` / `hydratePalette()` +
+//     the `PALETTES` tuple. Reads/writes `localStorage.civil_palette`.
+//   · `frontend/src/components/civil/PaletteSwitcher.jsx` (NEW) —
+//     3-chip UI. Renders `civil-palette-switcher` role="group"
+//     with `civil-palette-chip-{bitumen|roadwork|earthworks}` chips.
+//     Parent wraps with `md:hidden` so desktop is untouched.
+//   · `frontend/src/App.js` — mount-time `hydratePalette()` so the
+//     first paint is already in the persisted palette.
+//   · `frontend/src/pages/Cover.jsx` — mounts <PaletteSwitcher>
+//     above the sign-in card on phone.
+//   · `frontend/src/pages/Dashboard.jsx` — mounts <PaletteSwitcher>
+//     above the "DASHBOARD" chrome label on phone.
+//   · `frontend/src/lib/version.js` — this changelog block.
+//   · `frontend/public/service-worker.js` + `mobile/src/lib/version.ts`
+//     — canonical version bumps to force stale-bundle busting.
+//
+// ── Guardrails ───────────────────────────────────────────────────
+//   · Phone-only — switcher parent uses `md:hidden`; role tokens
+//     read only from `.civil-*` utilities which are opt-in.
+//   · Desktop untouched — no `brand.*` classes touched, no `.md:`
+//     scope modified.
+//   · Persistence — `localStorage.civil_palette` accepts only the
+//     3 whitelisted values; anything else falls back to `bitumen`.
+//   · Hydrator is idempotent; safe to call from any top-level
+//     effect.
+//   · Running bulk-import job `14433131-…`, Track 2, Precast Panel
+//     role/users, `/app/mobile/` RN components, Docker / K8s /
+//     requirements / package.json — all UNTOUCHED.
+//
+// ── Tests ────────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_civil_palette_switcher_v58_13_67.py`:
+//     · Palette module exports `getPalette` / `setPalette` /
+//       `hydratePalette` and whitelists exactly the 3 palette names.
+//     · CSS carries a `:root { --civil-chrome-bg … }` role-token
+//       block plus `html[data-palette="roadwork"]` and
+//       `html[data-palette="earthworks"]` override blocks with all
+//       five required role tokens each.
+//     · Cover + Dashboard both mount <PaletteSwitcher />.
+//     · App.js calls `hydratePalette()` at mount.
+//     · Forward-safe version-sync pin.
+//     · BAN check re-applied — no purple/gradient/backdrop-blur on
+//       phone-scoped classes of the two target pages.
+
+// v160.3.9.58.13.69 — v58.13.67 CIVIL completion sweep (phone visibility).
+//
+// After the initial v58.13.67 ship the user reported no visible
+// change on preview. Two gaps were caught on inspection:
+//
+//   1. Dashboard.jsx line 590 hero card ("Good morning, Stephen. /
+//      PANELTEC CIVIL · INTELLIGENCE CENTRE" over a navy gradient)
+//      was rendering on phone widths above the newer plain-copy
+//      block. Wrapped it in `hidden md:block` so phone users get
+//      the lean DASHBOARD / "Status and actions for your site."
+//      pane only. Desktop keeps the full marketing hero.
+//   2. AppShell.jsx top bar (workspace switcher, sticky header)
+//      was still the SaaS white/blue combo on phone. Applied
+//      `max-md:civil-chrome` to the sticky header + repointed the
+//      workspace switcher pill to CIVIL tokens on phone
+//      (`max-md:bg-transparent`, `max-md:border-civil-concrete-mid`,
+//      hi-vis orange status dot, off-white text). Desktop
+//      layout untouched.
+//
+// This ship also serves as a cache-buster: bumping CACHE_VERSION
+// forces any client that had the .67/.68 bundle cached to fetch
+// the fresh compiled bundle on next load.
+//
+// ── SOP ─────────────────────────────────────────────────────────
+//   · Backend restart NOT required.
+//   · Frontend hot-reload picks up the JSX edits; SW cache-version
+//     bump forces stale clients to refetch.
+//   · All 3 canonical version strings bumped to `.69`.
+
 // v160.3.9.58.13.68 — CIVIL palette mirror for Expo mobile (palette-only).
 //
 // ── What shipped ────────────────────────────────────────────────
@@ -5780,7 +5883,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.68';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.70';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
