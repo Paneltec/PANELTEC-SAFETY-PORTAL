@@ -59,8 +59,8 @@ export function registerServiceWorker() {
             }
             return null;
           })
-          .catch(() => { /* swallow — best-effort */ });
-      }).catch(() => { /* ignore */ });
+          .catch((err) => { console.warn('[sw] dev-cleanup cache clear failed', err); });
+      }).catch((err) => { console.warn('[sw] dev-cleanup getRegistrations failed', err); });
     }
     return;
   }
@@ -71,7 +71,7 @@ export function registerServiceWorker() {
       // v96.2 — Poll for SW updates every 60s while the tab is open so
       // long-lived sessions pick up new builds without a manual refresh.
       try {
-        setInterval(() => { reg.update().catch(() => {}); }, 60_000);
+        setInterval(() => { reg.update().catch((err) => { console.debug('[sw] update poll skipped', err); }); }, 60_000);
       } catch (_) { /* setInterval should never throw — defensive */ }
 
       // v96.2 — Auto-activate the incoming SW. Previously we showed a
@@ -96,6 +96,6 @@ export function registerServiceWorker() {
         } catch (_) { /* noop */ }
         setTimeout(() => window.location.reload(), 0);
       });
-    }).catch(() => { /* ignore — non-fatal */ });
+    }).catch((err) => { console.warn('[sw] register failed', err); });
   });
 }

@@ -8,6 +8,7 @@ workspace bindings refreshed and their token_version bumped (which invalidates
 any old session token that was issued before the password rotation).
 """
 import asyncio
+import os
 import sys
 
 sys.path.insert(0, "/app/backend")
@@ -19,7 +20,11 @@ from models import new_id, now_iso
 EMAIL = "stephen@paneltec.com.au"
 NAME = "Stephen"
 ROLE = "admin"
-PASSWORD = "PaneltecCivil-2026!"
+# v58.13.62 — Hardcoded password moved to env. Fails loud if missing
+# so a mis-configured deployment never falls back to a shared literal.
+PASSWORD = os.getenv("SEED_STEPHEN_PASSWORD")
+if not PASSWORD:
+    raise SystemExit("SEED_STEPHEN_PASSWORD env var required")
 
 
 async def main():

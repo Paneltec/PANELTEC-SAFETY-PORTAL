@@ -27,8 +27,13 @@ from pathlib import Path
 import httpx
 
 BACKEND = os.environ.get("PANELTEC_BACKEND", "http://localhost:8001")
-EMAIL = "stephen@paneltec.com.au"
-PASSWORD = "Mcgstephen50#"
+# v58.13.62 — Test credentials moved to env. Fails loud on omission.
+EMAIL = os.getenv("PANELTEC_TEST_EMAIL")
+PASSWORD = os.getenv("PANELTEC_TEST_PASSWORD")
+if not EMAIL or not PASSWORD:
+    raise SystemExit(
+        "PANELTEC_TEST_EMAIL and PANELTEC_TEST_PASSWORD env vars required"
+    )
 
 DROPBOX_URL = (
     "https://www.dropbox.com/scl/fi/k7oz7z06mwbbita7wernt/A-Barbari-2.zip"
@@ -112,7 +117,7 @@ async def main(args) -> int:
                 break
             await asyncio.sleep(5)
 
-        print(f"[live] fetching report")
+        print("[live] fetching report")
         report = await _report(c, headers, job_id)
 
         out_path = REPORT_DIR / f"bulk_import_live_{job_id}.json"

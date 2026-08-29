@@ -1,5 +1,67 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.62 — P0 security fixes (hardcoded secrets + silent catches).
+//
+// ── Backend ────────────────────────────────────────────────────────
+//   1. `/app/backend/seed_stephen.py` — the admin seed no longer
+//      carries a literal password. `PASSWORD = os.getenv(
+//      "SEED_STEPHEN_PASSWORD")` reads from env and fails-loud with
+//      `SystemExit("SEED_STEPHEN_PASSWORD env var required")` on
+//      omission. `import os` is now the second stdlib import.
+//   2. `/app/backend/scripts/live_bulk_import_dryrun.py` — the
+//      Stephen admin credentials used by the driver are now read
+//      from `PANELTEC_TEST_EMAIL` + `PANELTEC_TEST_PASSWORD`. Fails
+//      loud if either is missing. `import os` was already present.
+//      Also fixed a small F541 (`print(f"[live] fetching report")`
+//      → `print("...")`) so the file passes `ruff --select F` clean.
+//   3. The 3 `exec()` calls in `file_pdf.py` flagged by the review
+//      are CONFIRMED FALSE POSITIVES — they are
+//      `asyncio.create_subprocess_exec(...)` calls with hardcoded
+//      argv strings, not Python's builtin `exec`. Not touched.
+//
+// ── Frontend ───────────────────────────────────────────────────────
+//   `/app/frontend/src/serviceWorkerRegistration.js` — 4 previously
+//   silent `.catch(() => { /* … */ })` blocks now log diagnostics:
+//     · dev-cleanup cache-clear failure → `console.warn`
+//     · dev-cleanup getRegistrations failure → `console.warn`
+//     · 60s SW-update poll failure → `console.debug`
+//     · initial SW registration failure → `console.warn`
+//   The 4 intentional-silent guards (sessionStorage writes,
+//   `SKIP_WAITING` post, `controllerchange` reload marker) keep
+//   their tiny comment `_` catches — they run on every SW event
+//   and would flood the console.
+//
+// ── NOT touched ────────────────────────────────────────────────────
+//   · localStorage sensitive-move audit — queued as v58.13.63.
+//   · Running bulk-import job `14433131-…`.
+//   · Track 2 SSRA re-extraction.
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump).
+//   · No permission/RBAC/model schema change.
+//
+// ── Tests ──────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_p0_security_v58_13_62.py`:
+//     · seed_stephen.py contains no literal password assignment
+//       and always calls `os.getenv("SEED_STEPHEN_PASSWORD")`.
+//     · live_bulk_import_dryrun.py never falls back to literal
+//       credentials — env-only.
+//     · Both scripts fail loud (`SystemExit`) when the env is
+//       missing (verified by AST inspection, not execution — we
+//       don't want the test to actually import auth.hash_password).
+//     · serviceWorkerRegistration.js contains at least 3
+//       `console.warn`/`console.debug` diagnostics in the catches.
+//     · Forward-safe version-sync pin (moved past .61).
+//
+// ── SOP ────────────────────────────────────────────────────────────
+//   · frontend/src/lib/version.js#RUNNING_VERSION bumped.
+//   · frontend/public/service-worker.js#CACHE_VERSION bumped.
+//   · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION bumped.
+//   · Backend restart NOT required (no import-graph change; only
+//     script-level literal moves, which are only loaded when the
+//     scripts are invoked by hand).
+//   · Frontend hot-reload picks up the SW registration change on
+//     next dev refresh; production users get it on their next SW
+//     activate cycle.
+
 // v160.3.9.58.13.61 — Roles Admin merged as tab under Users & Permissions.
 //
 // ── UX ─────────────────────────────────────────────────────────────
@@ -5333,7 +5395,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.61';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.62';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
