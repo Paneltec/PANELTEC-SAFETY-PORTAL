@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Save, Eye, EyeOff, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { persistToken } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -54,7 +55,7 @@ export default function MyProfile() {
       if (email !== me.email) payload.email = email;
       const { data } = await api.post('/auth/update-profile', payload);
       // Refresh token so the user stays logged in after token_version bump on email change.
-      if (data?.access_token) localStorage.setItem('paneltec_token', data.access_token);
+      if (data?.access_token) persistToken(data.access_token);
       toast.success('Profile updated');
       load();
     } catch (e) { toast.error(apiError(e)); }
@@ -68,7 +69,7 @@ export default function MyProfile() {
     setPwdBusy(true);
     try {
       const { data } = await api.post('/auth/change-password', { current_password: curPwd, new_password: newPwd });
-      if (data?.access_token) localStorage.setItem('paneltec_token', data.access_token);
+      if (data?.access_token) persistToken(data.access_token);
       toast.success('Password changed — other sessions have been signed out');
       setCurPwd(''); setNewPwd(''); setConfirmPwd('');
     } catch (e) { toast.error(apiError(e)); }

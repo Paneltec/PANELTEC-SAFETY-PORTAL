@@ -1,5 +1,51 @@
 // Axios instance for Paneltec Civil API.
 // Bearer token in localStorage; 401 → drop token + redirect to /.
+//
+// ── v58.13.63 — localStorage storage decision (documented) ───────────
+//
+// The platform JWT (`paneltec_token`) intentionally lives in
+// `localStorage`, not `sessionStorage` or an HttpOnly cookie. This
+// note captures WHY so future security reviews don't try to move it
+// without appreciating the blast radius.
+//
+// Why localStorage is acceptable HERE, TODAY:
+//   1. The JWT is SHORT-LIVED. `auth.py` mints tokens with a bounded
+//      TTL; expired tokens fail with `x-auth-reason: jwt-expired`
+//      and the interceptor below drops the local copy + redirects.
+//   2. Every user record has a monotonic `token_version` field.
+//      Rotating a password (seed_stephen.py, admin reset, etc.) bumps
+//      the version and INVALIDATES every token minted before the bump
+//      — server-side revocation with no client cooperation needed.
+//   3. Refresh is server-mediated. Clients POST to `/api/auth/refresh`
+//      with the current token; the server returns a new one and
+//      updates `token_version` accordingly. See `lib/auth.js`.
+//
+// Why NOT sessionStorage:
+//   · Would sign every user out on tab close — a known-hostile UX
+//     regression for a WHS platform that field workers use on shared
+//     iPads and back-office admins keep pinned across shifts.
+//   · Would break `BulkImportPill` cross-tab sync, which relies on
+//     `storage` events fired against `localStorage` explicitly.
+//
+// Why NOT HttpOnly cookies + in-memory JWT (the "real" XSS fix):
+//   · The correct answer to "XSS could steal a localStorage token" is
+//     an HttpOnly refresh cookie + short-lived in-memory access JWT.
+//     That refactor touches every fetch call, every interceptor, CORS,
+//     CSRF token handling, and the SW auth passthrough. Estimated
+//     multi-week effort. TRACKED as a follow-up candidate; deliberately
+//     NOT shipped in v58.13.63.
+//
+// Whitelist (enforced by `tests/frontend_smoke/test_localStorage_whitelist_v58_13_63.py`):
+//   · Only `lib/auth.js` and `lib/api.js` may WRITE `paneltec_token`.
+//   · Only files that IMPORT `TOKEN_KEY` from `lib/api` may READ it.
+//   · The `bulkImport.*` job-UUID keys may only appear under
+//     `pages/prestarts/BulkImport/*`.
+//   · No literal `'paneltec_token'` string is allowed anywhere else.
+//
+// If you're adding a new page that needs to call the API, DO NOT read
+// `localStorage` directly — import the shared `api` axios instance
+// from this module and it will attach the Bearer for you.
+
 import axios from 'axios';
 
 const BASE = process.env.REACT_APP_BACKEND_URL;

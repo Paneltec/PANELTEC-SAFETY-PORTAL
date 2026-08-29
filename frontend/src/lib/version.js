@@ -1,5 +1,49 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.63 — localStorage whitelist enforcement (no UX change).
+//
+// ── Read-only audit outcome ───────────────────────────────────────
+//   The reviewer's flag on `pages/settings/SetupWizard.jsx:14`,
+//   `BackupTab.jsx:41,54`, `BackupStatusHero.jsx:12` was misleading:
+//   those sites are READ-ONLY accessors of the SAME `paneltec_token`
+//   that `lib/api.js:14` already reads on every API request. Moving
+//   them to `sessionStorage` would sign every user out on tab close
+//   and break the BackupTab's independent axios instance.
+//
+//   The BulkImport localStorage keys (`bulkImport.activeJobId`,
+//   `bulkImport.dismissedJobId`) store job UUIDs — not credentials.
+//   Cross-tab pill sync depends on `storage` events fired against
+//   `localStorage` explicitly; moving them would break the feature.
+//
+// ── What this ship actually does ──────────────────────────────────
+//   1. `lib/api.js` — new doc-cluster explaining WHY the JWT lives
+//      in localStorage (short-lived TTL, server-side `token_version`
+//      invalidation, refresh flow) and what the whitelist is.
+//   2. `tests/frontend_smoke/test_localStorage_whitelist_v58_13_63.py`
+//      — new source-grep guard that FAILS THE BUILD if any new file
+//      outside the whitelist starts reading/writing `paneltec_token`
+//      or uses a `bulkImport.*` key outside `pages/prestarts/BulkImport/`.
+//   3. Forward-safe version-sync pin (moved past .62).
+//
+// ── Explicitly NOT shipped ────────────────────────────────────────
+//   The "real" fix for XSS-readable JWT is HttpOnly refresh cookies
+//   + short-lived in-memory access JWT. That refactor touches every
+//   axios interceptor, every fetch, CORS, CSRF, and the SW auth
+//   passthrough. Multi-week effort. TRACKED as follow-up candidate
+//   but deliberately NOT shipped here.
+//
+// ── NOT touched ───────────────────────────────────────────────────
+//   · Running bulk-import job `14433131-…`
+//   · Track 2 SSRA re-extraction
+//   · `custom_precast_panel_employee` role + its users
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump)
+//   · Docker / K8s / requirements.txt / package.json
+//   · Any RBAC / permission / model schema
+//
+// ── SOP ───────────────────────────────────────────────────────────
+//   · Backend restart NOT required (frontend-only + test file).
+//   · All 3 canonical version strings bumped in this ship.
+
 // v160.3.9.58.13.62 — P0 security fixes (hardcoded secrets + silent catches).
 //
 // ── Backend ────────────────────────────────────────────────────────
@@ -5395,7 +5439,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.62';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.63';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

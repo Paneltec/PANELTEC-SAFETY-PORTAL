@@ -31,6 +31,16 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
 
+// v58.13.63 — Lightweight synchronous token persist, used by flows
+// that rotate the JWT server-side (password change, profile-email
+// change) and just need to swap the client copy without also
+// re-hydrating USER_KEY (the caller already has fresh user data or
+// will fetch it on next render).
+export function persistToken(token) {
+  if (!token) return;
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
 // Phase 4.7 — used by Onboard / Reset flows after the public redeem endpoint
 // returns a fresh JWT. We persist the token, then hydrate USER_KEY off
 // `/auth/me` so the rest of the app sees a complete user object.
