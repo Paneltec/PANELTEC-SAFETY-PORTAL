@@ -489,25 +489,12 @@ async def _record_or_404(collection: str, record_id: str, org_id: str) -> dict:
     return doc
 
 
-def _make_email_route(resource: str, collection: str, path: str, subject_fn, summary_fn,
-                      link_fn, attachments_fn=None):
-    async def _impl(record_id: str, body: RecordEmailIn,
-                    user: dict = Depends(require_permission(resource, "email"))):
-        rec = await _record_or_404(collection, record_id, user["org_id"])
-        subject = subject_fn(rec)
-        summary_html = summary_fn(rec)
-        link_path = link_fn(rec)
-        atts = attachments_fn(rec) if attachments_fn else []
-        doc = await queue_email_doc(
-            org_id=user["org_id"], to=body.to, cc=body.cc,
-            subject=subject, body_html=_wrap_body(body.message, summary_html, link_path),
-            attachments=atts, related_record_type=resource, related_record_id=record_id,
-            created_by=user["id"], resource_kind=resource,
-        )
-        note = "Sent via Microsoft 365" if doc["status"] == "sent" \
-            else "Queued — Microsoft 365 not connected"
-        return {**doc, "note": note}
-    router.add_api_route(path, _impl, methods=["POST"], status_code=201, name=f"email-{resource}-{record_id}")
+# v58.13.65 — `_make_email_route` factory removed. It had zero call
+# sites in the entire codebase and its final line referenced
+# `record_id` from the *inner* `_impl` closure at *registration
+# time* (outer scope), which is a NameError waiting to happen. All
+# live email-send endpoints are plain `async def` handlers wired
+# individually below (see `_swms_email`, `_prestart_email`, etc.).
 
 
 # SWMS for review

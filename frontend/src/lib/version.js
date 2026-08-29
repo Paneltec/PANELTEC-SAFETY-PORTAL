@@ -1,5 +1,64 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.65 — Undefined-name cleanup (Phase 2 · sub-ship 64b).
+//
+// ── Findings ─────────────────────────────────────────────────────
+//   `ruff --select F821 backend/` flagged 17 undefined-name sites
+//   across 2 files. Categorisation:
+//     · Real bugs that would misbehave at runtime:  0
+//     · False positives:                            0
+//     · Dead-code references (delete, don't patch): 17
+//
+//   The reviewer's earlier "58 undefined variables" count came from
+//   an eslint scan run WITHOUT globals configured — it flagged
+//   `document`, `window`, `console`, `process`, etc. as undefined.
+//   When ESLint is invoked with `browser + node + jest` globals via
+//   the audit config `frontend/eslint.audit.config.mjs`, the true
+//   count is ZERO frontend no-undef sites.
+//
+// ── Deletions ────────────────────────────────────────────────────
+//   1. `backend/email_outbox.py::_make_email_route` — factory with
+//      zero callers. Its `router.add_api_route(..., name=f"email-
+//      {resource}-{record_id}")` line referenced `record_id` from
+//      the inner `_impl` closure at *registration* time (outer
+//      scope), which is a NameError waiting to happen the moment
+//      anyone called it. All live email-send endpoints are plain
+//      `async def` handlers wired individually (`_swms_email`,
+//      `_prestart_email`, …), so removal is contract-safe.
+//   2. `backend/scripts/deep_parse_legacy_pdfs.py::
+//      _process_submission_LEGACY_INLINE` — the function's first
+//      executable statement is `return await process_submission(
+//      db, sub, tpl_by_id)`; the ~215 lines after that `return`
+//      were unreachable dead code left behind from the pre-refactor
+//      inline implementation. The dead block referenced a
+//      `parsed` / `template_fields` data shape that no longer
+//      exists post-refactor. Truncated to the delegator only.
+//
+// ── Tests ────────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_no_undefined_names_v58_13_64b.py`:
+//     · Runs `ruff check --select F821 backend/` as a subprocess
+//       and asserts zero hits. Frozen invariant going forward.
+//     · Guards that `_make_email_route` stays deleted.
+//     · Guards that `_process_submission_LEGACY_INLINE` stays tiny
+//       (<25 lines) and still contains the delegator.
+//     · Forward-safe version-sync pin (moved past .64).
+//
+// ── NOT touched ──────────────────────────────────────────────────
+//   · Running bulk-import job `14433131-…`
+//   · Track 2 SSRA re-extraction
+//   · `custom_precast_panel_employee` role + its users
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump)
+//   · Docker / K8s / requirements.txt / package.json
+//   · Any RBAC / permission / model schema
+//   · Any live endpoint contract
+//
+// ── SOP ──────────────────────────────────────────────────────────
+//   · Backend restart NOT required (only script + dead-factory
+//     deletions; no import graph change, no route contract change).
+//   · All 3 canonical version strings bumped in this ship.
+//   · Ship-per-version strategy confirmed by user: 64a=.64,
+//     64b=.65, 64c=.66, 65a=.67, 65b=.68, 65c=.69, 66a=.70, etc.
+
 // v160.3.9.58.13.64 — Circular imports: structural fix (sub-ship 64a).
 //
 // ── Cycles resolved ───────────────────────────────────────────────
@@ -5506,7 +5565,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.64';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.65';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
