@@ -11,6 +11,9 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
 
+/* v58.13.67 — CIVIL contractor phone-first theme (tokens + utilities). */
+@import './theme/civilContractor.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

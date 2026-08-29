@@ -73,9 +73,18 @@ export default function Cover() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#FBF8F2]" data-testid="cover-page">
-      {/* Topbar */}
-      <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-6 md:px-10 py-5">
+    <div className="min-h-screen w-full bg-[#FBF8F2] md:bg-[#FBF8F2] max-md:civil-page" data-testid="cover-page">
+      {/* v58.13.67 — Phone CIVIL chrome bar (visible <md only). */}
+      <div className="md:hidden civil-chrome flex items-center justify-between px-4 py-3" data-testid="cover-civil-chrome">
+        <div className="flex items-center gap-2.5">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#FF6A00" />
+          </svg>
+          <span className="civil-label-inverse">PANELTEC CIVIL</span>
+        </div>
+      </div>
+      {/* Topbar — desktop only (md+). */}
+      <div className="hidden md:flex absolute top-0 inset-x-0 z-20 items-center justify-between px-6 md:px-10 py-5">
         <Link to="/" className="flex items-center gap-2.5" data-testid="cover-brand">
           {/* Phase 4.10 v115 — chevron mark inlined as SVG to render in
               brand orange. The legacy /brand/mark.png is the old cobalt
@@ -141,28 +150,28 @@ export default function Cover() {
         <div className="relative bg-[#FBF8F2]">
           <div className="min-h-screen flex items-center justify-center px-4 sm:px-6 md:px-8 py-24 md:py-10">
             <div className="w-full max-w-[460px]">
-              {/* Mobile-only hero intro — Phase 4.10.4 (v119) shared
-                  component. Compact variant has no pills (desktop only). */}
-              <div className="md:hidden mb-6 px-2">
-                <PaneltecHero variant="compact" />
-              </div>
+              {/* Phone splash removed on <md per v58.13.67 (workwear,
+                  not wellness — lean sign-in only). Desktop layout
+                  above still renders PaneltecHero in the two-column
+                  grid at md+. */}
 
               {/* The elevated login card */}
-              <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-10 overflow-hidden" data-testid="cover-card">
+              <div className="relative bg-white rounded-2xl shadow-xl border border-slate-200 p-8 sm:p-10 overflow-hidden max-md:rounded-md max-md:shadow-none max-md:border-civil-concrete-mid max-md:bg-civil-off-white" data-testid="cover-card">
                 {/* Accent stripe — Phase 4.10 v115: cobalt → brand orange */}
-                <div className="absolute top-0 left-0 bottom-0 w-1" style={{ backgroundColor: '#F97316' }} aria-hidden="true" />
+                <div className="absolute top-0 left-0 bottom-0 w-1 max-md:hidden" style={{ backgroundColor: '#F97316' }} aria-hidden="true" />
 
                 {/* Phase 4.10 v115 — chevron mark inlined as SVG to render
                     in brand orange. The legacy /brand/mark.png is the old
                     cobalt version and is now unreferenced from any
-                    rendered surface. */}
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mb-5" data-testid="cover-mark">
+                    rendered surface. Hidden on phone (chrome carries the
+                    mark now — v58.13.67). */}
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" aria-hidden="true" className="mb-5 max-md:hidden" data-testid="cover-mark">
                   <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#F97316" />
                   <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" stroke="#EA580C" strokeWidth="0.5" />
                 </svg>
-                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-500">Sign in to your account</div>
-                <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#0F1B2D]">Welcome back</h2>
-                <p className="mt-1.5 text-sm text-slate-600">Sign in below to access your Paneltec Civil dashboard.</p>
+                <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-orange-500 max-md:civil-label max-md:text-civil-bitumen" data-testid="cover-signin-label">Sign in</div>
+                <h2 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight text-[#0F1B2D] max-md:text-2xl max-md:text-civil-bitumen">Sign in</h2>
+                <p className="mt-1.5 text-sm text-slate-600 max-md:text-civil-bitumen max-md:opacity-75">Sign in below to access your Paneltec Civil dashboard.</p>
 
                 <form onSubmit={submit} className="mt-7 space-y-4" data-testid="cover-login-form" autoComplete="on">
                   <div>
@@ -209,7 +218,7 @@ export default function Cover() {
                   )}
 
                   <button type="submit" disabled={busy} data-testid="cover-submit"
-                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-lg bg-orange-500 text-white text-base font-bold tracking-wide hover:bg-orange-600 active:bg-orange-700 transition-colors disabled:opacity-60 shadow-md">
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 rounded-lg bg-orange-500 text-white text-base font-bold tracking-wide hover:bg-orange-600 active:bg-orange-700 transition-colors disabled:opacity-60 shadow-md max-md:civil-btn max-md:civil-cta max-md:rounded max-md:shadow-none">
                     {busy ? <><Loader2 size={18} className="animate-spin" /> Signing in…</> : <>Sign in to Paneltec Civil <ArrowRight size={18} /></>}
                   </button>
                 </form>

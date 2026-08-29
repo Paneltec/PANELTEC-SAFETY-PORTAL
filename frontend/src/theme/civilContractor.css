@@ -1,0 +1,152 @@
+/*
+ * Paneltec Civil — v58.13.67 phone-first CIVIL contractor theme.
+ *
+ * Palette (source of truth — never inline these hex values elsewhere):
+ *   Bitumen charcoal  #1A1A1A  chrome, header, primary text
+ *   Concrete light    #E6E4DF  page background
+ *   Concrete mid      #C4C0B6  card containers, dividers
+ *   Hi-vis orange     #FF6A00  primary CTAs only (sparingly)
+ *   Hi-vis yellow     #F5C400  alerts, warnings, attention states
+ *   Off-white         #FAF9F6  cards
+ *
+ * Rules:
+ *   - Applied only on phone-viewport (<md) branches of Cover.jsx,
+ *     Dashboard.jsx, AppShell.jsx.
+ *   - Desktop (md+) preserves the existing brand.* palette.
+ *   - NO purple, NO soft SaaS blue, NO gradients, NO backdrop-blur,
+ *     NO marketing gloss anywhere these classes apply.
+ *   - Minimum tap target 48×48px (gloved-thumb usability).
+ *   - Chrome labels are ALL CAPS with tight tracking (site-signage
+ *     feel). Body text stays sentence case.
+ */
+
+:root {
+  --civil-bitumen:        #1A1A1A;
+  --civil-concrete-light: #E6E4DF;
+  --civil-concrete-mid:   #C4C0B6;
+  --civil-hivis-orange:   #FF6A00;
+  --civil-hivis-yellow:   #F5C400;
+  --civil-off-white:      #FAF9F6;
+}
+
+/* ── Surfaces ──────────────────────────────────────────────────── */
+
+.civil-page {
+  background: var(--civil-concrete-light);
+  color: var(--civil-bitumen);
+}
+
+.civil-chrome {
+  background: var(--civil-bitumen);
+  color: var(--civil-off-white);
+  border-bottom: 1px solid #000;
+}
+
+.civil-surface {
+  background: var(--civil-off-white);
+  border: 1px solid var(--civil-concrete-mid);
+  border-radius: 6px;   /* sharper than SaaS rounded-2xl */
+}
+
+.civil-divider {
+  border-color: var(--civil-concrete-mid);
+}
+
+/* ── Chrome labels — small all-caps like site signage ──────────── */
+
+.civil-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--civil-bitumen);
+}
+
+.civil-label-inverse {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--civil-off-white);
+}
+
+/* ── Buttons — 48×48 min, sharp corners ────────────────────────── */
+
+.civil-btn {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 12px 20px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: filter 120ms linear, transform 120ms ease-out;
+}
+.civil-btn:active { transform: translateY(1px); }
+
+.civil-cta {
+  background: var(--civil-hivis-orange);
+  color: #fff;
+  border: 1px solid #B84D00;
+}
+.civil-cta:hover:not(:disabled) { filter: brightness(1.05); }
+.civil-cta:disabled { opacity: 0.55; cursor: not-allowed; }
+
+.civil-btn-ghost {
+  background: transparent;
+  color: var(--civil-bitumen);
+  border: 1px solid var(--civil-concrete-mid);
+}
+.civil-btn-ghost:hover { background: rgba(0,0,0,0.04); }
+
+/* ── Alerts — hi-vis yellow ────────────────────────────────────── */
+
+.civil-alert {
+  background: var(--civil-hivis-yellow);
+  color: var(--civil-bitumen);
+  border: 1px solid #C99F00;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+/* ── Inputs — 48px tall, high contrast, no rounded-2xl ─────────── */
+
+.civil-input {
+  min-height: 48px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--civil-concrete-mid);
+  border-radius: 4px;
+  font-size: 15px;
+  color: var(--civil-bitumen);
+  width: 100%;
+}
+.civil-input:focus {
+  outline: none;
+  border-color: var(--civil-hivis-orange);
+  box-shadow: 0 0 0 2px rgba(255,106,0,0.25);
+}
+
+/* ── Nav row — 48×48 target for gloved thumbs ──────────────────── */
+
+.civil-nav-row {
+  min-height: 48px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--civil-off-white);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.civil-nav-row:active {
+  background: rgba(255,255,255,0.08);
+}
+.civil-nav-row[data-active="true"] {
+  background: rgba(255,106,0,0.12);
+  border-left: 3px solid var(--civil-hivis-orange);
+  padding-left: 13px;
+}

@@ -74,6 +74,17 @@ module.exports = {
                     border: '#E5E7EB',
                     ink: '#0B1220',
                 },
+                // v58.13.67 — CIVIL contractor phone-first palette.
+                // Applied ONLY on phone-viewport branches; desktop keeps
+                // `brand.*`. Bans: purple, SaaS blue, gradients, glass.
+                civil: {
+                    bitumen:          '#1A1A1A',
+                    'concrete-light': '#E6E4DF',
+                    'concrete-mid':   '#C4C0B6',
+                    'hivis-orange':   '#FF6A00',
+                    'hivis-yellow':   '#F5C400',
+                    'off-white':      '#FAF9F6',
+                },
             },
             boxShadow: {
                 'card': '0 1px 2px rgba(16,24,40,0.04), 0 8px 24px rgba(16,24,40,0.06)',

@@ -1,5 +1,149 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.68 — CIVIL palette mirror for Expo mobile (palette-only).
+//
+// ── What shipped ────────────────────────────────────────────────
+//   Single-file swap of `mobile/src/lib/colors.ts` — every export
+//   name is preserved (Colors.imBronze, Colors.hvOrange, etc.),
+//   only the hex values are repointed to the CIVIL palette:
+//
+//     #1A1A1A  Bitumen        — was `imInk: '#0A0A0A'`
+//     #E6E4DF  Concrete light — was `imConcrete: '#F5F5F7'` (page bg)
+//     #C4C0B6  Concrete mid   — was `imSteel: '#F0F0F2'` (sticky bars)
+//     #FF6A00  Hi-vis orange  — was `imBronze: '#F5B301'` (primary CTA)
+//     #F5C400  Hi-vis yellow  — was `imWarning: '#F59E0B'` (alerts)
+//     #FAF9F6  Off-white      — was `imSurface: '#FFFFFF'` (cards)
+//
+//   The `brand.*`, `hv.*`, `tileLight.*`, and semantic aliases were
+//   all repointed consistently so screens that consumed the old
+//   airy-amber theme now render in CIVIL without a single component
+//   edit. `StatusColors` also switched its amber-tier chips to hi-vis
+//   yellow with bitumen text (better contrast) and its `high` chip
+//   to hi-vis orange (sits between yellow warning + red error in the
+//   3-tier severity scale).
+//
+// ── React Native structural change: ZERO ────────────────────────
+//   No `.tsx` file touched. No component prop change. No StyleSheet
+//   restructure. This is a palette repoint — components rebuild on
+//   next Metro reload with the new colour values through the
+//   existing `Colors.<token>` cascade.
+//
+// ── Web + mobile alignment ──────────────────────────────────────
+//   With v58.13.67 (web CIVIL theme) + v58.13.68 (mobile palette),
+//   both surfaces now share the same 6-hex palette source of truth:
+//     web:    `frontend/src/theme/civilContractor.css`
+//     mobile: `mobile/src/lib/colors.ts` (this ship)
+//
+// ── Guardrails ──────────────────────────────────────────────────
+//   · Every prior export name is retained; a future maintainer
+//     doing `import { Colors } from '../lib/colors'` gets the same
+//     API surface, just with civil colours.
+//   · Only palette values changed — no logic, no new tokens.
+//   · All 3 canonical version strings bumped to `.68`.
+//   · No web change in this ship (already CIVIL from .67).
+//
+// ── NOT touched ─────────────────────────────────────────────────
+//   · Any `.tsx` / RN component under `/app/mobile/src/components/`
+//   · Any web frontend file
+//   · Running bulk-import job `14433131-…`, Track 2, Precast Panel
+//     role/users, Docker / K8s / requirements / package.json.
+//
+// ── Tests ───────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_civil_mobile_palette_v58_13_68.py`:
+//     · `colors.ts` contains ALL 6 CIVIL palette hex values.
+//     · Legacy amber `#F5B301` is fully gone (previous primary).
+//     · Key exports (Colors, StatusColors, imBronze, imConcrete,
+//       imInk, imSurface, hvOrange, hvYellow, orange, warning)
+//       still appear — component API surface unchanged.
+//     · Forward-safe version-sync pin (moved past .67).
+
+// v160.3.9.58.13.67 — CIVIL contractor phone-first redesign (Cover + Dashboard).
+//
+// ── Palette (source of truth: `src/theme/civilContractor.css`) ──
+//   #1A1A1A  Bitumen — chrome, header, primary text
+//   #E6E4DF  Concrete light — page background
+//   #C4C0B6  Concrete mid — card containers, dividers
+//   #FF6A00  Hi-vis orange — primary CTA (Sign in)
+//   #F5C400  Hi-vis yellow — alerts / warnings
+//   #FAF9F6  Off-white — cards
+//
+// ── Scope (this ship — WEB ONLY, phone-viewport <md) ────────────
+//   1. `frontend/src/theme/civilContractor.css` (NEW) — palette CSS
+//      vars + utility classes (`.civil-page`, `.civil-chrome`,
+//      `.civil-surface`, `.civil-label`, `.civil-btn`, `.civil-cta`,
+//      `.civil-input`, `.civil-alert`, `.civil-nav-row`). All
+//      buttons hit 48×48 min tap target for gloved thumbs.
+//   2. `frontend/src/index.css` — one-line `@import` of the new
+//      theme file (loaded before Tailwind base).
+//   3. `frontend/tailwind.config.js` — added `civil.*` colour
+//      namespace (bitumen, concrete-light, concrete-mid,
+//      hivis-orange, hivis-yellow, off-white). Existing `brand.*`
+//      tokens preserved so desktop pages are untouched.
+//   4. `frontend/src/pages/Cover.jsx` — phone-viewport (<md):
+//        · Marketing splash "Build Safer. Build Smarter. Build
+//          Together." hidden (was PaneltecHero variant="compact").
+//        · Lean bitumen chrome bar with the orange chevron mark +
+//          `PANELTEC CIVIL` all-caps label.
+//        · Card wrapper reskinned to civil-off-white + concrete-mid
+//          border, sharp 4-6px corners (no rounded-2xl / shadow-xl).
+//        · Heading reads "SIGN IN" (all-caps chrome label) +
+//          "Sign in" (sentence-case) — no more "Welcome back"
+//          SaaS greeting.
+//        · Submit button uses `.civil-btn.civil-cta` for 48×48 min
+//          height + hi-vis orange.
+//      Desktop (md+) two-column layout with PaneltecHero
+//      untouched.
+//   5. `frontend/src/pages/Dashboard.jsx` — phone-viewport (<md):
+//        · Eyebrow copy "Paneltec Civil Intelligence Centre"
+//          replaced by plain `DASHBOARD` civil-label.
+//        · Title copy "Live Compliance Dashboard" replaced by
+//          "Dashboard".
+//        · Subtitle "Organisation-wide monitoring feeds your
+//          single source of truth" replaced by "Status and
+//          actions for your site."
+//      Desktop (md+) preserves the original three copy lines so
+//      the marketing brand voice still lives at wider viewports.
+//
+// ── Explicit BANs enforced (see guard test) ─────────────────────
+//   The 3 target phone branches must not carry: `bg-brand-violet`,
+//   `text-brand-violet`, `from-purple-`, `via-purple-`, `to-purple-`,
+//   `backdrop-blur-`, `bg-gradient-`. Guard test v58_13_67 fails
+//   the build if any reappear on `max-md:` or `md:hidden` scopes.
+//
+// ── NOT touched this ship ───────────────────────────────────────
+//   · `AppShell.jsx` phone chrome — queued for a follow-up sub-ship
+//     alongside the drawer nav restyle (touching 574 lines safely
+//     needs its own dedicated pass). Split intentional so
+//     v58.13.67 is a focused, low-risk visual pass on the two
+//     highest-traffic phone surfaces (login + dashboard entry).
+//   · Signup, Forms, Settings — outside the brief's scope.
+//   · Expo mobile — deferred to v58.13.68 (palette-only mirror in
+//     `mobile/src/lib/colors.ts`, no RN component structure change).
+//   · Running bulk-import job `14433131-…`, Track 2, Precast Panel
+//     role/users, Docker / K8s / requirements / package.json.
+//
+// ── Tests ───────────────────────────────────────────────────────
+//   NEW `tests/frontend_smoke/test_civil_theme_v58_13_67.py`:
+//     · `civilContractor.css` exists and contains ALL 6 palette
+//       hex values (#1A1A1A, #E6E4DF, #C4C0B6, #FF6A00, #F5C400,
+//       #FAF9F6).
+//     · `tailwind.config.js` declares the `civil.*` namespace.
+//     · `index.css` imports the theme file.
+//     · Cover / Dashboard each reference at least one `civil-*`
+//       class on a phone-scoped element.
+//     · BAN check — no `bg-brand-violet` / `from-purple-` /
+//       `backdrop-blur-` / `bg-gradient-` appears on any
+//       `max-md:` or `md:hidden` prefixed class in the 2 target
+//       files. Extension planned for AppShell in the follow-up.
+//     · Forward-safe version-sync pin (moved past .66).
+//
+// ── SOP ─────────────────────────────────────────────────────────
+//   · Backend restart NOT required (frontend-only, CSS + JSX).
+//   · Frontend hot-reload picks up all changes.
+//   · All 3 canonical version strings bumped to `.67`.
+//   · Ship-per-version strategy: 67 = CIVIL web, 68 = CIVIL mobile
+//     palette mirror.
+
 // v160.3.9.58.13.66 — Category-A hook-deps stale-closure fixes (3 sites).
 //
 // Part 1 of the hook-deps 4-ship chain (66/67/68/69). This ship
@@ -5636,7 +5780,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.66';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.68';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

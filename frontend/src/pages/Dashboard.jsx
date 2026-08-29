@@ -635,9 +635,17 @@ export default function Dashboard() {
             top-aligned, on the right. */}
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase">Paneltec Civil Intelligence Centre</div>
-            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900">Live Compliance Dashboard</h1>
-            <p className="mt-3 text-slate-700 max-w-2xl">Organisation-wide monitoring feeds your single source of truth.</p>
+            {/* v58.13.67 — Phone-viewport: plain "DASHBOARD" chrome label +
+                "Dashboard" title, no Intelligence-Centre marketing gloss.
+                Desktop (md+) keeps the fuller SaaS heading below. */}
+            <div className="text-[11px] font-semibold tracking-[0.18em] text-brand-blue uppercase hidden md:block" data-testid="dashboard-eyebrow-md">Paneltec Civil Intelligence Centre</div>
+            <div className="md:hidden civil-label" data-testid="dashboard-eyebrow-phone">DASHBOARD</div>
+            <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl font-semibold mt-2 leading-tight tracking-tight text-slate-900 max-md:text-2xl max-md:text-civil-bitumen" data-testid="dashboard-title">
+              <span className="hidden md:inline">Live Compliance Dashboard</span>
+              <span className="md:hidden">Dashboard</span>
+            </h1>
+            <p className="mt-3 text-slate-700 max-w-2xl hidden md:block">Organisation-wide monitoring feeds your single source of truth.</p>
+            <p className="mt-2 md:hidden text-sm text-civil-bitumen opacity-75">Status and actions for your site.</p>
           </div>
           <Link to="/app/help" data-testid="dashboard-user-manual-btn"
             className="self-start shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/90 hover:bg-white border border-slate-200 text-slate-700 hover:text-orange-600 text-xs sm:text-sm font-semibold shadow-sm transition-colors">
