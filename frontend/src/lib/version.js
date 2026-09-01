@@ -1,5 +1,115 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.72 — PDF popup-inline in Document Library + full sweep.
+//
+// USER-VISIBLE PAIN: Clicking a PDF filename in the Document Library
+// popped a "Save As" dialog instead of opening the file. The other
+// preview surfaces (Capture tiles, cert files, forms, pdf_routes) had
+// already been migrated to inline-by-default in v58.13.51, but the
+// Document Library `/download` endpoint kept the Starlette default
+// (`FileResponse(filename=...)` = `Content-Disposition: attachment`)
+// so PDFs never rendered in-tab.
+//
+// ── Fix ────────────────────────────────────────────────────────
+//   1. `backend/document_library.py::download_file()` — adds a
+//      `download: int = Query(0, 0-1)` param and picks disposition
+//      per MIME:
+//          • PDF (mime == application/pdf OR .pdf ext) → `inline`
+//          • Non-PDF (docx, xlsx, pptx, csv, images) → `attachment`
+//          • `?download=1` forces `attachment` for EITHER path
+//      The non-PDF-stays-attachment split is intentional: browsers
+//      can't render Office docs / CSV inline, and a filename click
+//      for those files still needs to save-to-disk. Only PDF (and
+//      images, which browsers render inline natively via `<img>`)
+//      benefit from inline. Images already worked because MIME
+//      alone drives inline rendering — this ship doesn't change
+//      them.
+//   2. `backend/sites_signon_v127.py::signon_log_export()` — same
+//      pattern, adds `download` param, defaults PDF to `inline`.
+//      CSV stays `attachment` (identical rationale — not
+//      browser-renderable). Non-breaking: callers who wanted a
+//      download now append `?download=1`; the UI passes it
+//      automatically from the "Export as PDF" button.
+//   3. `frontend/src/pages/DocumentLibrary.jsx` — filename click
+//      now routes through a new `openFile(f)` handler:
+//          • PDF-previewable file → mints a short-lived download
+//            token via `filesUrl()` and opens the URL in a
+//            `window.open(url, 'paneltec-doc-viewer', 'popup=yes,
+//            width=900,height=1100,scrollbars,resizable')` popup.
+//            The backend now serves `Content-Disposition: inline`
+//            so the browser's PDF viewer renders it in-tab.
+//          • Non-PDF → falls through to the existing
+//            `downloadFile` flow.
+//      The explicit "Download original" icon button remains and
+//      calls `downloadFile(f, { force: true })` which appends
+//      `?download=1` to preserve the always-save-to-disk contract
+//      that button has always had.
+//   4. `data-testid="file-open-{id}"` added to the filename button
+//      so the popup smoke test can drive it.
+//
+// ── Audit table (all backend PDF-serving endpoints) ────────────
+//   Endpoint                                                        Before                    After
+//   ─────────────────────────────────────────────────────────────  ──────────                 ──────────
+//   /api/document-library/files/{id}/download                       attachment (implicit)      inline (PDF) · +download=1 opt-out    ← FIXED
+//   /api/sites/{id}/signon-log/export (format=pdf)                  attachment                 inline · +download=1 opt-out            ← FIXED
+//   /api/files/document_library/{folder_id}/{name}                  <none> (browser default)   <none> — PDFs render inline natively
+//   /api/files/{id}/pdf                                             inline · +dl=1 opt-out     unchanged
+//   /api/files/{id}/pdf.pdf                                         inline · +dl=1 opt-out     unchanged
+//   /api/files/inline/{stash_id}                                    inline                     unchanged
+//   /api/files/pdf-bundle                                           attachment (multi-file)    unchanged — bulk export, must save
+//   /api/workers/{id}/photo/{gridfs_id}                             inline                     unchanged
+//   /api/workers/{id}/certifications/{cert_id}/file                 inline · +download=1       unchanged (v58.13.51)
+//   /api/workers/{id}/hr-documents/{doc_id}/file                    inline                     unchanged
+//   /api/workers/{id}/unmatched-documents/{doc_id}/file             inline                     unchanged
+//   /api/workers/{id}/inductions/file                               inline · +download=1       unchanged
+//   /api/inductions/matrix.pdf                                      inline                     unchanged
+//   /api/inductions/matrix.xlsx                                     attachment                 unchanged — XLSX not renderable
+//   /api/assets/*.png (QR)                                          inline                     unchanged
+//   /api/assets/*.pdf                                               inline                     unchanged
+//   /api/suppliers/qr/*                                             inline                     unchanged
+//   /api/sites/qr/*                                                 inline                     unchanged
+//   /api/help/*                                                     inline                     unchanged
+//   /api/pdf/{resource}/{id}/pdf (universal renderer)               inline · +download=1       unchanged (v58.13.51)
+//   /api/asset-service/*                                            inline · +download=1       unchanged (v58.13.51)
+//   /api/forms/*/pdf                                                inline · +download=1       unchanged (v58.13.51)
+//   /api/backup/snapshots/{id}.zip                                  attachment (ZIP)           unchanged — ZIP not renderable
+//   /api/bulk-import/prestarts/preview/{scan_id}/pdf                inline                     unchanged
+//
+//   Intentional `attachment` (non-PDF): matrix.xlsx (XLSX),
+//   snapshots/{id}.zip (ZIP), signon-log CSV (CSV), pdf-bundle
+//   (multi-file merge — the user explicitly asked for a bundle,
+//   they want it saved).
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_pdf_inline_full_sweep_v58_13_72.py`:
+//     · Source-pin: `document_library.py::download_file` has a
+//       `download: int` param, picks `inline` for PDFs, `attachment`
+//       for non-PDFs, and forces `attachment` on `?download=1`.
+//     · Source-pin: `sites_signon_v127.py::signon_log_export` has a
+//       `download` param and defaults to `inline` for PDFs.
+//     · Frontend source-pin: `DocumentLibrary.jsx` calls
+//       `openFile` on filename click, `window.open` uses the
+//       `paneltec-doc-viewer` window name, and the Download icon
+//       calls `downloadFile(f, { force: true })`.
+//     · Version-sync (moved past .71).
+//
+//   Full pytest suite must remain 276+ passing (no regressions).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No Office / CSV / ZIP endpoint dispositions were flipped.
+//   · No mobile / native code changed (only MOBILE_BUNDLE_VERSION
+//     bump).
+//   · No new files created except the pytest file.
+//   · The 20 cancelled bulk-import job records — untouched.
+//   · Emergent object-storage lint on `document_library.py:381`
+//     (upload path) is pre-existing and untouched — outside the
+//     scope of this PDF-disposition ship.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (route signature changed).
+//   · Frontend hot-reload picks up JSX changes automatically.
+//   · All 3 canonical version strings bumped to `.72`.
+
 // v160.3.9.58.13.71 — DB prune code fix + retention hardening.
 //
 // Preview MongoDB was under disk pressure (~2 GB) from three
@@ -5984,7 +6094,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.71';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.72';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

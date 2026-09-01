@@ -14,6 +14,7 @@ import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
+import { filesUrl } from '../lib/downloadUrl';
 import BulkRestrictModal from '../components/BulkRestrictModal';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
@@ -790,10 +791,16 @@ export function DocumentLibraryFolder() {
     } catch (e) { toast.error(apiError(e)); }
   };
 
-  const downloadFile = async (f) => {
-    // Use fetch + blob to attach the Bearer token (the file route is auth-gated).
+  const downloadFile = async (f, opts = {}) => {
+    // v58.13.72 — Filename click and the explicit Download button both
+    // land here. For explicit downloads pass `{ force: true }` so the
+    // backend emits `Content-Disposition: attachment` regardless of
+    // MIME (the backend defaults to inline for PDFs post-.72). This
+    // preserves the "Save As" behaviour the Download icon has always
+    // had, while letting the filename click open PDFs inline.
     try {
-      const res = await fetch(`${API_BASE}/document-library/files/${f.id}/download`, {
+      const qs = opts.force ? '?download=1' : '';
+      const res = await fetch(`${API_BASE}/document-library/files/${f.id}/download${qs}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
       if (!res.ok) throw new Error(`Download failed (${res.status})`);
@@ -808,6 +815,31 @@ export function DocumentLibraryFolder() {
       URL.revokeObjectURL(url);
     } catch (e) {
       toast.error(e.message || 'Could not download file');
+    }
+  };
+
+  // v58.13.72 — Filename click for a PDF row opens the file in a
+  // dedicated popup window instead of triggering a "Save As" dialog.
+  // Non-PDF file types (docx, xlsx, images, csv, …) fall through to
+  // `downloadFile` because browsers can't render them inline.
+  const openFile = async (f) => {
+    if (!isPdfPreviewable(f.mime, f.filename)) {
+      return downloadFile(f);
+    }
+    try {
+      // Mint a short-lived download token so the popup can auth without
+      // a Bearer header (window.open URLs can't carry headers).
+      const url = await filesUrl(`/document-library/files/${f.id}/download`);
+      const w = window.open(
+        url,
+        'paneltec-doc-viewer',
+        'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes',
+      );
+      if (!w) {
+        toast.error('Popup was blocked. Please allow popups for this site.');
+      }
+    } catch (e) {
+      toast.error(e.message || 'Could not open PDF viewer');
     }
   };
 
@@ -948,7 +980,7 @@ export function DocumentLibraryFolder() {
                         <td className="px-4 py-3">
                           <div className="inline-flex items-center gap-2">
                             <span className="shrink-0" style={{ color: palette.hex }}>{fileIcon(f.mime)}</span>
-                            <button onClick={() => downloadFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]" title={f.filename}>
+                            <button onClick={() => openFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]" title={f.filename} data-testid={`file-open-${f.id}`}>
                               {f.filename}
                             </button>
                           </div>
@@ -1008,7 +1040,7 @@ export function DocumentLibraryFolder() {
                                 </button>
                               );
                             })()}
-                            <button onClick={() => downloadFile(f)} data-testid={`file-download-${f.id}`}
+                            <button onClick={() => downloadFile(f, { force: true })} data-testid={`file-download-${f.id}`}
                               className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
                               <Download />
                             </button>

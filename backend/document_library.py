@@ -428,7 +428,20 @@ async def delete_file(file_id: str, user: dict = Depends(require_permission("doc
 
 
 @router.get("/files/{file_id}/download")
-async def download_file(file_id: str, user: dict = Depends(require_permission("documents", "view"))):
+async def download_file(
+    file_id: str,
+    # v58.13.72 — Default disposition is now `inline` for PDFs so a
+    # filename click in the Document Library opens the file in the
+    # browser's PDF viewer (or the frontend's popup viewer window)
+    # instead of triggering a "Save As" dialog. Non-PDF file types
+    # (docx, xlsx, pptx, csv, images) keep the `attachment` default
+    # because browsers can't render them and users genuinely want them
+    # to land in Downloads on click. Any caller — PDF or otherwise —
+    # can force a download with `?download=1` (matches the v58.13.51
+    # pattern used by cert / forms / pdf_routes endpoints).
+    download: int = Query(0, ge=0, le=1),
+    user: dict = Depends(require_permission("documents", "view")),
+):
     doc = await db.doc_files.find_one(
         {"id": file_id, "org_id": user["org_id"], "deleted_at": None},
         {"_id": 0},
@@ -438,10 +451,22 @@ async def download_file(file_id: str, user: dict = Depends(require_permission("d
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
     if not path.exists():
         raise HTTPException(404, "File missing on disk")
+    mime = (doc.get("mime") or "").lower()
+    fname = (doc.get("filename") or "").lower()
+    is_pdf = mime == "application/pdf" or fname.endswith(".pdf")
+    if download:
+        disp = "attachment"
+    elif is_pdf:
+        disp = "inline"
+    else:
+        # Non-PDF files aren't natively renderable by the browser and
+        # a filename click for them still needs to save-to-disk.
+        disp = "attachment"
     return FileResponse(
         str(path),
         media_type=doc.get("mime") or "application/octet-stream",
         filename=doc.get("filename"),
+        content_disposition_type=disp,
     )
 
 

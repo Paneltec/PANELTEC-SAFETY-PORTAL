@@ -478,6 +478,13 @@ def _pdf_log(site_name: str, rows: list[dict]) -> bytes:
 @router.post("/{site_id}/signon-log/export")
 async def signon_log_export(site_id: str,
                               format: Literal["pdf", "csv"] = Query("pdf"),
+                              # v58.13.72 — inline-by-default for the PDF
+                              # variant so the popup viewer can render it
+                              # in-browser. Explicit save-to-disk via
+                              # `?download=1` (matches the v58.13.51
+                              # pattern). CSV stays `attachment` because
+                              # browsers can't render CSV inline.
+                              download: int = Query(0, ge=0, le=1),
                               from_: str | None = Query(None, alias="from"),
                               to: str | None = None,
                               user: dict = Depends(require_permission("sites", "view"))):
@@ -495,6 +502,7 @@ async def signon_log_export(site_id: str,
                         headers={"Content-Disposition":
                                  f'attachment; filename="signon-log-{site_id}.csv"'})
     pdf = _pdf_log(site.get("name") or site_id, rows)
+    disp = "attachment" if download else "inline"
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition":
-                             f'attachment; filename="signon-log-{site_id}.pdf"'})
+                             f'{disp}; filename="signon-log-{site_id}.pdf"'})
