@@ -791,6 +791,35 @@ export function DocumentLibraryFolder() {
     } catch (e) { toast.error(apiError(e)); }
   };
 
+  // v58.13.73 — Whitelist of file types the browser can render natively
+  // in a popup window. Kept in sync with the backend `INLINE_MIMES` /
+  // `INLINE_EXTS` sets in `document_library.py`. Anything outside this
+  // list falls through to `downloadFile` because a bare browser tab
+  // won't be a useful viewer for it.
+  //
+  // Note: CSV is deliberately absent — users almost always want CSV in
+  // Excel/Numbers, not a browser tab.
+  const INLINE_VIEWABLE_MIMES = React.useMemo(() => new Set([
+    'application/pdf',
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml',
+    'text/plain',
+    'application/json', 'application/xml', 'text/xml',
+  ]), []);
+  const INLINE_VIEWABLE_EXTS = React.useMemo(() => new Set([
+    '.pdf',
+    '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg',
+    '.txt', '.log', '.md',
+    '.json', '.xml',
+  ]), []);
+  const isInlineViewable = useCallback((mime, filename) => {
+    if (mime && INLINE_VIEWABLE_MIMES.has(String(mime).toLowerCase())) return true;
+    const n = String(filename || '').toLowerCase();
+    for (const ext of INLINE_VIEWABLE_EXTS) {
+      if (n.endsWith(ext)) return true;
+    }
+    return false;
+  }, [INLINE_VIEWABLE_MIMES, INLINE_VIEWABLE_EXTS]);
+
   const downloadFile = async (f, opts = {}) => {
     // v58.13.72 — Filename click and the explicit Download button both
     // land here. For explicit downloads pass `{ force: true }` so the
@@ -818,12 +847,13 @@ export function DocumentLibraryFolder() {
     }
   };
 
-  // v58.13.72 — Filename click for a PDF row opens the file in a
-  // dedicated popup window instead of triggering a "Save As" dialog.
-  // Non-PDF file types (docx, xlsx, images, csv, …) fall through to
-  // `downloadFile` because browsers can't render them inline.
+  // v58.13.72 → v58.13.73 — Filename click for a browser-renderable file
+  // (PDF, PNG/JPG/GIF/WEBP/SVG, TXT/LOG/MD, JSON, XML) opens the file in
+  // a dedicated popup window. Everything else (docx/xlsx/pptx/zip/rar…)
+  // falls through to `downloadFile` because a bare browser tab can't
+  // render them anyway.
   const openFile = async (f) => {
-    if (!isPdfPreviewable(f.mime, f.filename)) {
+    if (!isInlineViewable(f.mime, f.filename)) {
       return downloadFile(f);
     }
     try {
@@ -839,7 +869,7 @@ export function DocumentLibraryFolder() {
         toast.error('Popup was blocked. Please allow popups for this site.');
       }
     } catch (e) {
-      toast.error(e.message || 'Could not open PDF viewer');
+      toast.error(e.message || 'Could not open viewer');
     }
   };
 
@@ -980,7 +1010,11 @@ export function DocumentLibraryFolder() {
                         <td className="px-4 py-3">
                           <div className="inline-flex items-center gap-2">
                             <span className="shrink-0" style={{ color: palette.hex }}>{fileIcon(f.mime)}</span>
-                            <button onClick={() => openFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]" title={f.filename} data-testid={`file-open-${f.id}`}>
+                            <button onClick={() => openFile(f)} className="text-left font-medium text-slate-900 hover:text-brand-blue truncate max-w-[320px]"
+                              title={isInlineViewable(f.mime, f.filename)
+                                ? `Open in new window — ${f.filename}`
+                                : `Download — ${f.filename}`}
+                              data-testid={`file-open-${f.id}`}>
                               {f.filename}
                             </button>
                           </div>
@@ -1040,10 +1074,20 @@ export function DocumentLibraryFolder() {
                                 </button>
                               );
                             })()}
-                            <button onClick={() => downloadFile(f, { force: true })} data-testid={`file-download-${f.id}`}
-                              className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title="Download original">
-                              <Download />
-                            </button>
+                            {(() => {
+                              // v58.13.73 — Tooltip signals to the user WHY
+                              // some files open inline and others save.
+                              const inlineable = isInlineViewable(f.mime, f.filename);
+                              const dlTitle = inlineable
+                                ? 'Download original (save to disk)'
+                                : 'Download — this file type can\'t preview in the browser';
+                              return (
+                                <button onClick={() => downloadFile(f, { force: true })} data-testid={`file-download-${f.id}`}
+                                  className="p-1.5 rounded text-slate-500 hover:text-brand-blue hover:bg-slate-100" title={dlTitle}>
+                                  <Download />
+                                </button>
+                              );
+                            })()}
                             {canEdit && (
                               <button onClick={() => deleteFile(f)} data-testid={`file-delete-${f.id}`}
                                 className="p-1.5 rounded text-slate-500 hover:text-brand-red hover:bg-slate-100" title="Delete">

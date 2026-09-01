@@ -38,6 +38,48 @@ WRITE_ROLES = {"admin", "hseq_lead"}
 DELETE_FOLDER_ROLES = {"admin"}
 MAX_FILE_BYTES = 50 * 1024 * 1024  # 50 MB
 
+# v58.13.73 — Extended inline-render whitelist. Browsers can render
+# these MIMEs / extensions natively in a normal tab, so a filename
+# click in the Document Library should open a viewer popup rather
+# than triggering a "Save As" dialog. Anything not on this list
+# (Office, archives, unknown binary) stays `attachment` because
+# save-to-disk is the correct affordance.
+#
+# CSV is intentionally excluded — technically renderable, but users
+# almost always want it in Excel/Numbers, not a bare browser tab.
+INLINE_MIMES = frozenset({
+    "application/pdf",
+    "image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml",
+    "text/plain",
+    "application/json", "application/xml", "text/xml",
+})
+INLINE_EXTS = frozenset({
+    ".pdf",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",
+    ".txt", ".log", ".md",
+    ".json", ".xml",
+})
+
+
+def _is_browser_renderable(doc: dict) -> bool:
+    """Return True iff the browser can render this file inline in a
+    normal tab (no download prompt). Consulted by `download_file` when
+    the caller does NOT pass `?download=1`.
+
+    Uses MIME first (more precise) with a filename-extension fallback
+    so a file uploaded with a generic `application/octet-stream` MIME
+    still gets the inline treatment when the extension makes the
+    format obvious.
+    """
+    mime = (doc.get("mime") or "").lower()
+    if mime in INLINE_MIMES:
+        return True
+    fname = (doc.get("filename") or "").lower()
+    for ext in INLINE_EXTS:
+        if fname.endswith(ext):
+            return True
+    return False
+
 ALLOWED_EXTS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx",
     ".png", ".jpg", ".jpeg", ".txt", ".csv",
@@ -430,15 +472,19 @@ async def delete_file(file_id: str, user: dict = Depends(require_permission("doc
 @router.get("/files/{file_id}/download")
 async def download_file(
     file_id: str,
-    # v58.13.72 — Default disposition is now `inline` for PDFs so a
-    # filename click in the Document Library opens the file in the
-    # browser's PDF viewer (or the frontend's popup viewer window)
-    # instead of triggering a "Save As" dialog. Non-PDF file types
-    # (docx, xlsx, pptx, csv, images) keep the `attachment` default
-    # because browsers can't render them and users genuinely want them
-    # to land in Downloads on click. Any caller — PDF or otherwise —
-    # can force a download with `?download=1` (matches the v58.13.51
-    # pattern used by cert / forms / pdf_routes endpoints).
+    # v58.13.72 — Default disposition is `inline` for PDFs so a
+    # filename click opens the file in the browser's PDF viewer
+    # instead of triggering a "Save As" dialog. v58.13.73 extends
+    # the inline set to every MIME the browser can render natively:
+    # PDF, common raster/vector images, plain text, JSON, XML. CSV
+    # is intentionally kept as `attachment` because users almost
+    # always want to open it in Excel/Numbers, not a bare browser
+    # tab. Office formats (docx/xlsx/pptx/odt), archives (zip/rar)
+    # and everything else stay `attachment` — browsers can't render
+    # them and click-to-save is the correct affordance.
+    #
+    # `?download=1` forces `attachment` for ANY MIME (matches the
+    # v58.13.51 pattern used across cert/forms/pdf_routes).
     download: int = Query(0, ge=0, le=1),
     user: dict = Depends(require_permission("documents", "view")),
 ):
@@ -451,17 +497,10 @@ async def download_file(
     path = UPLOAD_DIR / doc["folder_id"] / doc["stored_name"]
     if not path.exists():
         raise HTTPException(404, "File missing on disk")
-    mime = (doc.get("mime") or "").lower()
-    fname = (doc.get("filename") or "").lower()
-    is_pdf = mime == "application/pdf" or fname.endswith(".pdf")
     if download:
         disp = "attachment"
-    elif is_pdf:
-        disp = "inline"
     else:
-        # Non-PDF files aren't natively renderable by the browser and
-        # a filename click for them still needs to save-to-disk.
-        disp = "attachment"
+        disp = "inline" if _is_browser_renderable(doc) else "attachment"
     return FileResponse(
         str(path),
         media_type=doc.get("mime") or "application/octet-stream",

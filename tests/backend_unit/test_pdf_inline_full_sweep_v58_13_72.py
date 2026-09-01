@@ -56,15 +56,21 @@ def test_document_library_download_defaults_pdf_to_inline():
         "download_file must keep disposition = attachment for non-PDF files "
         "and for the explicit ?download=1 opt-out."
     )
-    # MIME + filename detection both present so a PDF served with a
-    # generic `application/octet-stream` MIME still hits the inline path.
-    assert 'mime == "application/pdf"' in body, (
-        "download_file must detect PDFs via MIME (`application/pdf`)."
+    # v58.13.73 — PDF-inline detection was refactored into the
+    # `_is_browser_renderable(doc)` helper (which serves the extended
+    # PDF+image+text whitelist). Assert the handler consults it and
+    # that the helper still treats PDFs as browser-renderable.
+    assert "_is_browser_renderable(doc)" in body, (
+        "download_file must gate its inline branch on "
+        "`_is_browser_renderable(doc)` (v58.13.73 refactor)."
     )
-    assert 'fname.endswith(".pdf")' in body, (
-        "download_file must detect PDFs via `.pdf` filename extension "
-        "as a fallback when MIME is generic octet-stream."
-    )
+    # Import the module and prove the helper returns True for PDF,
+    # covering both the MIME path and the filename-extension fallback.
+    import importlib as _il, sys as _sys
+    _sys.path.insert(0, str(BACKEND))
+    _dl = _il.import_module("document_library")
+    assert _dl._is_browser_renderable({"mime": "application/pdf", "filename": "x"}) is True
+    assert _dl._is_browser_renderable({"mime": "application/octet-stream", "filename": "x.pdf"}) is True
 
 
 def test_document_library_download_passes_content_disposition_type():

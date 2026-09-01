@@ -1,5 +1,127 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.73 — Inline preview extended to all browser-renderable
+// types in Document Library.
+//
+// USER-VISIBLE PAIN: v58.13.72 shipped inline PDFs but stopped there.
+// The user came back reporting that clicking .txt, .xls, .docx, .png
+// and .zip files STILL popped a "Save As" dialog. Browsers can render
+// several of those (PNG natively, TXT as plain text), and the fix is
+// to widen the inline whitelist to every MIME the browser will honour
+// in a normal tab — while keeping formats the browser genuinely can't
+// display (Office docs, ZIP archives) as `attachment`.
+//
+// ── The whitelist ──────────────────────────────────────────────
+//   INLINE_MIMES = {
+//     application/pdf,
+//     image/png, image/jpeg, image/gif, image/webp, image/svg+xml,
+//     text/plain,
+//     application/json, application/xml, text/xml,
+//   }
+//   INLINE_EXTS = {
+//     .pdf,
+//     .png, .jpg, .jpeg, .gif, .webp, .svg,
+//     .txt, .log, .md,
+//     .json, .xml,
+//   }
+//
+//   CSV is intentionally EXCLUDED — technically renderable in a bare
+//   browser tab, but every real user wants it in Excel/Numbers on
+//   click. The DocumentLibrary team can add `.csv` later if a use
+//   case emerges (e.g. a "Preview CSV" toggle).
+//
+// ── Backend fix ────────────────────────────────────────────────
+//   `backend/document_library.py` gains an `INLINE_MIMES` +
+//   `INLINE_EXTS` module-level frozenset pair and a
+//   `_is_browser_renderable(doc) -> bool` helper. `download_file`
+//   consults the helper: if `?download=1` is passed OR the file
+//   isn't on the whitelist, disposition is `attachment`.
+//   Otherwise disposition is `inline`.
+//
+//   Fallback via extension is intentional: files uploaded with a
+//   generic `application/octet-stream` MIME (or no MIME at all)
+//   still get the inline treatment when the `.png` / `.txt`
+//   extension makes the format obvious.
+//
+// ── Frontend fix ───────────────────────────────────────────────
+//   `frontend/src/pages/DocumentLibrary.jsx` gains a
+//   `isInlineViewable(mime, filename)` helper mirroring the
+//   backend whitelist (kept as a `useMemo`'d Set for O(1)
+//   lookup + no re-renders). `openFile(f)` was previously
+//   PDF-only; it now routes ANY inline-viewable file through
+//   the `window.open('paneltec-doc-viewer', 'popup=yes,…')`
+//   popup path, and non-renderable files fall through to
+//   `downloadFile` exactly as they did in .72.
+//
+//   Tooltip UX:
+//     · Filename hover: "Open in new window — foo.png" vs
+//       "Download — bar.docx". So users see up-front which
+//       files will open in a viewer and which will save.
+//     · Download-icon hover: "Download original (save to
+//       disk)" for renderables, "Download — this file type
+//       can't preview in the browser" for non-renderables.
+//       That answers "why did the docx save?" without a
+//       support ticket.
+//
+// ── Non-goals ──────────────────────────────────────────────────
+//   · Office365 / Google Docs viewer for docx/xlsx/pptx.
+//     Explicitly rejected in the ship note — adding an external
+//     preview service is a new integration, out of scope.
+//   · Server-side conversion of Office docs to PDF for preview.
+//     The universal `/api/files/{id}/pdf` endpoint (Phase 3.10 /
+//     LibreOffice) already exists for that. If the user wants
+//     "preview docx in-browser", they use the Eye icon which
+//     already goes through PdfPreviewModal + LibreOffice. This
+//     ship is scoped to the FILENAME CLICK behaviour only.
+//   · ZIP archive preview. Not renderable, must save.
+//
+// ── Wire-level proof (curl through backend) ────────────────────
+//   PDF default        → 200  Content-Disposition: inline;    filename="cert.pdf"
+//   PNG default        → 200  Content-Disposition: inline;    filename="site.png"
+//   TXT default        → 200  Content-Disposition: inline;    filename="notes.txt"
+//   DOCX default       → 200  Content-Disposition: attachment; filename="report.docx"
+//   XLSX default       → 200  Content-Disposition: attachment; filename="matrix.xlsx"
+//   ZIP default        → 200  Content-Disposition: attachment; filename="bundle.zip"
+//   PDF ?download=1    → 200  Content-Disposition: attachment; filename="cert.pdf"
+//   PNG ?download=1    → 200  Content-Disposition: attachment; filename="site.png"
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_document_library_inline_extended_v58_13_73.py`:
+//     · Asserts `INLINE_MIMES` + `INLINE_EXTS` module constants
+//       exist and are `frozenset`s (immutable — no accidental
+//       runtime mutation).
+//     · Asserts every user-requested type (PDF, PNG, JPG, TXT)
+//       is on the whitelist AND every user-requested exclusion
+//       (DOCX, XLSX, ZIP, CSV) is OFF the whitelist.
+//     · Asserts `_is_browser_renderable` handles both MIME-hit
+//       and extension-hit paths, plus the octet-stream fallback.
+//     · Asserts `download_file` still forces `attachment` on
+//       `?download=1` regardless of MIME/extension.
+//     · Frontend source-pin: `DocumentLibrary.jsx` has
+//       `INLINE_VIEWABLE_MIMES` + `INLINE_VIEWABLE_EXTS` sets
+//       matching the backend, and `openFile` gates on
+//       `isInlineViewable(f.mime, f.filename)`.
+//     · Version-sync forward-safe pin (>= 73).
+//
+//   Full pytest suite must remain green (was 290, expect 300+
+//   after this ship).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · PDF behaviour (already correct from v58.13.72).
+//   · The 20 cancelled bulk-import job records.
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump).
+//   · Any other endpoint's Content-Disposition.
+//   · The universal `/api/files/{id}/pdf` endpoint (Eye icon
+//     still uses it for the in-app PdfPreviewModal).
+//   · Emergent object-storage lint on the upload path is
+//     pre-existing and out of scope.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (module-level constants + new
+//     helper + handler signature evolved).
+//   · Frontend hot-reload picks up JSX automatically.
+//   · All 3 canonical version strings bumped to `.73`.
+
 // v160.3.9.58.13.72 — PDF popup-inline in Document Library + full sweep.
 //
 // USER-VISIBLE PAIN: Clicking a PDF filename in the Document Library
@@ -6094,7 +6216,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.72';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.73';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
