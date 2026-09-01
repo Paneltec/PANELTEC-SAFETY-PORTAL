@@ -714,8 +714,16 @@ async def _commit_zip(
 # ─────────────────────────────────────────────────────────────
 
 def _fs_bucket() -> AsyncIOMotorGridFSBucket:
-    """Fresh GridFS bucket handle. Cheap; motor caches under the hood."""
-    return AsyncIOMotorGridFSBucket(db.client.get_database(db.name), bucket_name="bk_fs")
+    """Fresh GridFS bucket handle. Cheap; motor caches under the hood.
+
+    v58.13.71 — Repointed to the DEFAULT `fs` bucket (was `bk_fs`).
+    The Simpro-ZIP import writes real user content — worker photos,
+    HR documents, certification PDFs — so it belongs in the primary
+    bucket, not the `bk_fs` backup-snapshot bucket. `workers.py::
+    _fs_bucket()` was repointed in the same ship so reader/writer
+    parity is preserved.
+    """
+    return AsyncIOMotorGridFSBucket(db.client.get_database(db.name), bucket_name="fs")
 
 
 @router.post("/{worker_id}/simpro-zip-import")

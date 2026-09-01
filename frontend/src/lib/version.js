@@ -1,5 +1,106 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.71 — DB prune code fix + retention hardening.
+//
+// Preview MongoDB was under disk pressure (~2 GB) from three
+// classes of transient content that had accumulated over months
+// of runs. Emergent Support's plan: repoint the two writers that
+// were incorrectly targeting the `bk_fs` backup-snapshot bucket
+// to the default `fs` bucket, then extend the v58.13.53 retention
+// sweep to auto-drop the transient classes on every daily run so
+// this class of bloat can't recur.
+//
+// ── Code fixes (writer repoints) ────────────────────────────────
+//   1. `backend/workers.py::_fs_bucket()` — was returning a bucket
+//      handle for `bk_fs`; now returns the default `fs` bucket.
+//      The 8 existing worker photos on preview already live in
+//      `fs`, so post-ship uploads land in the same bucket the
+//      historical blobs are in and the `GET /workers/{id}/photo/
+//      {gridfs_id}` reader stays consistent.
+//   2. `backend/simpro_zip_import.py::_fs_bucket()` — same repoint.
+//      Simpro ZIP imports write real user content (worker photos,
+//      HR documents, certification PDFs) — that belongs in the
+//      primary `fs` bucket, not the `bk_fs` backup-snapshot
+//      bucket. Reader/writer parity from v160.3.9.34.3 is
+//      preserved because both endpoints now share `fs`.
+//
+// ── Retention hardening ─────────────────────────────────────────
+//   `backend/backup_service.py` gains
+//   `_sweep_ephemeral_collections(db_, fs_)` — an idempotent
+//   helper called from `_apply_retention_policy` after the
+//   existing orphan-GridFS sweep. It prunes:
+//     • `bulk_import_failed_pdfs.*` GridFS blobs older than 30
+//       days for jobs not in `processing`/`queued` state.
+//       Protects the known running job id `14433131-…`.
+//     • `bulk_import_dryrun` rows older than 30 days (ISO 8601
+//       string `at` field — lexicographic compare is year-first
+//       correct).
+//     • `bk_snapshots` rows + their `bk_fs` GridFS blobs older
+//       than 90 days. Fail-safe: ALWAYS retains the newest
+//       snapshot regardless of age so a boot-fresh cluster
+//       never gets its only backup deleted.
+//   Counters are stamped onto `app_state.backup_retention.
+//   last_run_ephemeral` so the operator can see what the sweep
+//   did on each cycle.
+//
+// ── TTL indexes — deferred ──────────────────────────────────────
+//   `bulk_import_dryrun.at` is stored as an ISO 8601 STRING, not a
+//   BSON Date; a native TTL index would silently never fire. The
+//   `bulk_import_failed_pdfs.files.uploadDate` field IS a BSON
+//   Date but sits on a GridFS system collection whose schema
+//   isn't ours to alter. Follow-up ship candidate: migrate the
+//   ISO strings to BSON Date fields on `bulk_import_dryrun`,
+//   `bulk_import_pdf_cache`, `bulk_import_reextract_v58_13_35_
+//   audit`, then add proper TTL indexes.
+//
+// ── Manual DB drops (Step 2, run after code ship verifies clean) ─
+//   • `db.bk_fs.chunks.drop()`
+//   • `db.bk_fs.files.drop()`
+//   • `db.bulk_import_failed_pdfs.chunks.drop()`
+//   • `db.bulk_import_failed_pdfs.files.drop()`
+//   • `db.bulk_import_dryrun.drop()`
+//   Verified before drop: preview `fs.files` contains 8 worker
+//   photos and 0 rows depend on `bk_fs`. Business collections
+//   (workers=72, hr_employees=121, cs_incident_issues=257,
+//   form_submissions=16,253, pre_starts=16,619, bulk_import_pdf
+//   _cache=9,755, bulk_import_jobs=20) untouched throughout.
+//
+// ── Tests ───────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_db_prune_v58_13_71.py`:
+//     · Asserts `workers.py::_fs_bucket()` returns the `fs`
+//       bucket (source pin — no ephemeral test DB required).
+//     · Asserts `simpro_zip_import.py::_fs_bucket()` returns
+//       the `fs` bucket.
+//     · Asserts `_sweep_ephemeral_collections` exists in
+//       `backup_service.py` and is called from
+//       `_apply_retention_policy`.
+//     · Asserts the 3 TTL constants
+//       (`_FAILED_PDF_TTL_DAYS`, `_DRYRUN_TTL_DAYS`,
+//       `_BK_SNAPSHOT_HARD_CAP_DAYS`) carry the intended values
+//       (30/30/90).
+//     · Asserts the fail-safe "always retain newest snapshot"
+//       comment is present so a maintainer can't silently
+//       delete the invariant.
+//     · Forward-safe version-sync pin (moved past .70).
+//
+// ── NOT touched ─────────────────────────────────────────────────
+//   · Running bulk-import job `14433131-…` — protected in the
+//     failed_pdfs prune branch.
+//   · The 20 cancelled bulk-import job records — metadata
+//     timestamps preserved, no state field flipped.
+//   · Business collections (workers, hr_employees, cs_incident
+//     _issues, form_submissions, pre_starts, bulk_import_pdf
+//     _cache, bulk_import_jobs, assets, orgs, users, roles).
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump).
+//   · Docker / K8s / requirements.txt / package.json.
+//   · Any RBAC / permission / route contract.
+//
+// ── SOP ─────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (backup_service module changed +
+//     workers/simpro_zip_import bucket writers changed).
+//   · Frontend hot-reload not needed (no JSX / CSS touched).
+//   · All 3 canonical version strings bumped to `.71`.
+
 // v160.3.9.58.13.70 — CIVIL 3-palette phone-only switcher (Bitumen / Roadwork / Earthworks).
 //
 // Bundled follow-up to v58.13.67 (CIVIL contractor phone-first
@@ -5883,7 +5984,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.70';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.71';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

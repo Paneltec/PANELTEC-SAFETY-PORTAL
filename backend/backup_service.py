@@ -382,6 +382,10 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
     orphans_swept, orphan_bytes = await _sweep_orphan_gridfs_blobs(db_, fs_)
     stamp["last_run_orphans_swept"] = orphans_swept
     stamp["last_run_orphan_bytes_freed"] = orphan_bytes
+    # v58.13.71 — Extended ephemeral-collection sweep (failed_pdfs,
+    # dryrun, bk_snapshot 90d hard cap).
+    ephemeral = await _sweep_ephemeral_collections(db_, fs_)
+    stamp["last_run_ephemeral"] = ephemeral
     await db_.app_state.update_one(
         {"_id": "backup_retention"},
         {"$set": stamp},
@@ -394,6 +398,7 @@ async def _apply_retention_policy(db_, fs_) -> Dict[str, Any]:
         "bytes_freed": bytes_freed,
         "orphans_swept": orphans_swept,
         "orphan_bytes_freed": orphan_bytes,
+        "ephemeral": ephemeral,
         "policy": policy,
         "debug": debug,
     }
@@ -455,6 +460,145 @@ async def _sweep_orphan_gridfs_blobs(db_, fs_) -> Tuple[int, int]:
             deleted, bytes_freed,
         )
     return (deleted, bytes_freed)
+
+
+# ============================================================
+# v58.13.71 — Hardened ephemeral-collection sweep
+# ============================================================
+# Following the preview-DB disk-pressure incident, three additional
+# classes of ephemeral content are pruned on every retention run:
+#   1. `bulk_import_failed_pdfs.*` — GridFS blobs older than 30 days
+#      for jobs no longer in `processing`/`queued` state.
+#   2. `bulk_import_dryrun` — plain-collection rows older than 30 days
+#      (ISO-string `at` field, sorts lexicographically for year-first).
+#   3. `bk_fs.files` backup snapshots older than 90 days — enforces a
+#      HARD cap on top of the Grandfather-Father-Son policy so a
+#      monthly-forever policy can never bloat the DB again. Always
+#      retains at least 1 recent snapshot as a boot-fresh fail-safe.
+#
+# TTL indexes are NOT created here — the relevant timestamp fields
+# on `bulk_import_dryrun` are ISO 8601 strings, not BSON Date, so a
+# native TTL index would silently never fire. GridFS `uploadDate` IS
+# a BSON Date but sits on a system collection (`*.files`) that we
+# don't own the schema of. A follow-up ship (tracked in PRD) will
+# migrate the ISO strings to BSON Date + add real TTL indexes.
+_FAILED_PDF_TTL_DAYS = 30
+_DRYRUN_TTL_DAYS = 30
+_BK_SNAPSHOT_HARD_CAP_DAYS = 90
+# From the PRD memory — never prune blobs belonging to this bulk-import
+# job even if the DB marks it failed.
+_KNOWN_RUNNING_BULK_IMPORT_JOB_ID = "14433131-29a9-4fa8-9d7e-af18f86145cf"
+
+
+def _iso_days_ago(days: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+
+async def _sweep_ephemeral_collections(db_, fs_) -> Dict[str, int]:
+    """v58.13.71 — Prune the 3 classes of transient content documented
+    in the module comment above. Idempotent; every path is guarded so
+    a transient DB failure inside one branch doesn't stop the others.
+
+    Returns a dict of counters the caller can log/stamp.
+    """
+    from bson import ObjectId  # local import — module already imports at top
+    counters = {
+        "failed_pdfs_deleted": 0,
+        "failed_pdfs_bytes_freed": 0,
+        "dryrun_rows_deleted": 0,
+        "bk_snapshots_hard_capped": 0,
+        "bk_snapshots_bytes_freed": 0,
+    }
+
+    # ── 1. bulk_import_failed_pdfs GridFS (30d) ─────────────────────
+    try:
+        protected: set = {_KNOWN_RUNNING_BULK_IMPORT_JOB_ID}
+        async for j in db_.bulk_import_jobs.find(
+            {"state": {"$in": ["processing", "queued"]}},
+            {"_id": 0, "id": 1},
+        ):
+            if j.get("id"):
+                protected.add(j["id"])
+        fp_bucket = AsyncIOMotorGridFSBucket(db_, bucket_name="bulk_import_failed_pdfs")
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(days=_FAILED_PDF_TTL_DAYS)
+        # uploadDate is a native BSON Date on GridFS files. Compare naive
+        # to naive (Mongo stores as UTC-naive by default via motor).
+        cutoff_naive = cutoff_dt.replace(tzinfo=None)
+        async for r in db_["bulk_import_failed_pdfs.files"].find(
+            {"uploadDate": {"$lt": cutoff_naive}},
+            {"_id": 1, "length": 1, "metadata.job_id": 1},
+        ):
+            job_id = (r.get("metadata") or {}).get("job_id")
+            if job_id in protected:
+                continue
+            try:
+                await fp_bucket.delete(r["_id"])
+                counters["failed_pdfs_deleted"] += 1
+                counters["failed_pdfs_bytes_freed"] += int(r.get("length") or 0)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("failed_pdfs prune delete failed for %s: %s", r["_id"], e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("v58.13.71 failed_pdfs branch aborted: %s", e)
+
+    # ── 2. bulk_import_dryrun (30d, ISO string) ─────────────────────
+    try:
+        cutoff_iso = _iso_days_ago(_DRYRUN_TTL_DAYS)
+        r = await db_.bulk_import_dryrun.delete_many({"at": {"$lt": cutoff_iso}})
+        counters["dryrun_rows_deleted"] = int(r.deleted_count or 0)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("v58.13.71 dryrun branch aborted: %s", e)
+
+    # ── 3. bk_fs backup snapshots (90d hard cap, retain ≥1 recent) ──
+    try:
+        # Load all snapshot rows sorted newest-first so the fail-safe
+        # "always keep at least 1" invariant is trivially enforceable.
+        all_snaps: List[Dict[str, Any]] = await db_.bk_snapshots.find(
+            {}, {"_id": 0, "id": 1, "created_at": 1, "gridfs_id": 1, "size": 1},
+        ).to_list(None)
+
+        def _parse_created(s: Dict[str, Any]) -> Optional[datetime]:
+            v = s.get("created_at")
+            if not v:
+                return None
+            try:
+                return datetime.fromisoformat(v)
+            except Exception:
+                return None
+
+        sorted_snaps = sorted(
+            [s for s in all_snaps if _parse_created(s) is not None],
+            key=lambda s: _parse_created(s),  # type: ignore[arg-type]
+            reverse=True,
+        )
+        if not sorted_snaps:
+            pass  # nothing to prune
+        else:
+            newest_id = sorted_snaps[0]["id"]  # always keep this one
+            cutoff_dt = datetime.now(timezone.utc) - timedelta(days=_BK_SNAPSHOT_HARD_CAP_DAYS)
+            for s in sorted_snaps:
+                if s["id"] == newest_id:
+                    continue  # fail-safe: never drop the most recent
+                ca = _parse_created(s)
+                if ca is None or ca >= cutoff_dt:
+                    continue
+                gid = s.get("gridfs_id")
+                if gid:
+                    try:
+                        await fs_.delete(ObjectId(gid))
+                    except Exception as e:  # noqa: BLE001
+                        logger.warning(
+                            "bk_snapshot hard-cap GridFS delete failed "
+                            "for %s: %s", s["id"], e,
+                        )
+                await db_.bk_snapshots.delete_one({"id": s["id"]})
+                counters["bk_snapshots_hard_capped"] += 1
+                counters["bk_snapshots_bytes_freed"] += int(s.get("size") or 0)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("v58.13.71 bk_snapshot hard-cap branch aborted: %s", e)
+
+    if any(counters.values()):
+        logger.info("v58.13.71 ephemeral sweep: %s", counters)
+    return counters
 
 
 

@@ -630,13 +630,15 @@ def _sniff_mime(head: bytes) -> Optional[str]:
 
 
 def _fs_bucket() -> AsyncIOMotorGridFSBucket:
-    # v160.3.9.34.3 — Must match the reader bucket in
-    # `simpro_zip_import.py::_fs_bucket()` (`bucket_name="bk_fs"`).
-    # Previously we wrote to the default `fs` bucket, so blobs uploaded
-    # via `POST /workers/{id}/photo` were unreachable via
-    # `GET /workers/{id}/photo/{gridfs_id}` and the avatar 404'd after
-    # every upload.
-    return AsyncIOMotorGridFSBucket(db.client[db.name], bucket_name="bk_fs")
+    # v58.13.71 — Repointed to the DEFAULT `fs` bucket. The 8 existing
+    # worker photos on preview already live in `fs`; the historical
+    # `bk_fs` write path (v160.3.9.34.3) predates the disk-bloat
+    # cleanup pass and shared the bucket with backup snapshots, which
+    # was semantically wrong and made the preview DB unprunable.
+    # `simpro_zip_import.py::_fs_bucket()` also now writes to `fs`
+    # (same ship), so the reader/writer parity that .34.3 was
+    # solving is preserved — just on the correct bucket.
+    return AsyncIOMotorGridFSBucket(db.client[db.name], bucket_name="fs")
 
 
 def _canonicalise_image(raw: bytes) -> tuple[bytes, str, dict]:
