@@ -118,12 +118,19 @@ def test_signon_log_export_pdf_defaults_inline():
 # Frontend — DocumentLibrary.jsx popup flow
 # ─────────────────────────────────────────────────────────────
 def test_documentlibrary_jsx_imports_files_url():
-    assert "from '../lib/downloadUrl'" in DOCLIB_JSX, (
-        "DocumentLibrary.jsx must import `filesUrl` from "
-        "`../lib/downloadUrl` to mint the tokenised popup URL."
-    )
-    assert "{ filesUrl }" in DOCLIB_JSX, (
-        "DocumentLibrary.jsx must destructure `filesUrl` from downloadUrl."
+    # v58.13.72 shipped this import for the `window.open` popup path.
+    # v58.13.74 replaced the popup with an in-app modal (blob URL
+    # iframe) which doesn't need `filesUrl`, so the import was
+    # removed. Repurpose this test to guard the new invariant:
+    # either the import is present (any future popup path) OR the
+    # FilePreviewModal integration is present. At least ONE
+    # inline-preview mechanism must exist.
+    has_files_url = "from '../lib/downloadUrl'" in DOCLIB_JSX
+    has_modal = "FilePreviewModal" in DOCLIB_JSX
+    assert has_files_url or has_modal, (
+        "DocumentLibrary.jsx must have some inline-preview mechanism "
+        "wired up — either the tokenised-URL helper (filesUrl) or the "
+        "in-app FilePreviewModal component."
     )
 
 
@@ -135,16 +142,18 @@ def test_documentlibrary_jsx_defines_openfile_handler():
 
 
 def test_documentlibrary_jsx_popup_window_name_pinned():
-    # The popup window name is user-visible (tab title) and drives
-    # reuse — same name = same tab. Pin it.
-    assert "'paneltec-doc-viewer'" in DOCLIB_JSX, (
-        "DocumentLibrary.jsx popup must use the window name "
-        "'paneltec-doc-viewer' so subsequent PDF opens reuse the tab."
+    # v58.13.72 originally used window.open('paneltec-doc-viewer', ...)
+    # but v58.13.74 replaced the popup with an in-app FilePreviewModal
+    # to bypass Edge's `edge://settings/content/pdfDocuments` "Download
+    # PDF files" preference (which overrode our inline header on
+    # top-level navigations). Assert the modal-based path exists.
+    assert "FilePreviewModal" in DOCLIB_JSX, (
+        "DocumentLibrary.jsx must import + use FilePreviewModal for the "
+        "in-app preview path (v58.13.74 Edge-compat replacement)."
     )
-    assert "popup=yes" in DOCLIB_JSX, (
-        "DocumentLibrary.jsx `window.open` must include `popup=yes` "
-        "in its features string so browsers actually spawn a popup "
-        "window rather than a new tab."
+    assert "setInlinePreviewFile" in DOCLIB_JSX, (
+        "DocumentLibrary.jsx must have an `inlinePreviewFile` state "
+        "setter driving the FilePreviewModal."
     )
 
 

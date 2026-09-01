@@ -197,8 +197,8 @@ def test_frontend_inline_viewable_sets_exclude_office_and_archive():
 
 def test_frontend_openfile_gates_on_isinlineviewable():
     """openFile must consult isInlineViewable(mime, filename) before
-    calling window.open — otherwise clicking a docx would still fire
-    the popup."""
+    opening the preview modal — otherwise clicking a docx would still
+    fire the modal path."""
     idx = DOCLIB_JSX.index("const openFile = async (f)")
     body = DOCLIB_JSX[idx:idx + 1200]
     assert "isInlineViewable(f.mime, f.filename)" in body, (
@@ -206,14 +206,20 @@ def test_frontend_openfile_gates_on_isinlineviewable():
         "its first guard so non-renderables fall through to "
         "downloadFile."
     )
-    # And the fallback must be downloadFile (NOT a nested window.open).
+    # And the fallback must be downloadFile (NOT a nested window.open
+    # or a nested modal-open for non-renderables).
     assert "return downloadFile(f)" in body, (
         "openFile must fall through to `return downloadFile(f)` for "
         "non-renderable files."
     )
-    # Popup window name pinned.
-    assert "'paneltec-doc-viewer'" in body, (
-        "openFile popup window name must remain 'paneltec-doc-viewer'."
+    # v58.13.74 — modal-based inline preview (blob URL iframe/img/pre).
+    # This is IMMUNE to Edge's `edge://settings/content/pdfDocuments`
+    # "Download PDF files" preference which was overriding our inline
+    # header on top-level `window.open()` navigations (v58.13.73
+    # field regression).
+    assert "setInlinePreviewFile(f)" in body, (
+        "openFile must call `setInlinePreviewFile(f)` to open the "
+        "in-app FilePreviewModal — v58.13.74 Edge-compat path."
     )
 
 

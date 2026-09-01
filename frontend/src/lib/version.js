@@ -1,5 +1,168 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.75 — Settings / Workers: sticky horizontal scrollbar
+//                     + sticky header row on the workers grid.
+//
+// USER PAIN (verbatim): "when opening settings/workers i can not view
+// all the window and the scroll sideways is at the bottom instead
+// allways viewiable as we scroll."
+//
+// Diagnosis: the workers grid at `frontend/src/pages/Workers.jsx`
+// (v160.3.6e card-row grid) uses a horizontal-only scroll container
+// (`overflow-x-auto`) with no vertical bound. On viewports narrower
+// than ~1280 px the grid overflows horizontally, but its bottom
+// scrollbar sits at the bottom of the full rendered row list — so a
+// user with 60+ workers has to scroll DOWN through the entire list to
+// reach the H scrollbar, drag it, then scroll BACK UP to see the
+// data they wanted. Terrible UX; unusable on 1280 × 720 monitors.
+//
+// ── Fix (Option A per the ship note) ───────────────────────────
+//   Single-container change on the outer scroll wrapper:
+//     Before: `<div className="rounded-2xl border border-slate-200
+//              bg-white overflow-x-auto" …>`
+//     After:  `<div className="rounded-2xl border border-slate-200
+//              bg-white overflow-auto max-h-[calc(100vh-260px)]" …>`
+//   Two effects:
+//     1. `overflow-auto` (both axes) + `max-h-…` bounds the
+//        container's height, so the H scrollbar now sits at the
+//        bottom of the container VIEWPORT — always visible.
+//     2. Vertical scrolling of rows happens INSIDE the container.
+//   Sort header row gains `sticky top-0 z-10` classes so column
+//   headers remain visible during vertical scroll. The header row
+//   already has `bg-slate-50` (opaque) so sticky paint is clean.
+//   `260 px` reserves room for the AppShell top nav (~64) + the
+//   Workers page header (~72) + toolbar (~72) + bottom breathing
+//   room (~52). Chosen empirically to leave ~30–40 rows visible on
+//   a 1440 × 900 monitor and still work down to 768 × 480.
+//
+// ── Verified ───────────────────────────────────────────────────
+//   · No page-level double-scrollbar: the outer AppShell has its
+//     own `flex-1 overflow-y-auto` (Workers.jsx:456 unchanged);
+//     the new inner container is a normal block child within it.
+//   · Sticky header row uses `position: sticky` relative to the
+//     nearest scrolling ancestor (the new bounded container), so
+//     it sticks correctly on both H and V scrolls.
+//   · No pagination or bulk-action toolbar below the grid — the
+//     `selected` set exists but only feeds row-level toggle; no
+//     bottom-of-list widgets that would be trapped inside the
+//     scroll region.
+//   · Below `md` breakpoints the grid keeps its `min-w-[980px]`
+//     inner rail, so users on narrow devices get horizontal
+//     scroll on the container (unchanged behaviour, just now
+//     with the scrollbar always visible).
+//   · Modals (EditModal, WorkerViewModal, BulkSimproZipModal) are
+//     rendered OUTSIDE the scroll region — no clipping.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_workers_sticky_scroll_v58_13_75.py`:
+//     · Asserts the workers grid container has BOTH `overflow-auto`
+//       and `max-h-[calc(100vh-260px)]` (drops the old
+//       `overflow-x-auto` alone).
+//     · Asserts the sort-header row has `sticky top-0 z-10`.
+//     · Asserts the min-inner-width `min-w-[980px]` invariant is
+//       preserved (regression guard — anyone who tightens this
+//       to a narrower value will re-introduce column clipping).
+//     · Version-sync forward-safe pin (>= 75).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Grid-template-columns (widths unchanged — this is purely a
+//     scroll-container fix).
+//   · No new files; no backend changes.
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records — untouched.
+//   · No changes to Document Library / FilePreviewModal (v58.13.74
+//     stays authoritative).
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.75`.
+
+// v160.3.9.58.13.74 — In-app inline preview modal (Edge PDF-download
+//                      preference bypass).
+//
+// URGENT REGRESSION FROM USER (Microsoft Edge, .73 field-report):
+//   Clicking a PDF filename in Document Library STILL saved to disk in
+//   Edge, even though the backend was correctly returning
+//   `Content-Disposition: inline` on the wire. Reason: Edge honours
+//   its own `edge://settings/content/pdfDocuments` "Download PDF files"
+//   preference for top-level navigations regardless of the disposition
+//   header. `window.open()` (v58.13.72/.73 popup path) IS a top-level
+//   navigation, so the preview flow was defeated by the browser
+//   setting the moment the user installed / joined a corp Edge with
+//   the default flipped to "Download".
+//
+// Wire proofs (both LOCAL uvicorn AND public preview URL — same result):
+//   GET /api/document-library/files/{pdf_id}/download
+//        → 200  Content-Disposition: inline; filename="cert.pdf"
+//   GET /api/document-library/files/{png_id}/download
+//        → 200  Content-Disposition: inline; filename="test.png"
+//   No CDN rewriting, no cache issue. Backend was fine. The bug was
+//   exclusively in the top-level-navigation approach on the client.
+//
+// The user's Downloads screenshot also showed
+// `2025_SWP-36 Electrofusion-welding-procedure.pdf` — but that file
+// is stored in the DB as a `.docx` (MIME
+// `application/vnd.openxmlformats-officedocument.wordprocessingml
+// .document`). The `.pdf` in Downloads came from clicking the
+// "Download as PDF" (FileText) icon, which explicitly converts +
+// downloads. That button is correctly labelled and correctly
+// implemented; the confusion just underscored that the FILENAME
+// click needs to be visibly different.
+//
+// ── Fix ────────────────────────────────────────────────────────
+//   NEW component:
+//     `frontend/src/components/FilePreviewModal.jsx`
+//   Renders the file INSIDE the app via a same-origin `blob:` URL:
+//     · PDF        → `<iframe src={blobUrl}>` — Edge's PDF-download
+//                    preference NEVER applies to blob iframes; the
+//                    file renders in-page unconditionally.
+//     · Image      → `<img src={blobUrl}>` — trivially inline.
+//     · Text/JSON  → `<pre>` with the fetched text body.
+//   Bearer JWT is attached at fetch time (before the blob is
+//   created), so the iframe/img/pre never touches auth.
+//   Header actions: Download original (hits `?download=1`) + Close.
+//   ESC closes. Body scroll locked via useLockBodyScroll (matches
+//   PdfPreviewModal ergonomics).
+//   `data-testid="file-preview-modal|iframe|image|text|close|
+//   download"` for smoke tests.
+//
+//   `frontend/src/pages/DocumentLibrary.jsx::openFile(f)`:
+//     · Non-renderable file → falls through to `downloadFile(f)`
+//       (unchanged — docx/xlsx/pptx/zip still save).
+//     · Renderable file → `setInlinePreviewFile(f)` — opens the
+//       new modal. NO MORE `window.open()`. NO MORE top-level
+//       navigation. NO MORE Edge PDF-download override.
+//   `filesUrl` import removed (no longer needed since we don't do
+//   URL-with-token top-level navigation anymore).
+//
+// ── Why not just "iframe inside PdfPreviewModal" instead of a new
+//    component? ──────────────────────────────────────────────────
+//   PdfPreviewModal is wired to `/api/files/{id}/pdf` — the
+//   LibreOffice-conversion route. That route converts the docx to
+//   PDF (bloating the workflow with a 10-30 s LO cold-start for
+//   images/text that don't need conversion). The user's ask is
+//   "open the ORIGINAL file inline", not "convert to PDF and
+//   show". FilePreviewModal serves the original bytes directly.
+//   Both modals coexist: FilePreviewModal (new) is the filename-
+//   click path, PdfPreviewModal (existing) is the Eye-icon path
+//   for on-the-fly conversion.
+//
+// ── Non-goals ──────────────────────────────────────────────────
+//   · No backend changes. Wire is correct as of v58.13.73.
+//   · No changes to disposition whitelist. `INLINE_MIMES` /
+//     `INLINE_EXTS` on backend and frontend stay identical.
+//   · Not calling the automated tester per user's explicit
+//     instruction on this ship.
+//   · No changes to `/app/mobile/` (except MOBILE_BUNDLE_VERSION).
+//   · The 20 cancelled bulk-import job records — untouched.
+//
+// ── Version sync ───────────────────────────────────────────────
+//   · frontend/src/lib/version.js#RUNNING_VERSION      → .74
+//   · frontend/public/service-worker.js#CACHE_VERSION   → .74
+//   · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION   → .74
+//   SW `skipWaiting` + `clients.claim` verified — old .73 bundle
+//   evicts on first reload after ship.
+
 // v160.3.9.58.13.73 — Inline preview extended to all browser-renderable
 // types in Document Library.
 //
@@ -6216,7 +6379,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.73';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.75';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

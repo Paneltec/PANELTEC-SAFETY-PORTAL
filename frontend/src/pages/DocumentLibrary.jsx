@@ -14,12 +14,12 @@ import api, { apiError, API_BASE } from '../lib/api';
 import { getToken, getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { stashInlinePdf } from '../lib/pdfStash';
-import { filesUrl } from '../lib/downloadUrl';
 import BulkRestrictModal from '../components/BulkRestrictModal';
 import {
   PageHeader, GhostButton, PrimaryButton, EmptyState, BackButton,
 } from '../components/capture/Ui';
 import PdfPreviewModal, { isPdfPreviewable } from '../components/PdfPreviewModal';
+import FilePreviewModal from '../components/FilePreviewModal';
 // v160.3.7p — Single source of truth for the Doc Library colour taxonomy.
 // Ships the semantic labels ("Health & Hazards", "SWMS & Competencies", …)
 // that replace the old cosmetic pastel names.
@@ -686,6 +686,11 @@ export function DocumentLibraryFolder() {
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState('');
   const [previewFile, setPreviewFile] = useState(null);
+  // v58.13.74 — Inline file preview (PDF / image / text). Bypasses
+  // Edge's `edge://settings/content/pdfDocuments` "Download PDFs"
+  // preference by rendering the file inside an iframe/img/pre via a
+  // same-origin blob URL rather than a top-level navigation.
+  const [inlinePreviewFile, setInlinePreviewFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
@@ -847,30 +852,18 @@ export function DocumentLibraryFolder() {
     }
   };
 
-  // v58.13.72 → v58.13.73 — Filename click for a browser-renderable file
-  // (PDF, PNG/JPG/GIF/WEBP/SVG, TXT/LOG/MD, JSON, XML) opens the file in
-  // a dedicated popup window. Everything else (docx/xlsx/pptx/zip/rar…)
-  // falls through to `downloadFile` because a bare browser tab can't
-  // render them anyway.
+  // v58.13.72 → .73 → .74 — Filename click for a browser-renderable
+  // file opens an in-app preview modal (iframe/img/pre backed by a
+  // same-origin blob URL). This is IMMUNE to Edge's PDF-download
+  // preference which was overriding our `Content-Disposition: inline`
+  // header in top-level navigations (v58.13.73 regression). Non-
+  // renderable files (docx/xlsx/pptx/zip/…) still fall through to
+  // `downloadFile` because browsers can't render them regardless.
   const openFile = async (f) => {
     if (!isInlineViewable(f.mime, f.filename)) {
       return downloadFile(f);
     }
-    try {
-      // Mint a short-lived download token so the popup can auth without
-      // a Bearer header (window.open URLs can't carry headers).
-      const url = await filesUrl(`/document-library/files/${f.id}/download`);
-      const w = window.open(
-        url,
-        'paneltec-doc-viewer',
-        'popup=yes,width=900,height=1100,scrollbars=yes,resizable=yes',
-      );
-      if (!w) {
-        toast.error('Popup was blocked. Please allow popups for this site.');
-      }
-    } catch (e) {
-      toast.error(e.message || 'Could not open viewer');
-    }
+    setInlinePreviewFile(f);
   };
 
   return (
@@ -1107,6 +1100,9 @@ export function DocumentLibraryFolder() {
       )}
       {previewFile && (
         <PdfPreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />
+      )}
+      {inlinePreviewFile && (
+        <FilePreviewModal file={inlinePreviewFile} onClose={() => setInlinePreviewFile(null)} />
       )}
     </div>
   );

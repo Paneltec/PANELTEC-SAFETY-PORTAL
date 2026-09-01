@@ -1994,11 +1994,27 @@ export default function Workers() {
         // Column budget (~970px min): 40 identity 220 phone 110 company 90
         // chips 200 status 120 action 190. Fits in ≥1280 viewports without
         // horizontal scroll; below that a scrollbar appears via overflow-x-auto.
-        <div className="rounded-2xl border border-slate-200 bg-white overflow-x-auto" data-testid="workers-table">
+        //
+        // v58.13.75 — Bounded scroll region so the horizontal scrollbar
+        // stays pinned to the bottom of the CONTAINER viewport, not the
+        // bottom of the page. Previously users on narrow screens had to
+        // scroll down through the full worker list to reach the H
+        // scrollbar. Now:
+        //   · `overflow-auto`   → both axes scroll INSIDE the container.
+        //   · `max-h-[calc(100vh-260px)]` → the container never grows
+        //     past the viewport, so the bottom scrollbar is always in
+        //     view. 260 px reserves room for the top nav + page header
+        //     + toolbar + bottom padding.
+        //   · Sort-header row gains `sticky top-0` so column headers
+        //     stay visible during vertical scroll inside the container.
+        <div
+          className="rounded-2xl border border-slate-200 bg-white overflow-auto max-h-[calc(100vh-260px)]"
+          data-testid="workers-table"
+        >
           <div className="min-w-[980px]">
             {/* Sort header row */}
             <div
-              className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-3 py-3 gap-3"
+              className="grid items-center bg-slate-50 border-b border-slate-200 text-slate-500 text-[10px] uppercase tracking-wider px-3 py-3 gap-3 sticky top-0 z-10"
               style={{ gridTemplateColumns: '40px minmax(220px, 2.4fr) minmax(110px, 1fr) 90px minmax(200px, 1.8fr) 120px 190px' }}
             >
               <div />
