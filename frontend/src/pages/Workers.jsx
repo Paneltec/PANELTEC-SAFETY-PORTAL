@@ -4,7 +4,7 @@
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Paperclip, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import DismissibleHint from '../components/DismissibleHint';
@@ -707,6 +707,46 @@ function CertificationsPanel({ workerId, canEdit }) {
                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
                                 <FileText size={11} />
                               </button>
+                            ) : canEdit ? (
+                              // v58.13.79 — Empty-file row now offers an
+                              // inline "attach image/file" button that
+                              // uploads via the new
+                              // `POST /workers/{id}/certifications/{cert_id}/upload`
+                              // endpoint — attaches to THIS cert (does
+                              // not create a duplicate row).
+                              <>
+                                <button type="button"
+                                  onClick={() => document.getElementById(`cert-attach-input-${c.id}`)?.click()}
+                                  title="Attach a file (PDF or photo) to this certification"
+                                  data-testid={`cert-attach-btn-${c.id}`}
+                                  className="inline-flex items-center justify-center w-6 h-6 rounded bg-[#e6eff9] text-[#1e4a8c] hover:bg-[#d8e6f4]">
+                                  <Paperclip size={11} />
+                                </button>
+                                <input
+                                  id={`cert-attach-input-${c.id}`}
+                                  type="file"
+                                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                  className="hidden"
+                                  data-testid={`cert-attach-input-${c.id}`}
+                                  onChange={async (e) => {
+                                    const file = e.target.files?.[0];
+                                    e.target.value = '';
+                                    if (!file) return;
+                                    setUploading(true);
+                                    try {
+                                      const fd = new FormData();
+                                      fd.append('file', file);
+                                      await api.post(
+                                        `/workers/${workerId}/certifications/${c.id}/upload`,
+                                        fd,
+                                      );
+                                      toast.success(`Attached to "${c.name}"`);
+                                      await load();
+                                    } catch (err) { toast.error(apiError(err)); }
+                                    finally { setUploading(false); }
+                                  }}
+                                />
+                              </>
                             ) : <span className="text-[10px] text-slate-400 italic" title="no file">—</span>}
                           </td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">

@@ -1,5 +1,159 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.79 — P1: Attach a file to an EXISTING certification
+//                     ("image disappeared and not connected to any
+//                      particular type").
+//
+// USER PAIN (verbatim, two messages):
+//   "when adding a image to a worker under certifications the image
+//    seem to disappear and not connected to any particular type"
+//   "in workers /stephen guy /certifications and disappeared"
+//
+// Reproduction on preview against Stephen Guy's worker record
+// (id `dbddf739-…`) — the smoking gun:
+//   · Stephen has 9 Simpro-imported metadata-only cert rows
+//     (First Aid, PSSR, Gas Safety Awareness, …) all carrying
+//     `doc_file_id: None`.
+//   · At 03:32 UTC today he uploaded a phone photo
+//     `134098955674089059.jpg` (2 MB) via the drop-zone.
+//   · The pre-.79 endpoint `POST /workers/{id}/certifications/upload`
+//     ALWAYS creates a new cert row using the FILENAME STEM as the
+//     cert name. So the phone photo landed as a brand-new cert
+//     row literally named `134098955674089059` — leaving "First
+//     Aid" still empty and the user unable to see where the image
+//     went. Exact match to the field-report copy: "disappeared and
+//     not connected to any particular type".
+//
+// The image WAS persisted (2 MB on disk, cert row indexed) — it just
+// hadn't been attached to the cert type the user wanted. This is a
+// UX design gap, not a persistence bug.
+//
+// ── Backend fix ────────────────────────────────────────────────
+//   NEW endpoint (`backend/worker_certifications.py`):
+//     `POST /workers/{worker_id}/certifications/{cert_id}/upload`
+//     · Loads the target cert row and 404s if missing.
+//     · Classifies the destination folder from the EXISTING cert
+//       `name` via `_match_folder_name(existing["name"])` — the
+//       file lands in "First Aid/Stephen Guy" instead of a folder
+//       derived from the raw phone stem.
+//     · Streams the upload to disk with the same 50 MB / ext
+//       validation as `upload_cert_file`.
+//     · Inserts the new `doc_files` row.
+//     · If the cert already had a file, soft-deletes the
+//       previous `doc_files` row (`deleted_at = now`,
+//       `deleted_reason = "replaced by …"`).
+//     · PATCHES the existing cert row with the new
+//       `doc_file_id` / `doc_folder_id` / `doc_seed_folder`
+//       via `find_one_and_update`. NEVER inserts a second cert
+//       row — that's the whole point of the ship.
+//     · Handles the "cert was deleted mid-upload" race by
+//       tombstoning the file it just wrote and 409ing back.
+//     · Returns `{ok, cert, file, folder}` shape identical to
+//       the create-new endpoint so the frontend can share
+//       parsing.
+//
+//   The pre-.79 `POST .../certifications/upload` (create-new-row)
+//   is UNCHANGED — it's still the right behaviour for the
+//   drop-zone workflow where the user is adding a totally new
+//   cert not yet tracked. The two endpoints are complementary.
+//
+// ── Frontend fix (`frontend/src/pages/Workers.jsx`, cert list) ─
+//   Each cert row's File column now renders one of three states:
+//     · `doc_file_id` set → the existing "View file" button (blue
+//       FileText glyph — unchanged).
+//     · `doc_file_id` null + `canEdit` → NEW inline "Attach"
+//       button (blue Paperclip glyph, testid
+//       `cert-attach-btn-{id}`). Clicking triggers a hidden
+//       `<input type="file">` (testid
+//       `cert-attach-input-{id}`) whose `onChange` POSTs the
+//       chosen file to the new
+//       `/workers/{id}/certifications/{cert_id}/upload` endpoint
+//       and reloads the list. Toast:
+//         `Attached to "First Aid"`
+//       so the user gets explicit confirmation the image linked
+//       to the CORRECT cert type.
+//     · `doc_file_id` null + read-only → the existing "—" glyph.
+//   `Paperclip` added to the top-of-file `lucide-react` import.
+//
+// ── DB fix (one-off, one row) ──────────────────────────────────
+//   Stephen Guy's orphan cert row (id `5a1344f3-…`, name
+//   `134098955674089059`) has been renamed via a support script
+//   to `Uploaded 2 Sep 2026 — please rename`, with a `notes`
+//   field explaining what happened. The image is still attached.
+//   User just needs to rename the row to the actual cert type
+//   (First Aid, White Card, etc.) via the existing inline-edit
+//   flow — or delete it and re-upload via the new Paperclip
+//   button on the correct row.
+//
+// ── Wire proof (live curl through LOCAL uvicorn against Stephen) ─
+//   Target: First Aid (id `23df65dd-…`, initially doc_file_id=None)
+//
+//   1. POST .../{cert_id}/upload (attach) → 200
+//        cert.id UNCHANGED (`23df65dd-…`)
+//        cert.name UNCHANGED (`First Aid`)
+//        cert.doc_file_id NOW SET (`802e7d01-…`)
+//        folder: `First Aid / Stephen Guy` ← correct cert-type folder
+//   2. GET .../certifications → cert still visible,
+//        `doc_file_id` persists as `802e7d01-…`.
+//   3. Re-attach same cert → 200; new doc_file_id `cc5e0750-…`;
+//        the previous `doc_files` row was soft-deleted.
+//   4. Attach to non-existent cert → 404
+//        {"detail":"Certification not found"}
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_cert_attach_v58_13_79.py`:
+//     · Endpoint registered at the exact path.
+//     · Handler classifies folder from EXISTING cert name.
+//     · Handler NEVER inserts into worker_certifications (positive
+//       regression guard against the original bug).
+//     · Handler PATCHES the existing row via find_one_and_update.
+//     · Old doc_files row soft-deleted on replace.
+//     · 404 when target cert missing.
+//     · Frontend imports Paperclip from lucide-react.
+//     · Empty-file rows render the attach button + hidden file input
+//       with stable testids.
+//     · Attach input POSTs to the correct endpoint, sets uploading
+//       state, reloads the list, toasts `Attached to "{cert.name}"`.
+//     · Version-sync forward-safe pin (>= 79).
+//
+//   Full pytest_backend suite: 374 passed (was 363 pre-ship;
+//   +11 new, zero regressions).
+//
+// ── Coverage checklist from the ship note ──────────────────────
+//   · Fresh cert creation with image        → unchanged drop-zone
+//                                              flow (creates new row).
+//   · Adding image to existing cert         → NEW attach button on
+//                                              empty rows (this ship).
+//   · Adding image without selecting a type → drop-zone still uses
+//                                              filename-derived name;
+//                                              user can rename after
+//                                              via inline edit.
+//                                              Attach button is
+//                                              ALWAYS on a specific
+//                                              cert row so "no type
+//                                              selected" cannot
+//                                              happen there.
+//   · Reload persistence                    → GET /certifications
+//                                              curl proof shows
+//                                              doc_file_id survives.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `POST /workers/{id}/certifications/upload` (create-new) —
+//     still there, still used by the drop-zone.
+//   · `PATCH /certifications/{id}` — unchanged. Users still rename
+//     / edit dates via the existing inline edit row.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//   · Ephemeral-storage lint on the upload path is pre-existing
+//     (same pattern as `upload_cert_file`) — out of scope for
+//     this ship.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (new route registered). Done on
+//     preview.
+//   · Frontend hot-reload picks it up.
+//   · All 3 canonical version strings bumped to `.79`.
+
 // v160.3.9.58.13.78 — P0: prod /app/pre-starts Cloudflare 520 origin
 //                     defensive hardening.
 //
@@ -6754,7 +6908,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.78';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.79';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

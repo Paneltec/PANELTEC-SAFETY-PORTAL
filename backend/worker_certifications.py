@@ -490,6 +490,142 @@ async def upload_cert_file(
     }
 
 
+# v58.13.79 — Attach a file to an EXISTING certification row.
+#
+# The pre-.79 upload flow (`POST /workers/{worker_id}/certifications/upload`)
+# always CREATES a new cert row using the filename stem as the cert
+# `name`. That made sense for the drop-zone but broke the very common
+# "here's the image for my existing First Aid ticket" workflow:
+#
+#   Before this ship the user tried to attach a photo of their First
+#   Aid ticket to the pre-existing Simpro-imported "First Aid" cert
+#   row (which had `doc_file_id: None`). The upload succeeded but
+#   created a brand-new row named after the raw phone filename
+#   (e.g. "134098955674089059"), leaving the "First Aid" row still
+#   file-less. The image looked disconnected from any known cert
+#   type — matching the field-report verbatim
+#   "disappeared and not connected to any particular type".
+#
+# This endpoint fixes that by PATCHING the existing cert row with
+# the new file id (never creates a second row). Idempotent
+# semantics: if the cert already has a file, the previous
+# `doc_files` row is soft-deleted so we don't leak orphan files.
+@router.post("/{worker_id}/certifications/{cert_id}/upload", status_code=200)
+async def attach_cert_file(
+    worker_id: str,
+    cert_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user, action="upload")
+    worker = await _require_worker(worker_id, user["org_id"])
+
+    existing = await db.worker_certifications.find_one(
+        {"id": cert_id, "worker_id": worker_id, "org_id": user["org_id"],
+         "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Certification not found")
+
+    ext = _safe_ext(file.filename)
+    if not ext:
+        raise HTTPException(
+            400,
+            "Unsupported file type — allowed: PDF, DOC, DOCX, XLS, XLSX, PNG, JPG, JPEG, TXT, CSV",
+        )
+
+    # Prefer the folder classified from the EXISTING cert name so the
+    # file lands next to metadata that already exists. Only fall back
+    # to filename-derived classification when the cert `name` is
+    # blank (shouldn't happen — model enforces min_length=1).
+    seed_name = _match_folder_name(existing.get("name") or file.filename or "")
+    seed_folder = await _resolve_seed_folder(user["org_id"], seed_name, user["id"])
+    sub_folder = await _find_or_create_worker_subfolder(seed_folder, worker, user["id"])
+
+    folder_dir = UPLOAD_DIR / sub_folder["id"]
+    folder_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid.uuid4().hex}{ext}"
+    target = folder_dir / stored_name
+
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_FILE_BYTES:
+                out.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(400, "Exceeds 50 MB limit")
+            out.write(chunk)
+
+    worker_label = f"{worker.get('first_name', '')} {worker.get('last_name', '')}".strip() or "(unnamed)"
+    file_doc = {
+        "id": new_id(),
+        "org_id": user["org_id"],
+        "folder_id": sub_folder["id"],
+        "filename": file.filename or stored_name,
+        "stored_name": stored_name,
+        "mime": file.content_type or "application/octet-stream",
+        "size": size,
+        "file_url": f"/api/files/document_library/{sub_folder['id']}/{stored_name}",
+        "uploaded_by": user["id"],
+        "uploaded_by_name": user.get("name") or user.get("email"),
+        "uploaded_at": now_iso(),
+        "updated_at": now_iso(),
+        "ai_tags": _stub_ai_tags(file.filename or stored_name) + [f"worker:{worker_label}"],
+        "uploaded_via": "worker_certification",
+        "worker_id": worker_id,
+        "worker_name": worker_label,
+        "seed_folder": seed_folder["name"],
+        "deleted_at": None,
+    }
+    await db.doc_files.insert_one(file_doc)
+
+    # Soft-delete the old file row so the cert never carries a stale
+    # doc_file_id reference and we don't leak disk usage.
+    old_file_id = existing.get("doc_file_id")
+    if old_file_id:
+        await db.doc_files.update_one(
+            {"id": old_file_id, "org_id": user["org_id"]},
+            {"$set": {"deleted_at": now_iso(),
+                       "deleted_by": user["id"],
+                       "deleted_reason": "replaced by /certifications/{id}/upload"}},
+        )
+
+    updated = await db.worker_certifications.find_one_and_update(
+        {"id": cert_id, "org_id": user["org_id"], "deleted_at": None},
+        {"$set": {
+            "doc_file_id": file_doc["id"],
+            "doc_folder_id": sub_folder["id"],
+            "doc_seed_folder": seed_folder["name"],
+            "updated_at": now_iso(),
+        }},
+        projection={"_id": 0},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        # Extremely unlikely — cert existed at the top of the handler.
+        # If we lost the race, hard-tombstone the file row so nothing
+        # dangles.
+        await db.doc_files.update_one(
+            {"id": file_doc["id"]},
+            {"$set": {"deleted_at": now_iso(),
+                       "deleted_reason": "attach-race: parent cert vanished"}},
+        )
+        raise HTTPException(409, "Certification was deleted while attaching the file")
+
+    return {
+        "ok": True,
+        "cert": _serialise_cert(updated),
+        "file": _serialise_file(file_doc),
+        "folder": {"id": sub_folder["id"], "name": sub_folder["name"],
+                   "parent_id": seed_folder["id"], "parent_name": seed_folder["name"]},
+    }
+
+
 # ────────────────────── Global view + search ──────────────────────
 
 @router.get("/certifications/all")
