@@ -7,9 +7,11 @@ Each entity exposes:
   PATCH  /api/{entity}/{id}            — partial update (requires <resource>.edit)
   DELETE /api/{entity}/{id}            — soft delete (requires <resource>.edit)
 """
-from typing import Any, Dict, Optional, Type
+import logging
+from typing import Any, Dict, List, Optional, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 
 from db import db
@@ -18,6 +20,65 @@ from models import (
     SwmsReview, new_id, now_iso,
 )
 from permissions import require_permission, require_module, resolve_team_scope
+
+logger = logging.getLogger("paneltec.crud")
+
+# v58.13.78 — Fields on mirrored `form_submissions` rows that can grow
+# arbitrarily large on prod (Claude Vision raw responses, per-photo
+# base64, HTML archives). Stripped from LIST responses only. The
+# detail route still returns them because it fetches a single row.
+_HEAVY_METADATA_FIELDS = (
+    "raw_extraction_json",
+    "raw_html",
+    "claude_response",
+    "vision_response",
+    "ocr_response",
+    "extraction_debug",
+    "pdf_page_images",
+)
+
+
+def _slim_mirror_metadata(row: dict) -> dict:
+    """Remove heavy blob fields from a mirrored form_submission row before
+    it hits the list serializer. Idempotent; safe on rows without a
+    `metadata` dict."""
+    md = row.get("metadata")
+    if not isinstance(md, dict):
+        return row
+    for k in _HEAVY_METADATA_FIELDS:
+        md.pop(k, None)
+    # Nested `attachments[*].base64` is another prod-only accident-in-
+    # waiting — strip inline base64 blobs but keep the descriptor.
+    atts = row.get("attachments")
+    if isinstance(atts, list):
+        for a in atts:
+            if isinstance(a, dict):
+                a.pop("base64", None)
+                a.pop("data_url", None)
+    return row
+
+
+def _safe_encode_list(docs: List[dict], route_hint: str) -> List[dict]:
+    """v58.13.78 — Encode a list of DB documents defensively.
+
+    A single unserialisable value (naive `datetime`, `Decimal`, `bytes`,
+    stray `ObjectId`) will crash FastAPI's default `JSONResponse`
+    partway through streaming, dropping the connection AFTER the
+    headers are sent — Cloudflare then reports 520 / "malformed
+    response" to the user. Guard against that by running each doc
+    through `jsonable_encoder` individually; log-and-skip any that
+    fail so ONE bad row can never take down the whole page.
+    """
+    out: List[dict] = []
+    for d in docs:
+        try:
+            out.append(jsonable_encoder(d))
+        except Exception as e:  # noqa: BLE001
+            logger.exception(
+                "safe-encode: dropped one row on %s (id=%r): %s: %s",
+                route_hint, d.get("id"), type(e).__name__, e,
+            )
+    return out
 
 
 def _scoped(user: dict, workspace_id: Optional[str] = None) -> dict:
@@ -59,7 +120,7 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         date_from: Optional[str] = Query(None),
         date_to: Optional[str] = Query(None),
         scope: Optional[str] = Query(None, description="`me` = own records only, `team` = org-wide (needs team_view)"),
-        limit: int = Query(200, ge=1, le=50000),
+        limit: int = Query(100, ge=1, le=50000),
         # v160.3.9.58.1 — filters used by the Bulk-Import wizard's
         # deep-links. `bulk_import_id` narrows the list to records
         # committed by one import job; `needs_review` shows only rows
@@ -70,6 +131,41 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
         bulk_import_id: Optional[str] = Query(None),
         needs_review: Optional[int] = Query(None),
         user: dict = Depends(require_permission(resource, "view")),
+    ):
+        # v58.13.78 — Top-level try/except so a crash in the list-build
+        # code path never drops the connection mid-stream. Cloudflare
+        # 520 on prod /app/pre-starts was traced to this endpoint; the
+        # symptom is a malformed origin response, which only happens
+        # when the server closes the TCP connection AFTER headers are
+        # sent. By catching + logging + returning a clean JSON error we
+        # ensure the origin ALWAYS emits a well-formed HTTP response.
+        try:
+            return await _list_impl(user, workspace_id, status, include_superseded,
+                                     date_from, date_to, scope, limit,
+                                     bulk_import_id, needs_review)
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001
+            logger.exception(
+                "list_items crashed on /%s (user=%s org=%s): %s: %s",
+                prefix, user.get("id"), user.get("org_id"),
+                type(e).__name__, e,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "ok": False,
+                    "error": "list_items_failed",
+                    "resource": resource,
+                    "message": "Server error while building the list. "
+                                "Support has been notified.",
+                },
+            )
+
+    async def _list_impl(
+        user, workspace_id, status, include_superseded,
+        date_from, date_to, scope, limit,
+        bulk_import_id, needs_review,
     ):
         q = _scoped(user, workspace_id)
         # v159.2 — team-scoping. If the caller lacks `team_view` on this
@@ -140,6 +236,16 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
                 }]
             mirrored = await db.form_submissions.find(mq, {"_id": 0}).sort(
                 "submitted_at", -1).to_list(limit)
+            # v58.13.78 — Strip heavy metadata blobs from list rows
+            # BEFORE any further processing. On prod some mirrored rows
+            # carry multi-MB Claude Vision responses / per-page base64
+            # image dumps that were fine to store but choked the list
+            # response and triggered Cloudflare 520s on
+            # /app/pre-starts. Detail route (`/{item_id}`) is
+            # unaffected — it fetches a single doc and returns full
+            # payload.
+            for _m in mirrored:
+                _slim_mirror_metadata(_m)
             # v58.10.3 — Dedup against the legacy shim. Rows in `docs`
             # (from the legacy collection, e.g. `pre_starts`) may carry
             # `source_form_submission_id` pointing at the paired
@@ -199,7 +305,10 @@ def build_router(prefix: str, collection: str, model: Type[BaseModel], resource:
             docs = docs + mirrored
             docs.sort(key=lambda d: d.get("created_at") or "", reverse=True)
             docs = docs[:limit]
-        return docs
+        # v58.13.78 — Defensive encode. Prevents a single unserialisable
+        # doc (naive datetime, Decimal, bytes) from crashing the whole
+        # response mid-stream and giving the user a Cloudflare 520.
+        return _safe_encode_list(docs, route_hint=f"/{prefix}")
 
     @r.get("/{item_id}")
     async def get_item(item_id: str, user: dict = Depends(require_permission(resource, "view"))):

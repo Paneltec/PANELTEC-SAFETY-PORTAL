@@ -1,5 +1,264 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.78 — P0: prod /app/pre-starts Cloudflare 520 origin
+//                     defensive hardening.
+//
+// USER PAIN (verbatim): "Couldn't reach the server. We tried twice and
+// still couldn't load your pre-starts. The origin web server sent a
+// response that Cloudflare could not parse. This may indicate the
+// origin returned an empty response, malformed HTTP headers, or an
+// otherwise invalid response."
+//
+// Environment: PRODUCTION (https://whs-compliance.emergent.host).
+// Cloudflare error 520 — origin closed the TCP connection AFTER the
+// response headers were sent, so CF sees a truncated / malformed
+// stream. Preview (same code, https://whs-compliance.preview.
+// emergentagent.com) — clean 200 with 0.16 MB JSON. So this is a
+// PROD-DB-specific incident, not a code regression.
+//
+// Root-cause candidates (I can't SSH prod so this is inferential):
+//   A. A single mirrored `form_submissions` row on prod carries an
+//      unserialisable field (naive `datetime`, `Decimal`, non-UTF-8
+//      `bytes`, stray ObjectId) that crashes FastAPI's default
+//      JSONResponse partway through streaming the list.
+//   B. A prod mirror row has multi-MB `metadata.raw_extraction_json`
+//      / `metadata.claude_response` / inline base64 image blobs,
+//      inflating the response past Cloudflare's ~100 MB limit.
+//   C. Long aggregate on a missing-index path pushes wall time past
+//      Cloudflare's ~100 s response deadline.
+//
+// The fix defends against all three simultaneously — none of them
+// leak a mid-stream disconnect any more.
+//
+// ── Fix (backend/crud.py::build_router) ────────────────────────
+//   1. NEW `_safe_encode_list(docs, route_hint)`:
+//        · Runs each doc through `fastapi.encoders.jsonable_encoder`
+//          in a try/except.
+//        · On failure: `logger.exception(...)` with the failing doc
+//          id + route hint, then SKIP the doc. The rest of the list
+//          survives.
+//        · Returns the encoded list. Called at the END of every
+//          entity list handler (swms, pre-starts, site-diary,
+//          hazards, incidents, inspections — all six routers built
+//          by `build_router`).
+//
+//   2. NEW `_slim_mirror_metadata(row)`:
+//        · Strips the seven known "large blob" fields from
+//          `row.metadata`: `raw_extraction_json`, `raw_html`,
+//          `claude_response`, `vision_response`, `ocr_response`,
+//          `extraction_debug`, `pdf_page_images`.
+//        · Strips inline `base64` / `data_url` from
+//          `row.attachments[*]` while KEEPING the descriptor
+//          (filename, mime, size) so the UI can render a chip.
+//        · Idempotent. Safe on rows without a `metadata` dict or
+//          without an `attachments` array.
+//        · Called on each mirrored row BEFORE union-merge into the
+//          list. Does NOT affect the detail route
+//          (`GET /{prefix}/{item_id}`) which returns the full doc.
+//
+//   3. NEW `_list_impl(...)` split-out + top-level try/except:
+//        The handler body was moved into a nested helper
+//        `async def _list_impl(...)`. The public `list_items` route
+//        now wraps `_list_impl` in `try: return await _list_impl(...)`
+//        `except HTTPException: raise` `except Exception: logger`
+//        `.exception + raise HTTPException(500, detail={ok:false,
+//        error:list_items_failed, resource, message})`. This
+//        guarantees the origin ALWAYS emits a well-formed HTTP
+//        response — never a mid-stream connection kill.
+//
+//   4. Default `limit` reduced 200 → 100 (max unchanged at 50 000).
+//        Wizard flows that legitimately page through big result
+//        sets keep working via explicit `?limit=`. First-load
+//        response size is halved.
+//
+// ── Wire proof (preview through the public ingress) ────────────
+//   /api/pre-starts    status=200  body_len=85 KB  ct=application/json
+//   /api/swms          status=200  body_len=25 KB
+//   /api/hazards       status=200  body_len=249 KB
+//   /api/incidents     status=200  body_len=12 KB
+//   /api/inspections   status=200  body_len=5.6 KB
+//   /api/site-diary    status=200  body_len=7 KB
+//   All six list routes clean; no regression on the healthy paths.
+//   Response for /api/pre-starts on preview shrank 171 KB → 85 KB
+//   (mirror-slim + limit drop).
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_prestarts_defensive_v58_13_78.py`:
+//     · `_safe_encode_list` behaviour — good docs encoded, bad docs
+//       (non-UTF-8 bytes, opaque `object()`) log-and-skipped, no
+//       raise, no dropped-good-neighbours.
+//     · `_slim_mirror_metadata` strips all seven heavy fields but
+//       preserves the rest of `metadata`; strips inline base64 /
+//       data_url from attachments; keeps descriptor keys.
+//     · Idempotency on rows without a metadata dict or attachments.
+//     · Source-pins: `limit=100` default, top-level try/except
+//       wraps `_list_impl`, `_safe_encode_list` wired into return,
+//       `_slim_mirror_metadata` called on each mirror row.
+//     · Version-sync forward-safe pin (>= 78).
+//
+//   Full pytest_backend suite: 363 passed (was 341 before this ship;
+//   +22 new tests across .77 + .78, zero regressions).
+//
+// ── Rollout plan the user asked for ────────────────────────────
+//   · Ship lands on PREVIEW automatically (frontend hot-reload,
+//     backend restarted).
+//   · User re-publishes to PRODUCTION via the deploy button.
+//   · First prod page-load on /app/pre-starts will exercise the
+//     new defenses. If a poison doc exists, it is now silently
+//     dropped from the list and logged server-side — worst case
+//     the user sees N-1 pre-starts instead of a 520.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No schema / migration changes.
+//   · No frontend changes.
+//   · No mobile changes (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records — untouched.
+//   · The detail routes (`/{item_id}`) still return full metadata.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (crud.py changed). Done on preview.
+//   · Frontend hot-reload — no user-visible frontend changes.
+//   · All 3 canonical version strings bumped to `.78`.
+
+// v160.3.9.58.13.77 — P1: Document Library folder-delete UX
+//                     (stopPropagation + page-level modal).
+//
+// USER PAIN (verbatim): "documents folders we are unable to delete
+// the folder and completely". Specific folder cited: "Committees &
+// Memberships". Initial suspicion: URL-encoding bug on the `&` in
+// the name.
+//
+// Investigation — the `&` theory was a red herring:
+//   1. Frontend deletes by UUID:
+//        `api.delete('/document-library/folders/${f.id}')`
+//      The URL never contains the folder name.
+//   2. Backend DELETE route is `/folders/{folder_id}` — UUID path
+//      param, decoded automatically by FastAPI.
+//   3. Curl proof (LOCAL uvicorn on preview):
+//        Seeded a test folder named literally
+//          "Committees & Test / Q? #a +b %c"
+//        which contains every classic URL-breaker.
+//          POST /folders            → 200 (name round-trips intact)
+//          GET  /folders            → contains-test-folder=True
+//          DELETE /folders/{uuid}   → 204
+//          GET  /folders            → still-in-list=False
+//        Backend delete works flawlessly for any name.
+//
+// The REAL bug was in the confirm-delete UX in
+// `frontend/src/pages/DocumentLibrary.jsx`:
+//
+//   Folder card structure (before ship):
+//     <div class="group relative ..."> {/* folder card */}
+//       <button onClick={navigate}> ... </button>  {/* full-card nav */}
+//       {hover-only action bar with delete X button}
+//       {confirm strip:
+//          `<div class="absolute inset-x-1.5 top-1.5 flex ...">
+//             <span>Delete?</span>
+//             <button onClick={deleteFolder(f)}>✓</button>
+//             <button onClick={cancel}>✗</button>
+//           </div>`}
+//     </div>
+//
+//   The confirm strip was a TINY ribbon at the top-1.5 of the card,
+//   px-2 py-1 — maybe 24 px tall. The REST of the card underneath
+//   was still the full-card `<button onClick={navigate}>`. A user
+//   who clicked NEAR the checkmark but missed by a few pixels
+//   landed on the nav button under the strip → navigated INTO the
+//   folder page mid-delete → in some browsers the pending fetch
+//   was cancelled by the route change, in others the delete fired
+//   but the toast/refresh never showed because the page navigated
+//   away. Result: unpredictable "cannot delete completely" — folder
+//   sometimes survived on refresh.
+//
+//   Additionally the action-bar buttons (recolor / rename / delete
+//   X) had no `e.stopPropagation()` on click, so a click that
+//   originated inside a descendant element could bubble past the
+//   inner button boundary and re-fire the parent card's nav
+//   handler on some browsers (Edge historically has this quirk in
+//   nested-clickable contexts).
+//
+// ── Fix ────────────────────────────────────────────────────────
+//   1. Every inner action button gets an inline
+//      `(e) => { e.stopPropagation(); ... }` handler:
+//        · Recolor swatch
+//        · Rename button
+//        · Delete-X button
+//      Guarantees clicks never bubble to the parent nav button.
+//      Also bumps the action-bar div's z-index to `z-10` so it
+//      paints above the folder tile's own content and hover
+//      targets are unambiguous.
+//
+//   2. The inline confirm strip is REMOVED entirely. Replaced by a
+//      new page-level centered modal `<FolderDeleteConfirmModal>`
+//      rendered at the ROOT of the FolderList component (outside
+//      the folder grid). Modal:
+//        · Full backdrop (fixed inset-0 z-[90] bg-slate-950/60),
+//          click-to-dismiss.
+//        · Panel `onClick={e.stopPropagation}` so clicks inside
+//          the panel don't reach the backdrop.
+//        · Rose-accented X icon, "Delete folder?" title, "This
+//          cannot be undone." subtext.
+//        · Folder name callout in a slate-50 card
+//          (`data-testid="folder-delete-modal-name"`).
+//        · File + subfolder count callout
+//          (`data-testid="folder-delete-modal-counts"`) —
+//          computes `fc = target.file_count` and
+//          `sc = target.subfolder_count` and renders:
+//            · "Empty folder — no files or subfolders will be
+//              affected." (fc=0, sc=0)
+//            · "Will also delete <b>N files</b> and
+//              <b>M subfolders</b> inside it." (either > 0)
+//          Bold counts so the user can't miss what's being
+//          cascaded.
+//        · "Cancel" outlined button
+//          (`data-testid="folder-delete-modal-cancel"`).
+//        · Big red "Delete folder" button
+//          (`data-testid="folder-delete-modal-confirm"`) —
+//          fires the existing `deleteFolder(target)` helper.
+//
+//   The modal's click surface is fully isolated from any folder
+//   card underneath — mis-clicks are impossible.
+//
+// ── Curl proof (URL-breakers) ──────────────────────────────────
+//   Seeded a test folder on preview with a name containing every
+//   classic URL-breaker character:
+//     "Committees & Test / Q? #a +b %c"
+//   GET /folders returned the folder with the name intact.
+//   DELETE /folders/{uuid} → 204.
+//   Subsequent GET /folders no longer contains the id.
+//   DB record shows `deleted_at` stamped, name preserved.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_folder_delete_ux_v58_13_77.py`:
+//     · Every inner action button has `e.stopPropagation()` in
+//       its onClick (delete-X, rename, recolor).
+//     · Old inline confirm strip identifiers gone
+//       (`folder-delete-confirm-yes/no` testids, `>Delete?<`
+//       label).
+//     · Page-level modal testids present
+//       (folder-delete-modal / -name / -counts / -cancel /
+//        -confirm).
+//     · Modal references `target.file_count` and
+//       `target.subfolder_count`.
+//     · Modal has the "Empty folder" copy for zero-count case.
+//     · Modal backdrop click calls `setConfirmDeleteId(null)`;
+//       modal panel click calls `e.stopPropagation()`.
+//     · Modal confirm button calls `deleteFolder(target)`.
+//     · Backend delete-by-UUID route pinned in place (regression
+//       guard — if anyone ever rewires this to name-based, the
+//       URL-encoding class of bugs re-emerges).
+//     · Version-sync forward-safe pin (>= 77).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Backend delete route — it always worked (curl-proven).
+//   · Folder listing / creation / rename / file-listing routes.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.77`.
+
 // v160.3.9.58.13.76 — Workers table: measured flex-fill H scrollbar.
 //
 // USER PAIN (verbatim, .75 field-report): "i have to scroll to the
@@ -6495,7 +6754,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.76';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.78';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

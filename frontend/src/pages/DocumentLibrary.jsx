@@ -589,25 +589,32 @@ export default function DocumentLibrary() {
                   </div>
                 </button>
                 {canEdit && !f.is_system && confirmDeleteId !== f.id && (
-                  <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5" data-testid={`folder-actions-${f.id}`}>
+                  <div className="hidden group-hover:flex absolute top-1.5 right-1.5 gap-0.5 z-10" data-testid={`folder-actions-${f.id}`}>
                     {/* v160.3.7o — recolour swatch: click to open the palette picker,
                         pick a new group and the tile re-tints instantly.
                         v160.3.7p — Tooltip surfaces the semantic group name
                         ("Health & Hazards") first, with the pastel slug in
-                        parens for admins who track the colour name. */}
-                    <button onClick={() => setColorPickerFolderId(f.id)}
+                        parens for admins who track the colour name.
+                        v58.13.77 — `e.stopPropagation()` on every inner
+                        action button so a click never bubbles to the
+                        parent card's nav button. Previously (rare edge
+                        conditions in Edge / Safari) a click on the
+                        delete-X could trigger the folder-nav mid-way,
+                        which is a strong candidate for the "cannot
+                        delete completely" symptom the user reported. */}
+                    <button onClick={(e) => { e.stopPropagation(); setColorPickerFolderId(f.id); }}
                       data-testid={`folder-recolor-btn-${f.id}`}
                       title={`Group · ${PASTEL_LABEL[f.color_key || 'sky']} (${PASTEL_COSMETIC[f.color_key || 'sky']}) — click to change`}
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:bg-white flex items-center">
                       <span className={`inline-block w-3 h-3 rounded-full border border-white/60 ${PASTEL_DOT[f.color_key || 'sky']}`} />
                     </button>
-                    <button onClick={() => startRename(f)} data-testid={`folder-rename-btn-${f.id}`}
+                    <button onClick={(e) => { e.stopPropagation(); startRename(f); }} data-testid={`folder-rename-btn-${f.id}`}
                       title="Rename"
                       className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-blue hover:bg-white">
                       <Pencil />
                     </button>
                     {canDeleteFolder && (
-                      <button onClick={() => setConfirmDeleteId(f.id)} data-testid={`folder-delete-btn-${f.id}`}
+                      <button onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(f.id); }} data-testid={`folder-delete-btn-${f.id}`}
                         title="Delete"
                         className="p-1.5 rounded bg-white/90 border border-slate-200 text-slate-500 hover:text-brand-red hover:bg-white">
                         <X size={11} />
@@ -647,18 +654,10 @@ export default function DocumentLibrary() {
                     })}
                   </div>
                 )}
-                {canEdit && confirmDeleteId === f.id && (
-                  <div className="absolute inset-x-1.5 top-1.5 flex items-center justify-between gap-1 bg-[#fbe4e7] border border-[#e69aa3] rounded px-2 py-1"
-                    data-testid={`folder-delete-confirm-${f.id}`}>
-                    <span className="text-[10px] font-semibold text-[#7a1f33] uppercase tracking-wider">Delete?</span>
-                    <div className="flex gap-0.5">
-                      <button onClick={() => deleteFolder(f)} data-testid={`folder-delete-confirm-yes-${f.id}`}
-                        className="p-1 rounded text-[#7a1f33] hover:bg-white"><Check size={11} /></button>
-                      <button onClick={() => setConfirmDeleteId(null)} data-testid={`folder-delete-confirm-no-${f.id}`}
-                        className="p-1 rounded text-slate-500 hover:bg-white"><X size={11} /></button>
-                    </div>
-                  </div>
-                )}
+                {/* v58.13.77 — inline confirm strip removed. Replaced by
+                    the page-level `<FolderDeleteConfirmModal>` mounted
+                    outside the folder grid so clicks can never leak to
+                    the card's nav button underneath. */}
                 {f.is_system && (
                   <span className="absolute top-1.5 right-1.5 text-[9px] uppercase tracking-wider font-semibold text-slate-500 bg-white/80 px-1.5 py-0.5 rounded">System</span>
                 )}
@@ -667,6 +666,75 @@ export default function DocumentLibrary() {
           ))}
         </div>
       )}
+      {/* v58.13.77 — Page-level folder-delete confirmation modal.
+          Rendered OUTSIDE the folder grid so its click surface is
+          isolated from the folder card's navigation button — the
+          previous inline confirm strip sat inside the card at
+          `absolute top-1.5` and left the rest of the card as a
+          click target, so mis-clicks navigated INTO the folder
+          instead of deleting. This modal has a full backdrop and a
+          large explicit "Delete folder" button, and shows the
+          file count so the user knows what's being cascaded. */}
+      {confirmDeleteId && (() => {
+        const target = folders.find((x) => x.id === confirmDeleteId);
+        if (!target) return null;
+        const fc = target.file_count || 0;
+        const sc = target.subfolder_count || 0;
+        return (
+          <div
+            className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
+            onClick={() => setConfirmDeleteId(null)}
+            data-testid="folder-delete-modal"
+          >
+            <div
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-10 h-10 rounded-full bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0">
+                  <X size={18} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-display font-bold text-slate-900 text-lg leading-snug">Delete folder?</h3>
+                  <p className="text-xs text-slate-500 mt-1">This cannot be undone.</p>
+                </div>
+              </div>
+              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3 mb-4">
+                <div className="text-sm font-semibold text-slate-900" data-testid="folder-delete-modal-name">
+                  {target.name}
+                </div>
+                <div className="text-xs text-slate-500 mt-1" data-testid="folder-delete-modal-counts">
+                  {fc === 0 && sc === 0
+                    ? 'Empty folder — no files or subfolders will be affected.'
+                    : (
+                      <>
+                        Will also delete
+                        {fc > 0 && <> <b className="text-slate-800">{fc} {fc === 1 ? 'file' : 'files'}</b></>}
+                        {fc > 0 && sc > 0 && <> and</>}
+                        {sc > 0 && <> <b className="text-slate-800">{sc} {sc === 1 ? 'subfolder' : 'subfolders'}</b></>}
+                        {' '}inside it.
+                      </>
+                    )}
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  data-testid="folder-delete-modal-cancel"
+                  className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >Cancel</button>
+                <button
+                  onClick={() => deleteFolder(target)}
+                  data-testid="folder-delete-modal-confirm"
+                  className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 inline-flex items-center gap-1.5"
+                >
+                  <X size={13} /> Delete folder
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
