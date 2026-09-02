@@ -2,7 +2,7 @@
 // Phase 1: identity, contact, Simpro sync, manual CRUD, soft delete.
 // Phase 2: Personal section (birth date + address), Availability scheduler,
 // Clients multi-select from Simpro customers, plus table chips (state + clients).
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
 import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Award, Calendar, CheckSquare, ChevronDown, ChevronRight, Download as DownloadLucide, FileText, HardHat, Loader2, MapPin, Plug, Smartphone, Square, UploadCloud, Users, X, ZoomIn } from 'lucide-react';
 import { toast } from 'sonner';
@@ -1854,6 +1854,58 @@ export default function Workers() {
     } catch (e) { toast.error(apiError(e)); }
   };
 
+  // v58.13.76 — Flex-fill-remaining-viewport for the workers table.
+  //
+  // v58.13.75 tried a static `max-h-[calc(100vh-260px)]` budget on the
+  // outer container, but the top-chrome stack on the real page turned
+  // out to be ~340-360 px (Emergent host bar + Paneltec TopBar +
+  // workspace row + breadcrumb + page title + toolbar + tabs + column
+  // headers). The 260 px budget was too small, so the container spilled
+  // below the viewport fold and the horizontal scrollbar landed
+  // off-screen — the exact regression this fix is undoing.
+  //
+  // Rather than pick a new magic number (which any future header/tab
+  // change would break again) we MEASURE the container's top offset in
+  // the viewport and bind `max-height` dynamically to
+  // `calc(100dvh - top - 24px)`. `100dvh` (dynamic viewport height)
+  // means the calc is correct on mobile Safari / Chrome where the URL
+  // bar hides/shows and shifts the visible area. The 24 px tail is a
+  // small bottom cushion so the horizontal scrollbar doesn't butt
+  // against any floating widget on the bottom of the screen.
+  //
+  // The measurement re-runs on:
+  //   1. mount (initial paint)
+  //   2. window resize (browser resize / device rotate)
+  //   3. any body-size change via ResizeObserver (Emergent host chrome
+  //      hides/shows, TopBar height changes on breakpoint crossings,
+  //      DismissibleHint appears/disappears, tab switch shrinks/grows
+  //      the space above the table, etc.)
+  const workersTableRef = useRef(null);
+  useLayoutEffect(() => {
+    const el = workersTableRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const node = workersTableRef.current;
+      if (!node) return;
+      const top = Math.max(0, node.getBoundingClientRect().top);
+      node.style.maxHeight = `calc(100dvh - ${top + 24}px)`;
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(document.documentElement);
+    window.addEventListener('resize', update);
+    // A short-lived delayed re-measure covers late-paint chrome (web
+    // fonts, images) that shifts the container's top after the first
+    // useLayoutEffect frame.
+    const t1 = setTimeout(update, 120);
+    const t2 = setTimeout(update, 500);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', update);
+      clearTimeout(t1); clearTimeout(t2);
+    };
+  }, [tab, loading, filtered.length]);
+
   return (
     <div className="max-w-7xl mx-auto" data-testid="workers-page">
       <PageHeader crumb="Settings / Workers" title="Workers"
@@ -1995,20 +2047,20 @@ export default function Workers() {
         // chips 200 status 120 action 190. Fits in ≥1280 viewports without
         // horizontal scroll; below that a scrollbar appears via overflow-x-auto.
         //
-        // v58.13.75 — Bounded scroll region so the horizontal scrollbar
-        // stays pinned to the bottom of the CONTAINER viewport, not the
-        // bottom of the page. Previously users on narrow screens had to
-        // scroll down through the full worker list to reach the H
-        // scrollbar. Now:
-        //   · `overflow-auto`   → both axes scroll INSIDE the container.
-        //   · `max-h-[calc(100vh-260px)]` → the container never grows
-        //     past the viewport, so the bottom scrollbar is always in
-        //     view. 260 px reserves room for the top nav + page header
-        //     + toolbar + bottom padding.
-        //   · Sort-header row gains `sticky top-0` so column headers
-        //     stay visible during vertical scroll inside the container.
+        // v58.13.75 → .76 — Bounded scroll region so the horizontal
+        // scrollbar stays pinned to the bottom of the CONTAINER
+        // viewport, not the bottom of the page. The .75 version used a
+        // static `max-h-[calc(100vh-260px)]` budget which was too small
+        // for the real chrome stack. v58.13.76 replaces the static
+        // budget with a measured `max-height` set from the
+        // `useLayoutEffect` above — it computes
+        // `calc(100dvh - <getBoundingClientRect().top> - 24px)` on
+        // mount, resize, and any body-size change (ResizeObserver).
+        // Sort-header row keeps `sticky top-0 z-10` so column headers
+        // stay visible during vertical scroll inside the container.
         <div
-          className="rounded-2xl border border-slate-200 bg-white overflow-auto max-h-[calc(100vh-260px)]"
+          ref={workersTableRef}
+          className="rounded-2xl border border-slate-200 bg-white overflow-auto"
           data-testid="workers-table"
         >
           <div className="min-w-[980px]">

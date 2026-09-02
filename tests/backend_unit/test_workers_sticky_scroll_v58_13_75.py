@@ -46,10 +46,21 @@ def test_workers_grid_container_has_overflow_auto():
 
 def test_workers_grid_container_has_bounded_height():
     body = _grid_block()
-    assert "max-h-[calc(100vh-260px)]" in body, (
-        "Workers grid container must have `max-h-[calc(100vh-260px)]` "
-        "so vertical scrolling happens INSIDE the container and the "
-        "horizontal scrollbar stays pinned to the visible viewport."
+    # v58.13.75 shipped a static `max-h-[calc(100vh-260px)]`. v58.13.76
+    # replaced that with a measured ref-driven max-height set from a
+    # useLayoutEffect (`100dvh - getBoundingClientRect().top - 24px`).
+    # Either mechanism satisfies the invariant: the container must be
+    # height-bounded so the H scrollbar sits inside the visible
+    # viewport.
+    static_budget = "max-h-[calc(100vh-260px)]" in body
+    measured_ref = ("ref={workersTableRef}" in body
+                    and "useLayoutEffect" in WORKERS_JSX
+                    and "100dvh" in WORKERS_JSX)
+    assert static_budget or measured_ref, (
+        "Workers grid container must be height-bounded — either via a "
+        "static `max-h-[calc(100vh-260px)]` (v58.13.75) or via the "
+        "measured ref + useLayoutEffect + 100dvh flex-fill (v58.13.76). "
+        "Neither found."
     )
 
 

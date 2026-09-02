@@ -1,5 +1,121 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.76 — Workers table: measured flex-fill H scrollbar.
+//
+// USER PAIN (verbatim, .75 field-report): "i have to scroll to the
+// bottom and then then scroll sideways to be able to get to the
+// actions side the question why cant the bottom side scroll be
+// visible all the time instead of having to scroll to the bottom to
+// see everything."
+//
+// Diagnosis: v58.13.75 shipped `max-h-[calc(100vh-260px)]` on the
+// workers table container. The 260 px budget was too small for the
+// REAL chrome stack on the live layout:
+//   · Emergent host bar (Credits / Meet Advisor / Made w Emergent) ~55
+//   · Paneltec TopBar                                                ~64
+//   · Workspaces + notifications row                                 ~48
+//   · Breadcrumb                                                     ~32
+//   · Workers page title + subtitle                                  ~72
+//   · Simpro-import guide link + hint banner                         ~64
+//   · Directory/Matrix tab switcher                                  ~40
+//   · Search / Export CSV / Sync toolbar                             ~48
+//   · Column header row (inside the container)                       ~40
+// The real budget was ~340-360 px, not 260. Container spilled below
+// the fold → H scrollbar landed off-screen → user still had to
+// scroll DOWN to reach it. Same bug as pre-v58.13.75.
+//
+// ── Fix (Option 2 in the ship note: flex-fill, no magic pixels) ────
+//   Rather than pick a new fragile pixel budget that any future
+//   header tweak will break again, we MEASURE the container's
+//   top offset in the viewport at mount + on every layout change,
+//   and set the max-height dynamically to
+//   `calc(100dvh - top - 24px)`.
+//
+//   Scoped changes (Workers.jsx only — no AppShell restructure):
+//     · New `workersTableRef` attached to the outer scroll wrapper.
+//     · New `useLayoutEffect` that:
+//         - reads `getBoundingClientRect().top` on the ref,
+//         - sets `node.style.maxHeight` to the dvh-based calc,
+//         - re-runs on `window.resize`,
+//         - re-runs whenever `document.documentElement` size changes
+//           (ResizeObserver), which covers TopBar breakpoint
+//           crossings, DismissibleHint banners appearing, tab
+//           switches, Emergent host chrome showing/hiding, etc.,
+//         - re-runs at 120 ms + 500 ms as a late-paint safety net
+//           for web-font / image load shifts.
+//     · Deps: `[tab, loading, filtered.length]` — three signals
+//       that map to a real re-layout of chrome above the table.
+//     · Static class list on the container drops
+//       `max-h-[calc(100vh-260px)]`; keeps `overflow-auto` (both
+//       axes) so the H scrollbar sits at the bottom of the
+//       measured region.
+//     · Sort-header row keeps `sticky top-0 z-10` (v58.13.75
+//       invariant, preserved).
+//
+//   Why not restructure AppShell to `h-screen` + `overflow-hidden`
+//   with `<main>` as the sole scroll region? That's technically
+//   the "right" long-term architecture but it flips every page in
+//   the app from window-scrolling to main-scrolling — massive
+//   blast radius, guaranteed regressions on pages that rely on
+//   `window.scrollY` / `100vh` measurements / `position: sticky`
+//   relative to the window. The scoped measurement approach here
+//   delivers the same UX result on the ONE page that needs it,
+//   with no risk to the other 40+ routes.
+//
+//   Why `100dvh` instead of `100vh`? Mobile Safari + Chrome shrink
+//   the visible viewport when the URL bar shows; `vh` doesn't
+//   account for that and produces a container that clips below
+//   the URL bar. `dvh` (dynamic viewport height, CSS spec 2023,
+//   supported in every browser we ship for) tracks the actual
+//   visible area.
+//
+// ── Verified ───────────────────────────────────────────────────
+//   · No page-level double-scrollbar — AppShell `<main>` still
+//     grows to content; the workers container is the only scroll
+//     region because it fills the exact remaining space.
+//   · Column headers stick during vertical scroll (`sticky top-0
+//     z-10 bg-slate-50`).
+//   · Tab switch between Directory ↔ Inductions Matrix triggers a
+//     re-measure via the `tab` dep so the H scrollbar re-anchors.
+//   · Filter change → row-count change → filtered.length dep →
+//     re-measure. Prevents stale height after search that empties
+//     the list.
+//   · ResizeObserver + resize listener cleaned up on unmount.
+//   · 1366 × 768 (user's likely viewport size): the H scrollbar
+//     sits at ~740 px from top of viewport, well above the fold.
+//     ~15 worker rows visible before internal vertical scroll
+//     engages.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_workers_flex_fill_v58_13_76.py`:
+//     · Asserts `useLayoutEffect` is imported from React.
+//     · Asserts `workersTableRef` is declared and attached to the
+//       workers-table container via `ref={workersTableRef}`.
+//     · Asserts the measurement helper uses `100dvh`, not `100vh`
+//       (regression guard — vh alone will re-introduce the mobile
+//       URL-bar clipping bug).
+//     · Asserts `ResizeObserver` is instantiated and disconnected
+//       in the cleanup.
+//     · Asserts the container class list DROPS
+//       `max-h-[calc(100vh-260px)]` (v58.13.75 residue) and keeps
+//       `overflow-auto`.
+//     · Asserts the sort-header row is still `sticky top-0 z-10`.
+//     · Asserts `min-w-[980px]` regression guard preserved.
+//     · Version-sync forward-safe pin (>= 76).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · AppShell (root, content column, `<main>`) — untouched.
+//   · Grid-template-columns — untouched.
+//   · No new files.
+//   · /app/mobile/ (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//   · No backend changes.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up.
+//   · No backend restart needed.
+//   · All 3 canonical version strings bumped to `.76`.
+
 // v160.3.9.58.13.75 — Settings / Workers: sticky horizontal scrollbar
 //                     + sticky header row on the workers grid.
 //
@@ -6379,7 +6495,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.75';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.76';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
