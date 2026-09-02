@@ -517,8 +517,27 @@ function CertificationsPanel({ workerId, canEdit }) {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  // v58.13.80 — id of the cert row currently being hovered with a
+  // dragged file. Drives per-row highlight + drop routing.
+  const [rowDragOverId, setRowDragOverId] = useState(null);
+  // Brief "just-attached" pulse (id → mount time). Cleared automatically.
+  const [rowFlashId, setRowFlashId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const fileInputRef = useRef(null);
+
+  // v58.13.80 — Only these MIME/extension combinations are accepted by
+  // the certification upload endpoints. Mirrors the backend
+  // `_safe_ext` whitelist for the image/PDF subset (docx/xls stay in
+  // the drop-zone flow only, since the user's ask is "photos/PDFs").
+  const _ACCEPT_RE = /\.(pdf|jpe?g|png)$/i;
+  const _ACCEPT_MIME = new Set([
+    'application/pdf', 'image/png', 'image/jpeg',
+  ]);
+  const _isAcceptedForRow = (file) => {
+    if (!file) return false;
+    if (_ACCEPT_MIME.has(String(file.type || '').toLowerCase())) return true;
+    return _ACCEPT_RE.test(file.name || '');
+  };
 
   const load = async () => {
     setLoading(true);
@@ -563,6 +582,44 @@ function CertificationsPanel({ workerId, canEdit }) {
     setDragOver(false);
     if (!canEdit) return;
     if (e.dataTransfer.files?.length) upload(e.dataTransfer.files);
+  };
+
+  // v58.13.80 — Drop a file directly on a specific cert row.
+  // Uses the v58.13.79 attach endpoint which patches the existing
+  // cert (or replaces its file if it already has one). Enforces
+  // single-file, PDF/JPG/PNG-only on the client so the user gets an
+  // immediate rejection toast rather than a round-trip 400.
+  const attachToRow = async (cert, fileList) => {
+    if (!canEdit || !cert) return;
+    if (!fileList || fileList.length === 0) return;
+    if (fileList.length > 1) {
+      toast.error('Only one file per certification row. Drop them one at a time.');
+      return;
+    }
+    const file = fileList[0];
+    if (!_isAcceptedForRow(file)) {
+      toast.error('Only PDF, JPG or PNG files can be attached to a certification.');
+      return;
+    }
+    const hadFile = Boolean(cert.doc_file_id);
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      await api.post(
+        `/workers/${workerId}/certifications/${cert.id}/upload`,
+        fd,
+      );
+      toast.success(
+        hadFile
+          ? `Replaced file on "${cert.name}"`
+          : `Attached to "${cert.name}"`
+      );
+      setRowFlashId(cert.id);
+      setTimeout(() => setRowFlashId((v) => (v === cert.id ? null : v)), 800);
+      await load();
+    } catch (err) { toast.error(apiError(err)); }
+    finally { setUploading(false); }
   };
 
   const addManual = async () => {
@@ -638,9 +695,11 @@ function CertificationsPanel({ workerId, canEdit }) {
             >
               <UploadCloud size={22} className="mx-auto text-[#1e4a8c] mb-1.5" />
               <div className="text-sm font-medium text-[#1e4a8c]">
-                {uploading ? 'Uploading…' : 'Drop certification files here (PDF, JPG, PNG) or click to browse'}
+                {uploading ? 'Uploading…' : 'Drop a new certification here (creates a new row)'}
               </div>
-              <div className="text-[11px] text-slate-500 mt-0.5">Up to 50MB · auto-files to Document Library &quot;Licences &amp; Tickets&quot;</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                For certifications not already in the list. Use the paperclip — or drag onto a row — to attach a file to an existing certification. Up to 50MB.
+              </div>
               <input
                 ref={fileInputRef} type="file" multiple
                 accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
@@ -687,7 +746,38 @@ function CertificationsPanel({ workerId, canEdit }) {
                           onSaved={() => { setEditingId(null); load(); }}
                           onCancel={() => setEditingId(null)} />
                       : (
-                        <tr key={c.id} className="border-t border-slate-100" data-testid={`cert-row-${c.id}`}>
+                        <tr key={c.id}
+                          // v58.13.80 — Row-level drag-and-drop attach.
+                          // Every cert row is a drop target: empty rows
+                          // attach the file, filled rows replace theirs.
+                          // Row-level highlight via `rowDragOverId`. A
+                          // brief blue-100 flash on `rowFlashId` gives
+                          // the user positive confirmation before the
+                          // list re-renders.
+                          onDragOver={canEdit ? (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+                            if (rowDragOverId !== c.id) setRowDragOverId(c.id);
+                          } : undefined}
+                          onDragLeave={canEdit ? (e) => {
+                            // Only clear when leaving the row entirely
+                            // (dragleave fires on child crossings too).
+                            if (e.currentTarget.contains(e.relatedTarget)) return;
+                            setRowDragOverId((v) => (v === c.id ? null : v));
+                          } : undefined}
+                          onDrop={canEdit ? (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setRowDragOverId(null);
+                            attachToRow(c, e.dataTransfer?.files);
+                          } : undefined}
+                          className={`border-t border-slate-100 transition-colors ${
+                            rowDragOverId === c.id ? 'bg-blue-50 outline outline-2 outline-blue-300 cursor-copy' :
+                            rowFlashId === c.id ? 'bg-blue-100' :
+                            ''
+                          }`}
+                          data-testid={`cert-row-${c.id}`}>
                           <td className="px-3 py-2 font-semibold text-slate-900 break-words max-w-[220px]">{c.name}</td>
                           <td className="px-3 py-2 text-slate-600 hidden md:table-cell break-words max-w-[180px]">{c.issuer || '—'}</td>
                           <td className="px-3 py-2 text-slate-500 hidden lg:table-cell whitespace-nowrap">{shortDate(c.issue_date)}</td>

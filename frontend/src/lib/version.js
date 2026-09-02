@@ -1,5 +1,137 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.80 — P2: Per-row drag-and-drop attach on Worker
+//                     Certifications ("drop a image to a specific
+//                      named position").
+//
+// USER PAIN (verbatim, with screenshot):
+//   "we need to be able to drop a image to a specific named position"
+//
+// Context: v58.13.79 shipped the Paperclip attach-to-existing button
+// per row (click → picker → attach to that cert). This ship gives
+// users the drag-and-drop equivalent — drag a file from Explorer /
+// Finder directly onto "Fork Lift" and have it land on the Fork Lift
+// row, not the drop-zone that creates a new row.
+//
+// ── Frontend fix (`frontend/src/pages/Workers.jsx`, cert section) ──
+//   New state slots on the Certifications section:
+//     · `rowDragOverId` — id of the cert row currently being hovered
+//       with a dragged file. Drives per-row highlight + drop routing.
+//     · `rowFlashId` — id of the row currently in its "just-attached"
+//       800 ms `bg-blue-100` pulse. Cleared automatically.
+//
+//   NEW `attachToRow(cert, fileList)` — POSTs to the v58.13.79
+//   attach endpoint
+//     `POST /workers/{workerId}/certifications/{cert.id}/upload`
+//   The helper is shared between:
+//     · The drag-and-drop `onDrop` on each row (this ship).
+//     · Available for future per-row paperclip drop-menus without
+//       needing another endpoint.
+//   Client-side guards run BEFORE the fetch so the user gets an
+//   immediate toast instead of a round-trip 400:
+//     · Multi-file rejection — `Only one file per certification
+//       row. Drop them one at a time.`
+//     · Type mismatch (docx, xlsx, txt, etc.) — `Only PDF, JPG or
+//       PNG files can be attached to a certification.`
+//   Toast copy differs based on whether the cert already had a
+//   file:
+//     · First attach     → `Attached to "First Aid"`
+//     · Replacement      → `Replaced file on "First Aid"`
+//   The v58.13.79 endpoint already soft-deletes the previous
+//   doc_files row on replace, so no orphan storage.
+//
+//   Every cert row `<tr>` now carries (only when `canEdit`):
+//     · `onDragOver` — `preventDefault + stopPropagation`, sets
+//       `dataTransfer.dropEffect = 'copy'` (correct OS cursor),
+//       and updates `rowDragOverId` iff it changed (avoids
+//       needless re-renders during native dragover event
+//       spam every 16 ms).
+//     · `onDragLeave` — clears `rowDragOverId` ONLY when the
+//       drag actually leaves the row (not on child-crossing
+//       false-positives — checks `e.currentTarget.contains
+//       (e.relatedTarget)`).
+//     · `onDrop` — `preventDefault + stopPropagation` (so the
+//       drop doesn't bubble to the top drop-zone and create a
+//       new row too), clears `rowDragOverId`, calls
+//       `attachToRow(c, e.dataTransfer?.files)`.
+//   Visual states via conditional className on the `<tr>`:
+//     · rowDragOverId === c.id →
+//         `bg-blue-50 outline outline-2 outline-blue-300 cursor-copy`
+//     · rowFlashId === c.id (800 ms) → `bg-blue-100`
+//     · else → no extra classes
+//   Both wrapped by `transition-colors` for smooth in/out.
+//
+//   Client accept whitelist (mirrors the endpoint's server-side
+//   `_safe_ext` for the image/PDF subset — this ship deliberately
+//   omits docx/xlsx from the drop targets because the user's ask
+//   was specifically "images/photos of certs"):
+//     · MIMEs: application/pdf, image/png, image/jpeg
+//     · Extensions: .pdf, .jpg, .jpeg, .png (case-insensitive)
+//   Fall-through to extension check when MIME is empty
+//   (Firefox on Linux occasionally emits `""` MIME on drag).
+//
+//   The Paperclip button per row is UNCHANGED — accessibility
+//   for users without a mouse or with motor impairments.
+//
+// ── Top drop-zone rework (Option A per spec) ───────────────────
+//   Kept, but re-labelled to reflect its new semantics
+//   (create-new-row):
+//     · Label: `Drop a new certification here (creates a new row)`
+//     · Sub-label: `For certifications not already in the list.
+//                   Use the paperclip — or drag onto a row — to
+//                   attach a file to an existing certification.
+//                   Up to 50MB.`
+//   Behaviour unchanged — still POSTs to the create-new endpoint
+//   `POST /workers/{id}/certifications/upload` which mints a
+//   fresh cert row from the filename stem. Because row-level
+//   `onDrop` calls `stopPropagation`, drops on a row NEVER
+//   bubble up to trigger the top drop-zone as well.
+//
+// ── Wire proof ─────────────────────────────────────────────────
+//   The endpoint this feature uses is v58.13.79's
+//     `POST /workers/{id}/certifications/{cert_id}/upload`
+//   which was proven end-to-end in the previous ship's curl:
+//     · Attach to First Aid            → 200, doc_file_id set
+//     · Re-attach First Aid            → 200, previous file soft-
+//                                        deleted, new file_id
+//     · Attach to non-existent cert    → 404
+//     · Persistence (GET after attach) → doc_file_id survives
+//   No new backend endpoints were added or changed in this ship.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_cert_row_drag_drop_v58_13_80.py`:
+//     · rowDragOverId + rowFlashId state slots declared.
+//     · attachToRow helper hits the v58.13.79 endpoint.
+//     · Multi-file rejection with the correct user-visible toast.
+//     · Type-mismatch rejection with the correct toast.
+//     · Client accept whitelist covers PDF + PNG + JPEG MIMEs plus
+//       a `.pdf|.jpe?g|.png` regex extension fallback.
+//     · Every cert row carries onDragOver / onDragLeave / onDrop
+//       gated on `canEdit`, sets dropEffect='copy', and dispatches
+//       to attachToRow(c, e.dataTransfer?.files).
+//     · Highlight classes present for both dragOver + flash states.
+//     · Replace-vs-first-attach toast copy pinned.
+//     · Top drop-zone re-labelled to `Drop a new certification here
+//       (creates a new row)`; old `auto-files to Document Library`
+//       copy is gone.
+//     · Paperclip button preserved for a11y.
+//     · Version-sync forward-safe pin (>= 80).
+//
+//   Full pytest_backend suite: 387 passed (was 374 pre-ship;
+//   +13 new tests, zero regressions).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Backend — no new / edited endpoints. Reuses v58.13.79's
+//     attach handler.
+//   · Drop-zone's create-new-row semantics.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//   · Certifications table columns / sort / status pills.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.80`.
+
 // v160.3.9.58.13.79 — P1: Attach a file to an EXISTING certification
 //                     ("image disappeared and not connected to any
 //                      particular type").
@@ -6908,7 +7040,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.79';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.80';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
