@@ -107,6 +107,8 @@ from pydantic import BaseModel
 from auth import get_current_user, require_roles  # noqa: E402
 from permissions import require_permission  # v160.3.9.27 — guard migration
 
+from admin_safe_wrapper import safe_admin_endpoint
+
 router = APIRouter(prefix="/admin", tags=["admin-comms-safe-mode"])
 
 
@@ -135,6 +137,7 @@ class SafeModeUpdate(BaseModel):
 
 
 @router.patch("/comms-safe-mode")
+@safe_admin_endpoint
 async def patch_safe_mode(
     body: SafeModeUpdate,
     # v58.13.90 — Was `require_permission("notifications", "edit")`,
@@ -250,6 +253,7 @@ async def ensure_stephen_can_toggle() -> dict:
 # `admin_purge_test_data`). Audit log line stamped on every purge
 # so a future auditor can retrace who cleared the queue.
 @router.delete("/comms-outbox-blocked")
+@safe_admin_endpoint
 async def clear_blocked(
     channel: Optional[str] = Query(None, description="email | sms"),
     user: dict = Depends(get_current_user),

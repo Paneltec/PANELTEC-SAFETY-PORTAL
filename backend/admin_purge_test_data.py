@@ -32,6 +32,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from db import db
 from auth import get_current_user
+from admin_safe_wrapper import safe_admin_endpoint
 
 logger = logging.getLogger("paneltec.admin.purge")
 
@@ -84,6 +85,7 @@ async def _build_query(col: str) -> Dict[str, Any] | None:
 
 
 @router.post("/purge-test-data")
+@safe_admin_endpoint
 async def purge_test_data(
     dry_run: int = Query(1, ge=0, le=1),
     user: dict = Depends(get_current_user),

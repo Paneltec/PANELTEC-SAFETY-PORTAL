@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from auth import require_roles
+from admin_safe_wrapper import safe_admin_endpoint
 from db import db
 from models import new_id, now_iso
 from permissions import ACTIONS, PERMISSIONS_SCHEMA, RESOURCES, require_permission, _bust_role_cache
@@ -529,6 +530,7 @@ class RolePatch(BaseModel):
 
 
 @router.post("", status_code=201)
+@safe_admin_endpoint
 async def create_role(
     payload: RoleCreate,
     user: dict = Depends(require_permission("users", "edit")),
@@ -574,6 +576,7 @@ async def create_role(
 
 
 @router.patch("/{role_id}")
+@safe_admin_endpoint
 async def patch_role(
     role_id: str,
     payload: RolePatch,
@@ -636,6 +639,7 @@ async def patch_role(
 
 
 @router.delete("/{role_id}")
+@safe_admin_endpoint
 async def delete_role(
     role_id: str,
     user: dict = Depends(require_permission("users", "edit")),
@@ -763,6 +767,7 @@ async def create_role_from_position(
 
 
 @router.post("/sync-from-simpro-positions")
+@safe_admin_endpoint
 async def sync_roles_from_simpro_positions(
     user: dict = Depends(require_permission("users", "edit")),
 ):
@@ -923,6 +928,7 @@ async def list_available_forms_for_role(
 
 
 @router.post("/{role_id}/forms", status_code=201)
+@safe_admin_endpoint
 async def assign_form_to_role(
     role_id: str,
     payload: RoleFormAssign,
@@ -977,6 +983,7 @@ async def assign_form_to_role(
 
 
 @router.patch("/{role_id}/forms/{form_id}")
+@safe_admin_endpoint
 async def patch_role_form(
     role_id: str,
     form_id: str,
@@ -1015,6 +1022,7 @@ async def patch_role_form(
 
 
 @router.delete("/{role_id}/forms/{form_id}")
+@safe_admin_endpoint
 async def unassign_form_from_role(
     role_id: str,
     form_id: str,

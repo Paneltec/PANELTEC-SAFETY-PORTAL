@@ -8165,7 +8165,139 @@
 //   · Ship note: prod is on .89 during Path-3 re-publish; .90 lands
 //     on preview first. Second re-publish once .90 is verified.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.90';
+// v160.3.9.58.13.91 — P0 hotfix: /api/admin/* mutation endpoints
+// hardened against CF 520 (origin sent invalid response).
+//
+// USER PAIN VERBATIM (with screenshot of a prod Cloudflare 520 page):
+//   "just court it Comms Safe Mode Outbound email and SMS kill
+//    switch... The origin web server sent a response that Cloudflare
+//    could not parse. This may indicate the origin returned an empty
+//    response, malformed HTTP headers, or an otherwise invalid
+//    response."
+// URL: https://whs-compliance.emergent.host/app/settings/comms-safe-mode
+// Action: clicked "Turn Safe Mode OFF" on prod (running v58.13.89).
+//
+// Cloudflare returns 520 when the origin closes a connection with
+// malformed or partial HTTP headers, which happens when a Python
+// exception escapes past FastAPI's default handler (e.g. mid-stream
+// after headers are sent, or in a middleware layer above FastAPI's
+// exception boundary). This is the same failure mode we fixed in
+// v58.13.78 for `/api/pre-starts` via a per-endpoint try/except
+// wrapper. .91 generalises the pattern: every mutation endpoint
+// under `/api/admin/*` (23 endpoints across 7 modules) now sits
+// behind a single `@safe_admin_endpoint` decorator that guarantees
+// a well-formed JSON response even under an unexpected crash.
+//
+// ── NEW: `backend/admin_safe_wrapper.py` ──
+// Central decorator with three key properties:
+//   1. `HTTPException` passes through untouched so FastAPI still
+//      renders 4xx / 423 / etc. correctly (the frontend already
+//      branches on those statuses).
+//   2. Any other `Exception` becomes:
+//        `JSONResponse(status_code=500,
+//                      content={"detail": "internal_error",
+//                               "error_ref": "<uuid12>",
+//                               "hint": "…contact support with
+//                                        error_ref=<uuid12>."})`
+//      and a structured server log line with:
+//        endpoint name · request path · actor user id (from
+//        `send_context.get_send_context()`) · error_ref · exception
+//        class · exception message · full stack trace.
+//   3. Signature preservation. FastAPI's `get_typed_signature()`
+//      resolves string annotations (produced by every wrapped file's
+//      `from __future__ import annotations` pragma, per PEP 563)
+//      via `eval(annotation, callable.__globals__)`. A naive
+//      `@functools.wraps` wrapper would leave `wrapper.__globals__`
+//      pointing at the wrapper module — so `body: SafeModeUpdate`
+//      would fail to resolve and FastAPI would fall back to Query,
+//      422'ing every request. Same class of bug as the v58.13.88
+//      slowapi + PEP 563 collision that broke `/api/openapi.json`.
+//      Fix: `types.FunctionType(_wrapped_body.__code__,
+//      merged_globals, ...)` where `merged_globals` starts from the
+//      wrapped module's globals (so `SafeModeUpdate` /
+//      `SessionTimeoutUpdate` / etc. resolve) and layers on the
+//      wrapper's runtime dependencies (`uuid`, `traceback`,
+//      `Request`, `HTTPException`, `JSONResponse`, `log`,
+//      `_actor_id_best_effort`).
+//
+// ── ROOT CAUSE OF THE PROD CF 520 ──
+// Not yet directly proven from prod logs (prod log tail wasn't
+// available during this ship). The four most likely candidates
+// listed in the .91 ship note were:
+//   1. Unhandled exception in the toggle endpoint body.
+//   2. ContextVar side-effect crashing a hidden email/audit path.
+//   3. DB write failure (`db.org_settings.update_one` hang/throw).
+//   4. Response serialisation of a non-JSONable value.
+// All four now surface as clean JSON `500 {detail: "internal_error",
+// error_ref: <uuid>}` — with the actual crash captured in the
+// server log under that `error_ref`. On the next prod 520, the
+// user reports `error_ref=<uuid>` and we grep the log for the exact
+// stack. Belt-and-braces for every /api/admin/* mutation, not just
+// `patch_safe_mode`.
+//
+// ── ENDPOINTS WRAPPED (23 total, 7 files) ──
+//   backend/admin_active_sessions.py (3):
+//     · DELETE /api/admin/active-sessions/{jti}
+//     · POST   /api/admin/active-sessions/bulk-revoke
+//     · POST   /api/admin/active-sessions/purge-inactive
+//   backend/admin_purge_test_data.py (1):
+//     · POST   /api/admin/purge-test-data
+//   backend/comms_safe_mode.py (2):
+//     · PATCH  /api/admin/comms-safe-mode                  ← the P0
+//     · DELETE /api/admin/comms-outbox-blocked
+//   backend/roles_catalogue.py (7):
+//     · POST   /api/admin/roles
+//     · PATCH  /api/admin/roles/{role_id}
+//     · DELETE /api/admin/roles/{role_id}
+//     · POST   /api/admin/roles/sync-from-simpro-positions
+//     · POST   /api/admin/roles/{role_id}/forms
+//     · PATCH  /api/admin/roles/{role_id}/forms/{form_id}
+//     · DELETE /api/admin/roles/{role_id}/forms/{form_id}
+//   backend/session_timeout.py (3):
+//     · PUT    /api/admin/settings/session-timeout
+//     · POST   /api/admin/settings/force-logout-all
+//     · POST   /api/admin/settings/force-refresh-all
+//   backend/simpro_import_users.py (3):
+//     · POST   /api/admin/simpro/import-employees
+//     · POST   /api/admin/simpro/import-employees/selective
+//     · POST   /api/admin/simpro/sync-linked
+//   backend/swms_extras.py (4):
+//     · POST   /api/admin/swms/backfill-version-chain
+//     · POST   /api/{swms}/import-docx (admin-only via require role)
+//     · PUT    /api/{swms}/assignments/bulk
+//     · PUT    /api/{swms}/assignments/{swms_id}
+//   Total: `3 + 1 + 2 + 7 + 3 + 3 + 4 = 23` @safe_admin_endpoint
+//   decorators, verified by source-scan pytest.
+//
+// ── LIVE REPRODUCTION PROOFS ──
+//   1. In-process crash: `RuntimeError` inside `patch_safe_mode`
+//      (via monkeypatched `db.org_settings.update_one`) → returns
+//      `500 {"detail": "internal_error", "error_ref":
+//      "93b59d06dd0f", "hint": "…"}` — well-formed JSON, no
+//      connection close, matching structured log line emitted.
+//   2. Malformed JSON body → clean `422 {detail: [...]}`.
+//   3. Env-locked `mode=on` → clean `423` with the operator
+//      message. HTTPException pass-through path proven.
+//   4. `HTTPException` correctly bubbles when raised inside the
+//      wrapper — the frontend's per-status branches (403, 423, etc.)
+//      continue to work.
+//
+// ── SANITY: preview `.env` `COMMS_SAFE_MODE=on` — untouched. Only ──
+// ── the local `COMMS_SAFE_MODE=off` env var was set in one       ──
+// ── subprocess for the in-process crash proof (dies with the     ──
+// ── subprocess; the running backend still has `COMMS_SAFE_MODE=  ──
+// ── on` and hits the 423 env-lock as expected).                  ──
+//
+// ── SOP ──
+//   · Backend restart needed (7 modules changed + new admin_safe_
+//     wrapper module).
+//   · Frontend hot-reload: no JSX changes in .91.
+//   · All 3 canonical version strings bumped to `.91`.
+//   · Prod is on .89 and pending your next Path-3 re-publish.
+//     .91 fold-in doesn't change the code path prod-side until you
+//     publish; the wrapper covers the crash class you hit.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.91';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

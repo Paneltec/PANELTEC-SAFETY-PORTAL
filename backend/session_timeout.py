@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from auth import get_current_user, require_roles
+from admin_safe_wrapper import safe_admin_endpoint
 from db import db
 
 router = APIRouter(prefix="/settings", tags=["session-timeout"])
@@ -124,6 +125,7 @@ async def get_session_timeout(user: dict = Depends(require_roles("admin"))):
 
 
 @admin_router.put("/session-timeout")
+@safe_admin_endpoint
 async def put_session_timeout(body: SessionTimeoutIn, user: dict = Depends(require_roles("admin"))):
     patch = {k: v for k, v in body.model_dump(exclude_none=True).items()}
     if not patch:
@@ -157,6 +159,7 @@ async def put_session_timeout(body: SessionTimeoutIn, user: dict = Depends(requi
 
 
 @admin_router.post("/force-logout-all")
+@safe_admin_endpoint
 async def force_logout_all(user: dict = Depends(require_roles("admin"))):
     """Bump every org user's `token_version` (immediately revokes every
     outstanding JWT including the caller's) and wipe `active_sessions`."""
@@ -184,6 +187,7 @@ async def force_logout_all(user: dict = Depends(require_roles("admin"))):
 # critical UI fix that needs to land instantly but you don't want to
 # sign anyone out.
 @admin_router.post("/force-refresh-all")
+@safe_admin_endpoint
 async def force_refresh_all(user: dict = Depends(require_roles("admin"))):
     now = _now_iso()
     await db.org_settings.update_one(

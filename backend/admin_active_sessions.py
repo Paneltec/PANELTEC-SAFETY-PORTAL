@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from auth import get_current_user
 from db import db
 from models import now_iso
+from admin_safe_wrapper import safe_admin_endpoint
 
 router = APIRouter(prefix="/admin", tags=["admin-active-sessions"])
 
@@ -84,6 +85,7 @@ async def list_active_sessions(user: dict = Depends(get_current_user)):
 
 
 @router.delete("/active-sessions/{jti}", status_code=204)
+@safe_admin_endpoint
 async def revoke_session(jti: str, request: Request,
                           user: dict = Depends(get_current_user)):
     """Revoke ONE session. Forces that token to fail on its next request via
@@ -162,6 +164,7 @@ def _caller_jti_from_request(request: Request) -> str | None:
 
 
 @router.post("/active-sessions/bulk-revoke")
+@safe_admin_endpoint
 async def bulk_revoke_sessions(
     body: BulkRevokeIn,
     request: Request,
@@ -336,6 +339,7 @@ async def preview_purge_inactive(
 
 
 @router.post("/active-sessions/purge-inactive")
+@safe_admin_endpoint
 async def purge_inactive_sessions(
     body: PurgeInactiveIn,
     user: dict = Depends(get_current_user),

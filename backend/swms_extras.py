@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from db import db
 from auth import get_current_user
+from admin_safe_wrapper import safe_admin_endpoint
 
 
 log = logging.getLogger("paneltec.swms.extras")
@@ -160,6 +161,7 @@ class ImportDocxIn(BaseModel):
 
 
 @router.post("/import-docx")
+@safe_admin_endpoint
 async def import_swms_docx(body: ImportDocxIn, user: dict = Depends(get_current_user)):
     """Fetch a .docx, parse via python-docx, return a best-effort structured
     payload for the admin to review. **Does NOT auto-save** — the front-end
@@ -327,6 +329,7 @@ admin_router = APIRouter(prefix="/admin/swms", tags=["admin-swms"])
 
 
 @admin_router.post("/backfill-version-chain")
+@safe_admin_endpoint
 async def backfill_version_chain(user: dict = Depends(get_current_user)):
     """One-shot: link duplicates with the same `title` in import_date order.
     Idempotent — rows already in a chain are skipped."""
@@ -398,6 +401,7 @@ def _require_swms_edit(user: dict):
 
 
 @router.put("/assignments/bulk")
+@safe_admin_endpoint
 async def put_assignment_bulk(body: BulkAssignmentsIn,
                               user: dict = Depends(get_current_user)):
     _require_swms_edit(user)
@@ -414,6 +418,7 @@ async def put_assignment_bulk(body: BulkAssignmentsIn,
 
 
 @router.put("/assignments/{swms_id}")
+@safe_admin_endpoint
 async def put_assignment(swms_id: str, body: AssignmentsIn,
                          user: dict = Depends(get_current_user)):
     _require_swms_edit(user)

@@ -38,6 +38,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from auth import require_roles
+from admin_safe_wrapper import safe_admin_endpoint
 from db import db
 from integrations_simpro_workers import _fetch_simpro, _lower, _split_name
 # v160.3.9.42.3 — SEC-003 SWEEP GAP CLOSED. Every call site below used to
@@ -93,6 +94,7 @@ def _pick_name(detail: dict) -> tuple[str, str]:
 
 
 @router.post("/import-employees")
+@safe_admin_endpoint
 async def import_employees(
     body: ImportEmployeesIn,
     user: dict = Depends(require_roles("admin")),
@@ -295,6 +297,7 @@ async def list_available_simpro_employees(
 
 
 @router.post("/import-employees/selective")
+@safe_admin_endpoint
 async def import_employees_selective(
     body: SelectiveImportIn,
     user: dict = Depends(require_permission("users", "edit")),
@@ -446,6 +449,7 @@ async def import_employees_selective(
 
 
 @router.post("/sync-linked")
+@safe_admin_endpoint
 async def sync_linked_users(
     user: dict = Depends(require_permission("users", "edit")),
 ):
