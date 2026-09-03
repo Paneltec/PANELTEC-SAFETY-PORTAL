@@ -243,6 +243,19 @@ async def get_current_user(
     if jti:
         user["jti"] = jti
 
+    # v58.13.87 — Populate the send-context ContextVar so outbound
+    # comms boundaries (`graph_send_mail`, `safe_send_sms`,
+    # `tm_send`) can refuse to fire when no live HTTP request is on
+    # the stack. See `backend/send_context.py`.
+    try:
+        from send_context import set_send_context
+        set_send_context(user)
+    except Exception:  # noqa: BLE001
+        # Never let a context write fail the request — worst case
+        # the send boundary refuses due to missing context, which
+        # is the safer failure mode.
+        pass
+
     # Phase 3.16 — session idle enforcement. Imported lazily to avoid a
     # circular import (session_timeout imports auth.get_current_user).
     # Hard-fails open if anything weird happens (e.g. db down): the goal

@@ -69,6 +69,15 @@ async def safe_send_sms(
     triggered_by_endpoint: str = "",
     actor_user_id: Optional[str] = None,
 ) -> dict:
+    # v58.13.87 — Belt-and-braces request-context refusal. Runs
+    # BEFORE the env gate and Safe Mode so any startup / worker /
+    # cron / background caller is denied hard.
+    from send_context import refuse_if_no_request_context
+    _refusal = refuse_if_no_request_context(
+        provider="textmagic_safe_send_sms", to=mobiles, subject="",
+    )
+    if _refusal is not None:
+        return _refusal
     # v58.13.85 — IS_PROD env gate FIRST. On preview / dev / test,
     # system-originated SMS (cron reminders, form-assignment notifier,
     # pytest fixtures) are silent no-ops — no comms_outbox_blocked

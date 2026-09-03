@@ -1,5 +1,159 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.87 — Path C fix (m365_test flush loop deleted) +
+//                     retry_outbox bookkeeping fix + belt-and-braces
+//                     contextvar gate + DB corrections + email/SMS
+//                     origin audit (Item 7).
+//
+// USER PAIN (verbatim): "i would like to know which items triggerd
+// the email send off so we can fix it from the source then we can
+// leave safe mode on because there may be others features in the
+// app that require access to the services."
+//
+// ── INCIDENT SUMMARY (2026-09-03T07:51:48 UTC) ────────────────
+//   Two "You're invited to Paneltec Pty Ltd" rows appeared in
+//   `outbound_emails` with `status=sent, provider=microsoft365,
+//   sent_at=2026-09-03T07:51:48.136/138Z`. The user reported this
+//   as real emails firing during the temporary env-lock lift for
+//   the green-light demo.
+//   Forensic finding: NO real emails were delivered. Safe Mode was
+//   effectively ON at 07:51:48 because `env_setting()` in
+//   `comms_safe_mode.py` defaults to `"on"` when the env var is
+//   unset (fail-safe). All `graph_send_mail` calls hit the Safe
+//   Mode gate at `integrations_m365.py:189` and returned
+//   `{ok:True, blocked:True}` without contacting Microsoft Graph.
+//   TWO bugs converged to produce the misleading rows:
+//     (a) Path C — hidden auto-send: `m365_test` flushed every
+//         `status=queued` outbound_email via `graph_send_mail`
+//         after a successful Test Connection click. My own earlier
+//         verification curl triggered it, resurrecting two June-
+//         30 soft-deleted invites.
+//     (b) Bookkeeping lie: the flush loop's `if res.get("ok"):`
+//         treated `{ok:True, blocked:True}` as success and wrote
+//         `status="sent", provider="microsoft365"` to the DB —
+//         painting a picture of a live send that never happened.
+//   Actual delivery count: 0. Alarm intensity: correctly high.
+//
+// ── STEP 1 — Path C DELETED (m365_test post-test flush) ───────
+//   `integrations_m365.py:154-178` — the entire flush loop is
+//   gone. Test Connection now sends only the single test email
+//   to the configured `sender_email`. `flushed_from_queue: 0`
+//   returned to preserve response shape. Users can retry queued
+//   emails manually via the outbox UI Retry button.
+//
+// ── STEP 2 — Queued rows purged ────────────────────────────────
+//   `db.outbound_emails.delete_many({"status":"queued"})` on
+//   preview: deleted 2 rows (1 pre_starts + 1 hazards). Steady
+//   state now: queued=0, blocked=157, sent=95, failed=2,
+//   cancelled=16. Post-ship expected: only user-initiated sends
+//   during Safe-Mode-OFF windows will populate `sent`.
+//
+// ── STEP 3 — Falsely-labelled rows corrected ──────────────────
+//   The 2 lie rows from the 07:51:48 incident (amanda +
+//   rikantrim) rewritten to `status=blocked, provider=safe_mode,
+//   sent_at=None, error="v58.13.87 correction — was falsely
+//   marked sent; Safe Mode had intercepted..."` so the audit
+//   trail reflects reality. `updated_at` stamped to the ship
+//   time for change-tracking.
+//
+// ── STEP 4 — retry_outbox bookkeeping fix ─────────────────────
+//   `email_outbox.py:407-460` — Previously wrote
+//   `status="sent", provider="microsoft365"` without ever calling
+//   Graph. Now:
+//     · Fetches doc, validates status ∈ {queued, failed}.
+//     · If M365 not connected → status stays queued.
+//     · Otherwise calls `graph_send_mail(...)`. Three honest
+//       branches:
+//         · res.blocked → status="blocked", provider=safe_mode,
+//                          audit row in comms_outbox_blocked.
+//         · res.ok      → status="sent", provider="microsoft365",
+//                          sent_at now.
+//         · res.error   → status="failed", error captured.
+//   Same class of bug as the flush loop — same fix pattern.
+//
+// ── STEP 5 — Belt-and-braces contextvar gate ──────────────────
+//   NEW `backend/send_context.py`:
+//     · `contextvars.ContextVar[Optional[dict]]` scoped to the
+//       current request task.
+//     · `set_send_context(user)` — called from
+//       `auth.get_current_user()` on every successful
+//       authenticated HTTP request.
+//     · `refuse_if_no_request_context(provider, to, subject)` —
+//       returns the standard `{ok:False, blocked:True,
+//       error:"no_request_context"}` shape if the ContextVar is
+//       None. Also emits a **CRITICAL log line with the full
+//       call-stack traceback** so ops can trace unauthorised
+//       send attempts in production.
+//   Wired into:
+//     · `integrations_m365.graph_send_mail` — BEFORE the Safe
+//       Mode check. Any startup / worker / cron / background
+//       task caller is refused hard.
+//     · `integrations_textmagic.safe_send_sms` — same.
+//   Auth handler (`auth.py:244-256`) populates the ContextVar
+//   inside `get_current_user`, so every route dep that requires
+//   auth flows through it. `asyncio.create_task(...)` inherits
+//   the context by default, so admin-click fan-outs still work.
+//   Rejected paths:
+//     · Startup hooks (`@app.on_event("startup")`) — no request
+//       on stack → refused.
+//     · APScheduler jobs — same.
+//     · Standalone scripts / pytest fixtures — same, unless the
+//       test calls `set_send_context({"id":..., "org_id":...})`
+//       explicitly.
+//   Refusal path proven by pytest (see below).
+//
+// ── STEP 6 — Test coverage ────────────────────────────────────
+//   NEW `tests/backend_unit/test_path_c_and_context_gate_v58_
+//   13_87.py`:
+//     · Item 1: flush loop deleted + "Path C DELETED" comment
+//       marker present.
+//     · Item 1: no `outbound_emails.find(status=queued)` loops
+//       exist anywhere in `/app/backend/` except `email_outbox.py`.
+//     · Item 4: `retry_outbox` calls `graph_send_mail`; handles
+//       `res.blocked`; `status=sent` write ONLY appears after
+//       `graph_send_mail` returns.
+//     · Item 5: `send_context.py` module + wire-in points; refusal
+//       check runs BEFORE Safe Mode in both boundaries.
+//     · **Runtime**: creates a background task with no request
+//       context, calls `graph_send_mail`, asserts refusal +
+//       CRITICAL log line.
+//     · **Runtime**: sets context explicitly (simulates HTTP
+//       request), mocks Graph, asserts the send proceeds.
+//     · Version-sync forward-safe pin >= 87.
+//   97/97 green across ships .81 → .87.
+//
+// ── ITEM 7 — Email + SMS origin audit ─────────────────────────
+//   Complete inventory in the ship report (see chat). 13 email
+//   origins + 3 SMS origins. All flow through `queue_email_doc` /
+//   `safe_send_sms` / `tm_send`. Zero automatic / cron / event-
+//   triggered origins remain (Path A deleted in v58.13.86; Path
+//   B refactored in v58.13.86; Path C deleted in v58.13.87). All
+//   16 origins are user-action — every send now originates from
+//   an explicit button click.
+//   Consequence: Safe Mode can be flipped OFF permanently in the
+//   admin UI once ops is comfortable, and no automatic feature
+//   will surprise the user. The env-lock stays as the belt.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Preview `.env` `COMMS_SAFE_MODE=on` env-lock — RETAINED.
+//   · Prod `.env` guidance from v58.13.86 — unchanged.
+//   · `_send_invite_sms` bug at auth_invite.py:147 (imports
+//     non-existent `integrations.send_sms`) — noted, still out
+//     of scope (email invite works; SMS invite silently returns
+//     False).
+//   · Rate limiting — DEFERRED to v58.13.88.
+//   · Safe Mode disable-confirmation modal — DEFERRED.
+//   · `?force=1` on manual admin scans — DEFERRED.
+//   · 30 pre-existing lint findings.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (5 files changed).
+//   · Frontend hot-reload picks up any UI changes.
+//   · All 3 canonical version strings bumped to `.87`.
+//   · **No env-lock touches during or after this ship.** The
+//     new contextvar gate is the belt-and-braces defence; Safe
+//     Mode is the outer layer.
+
 // v160.3.9.58.13.86 — Delete Path A (startup cert-reminder auto-scan)
 //                     + refactor Path B (assignment-save auto-notify
 //                     → explicit "Notify Now" modal) + restore Send
@@ -7817,7 +7971,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.86';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.87';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

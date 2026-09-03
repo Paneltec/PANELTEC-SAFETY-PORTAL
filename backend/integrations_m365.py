@@ -151,36 +151,34 @@ async def m365_test(user: dict = Depends(require_permission("integrations", "edi
         {"$set": {"status": "connected", "last_tested_at": now_iso(),
                   "last_error": None, "updated_at": now_iso()}},
     )
-    # Best-effort: drain queued emails now that we know creds are good.
-    try:
-        queued = await db.outbound_emails.find(
-            {"org_id": user["org_id"], "status": "queued"}, {"_id": 0}
-        ).sort("created_at", 1).to_list(200)
-        flushed = 0
-        for em in queued:
-            res = await graph_send_mail(
-                user["org_id"],
-                to=em.get("to", []), cc=em.get("cc", []),
-                subject=em.get("subject", ""), body_html=em.get("body_html", ""),
-                attachments=em.get("attachments", []),
-            )
-            if res.get("ok"):
-                await db.outbound_emails.update_one(
-                    {"id": em["id"]},
-                    {"$set": {"status": "sent", "provider": "microsoft365",
-                              "sent_at": now_iso(), "error": None, "updated_at": now_iso()}},
-                )
-                flushed += 1
-    except Exception as e:
-        log.warning("Post-test flush failed: %s", e)
-        flushed = 0
-
-    return {"ok": True, "sent_to": sender, "flushed_from_queue": flushed}
+    # v58.13.87 — Path C DELETED. The old "post-test flush" loop
+    # here iterated every `status=queued` outbound_email and called
+    # `graph_send_mail` directly. It fired on every Test Connection
+    # click, bypassing any user-action check. Two bugs also lurked:
+    # (a) `if res.get("ok")` treated `{ok:True, blocked:True}` as
+    #     success and lied about status in `outbound_emails`;
+    # (b) the query didn't filter `deleted_at`, so soft-deleted
+    #     rows were resurrected.
+    # The retry semantics move to the manual user-action Retry button
+    # in the outbox UI (`POST /outbox/{email_id}/retry`). Nothing
+    # automatic remains here.
+    return {"ok": True, "sent_to": sender, "flushed_from_queue": 0}
 
 
 async def graph_send_mail(org_id: str, *, to: List[str], cc: List[str], subject: str,
                           body_html: str, attachments: List[dict]) -> dict:
     """Send an email via Graph using app-only auth. Returns {ok: bool, error?: str}."""
+    # v58.13.87 — Belt-and-braces: refuse any send that isn't
+    # originating from a live authenticated HTTP request. Startup
+    # tasks, workers, schedulers, and stray background tasks all get
+    # blocked here BEFORE Safe Mode is even consulted. Written as a
+    # one-liner refusal so a future hidden Path D can't sneak past.
+    from send_context import refuse_if_no_request_context
+    _refusal = refuse_if_no_request_context(
+        provider="microsoft365_graph_send_mail", to=to, subject=subject,
+    )
+    if _refusal is not None:
+        return _refusal
     # Phase 4.7.3 — defensive Safe Mode check. queue_email_doc already blocks
     # in front of us, but any direct caller hitting this function MUST also be
     # gated. We persist a `comms_outbox_blocked` row and return ok=True with

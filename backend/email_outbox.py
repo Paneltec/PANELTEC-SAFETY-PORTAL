@@ -413,13 +413,51 @@ async def retry_outbox(email_id: str, user: dict = Depends(get_current_user)):
         raise HTTPException(400, f"Cannot retry status={doc['status']}")
     connected = await _m365_connected(user["org_id"])
     update: dict = {"updated_at": now_iso()}
-    if connected:
-        update.update({"status": "sent", "provider": "microsoft365",
-                       "sent_at": now_iso(), "error": None})
+    if not connected:
+        update.update({"status": "queued", "error": "Microsoft 365 not connected"})
+        await db.outbound_emails.update_one({"id": email_id}, {"$set": update})
+        saved = await db.outbound_emails.find_one({"id": email_id}, {"_id": 0})
+        return {**saved, "note": "Still queued — Microsoft 365 not connected"}
+
+    # v58.13.87 — Actually attempt the send via Graph. Previously
+    # this optimistically wrote `status=sent, provider=microsoft365`
+    # without calling Graph at all — a bookkeeping lie identical
+    # to the m365_test flush bug fixed in the same ship. Honest
+    # branches now:
+    #   · Safe Mode ON → graph_send_mail returns {ok:True, blocked:True}
+    #                    → row status becomes "blocked", audit row is
+    #                    written to `comms_outbox_blocked`.
+    #   · Graph 2xx    → status "sent", provider "microsoft365".
+    #   · Graph error  → status "failed", error captured.
+    from integrations_m365 import graph_send_mail
+    res = await graph_send_mail(
+        user["org_id"],
+        to=doc.get("to", []), cc=doc.get("cc", []),
+        subject=doc.get("subject", ""), body_html=doc.get("body_html", ""),
+        attachments=doc.get("attachments", []),
+    )
+    if res.get("blocked"):
+        update.update({
+            "status": "blocked",
+            "provider": res.get("provider") or "safe_mode",
+            "sent_at": None,
+            "error": res.get("error"),
+        })
+        note = "Blocked by Comms Safe Mode — audit row logged"
+    elif res.get("ok"):
+        update.update({
+            "status": "sent",
+            "provider": "microsoft365",
+            "sent_at": now_iso(),
+            "error": None,
+        })
         note = "Sent via Microsoft 365"
     else:
-        update.update({"status": "queued", "error": "Microsoft 365 not connected"})
-        note = "Still queued — Microsoft 365 not connected"
+        update.update({
+            "status": "failed",
+            "error": res.get("error") or "unknown_graph_error",
+        })
+        note = f"Send failed: {update['error']}"
     await db.outbound_emails.update_one({"id": email_id}, {"$set": update})
     saved = await db.outbound_emails.find_one({"id": email_id}, {"_id": 0})
     return {**saved, "note": note}
