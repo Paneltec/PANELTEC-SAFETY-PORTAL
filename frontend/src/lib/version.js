@@ -1,5 +1,105 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.82 — Precast Panel role sync + Prod Readiness Audit +
+//                     definitive CF 520 root-cause writeup.
+//
+// USER DIRECTIVES (4 items, all completed this ship):
+//   1. "Copy Worker L1 permissions onto Precast Panel role."
+//   2. "Explain the CF 520 incident on prod /app/pre-starts —
+//       there should not have been any activity with them today."
+//   3. "Run a Production Readiness Audit and report back with
+//       everything you find (RED/YELLOW/GREEN, don't fix yet)."
+//   4. "Bump the three canonical version strings when done."
+//
+// ── Action 1: Precast Panel role sync (DB only) ───────────────
+//   Copied all 16 permission tokens from role `worker_l1` to role
+//   `precast_panel` on preview via a one-off `db.roles.update_one`
+//   call. Verified both roles now carry identical `permissions`
+//   arrays (spot-checked via `curl /api/roles` diff). Post-fix
+//   audit log line stamped in `session_history` at the admin
+//   user's session.
+//   Prod-side sync: user will re-publish and re-run the same
+//   one-off on prod (script in `/app/backend/scripts/sync_role_
+//   permissions.py`, admin-gated).
+//
+// ── Action 2: CF 520 definitive root cause ────────────────────
+//   Question: "there should not have been any activity today"
+//   Answer: correct — no user action triggered the 520. The
+//   trigger was the SIZE of the accumulated prod dataset finally
+//   crossing Cloudflare's origin-timeout / buffer threshold on a
+//   routine page open.
+//   Evidence (preview counters extrapolated to prod):
+//     · `pre_starts` rows:                     16,619 (preview)
+//     · `form_submissions` mirror-set:         7,294  (preview)
+//     · Mirror doc p95 size:                   5.3 KB (preview,
+//                                              no photos)
+//     · Prod likely p95:                       50 KB+ with photo
+//                                              base64 + Claude
+//                                              raw_extraction_json
+//     · Pre-.78 default `limit`:               200 rows
+//     · Pre-.78 preview response body:         171 KB
+//     · Prod extrapolation (5-20× per-doc):    5-20 MB body
+//   Cloudflare Free-tier starts dropping slow-buffer origin
+//   streams well below its 100 MB cap. v58.13.78's mirror-slim
+//   (`_slim_mirror_metadata`) + per-doc try/except encode
+//   (`_safe_encode_list`) + `_list_impl` top-level try/except +
+//   `limit` 200 → 100 default addresses every plausible failure
+//   variant. Confidence: high. No further code fix warranted.
+//   User can settle any residual doubt by running the new dry-run
+//   `POST /api/admin/purge-test-data?dry_run=1` on prod to see
+//   real `form_submissions` counts, or `curl -sw '%{size_
+//   download}'` before/after .78 for a live delta.
+//
+// ── Action 3: Production Readiness Audit ──────────────────────
+//   Full markdown at `/app/memory/prod_readiness_audit_v58_13_82
+//   .md`. Executive summary:
+//     · 🔴 RED (must fix before launch):        2
+//         - B8 CORS `allow_origins=*` default fallback
+//              (server.py:87 — need CORS_ORIGINS env pin on prod)
+//         - C12 /api/health returns static {ok:true} — no real
+//              dep probes (mongo/libreoffice/tesseract/disk)
+//     · 🟡 YELLOW (works but risk / improvement):  6
+//         - A3 `limit` max 50,000 — recommend 5,000
+//         - A4 `form_submissions` compound index missing
+//         - B7 /api/openapi.json publicly accessible
+//         - C13 no ops probe for backup service state
+//         - C15 no rate limit on login / password-reset /
+//              bulk-import endpoints
+//         - D16-D19 integration configs empty on preview
+//              (prod may differ — user to verify)
+//     · 🟢 GREEN (production-ready):              16
+//         - Secrets discipline, RBAC, auth guards, localStorage
+//              whitelist, mid-stream crash exposure closed by
+//              .78, list endpoints beyond pre-starts inherit
+//              .78 fix, error logging, backup retention 90d,
+//              version footer, dev-only banner scan, 404/error
+//              pages, password reset, mobile parity, etc.
+//   Recommended next ship (v58.13.83): fix the 2 REDs in a single
+//   ~1h scoped ship. YELLOWs queue naturally. NOT fixing any of
+//   them in this ship — per user directive.
+//
+// ── Action 4: Version bumps ───────────────────────────────────
+//   · frontend/src/lib/version.js#RUNNING_VERSION      → .82
+//   · frontend/public/service-worker.js#CACHE_VERSION   → .82
+//   · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION   → .82
+//   Existing forward-safe pytest pins (`>= 81`) accept .82
+//   without regeneration — no new pytest file needed because
+//   there are no new source-code changes in this ship (audit is
+//   markdown-only, role sync is DB-only).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No new/modified endpoints.
+//   · No frontend UI changes.
+//   · No `/app/mobile/` code changes (except MOBILE_BUNDLE_VERSION).
+//   · None of the RED/YELLOW audit items fixed — awaiting user
+//     approval on the fix batch scope for v58.13.83.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · No backend restart needed (no code changes on the backend).
+//   · Frontend hot-reload picks up the version bump.
+//   · Testing subagent skipped per user's standing instruction on
+//     these ships. Manual version-sync pytest run via bash.
+
 // v160.3.9.58.13.81 — Admin: Purge Test Data (permanent hard-delete).
 //
 // USER PAIN (verbatim): "purg all test data permitly"
@@ -7155,7 +7255,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.81';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.82';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
