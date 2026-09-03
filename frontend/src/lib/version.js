@@ -7971,7 +7971,87 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.88';
+// v160.3.9.58.13.89 — P0 hotfix: Pre-starts frontend limit regression.
+//
+// USER PAIN (verbatim, screenshot): "Our Pre-starts have gone now."
+// UI banner on preview `/app/pre-starts`:
+//   Couldn't reach the server. We tried twice and still couldn't
+//   load your pre-starts. Input should be less than or equal to 5000
+//
+// Root cause: v58.13.84 A3 dropped the list-endpoint `limit` max from
+// 50000 → 5000. `PreStarts.jsx::fetchItems` had been passing
+// `limit: 50000` since the .11.1 retry ship and slipped through .84's
+// grep sweep (the sweep only checked hardcoded URL query strings —
+// `limit: N` on axios `params` reads different). On mount the request
+// now 422s with `Input should be less than or equal to 5000`, the
+// retry loop treats it as a transient network blip and retries twice
+// more (uselessly, since the params never change), and after both
+// retries fail the amber "Couldn't reach the server" banner shows —
+// which reads to the user as a data-loss event.
+//
+// ── STEP 1 — Frontend limit fix (`frontend/src/pages/PreStarts.jsx`) ──
+//   `fetchItems`:
+//     · `params: { limit: 50000 }` → `params: { limit: 5000 }`
+//       (matches the backend cap exactly).
+//     · Capture `err?.response?.status` on the catch branch, classify
+//       as `client` (4xx) or `network` (0 / 5xx / no response).
+//     · 4xx bypasses the auto-retry (retrying with the same params
+//       will fail identically).
+//     · `loadError.kind` propagates into the banner branch.
+//
+// ── STEP 2 — Error banner reword (`frontend/src/pages/PreStarts.jsx`) ──
+//   New rose-toned banner variant for `kind === 'client'`:
+//     · Headline: "Request too large."
+//     · Body: "The server rejected the request — please contact
+//       support if this keeps happening."
+//     · Preserves the mono-font detail line with the raw error message
+//       so support can grep for it.
+//     · Retry button preserved (users can force a re-fetch after a
+//       config change) but coloured rose to match the banner.
+//   Amber "Couldn't reach the server." banner unchanged for `kind ===
+//   'network'` — the auto-retry copy still applies there.
+//   New `data-error-kind` DOM attribute on the banner root so future
+//   pytests / playwright can assert which branch rendered.
+//
+// ── STEP 3 — Backend hint header (deferred) ──
+//   User's ship note item 5 suggested returning `X-Max-Limit: 5000` on
+//   422 so the frontend could auto-clamp on retry. NOT shipped in
+//   .89 — the frontend limit is now correct at source; auto-clamp is
+//   nice-to-have but ships better as a server-side pagination
+//   companion. Follow-up.
+//
+// ── AUDIT — other list pages ──
+//   Grepped every `limit: N` and `limit=N` axios call in `frontend/src`.
+//   Result: PreStarts.jsx was the SOLE offender. Next-largest values
+//   are `limit: 2000` on PlantMaintenance and SimproSupplierImportModal
+//   (both < 5000 cap, safe). All other pages pass ≤1000. No other
+//   pages need touching in .89.
+//
+// ── FOLLOW-UP (real fix) ──
+//   Preview has ~16,619 pre_starts rows; limit=5000 truncates the
+//   client-side list to the newest 5,000. For orgs that grow past
+//   that, real server-side pagination on `/api/pre-starts` +
+//   client-side infinite-scroll is the correct answer. Tracked as
+//   a P2 in this ship's report.
+//
+// ── Tests ──
+//   NEW `tests/backend_unit/test_prestarts_limit_regression_v58_13_89.py`:
+//     · `PreStarts.jsx` passes `limit: 5000` (not `50000`).
+//     · `fetchItems` classifies error kind on catch (`status >= 400 &&
+//       status < 500 → client`).
+//     · Client-kind errors do NOT enqueue a retry.
+//     · Banner branches on `loadError.kind` and carries the
+//       `data-error-kind` attribute.
+//     · Version-sync forward-safe pin >= 89.
+//
+// ── SOP ──
+//   · Frontend hot-reload picks up the change. No backend restart
+//     needed (no backend code changed).
+//   · All 3 canonical version strings bumped to `.89`.
+//   · Preview `.env` `COMMS_SAFE_MODE=on` — untouched.
+//   · `/app/mobile/` — only MOBILE_BUNDLE_VERSION bumped.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.89';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

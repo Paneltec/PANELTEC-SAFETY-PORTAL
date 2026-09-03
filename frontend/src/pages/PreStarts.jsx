@@ -96,22 +96,43 @@ export default function PreStartsList() {
   //   · auto-retry twice (3s, then 10s), same params,
   //   · offer a manual `Retry` button once both retries fail.
   // Retries fire on initial mount OR manual click only — no polling.
+  //
+  // v160.3.9.58.13.89 — P0 hotfix: cap `limit` at the backend max.
+  // v58.13.84 A3 dropped the list-endpoint cap from 50000 → 5000, so
+  // the old `limit: 50000` returned 422 `Input should be less than or
+  // equal to 5000`, which the retry loop mis-classified as a network
+  // failure. Now:
+  //   · `limit: 5000` matches the backend cap exactly.
+  //   · 4xx responses (client-side param errors like 422) bypass the
+  //     auto-retry and render a distinct amber "Request too large"
+  //     banner — retrying a 422 with unchanged params is pointless.
+  //   · 5xx / network errors keep the original retry behaviour.
+  // Real follow-up: server-side pagination for orgs with >5k
+  // pre-starts (preview has ~16.6k). Tracked in the .89 ship report.
   const fetchItems = useCallback(async (attempt = 0) => {
     setLoading(true);
     try {
-      const r = await api.get('/pre-starts', { params: { limit: 50000 } });
+      const r = await api.get('/pre-starts', { params: { limit: 5000 } });
       setItems(Array.isArray(r.data) ? r.data : []);
       setLoadError(null);
       setLoading(false);
       return true;
     } catch (err) {
+      const status = err?.response?.status;
       const message = apiError(err) || 'Network error';
-      setLoadError({ message, attempt });
+      // Classify the error so the banner and retry logic can react
+      // sensibly. 4xx = the request itself was rejected (bad param,
+      // permission, bad path); retrying it will just fail again.
+      // 0 / 5xx = transient — worth retrying.
+      const isClientError = typeof status === 'number' && status >= 400 && status < 500;
+      setLoadError({ message, attempt, status, kind: isClientError ? 'client' : 'network' });
       setLoading(false);
-      if (attempt === 0) {
-        setTimeout(() => { fetchItems(1); }, 3000);
-      } else if (attempt === 1) {
-        setTimeout(() => { fetchItems(2); }, 10000);
+      if (!isClientError) {
+        if (attempt === 0) {
+          setTimeout(() => { fetchItems(1); }, 3000);
+        } else if (attempt === 1) {
+          setTimeout(() => { fetchItems(2); }, 10000);
+        }
       }
       return false;
     }
@@ -315,20 +336,46 @@ export default function PreStartsList() {
           // thinking data was lost. Auto-retries fire in the
           // background at 3s / 10s; the manual Retry button re-runs
           // the same fetch immediately.
+          //
+          // v58.13.89 — Branch on error kind. A 4xx (e.g. 422 param
+          // validation) is a client-side problem — retrying with the
+          // same params will fail identically, so we suppress the
+          // "Retrying automatically…" copy and reword the banner.
           <div
-            className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center"
+            className={
+              loadError.kind === 'client'
+                ? "rounded-2xl border border-rose-200 bg-rose-50 p-6 text-center"
+                : "rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center"
+            }
             data-testid="prestarts-load-error"
+            data-error-kind={loadError.kind || 'network'}
           >
-            <div className="font-display font-semibold text-amber-900">
-              Couldn&apos;t reach the server.
+            <div className={
+              loadError.kind === 'client'
+                ? "font-display font-semibold text-rose-900"
+                : "font-display font-semibold text-amber-900"
+            }>
+              {loadError.kind === 'client'
+                ? 'Request too large.'
+                : "Couldn't reach the server."}
             </div>
-            <div className="text-sm text-amber-800 mt-1">
-              {loadError.attempt < 2
-                ? `Retrying automatically… (attempt ${loadError.attempt + 1} of 2)`
-                : "We tried twice and still couldn't load your pre-starts."}
+            <div className={
+              loadError.kind === 'client'
+                ? "text-sm text-rose-800 mt-1"
+                : "text-sm text-amber-800 mt-1"
+            }>
+              {loadError.kind === 'client'
+                ? "The server rejected the request — please contact support if this keeps happening."
+                : (loadError.attempt < 2
+                    ? `Retrying automatically… (attempt ${loadError.attempt + 1} of 2)`
+                    : "We tried twice and still couldn't load your pre-starts.")}
             </div>
             {loadError.message && (
-              <div className="text-xs text-amber-700 mt-2 font-mono">
+              <div className={
+                loadError.kind === 'client'
+                  ? "text-xs text-rose-700 mt-2 font-mono"
+                  : "text-xs text-amber-700 mt-2 font-mono"
+              }>
                 {loadError.message}
               </div>
             )}
@@ -336,7 +383,11 @@ export default function PreStartsList() {
               <button
                 type="button"
                 onClick={() => fetchItems(0)}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                className={
+                  loadError.kind === 'client'
+                    ? "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700"
+                    : "inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700"
+                }
                 data-testid="prestarts-load-error-retry"
               >
                 Retry
