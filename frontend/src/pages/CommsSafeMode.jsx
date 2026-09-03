@@ -16,20 +16,17 @@ const CHANNEL_ICON = { email: Mail, sms: MessageSquare };
 
 export default function CommsSafeMode() {
   const [status, setStatus] = useState(null);
-  const [autoComms, setAutoComms] = useState(null);  // v58.13.86
   const [blocked, setBlocked] = useState({ items: [], count: 0 });
   const [channelF, setChannelF] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
     try {
-      const [s, a, b] = await Promise.all([
+      const [s, b] = await Promise.all([
         api.get('/admin/comms-safe-mode/status'),
-        api.get('/admin/auto-comms/status'),  // v58.13.86
         api.get(`/admin/comms-outbox-blocked${channelF ? `?channel=${channelF}` : ''}`),
       ]);
       setStatus(s.data);
-      setAutoComms(a.data);
       setBlocked(b.data);
     } catch (e) { toast.error(apiError(e)); }
   };
@@ -49,28 +46,6 @@ export default function CommsSafeMode() {
       // v58.7.1 — Defensive: if the backend rejects with 423 (env
       // locked between load and click) surface the same toast as the
       // pre-check above so the user isn't left wondering.
-      const code = e?.response?.status;
-      if (code === 423) toast.error('Locked by env var — contact your operator.');
-      else toast.error(apiError(e));
-    }
-    finally { setBusy(false); }
-  };
-
-  // v58.13.86 — Automated Comms toggle. Separate switch from Safe Mode.
-  // Blocks system-sourced sends (cron reminders, event-triggered notifs)
-  // silently — no blocked outbox row. Manual sends (user clicks "Send")
-  // ignore this toggle.
-  const toggleAutoComms = async (enabled) => {
-    if (autoComms?.env_locked) {
-      toast.error('Locked by env var — contact your operator.');
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.patch('/admin/auto-comms', { enabled });
-      toast.success(`Automated Comms ${enabled ? 'ENABLED' : 'DISABLED'}`);
-      await load();
-    } catch (e) {
       const code = e?.response?.status;
       if (code === 423) toast.error('Locked by env var — contact your operator.');
       else toast.error(apiError(e));
@@ -141,58 +116,6 @@ export default function CommsSafeMode() {
           {status && (
             <div className="mt-2 text-[11px] text-slate-500">
               env: <span className="font-mono">{status.env_value}</span> · org: <span className="font-mono">{status.org_value}</span> · effective: <span className="font-mono font-semibold">{status.effective}</span>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* v58.13.86 — Automated Comms toggle. Sits between Safe Mode
-          and the blocked outbox so admins can see both switches
-          together. Default state (OFF) is styled as informational,
-          not alarming, since OFF is the fail-safe default. */}
-      <div className={`mb-6 rounded-2xl border p-5 flex items-start gap-4 ${
-        autoComms?.enabled
-          ? 'bg-amber-50 border-amber-200'
-          : 'bg-slate-50 border-slate-200'
-      }`} data-testid="auto-comms-card">
-        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-          autoComms?.enabled ? 'bg-amber-200 text-amber-800' : 'bg-slate-200 text-slate-700'
-        }`}>
-          <Zap size={20} />
-        </div>
-        <div className="flex-1">
-          <div className="font-display text-lg font-semibold text-slate-900">
-            Automated Comms is {autoComms?.enabled ? 'ENABLED' : 'DISABLED'}
-          </div>
-          <div className="text-sm text-slate-600 mt-1">
-            {autoComms?.enabled
-              ? 'Cron reminders (cert expiry, form assignment) and event-triggered notifications will be dispatched. Manual "Send" buttons always fire regardless of this toggle.'
-              : 'Only manual send buttons will fire emails/SMS. Cron reminders and event-triggered notifications will not be sent. Recommended: keep DISABLED unless you specifically want automated workflows.'}
-          </div>
-          {autoComms?.env_locked && (
-            <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-200 px-2 py-0.5 rounded-md" data-testid="auto-comms-env-lock">
-              <Lock size={11} /> Locked by env var (operator-controlled)
-            </div>
-          )}
-          <div className="mt-3 flex gap-2">
-            <button
-              onClick={() => toggleAutoComms(true)}
-              disabled={busy || autoComms?.env_locked || autoComms?.enabled}
-              data-testid="auto-comms-enable"
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500">
-              Enable
-            </button>
-            <button
-              onClick={() => toggleAutoComms(false)}
-              disabled={busy || autoComms?.env_locked || autoComms?.enabled === false}
-              data-testid="auto-comms-disable"
-              className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-              Disable
-            </button>
-          </div>
-          {autoComms && (
-            <div className="mt-2 text-[11px] text-slate-500">
-              env: <span className="font-mono">{autoComms.env_value || '(unset)'}</span> · org: <span className="font-mono">{String(autoComms.org_value)}</span> · effective: <span className="font-mono font-semibold">{autoComms.enabled ? 'enabled' : 'disabled'}</span>
             </div>
           )}
         </div>

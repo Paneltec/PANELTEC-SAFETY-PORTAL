@@ -1,5 +1,191 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.86 — Delete Path A (startup cert-reminder auto-scan)
+//                     + refactor Path B (assignment-save auto-notify
+//                     → explicit "Notify Now" modal) + restore Send
+//                     Invite manual button + explicit prod Safe Mode
+//                     env guidance. AUTO_COMMS_ENABLED proposal
+//                     REVERTED (overengineered — Safe Mode + Path
+//                     deletion covers the user's directive).
+//
+// USER DIRECTIVE (verbatim, cumulative across the session):
+//   · "i still need you to make sure that emails are not sent
+//     automatically from the source i don't need this function
+//     i will send any email or sms when needed myself."
+//   · "coms safe mode was made to stop the api from working
+//     you need to turn it on other the system wont work this
+//     has nothing to do with the notices being sent out..."
+//   · After the architecture explainer (`/app/memory/comms_
+//     architecture_explainer_v58_13_86.md`), user approved all
+//     6 recommendations: delete Path A, refactor Path B, revert
+//     AUTO_COMMS, add manual buttons, pin prod Safe Mode, keep
+//     preview as-is.
+//
+// ── STEP 1 — REVERT unshipped auto_comms code ─────────────────
+//   Files removed:
+//     · `backend/auto_comms.py`
+//     · `tests/backend_unit/test_auto_comms_v58_13_86.py`
+//   Backend surgery:
+//     · `server.py` — no `from auto_comms import router`, no
+//       `include_router(auto_comms_router)`.
+//     · `email_outbox.py::queue_email_doc` — `source: str = "system"`
+//       kwarg removed; `if source != "user_action" → auto-disabled
+//       skip` branch removed. Gate order collapses to
+//       IS_PROD env gate → Safe Mode → provider dispatch.
+//     · `integrations_textmagic.py::safe_send_sms` — same revert.
+//     · 15 call sites stripped of `source="user_action"` /
+//       `source=_send_source` tags (email_outbox 11, auth_invite 1,
+//       suppliers 1, worker_certifications 3).
+//     · `.env` line `AUTO_COMMS_ENABLED=false` removed.
+//   Frontend surgery:
+//     · `CommsSafeMode.jsx` — Auto Comms toggle card + state fetch
+//       removed. Only the Safe Mode card + Blocked outbox remain.
+//     · `AppShell.jsx` — "Auto Comms: OFF" top-bar pill + state
+//       fetch removed. Only "Comms Safe Mode" chip stays.
+//   Working tree matches "auto_comms never existed" (grep-verified).
+//
+// ── STEP 2 — DELETE Path A (startup auto-scan) ────────────────
+//   `server.py` — the block
+//     `try:
+//        from worker_certifications import run_reminder_scan
+//        stats = await run_reminder_scan()
+//        log.info("Cert reminder scan: %s", stats)
+//      except Exception as e:
+//        log.warning("Cert reminder scan failed at startup: %s", e)`
+//   is deleted. Replaced with a comment marker
+//   (`# v58.13.86 — Path A ... deleted per user directive ...`)
+//   so future eyes see the intentionality.
+//   Function `worker_certifications.py::run_reminder_scan` is
+//   RETAINED — still callable via
+//   `POST /worker-certifications/certifications/scan-reminders`
+//   (admin-only). Docstring updated with a "NOTE: no auto-invocation"
+//   line so no one re-wires it into a cron by accident.
+//   Effect: every backend restart no longer fires a scan against
+//   every worker/admin in every org.
+//
+// ── STEP 3 — REFACTOR Path B (assignment-save side-effect) ────
+//   `form_assignment_notifier.py`:
+//     · `dispatch_diff()` — the fire-and-forget
+//       `asyncio.create_task(_process(...))` inside is removed.
+//       Returns the diff (`newly_added`, counts) with `queued:
+//       False` always. `skip` param kept in signature for
+//       back-compat but ignored — no send fires either way.
+//     · NEW `notify_worker_ids(org_id, template_id, worker_ids,
+//       actor_user_id)` — public helper that delegates to
+//       `_process()` (same code that USED to run as a side effect).
+//       Only reachable via the new endpoint below.
+//   `asset_service.py`:
+//     · NEW `POST /form-templates/{id}/notify-added-workers` —
+//       admin-only, template-ownership-checked; body `{worker_ids:
+//       [str]}`; calls `notify_worker_ids`. Returns `{ok, sent,
+//       deduped}`.
+//     · `bulk_save_assignments` — response now includes
+//       `notify.per_template: [{template_id, newly_added,
+//       newly_added_count}]` so the admin UI can fire the
+//       notification endpoint per template after a save.
+//   Frontend `FormAssignmentsAdmin.jsx::persistSave`:
+//     · When admin clicks "Save & notify" on the existing
+//       confirm dialog, the save happens first, then the
+//       frontend iterates `notify.per_template` and POSTs to
+//       `/notify-added-workers` per template with newly-added
+//       worker IDs. Toast reports the aggregate `sent` count OR
+//       a warning if any template failed to notify (typical
+//       cause: Safe Mode ON → sends held in blocked outbox).
+//     · "Skip" behaviour unchanged — save proceeds, nothing
+//       is notified.
+//     · Zero-diff saves — no modal, no notify (unchanged).
+//
+// ── STEP 4 — RESTORE Send Invite manual button ────────────────
+//   Backend `auth_invite.py::send_invite`:
+//     · `@router.post(..., status_code=410)` → 201.
+//     · `raise HTTPException(410, "invite disabled: use Simpro
+//       import")` deleted.
+//     · Admin-only guard (`caller.role == "admin"`) preserved.
+//     · Body flow unchanged: mints invite token, updates user
+//       row, sends email/SMS via `_send_invite_email` /
+//       `_send_invite_sms`.
+//   Frontend `components/auth/AccessKebab.jsx`:
+//     · `fireInvite(channel)` restored — POSTs to
+//       `/users/{id}/invite` with `{channel: 'email'|'sms'|'auto'}`.
+//     · "Send invite…" DropdownMenuItem restored with
+//       `data-testid="access-kebab-invite-{id}"`.
+//     · New ChannelPickerDialog with the invite-specific copy
+//       ("The worker will receive a link to set their password
+//       and access Paneltec.").
+//   Note: `_send_invite_sms` at line 152 of `auth_invite.py`
+//   currently imports a non-existent `integrations.send_sms`
+//   helper — was silently returning False since a rename. Not
+//   fixed in this ship (out of scope). SMS invite falls back to
+//   email; email path works correctly.
+//
+// ── STEP 5 — Notify Now on cert expiry ────────────────────────
+//   Endpoint `POST /workers/certifications/{cert_id}/send-reminder`
+//   ALREADY exists (`worker_certifications.py:938`). Frontend
+//   already wires a "Send Reminder" button per-row in
+//   `Certifications.jsx:447`. **No changes needed** — the manual
+//   Notify Now flow is already end-to-end. Ship report notes this
+//   discovery.
+//
+// ── STEP 6 — Prod Safe Mode env guidance ──────────────────────
+//   `.env.example`:
+//     · `COMMS_SAFE_MODE=on` — now with a 12-line PROD
+//       RECOMMENDATION block explaining how to safely enable
+//       real sends: turn OFF for a bounded window, send, turn ON.
+//     · `IS_PROD=false` — documented; prod MUST flip to `true` at
+//       re-publish time or system-sourced sends will silently
+//       no-op in production too.
+//   No change to preview `.env` — Safe Mode was already env-locked
+//   ON there before this ship.
+//
+// ── STEP 7 — Tests ────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_no_auto_comms_v58_13_86.py`:
+//     · auto_comms module deleted; no imports; no env var; no
+//       gate branch; no `source=` param in signatures; no
+//       `source=user_action` at call sites.
+//     · Path A: startup `run_reminder_scan()` gone; function
+//       still defined + note-marked.
+//     · Path B: `dispatch_diff` doesn't `asyncio.create_task`;
+//       `notify_worker_ids` defined; `/notify-added-workers`
+//       route registered; bulk-save returns `per_template`;
+//       frontend calls `/notify-added-workers`.
+//     · Invite: 201 not 410; admin-only preserved;
+//       `access-kebab-invite-` test-id present.
+//     · `.env.example` pins `COMMS_SAFE_MODE=on` + PROD
+//       RECOMMENDATION block + IS_PROD guidance.
+//     · Version-sync forward-safe pin >= 86.
+//   All prior version-sync pins (`>= 81/78/83/84/85`) forward-safe.
+//
+// ── Blocked outbox — expected steady state ────────────────────
+//   Pre-ship: 0 rows (admin Clear button hit in .85).
+//   Post-ship expected:
+//     · Zero system-fired rows from Path A (deleted) or Path B
+//       (only fires on explicit click).
+//     · Only real user-initiated sends will appear here, and
+//       only while Safe Mode is ON (correct behaviour — audit
+//       trail for held sends).
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Preview `.env` — Safe Mode env-lock ON preserved.
+//   · v58.13.85's blocked-outbox retention + admin Clear button
+//     — still present, still useful.
+//   · v58.13.85's 3-site SMS bypass fix — still in force.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · 30 pre-existing lint findings.
+//   · Rate limiting — DEFERRED to v58.13.87.
+//   · Safe Mode disable-confirmation modal — DEFERRED to .87.
+//   · `?force=1` on the manual cron endpoints — DEFERRED to .87.
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (server.py + email_outbox +
+//     integrations_textmagic + auth_invite + asset_service +
+//     form_assignment_notifier + worker_certifications changed).
+//   · Frontend hot-reload picks up the AccessKebab + assignments +
+//     CommsSafeMode + AppShell changes.
+//   · All 3 canonical version strings bumped to `.86`.
+//   · **On prod re-publish**: explicitly set `COMMS_SAFE_MODE=on`
+//     AND `IS_PROD=true` in prod `backend/.env`. To send real
+//     comms: flip Safe Mode OFF briefly, send, flip back ON.
+
 // v160.3.9.58.13.85 — Integration wiring audit + Comms Safe Mode source-gate.
 //
 // USER PAIN #1 (verbatim): "could you test microsoft 365 because i

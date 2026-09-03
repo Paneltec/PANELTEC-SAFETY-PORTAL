@@ -68,26 +68,17 @@ async def safe_send_sms(
     text: str,
     triggered_by_endpoint: str = "",
     actor_user_id: Optional[str] = None,
-    source: str = "system",  # v58.13.86 — "user_action" | "system"
 ) -> dict:
-    # v58.13.86 — Gate 1+2: auto-comms gate for system-sourced sends.
-    # Silent skip; no comms_outbox_blocked row is written.
-    if source != "user_action":
-        from auto_comms import is_disabled as _auto_disabled
-        if await _auto_disabled(org_id):
-            log.info(
-                "safe_send_sms auto_disabled_skipped source=%s endpoint=%r to_n=%d",
-                source, triggered_by_endpoint or "-", len(mobiles or []),
-            )
-            return {"ok": True, "skipped": True, "provider": "auto_comms_gate"}
-
-    # v58.13.85 — Gate 3: IS_PROD env gate. Retained for backward-compat.
+    # v58.13.85 — IS_PROD env gate FIRST. On preview / dev / test,
+    # system-originated SMS (cron reminders, form-assignment notifier,
+    # pytest fixtures) are silent no-ops — no comms_outbox_blocked
+    # row, no upstream HTTP call. User-initiated SMS (real actor id)
+    # still flow through so Safe Mode's audit trail keeps them
+    # visible.
     import os as _os
     is_prod = (_os.environ.get("IS_PROD", "false").strip().lower() == "true")
     pytest_running = bool(_os.environ.get("PYTEST_CURRENT_TEST"))
-    is_system_source = (
-        source != "user_action" and (actor_user_id is None or pytest_running)
-    )
+    is_system_source = actor_user_id is None or pytest_running
     if (not is_prod) and is_system_source:
         log.info(
             "safe_send_sms system_source_skipped env=non_prod endpoint=%r "

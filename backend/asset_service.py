@@ -724,7 +724,16 @@ async def bulk_save_assignments(body: BulkAssignmentsIn,
                                 user: dict = Depends(get_current_user)):
     _require_assignments_role(user, write=True)
     saved, missing = 0, []
-    notify_totals = {"sent": 0, "queued_templates": 0, "newly_added_total": 0}
+    # v58.13.86 — Path B refactor. The bulk save no longer fires
+    # notifications as a side effect. Instead we return per-template
+    # `newly_added` worker IDs so the admin UI can open a
+    # "Notify newly-assigned workers?" modal after the save and, if
+    # the admin clicks Notify, POST to `/form-templates/{id}/
+    # notify-added-workers` per template. `skip_notifications` in the
+    # request body is accepted for API back-compat but ignored — no
+    # send happens automatically either way.
+    notify_totals = {"sent": 0, "queued_templates": 0, "newly_added_total": 0,
+                     "per_template": []}
     from form_assignment_notifier import dispatch_diff
 
     for entry in body.assignments:
@@ -759,9 +768,13 @@ async def bulk_save_assignments(body: BulkAssignmentsIn,
             next_applies_to=next_applies,
             skip=body.skip_notifications,
         )
-        if diff["queued"]:
-            notify_totals["queued_templates"] += 1
+        if diff["newly_added_count"] > 0:
             notify_totals["newly_added_total"] += diff["newly_added_count"]
+            notify_totals["per_template"].append({
+                "template_id": entry.template_id,
+                "newly_added": diff["newly_added"],
+                "newly_added_count": diff["newly_added_count"],
+            })
 
     return {"ok": True, "saved": saved, "missing": missing, "notify": notify_totals}
 
@@ -804,6 +817,38 @@ async def preview_recipients(template_id: str, body: AppliesToIn,
         "newly_added_count": len(newly),
         "newly_added_sample": sample,
     }
+
+
+# v58.13.86 — Manual "Notify newly-assigned workers" endpoint. Fires
+# the notification code that USED to run as a side effect of saving
+# assignments (Path B in the pre-.86 comms audit). Only reachable by
+# explicit user click on the post-save modal.
+class NotifyAddedWorkersIn(BaseModel):
+    worker_ids: list[str]
+
+
+@assignments_router.post("/{template_id}/notify-added-workers")
+async def notify_added_workers(
+    template_id: str,
+    body: NotifyAddedWorkersIn,
+    user: dict = Depends(get_current_user),
+):
+    _require_assignments_role(user, write=True)
+    # Template ownership check — reject cross-org attempts.
+    tpl = await db.form_templates.find_one(
+        {"id": template_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0, "id": 1},
+    )
+    if not tpl:
+        raise HTTPException(404, "Template not found")
+    from form_assignment_notifier import notify_worker_ids
+    res = await notify_worker_ids(
+        org_id=user["org_id"],
+        template_id=template_id,
+        worker_ids=list(body.worker_ids or []),
+        actor_user_id=user["id"],
+    )
+    return {"ok": True, **res}
 
 
 # ────────────────── Schedules ──────────────────

@@ -275,7 +275,10 @@ export default function FormAssignmentsAdmin() {
     assigned_positions: Array.from(v.positions || []),
   });
 
-  // Actually persist; `skip_notifications` opts out of the email + SMS fanout.
+  // Actually persist; `skipNotifications=true` means the admin
+  // clicked Skip on the confirm dialog → save only, no notify.
+  // `skipNotifications=false` means the admin clicked "Save & notify"
+  // → save, then fire the manual notify endpoint per template.
   const persistSave = async (skipNotifications) => {
     setSaving(true);
     try {
@@ -286,10 +289,36 @@ export default function FormAssignmentsAdmin() {
         assignments, skip_notifications: !!skipNotifications,
       });
       const totals = r.data?.notify || {};
+      // v58.13.86 — Explicit manual notify. The backend no longer
+      // fires side-effect emails/SMS on save (Path B in the .86 comms
+      // audit). If the admin chose "Save & notify", we now POST to
+      // /notify-added-workers per template that has newly-added
+      // workers, using the per_template list the bulk save returned.
+      let notifySent = 0;
+      let notifyErrors = 0;
+      if (!skipNotifications && Array.isArray(totals.per_template)) {
+        for (const t of totals.per_template) {
+          if (!t.newly_added_count) continue;
+          try {
+            const nr = await api.post(
+              `/form-templates/${t.template_id}/notify-added-workers`,
+              { worker_ids: t.newly_added },
+            );
+            notifySent += nr.data?.sent || 0;
+          } catch (e) {
+            notifyErrors += 1;
+            console.warn('notify-added-workers failed', t.template_id, e);
+          }
+        }
+      }
       if (skipNotifications) {
-        toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated (notifications muted)`);
+        toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated (notifications skipped)`);
       } else if (totals.newly_added_total > 0) {
-        toast.success(`Saved · notifying ${totals.newly_added_total} worker${totals.newly_added_total === 1 ? '' : 's'} by email + SMS`);
+        if (notifyErrors > 0) {
+          toast.warning(`Saved · ${notifySent} notified, ${notifyErrors} template(s) failed to notify — check Comms Safe Mode.`);
+        } else {
+          toast.success(`Saved · notifying ${notifySent} worker${notifySent === 1 ? '' : 's'} by email + SMS`);
+        }
       } else {
         toast.success(`Saved · ${dirtyCount} template${dirtyCount === 1 ? '' : 's'} updated`);
       }

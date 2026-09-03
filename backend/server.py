@@ -48,7 +48,6 @@ from worker_certifications import router as worker_certifications_router, certs_
 from forms import router as forms_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from comms_safe_mode import router as comms_safe_mode_router  # noqa: E402 — Phase 4.7.3
-from auto_comms import router as auto_comms_router  # noqa: E402 — v58.13.86
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
 from integrations_simpro import router as simpro_router  # noqa: E402
@@ -447,7 +446,6 @@ app.include_router(mobile_modules_router)
 api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(comms_safe_mode_router)  # Phase 4.7.3
-api.include_router(auto_comms_router)  # v58.13.86 — auto-comms toggle
 api.include_router(pdf_router)
 # v160.3.9.58.13.47 — Capture-density telemetry endpoint.
 api.include_router(metrics_router)
@@ -831,15 +829,12 @@ async def on_startup():
 
     result = await seed_all()
     log.info("Seeded: %s", result["counts"])
-    # Daily reminder scan — runs once at startup for now (true cron requires
-    # APScheduler in production). Wrapped so a failure here can't take down
-    # the rest of the API.
-    try:
-        from worker_certifications import run_reminder_scan
-        stats = await run_reminder_scan()
-        log.info("Cert reminder scan: %s", stats)
-    except Exception as e:
-        log.warning("Cert reminder scan failed at startup: %s", e)
+    # v58.13.86 — Path A (startup cert reminder scan) deleted per user
+    # directive "I don't want anything sent automatically". The scan
+    # function itself is kept in `worker_certifications.py` behind the
+    # admin-only `POST /worker-certifications/reminders/scan` endpoint
+    # so an admin can still fire it manually when desired.
+    # No auto-invocation. See ship notes for v58.13.86.
 
     # v160.3.1 — Simpro cert_kinds + licence_mapping seed load (idempotent).
     try:

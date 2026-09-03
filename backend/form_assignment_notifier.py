@@ -177,28 +177,58 @@ async def _process(template_id: str, org_id: str, new_worker_ids: Iterable[str])
 async def dispatch_diff(
     *, org_id: str, template_id: str,
     prior_applies_to: dict, next_applies_to: dict,
-    skip: bool = False,
+    skip: bool = False,  # v58.13.86 — retained for backwards-compat only.
 ) -> dict:
-    """Synchronous helper that **schedules** notification work for the newly
-    exposed audience. Returns the {newly_added, prior_count, next_count}
-    counts immediately so the API caller can display them. If `skip=True`
-    the diff is computed but no notifications are queued (used when the
-    admin opted out)."""
+    """v58.13.86 — Compute the diff. **No longer fires notifications.**
+
+    Previously this scheduled a fire-and-forget `_process()` task for
+    newly-added workers as a side effect of the admin saving assignment
+    changes (Path B in the comms audit). Per user directive
+    ("I don't want anything sent automatically. When I want to send an
+    email or SMS, I'll click a button"), the auto-fire has been
+    removed. The caller now receives `newly_added` (list of worker
+    IDs) and the admin UI presents a "Notify newly-assigned workers?"
+    modal; if the admin clicks Notify, the frontend POSTs to
+    `/api/form-templates/{id}/notify-added-workers` which calls
+    `notify_worker_ids()` below.
+
+    The `skip` param is kept in the signature for API back-compat but
+    is ignored — nothing fires either way.
+    """
     prior_audience = await _resolve_audience(org_id, prior_applies_to or {})
     next_audience = await _resolve_audience(org_id, next_applies_to or {})
     newly = next_audience - prior_audience
-
-    if not skip and newly:
-        # Fire-and-forget — don't block the PUT response.
-        asyncio.create_task(_process(template_id, org_id, list(newly)))
-
     return {
         "prior_count": len(prior_audience),
         "next_count": len(next_audience),
         "newly_added": sorted(newly),
         "newly_added_count": len(newly),
-        "queued": not skip and len(newly) > 0,
+        # v58.13.86 — `queued` is now always False; kept in the response
+        # shape so existing frontend callers reading it don't break.
+        "queued": False,
     }
+
+
+async def notify_worker_ids(
+    *, org_id: str, template_id: str, worker_ids: list[str],
+    actor_user_id: str,
+) -> dict:
+    """v58.13.86 — Manual, explicit notify entry point. Called from
+    `POST /form-templates/{id}/notify-added-workers` after the admin
+    clicks "Notify Now" on the post-save modal. Delegates to
+    `_process()` (the same code that used to run as a side effect of
+    `dispatch_diff` pre-.86), but this time triggered by a real user
+    click.
+
+    Returns {sent, deduped} — same shape as `_process()`."""
+    if not worker_ids:
+        return {"sent": 0, "deduped": 0, "note": "no worker_ids provided"}
+    log.info(
+        "form_assignment_notifier.notify_worker_ids manual template=%s "
+        "actor=%s worker_ids=%d",
+        template_id, actor_user_id, len(worker_ids),
+    )
+    return await _process(template_id, org_id, list(worker_ids))
 
 
 # ────────────────── Targeted form resolution (used by scan + list) ──────────────────

@@ -270,15 +270,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const [changePwOpen, setChangePwOpen] = useState(false);
   // Phase 4.7.3 — Comms Safe Mode indicator (yellow lightning chip).
   const [safeMode, setSafeMode] = useState(null);
-  // v58.13.86 — Automated Comms indicator (muted slate when OFF).
-  const [autoComms, setAutoComms] = useState(null);
   useEffect(() => {
     let alive = true;
     api.get('/admin/comms-safe-mode/status')
       .then((r) => { if (alive) setSafeMode(r.data); })
-      .catch(() => { /* non-admin or unauthenticated, skip */ });
-    api.get('/admin/auto-comms/status')
-      .then((r) => { if (alive) setAutoComms(r.data); })
       .catch(() => { /* non-admin or unauthenticated, skip */ });
     return () => { alive = false; };
   }, []);
@@ -407,27 +402,6 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
           className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-semibold uppercase tracking-wider hover:bg-amber-200 transition-colors">
           <Zap size={12} className="fill-amber-500 text-amber-600" />
           Comms Safe Mode
-        </Link>
-      )}
-
-      {/* v58.13.86 — Automated Comms indicator. OFF is muted (fail-safe
-          default) — it's informational, not alarming. ON is amber
-          (unusual state that admins should be aware of). Only rendered
-          when the status has loaded. */}
-      {autoComms && (
-        <Link
-          to="/app/settings/comms-safe-mode"
-          title={autoComms.enabled
-            ? 'Automated Comms is ENABLED\nCron reminders and event-triggered notifications will be dispatched. Click to review or disable.'
-            : 'Automated Comms is DISABLED\nOnly manual send buttons fire emails/SMS. Cron reminders and event-triggered notifications are suppressed. Click to review or enable.'}
-          data-testid="auto-comms-chip"
-          className={`hidden md:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-wider transition-colors ${
-            autoComms.enabled
-              ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-              : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
-          }`}>
-          <Zap size={12} className={autoComms.enabled ? 'fill-amber-500 text-amber-600' : 'text-slate-500'} />
-          Auto Comms: {autoComms.enabled ? 'ON' : 'OFF'}
         </Link>
       )}
 

@@ -132,7 +132,6 @@ async def _send_invite_email(user: dict, link: str, org_name: str, kind: str, se
         related_record_type="user", related_record_id=user["id"],
         created_by=sender.get("id") or "system",
         resource_kind="auth_invite",
-        source="user_action",  # v58.13.86 — admin clicked Send Invite / Reset,
                                # OR user clicked "Forgot Password" on login.
     )
 
@@ -171,13 +170,14 @@ def _public_host(request: Request) -> str:
     return os.environ.get("PUBLIC_BASE_URL", "")
 
 
-@router.post("/users/{user_id}/invite", status_code=410)
+@router.post("/users/{user_id}/invite", status_code=201)
 async def send_invite(user_id: str, body: InviteIn, request: Request,
                       caller: dict = Depends(get_current_user)):
-    # v160.3.9.32-4b — Admin-triggered invite path removed. Simpro
-    # selective-import is the only way in. Use `/api/admin/users/{id}/set-password`
-    # or `/api/users/{id}/reset-password` (magic-link) to give users access.
-    raise HTTPException(410, "invite disabled: use Simpro import")
+    # v58.13.86 — Re-enabled per user directive. The v160.3.9.32-4b
+    # 410 removal was reverted because the invite flow is legitimate
+    # user-action comms (admin explicitly clicks Send Invite). The
+    # Simpro import path stays available for bulk provisioning; this
+    # endpoint is the manual per-user path.
     if caller.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     target = await _user_or_404(user_id, caller["org_id"])

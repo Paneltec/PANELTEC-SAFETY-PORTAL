@@ -33,9 +33,20 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
 
   const closePicker = () => setPicker(null);
 
-  // v160.3.9.32-4c.1 — fireInvite() removed. The backend endpoint returns
-  // 410 and admins now use fireReset (magic link) or the direct Set-password
-  // dialog opened from the drawer.
+  // v58.13.86 — fireInvite() restored. Backend `/users/{id}/invite`
+  // was re-enabled from HTTP 410 → 201. Admin explicitly clicks Send
+  // Invite → this fires the invite email/SMS (subject to Comms Safe
+  // Mode). Uses the same ChannelPickerDialog as reset.
+  const fireInvite = async (channel) => {
+    setBusy(true);
+    try {
+      const { data } = await api.post(`/users/${userId}/invite`, { channel });
+      closePicker();
+      toast.success(`Invite sent via ${data?.channel || channel}`);
+      onAfterAction?.();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
 
   const fireReset = async (channel) => {
     setBusy(true);
@@ -85,9 +96,12 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Access</DropdownMenuLabel>
           <DropdownMenuSeparator />
-          {/* v160.3.9.32-4c.1 — "Send invite…" removed. Backend returns
-              410 for the invite endpoint; admin uses Reset password or
-              the direct Set-password action in the drawer instead. */}
+          {/* v58.13.86 — "Send invite…" restored per user directive
+              on manual-send buttons. Backend now returns 201 again. */}
+          <DropdownMenuItem onSelect={() => setPicker({ kind: 'invite' })}
+            data-testid={`access-kebab-invite-${suffix}`}>
+            Send invite…
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setPicker({ kind: 'reset' })}
             data-testid={`access-kebab-reset-${suffix}`}>
             Reset password…
@@ -105,6 +119,14 @@ export default function AccessKebab({ userId, canEdit, can, onAfterAction, testI
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <ChannelPickerDialog
+        open={picker?.kind === 'invite'}
+        onClose={closePicker}
+        title="Send invite"
+        description="The worker will receive a link to set their password and access Paneltec. Their onboarding state resets to 'awaiting first login' until they redeem the link."
+        onConfirm={fireInvite}
+        busy={busy}
+      />
       <ChannelPickerDialog
         open={picker?.kind === 'reset'}
         onClose={closePicker}
