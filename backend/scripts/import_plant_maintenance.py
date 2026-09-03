@@ -96,7 +96,11 @@ def _content_hash(doc: dict) -> str:
 async def _load_rego_index() -> dict:
     idx: dict = {}
     async for a in db.assets.find(
-            {"deleted_at": None, "rego_serial": {"$ne": None, "$ne": ""}},
+            # v58.13.88 lint sweep — F601: previously
+            # `{"$ne": None, "$ne": ""}` where the second key silently
+            # overwrote the first. Intent was "rego is set (not null and
+            # not empty)"; expressed correctly with `$nin` below.
+            {"deleted_at": None, "rego_serial": {"$nin": [None, ""]}},
             {"_id": 0, "id": 1, "rego_serial": 1, "name": 1}):
         idx[_norm_rego(a["rego_serial"])] = a["id"]
     return idx

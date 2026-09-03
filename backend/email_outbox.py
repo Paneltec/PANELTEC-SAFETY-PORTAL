@@ -286,6 +286,25 @@ async def queue_email_doc(
         "created_at": now_iso(),
         "updated_at": now_iso(),
     }
+    # v58.13.88 — Provenance tag. Pull from the send_context ContextVar
+    # so every outbound_emails row records the ACTUAL user whose HTTP
+    # request produced it (independent of `created_by` which callers
+    # sometimes set to "system" for renewal/system-owned records).
+    # Falls back to `null` + `actor_source="system"` if somehow no
+    # request context (shouldn't happen post-.87 contextvar gate).
+    try:
+        from send_context import get_send_context
+        _ctx_user = get_send_context()
+    except Exception:                                 # noqa: BLE001
+        _ctx_user = None
+    if _ctx_user:
+        doc["actor_user_id"] = _ctx_user.get("id")
+        doc["actor_email"] = _ctx_user.get("email")
+        doc["actor_source"] = "user_action"
+    else:
+        doc["actor_user_id"] = None
+        doc["actor_email"] = None
+        doc["actor_source"] = "system"
     if safe_blocked:
         # Block-and-record. The caller (invite flow / reset flow) still gets
         # back a doc dict that looks successful from its POV — the row in

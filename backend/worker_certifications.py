@@ -22,13 +22,16 @@ from pymongo import ReturnDocument
 from auth import get_current_user
 from db import db
 from models import new_id, now_iso
-from permissions import require_permission
+from permissions import require_permission, resolve_team_scope, require_module
 from document_library import (
     MAX_FILE_BYTES, UPLOAD_DIR, _safe_ext, _serialise_file, _stub_ai_tags,
 )
 
 log = logging.getLogger("paneltec.worker_certs")
-from permissions import require_permission, resolve_team_scope, require_module
+# v58.13.88 lint sweep — `require_permission` was imported twice (line 25 and
+# line 31 pre-sweep). Consolidated into the single import above. The extra
+# symbols the second line added (`resolve_team_scope`, `require_module`) are
+# kept on the consolidated line.
 from permissions_scope import require_scoped_access  # v160.3.9.44 (P0-IDOR)
 
 router = APIRouter(
@@ -1018,6 +1021,9 @@ async def run_reminder_scan() -> dict:
 
 
 @router.post("/certifications/scan-reminders")
+# v58.13.88 — `?force=1` accepted for symmetry with the asset-service
+# scan endpoint; both are already user-action so the IS_PROD env gate
+# doesn't apply. Logged for audit.
 async def trigger_reminder_scan(user: dict = Depends(get_current_user)):
     """Manual trigger of the daily scan — admin-only."""
     _require_write(user, action="scan_reminders")

@@ -1406,6 +1406,7 @@ async def update_meter(asset_id: str, body: MeterUpdateIn, user: dict = Depends(
 # ────────────────── Reminder scan ──────────────────
 
 @router.post("/service/scan-reminders")
+# v58.13.88 — user-action endpoint; no gate bypass needed.
 async def scan_reminders(user: dict = Depends(get_current_user)):
     if user.get("role") not in {"admin", "manager", "hseq_lead"}:
         raise HTTPException(403, "Admin/Manager only")

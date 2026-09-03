@@ -458,9 +458,12 @@ async def _navixy_tracker_tag_map(client: httpx.AsyncClient, base: str, h: str) 
     return out
 
 
-import logging
-import os
-
+# v58.13.88 lint sweep — module-level `import logging` (line 19) and
+# `import os` (line 20) at the top of this file already cover these
+# names; the duplicated re-imports here were shadowing them. Removed
+# `import logging` and `import os` at this location. `_LOG` and the
+# NAVIXY_DEBUG env read below continue to work via the top-of-file
+# imports.
 _LOG = logging.getLogger("paneltec.navixy")
 _NAVIXY_DEBUG = os.environ.get("NAVIXY_DEBUG", "").lower() in ("1", "true", "yes")
 

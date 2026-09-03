@@ -105,12 +105,26 @@ export default function CommsSafeMode() {
             <button onClick={() => toggle('on')} disabled={busy || locked || eff === 'on'}
               data-testid="safe-mode-toggle-on"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500">
-              Turn ON
+              Turn Safe Mode ON
             </button>
-            <button onClick={() => toggle('off')} disabled={busy || locked || eff === 'off'}
+            <button
+              onClick={() => {
+                // v58.13.88 — confirmation modal before turning OFF.
+                // Turning ON is always safe; turning OFF opens the door.
+                if (!window.confirm(
+                  'Turn Safe Mode OFF?\n\n' +
+                  'This will allow real emails and SMS to be sent to real recipients from ' +
+                  'every legitimate Send button in the app.\n\n' +
+                  'Recommended: only turn OFF for the bounded window you need to send, ' +
+                  'then turn ON again.\n\n' +
+                  'Continue?'
+                )) return;
+                toggle('off');
+              }}
+              disabled={busy || locked || eff === 'off'}
               data-testid="safe-mode-toggle-off"
               className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
-              Turn OFF
+              Turn Safe Mode OFF…
             </button>
           </div>
           {status && (
@@ -118,6 +132,16 @@ export default function CommsSafeMode() {
               env: <span className="font-mono">{status.env_value}</span> · org: <span className="font-mono">{status.org_value}</span> · effective: <span className="font-mono font-semibold">{status.effective}</span>
             </div>
           )}
+          {/* v58.13.88 — plain-English "what does this affect" panel */}
+          <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
+            <div className="font-semibold text-slate-900 mb-1">What Safe Mode affects</div>
+            <div className="text-xs text-slate-600 leading-relaxed">
+              <span className="font-semibold text-slate-800">Blocks:</span> Microsoft 365 outbound email and TextMagic outbound SMS.<br/>
+              <span className="font-semibold text-slate-800">Does NOT block:</span> in-app notifications (bell), Simpro sync, Navixy GPS, MongoDB, the app itself, or any read-only feature.<br/>
+              <span className="mt-2 block"><span className="font-semibold text-slate-800">Keep it ON</span> when testing, doing dev work, running imports, or when you're not actively sending comms.</span>
+              <span className="block"><span className="font-semibold text-slate-800">Turn it OFF</span> when you're about to click Send Invite / Send Reminder / Send Renewal, then turn back ON.</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -198,8 +222,23 @@ export default function CommsSafeMode() {
         )}
       </div>
 
-      <div className="mt-4 text-xs text-slate-500">
-        Looking for the live outbox? <Link to="/app/email/outbox" className="text-orange-600 hover:underline inline-flex items-center gap-0.5">Email outbox <ChevronRight size={11} /></Link>
+      {/* v58.13.88 — clear CTA replaces the italic "Looking for the live outbox?" line. */}
+      <div className="mt-6 flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
+        <div className="text-sm text-slate-700">
+          <div className="font-semibold text-slate-900">Want to see queued or sent messages?</div>
+          <div className="text-xs text-slate-500 mt-0.5">The full outbox lists every email/SMS the app has queued, sent, blocked, or cancelled.</div>
+        </div>
+        <Link to="/app/email/outbox" data-testid="open-outbox-cta"
+          className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white">
+          Open Outbox <ChevronRight size={12} />
+        </Link>
+      </div>
+
+      {/* v58.13.88 — Belt-and-braces reassurance note. */}
+      <div className="mt-4 text-[11px] text-slate-400 leading-relaxed">
+        Even with Safe Mode OFF, the app architecturally prevents automatic sends. Every outbound
+        message requires a live authenticated user action on the call stack — see v58.13.86-.87 changelogs
+        (Path A / B / C deletions + ContextVar gate).
       </div>
     </div>
   );

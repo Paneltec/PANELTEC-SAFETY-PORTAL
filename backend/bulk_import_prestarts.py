@@ -41,7 +41,16 @@ v58.0.1 scaling bundle (2026-02):
     downloading / extracting, plus a *vision-stall* check that keys off
     `processed` DELTA (not wall-clock) so multi-hour runs are healthy.
 """
-from __future__ import annotations
+# v58.13.88 openapi hotfix — `from __future__ import annotations` was
+# REMOVED. Rationale: the new `@user_limiter.limit` decorator on
+# `init_job` below wraps the endpoint such that FastAPI's
+# `get_type_hints()` can't resolve string-form annotations under PEP
+# 563. With the pragma in place, `body: InitBody` reappeared as a
+# `ForwardRef('InitBody')` inside `TypeAdapter[Annotated[..., Query(...)]]`
+# during OpenAPI schema generation and 500'd `/api/openapi.json`.
+# This file uses PEP 604 `X | None` unions at two sites (line ~1300);
+# Python 3.11+ supports these natively at runtime so the pragma is
+# not required.
 
 import asyncio
 import base64
@@ -58,10 +67,10 @@ import time
 import uuid
 import zipfile
 from datetime import datetime, timezone, timedelta
-from typing import AsyncIterator, Optional
+from typing import Annotated, AsyncIterator, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from db import db
@@ -1646,7 +1655,19 @@ async def get_failed_pdf(gridfs_id: str,
 
 
 @router.post("/init", status_code=201)
-async def init_job(body: InitBody, user: dict = Depends(get_current_user)):
+# v58.13.88 — rate limit 5/hour per USER (not IP — a legitimate import
+# session might make repeated init calls from one IP behind NAT).
+@__import__("rate_limit", fromlist=["user_limiter"]).user_limiter.limit("5/hour")
+async def init_job(request: Request,
+                   body: Annotated[InitBody, Body()],
+                   user: dict = Depends(get_current_user)):
+    # v58.13.88 openapi hotfix — explicit `Annotated[..., Body()]` because
+    # this module uses `from __future__ import annotations` and the
+    # `@user_limiter.limit` wrapper below hides the module globals from
+    # FastAPI's `get_type_hints()` during `app.openapi()` schema
+    # generation, which would otherwise 500 with a
+    # `TypeAdapter[Annotated[ForwardRef('InitBody'), Query(...)]]` error.
+    request.state.current_user = user  # for user_limiter key
     _require_admin(user)
     if body.source == "url":
         if not body.url:

@@ -70,8 +70,16 @@ def test_queue_email_doc_source_param_reverted():
     m = re.search(r"async def queue_email_doc\([\s\S]+?\) -> dict:", EMAIL_OUTBOX_PY)
     sig = m.group(0)
     assert 'source: str = "system"' not in sig
-    assert 'source="user_action"' not in EMAIL_OUTBOX_PY
-    assert 'source="system"' not in EMAIL_OUTBOX_PY
+    # v58.13.86 intent: no `source="user_action"` / `source="system"`
+    # kwargs to `queue_email_doc(...)` (the AUTO_COMMS pattern that was
+    # reverted). Substring-only checks were too broad — v58.13.88 added
+    # provenance tagging that writes `doc["actor_source"] = "system"`
+    # and describes the design in a code comment as `actor_source=
+    # "system"`. Both of those legitimately contain the substring
+    # `source="system"` but neither is a kwarg to `queue_email_doc`.
+    # Tighten to a regex that only matches the kwarg-call form.
+    assert re.search(r'queue_email_doc\([^)]*source="user_action"', EMAIL_OUTBOX_PY) is None
+    assert re.search(r'queue_email_doc\([^)]*source="system"', EMAIL_OUTBOX_PY) is None
 
 
 def test_safe_send_sms_source_param_reverted():
@@ -187,10 +195,27 @@ def test_access_kebab_has_invite_button():
 # ── .env.example — prod guidance ──────────────────────────────────
 
 def test_env_example_pins_comms_safe_mode_on():
-    assert "COMMS_SAFE_MODE=on" in ENV_EXAMPLE
-    # Prod recommendation text present.
-    assert "PROD RECOMMENDATION" in ENV_EXAMPLE
-    # IS_PROD guidance present.
+    # v58.13.88 revised .env.example: `COMMS_SAFE_MODE=on` was
+    # DOWNGRADED to a commented-out FIRE-ALARM-GLASS override with an
+    # explainer, and the old "PROD RECOMMENDATION" block was replaced
+    # with a "NORMAL OPERATION" note. See the .88 test
+    # `test_env_example_downgrades_safe_mode_to_fire_alarm` which
+    # pins the new posture directly. Here we forward-accept either
+    # posture so the .86 test continues to guard the sibling knobs
+    # (IS_PROD) without failing on the .88-approved wording swap.
+    posture_88 = ("FIRE-ALARM-GLASS" in ENV_EXAMPLE
+                  and "NORMAL OPERATION" in ENV_EXAMPLE
+                  and "# COMMS_SAFE_MODE=on" in ENV_EXAMPLE)
+    posture_86 = ("PROD RECOMMENDATION" in ENV_EXAMPLE
+                  and re.search(r"^COMMS_SAFE_MODE=on\s*$",
+                                ENV_EXAMPLE, re.MULTILINE) is not None)
+    assert posture_88 or posture_86, (
+        ".env.example must document Comms Safe Mode via either the "
+        "v58.13.86 posture (active `COMMS_SAFE_MODE=on` line + PROD "
+        "RECOMMENDATION block) or the v58.13.88 posture (commented-out "
+        "override + FIRE-ALARM-GLASS explainer)."
+    )
+    # IS_PROD guidance present (unchanged intent across .86 → .88).
     assert "IS_PROD=" in ENV_EXAMPLE
 
 

@@ -460,7 +460,9 @@ def _job_status_bucket(stage: Optional[str]) -> str:
     return "active"
 
 
-import html as _html_unescape
+# v58.13.88 lint sweep — module-level `import html as _html_unescape`
+# (line 5) already covers this name; the duplicated re-import here was
+# shadowing it. Removed. `_HTML_RX` uses the top-of-file alias.
 _HTML_RX = _re_html.compile(r"<[^>]+>")
 
 

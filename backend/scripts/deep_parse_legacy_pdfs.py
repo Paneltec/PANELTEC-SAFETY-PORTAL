@@ -211,7 +211,11 @@ def parse_pdf(pdf_path: str) -> dict:
         try:
             d = datetime.strptime(date_str, "%d/%m/%Y")
             meta["date"] = d.strftime("%Y-%m-%d")
-        except: pass
+        # v58.13.88 lint sweep — E722: strptime only ever raises
+        # ValueError on malformed input; silence just that one so we
+        # don't accidentally hide unrelated crashes.
+        except ValueError:
+            pass
     if gps: meta["gps"] = gps
 
     # v160.3.0-adjust-16b — Merge multi-line pair labels. When the
@@ -468,7 +472,13 @@ def extract_fields_from_parsed(parsed: dict, template_fields: list, tpl_id: str 
                         m = re.search(r"[\d,]+", v)
                         if m:
                             try: v = int(m.group().replace(",", ""))
-                            except: pass
+                            # v58.13.88 lint sweep — E722: int() on a
+                            # comma-stripped string only raises ValueError;
+                            # attribute access above only raises
+                            # AttributeError if `m` is somehow None (it
+                            # isn't, given the `if m:` guard). Narrow the
+                            # catch so unrelated bugs surface.
+                            except ValueError: pass
                     break
 
         if v is None and ftype in ("text", "textarea", "select", "number", "radio"):
@@ -481,7 +491,10 @@ def extract_fields_from_parsed(parsed: dict, template_fields: list, tpl_id: str 
                         m = re.search(r"[\d,]+", v)
                         if m:
                             try: v = int(m.group().replace(",", ""))
-                            except: pass
+                            # v58.13.88 lint sweep — E722: narrowed to
+                            # ValueError (same rationale as the item-scan
+                            # block above).
+                            except ValueError: pass
                     break
 
         if v is None and ftype in ("radio", "select") and "—" in raw_flabel:
@@ -526,7 +539,10 @@ def extract_fields_from_parsed(parsed: dict, template_fields: list, tpl_id: str 
                         m = re.search(r"[\d,]+", v)
                         if m:
                             try: v = int(m.group().replace(",", ""))
-                            except: pass
+                            # v58.13.88 lint sweep — E722: narrowed to
+                            # ValueError (same rationale as the other
+                            # int()-parse blocks in this function).
+                            except ValueError: pass
                     break
 
         entry = {"field_id": f["id"], "value": v, "label": f.get("label"), "type": ftype}

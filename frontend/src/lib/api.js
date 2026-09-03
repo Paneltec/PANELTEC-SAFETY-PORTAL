@@ -96,6 +96,15 @@ export default api;
 
 // Helper for FastAPI's varied error shapes
 export function apiError(e) {
+  // v58.13.88 — friendly 429 handling. Rate-limited responses carry
+  // `{ok:false, error:"rate_limit_exceeded", retry_after_seconds, message}`
+  // + a `Retry-After` header. Surface the message verbatim so the user
+  // knows exactly how long to wait.
+  if (e?.response?.status === 429) {
+    const body = e?.response?.data || {};
+    return body.message
+      || `Too many attempts. Try again in ${body.retry_after_seconds || 60} seconds.`;
+  }
   const d = e?.response?.data?.detail;
   if (!d) return e?.message || 'Something went wrong';
   if (typeof d === 'string') return d;

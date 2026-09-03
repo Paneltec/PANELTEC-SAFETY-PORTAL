@@ -202,7 +202,20 @@ def test_unauthenticated_upload_rejected(scratch_schedule):
 
 
 def test_openapi_lists_all_three_new_paths():
-    r = requests.get(f"{API}/openapi.json", timeout=30)
+    # v58.13.88 — /api/openapi.json now admin-gated (v58.13.84 B7 fix).
+    # Get an admin token from the shared login endpoint before fetching.
+    login = requests.post(
+        f"{API}/auth/login",
+        json={"email": "stephen@paneltec.com.au", "password": "Mcgstephen50#"},
+        timeout=15,
+    )
+    assert login.status_code == 200, f"admin login failed: {login.status_code}"
+    token = login.json()["access_token"]
+    r = requests.get(
+        f"{API}/openapi.json",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
     assert r.status_code == 200
     paths = r.json()["paths"]
     # FastAPI reports the actual server-side paths, which include the

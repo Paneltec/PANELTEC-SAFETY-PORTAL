@@ -375,7 +375,11 @@ async def signup(body: SignupIn):
 
 
 @router.post("/login", response_model=TokenOut)
-async def login(body: LoginIn, request: Request):
+# v58.13.88 — rate limit 5/min per IP. On 429 the frontend surfaces a
+# toast with Retry-After. Complements the per-account lockout in
+# `is_locked()` below (which is 5 failures / 15 min per email).
+@__import__("rate_limit", fromlist=["limiter"]).limiter.limit("5/minute")
+async def login(request: Request, body: LoginIn):
     email = body.email.lower()
     # Phase 4.7 — lockout pre-check. Locked accounts return 423 with a
     # friendly message; admins can unlock via /api/users/{id}/unlock.

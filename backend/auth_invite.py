@@ -3,8 +3,17 @@
 All public endpoints are rate-limited per IP via a tiny in-memory bucket
 (good enough for a single-worker dev pod; production behind a reverse
 proxy should still honour the headers the bucket emits).
+
+v58.13.88 openapi hotfix note — rate-limited endpoints whose body is a
+Pydantic model MUST annotate the body param as `Annotated[Model, Body()]`
+(not the bare `body: Model` form). Reason: this module uses
+`from __future__ import annotations` (PEP 563), so annotations are stored
+as strings; the slowapi `@limiter.limit` wrapper then hides the module
+`__globals__` from FastAPI's `get_type_hints()` call during OpenAPI
+schema generation, and Pydantic v2 falls back to guessing `Query`, which
+500s the openapi endpoint. Explicit `Body()` short-circuits the guess.
+Applies to `send_reset` and `reset_redeem` below.
 """
-from __future__ import annotations
 import hashlib
 import logging
 import os
@@ -12,11 +21,11 @@ import random
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Annotated, Optional
 
 import bcrypt
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, EmailStr
 
 from auth import (JWT_ALGORITHM, _secret, create_access_token,
@@ -142,14 +151,20 @@ async def _send_invite_sms(user: dict, link: str, kind: str) -> bool:
     phone = user.get("phone") or user.get("mobile")
     if not phone:
         return False
-    try:
-        from integrations import send_sms  # type: ignore
-    except Exception:
-        return False
+    # v58.13.88 — route through the centralised safe_send_sms boundary
+    # (was silently returning False since a rename — `integrations.send_sms`
+    # didn't exist). Now honours Safe Mode + contextvar gate.
+    from integrations_textmagic import safe_send_sms
     body = ("Paneltec password reset: " if kind == "reset" else "Paneltec invite: ") + link
     try:
-        await send_sms(user["org_id"], to=phone, body=body)
-        return True
+        res = await safe_send_sms(
+            user["org_id"], mobiles=[phone], text=body,
+            triggered_by_endpoint=f"auth_invite._send_invite_sms:{kind}",
+            actor_user_id=user.get("id"),
+        )
+        if res.get("blocked") or res.get("skipped"):
+            return True  # audit row logged; caller treats as "held".
+        return bool(res.get("ok"))
     except Exception as exc:
         log.warning("auth_invite sms_failed: %s", exc)
         return False
@@ -294,7 +309,10 @@ async def invite_redeem(body: RedeemIn, request: Request):
 
 # ───── Reset password ────────────────────────────────────────────────
 @router.post("/users/{user_id}/reset-password")
-async def send_reset(user_id: str, body: InviteIn, request: Request,
+# v58.13.88 — rate limit 3/min per IP (admin-triggered reset).
+@__import__("rate_limit", fromlist=["limiter"]).limiter.limit("3/minute")
+async def send_reset(user_id: str, request: Request,
+                     body: Annotated[InviteIn, Body()],
                      caller: dict = Depends(get_current_user)):
     if caller.get("role") != "admin":
         raise HTTPException(403, "Admin only")
@@ -328,7 +346,10 @@ async def send_reset(user_id: str, body: InviteIn, request: Request,
 
 
 @router.post("/auth/reset/redeem")
-async def reset_redeem(body: RedeemIn, request: Request):
+# v58.13.88 — rate limit 10/hr per IP for reset-redeem (belt over
+# the existing `_rate_limit("reset_redeem", 5, request)` in-body check).
+@__import__("rate_limit", fromlist=["limiter"]).limiter.limit("10/hour")
+async def reset_redeem(request: Request, body: Annotated[RedeemIn, Body()]):
     _rate_limit("reset_redeem", 5, request)
     payload = _decode_link_token(body.token, "reset")
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})

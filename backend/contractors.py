@@ -13,11 +13,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from pydantic import BaseModel, EmailStr, Field
 
 from auth import get_current_user
-from permissions import require_permission
+from permissions import require_permission, require_module
 from db import db
 from models import new_id, now_iso
 
-from permissions import require_permission, require_module
+# v58.13.88 lint sweep — `require_permission` was imported twice (line 16 and
+# line 20 pre-sweep). Consolidated into the single import above. `require_module`
+# was the only extra symbol the second line added; keeping it here.
 from permissions_scope import scope_filter, require_scoped_access  # v160.3.9.28
 
 router = APIRouter(

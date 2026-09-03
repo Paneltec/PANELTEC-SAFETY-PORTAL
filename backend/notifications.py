@@ -112,7 +112,12 @@ async def _cat_expiring_certs(now: datetime) -> list[NotificationItem]:
     cur = db.worker_certifications.find(
         {
             "deleted_at": {"$in": [None, ""]},
-            "expiry_date": {"$lte": horizon_str, "$ne": None, "$ne": ""},
+            # v58.13.88 lint sweep — F601: previously `{"$lte": horizon_str,
+            # "$ne": None, "$ne": ""}` where the second `$ne` silently
+            # overwrote the first at dict-literal time. Intent was "expiry
+            # is set (not null and not empty)"; expressed correctly as
+            # `$nin` below so both non-values are excluded.
+            "expiry_date": {"$lte": horizon_str, "$nin": [None, ""]},
         },
         {
             "_id": 0, "id": 1, "worker_id": 1, "name": 1, "expiry_date": 1,
