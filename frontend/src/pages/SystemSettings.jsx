@@ -10,7 +10,7 @@
 // If the page is reloaded mid-install we detect `install_running=true`
 // on mount and resume the polling loop automatically — no orphan
 // spinners.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, XCircle, Loader2, FileText, Settings as Cog } from 'lucide-react';
 import { toast } from 'sonner';
@@ -280,6 +280,100 @@ export default function SystemSettings() {
       {canInstall && (
         <div className="mt-6">
           <SessionTimeoutCard />
+        </div>
+      )}
+
+      {canInstall && <PurgeTestDataCard />}
+    </div>
+  );
+}
+
+// v58.13.81 — Purge Test Data (admin-only "danger zone" card).
+function PurgeTestDataCard() {
+  const [open, setOpen] = React.useState(false);
+  const [loading, setLoading] = React.useState(false);
+  const [dry, setDry] = React.useState(null);   // dry-run response payload
+  const [ack, setAck] = React.useState(false);  // "I understand" checkbox
+  const [busy, setBusy] = React.useState(false);
+  const startDryRun = async () => {
+    setLoading(true); setDry(null); setAck(false); setOpen(true);
+    try {
+      const r = await api.post('/admin/purge-test-data?dry_run=1');
+      setDry(r.data);
+    } catch (e) { toast.error(apiError(e)); setOpen(false); }
+    finally { setLoading(false); }
+  };
+  const confirmDelete = async () => {
+    if (!ack || busy || !dry) return;
+    setBusy(true);
+    try {
+      const r = await api.post('/admin/purge-test-data?dry_run=0');
+      toast.success(`Purge complete — ${r.data.grand_total} rows deleted`);
+      setOpen(false); setDry(null); setAck(false);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="mt-6 rounded-2xl border-2 border-rose-300 bg-white p-4 shadow-sm" data-testid="purge-test-data-card">
+      <div className="flex items-center gap-2 mb-1">
+        <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-rose-50 text-rose-700"><XCircle size={16} /></span>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-slate-900">Purge Test Data</div>
+          <div className="text-[10px] text-slate-500">Danger zone · admin only · irreversible</div>
+        </div>
+        <button onClick={startDryRun}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-rose-300 text-rose-700 hover:bg-rose-50"
+          data-testid="purge-test-data-open">Preview matches…</button>
+      </div>
+      <div className="mt-2 text-[11px] text-slate-600">
+        Hard-deletes rows in <b>assets, workers, sites, forms, doc_files, cs_incident_issues</b> etc. whose name/title matches a test-data pattern (<code className="text-slate-500">TEST-*, demo-*, sample-*, pytest-*, …</code>). Simpro-imported rows are always excluded. Every delete is written to an audit log.
+      </div>
+
+      {open && (
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
+          onClick={() => !busy && setOpen(false)} data-testid="purge-test-data-modal">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="font-display font-bold text-slate-900 text-lg">Purge Test Data — preview</h3>
+            {loading && <div className="mt-4 text-slate-500 text-sm">Loading matches…</div>}
+            {!loading && dry && (
+              <>
+                <p className="text-xs text-slate-500 mt-1">This cannot be undone. Grand total: <b className="text-slate-900" data-testid="purge-total">{dry.grand_total}</b> rows across {dry.matches.length} collection(s).</p>
+                <div className="mt-3 max-h-72 overflow-auto border border-slate-200 rounded-lg">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-50 text-slate-500 sticky top-0">
+                      <tr><th className="text-left px-3 py-2">Collection</th><th className="text-right px-3 py-2">Count</th><th className="text-left px-3 py-2">Sample names</th></tr>
+                    </thead>
+                    <tbody>
+                      {dry.matches.map((m) => (
+                        <tr key={m.collection} className="border-t border-slate-100" data-testid={`purge-row-${m.collection}`}>
+                          <td className="px-3 py-2 font-mono">{m.collection}</td>
+                          <td className="px-3 py-2 text-right font-semibold">{m.count}</td>
+                          <td className="px-3 py-2 text-slate-500 truncate max-w-[280px]" title={m.samples.join(' · ')}>{m.samples.join(' · ')}</td>
+                        </tr>
+                      ))}
+                      {dry.matches.length === 0 && <tr><td colSpan={3} className="px-3 py-4 text-center text-slate-500">No test-data rows found. Nothing to delete.</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
+                <label className="mt-4 flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)}
+                    disabled={dry.grand_total === 0}
+                    className="mt-0.5" data-testid="purge-ack" />
+                  <span>I understand this cannot be undone. All matched rows will be permanently deleted.</span>
+                </label>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button onClick={() => setOpen(false)} disabled={busy}
+                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    data-testid="purge-cancel">Cancel</button>
+                  <button onClick={confirmDelete} disabled={!ack || busy || dry.grand_total === 0}
+                    className="px-4 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="purge-confirm">
+                    {busy ? 'Deleting…' : `Delete ${dry.grand_total} records permanently`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>

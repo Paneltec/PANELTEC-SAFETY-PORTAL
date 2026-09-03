@@ -1,5 +1,120 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.81 — Admin: Purge Test Data (permanent hard-delete).
+//
+// USER PAIN (verbatim): "purg all test data permitly"
+//
+// ── Step A — one-off purge on preview ──────────────────────────
+//   Executed under the confirmed scope (per the ship note):
+//     · 1,008 assets  matching `^TEST-v\d+\.\d+\.\d+-` on `name`
+//     · 1,008 asset_service_schedules  cascade-linked
+//     · 1 doc_files (`sample-ppe.txt`, 38 bytes) + on-disk removal
+//     · 1 cs_incident_issues (`Test- Training / Monday 16/3/24 …`)
+//   Actual deleted counts:
+//     · asset_service_schedules  deleted=1008
+//     · assets                   deleted=1008
+//     · doc_files                deleted=1  on-disk file also removed
+//     · cs_incident_issues       deleted=1
+//     · GRAND TOTAL              2,018 rows
+//   Post-delete verification (all 0):
+//     · assets matching pattern       → 0
+//     · orphan asset_service_schedules→ 0
+//     · doc_files targeted            → 0
+//     · cs_incident_issues targeted   → 0
+//   Audit log written to `/app/memory/purge_v58_13_81_log.txt`
+//   with full id list for every deleted row.
+//
+// ── Step B — reusable Admin Tools button ───────────────────────
+//   NEW `backend/admin_purge_test_data.py`:
+//     POST /api/admin/purge-test-data?dry_run={0|1}
+//     · dry_run=1 → returns {ok, matches:[{collection,count,samples}],
+//                            grand_total} — touches nothing.
+//     · dry_run=0 → deletes matches, cascades asset_service_schedules,
+//                   appends to `/app/memory/purge_v58_13_81_log.txt`
+//                   (timestamp + user email + per-collection counts
+//                   + full id list), returns {ok, deleted, grand_total,
+//                   audit_log}.
+//     · Simpro-imported rows ALWAYS excluded via
+//       `{"source": {"$ne": "simpro"}}` on every query.
+//     · Guarded by role == "admin" (raises 403 "Admin role required"
+//       otherwise). Not tied to `require_permission("admin","manage")`
+//       — that permission isn't in the current PERMISSIONS_SCHEMA
+//       so it would 403 admins.
+//   Router registered in `server.py` right after `admin_active_sessions`.
+//
+//   NEW `PurgeTestDataCard` in `frontend/src/pages/SystemSettings.jsx`
+//   (rendered only when `canInstall`, i.e. admin-only, at the bottom
+//   of the Server Tools page):
+//     · Rose-bordered "danger zone" card with a "Preview matches…"
+//       button that calls dry-run.
+//     · Modal shows a scrollable count-and-samples table, plus a
+//       required "I understand this cannot be undone" checkbox.
+//     · Big red "Delete N records permanently" button is disabled
+//       until the ack checkbox is ticked AND grand_total > 0.
+//     · Backdrop click and Cancel button dismiss safely.
+//     · testids: purge-test-data-card, purge-test-data-open,
+//       purge-test-data-modal, purge-total, purge-ack, purge-cancel,
+//       purge-confirm, purge-row-{collection}.
+//
+//   Pattern whitelist (case-insensitive):
+//     ^TEST-v\d+\.\d+\.\d+-, ^TEST-,
+//     ^test-vehicle-, ^test-worker-, ^test-site-, ^test-hazard-,
+//     ^test-swms-, ^test-incident-, ^test-inspection-,
+//     ^test-diary-, ^test-prestart-, ^test-supplier-, ^test-cert-,
+//     ^demo-, ^sample-, ^seed-,
+//     pytest-, _pytest_, __test__
+//   Target collections: assets, workers, sites, hazards, swms,
+//     incidents, inspections, site_diary_entries, pre_starts,
+//     doc_files, doc_folders, worker_certifications, suppliers,
+//     form_assignments, form_submissions, qr_codes, bulk_import_jobs,
+//     bulk_import_pdf_cache, cs_incident_issues, hr_employees,
+//     workspaces.
+//
+// ── Curl proofs (post-Step-A, on preview LOCAL uvicorn) ────────
+//   admin  POST /api/admin/purge-test-data?dry_run=1  → 200
+//          {ok:true, grand_total:0, matches:[]}     (all clean)
+//   admin  POST /api/admin/purge-test-data?dry_run=0  → 200
+//          {ok:true, grand_total:0, deleted:{}}     (no-op)
+//   non-admin POST … → 403 {"detail":"Admin role required"}
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_admin_purge_v58_13_81.py`:
+//     · Router module importable + route registered at expected path.
+//     · Server.py includes the new router.
+//     · Simpro-source guard present on every query.
+//     · Admin role guard present + wired into handler.
+//     · TEST_PATTERNS covers every pattern in the spec whitelist.
+//     · TARGET_COLLECTIONS covers all 21 collections in the spec.
+//     · asset_service_schedules cascade delete wired.
+//     · Audit log path pinned; audit log opened in append mode.
+//     · Frontend card + modal carry all required testids.
+//     · Frontend calls dry-run first, commit second.
+//     · Delete button disabled until ack + grand_total > 0.
+//     · Version-sync forward-safe pin (>= 81).
+//
+//   Full pytest_backend suite: 401 passed (was 387 pre-ship;
+//   +14 new, zero regressions).
+//
+// ── Rollout plan ───────────────────────────────────────────────
+//   · PREVIEW: Step A executed; endpoint live; UI card shipped.
+//   · PROD: user re-publishes when they're ready. Same Admin Tools
+//     card will appear on prod. User clicks "Preview matches…",
+//     reviews the count-and-samples table, ticks the ack box, and
+//     runs the commit call. All prod deletes stream to the prod
+//     audit log at the same path.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No other endpoints touched.
+//   · No new frontend routes; the card just renders inside the
+//     existing Server Tools page for admins.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (new router mounted). Done on preview.
+//   · Frontend hot-reload picks up the new card.
+//   · All 3 canonical version strings bumped to `.81`.
+
 // v160.3.9.58.13.80 — P2: Per-row drag-and-drop attach on Worker
 //                     Certifications ("drop a image to a specific
 //                      named position").
@@ -7040,7 +7155,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.80';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.81';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -1,0 +1,48 @@
+# Paneltec test-data purge audit log — v58.13.81
+# Timestamp: 2026-09-03T06:14:21.539577+00:00
+# Triggered by: Stephen (admin, one-off migration script)
+# Env: PREVIEW (test_database)
+
+## asset_service_schedules  deleted=1008
+  asset_id_ref: 758172a1-8a5b-42f7-86e3-1f79fd570d9f
+  asset_id_ref: 39ecaf36-9d3c-41e2-a91b-d1a53edd0c1e
+  asset_id_ref: c27325db-5735-4daf-88e4-93db32768e1c
+  asset_id_ref: e6e08529-814c-4746-bb22-df0b43d927ff
+  asset_id_ref: b10a5153-aa32-42d6-8920-bf4095009815
+  asset_id_ref: f50e740a-dbea-4491-9dc8-b969398ce9b6
+  asset_id_ref: b3c96f8d-ab86-4950-aea2-b0ea361a20bb
+  asset_id_ref: c51057ef-ae82-4b18-998b-5072c987a000
+  asset_id_ref: ba518dee-1838-41f6-ad8c-f0b7e72f1618
+  asset_id_ref: 3adb5ccf-fed6-4a92-a7c2-3d5f140b9964
+  … + 998 more asset_id refs
+
+## assets  deleted=1008
+  id: 758172a1-8a5b-42f7-86e3-1f79fd570d9f
+  id: 39ecaf36-9d3c-41e2-a91b-d1a53edd0c1e
+  id: c27325db-5735-4daf-88e4-93db32768e1c
+  id: e6e08529-814c-4746-bb22-df0b43d927ff
+  id: b10a5153-aa32-42d6-8920-bf4095009815
+  id: f50e740a-dbea-4491-9dc8-b969398ce9b6
+  id: b3c96f8d-ab86-4950-aea2-b0ea361a20bb
+  id: c51057ef-ae82-4b18-998b-5072c987a000
+  id: ba518dee-1838-41f6-ad8c-f0b7e72f1618
+  id: 3adb5ccf-fed6-4a92-a7c2-3d5f140b9964
+  … + 998 more ids
+
+## doc_files  deleted=1
+  removed on-disk: /app/backend/uploads/document_library/e312493e-2f2c-4ab4-a063-f67ce45d87ad/77480ccde9a449028273859953809db9.txt  (38 bytes)
+  id=50950bb6-b6e3-4380-9206-d38ec0df9313  filename=sample-ppe.txt
+  on_disk_files_removed=1
+
+## cs_incident_issues  deleted=1
+  id: 957371b7-bfd7-4b51-b35d-49f7dc7f41f2
+
+## GRAND TOTAL rows deleted: 2018
+
+## Post-delete verification (must all be 0):
+  assets matching pattern       : 0
+  orphan asset_service_schedules: 0
+  doc_files targeted            : 0
+  cs_incident_issues targeted   : 0
+
+## 2026-09-03T06:17:41.767691+00:00  user=stephen@paneltec.com.au  grand_total=0
