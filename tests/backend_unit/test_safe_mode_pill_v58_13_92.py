@@ -34,11 +34,10 @@ def test_pill_renders_regardless_of_effective_state():
 
 
 def test_pill_renders_both_on_and_off_branches():
-    """Green (OFF) and amber (ON) code paths must both exist inside
-    the IIFE. Simple substring checks — the IIFE picks colors via a
-    single ternary."""
-    assert "bg-amber-100" in APPSHELL_JSX  # ON branch
-    assert "bg-emerald-50" in APPSHELL_JSX  # OFF branch (subdued green)
+    """Green (ON) and amber (OFF) code paths must both exist inside
+    the IIFE. v58.13.94 flipped the semantics — ON=green, OFF=amber."""
+    assert "bg-emerald-100" in APPSHELL_JSX  # ON branch (v58.13.94)
+    assert "bg-amber-50" in APPSHELL_JSX  # OFF branch (v58.13.94)
     assert "ShieldCheck" in APPSHELL_JSX  # ON icon
     assert "ShieldOff" in APPSHELL_JSX  # OFF icon
     # Label ternary present.
@@ -84,10 +83,11 @@ def test_pill_has_focus_ring_and_aria_label():
 
 def test_pill_tooltips_match_spec():
     """Tooltip copy is asserted verbatim so a future edit can't drift
-    the wording that ships in the UI."""
-    assert "Comms Safe Mode is ON — outbound comms blocked. Click to manage." in APPSHELL_JSX
-    assert "Comms Safe Mode is OFF — comms live. Click to manage." in APPSHELL_JSX
-    assert "Comms Safe Mode is ON (env-locked)" in APPSHELL_JSX
+    the wording that ships in the UI. v58.13.94 flipped the copy to
+    emphasise SAFETY on ON and RISK on OFF."""
+    assert "Comms Safe Mode is ON — outbound comms are being captured safely, not delivered. Click to manage." in APPSHELL_JSX
+    assert "Comms Safe Mode is OFF — real emails and SMS will fire on button clicks. Click to manage." in APPSHELL_JSX
+    assert "Comms Safe Mode is ON (env-locked) —" in APPSHELL_JSX
 
 
 # ── Live-update wiring ──

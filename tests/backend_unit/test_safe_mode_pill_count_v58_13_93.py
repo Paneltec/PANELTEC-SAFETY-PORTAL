@@ -93,32 +93,35 @@ def test_pill_reads_blocked_count_from_status():
 
 
 def test_pill_badge_dom_contract():
-    """Badge testid + numeric class + `data-blocked-count` attribute."""
+    """Badge testid + numeric class + `data-blocked-count` attribute.
+    v58.13.94 flipped the badge chrome from amber-500/white to
+    white/emerald-800 for contrast on the new green pill."""
     assert 'data-testid="comms-safe-mode-chip-count"' in APPSHELL_JSX
     # `data-blocked-count={String(n)}` on the outer Link.
     assert 'data-blocked-count={String(n)}' in APPSHELL_JSX
-    # Badge visual: amber-500 background + white text tabular-nums.
+    # Badge visual: white fill + emerald-800 text (v58.13.94 flip).
     m = re.search(
-        r'data-testid="comms-safe-mode-chip-count"[\s\S]{0,400}?bg-amber-500[\s\S]{0,400}?text-white',
+        r'data-testid="comms-safe-mode-chip-count"[\s\S]{0,400}?bg-white[\s\S]{0,400}?text-emerald-800',
         APPSHELL_JSX,
     )
-    assert m, "badge visual class hints (bg-amber-500 + text-white) not found"
-    # Nested only when `showBadge` is true.
-    assert re.search(r"\{showBadge\s*&&\s*\(\s*<span", APPSHELL_JSX)
+    assert m, "badge visual class hints (bg-white + text-emerald-800) not found"
+    # Nested only when `showBadge` is true (tolerate an inline
+    # comment block between the guard and the <span>).
+    assert re.search(r"\{showBadge\s*&&\s*\([\s\S]{0,600}?<span", APPSHELL_JSX)
 
 
 def test_pill_tooltip_switches_to_count_variant_when_n_gt_0():
     """When ON and count > 0, the tooltip must include the count and
-    the pluralised copy. Verbatim substring checks so wording drift
-    fails CI."""
+    the pluralised copy. v58.13.94 wording: "N outbound comm(s)
+    captured safely, not delivered."."""
     # Non-env-locked ON+N>0
-    assert "outbound comm${n === 1 ? '' : 's'} blocked" in APPSHELL_JSX
+    assert "outbound comm${n === 1 ? '' : 's'} captured safely, not delivered" in APPSHELL_JSX
     # Env-locked ON+N>0 variant
     assert "Comms Safe Mode is ON (env-locked) — ${n} outbound comm" in APPSHELL_JSX
-    # OFF unchanged
-    assert "Comms Safe Mode is OFF — comms live. Click to manage." in APPSHELL_JSX
-    # ON+N=0 unchanged
-    assert "Comms Safe Mode is ON — outbound comms blocked. Click to manage." in APPSHELL_JSX
+    # OFF unchanged (v58.13.94 wording)
+    assert "Comms Safe Mode is OFF — real emails and SMS will fire on button clicks. Click to manage." in APPSHELL_JSX
+    # ON+N=0 unchanged (v58.13.94 wording)
+    assert "Comms Safe Mode is ON — outbound comms are being captured safely, not delivered. Click to manage." in APPSHELL_JSX
 
 
 def test_off_branch_never_renders_badge():

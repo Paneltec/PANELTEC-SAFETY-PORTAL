@@ -427,30 +427,37 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         const eff = safeMode.effective;
         const locked = !!safeMode.env_locked;
         const isOn = eff === 'on';
-        // v58.13.93 — Blocked-outbox count badge (rendered only when
-        // ON and count > 0 — a `· 0` trailing separator is visual
-        // noise). `blocked_count` shipped in the status payload.
         const n = Number(safeMode.blocked_count || 0);
         const showBadge = isOn && n > 0;
+        // v58.13.94 — Color semantics flipped from .92/.93 to match
+        // user intuition. USER PAIN VERBATIM: "with the safe mode on
+        // you were going to turn the pill green to show its on."
+        //   ON  → GREEN (system is protecting — reassuring)
+        //   OFF → AMBER (real sends possible — warning)
+        // Icons unchanged: ShieldCheck (ON) = "protected",
+        // ShieldOff (OFF) = "protection dropped".
         const cls = isOn
-          ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
-          : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100';
+          ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+          : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100';
         const Icon = isOn ? ShieldCheck : ShieldOff;
         const iconCls = isOn
-          ? 'fill-amber-500 text-amber-700'
-          : 'text-emerald-700';
+          ? 'fill-emerald-500 text-emerald-700'
+          : 'text-amber-700';
         const label = isOn
           ? 'Comms Safe Mode: ON'
           : 'Comms Safe Mode: OFF';
+        // v58.13.94 — Tooltip copy also flipped to emphasise SAFETY
+        // when ON and RISK when OFF (per ship spec). Pluralisation
+        // and the env-locked qualifier from .92/.93 preserved.
         const tooltip = isOn
           ? (locked
               ? (showBadge
-                  ? `Comms Safe Mode is ON (env-locked) — ${n} outbound comm${n === 1 ? '' : 's'} blocked. Click to manage.`
-                  : 'Comms Safe Mode is ON (env-locked) — outbound comms blocked. Click to manage.')
+                  ? `Comms Safe Mode is ON (env-locked) — ${n} outbound comm${n === 1 ? '' : 's'} captured safely, not delivered. Click to manage.`
+                  : 'Comms Safe Mode is ON (env-locked) — outbound comms are being captured safely, not delivered. Click to manage.')
               : (showBadge
-                  ? `Comms Safe Mode is ON — ${n} outbound comm${n === 1 ? '' : 's'} blocked. Click to manage.`
-                  : 'Comms Safe Mode is ON — outbound comms blocked. Click to manage.'))
-          : 'Comms Safe Mode is OFF — comms live. Click to manage.';
+                  ? `Comms Safe Mode is ON — ${n} outbound comm${n === 1 ? '' : 's'} captured safely, not delivered. Click to manage.`
+                  : 'Comms Safe Mode is ON — outbound comms are being captured safely, not delivered. Click to manage.'))
+          : 'Comms Safe Mode is OFF — real emails and SMS will fire on button clicks. Click to manage.';
         return (
           <Link
             to="/app/settings/comms-safe-mode"
@@ -460,21 +467,28 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
             data-mode={eff}
             data-env-locked={locked ? 'true' : 'false'}
             data-blocked-count={String(n)}
-            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${isOn ? 'focus:ring-amber-400' : 'focus:ring-emerald-400'} ${cls}`}
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${isOn ? 'focus:ring-emerald-400' : 'focus:ring-amber-400'} ${cls}`}
           >
             <Icon size={12} className={iconCls} aria-hidden="true" />
             {label}
             {showBadge && (
+              // v58.13.94 — Badge re-coloured for contrast on the
+              // new green pill. White fill + emerald-800 text keeps
+              // the count legible without adding a second "alarm"
+              // colour to a pill that is itself the reassuring
+              // signal. If the count needs to feel more urgent for
+              // large backlogs, a future ship can swap to
+              // `bg-rose-500 text-white` at a threshold (e.g. N>=10).
               <span
                 data-testid="comms-safe-mode-chip-count"
-                className="ml-0.5 inline-flex items-center justify-center min-w-[16px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none tabular-nums"
+                className="ml-0.5 inline-flex items-center justify-center min-w-[16px] px-1 rounded-full bg-white text-emerald-800 border border-emerald-300 text-[10px] font-bold leading-none tabular-nums"
                 aria-hidden="true"
               >
                 {n}
               </span>
             )}
             {locked && (
-              <Lock size={10} className="text-amber-700" aria-hidden="true" data-testid="comms-safe-mode-chip-env-lock" />
+              <Lock size={10} className="text-emerald-700" aria-hidden="true" data-testid="comms-safe-mode-chip-env-lock" />
             )}
           </Link>
         );

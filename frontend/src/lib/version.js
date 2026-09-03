@@ -8432,7 +8432,104 @@
 //   change. No env changes. No `/app/mobile/` changes beyond the
 //   version string.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.93';
+// v160.3.9.58.13.94 — Comms Safe Mode pill color flip.
+//
+// USER PAIN VERBATIM: "with the safe mode on you were going to turn
+// the pill green to show its on."
+//
+// The .92/.93 pill mapped ON → amber and OFF → green — matching the
+// generic "amber = pay attention" convention. Users read it the
+// other way round: ON means the SYSTEM is being safe (reassuring →
+// GREEN), and OFF means real deliveries can fire (nervous → AMBER).
+// .94 flips the semantics accordingly.
+//
+// ── AppShell.jsx (top-bar pill) ──
+//   Pill background/border/hover:
+//     · ON  → bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200
+//     · OFF → bg-amber-50    text-amber-900   border-amber-300    hover:bg-amber-100
+//   Icon fill:
+//     · ON  → ShieldCheck fill-emerald-500 text-emerald-700
+//     · OFF → ShieldOff text-amber-700
+//   Env-lock nested badge: text-emerald-700 (was text-amber-700).
+//   Focus ring: emerald-400 on ON, amber-400 on OFF.
+//
+// ── Blocked-outbox count badge (from .93) ──
+//   Was `bg-amber-500 text-white` — clashed on the new green pill.
+//   Swapped to `bg-white text-emerald-800 border border-emerald-300`
+//   for a high-contrast chip that doesn't add a second "alarm" hue
+//   to the reassurance signal. Contrast ~10.5:1, well over WCAG AA.
+//
+// ── Tooltip / aria-label ──
+//   Copy re-cast to emphasise SAFETY on ON and RISK on OFF:
+//     · ON:  "Comms Safe Mode is ON — outbound comms are being
+//             captured safely, not delivered. Click to manage."
+//     · ON+N>0: "Comms Safe Mode is ON — {N} outbound comm(s)
+//             captured safely, not delivered. Click to manage."
+//     · OFF: "Comms Safe Mode is OFF — real emails and SMS will
+//             fire on button clicks. Click to manage."
+//   Env-locked variants append " (env-locked)". Pluralisation from
+//   .93 preserved (1 comm vs N comms).
+//
+// ── CommsSafeMode.jsx (admin page state accent card) ──
+//   The "Safe Mode is ON/OFF" card at the top mirrored the pre-.94
+//   amber-for-ON scheme. Flipped to match the pill:
+//     · ON  → bg-emerald-50 / border-emerald-200 · icon tile
+//              bg-emerald-200 text-emerald-800 · Zap fill-emerald-600
+//     · OFF → bg-amber-50 / border-amber-200 · icon tile
+//              bg-amber-200 text-amber-800 · Zap fill-amber-600
+//   Zap on OFF gains a fill (was a bare outline) for parity with
+//   the ON tile weight.
+//
+// ── Tests ──
+//   `test_safe_mode_pill_v58_13_92.py` and
+//   `test_safe_mode_pill_count_v58_13_93.py` had verbatim
+//   assertions on the amber-for-ON classes and the old tooltip
+//   copy. .94 updates both in place. New
+//   `test_safe_mode_pill_colors_v58_13_94.py` pins the flipped
+//   semantics so a future edit that re-flips fails CI.
+//
+// ── SANITY ──
+//   No backend change. No env change. Frontend-only Tailwind swap
+//   + tooltip copy + admin-page accent card. Hot-reload picks it up.
+
+// v160.3.9.58.13.95 — "Open Outbox" CTA route fix.
+//
+// USER PAIN VERBATIM: "the open out tab takes me to a new login again."
+//
+// The Comms Safe Mode admin page (`CommsSafeMode.jsx`) had an
+// "Open Outbox" link pointing to `/app/email/outbox` — a route
+// that has NEVER been registered in `App.js`. The canonical route
+// is `/app/outbox` (registered at `App.js:250` as
+// `<Route path="outbox" element={<Outbox />} />` and already used
+// by `OutboxBell.jsx:25` in the top-bar bell). React Router's
+// catch-all `<Route path="*" element={<Navigate to="/" replace />} />`
+// (`App.js:255`) redirected the unknown route to `/`, which for a
+// mid-hydration session lands on the Cover / Login screen —
+// exactly the "new login again" symptom the user reported.
+//
+// One-line fix: `/app/email/outbox` → `/app/outbox` in
+// `CommsSafeMode.jsx:315` (the `<Link>` wrapping the "Open Outbox"
+// CTA under the "Live vs Blocked outbox" explainer).
+//
+// ── Audit sweep ──
+//   grep -rn '"/app/email/outbox"' frontend/src → only this one
+//   site. Every other outbox reference already uses `/app/outbox`
+//   (`OutboxBell.jsx`, `Outbox.jsx` self-link, etc.), so no other
+//   fix needed.
+//
+// ── Test ──
+//   `tests/backend_unit/test_open_outbox_route_v58_13_95.py`:
+//     · `CommsSafeMode.jsx` CTA links to `/app/outbox` (not
+//       `/app/email/outbox` or any other path).
+//     · The canonical route `/app/outbox` is registered in
+//       `App.js`.
+//     · Version-sync pin ≥ 95.
+//
+// ── SANITY ──
+//   No backend change. No env change. Frontend-only one-line swap;
+//   hot-reload picks it up.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.95';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

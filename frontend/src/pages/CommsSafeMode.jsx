@@ -98,15 +98,19 @@ export default function CommsSafeMode() {
 
       <HowThisWorks schematicSlug="comms_safe_mode" />
 
+      {/* v58.13.94 — Color semantics flipped to match user intuition
+          (ON=green=safe, OFF=amber=risk). Icon behaviour: on ON the
+          lightning is filled emerald; on OFF it's an amber outline
+          to signal "protection dropped". */}
       <div className={`mb-6 rounded-2xl border p-5 flex items-start gap-4 ${
         eff === 'on'
-          ? 'bg-amber-50 border-amber-200'
-          : 'bg-emerald-50 border-emerald-200'
+          ? 'bg-emerald-50 border-emerald-200'
+          : 'bg-amber-50 border-amber-200'
       }`}>
         <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-          eff === 'on' ? 'bg-amber-200 text-amber-800' : 'bg-emerald-200 text-emerald-800'
+          eff === 'on' ? 'bg-emerald-200 text-emerald-800' : 'bg-amber-200 text-amber-800'
         }`}>
-          <Zap size={20} className={eff === 'on' ? 'fill-amber-600 text-amber-600' : ''} />
+          <Zap size={20} className={eff === 'on' ? 'fill-emerald-600 text-emerald-600' : 'fill-amber-600 text-amber-600'} />
         </div>
         <div className="flex-1">
           <div className="font-display text-lg font-semibold text-slate-900">
@@ -308,7 +312,7 @@ export default function CommsSafeMode() {
           <div className="font-semibold text-slate-900">Want to see queued or sent messages?</div>
           <div className="text-xs text-slate-500 mt-0.5">The full outbox lists every email/SMS the app has queued, sent, blocked, or cancelled.</div>
         </div>
-        <Link to="/app/email/outbox" data-testid="open-outbox-cta"
+        <Link to="/app/outbox" data-testid="open-outbox-cta"
           className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-white">
           Open Outbox <ChevronRight size={12} />
         </Link>
