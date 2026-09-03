@@ -554,6 +554,17 @@ install_backup(app, _mongo_db, require_roles("admin"))
 async def on_startup():
     await ensure_indexes()
     await session_history_ensure_indexes()
+    # v58.13.90 — Idempotent seed of the `comms_safe_mode.edit` override
+    # for Stephen Guy. Runs on every backend restart; a no-op after the
+    # first apply. Failure is logged but never blocks startup because
+    # Stephen can always toggle via the DB one-liner in the ship report
+    # if this hook silently fails on some future schema drift.
+    try:
+        from comms_safe_mode import ensure_stephen_can_toggle
+        _res = await ensure_stephen_can_toggle()
+        log.info("comms_safe_mode.startup_seed: %s", _res)
+    except Exception as e:  # noqa: BLE001
+        log.warning("comms_safe_mode startup seed failed: %s", e)
     # v160.3.9.58.13.47 — TTL + query indexes for capture-density
     # telemetry. Best-effort, silent on failure (idempotent).
     try:

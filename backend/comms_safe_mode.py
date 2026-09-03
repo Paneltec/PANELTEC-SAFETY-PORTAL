@@ -137,7 +137,16 @@ class SafeModeUpdate(BaseModel):
 @router.patch("/comms-safe-mode")
 async def patch_safe_mode(
     body: SafeModeUpdate,
-    user: dict = Depends(require_permission("notifications", "edit")),
+    # v58.13.90 — Was `require_permission("notifications", "edit")`,
+    # which granted the toggle to every admin (and every role whose
+    # matrix cell inherits notifications.edit). Now uses the dedicated
+    # `comms_safe_mode.edit` token, which is DENIED for every seeded
+    # role by default (see permissions.py after ROLE_DEFAULTS). Admins
+    # must explicitly grant the override via
+    # `db.user_permissions.overrides.comms_safe_mode.edit = true` OR
+    # via the Users & Permissions matrix UI. Preview seeds Stephen's
+    # override on startup (see `server.py::on_startup`).
+    user: dict = Depends(require_permission("comms_safe_mode", "edit")),
 ):
     if env_is_master_on():
         raise HTTPException(
@@ -167,6 +176,73 @@ async def list_blocked(
         q["channel"] = channel
     docs = await db.comms_outbox_blocked.find(q, {"_id": 0}).sort("ts", -1).to_list(limit)
     return {"items": docs, "count": len(docs)}
+
+
+# v58.13.90 — Who currently holds the `comms_safe_mode.edit` override?
+# Any authed user in the org can call this — the answer helps a
+# non-permission-holder find the right person to contact. Returns
+# minimal identity fields (id, name, email) — never role/perms/session
+# data. Silent-empty if the collection is missing so the frontend
+# doesn't 500 on a fresh install.
+@router.get("/comms-safe-mode/who-can-toggle")
+async def who_can_toggle(user: dict = Depends(get_current_user)):
+    holders = []
+    try:
+        # Overrides doc shape: `{user_id, org_id, overrides: {resource: {action: bool}}}`
+        cur = db.user_permissions.find(
+            {"org_id": user["org_id"], "overrides.comms_safe_mode.edit": True},
+            {"_id": 0, "user_id": 1},
+        )
+        user_ids = [d["user_id"] async for d in cur]
+        if user_ids:
+            u_cur = db.users.find(
+                {"id": {"$in": user_ids}, "org_id": user["org_id"], "deleted_at": None},
+                {"_id": 0, "id": 1, "name": 1, "email": 1},
+            )
+            holders = [u async for u in u_cur]
+    except Exception as exc:
+        log.warning("who_can_toggle probe failed: %s", exc)
+    holders.sort(key=lambda h: (h.get("name") or h.get("email") or "").lower())
+    return {"holders": holders, "count": len(holders)}
+
+
+# v58.13.90 — Idempotent startup seed hook for Stephen's override.
+# Called from `server.py::on_startup` after the role-cache bootstrap.
+# Safe to call on every restart; a no-op after the first apply.
+# NOT tied to `seed_all()` because prod doesn't run the dev seed on
+# boot but still needs Stephen's override to exist.
+STEPHEN_EMAIL = "stephen@paneltec.com.au"
+
+
+async def ensure_stephen_can_toggle() -> dict:
+    """Grant the `comms_safe_mode.edit` override to Stephen Guy if
+    it isn't already granted. Preserves any other overrides on his
+    row. Returns a summary suitable for a startup log line."""
+    stephen = await db.users.find_one(
+        {"email": STEPHEN_EMAIL, "deleted_at": None},
+        {"_id": 0, "id": 1, "org_id": 1},
+    )
+    if not stephen:
+        return {"granted": False, "reason": "stephen_user_not_found"}
+    existing = await db.user_permissions.find_one(
+        {"user_id": stephen["id"]}, {"_id": 0, "overrides": 1},
+    ) or {}
+    overrides = existing.get("overrides") or {}
+    already = bool((overrides.get("comms_safe_mode") or {}).get("edit"))
+    if already:
+        return {"granted": True, "no_op": True, "user_id": stephen["id"]}
+    await db.user_permissions.update_one(
+        {"user_id": stephen["id"]},
+        {"$set": {
+            "org_id": stephen["org_id"],
+            "overrides.comms_safe_mode.edit": True,
+            "updated_at": now_iso(),
+            "updated_by": "system:v58_13_90_seed",
+        }},
+        upsert=True,
+    )
+    log.info("comms_safe_mode.override_seeded user_id=%s (Stephen)", stephen["id"])
+    return {"granted": True, "no_op": False, "user_id": stephen["id"]}
 
 
 # v58.13.85 — Admin one-click purge of the blocked outbox.

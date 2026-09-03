@@ -19,20 +19,44 @@ export default function CommsSafeMode() {
   const [blocked, setBlocked] = useState({ items: [], count: 0 });
   const [channelF, setChannelF] = useState('');
   const [busy, setBusy] = useState(false);
+  // v58.13.90 — Toggle is now gated by the granular
+  // `comms_safe_mode.edit` permission (see backend permissions.py +
+  // comms_safe_mode.py). Fetch the caller's effective matrix from
+  // `/api/permissions/me` so we can disable the button + surface a
+  // "who can toggle" contact hint. Also fetch the list of users who
+  // currently hold the override so the caller knows who to ask.
+  const [canToggle, setCanToggle] = useState(false);
+  const [holders, setHolders] = useState([]);
 
   const load = async () => {
     try {
-      const [s, b] = await Promise.all([
+      const [s, b, p, w] = await Promise.all([
         api.get('/admin/comms-safe-mode/status'),
         api.get(`/admin/comms-outbox-blocked${channelF ? `?channel=${channelF}` : ''}`),
+        // v58.13.90 — `/api/auth/me` returns `{..., effective_permissions:
+        // {resource: {action: bool, ...}, ...}}`. That's the canonical
+        // permission surface the rest of the app already uses (see
+        // AuthContext + UsersManagement matrix).
+        api.get('/auth/me').catch(() => ({ data: {} })),
+        api.get('/admin/comms-safe-mode/who-can-toggle').catch(() => ({ data: { holders: [] } })),
       ]);
       setStatus(s.data);
       setBlocked(b.data);
+      const eff = p.data?.effective_permissions || {};
+      setCanToggle(!!(eff.comms_safe_mode && eff.comms_safe_mode.edit));
+      setHolders(w.data?.holders || []);
     } catch (e) { toast.error(apiError(e)); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [channelF]);
 
   const toggle = async (mode) => {
+    if (!canToggle) {
+      const contact = holders.length
+        ? holders.map((h) => h.name || h.email).join(', ')
+        : 'your administrator';
+      toast.error(`You don't have permission to change Safe Mode. Contact ${contact} to request access.`);
+      return;
+    }
     if (status?.env_locked) {
       toast.error('Locked by env var — contact your operator.');
       return;
@@ -46,8 +70,16 @@ export default function CommsSafeMode() {
       // v58.7.1 — Defensive: if the backend rejects with 423 (env
       // locked between load and click) surface the same toast as the
       // pre-check above so the user isn't left wondering.
+      // v58.13.90 — Also surface 403 (missing permission) with the
+      // friendly "contact X" copy instead of a raw "Permission denied".
       const code = e?.response?.status;
       if (code === 423) toast.error('Locked by env var — contact your operator.');
+      else if (code === 403) {
+        const contact = holders.length
+          ? holders.map((h) => h.name || h.email).join(', ')
+          : 'your administrator';
+        toast.error(`You don't have permission to change Safe Mode. Contact ${contact}.`);
+      }
       else toast.error(apiError(e));
     }
     finally { setBusy(false); }
@@ -101,9 +133,38 @@ export default function CommsSafeMode() {
               </span>
             </div>
           )}
+          {/* v58.13.90 — Permission banner. Sits ABOVE the toggle
+              buttons like the env-lock banner (same visual pattern
+              so the user reads both signals top-to-bottom). Only
+              shows when the caller lacks `comms_safe_mode.edit` AND
+              the env-lock isn't already covering the same buttons.
+              Lists the current holders so the user knows exactly
+              who to ask; falls back to "your administrator" when
+              the roster is empty. */}
+          {!canToggle && !locked && (
+            <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50 p-3 flex items-start gap-2 text-sm text-violet-900"
+                 data-testid="perm-lock-banner"
+                 data-perm-token="comms_safe_mode.edit">
+              <Lock size={16} className="mt-0.5 shrink-0 text-violet-700" />
+              <span>
+                <span className="font-semibold">You don&apos;t have permission to change Safe Mode.</span>
+                {' '}
+                {holders.length > 0 ? (
+                  <>Contact{' '}
+                    <span data-testid="perm-lock-holders" className="font-semibold">
+                      {holders.map((h) => h.name || h.email).join(', ')}
+                    </span>{' '}to request access.
+                  </>
+                ) : (
+                  <span data-testid="perm-lock-holders">Contact your administrator to request access.</span>
+                )}
+              </span>
+            </div>
+          )}
           <div className="mt-3 flex gap-2">
-            <button onClick={() => toggle('on')} disabled={busy || locked || eff === 'on'}
+            <button onClick={() => toggle('on')} disabled={busy || locked || !canToggle || eff === 'on'}
               data-testid="safe-mode-toggle-on"
+              title={!canToggle ? "You don't have permission to change Safe Mode." : undefined}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-500">
               Turn Safe Mode ON
             </button>
@@ -121,8 +182,9 @@ export default function CommsSafeMode() {
                 )) return;
                 toggle('off');
               }}
-              disabled={busy || locked || eff === 'off'}
+              disabled={busy || locked || !canToggle || eff === 'off'}
               data-testid="safe-mode-toggle-off"
+              title={!canToggle ? "You don't have permission to change Safe Mode." : undefined}
               className="px-3 py-1.5 rounded-lg text-xs font-semibold border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent">
               Turn Safe Mode OFF…
             </button>
@@ -132,6 +194,16 @@ export default function CommsSafeMode() {
               env: <span className="font-mono">{status.env_value}</span> · org: <span className="font-mono">{status.org_value}</span> · effective: <span className="font-mono font-semibold">{status.effective}</span>
             </div>
           )}
+          {/* v58.13.90 — Publish the current holder roster so anybody
+              on the org can see who to ask, regardless of whether
+              they hold the token themselves. Rendered as a soft
+              helper line, not a table — keeps the page focused. */}
+          <div className="mt-2 text-[11px] text-slate-500" data-testid="perm-holders-line">
+            Users with permission to toggle:{' '}
+            {holders.length > 0
+              ? <span className="font-semibold text-slate-700">{holders.map((h) => h.name || h.email).join(', ')}</span>
+              : <span className="italic">nobody yet — request access via Users & Permissions.</span>}
+          </div>
           {/* v58.13.88 — plain-English "what does this affect" panel */}
           <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-700">
             <div className="font-semibold text-slate-900 mb-1">What Safe Mode affects</div>

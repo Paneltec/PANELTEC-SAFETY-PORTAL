@@ -8051,7 +8051,121 @@
 //   · Preview `.env` `COMMS_SAFE_MODE=on` — untouched.
 //   · `/app/mobile/` — only MOBILE_BUNDLE_VERSION bumped.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.89';
+// v160.3.9.58.13.90 — Granular Safe Mode toggle permission.
+//
+// USER PAIN VERBATIM: "could we have a toggle in users permissions
+// and give me the one that can toggle safe mode."
+//
+// Before this ship, PATCH /api/admin/comms-safe-mode was gated by
+// `require_permission("notifications", "edit")` — every admin (and
+// several sub-admin roles that inherit notifications.edit) could
+// flip Safe Mode. The user wanted the toggle isolated behind a
+// per-user, per-token grant so only explicitly-nominated people
+// could turn it OFF (the single knob that unblocks real comms).
+//
+// ── STEP 1 — New `comms_safe_mode` resource (`backend/permissions.py`) ──
+//   · Registered in `PERMISSIONS_SCHEMA` with `email_supported=False`
+//     and `delete_supported=False` (there is no meaningful delete for
+//     a boolean toggle).
+//   · Explicitly DENIED for every seeded role by default, including
+//     `admin`. The `ROLE_DEFAULTS["admin"]` dict comprehension grants
+//     `_all(True)` across every resource; a post-comprehension loop
+//     clobbers `comms_safe_mode` for every role back to `_grant()`
+//     (every action False). Result: even a fresh org where the DB
+//     `roles` collection is empty can't accidentally hand this token
+//     to an admin.
+//   · SEAM (`backend/roles_catalogue.py::_all_tokens`): the DB
+//     `roles.admin.permission_tokens` was previously auto-generated
+//     from every resource × action pair in `PERMISSIONS_SCHEMA`,
+//     which would have handed admin `comms_safe_mode.edit` on the
+//     next startup and defeated the ROLE_DEFAULTS clobber. Fixed
+//     by adding `_AUTO_GRANT_EXCLUDED = {"comms_safe_mode"}` and
+//     skipping excluded resources in `_all_tokens()`. The next
+//     `seed_system_roles()` run (which happens on every startup)
+//     rewrites the admin token list without the `comms_safe_mode.*`
+//     entries — self-healing migration, no separate migration
+//     script needed. Live proof: admin token count on preview
+//     went from 309 → 298 after the first restart on .90.
+//
+// ── STEP 2 — Endpoint gate swap (`backend/comms_safe_mode.py`) ──
+//   `PATCH /api/admin/comms-safe-mode` dep changed from
+//     `require_permission("notifications", "edit")`
+//   to
+//     `require_permission("comms_safe_mode", "edit")`.
+//   `GET /api/admin/comms-safe-mode/status` remains authed-only
+//   (every logged-in user in the org can SEE the state; only the
+//   holders can flip it).
+//
+// ── STEP 3 — Idempotent Stephen seed (`backend/server.py` on_startup) ──
+//   `ensure_stephen_can_toggle()` in `comms_safe_mode.py` upserts
+//   `db.user_permissions` for Stephen (looked up by email
+//   `stephen@paneltec.com.au`) with
+//   `overrides.comms_safe_mode.edit = true`. Runs on every backend
+//   restart; a no-op after the first apply. Preserves any other
+//   overrides on his row. Failure is logged but never blocks
+//   startup — the ship report includes a DB one-liner as fallback.
+//
+// ── STEP 4 — Holder-list endpoint (`backend/comms_safe_mode.py`) ──
+//   `GET /api/admin/comms-safe-mode/who-can-toggle` returns the
+//   current org roster of users whose per-user override sets
+//   `comms_safe_mode.edit = true`. Available to every authed user in
+//   the org (the answer helps a denied user know who to ask).
+//   Returns `{id, name, email}` only — no role/perms/session data.
+//
+// ── STEP 5 — Frontend gating (`frontend/src/pages/CommsSafeMode.jsx`) ──
+//   `load()` now fans out `Promise.all` to `/api/auth/me` (for
+//   `effective_permissions.comms_safe_mode.edit`) and to the new
+//   `who-can-toggle` endpoint (for the roster).
+//   · `canToggle` gates both toggle buttons — `disabled` includes it,
+//     and the `title` prop surfaces the "You don't have permission…"
+//     hover copy.
+//   · A new violet permission-lock banner sits ABOVE the buttons
+//     (same visual pattern as the amber env-lock banner) when the
+//     caller lacks the token and the env-lock isn't already covering
+//     the same buttons. The banner lists the current holders inline
+//     so the caller reads exactly who to ask.
+//   · A soft "Users with permission to toggle: X, Y" helper line
+//     appears under the toggle row for every viewer — so even
+//     holders see who else has it. Empty roster reads "nobody yet —
+//     request access via Users & Permissions."
+//   · `toggle()` early-returns with a friendly toast when `!canToggle`
+//     (belt-and-braces for the case where the button gets clicked
+//     via keyboard shortcut / a11y bypass).
+//   · Catch branch now special-cases 403 with the same "contact X"
+//     copy instead of the raw "Permission denied" from `apiError()`.
+//
+// ── STEP 6 — Users & Permissions matrix ──
+//   The matrix is dynamic — it renders every resource in the schema
+//   and every action in ACTIONS. The new `comms_safe_mode` resource
+//   auto-appears with an `Edit` checkbox (all other columns hidden
+//   because `email_supported=False` and `delete_supported=False`).
+//   No JSX change needed.
+//
+// ── SANITY: preview `.env` `COMMS_SAFE_MODE=on` — untouched. Only ──
+// ── the per-user override table is written. The env kill-switch    ──
+// ── continues to override the org toggle regardless of who holds   ──
+// ── the token.                                                     ──
+//
+// ── Tests ──
+//   NEW `tests/backend_unit/test_safe_mode_toggle_perm_v58_13_90.py`:
+//     · Schema registers `comms_safe_mode` resource.
+//     · ROLE_DEFAULTS denies `comms_safe_mode.edit` for admin AND
+//       every other seeded role.
+//     · Endpoint gate uses `comms_safe_mode.edit`.
+//     · `ensure_stephen_can_toggle()` upserts the correct override
+//       shape and is idempotent (second call = no-op).
+//     · Frontend gates both toggle buttons on `canToggle`.
+//     · Frontend renders the perm-lock banner + holder line.
+//     · Version-sync forward-safe pin >= 90.
+//
+// ── SOP ──
+//   · Backend restart needed (permissions.py + comms_safe_mode.py
+//     + server.py all changed).
+//   · Frontend hot-reload picks up CommsSafeMode.jsx.
+//   · Ship note: prod is on .89 during Path-3 re-publish; .90 lands
+//     on preview first. Second re-publish once .90 is verified.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.90';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

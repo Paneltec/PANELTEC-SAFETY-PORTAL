@@ -46,9 +46,22 @@ def _t(resource: str, actions: List[str]) -> List[str]:
     return out
 
 
+# v58.13.90 — Resources that must NEVER be auto-granted to seeded
+# roles by `_all_tokens()`. Only per-user overrides (via
+# `db.user_permissions`) or an admin-hand-authored custom role can
+# hand out these tokens. Currently: `comms_safe_mode` (the single
+# knob that unblocks real outbound comms).
+_AUTO_GRANT_EXCLUDED: set = {"comms_safe_mode"}
+
+
 def _all_tokens() -> List[str]:
     tokens: list[str] = []
     for r in RESOURCES:
+        if r in _AUTO_GRANT_EXCLUDED:
+            # v58.13.90 — Deliberately skipped from admin auto-grant.
+            # See permissions.py ROLE_DEFAULTS clobber loop for the
+            # matching hardcoded-fallback denial. Both layers agree.
+            continue
         for a in ACTIONS:
             if a == "email" and not PERMISSIONS_SCHEMA[r].get("email_supported"):
                 continue

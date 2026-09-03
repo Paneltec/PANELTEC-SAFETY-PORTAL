@@ -93,6 +93,14 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # extended actions: reveal_pii / archive / reimport / audit_view
     # gate the sensitive endpoints in `hr_employees.py`.
     "hr_employees":    {"label": "HR Employees",           "email_supported": False, "delete_supported": True},
+    # v58.13.90 — Comms Safe Mode toggle. Deliberately isolated from
+    # the generic `admin` role auto-grant below (see the explicit
+    # `ROLE_DEFAULTS["admin"]["comms_safe_mode"]` denial after the
+    # dict comprehension). Only `edit` matters — `view` is not
+    # required because Safe Mode status is public to any authed user
+    # via `/api/admin/comms-safe-mode/status`. Per-user override via
+    # `db.user_permissions` (see startup seed in `server.py`).
+    "comms_safe_mode": {"label": "Comms Safe Mode",        "email_supported": False, "delete_supported": False},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -267,6 +275,20 @@ ROLE_DEFAULTS: Dict[str, Dict[str, Dict[str, bool]]] = {
 ROLE_DEFAULTS["auditor"]["hr_employees"] = _grant(
     open=True, view=True, audit_view=True,
 )
+
+# v58.13.90 — Comms Safe Mode toggle is DENIED for every seeded role
+# by default, including admin. The dict comprehension above grants
+# admin `_all(True)` across every resource; we explicitly clobber
+# `comms_safe_mode` here so an admin can only get the toggle via an
+# explicit per-user override in `db.user_permissions`. Same treatment
+# for the four other seeded roles that get here via `_all_no_delete`
+# / `_grant()` — none of them touch Safe Mode unless an admin hands
+# them the override deliberately. USER PAIN VERBATIM: "could we have
+# a toggle in users permissions and give me the one that can toggle
+# safe mode."
+for _role in ROLE_DEFAULTS:
+    ROLE_DEFAULTS[_role]["comms_safe_mode"] = _grant()  # every action False
+del _role
 
 
 async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:
