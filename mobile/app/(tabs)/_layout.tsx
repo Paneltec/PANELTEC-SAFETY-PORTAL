@@ -83,21 +83,24 @@ export default function TabLayout() {
             backgroundColor: Colors.brandTabBar,
             borderTopColor: Colors.borderLight,
             borderTopWidth: 1,
-            height: 64,
+            height: 60,
             paddingBottom: 8,
             paddingTop: 6,
+            elevation: 8,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.06,
+            shadowRadius: 8,
           },
-          tabBarLabelStyle: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3 },
+          tabBarLabelStyle: { fontSize: 11, fontWeight: '600', letterSpacing: 0.2 },
         }}
       >
         <Tabs.Screen
           name="dashboard"
           options={{
             title: 'Home',
-            tabBarIcon: ({ color, size, focused }) => (
-              <View style={focused ? rs.activeTabIcon : undefined}>
-                <Ionicons name="home" size={size} color={focused ? '#FFFFFF' : color} />
-              </View>
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="home" size={size} color={color} />
             ),
           }}
         />
@@ -105,10 +108,8 @@ export default function TabLayout() {
           name="qr-signon"
           options={{
             title: 'QR Scan',
-            tabBarIcon: ({ color, size, focused }) => (
-              <View style={focused ? rs.activeTabIcon : undefined}>
-                <Ionicons name="qr-code" size={size} color={focused ? '#FFFFFF' : color} />
-              </View>
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="qr-code" size={size} color={color} />
             ),
             href: modules.sign_on ? undefined : null,
           }}
@@ -121,10 +122,8 @@ export default function TabLayout() {
           name="vehicles"
           options={{
             title: 'Fleet',
-            tabBarIcon: ({ color, size, focused }) => (
-              <View style={focused ? rs.activeTabIcon : undefined}>
-                <Ionicons name="car" size={size} color={focused ? '#FFFFFF' : color} />
-              </View>
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="car" size={size} color={color} />
             ),
             href: modules.plant_vehicles ? undefined : null,
           }}
@@ -139,10 +138,8 @@ export default function TabLayout() {
           name="settings"
           options={{
             title: 'Profile',
-            tabBarIcon: ({ color, size, focused }) => (
-              <View style={focused ? rs.activeTabIcon : undefined}>
-                <Ionicons name="person-circle" size={size} color={focused ? '#FFFFFF' : color} />
-              </View>
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="person-circle" size={size} color={color} />
             ),
           }}
         />
@@ -152,10 +149,8 @@ export default function TabLayout() {
           options={{
             href: modules.ask_intel ? undefined : null,
             title: 'Ask AI',
-            tabBarIcon: ({ color, size, focused }) => (
-              <View style={focused ? rs.activeTabIcon : undefined}>
-                <Ionicons name="sparkles" size={size} color={focused ? '#FFFFFF' : color} />
-              </View>
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="sparkles" size={size} color={color} />
             ),
           }}
         />
@@ -165,14 +160,9 @@ export default function TabLayout() {
 }
 
 const rs = StyleSheet.create({
-  activeTabIcon: {
-    width: 36, height: 36, borderRadius: 10,
-    backgroundColor: Colors.brandTabActive,
-    alignItems: 'center', justifyContent: 'center',
-  },
   ribbon: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: '#FEF3C7', paddingVertical: 5, paddingHorizontal: 12,
+    backgroundColor: '#EFF6FF', paddingVertical: 5, paddingHorizontal: 12,
   },
   ribbonText: { fontSize: 10, fontWeight: '700', color: Colors.orange, letterSpacing: 1 },
   signoffBanner: {

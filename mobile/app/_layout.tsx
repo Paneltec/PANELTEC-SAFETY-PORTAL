@@ -13,6 +13,7 @@ import * as Linking from 'expo-linking';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { getToken } from '../src/lib/auth';
 import { AuthProvider, useAuth } from '../src/lib/AuthContext';
+import { ThemeProvider } from '../src/lib/ThemeContext';
 import { isPreviewMode } from '../src/lib/preview';
 import ChangePasswordModal from '../src/components/auth/ChangePasswordModal';
 import { Colors } from '../src/lib/colors';
@@ -114,7 +115,7 @@ function NotchBackdrop() {
         left: 0,
         right: 0,
         height,
-        backgroundColor: Colors.brandNavy,
+        backgroundColor: Colors.bg,
         zIndex: 100,
         pointerEvents: 'none',
       }}
@@ -125,9 +126,11 @@ function NotchBackdrop() {
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <RootNav />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <RootNav />
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

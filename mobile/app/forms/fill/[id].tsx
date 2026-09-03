@@ -1032,7 +1032,7 @@ export default function FillOutScreen() {
               style={fs.cancelBtn}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             >
-              <Ionicons name="chevron-back" size={20} color={Colors.hvOrange} />
+              <Ionicons name="chevron-back" size={20} color="#FFFFFF" />
               <Text style={fs.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center', paddingHorizontal: 8 }}>
@@ -1040,7 +1040,7 @@ export default function FillOutScreen() {
               <Text style={fs.headerTitle} numberOfLines={1}>{tpl.name}</Text>
             </View>
             <View style={fs.draftBadge}>
-              <Ionicons name="save" size={10} color={Colors.hvYellow} />
+              <Ionicons name="save" size={10} color="rgba(255,255,255,0.7)" />
               <Text style={fs.draftBadgeText}>auto-save</Text>
             </View>
           </View>
@@ -1329,20 +1329,26 @@ export default function FillOutScreen() {
             return acc;
           }, [] as React.ReactElement[])}        </ScrollView>
 
-        {/* Submit bar — orange-amber */}
+        {/* Submit bar — matching Reference 2: Save draft (outline) + Submit (green) */}
         <View style={fs.submitBar}>
           {progress ? <Text style={fs.progressText}>{progress}</Text> : null}
-          <TouchableOpacity testID="form-submit-btn" style={[fs.submitBtn, saving && { opacity: 0.6 }]}
-            onPress={submit} disabled={saving}>
-            {saving ? <ActivityIndicator size="small" color={Colors.imSurface} /> : <Ionicons name="checkmark-circle" size={16} color={Colors.imSurface} />}
-            {/* v160.1.5 — Submit label enumerates missing fields inline
-                so the operator sees exactly what's blocking a submit. */}
-            <Text style={fs.submitBtnText}>
-              {submitAttempted && missingFields.length > 0
-                ? `Complete: ${missingFields.slice(0, 2).map((f: any) => f.label).join(', ')}${missingFields.length > 2 ? ` +${missingFields.length - 2}` : ''}`
-                : 'Submit Form'}
-            </Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 12, flex: 1 }}>
+            <TouchableOpacity testID="form-save-draft-btn" style={fs.draftBtn}
+              onPress={() => { /* Draft save placeholder — same endpoint, draft flag */ }}
+              disabled={saving}>
+              <Ionicons name="bookmark-outline" size={16} color={Colors.ink} />
+              <Text style={fs.draftBtnText}>Save draft</Text>
+            </TouchableOpacity>
+            <TouchableOpacity testID="form-submit-btn" style={[fs.submitBtn, saving && { opacity: 0.6 }]}
+              onPress={submit} disabled={saving}>
+              {saving ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />}
+              <Text style={fs.submitBtnText}>
+                {submitAttempted && missingFields.length > 0
+                  ? `Complete: ${missingFields.slice(0, 2).map((f: any) => f.label).join(', ')}${missingFields.length > 2 ? ` +${missingFields.length - 2}` : ''}`
+                  : 'Submit'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </KeyboardAvoidingView>
 
@@ -1363,9 +1369,8 @@ export default function FillOutScreen() {
 const fs = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
-    backgroundColor: Colors.bg,
-    paddingHorizontal: 16, paddingBottom: 12,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: '#1E3A8A',
+    paddingHorizontal: 16, paddingBottom: 14, paddingTop: 8,
   },
   headerRow: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -1375,16 +1380,16 @@ const fs = StyleSheet.create({
     paddingVertical: 4,
   },
   cancelText: {
-    fontSize: 14, fontWeight: '700', color: Colors.hvOrange,
+    fontSize: 14, fontWeight: '700', color: '#FFFFFF',
   },
-  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.hvYellow },
-  headerTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
+  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: 'rgba(255,255,255,0.7)' },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
   draftBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: Colors.amberSoft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
-    borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10,
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)',
   },
-  draftBadgeText: { fontSize: 9, fontWeight: '600', color: Colors.hvYellow },
+  draftBadgeText: { fontSize: 9, fontWeight: '600', color: 'rgba(255,255,255,0.7)' },
   gpsBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
@@ -1507,15 +1512,24 @@ const fs = StyleSheet.create({
   gpsCellLabel: { fontSize: 9, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 1, textTransform: 'uppercase' },
   gpsCellVal: { fontSize: 12, fontWeight: '600', color: Colors.ink, marginTop: 2 },
   submitBar: {
+    flexDirection: 'row', gap: 12, alignItems: 'center',
     paddingHorizontal: 16, paddingVertical: 12, paddingBottom: 24,
-    backgroundColor: Colors.bg, borderTopWidth: 1, borderTopColor: Colors.border,
+    backgroundColor: Colors.surface, borderTopWidth: 1, borderTopColor: Colors.border,
   },
   progressText: { fontSize: 11, color: Colors.textTertiary, marginBottom: 6 },
   submitBtn: {
+    flex: 1,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: Colors.brandOrange, borderRadius: 12, paddingVertical: 14, minHeight: 50,
+    backgroundColor: '#10B981', borderRadius: 14, paddingVertical: 14, minHeight: 50,
   },
-  submitBtnText: { color: Colors.imSurface, fontSize: 14, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
+  submitBtnText: { color: '#FFFFFF', fontSize: 14, fontWeight: '700', letterSpacing: 0.3 },
+  draftBtn: {
+    flex: 1,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: Colors.surface, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14,
+    paddingVertical: 14, minHeight: 50,
+  },
+  draftBtnText: { color: Colors.ink, fontSize: 14, fontWeight: '600' },
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   pickerBox: { backgroundColor: Colors.white, borderRadius: 16, padding: 16, width: '100%', maxWidth: 320 },
   pickerTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink, marginBottom: 8 },

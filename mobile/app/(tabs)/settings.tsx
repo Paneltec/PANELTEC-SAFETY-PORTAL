@@ -8,6 +8,8 @@ import { useAuth } from '../../src/lib/AuthContext';
 import { useRouter } from 'expo-router';
 import ChangePasswordModal from '../../src/components/auth/ChangePasswordModal';
 import { isBiometricAvailable, isBiometricEnabled, getBiometricType, storeBiometricToken, clearBiometric } from '../../src/lib/biometric';
+import { useTheme } from '../../src/lib/ThemeContext';
+import { PALETTE_META } from '../../src/lib/palettes';
 import api from '../../src/lib/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -23,6 +25,7 @@ const ALERT_OPTIONS = ['both', 'email', 'sms', 'off'] as const;
 
 export default function ProfileScreen() {
   const { setAuth, refreshModules, modules } = useAuth();
+  const { paletteId, switchPalette } = useTheme();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -229,6 +232,37 @@ export default function ProfileScreen() {
           })()}
         </View>
 
+        {/* Palette switcher — admin-only */}
+        {isAdminTier && (
+          <>
+            <Text style={st.sectionLabel}>APPEARANCE</Text>
+            <View style={st.section}>
+              {PALETTE_META.map(p => (
+                <TouchableOpacity
+                  key={p.id}
+                  testID={`palette-${p.id}`}
+                  style={st.row}
+                  onPress={() => switchPalette(p.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[st.palettePreview, { backgroundColor: p.preview.bg, borderColor: p.preview.accent }]}>
+                    <View style={[st.paletteAccent, { backgroundColor: p.preview.accent }]} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.rowText}>{p.label.toUpperCase()}</Text>
+                    <Text style={{ fontSize: 11, color: Colors.textSecondary, marginTop: 1 }}>{p.description}</Text>
+                  </View>
+                  {paletteId === p.id ? (
+                    <Ionicons name="checkmark-circle" size={20} color={Colors.orange} />
+                  ) : (
+                    <Ionicons name="ellipse-outline" size={20} color={Colors.textTertiary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
         {/* Actions */}
         <TouchableOpacity testID="clear-cache-btn" style={st.actionRow} onPress={clearCache} activeOpacity={0.7}>
           <Ionicons name="trash" size={18} color={Colors.textSecondary} />
@@ -275,5 +309,7 @@ const st = StyleSheet.create({
   actionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface, marginBottom: 12 },
   actionText: { fontSize: 12, fontWeight: '700', color: Colors.textSecondary, letterSpacing: 0.8 },
   signOutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 15, borderRadius: 12, backgroundColor: Colors.orange },
-  signOutText: { fontSize: 13, fontWeight: '800', color: Colors.imSurface, letterSpacing: 1 },
+  signOutText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF', letterSpacing: 1 },
+  palettePreview: { width: 36, height: 36, borderRadius: 10, borderWidth: 2, alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden' },
+  paletteAccent: { width: '100%', height: 10 },
 });
