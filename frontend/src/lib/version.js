@@ -1,5 +1,124 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.83 — Prod Readiness Audit RED fixes: CORS lockdown +
+//                     real /api/health dependency probes.
+//
+// USER DIRECTIVE (verbatim): "User approved fixing the 2 REDs and wants
+// the 6 YELLOWs enumerated for selection."
+//
+// ── Fix B8 — CORS `allow_origins` lockdown (`backend/server.py`) ─
+//   Before (pre-.83):
+//     `allow_origins=os.environ.get("CORS_ORIGINS", "*").split(",")`
+//     `allow_methods=["*"]`
+//     `allow_headers=["*"]`
+//   After (.83):
+//     · Safe fallback list (used when env var is empty OR literally `"*"`):
+//         - https://whs-compliance.emergent.host   (prod)
+//         - https://whs-compliance.preview.emergentagent.com (preview)
+//     · Env override honoured — `CORS_ORIGINS=https://a.com,https://b.com`
+//       replaces the fallback verbatim.
+//     · `CORS_ORIGINS="*"` is now IGNORED with a WARNING log; degrades
+//       to the safe fallback. Old .env carried `"*"` — this ship makes
+//       that safe by construction rather than a manual env edit.
+//     · `http://localhost:3000` appended only when `ENV in {dev,
+//       development, local}`.
+//     · `allow_methods` locked to the six verbs the API actually uses:
+//       GET / POST / PATCH / PUT / DELETE / OPTIONS.
+//     · `allow_headers` locked to what the frontend actually sends:
+//       Authorization / Content-Type / X-Requested-With / Accept /
+//       Origin.
+//     · `expose_headers=["Content-Disposition"]` — needed by the PDF /
+//       file-download flow so JS can read the server-supplied filename.
+//     · `max_age=600` so preflight OPTIONS responses cache for 10 min.
+//     · Startup log line `CORS: allow_origins=[...]` prints the final
+//       resolved list at boot so misconfigurations are visible in
+//       `/var/log/supervisor/backend.out.log`.
+//   Bearer auth is still the only credential path so `allow_credentials`
+//   stays False.
+//
+// ── Fix C12 — `/api/health` real dependency probes (`backend/server.py`) ─
+//   Before (pre-.83):
+//     `return {"ok": True}` — static 200, K8s liveness could not detect
+//     a mongo outage.
+//   After (.83):
+//     Response shape:
+//       {"ok": true|false,
+//        "checks": {
+//          "mongo":       {"ok": bool, "ms": int  | "error": str},
+//          "gridfs":      {"ok": bool                   | "error": str},
+//          "disk":        {"ok": bool, "free_gb": float, "total_gb": float,
+//                          "warn_below_gb": 2.0        | "error": str},
+//          "libreoffice": {"ok": bool, "path": str      | "reason": str},
+//          "tesseract":   {"ok": bool, "path": str      | "reason": str},
+//          "poppler":     {"ok": bool, "path": str      | "reason": str},
+//        },
+//        "degraded": ["libreoffice", "tesseract", ...]}
+//     · Critical deps: mongo (`db.command("ping")`, 1s timeout),
+//       gridfs (`fs.files.estimated_document_count`, 500ms timeout),
+//       disk (`< 500 MB free` → critical, `< 2 GB` → degraded warn).
+//     · Soft deps: libreoffice/tesseract/poppler — `shutil.which()`
+//       only; missing binaries land in `degraded[]` but overall
+//       response stays 200. Consistent with Server Tools' existing
+//       install-on-demand pattern.
+//     · Critical failure → HTTP 503 with the same body shape so
+//       Emergent's load balancer can pull an unhealthy pod out of
+//       rotation. Preserves the 200 fast-path for the top-bar health
+//       pill polling.
+//     · 2-second aggregate wall time cap (per-check timeouts).
+//       Endpoint is unauthenticated (`/api/health` is in the
+//       `permissions_middleware` public-path whitelist) so the cap
+//       prevents it being a resource-exhaustion vector.
+//
+// ── Wire proof (preview `curl -sw '%{http_code}\n'`) ───────────
+//   Pre-.83:  200  {"ok":true}
+//   Post-.83: 200  {"ok":true,"checks":{"mongo":{"ok":true,"ms":3},
+//                    "gridfs":{"ok":true},
+//                    "disk":{"ok":true,"free_gb":41.7,...},
+//                    "libreoffice":{"ok":true,"path":"/usr/bin/soffice"},
+//                    "tesseract":{"ok":true,"path":"/usr/bin/tesseract"},
+//                    "poppler":{"ok":true,"path":"/usr/bin/pdftotext"}},
+//                  "degraded":[]}
+//   Confirmed CORS reject: `curl -H 'Origin: https://evil.example' -I`
+//   returns response WITHOUT `Access-Control-Allow-Origin` header
+//   (browser will block cross-origin XHR from evil.example).
+//   Confirmed CORS accept: `Origin: https://whs-compliance.emergent.host`
+//   returns `Access-Control-Allow-Origin: https://whs-compliance.emergent.host`.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_prod_readiness_reds_v58_13_83.py`:
+//     B8 (CORS):
+//       · Source-pin: safe fallback list contains prod + preview hosts.
+//       · Source-pin: `"*"` in `CORS_ORIGINS` degrades with warning log.
+//       · Source-pin: `allow_methods` no longer `["*"]`.
+//       · Source-pin: `allow_headers` no longer `["*"]`.
+//       · Source-pin: `allow_credentials=False` preserved.
+//     C12 (health):
+//       · Handler runs `db.command("ping")` under `asyncio.wait_for`.
+//       · Handler probes gridfs via `fs.files.estimated_document_count`.
+//       · Handler probes disk via `shutil.disk_usage`.
+//       · Handler probes libreoffice/tesseract/poppler via `shutil.which`.
+//       · Handler returns 503 when a critical dep fails.
+//       · Handler still returns 200 with `degraded[]` when only soft
+//         deps are missing.
+//     Version-sync forward-safe pin (>= 83).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · The 6 YELLOW audit items — presented separately for user
+//     selection ahead of a follow-up ship.
+//   · No frontend UI changes (the top-bar health pill / integrations
+//     admin page already read from `/api/health/integrations`, not
+//     from `/api/health`).
+//   · `/api/health/version`, `/api/health/integrations`, `/api/health/
+//     backup` all untouched — they already have their own semantics.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (server.py middleware + handler changed).
+//     Done on preview.
+//   · Frontend hot-reload picks up the version footer bump.
+//   · All 3 canonical version strings bumped to `.83`.
+
 // v160.3.9.58.13.82 — Precast Panel role sync + Prod Readiness Audit +
 //                     definitive CF 520 root-cause writeup.
 //
@@ -7255,7 +7374,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.82';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.83';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

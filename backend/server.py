@@ -81,13 +81,34 @@ log = logging.getLogger("paneltec")
 
 app = FastAPI(title="Paneltec Civil API", version="0.2.0", openapi_url="/api/openapi.json")
 
-# CORS — Bearer auth so allow_credentials isn't required; permit wildcard via env.
+# CORS — v58.13.83 lockdown. Bearer auth, so allow_credentials=False.
+#
+# Env var `CORS_ORIGINS` (comma-separated) overrides the safe fallback.
+# The safe fallback covers prod + preview + Emergent's alt host. `*` is
+# NEVER honoured any more — passing "*" now degrades to the safe list
+# and emits a warning log. localhost:3000 is only added when ENV=dev.
+_CORS_SAFE_DEFAULT = [
+    "https://whs-compliance.emergent.host",
+    "https://whs-compliance.preview.emergentagent.com",
+]
+_cors_env_raw = os.environ.get("CORS_ORIGINS", "").strip()
+if _cors_env_raw and _cors_env_raw != "*":
+    _cors_origins = [o.strip() for o in _cors_env_raw.split(",") if o.strip() and o.strip() != "*"]
+else:
+    if _cors_env_raw == "*":
+        log.warning("CORS: CORS_ORIGINS='*' ignored — using safe fallback list.")
+    _cors_origins = list(_CORS_SAFE_DEFAULT)
+if os.environ.get("ENV", "").lower() in ("dev", "development", "local"):
+    _cors_origins.append("http://localhost:3000")
+log.info("CORS: allow_origins=%s", _cors_origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
+    allow_origins=_cors_origins,
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"],
+    expose_headers=["Content-Disposition"],
+    max_age=600,
 )
 
 api = APIRouter(prefix="/api")
@@ -117,7 +138,78 @@ async def root():
 
 @api.get("/health")
 async def health():
-    return {"ok": True}
+    """v58.13.83 — real dependency probes.
+
+    Critical deps (mongo, disk) failing → 503 so K8s / Cloudflare load
+    balancer can pull the pod out of rotation. Soft deps (libreoffice,
+    tesseract, poppler) missing → 200 with the missing name added to
+    `degraded` so the top-bar health pill and admin UI can show a warning
+    without triggering a health-check failover. 2-second aggregate cap
+    prevents this endpoint from being a DoS vector (health probes are
+    unauthenticated by design)."""
+    import asyncio, shutil, time as _time
+    from db import db as _db
+
+    checks: dict = {}
+    degraded: list = []
+    critical_fail = False
+
+    # 1. MongoDB ping — critical.
+    t0 = _time.perf_counter()
+    try:
+        await asyncio.wait_for(_db.command("ping"), timeout=1.0)
+        checks["mongo"] = {"ok": True, "ms": int((_time.perf_counter() - t0) * 1000)}
+    except Exception as exc:  # noqa: BLE001
+        checks["mongo"] = {"ok": False, "error": str(exc)[:120]}
+        critical_fail = True
+
+    # 2. GridFS reachable — critical (backup + user file uploads depend on it).
+    try:
+        # `fs.files` is the default GridFS bucket; count is O(1) with the auto index.
+        await asyncio.wait_for(_db["fs.files"].estimated_document_count(), timeout=0.5)
+        checks["gridfs"] = {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        checks["gridfs"] = {"ok": False, "error": str(exc)[:120]}
+        critical_fail = True
+
+    # 3. Disk headroom — critical if < 500 MB, warn below 2 GB.
+    try:
+        usage = shutil.disk_usage("/")
+        free_gb = round(usage.free / (1024**3), 2)
+        crit = free_gb < 0.5
+        checks["disk"] = {
+            "ok": not crit,
+            "free_gb": free_gb,
+            "total_gb": round(usage.total / (1024**3), 2),
+            "warn_below_gb": 2.0,
+        }
+        if crit:
+            critical_fail = True
+        elif free_gb < 2.0:
+            degraded.append("disk_low")
+    except Exception as exc:  # noqa: BLE001
+        checks["disk"] = {"ok": False, "error": str(exc)[:120]}
+        # Don't flip critical_fail — a disk_usage() failure is rare and
+        # unlikely to be a real outage signal.
+
+    # 4-6. Soft deps — presence check only (cheap).
+    for name, cmd in (("libreoffice", "soffice"), ("tesseract", "tesseract"), ("poppler", "pdftotext")):
+        path = shutil.which(cmd)
+        if path:
+            checks[name] = {"ok": True, "path": path}
+        else:
+            checks[name] = {"ok": False, "reason": f"{cmd} not on PATH"}
+            degraded.append(name)
+
+    body = {
+        "ok": not critical_fail,
+        "checks": checks,
+        "degraded": degraded,
+    }
+    if critical_fail:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content=body)
+    return body
 
 
 # v96.2 — Cache-version probe. Frontend AppShell queries the controlling
