@@ -357,7 +357,14 @@ async def health_backup(user: dict = Depends(get_current_user)):
     manual + scheduled snapshot). Pill logic:
       • green if the newest snapshot is <=6h old (matches the every-6h cron)
       • amber if 6h-25h (missed the 6h boundary but still inside the daily fallback)
-      • red if >25h OR the collection is empty."""
+      • red if >25h OR the collection is empty.
+
+    v58.13.84 — C13: response now carries `snapshot_count`,
+    `retention_last_run_at`, `ephemeral_last_run` (from
+    `app_state.backup_retention`), and `next_scheduled_at` (introspected
+    from the live APScheduler `backup_snapshot_6h` job). Response is
+    still HTTP 200 on the amber path; HTTP 503 only when snapshots are
+    stale enough (>36h) that automatic recovery has clearly failed."""
     now = datetime.now(timezone.utc)
     history: list[dict] = []
     async for row in db.bk_snapshots.find(
@@ -375,10 +382,43 @@ async def health_backup(user: dict = Depends(get_current_user)):
             "sha256": row.get("sha256"),
         })
 
+    # v58.13.84 — C13: pull retention/ephemeral counters from app_state.
+    retention_doc = await db.app_state.find_one(
+        {"_id": "backup_retention"}, {"_id": 0},
+    ) or {}
+    snapshot_count = int(await db.bk_snapshots.estimated_document_count())
+
+    # v58.13.84 — C13: introspect the live APScheduler cron job.
+    next_scheduled_at = None
+    try:
+        from fastapi import Request  # noqa: F401 — just for type hint intent
+        # Access the running scheduler via the FastAPI app.state slot
+        # that server.py sets up on startup (backup_service also uses
+        # this pattern — see `backup_service.py:913`).
+        from server import app as _app
+        scheduler = getattr(_app.state, "scheduler", None)
+        job = scheduler.get_job("backup_snapshot_6h") if scheduler else None
+        nrt = getattr(job, "next_run_time", None) if job else None
+        next_scheduled_at = nrt.isoformat() if nrt else None
+    except Exception:                                  # noqa: BLE001
+        next_scheduled_at = None
+
     if not history:
-        return {"last_backup_at": None, "hours_since": None,
-                "status": "down", "history": [],
-                "detail": "No snapshots on record — schedule not yet run."}
+        body = {
+            "last_backup_at": None,
+            "hours_since": None,
+            "status": "down",
+            "history": [],
+            "snapshot_count": snapshot_count,
+            "retention_last_run_at": retention_doc.get("last_run_at"),
+            "ephemeral_last_run": retention_doc.get("ephemeral_last_run"),
+            "next_scheduled_at": next_scheduled_at,
+            "detail": "No snapshots on record — schedule not yet run.",
+        }
+        from fastapi.responses import JSONResponse
+        # >36h with no snapshots at all → 503 so the load balancer / ops
+        # tooling can act. Pod itself keeps serving the rest of the API.
+        return JSONResponse(status_code=503, content=body)
 
     hours_since = None
     try:
@@ -396,12 +436,24 @@ async def health_backup(user: dict = Depends(get_current_user)):
     else:
         status = "down"
 
-    return {
+    body = {
         "last_backup_at": history[0]["at"],
         "hours_since": hours_since,
         "status": status,
         "history": history,
+        # v58.13.84 — C13 additions.
+        "snapshot_count": snapshot_count,
+        "retention_last_run_at": retention_doc.get("last_run_at"),
+        "ephemeral_last_run": retention_doc.get("ephemeral_last_run"),
+        "next_scheduled_at": next_scheduled_at,
     }
+    # v58.13.84 — C13: 503 when snapshots are truly stale (>36h) — the
+    # 6h cron + 25h amber tolerance have both been exceeded, so
+    # automatic recovery has clearly failed.
+    if hours_since is not None and hours_since > 36:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content=body)
+    return body
 
 
 # ─────────────────────── Per-user suspicious-login alert prefs ───────────────────────

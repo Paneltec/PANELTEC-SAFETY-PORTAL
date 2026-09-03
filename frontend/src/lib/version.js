@@ -1,5 +1,138 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.84 — Prod Readiness Audit — 4-YELLOW bundle:
+//                     A3 + A4 + B7 + C13.
+//
+// USER DIRECTIVE: "Ship in 2 phases as planned. Phase 1 — v58.13.84 first
+// (the 4-item bundle). ... Ship as v58.13.84. Bump version files. No
+// automated tester."
+//
+// ── Fix A3 — Drop list-endpoint max limit 50k → 5k ────────────
+//   File: `backend/crud.py::build_router`
+//   Before: `limit: int = Query(100, ge=1, le=50000)`
+//   After:  `limit: int = Query(100, ge=1, le=5000)`
+//   Grep of the entire frontend for `limit=` yielded ONLY values in
+//   {1, 10, 20, 50, 100, 200, 500}. Backend also has no >500 hardcoded
+//   callers. Cap of 5,000 is 10× headroom over the largest known
+//   legitimate call — safe change.
+//   Applied to every entity list served by `build_router` (swms,
+//   pre_starts, site_diary, hazards, incidents, inspections,
+//   risk_assessments) — same fix, seven routes.
+//
+// ── Fix A4 — Compound index on form_submissions ───────────────
+//   File: `backend/seed.py::ensure_indexes()`
+//   NEW index (name `form_submissions_mirrorset_v58_13_84`):
+//     `[("template_category_snapshot", 1), ("org_id", 1),
+//       ("submitted_at", -1)]`
+//   Backs the mirror-set query in
+//     `crud.py::build_router::_list_impl` (line 208):
+//     `{"template_category_snapshot": {"$in": [...]}, "org_id": ...}`
+//   with a `-submitted_at` sort. Compound covers exactly the four
+//   columns the query filters + sorts on. Idempotent
+//   (`create_index` is a no-op when the index already exists on
+//   restart). Startup log line
+//   `ensure_indexes: form_submissions_mirrorset_v58_13_84 ready`
+//   appears once per backend start.
+//   Preview counters: 7,294 docs → linear scan was 3ms → now
+//   O(log n). Prod extrapolation: 20,000+ rows → estimated 10-40ms
+//   scan without the index → sub-ms with it.
+//
+// ── Fix B7 — Gate /api/openapi.json + /api/docs + /api/redoc ──
+//   File: `backend/server.py`
+//   Before:
+//     `FastAPI(title=..., version=..., openapi_url="/api/openapi.json")`
+//     — spec + Swagger UI + ReDoc all publicly reachable at
+//     `/api/openapi.json`, `/api/docs`, `/api/redoc` (FastAPI
+//     defaults).
+//   After:
+//     `FastAPI(..., openapi_url=None, docs_url=None, redoc_url=None)`
+//     — framework-level exposure disabled.
+//     Custom admin-gated routes added inline:
+//       @api.get("/openapi.json") → returns `app.openapi()` under
+//                                    `Depends(_require_admin_role)`.
+//       @api.get("/docs")         → returns Swagger UI (admin-only).
+//       @api.get("/redoc")        → returns ReDoc (admin-only).
+//     `_require_admin_role` follows the same pattern as
+//     `admin_purge_test_data.py` (v58.13.81) — `user.role == "admin"`
+//     or HTTPException 403 "Admin role required".
+//     `include_in_schema=False` on all three so they don't clutter
+//     the generated spec itself.
+//   Non-admin (worker/HSEQ/supervisor/contractor) callers, and all
+//   anonymous callers, receive 401 (no bearer) or 403 (non-admin
+//   bearer). Route map no longer leaks to the internet.
+//
+// ── Fix C13 — Ops probe on /api/health/backup ─────────────────
+//   File: `backend/health_extras.py::health_backup`
+//   Before: `{last_backup_at, hours_since, status, history[]}`
+//   After: same + four new fields —
+//     · `snapshot_count`        — total rows in `bk_snapshots`
+//     · `retention_last_run_at` — from `app_state.backup_retention.
+//                                 last_run_at`
+//     · `ephemeral_last_run`    — from `app_state.backup_retention.
+//                                 ephemeral_last_run`
+//     · `next_scheduled_at`     — pulled live from the APScheduler
+//                                 `backup_snapshot_6h` job's
+//                                 `next_run_time`.
+//   Status-code semantics upgraded:
+//     · 200 on green (<=6h) + amber (6h-25h) + amber-25h-36h.
+//     · 503 on RED — either (a) `bk_snapshots` is empty (no schedule
+//                            ever ran), or
+//                             (b) `hours_since > 36`h (both cron +
+//                            25h amber tolerance exhausted).
+//   Cloudflare / K8s / uptime pingers can now use the same URL as
+//   the admin top-bar pill and get an actionable HTTP code.
+//   Structured log preserved (v143 pattern) — no chatty additions.
+//
+// ── Wire proof (preview `curl`) ───────────────────────────────
+//   Anonymous  GET /api/openapi.json → 401
+//   Worker     GET /api/openapi.json → 403 "Admin role required"
+//   Admin      GET /api/openapi.json → 200 + full spec (bytes match
+//                                       app.openapi() cache).
+//   Admin      GET /api/docs         → 200 + Swagger HTML.
+//   Anonymous  GET /api/docs         → 401.
+//   Admin      GET /api/health/backup → 200
+//     {"last_backup_at":"…", "hours_since":X, "status":"up",
+//      "history":[…], "snapshot_count":N,
+//      "retention_last_run_at":"…", "ephemeral_last_run":"…",
+//      "next_scheduled_at":"…"}
+//   MongoDB    getIndexes(form_submissions) now contains
+//     `form_submissions_mirrorset_v58_13_84` after backend restart.
+//   Fastapi    GET /api/swms?limit=6000 → 422 (limit too big).
+//              GET /api/swms?limit=5000 → 200.
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_yellow_bundle_v58_13_84.py`:
+//     A3: source-pin `crud.py` carries `le=5000`, no `le=50000`.
+//     A4: source-pin `seed.py::ensure_indexes()` calls
+//         `db.form_submissions.create_index([("template_category
+//         _snapshot", 1), ("org_id", 1), ("submitted_at", -1)], ...)`;
+//         `logging` import present.
+//     B7: source-pin `server.py` FastAPI init has `openapi_url=None`,
+//         `docs_url=None`, `redoc_url=None`; `_require_admin_role`
+//         raises 403 for non-admin; `/openapi.json`, `/docs`,
+//         `/redoc` custom routes present with admin dep.
+//     C13: source-pin `health_extras.py::health_backup` reads
+//          `app_state.backup_retention`, computes
+//          `snapshot_count` via `estimated_document_count`,
+//          reads APScheduler `backup_snapshot_6h.next_run_time`,
+//          returns 503 on empty snapshots + hours_since>36h.
+//     Version-sync forward-safe pin (>= 84).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · C15 rate limiting — Phase 2, ships as v58.13.85 (introduces
+//     slowapi dep, needs its own scope).
+//   · D16-D19 — user's one-off curl on prod, no code component.
+//   · Any of the 30 pre-existing lint findings — waiting on user
+//     approval for a maintenance ship.
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 cancelled bulk-import job records.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (server.py + seed.py + health_extras.py
+//     + crud.py changed).
+//   · Frontend hot-reload picks up the version footer bump.
+//   · All 3 canonical version strings bumped to `.84`.
+
 // v160.3.9.58.13.83 — Prod Readiness Audit RED fixes: CORS lockdown +
 //                     real /api/health dependency probes.
 //
@@ -7374,7 +7507,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.83';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.84';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

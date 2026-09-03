@@ -104,7 +104,8 @@ def test_slim_mirror_is_idempotent_on_shapes_without_metadata():
 # Source-pins on the handler
 # ─────────────────────────────────────────────────────────────
 def test_default_list_limit_dropped_to_100():
-    assert "limit: int = Query(100, ge=1, le=50000)" in CRUD_PY, (
+    # v58.13.84 (A3): max cap dropped 50000 → 5000, default still 100.
+    assert "limit: int = Query(100, ge=1, le=5000)" in CRUD_PY, (
         "Default list `limit` must be dropped from 200 → 100 so the "
         "prod response never balloons on a first-load."
     )

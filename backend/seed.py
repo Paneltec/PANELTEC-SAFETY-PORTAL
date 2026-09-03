@@ -3,6 +3,7 @@
 Run on every backend startup. Safe to call repeatedly.
 """
 from __future__ import annotations
+import logging
 import os
 import random
 from datetime import datetime, timedelta, timezone
@@ -410,6 +411,18 @@ async def ensure_indexes() -> None:
     await db.users.create_index("email", unique=True)
     for c in ("swms", "pre_starts", "site_diary_entries", "hazards", "incidents", "inspections"):
         await db[c].create_index([("org_id", 1), ("workspace_id", 1), ("created_at", -1)])
+    # v58.13.84 — A4: compound index on form_submissions for the mirror-set
+    # query in crud.py::build_router (template_category_snapshot + org_id,
+    # sorted by submitted_at desc). Without this, the mirror-set query is a
+    # linear scan that could re-open the Cloudflare-timeout door post-.78.
+    # Idempotent — create_index is a no-op if the index already exists.
+    await db.form_submissions.create_index(
+        [("template_category_snapshot", 1), ("org_id", 1), ("submitted_at", -1)],
+        name="form_submissions_mirrorset_v58_13_84",
+    )
+    logging.getLogger("paneltec.seed").info(
+        "ensure_indexes: form_submissions_mirrorset_v58_13_84 ready"
+    )
     # Asset register indexes (Phase 1).
     await db.assets.create_index("scan_token", unique=True)
     await db.assets.create_index([("org_id", 1), ("kind", 1)])

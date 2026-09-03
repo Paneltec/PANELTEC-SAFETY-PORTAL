@@ -79,7 +79,16 @@ from mobile_modules import router as mobile_modules_router  # noqa: E402
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(name)s | %(message)s")
 log = logging.getLogger("paneltec")
 
-app = FastAPI(title="Paneltec Civil API", version="0.2.0", openapi_url="/api/openapi.json")
+app = FastAPI(
+    title="Paneltec Civil API",
+    version="0.2.0",
+    # v58.13.84 — B7: openapi/docs/redoc all disabled at the framework
+    # level. Admin-gated custom routes below (see `/api/openapi.json`,
+    # `/api/docs`, `/api/redoc`) restore access for admins only.
+    openapi_url=None,
+    docs_url=None,
+    redoc_url=None,
+)
 
 # CORS — v58.13.83 lockdown. Bearer auth, so allow_credentials=False.
 #
@@ -243,6 +252,37 @@ def _read_sw_cache_version() -> str:
 @api.get("/health/version")
 async def health_version():
     return {"cache_version": _read_sw_cache_version()}
+
+
+# v58.13.84 — B7: admin-gated OpenAPI spec + Swagger UI + ReDoc.
+# The framework-level `openapi_url` / `docs_url` / `redoc_url` are
+# disabled on the FastAPI() init above so we can require an admin
+# bearer for every access. Non-admin requests (anon or worker/HSEQ/
+# supervisor) get 401/403 — no route map leaked to the internet.
+def _require_admin_role(user: dict = Depends(get_current_user)) -> dict:
+    if (user or {}).get("role") != "admin":
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return user
+
+
+@api.get("/openapi.json", include_in_schema=False)
+async def _admin_openapi(_admin: dict = Depends(_require_admin_role)):
+    # Lazily generate the schema — FastAPI caches it internally after
+    # the first call, so subsequent calls are effectively free.
+    return app.openapi()
+
+
+@api.get("/docs", include_in_schema=False)
+async def _admin_swagger_ui(_admin: dict = Depends(_require_admin_role)):
+    from fastapi.openapi.docs import get_swagger_ui_html
+    return get_swagger_ui_html(openapi_url="/api/openapi.json", title=app.title + " · Swagger UI")
+
+
+@api.get("/redoc", include_in_schema=False)
+async def _admin_redoc(_admin: dict = Depends(_require_admin_role)):
+    from fastapi.openapi.docs import get_redoc_html
+    return get_redoc_html(openapi_url="/api/openapi.json", title=app.title + " · ReDoc")
 
 
 @api.get("/whoami")
