@@ -132,6 +132,8 @@ async def _send_invite_email(user: dict, link: str, org_name: str, kind: str, se
         related_record_type="user", related_record_id=user["id"],
         created_by=sender.get("id") or "system",
         resource_kind="auth_invite",
+        source="user_action",  # v58.13.86 — admin clicked Send Invite / Reset,
+                               # OR user clicked "Forgot Password" on login.
     )
 
 

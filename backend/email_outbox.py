@@ -217,30 +217,60 @@ async def queue_email_doc(
     related_record_type: Optional[str] = None, related_record_id: Optional[str] = None,
     created_by: str, resource_kind: str,
     bypass_provider_attempt: bool = False,
+    source: str = "system",  # v58.13.86 — "user_action" | "system"
 ) -> dict:
     """Persist + (if M365 connected) mark as sent. Used by /email/send AND by
     convenience routes + user-invite flow.
+
+    v58.13.86 — Gate order:
+      1. `source == "user_action"` → bypasses auto-comms gate.
+      2. Auto-comms gate — if `source == "system"` AND auto disabled
+         → silent skip (no outbox row, no blocked outbox row).
+      3. IS_PROD env gate — non-prod + system → skip.
+      4. Comms Safe Mode — queue to blocked outbox if ON.
+      5. Graph SendMail dispatch.
     """
     # v160.3.9.40 (SEC-002) — Every write path funnels through this
     # helper. Sanitize `body_html` HERE so no caller can accidentally
     # bypass it, and so the internal convenience routes (record-scoped
     # send helpers below) are protected too — not just POST /send.
     body_html = sanitize_email_body_html(body_html)
-    # v58.13.85 — Environment gate FIRST, before Safe Mode.
-    # On preview / dev / test (IS_PROD != "true"), system-originated
-    # sends (cron reminders, form_assignment_notifier, seed tasks,
-    # test runs) skip entirely — no queue to outbound_emails, no
-    # comms_outbox_blocked row, no log noise. User-initiated sends
-    # (real user id in `created_by`, e.g. an admin clicking
-    # "Send invite") STILL flow through so Safe Mode's audit trail
-    # keeps them visible.
+
+    # v58.13.86 — Gate 1+2: auto-comms gate for system-sourced sends.
+    # Applied BEFORE the IS_PROD env gate so it works on prod too:
+    # even with IS_PROD=true, system-sourced sends stay off unless the
+    # admin explicitly enables auto-comms in the UI. Silent — no
+    # outbox row and no blocked outbox row are written.
+    if source != "user_action":
+        from auto_comms import is_disabled as _auto_disabled
+        if await _auto_disabled(org_id):
+            log.info(
+                "email_outbox.auto_disabled_skipped source=%s created_by=%r "
+                "subject=%r to_n=%d resource=%r",
+                source, created_by, (subject or "")[:80], len(to or []),
+                resource_kind,
+            )
+            return {
+                "id": new_id(), "org_id": org_id, "to": list(to),
+                "subject": subject, "status": "skipped_auto_disabled",
+                "provider": "auto_comms_gate", "created_by": created_by,
+                "created_at": now_iso(),
+            }
+
+    # v58.13.85 — Gate 3: IS_PROD env gate. Retained for
+    # backward-compat but the auto-comms gate above now covers the
+    # same territory more thoroughly (system source → skip on any
+    # env). This branch matters only when auto-comms IS enabled but
+    # we still don't want cron noise to reach a preview mailbox.
     import os as _os
     is_prod = (_os.environ.get("IS_PROD", "false").strip().lower() == "true")
     pytest_running = bool(_os.environ.get("PYTEST_CURRENT_TEST"))
     is_system_source = (
-        (created_by or "").startswith("system")
-        or (created_by or "") == ""
-        or pytest_running
+        source != "user_action" and (
+            (created_by or "").startswith("system")
+            or (created_by or "") == ""
+            or pytest_running
+        )
     )
     if (not is_prod) and is_system_source:
         log.info(
@@ -249,8 +279,6 @@ async def queue_email_doc(
             created_by, (subject or "")[:80], len(to or []),
             resource_kind, "pytest" if pytest_running else "cron/system",
         )
-        # Return a minimal shape matching the normal path so callers
-        # can `.get('id')` without crashing.
         return {
             "id": new_id(), "org_id": org_id, "to": list(to),
             "subject": subject, "status": "skipped_non_prod",
@@ -345,6 +373,9 @@ async def send_email(body: EmailSendIn, user: dict = Depends(get_current_user)):
         body_html=body.body_html, attachments=[a.model_dump() for a in body.attachments],
         related_record_type=body.related_record_type, related_record_id=body.related_record_id,
         created_by=user["id"], resource_kind=body.resource_kind,
+        source="user_action",  # v58.13.86 — POST /email/send is always
+                               # a real user clicking Send in the outbox
+                               # composer.
     )
     note = "Sent via Microsoft 365" if doc["status"] == "sent" \
         else "Microsoft 365 not connected — message stored in outbox"
@@ -547,6 +578,7 @@ async def _swms_email(record_id: str, body: RecordEmailIn,
         body_html=_wrap_body(body.message, summary, link), attachments=atts,
         related_record_type="swms", related_record_id=record_id,
         created_by=user["id"], resource_kind="swms",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
     return {**doc, "note": "Sent via Microsoft 365" if doc["status"] == "sent" else "Queued — Microsoft 365 not connected"}
 
@@ -577,6 +609,7 @@ async def email_swms_for_review(record_id: str, body: RecordEmailIn, user: dict)
         body_html=_wrap_body(body.message, summary, link), attachments=atts,
         related_record_type="swms", related_record_id=record_id,
         created_by=user["id"], resource_kind="swms",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -596,6 +629,7 @@ async def email_prestart(record_id, body, user):
         attachments=[pdf_att] if pdf_att else [],
         related_record_type="pre_starts", related_record_id=record_id,
         created_by=user["id"], resource_kind="pre_starts",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -610,6 +644,7 @@ async def email_site_diary(record_id, body, user):
         attachments=[pdf_att] if pdf_att else [],
         related_record_type="site_diary", related_record_id=record_id,
         created_by=user["id"], resource_kind="site_diary",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -632,6 +667,7 @@ async def email_hazard(record_id, body, user):
         body_html=_wrap_body(body.message, summary, f"/app/hazards"),
         attachments=atts, related_record_type="hazards", related_record_id=record_id,
         created_by=user["id"], resource_kind="hazards",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -649,6 +685,7 @@ async def email_incident(record_id, body, user):
         body_html=_wrap_body(body.message, summary, f"/app/incidents"),
         attachments=[], related_record_type="incidents", related_record_id=record_id,
         created_by=user["id"], resource_kind="incidents",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -669,6 +706,7 @@ async def email_inspection(record_id, body, user):
         attachments=[pdf_att] if pdf_att else [],
         related_record_type="inspections", related_record_id=record_id,
         created_by=user["id"], resource_kind="inspections",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -685,6 +723,7 @@ async def email_contractor(record_id, body, user):
         body_html=_wrap_body(body.message, summary, f"/app/contractors/{record_id}"),
         attachments=[], related_record_type="contractors", related_record_id=record_id,
         created_by=user["id"], resource_kind="contractors",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -703,6 +742,7 @@ async def email_renewal(record_id, body, user):
         body_html=_wrap_body(body.message, summary, public_link),
         attachments=[], related_record_type="renewals", related_record_id=record_id,
         created_by=user["id"], resource_kind="renewals",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 
@@ -722,6 +762,7 @@ async def email_audit_export(record_id, body, user):
         body_html=_wrap_body(body.message, summary, f"/app/audit-exports"),
         attachments=atts, related_record_type="audit_exports", related_record_id=record_id,
         created_by=user["id"], resource_kind="audit_exports",
+        source="user_action",  # v58.13.86 — record-scoped email endpoint
     )
 
 

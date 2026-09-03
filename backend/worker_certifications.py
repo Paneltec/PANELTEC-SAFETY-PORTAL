@@ -853,6 +853,13 @@ async def _send_one_reminder(
     tm_cfg = (hydrate_integration_config(tm) if tm and tm.get("status") == "connected" else None) or {}
     tm_ready = bool(tm_cfg.get("username") and tm_cfg.get("api_key"))
 
+    # v58.13.86 — Source classification: `manual_by` is set only when
+    # an admin clicked "Send Reminder Now" on the cert admin UI.
+    # `notice_type="manual"` from `send_cert_reminder_now` is the caller.
+    # In all other paths (`run_reminder_scan` cron), `manual_by is None`
+    # → treated as system source → gated by auto-comms toggle.
+    _send_source = "user_action" if manual_by else "system"
+
     async def _send_sms(mobiles: list[str], sms_text: str) -> tuple[list[str], Optional[str]]:
         if not mobiles:
             return [], None
@@ -863,6 +870,7 @@ async def _send_one_reminder(
         res = await safe_send_sms(
             org_id, mobiles=mobiles, text=sms_text,
             triggered_by_endpoint="worker_certifications._send_sms",
+            source=_send_source,  # v58.13.86
         )
         if res.get("ok") and not res.get("blocked"):
             return mobiles, None
@@ -882,6 +890,7 @@ async def _send_one_reminder(
                 related_record_id=cert["id"],
                 created_by=manual_by or "system",
                 resource_kind="renewal_links",
+                source=_send_source,  # v58.13.86
             )
             summary["email_to"] = admin_emails
         except Exception as e:
@@ -907,6 +916,7 @@ async def _send_one_reminder(
                     related_record_id=cert["id"],
                     created_by=manual_by or "system",
                     resource_kind="renewal_links",
+                    source=_send_source,  # v58.13.86
                 )
                 summary["worker_email_to"] = [worker_email]
             except Exception as e:

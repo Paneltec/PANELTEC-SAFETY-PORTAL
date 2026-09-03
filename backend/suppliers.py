@@ -245,5 +245,6 @@ async def send_renewal(
         related_record_id=simpro_supplier_id,
         resource_kind="contractors",
         created_by=user["id"],
+        source="user_action",  # v58.13.86 — admin clicked "Send Renewal"
     )
     return {"ok": True, "status": doc["status"], "outbox_id": doc["id"]}

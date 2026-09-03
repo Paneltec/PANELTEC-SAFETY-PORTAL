@@ -48,6 +48,7 @@ from worker_certifications import router as worker_certifications_router, certs_
 from forms import router as forms_router  # noqa: E402
 from email_outbox import record_router as record_email_router, router as email_router  # noqa: E402
 from comms_safe_mode import router as comms_safe_mode_router  # noqa: E402 — Phase 4.7.3
+from auto_comms import router as auto_comms_router  # noqa: E402 — v58.13.86
 from exports import router as exports_router  # noqa: E402
 from integrations import router as integrations_router  # noqa: E402
 from integrations_simpro import router as simpro_router  # noqa: E402
@@ -446,6 +447,7 @@ app.include_router(mobile_modules_router)
 api.include_router(email_router)
 api.include_router(record_email_router)
 api.include_router(comms_safe_mode_router)  # Phase 4.7.3
+api.include_router(auto_comms_router)  # v58.13.86 — auto-comms toggle
 api.include_router(pdf_router)
 # v160.3.9.58.13.47 — Capture-density telemetry endpoint.
 api.include_router(metrics_router)
