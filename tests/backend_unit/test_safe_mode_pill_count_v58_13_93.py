@@ -37,24 +37,26 @@ def test_status_model_has_blocked_count_field():
 
 
 def test_status_endpoint_counts_scoped_by_org():
-    """`get_safe_mode_status` MUST org-scope the count query, otherwise
-    an admin in org A sees the blocked count from every other org
-    (multi-tenant leak). Also verifies the endpoint handles a probe
-    failure gracefully so a missing collection doesn't 500 the top
-    bar."""
+    """`get_safe_mode_status` MUST org-scope the blocked count query,
+    otherwise an admin in org A sees the count from every other org.
+    v58.13.97 moved the source-of-truth from `comms_outbox_blocked`
+    (audit-only) to `outbound_emails` + `outbound_sms` where
+    `status='blocked'` — this test tracks that realignment."""
     m = re.search(
-        r"async def get_safe_mode_status\([\s\S]+?"
-        r"db\.comms_outbox_blocked\.count_documents\(\s*"
-        r"\{\s*\"org_id\":\s*user\[\"org_id\"\]\s*\}\s*\)",
+        r'async def get_safe_mode_status\([\s\S]+?'
+        r'for coll in \("outbound_emails",\s*"outbound_sms"\):[\s\S]+?'
+        r'db\[coll\]\.count_documents\(\{\s*'
+        r'"org_id":\s*user\["org_id"\],\s*'
+        r'"status":\s*"blocked"',
         COMMS_PY,
     )
-    assert m, "blocked_count query is not scoped by `org_id`"
+    assert m, "blocked_count query is not scoped by `org_id` on the outbound collections"
     # try/except so a collection-missing failure returns 0, not 500.
     assert re.search(
-        r"try:\s*\n\s*blocked = await db\.comms_outbox_blocked\.count_documents"
-        r"[\s\S]+?except Exception[\s\S]+?blocked = 0",
+        r"try:\s*\n\s*blocked \+= await db\[coll\]\.count_documents"
+        r"[\s\S]+?except Exception[\s\S]+?log\.warning",
         COMMS_PY,
-    ), "count_documents is not wrapped in a try/except → 0 fallback"
+    ), "count_documents is not wrapped in a try/except → per-channel 0 fallback"
 
 
 @pytest.mark.asyncio

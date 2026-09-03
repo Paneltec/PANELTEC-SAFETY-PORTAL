@@ -8529,7 +8529,10 @@
 //   No backend change. No env change. Frontend-only one-line swap;
 //   hot-reload picks it up.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.96';
+// v160.3.9.58.13.97 — Outbox counter drift fix + vehicle/unmatched audit report.
+// Full changelog in the ship record — see comment block above the RUNNING_VERSION
+// constant history (also captured in `/app/memory/vehicle_unmatched_audit_v58_13_97.md`).
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.97';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -130,18 +130,27 @@ async def get_safe_mode_status(user: dict = Depends(get_current_user)):
     env_val = env_setting()
     org_val = await org_setting(user["org_id"])
     eff = await effective_mode(user["org_id"])
-    # v58.13.93 — Cheap org-scoped count. `count_documents` with an
-    # indexed `org_id` filter is O(index-scan) — fast enough to run on
-    # every status probe without caching. Best-effort: if the
-    # collection is missing on a fresh install, treat as 0 rather
-    # than 500ing the status probe.
-    try:
-        blocked = await db.comms_outbox_blocked.count_documents(
-            {"org_id": user["org_id"]}
-        )
-    except Exception as exc:  # noqa: BLE001
-        log.warning("blocked_count probe failed org=%s: %s", user["org_id"], exc)
-        blocked = 0
+    # v58.13.97 — Source-of-truth realignment. Was
+    # `db.comms_outbox_blocked.count_documents(...)` — an audit-only
+    # collection that is (a) subject to a retention prune keeping
+    # only newest-100 per org, and (b) wiped by the "Clear Blocked
+    # Outbox" admin button. Meanwhile the actual blocked email/SMS
+    # rows live in `outbound_emails` / `outbound_sms` with
+    # `status="blocked"` — the same rows the Email Outbox table
+    # renders. Post-.97 the pill count matches what the outbox
+    # table shows. Best-effort per channel: if either collection is
+    # missing on a fresh install, that channel contributes 0 rather
+    # than 500'ing the status probe.
+    blocked = 0
+    for coll in ("outbound_emails", "outbound_sms"):
+        try:
+            blocked += await db[coll].count_documents({
+                "org_id": user["org_id"],
+                "status": "blocked",
+            })
+        except Exception as exc:  # noqa: BLE001
+            log.warning("blocked_count probe failed coll=%s org=%s: %s",
+                        coll, user["org_id"], exc)
     return SafeModeStatus(
         effective=eff,
         env_locked=env_is_master_on(),

@@ -434,3 +434,34 @@
   - `app/forms/fill/[id].tsx` — header bg + title text
 - **Screens updated**: Login, Dashboard, Forms Library, Forms Category, Form Fill, Tab Bar, Settings (via token cascade)
 - **Deferred**: Pre-starts/new.tsx (has rgba(255,255,255,0.85) inline), QR scan (camera overlay), document-library.tsx (minor badge)
+
+## Iteration 20 — v160.3.9.58.13.96 Modern Light Palette Redesign
+- **Commit**: c09cd3e507d1d145fe1c245503bd02a7c847b191
+- **Date**: 2026-09-03T11:39:00Z
+- **Changes**:
+  - Created `src/lib/palettes.ts`: Modern Light + Civil Contractor palette definitions
+  - Created `src/lib/ThemeContext.tsx`: runtime palette switching with AsyncStorage persistence
+  - Rewrote `src/lib/colors.ts`: mutable palette system, Modern Light as default
+  - Login: amber logo tile, blue primary CTA, clean white inputs
+  - Dashboard: amber circular avatar, blue icon tiles, subtle card shadows, cream bg
+  - Form fill: dark navy header (#1E3A8A), white text, dual-button footer (Save draft outline + Submit green)
+  - Tab bar: white bg, clean styling, no amber highlight squares
+  - Settings: admin-gated APPEARANCE section with palette switcher
+  - Forms library/category: dark readable headers, white search inputs
+  - Version bumped to paneltec-v160.3.9.58.13.96 (all 3 files)
+- **Files created (2)**:
+  - `src/lib/palettes.ts`
+  - `src/lib/ThemeContext.tsx`
+- **Files modified (10)**:
+  - `src/lib/colors.ts` (mutable palette, Modern Light default)
+  - `src/lib/version.ts` (version bump)
+  - `app/_layout.tsx` (ThemeProvider wrapper, bg color)
+  - `app/(auth)/login.tsx` (amber logo, blue CTA, outline biometric btn)
+  - `app/(tabs)/_layout.tsx` (white tab bar, clean icons)
+  - `app/(tabs)/dashboard.tsx` (amber avatar, blue tiles, shadows)
+  - `app/(tabs)/settings.tsx` (palette switcher, admin-gated)
+  - `app/forms/fill/[id].tsx` (navy header, Save draft + Submit green)
+  - `frontend/src/lib/version.js` (version sync)
+  - `frontend/public/service-worker.js` (version sync)
+- **Verified**: 4 screenshots (Login, Dashboard, Forms Library, Form Detail) + Settings palette switcher
+
