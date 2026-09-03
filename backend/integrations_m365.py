@@ -125,11 +125,26 @@ async def m365_test(user: dict = Depends(require_permission("integrations", "edi
         raise HTTPException(502, f"Graph unreachable: {e}")
     if r.status_code not in (200, 202):
         msg = r.text[:400]
+        # v58.13.85 — Actionable message for the common
+        # "sender_email placeholder" case. Graph returns:
+        #   {"error":{"code":"ErrorInvalidUser","message":"The requested
+        #    user 'x@y' is invalid."}}
+        # on a non-existent mailbox. The raw message doesn't tell the
+        # admin what to do; rewrite it to a specific fix path.
+        friendly = None
+        if "ErrorInvalidUser" in msg or "requested user" in msg.lower():
+            friendly = (
+                f"The 'Send from' mailbox '{sender}' does not exist in "
+                f"your Microsoft 365 tenant, or its Mail.Send app permission "
+                f"has not been granted. Update the Send-from mailbox in "
+                f"Settings → Integrations → Microsoft 365 to a real "
+                f"licensed mailbox in your tenant."
+            )
         await db.integration_configs.update_one(
             {"org_id": user["org_id"], "kind": "microsoft365"},
             {"$set": {"status": "error", "last_error": msg, "updated_at": now_iso()}},
         )
-        raise HTTPException(400, f"Graph SendMail failed: HTTP {r.status_code} — {msg}")
+        raise HTTPException(400, friendly or f"Graph SendMail failed: HTTP {r.status_code} — {msg}")
 
     await db.integration_configs.update_one(
         {"org_id": user["org_id"], "kind": "microsoft365"},

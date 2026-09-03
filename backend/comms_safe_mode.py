@@ -77,6 +77,27 @@ async def record_blocked(
         channel, ",".join(to)[:120], (subject or "")[:80], reason,
         triggered_by_endpoint or "-",
     )
+    # v58.13.85 — Retention. Keep at most 100 rows OR the last 7 days,
+    # whichever is more generous. Prevents unbounded growth in preview
+    # where the blocked outbox is the primary sink for held sends.
+    try:
+        from datetime import datetime, timezone, timedelta
+        cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        # Delete rows older than 7d AND outside the newest-100 window.
+        keep_ids = set()
+        async for r in db.comms_outbox_blocked.find(
+            {"org_id": org_id}, {"_id": 1},
+        ).sort("ts", -1).limit(100):
+            keep_ids.add(r["_id"])
+        await db.comms_outbox_blocked.delete_many({
+            "org_id": org_id,
+            "ts": {"$lt": cutoff_iso},
+            "_id": {"$nin": list(keep_ids)},
+        })
+    except Exception:                                  # noqa: BLE001
+        # Retention is best-effort — do NOT crash the caller (which
+        # is trying to record a blocked send) on a prune failure.
+        log.exception("comms_outbox_blocked retention prune failed")
     return doc
 
 
@@ -146,3 +167,26 @@ async def list_blocked(
         q["channel"] = channel
     docs = await db.comms_outbox_blocked.find(q, {"_id": 0}).sort("ts", -1).to_list(limit)
     return {"items": docs, "count": len(docs)}
+
+
+# v58.13.85 — Admin one-click purge of the blocked outbox.
+# Restricted to `role == "admin"` (same pattern as v58.13.81
+# `admin_purge_test_data`). Audit log line stamped on every purge
+# so a future auditor can retrace who cleared the queue.
+@router.delete("/comms-outbox-blocked")
+async def clear_blocked(
+    channel: Optional[str] = Query(None, description="email | sms"),
+    user: dict = Depends(get_current_user),
+):
+    if (user or {}).get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    q: dict = {"org_id": user["org_id"]}
+    if channel in ("email", "sms"):
+        q["channel"] = channel
+    res = await db.comms_outbox_blocked.delete_many(q)
+    deleted = int(res.deleted_count or 0)
+    log.info(
+        "comms.safe_mode_outbox_cleared org=%s actor=%s channel=%s deleted=%d",
+        user["org_id"], user["id"], channel or "all", deleted,
+    )
+    return {"ok": True, "deleted": deleted, "channel": channel or "all"}

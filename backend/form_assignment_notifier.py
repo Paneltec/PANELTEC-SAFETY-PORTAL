@@ -115,29 +115,20 @@ async def _send_one(worker: dict, template: dict, org_id: str, deep_link: str) -
                     worker.get("id"), template.get("id"), e)
 
     # SMS (TextMagic, best-effort).
+    # v58.13.85 — Route through safe_send_sms so Comms Safe Mode is
+    # honoured (was previously a direct httpx call bypassing the gate).
     try:
-        tm = await db.integration_configs.find_one(
-            {"org_id": org_id, "kind": "textmagic"},
-            {"config": 1, "status": 1},
-        )
-        # v160.3.9.40 (SEC-003) — decrypt secrets on read.
-        from integrations import hydrate_integration_config
-        tm_cfg = hydrate_integration_config(tm)
         mobile = worker.get("phone") or worker.get("mobile")
-        if tm_cfg.get("username") and tm_cfg.get("api_key") and mobile:
+        if mobile:
             text = (
                 f"Paneltec: New safety form assigned — {template.get('name')}. "
                 f"Open the app to complete."
             )
-            async with httpx.AsyncClient(timeout=10) as c:
-                await c.post(
-                    "https://rest.textmagic.com/api/v2/messages",
-                    headers={
-                        "X-TM-Username": tm_cfg["username"],
-                        "X-TM-Key": tm_cfg["api_key"],
-                    },
-                    data={"text": text, "phones": mobile},
-                )
+            from integrations_textmagic import safe_send_sms
+            await safe_send_sms(
+                org_id, mobiles=[mobile], text=text,
+                triggered_by_endpoint="form_assignment_notifier._send_one",
+            )
     except Exception as e:  # noqa: BLE001
         log.warning("form-assignment SMS failed worker=%s tpl=%s: %s",
                     worker.get("id"), template.get("id"), e)

@@ -151,10 +151,24 @@ def _encrypt_secrets_for_storage(kind: str, config: dict) -> dict:
     `<field>_encrypted` and drop the plaintext key. Non-secret fields
     pass through unchanged. Raises RuntimeError if a secret needs to
     be written but Fernet is unavailable — do NOT silently store
-    plaintext."""
+    plaintext.
+
+    v58.13.85 — Strip leading/trailing whitespace from EVERY string
+    value in the config dict before storage. Copy-paste of credentials
+    from provider dashboards routinely captures tab/space characters
+    (TextMagic api_key was arriving with a leading TAB, breaking the
+    httpx `X-TM-Key` header build). Since no legitimate credential /
+    URL / identifier we accept has meaningful surrounding whitespace,
+    stripping is safe. Applies to both secret and non-secret fields.
+    """
     if not config:
         return {}
-    out = dict(config)
+    out = {}
+    for k, v in config.items():
+        if isinstance(v, str):
+            out[k] = v.strip()
+        else:
+            out[k] = v
     for field in SECRETS_BY_KIND.get(kind, []):
         v = out.get(field)
         if v is None or v == "":
@@ -167,6 +181,7 @@ def _encrypt_secrets_for_storage(kind: str, config: dict) -> dict:
                 f"Cannot store secret {field!r}: {_ENC_KEY_ENV} not "
                 "configured on this backend. Ask an admin to set the key.",
             )
+        # Already stripped above; encrypt the trimmed plaintext.
         out[f"{field}_encrypted"] = _encrypt_integration_secret(str(v))
         out.pop(field, None)
     return out

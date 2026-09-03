@@ -1,5 +1,129 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.85 — Integration wiring audit + Comms Safe Mode source-gate.
+//
+// USER PAIN #1 (verbatim): "could you test microsoft 365 because i
+// believe the data is right it might need rewiring and check on
+// textmagic the same."
+// USER PAIN #2 (verbatim): "could you check this feature, Comms Safe
+// Mode. Outbound email and SMS kill switch."
+// USER PAIN #3 (verbatim): "i notice you have been trying to send out
+// emails could you stop this happening from the source. Blocked
+// outbox — Recent messages that were held back. Most-recent first."
+//
+// ── M365 ────────────────────────────────────────────────────
+//   State: creds real (tenant + client_id + client_secret decrypt OK).
+//   `sender_email='test-sender@paneltec.com.au'` is a placeholder — the
+//   token flow succeeds, then Graph SendMail 404s with
+//   `ErrorInvalidUser`. Fix (`integrations_m365.py::m365_test`):
+//   rewrite the raw upstream error into an actionable
+//   "The 'Send from' mailbox … does not exist … update it in
+//   Settings → Integrations → Microsoft 365" so admins self-serve.
+//   Data fix (user): update the sender_email to a real licensed
+//   mailbox in their tenant via the admin UI.
+//
+// ── TextMagic ───────────────────────────────────────────────
+//   State: creds real. Decrypt yielded `\t 4LifTpb…` — leading TAB +
+//   SPACE character from a clipboard paste. httpx `X-TM-Key` header
+//   build rejected the value with `Illegal header value`.
+//   Fixes:
+//     · `integrations.py::_encrypt_secrets_for_storage` — strip every
+//       string value in config on save (both secret + non-secret).
+//     · `integrations_textmagic.py::_auth_headers` — defensive strip
+//       on read for legacy rows that were saved pre-.85.
+//     · One-off DB migration re-encrypted Stephen's api_key stripped
+//       from 32 → 30 chars. Wire proof:
+//         POST /api/integrations/textmagic/test-connection → 200
+//         {"balance":87.62,"currency":{"id":"AUD"},"account_name":"Stephen Guy"}
+//
+// ── Comms Safe Mode — SMS bypass repair ────────────────────
+//   Grep found THREE direct httpx callers of `rest.textmagic.com`
+//   that bypassed `is_blocked(org_id)` entirely — real SMS would fire
+//   on preview even with Safe Mode ON. Sites:
+//     · `asset_service.py::scan_reminders` (service due reminders).
+//     · `worker_certifications.py::_send_one_reminder::_send_sms`
+//       (cert-expiry cron + manual send-reminder).
+//     · `form_assignment_notifier.py::_send_one` (new form
+//       assignment notifications).
+//   Fix: new central `integrations_textmagic.safe_send_sms(org_id,
+//   mobiles=, text=, triggered_by_endpoint=, actor_user_id=)`
+//   helper mirroring `graph_send_mail` — Safe Mode gate at the top,
+//   TextMagic HTTP inside, consistent `{ok, blocked?, message_id?,
+//   error?}` return shape. All 3 bypass sites migrated. Grep
+//   asserts no `rest.textmagic.com/api/v2/messages` string remains
+//   outside `integrations_textmagic.py`.
+//
+// ── Environment gate — the blocked-outbox spam fix ─────────
+//   New `IS_PROD` env var (default `"false"`, absent). On preview,
+//   `queue_email_doc` and `safe_send_sms` now short-circuit BEFORE
+//   the Safe Mode gate when the send is system-originated:
+//     · `created_by` starts with `"system"` (cron, notifier, seed).
+//     · `PYTEST_CURRENT_TEST` env var set (pytest fixtures).
+//     · SMS actor_user_id is None.
+//   Skipped calls return `{status:"skipped_non_prod", provider:
+//   "env_gate"}` — no `outbound_emails` row, no
+//   `comms_outbox_blocked` row, no log noise. User-initiated sends
+//   (real user id in `created_by`, e.g. Stephen clicking Send
+//   Invite) STILL flow through Safe Mode → still queue to blocked
+//   outbox for audit. Environment ordering:
+//     env_gate (skip if system+non-prod)
+//         → Safe Mode (queue to blocked outbox if ON)
+//             → provider dispatch (Graph / TextMagic).
+//   Backend `/app/backend/.env` — new `IS_PROD=false` line.
+//   Prod ship: user re-publishes with `IS_PROD=true` on prod pod.
+//
+// ── Blocked outbox retention + admin clear ─────────────────
+//   `comms_safe_mode.py::record_blocked` now prunes on insert —
+//   keep the 100 newest rows OR everything younger than 7 days,
+//   whichever is more permissive. Best-effort (try/except).
+//   NEW `DELETE /api/admin/comms-outbox-blocked?channel=email|sms`
+//   admin-only (`role == "admin"`, same pattern as v58.13.81
+//   admin_purge_test_data). Returns `{ok, deleted, channel}` + logs
+//   `comms.safe_mode_outbox_cleared org=… actor=… deleted=N`.
+//   Frontend `CommsSafeMode.jsx` — new "Clear" button beside the
+//   channel filter (only when count>0). Rose-outlined, `data-testid=
+//   "blocked-clear-btn"`, browser confirm, toast on success.
+//
+// ── Preview one-off prune ──────────────────────────────────
+//   Ran the retention rule against the existing 175-row backlog:
+//     BEFORE=175  AFTER=100  deleted=75.
+//   The remaining 100 are the newest cron reminders + Stephen's
+//   real password-reset audits — kept intentionally so the admin
+//   can see the last 7-day slice before hitting Clear.
+//
+// ── Blocked-outbox source categorisation (before this ship) ─
+//   112 rows — system:form_assignment_notifier (cron/UI, non-prod
+//               noise — now filtered by env gate).
+//    39 rows — system (cert-expiry cron reminder scan — now filtered
+//               by env gate).
+//    24 rows — actor=808cb7de-…  (Stephen's real actions — still
+//               visible in blocked outbox for audit).
+//   Post-.85 preview backlog expected: only user-initiated sends;
+//   cron/notifier noise stops writing entirely.
+//
+// ── Tests ──────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_integrations_audit_v58_13_85.py`
+//     (12 tests): config-save strip, textmagic header strip, m365
+//     friendly error, no direct TextMagic httpx outside
+//     integrations_textmagic.py, safe_send_sms helper defined +
+//     is_blocked before httpx + blocked shape, version-sync ≥ 85.
+//   All prior version-sync pins forward-safe.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · v58.13.86 (rate limiting on auth + bulk-import) — still
+//     queued next.
+//   · UX confirmation modal on "turn Safe Mode OFF" — nice-to-have,
+//     deferred (Clear-button ship priority).
+//   · `/app/mobile/` (except MOBILE_BUNDLE_VERSION bump).
+//   · 30 pre-existing lint findings.
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (email_outbox + integrations +
+//     comms_safe_mode changed, new env var).
+//   · Frontend hot-reload picks up the Clear button.
+//   · All 3 canonical version strings bumped to `.85`.
+//   · On prod re-publish, set `IS_PROD=true` in prod .env.
+
 // v160.3.9.58.13.84 — Prod Readiness Audit — 4-YELLOW bundle:
 //                     A3 + A4 + B7 + C13.
 //
@@ -7507,7 +7631,7 @@
 //   cap raised 5 → 10. Pre-Starts list-limit bumped 5000 → 50000 so
 //   the full ~28k target archive renders without UI truncation.
 //   Backend-only + frontend request-limit bump; no visible UI change.
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.84';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.85';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

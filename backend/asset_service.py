@@ -1412,31 +1412,30 @@ async def scan_reminders(user: dict = Depends(get_current_user)):
         except Exception as e:
             log.warning("asset reminder email failed for schedule=%s: %s", sched.get("id"), e)
 
-        # SMS
-        try:
-            tm = await db.integration_configs.find_one({"org_id": org_id, "kind": "textmagic"})
-            # v160.3.9.40 (SEC-003) — decrypt secrets on read.
-            from integrations import hydrate_integration_config
-            tm_cfg = hydrate_integration_config(tm)
-            if tm_cfg.get("username") and tm_cfg.get("api_key"):
-                import httpx
-                mobiles = []
-                async for u in db.users.find({"org_id": org_id, "role": {"$in": ["admin", "manager"]}}):
-                    if u.get("mobile"): mobiles.append(u["mobile"])
-                if mobiles:
-                    text = f"{st.upper()}: {sched['name']} on {asset.get('name')} {asset.get('rego_serial') or ''}"
-                    async with httpx.AsyncClient(timeout=10) as c:
-                        await c.post("https://rest.textmagic.com/api/v2/messages",
-                                     headers={"X-TM-Username": tm_cfg["username"], "X-TM-Key": tm_cfg["api_key"]},
-                                     data={"text": text, "phones": ",".join(mobiles)})
-                    sms_sent += len(mobiles)
-        except Exception as e:
-            log.warning("asset reminder SMS failed for schedule=%s: %s", sched.get("id"), e)
+    # SMS
+    try:
+        # v58.13.85 — Route through safe_send_sms so Comms Safe Mode
+        # is honoured (was previously a direct httpx call bypassing
+        # the kill switch — the exact bug fixed in this ship).
+        mobiles = []
+        async for u in db.users.find({"org_id": org_id, "role": {"$in": ["admin", "manager"]}}):
+            if u.get("mobile"): mobiles.append(u["mobile"])
+        if mobiles:
+            text = f"{st.upper()}: {sched['name']} on {asset.get('name')} {asset.get('rego_serial') or ''}"
+            from integrations_textmagic import safe_send_sms
+            res = await safe_send_sms(
+                org_id, mobiles=mobiles, text=text[:160],
+                triggered_by_endpoint="asset_service.scan_reminders",
+            )
+            if res.get("ok") and not res.get("blocked"):
+                sms_sent += 1
+    except Exception as e:
+        log.warning("asset reminder SMS failed for schedule=%s: %s", sched.get("id"), e)
 
-        await db.asset_reminders_sent.insert_one({
-            "id": new_id(), "schedule_id": sched["id"], "asset_id": sched["asset_id"],
-            "status": st, "sent_at": now_iso(), "org_id": org_id,
-        })
+    await db.asset_reminders_sent.insert_one({
+        "id": new_id(), "schedule_id": sched["id"], "asset_id": sched["asset_id"],
+        "status": st, "sent_at": now_iso(), "org_id": org_id,
+    })
 
     return {"scanned": scanned, "due_soon": due_soon, "overdue": overdue,
             "emails_sent": emails_sent, "sms_sent": sms_sent}

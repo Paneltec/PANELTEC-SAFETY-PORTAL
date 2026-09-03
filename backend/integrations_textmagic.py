@@ -39,7 +39,94 @@ async def _cfg(org_id: str) -> dict:
 
 
 def _auth_headers(cfg: dict) -> dict:
-    return {"X-TM-Username": cfg.get("username") or "", "X-TM-Key": cfg.get("api_key") or ""}
+    # v58.13.85 — Defensive strip: even if a stale row has whitespace
+    # in the credential values, the httpx header build won't fail.
+    # The save-time strip in `integrations.py::_encrypt_secrets_for_storage`
+    # handles new writes; this is belt and braces for existing bad rows
+    # that were saved before the .85 fix landed.
+    return {
+        "X-TM-Username": (cfg.get("username") or "").strip(),
+        "X-TM-Key": (cfg.get("api_key") or "").strip(),
+    }
+
+
+# ─────────────────────────────────────────────────────────
+# v58.13.85 — Centralised SMS boundary. All outbound SMS MUST go
+# through `safe_send_sms(...)` so:
+#   1. Comms Safe Mode is honoured (previously bypassed by 3 direct
+#      httpx callers in asset_service, worker_certifications, and
+#      form_assignment_notifier).
+#   2. TextMagic API errors are logged consistently.
+#   3. A future rate-limit / retry policy can be added in one place.
+# Returns {ok: bool, blocked?: bool, message_id?: str, error?: str}
+# in the same shape as `integrations_m365.graph_send_mail`.
+# ─────────────────────────────────────────────────────────
+async def safe_send_sms(
+    org_id: str,
+    *,
+    mobiles: List[str],
+    text: str,
+    triggered_by_endpoint: str = "",
+    actor_user_id: Optional[str] = None,
+) -> dict:
+    # v58.13.85 — Environment gate FIRST. On preview / dev / test,
+    # system-originated SMS (cron reminders, form-assignment notifier,
+    # pytest fixtures) are silent no-ops — no comms_outbox_blocked
+    # row, no upstream HTTP call. User-initiated SMS (real actor id)
+    # still flow through so Safe Mode's audit trail keeps them
+    # visible.
+    import os as _os
+    is_prod = (_os.environ.get("IS_PROD", "false").strip().lower() == "true")
+    pytest_running = bool(_os.environ.get("PYTEST_CURRENT_TEST"))
+    is_system_source = actor_user_id is None or pytest_running
+    if (not is_prod) and is_system_source:
+        log.info(
+            "safe_send_sms system_source_skipped env=non_prod endpoint=%r "
+            "to_n=%d reason=%s",
+            triggered_by_endpoint or "-", len(mobiles or []),
+            "pytest" if pytest_running else "cron/system",
+        )
+        return {"ok": True, "skipped": True, "provider": "env_gate"}
+    from comms_safe_mode import is_blocked, record_blocked
+    if await is_blocked(org_id):
+        await record_blocked(
+            channel="sms", org_id=org_id, to=list(mobiles or []),
+            subject="", body=text or "",
+            triggered_by_endpoint=triggered_by_endpoint or "safe_send_sms",
+            actor_user_id=actor_user_id,
+        )
+        return {"ok": True, "blocked": True, "provider": "safe_mode"}
+    if not mobiles:
+        return {"ok": False, "error": "no_recipients"}
+    doc = await db.integration_configs.find_one({"org_id": org_id, "kind": "textmagic"})
+    if not doc or doc.get("status") != "connected":
+        return {"ok": False, "error": "textmagic_not_connected"}
+    cfg = hydrate_integration_config(doc)
+    if not cfg.get("username") or not cfg.get("api_key"):
+        return {"ok": False, "error": "textmagic_credentials_missing"}
+    try:
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.post(
+                f"{TM_BASE}/messages",
+                headers=_auth_headers(cfg),
+                data={"text": text, "phones": ",".join(mobiles)},
+            )
+    except Exception as e:                             # noqa: BLE001
+        log.warning("safe_send_sms network error org=%s err=%s", org_id, e)
+        return {"ok": False, "error": f"network: {e}"}
+    if r.status_code in (200, 201):
+        data = {}
+        try:
+            data = r.json()
+        except Exception:
+            pass
+        log.info("safe_send_sms org=%s to=%d text_len=%d msg_id=%s endpoint=%s",
+                 org_id, len(mobiles), len(text or ""), data.get("id"),
+                 triggered_by_endpoint or "-")
+        return {"ok": True, "message_id": data.get("id")}
+    log.warning("safe_send_sms upstream_error org=%s status=%s body=%r endpoint=%s",
+                org_id, r.status_code, r.text[:200], triggered_by_endpoint or "-")
+    return {"ok": False, "error": f"HTTP {r.status_code} {r.text[:200]}"}
 
 
 @router.post("/test-connection")

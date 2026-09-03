@@ -226,6 +226,37 @@ async def queue_email_doc(
     # bypass it, and so the internal convenience routes (record-scoped
     # send helpers below) are protected too — not just POST /send.
     body_html = sanitize_email_body_html(body_html)
+    # v58.13.85 — Environment gate FIRST, before Safe Mode.
+    # On preview / dev / test (IS_PROD != "true"), system-originated
+    # sends (cron reminders, form_assignment_notifier, seed tasks,
+    # test runs) skip entirely — no queue to outbound_emails, no
+    # comms_outbox_blocked row, no log noise. User-initiated sends
+    # (real user id in `created_by`, e.g. an admin clicking
+    # "Send invite") STILL flow through so Safe Mode's audit trail
+    # keeps them visible.
+    import os as _os
+    is_prod = (_os.environ.get("IS_PROD", "false").strip().lower() == "true")
+    pytest_running = bool(_os.environ.get("PYTEST_CURRENT_TEST"))
+    is_system_source = (
+        (created_by or "").startswith("system")
+        or (created_by or "") == ""
+        or pytest_running
+    )
+    if (not is_prod) and is_system_source:
+        log.info(
+            "email_outbox.system_source_skipped env=non_prod created_by=%r "
+            "subject=%r to_n=%d resource=%r reason=%s",
+            created_by, (subject or "")[:80], len(to or []),
+            resource_kind, "pytest" if pytest_running else "cron/system",
+        )
+        # Return a minimal shape matching the normal path so callers
+        # can `.get('id')` without crashing.
+        return {
+            "id": new_id(), "org_id": org_id, "to": list(to),
+            "subject": subject, "status": "skipped_non_prod",
+            "provider": "env_gate", "created_by": created_by,
+            "created_at": now_iso(),
+        }
     # Phase 4.7.3 — Comms Safe Mode kill switch. Intercepts at the boundary so
     # neither Graph API nor the queued-then-cron flow can fire while safe mode
     # is on. We still persist the row in `outbound_emails` (status="blocked")

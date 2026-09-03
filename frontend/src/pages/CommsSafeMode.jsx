@@ -136,6 +136,30 @@ export default function CommsSafeMode() {
               <option value="sms">SMS</option>
             </select>
             <span className="text-xs text-slate-500" data-testid="blocked-count">{blocked.count} blocked</span>
+            {blocked.count > 0 ? (
+              <button
+                type="button"
+                data-testid="blocked-clear-btn"
+                disabled={busy}
+                onClick={async () => {
+                  if (!window.confirm(
+                    `Clear ${blocked.count} blocked ${channelF || 'email/sms'} row(s) from the outbox? This cannot be undone.`
+                  )) return;
+                  setBusy(true);
+                  try {
+                    const { data } = await api.delete(
+                      `/admin/comms-outbox-blocked${channelF ? `?channel=${channelF}` : ''}`
+                    );
+                    toast.success(`Cleared ${data?.deleted ?? 0} blocked row(s)`);
+                    await load();
+                  } catch (e) { toast.error(apiError(e)); }
+                  finally { setBusy(false); }
+                }}
+                className="text-xs px-2.5 py-1.5 rounded-md border border-rose-300 text-rose-700 bg-rose-50 hover:bg-rose-100 disabled:opacity-50"
+              >
+                Clear
+              </button>
+            ) : null}
           </div>
         </div>
         {blocked.items.length === 0 ? (

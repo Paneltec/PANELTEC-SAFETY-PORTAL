@@ -854,21 +854,21 @@ async def _send_one_reminder(
     tm_ready = bool(tm_cfg.get("username") and tm_cfg.get("api_key"))
 
     async def _send_sms(mobiles: list[str], sms_text: str) -> tuple[list[str], Optional[str]]:
-        if not (tm_ready and mobiles):
+        if not mobiles:
             return [], None
-        import httpx
-        try:
-            async with httpx.AsyncClient(timeout=15) as c:
-                r = await c.post(
-                    "https://rest.textmagic.com/api/v2/messages",
-                    headers={"X-TM-Username": tm_cfg["username"], "X-TM-Key": tm_cfg["api_key"]},
-                    data={"text": sms_text, "phones": ",".join(mobiles)},
-                )
-            if r.status_code in (200, 201):
-                return mobiles, None
-            return [], f"sms: HTTP {r.status_code} {r.text[:120]}"
-        except Exception as e:
-            return [], f"sms: {e}"
+        # v58.13.85 — Route through the centralised safe boundary so
+        # Comms Safe Mode is honoured (was previously a direct httpx
+        # call that bypassed the gate).
+        from integrations_textmagic import safe_send_sms
+        res = await safe_send_sms(
+            org_id, mobiles=mobiles, text=sms_text,
+            triggered_by_endpoint="worker_certifications._send_sms",
+        )
+        if res.get("ok") and not res.get("blocked"):
+            return mobiles, None
+        if res.get("blocked"):
+            return [], None  # Silently held by Safe Mode; audit row is in comms_outbox_blocked.
+        return [], f"sms: {res.get('error')}"
 
     # ── Admin / HSEQ Lead audience ─────────────────────
     admin_subject, admin_html, admin_sms = _build_messages(cert, worker, app_base, "admin")
