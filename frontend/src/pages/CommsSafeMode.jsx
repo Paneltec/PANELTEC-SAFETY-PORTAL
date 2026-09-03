@@ -65,6 +65,10 @@ export default function CommsSafeMode() {
     try {
       await api.patch('/admin/comms-safe-mode', { mode });
       toast.success(`Comms Safe Mode set to ${mode.toUpperCase()}`);
+      // v58.13.92 — Notify the AppShell top-bar pill so it reflects
+      // the new state without a full page refresh. Listener lives in
+      // AppShell.jsx#safeMode useEffect.
+      window.dispatchEvent(new CustomEvent('paneltec:comms-safe-mode-changed', { detail: { mode } }));
       await load();
     } catch (e) {
       // v58.7.1 — Defensive: if the backend rejects with 423 (env

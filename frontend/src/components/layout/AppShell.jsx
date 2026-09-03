@@ -6,7 +6,7 @@ import SettingsNav from '@/components/settings/SettingsNav';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   Search, Bell, ChevronDown, ChevronLeft, Menu, X, LogOut, ChevronsLeft, ChevronsRight, Plus,
-  KeyRound as KeyRoundIcon, Zap, Upload,
+  KeyRound as KeyRoundIcon, Zap, Upload, ShieldCheck, ShieldOff, Lock,
 } from 'lucide-react';
 // Phase 3.20 Wave 1 — sidebar nav migrated to @fluentui/react-icons.
 // Each NAV entry now carries `icon` (Regular outline) for the resting
@@ -268,15 +268,33 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   const [workspaces, setWorkspaces] = useState([]);
   // Phase 4.7 — self-serve password change from the user dropdown.
   const [changePwOpen, setChangePwOpen] = useState(false);
-  // Phase 4.7.3 — Comms Safe Mode indicator (yellow lightning chip).
+  // Phase 4.7.3 — Comms Safe Mode indicator (v58.13.92 — always-on
+  // color-coded pill; was previously a conditional amber chip that
+  // only rendered when Safe Mode was ON).
   const [safeMode, setSafeMode] = useState(null);
   useEffect(() => {
     let alive = true;
-    api.get('/admin/comms-safe-mode/status')
-      .then((r) => { if (alive) setSafeMode(r.data); })
-      .catch(() => { /* non-admin or unauthenticated, skip */ });
-    return () => { alive = false; };
-  }, []);
+    const load = () => {
+      api.get('/admin/comms-safe-mode/status')
+        .then((r) => { if (alive) setSafeMode(r.data); })
+        .catch(() => { /* non-admin or unauthenticated, skip */ });
+    };
+    load();
+    // v58.13.92 — live-update the pill without a full page refresh.
+    //   1. Refetch on any route change (cheap; means clicking away
+    //      from `/app/settings/comms-safe-mode` back to a dashboard
+    //      immediately reflects the new state).
+    //   2. Listen for the `paneltec:comms-safe-mode-changed` window
+    //      event that `CommsSafeMode.jsx` dispatches after a
+    //      successful PATCH so the pill flips in the same tab even
+    //      when the user stays on the admin page.
+    const onEvent = () => load();
+    window.addEventListener('paneltec:comms-safe-mode-changed', onEvent);
+    return () => {
+      alive = false;
+      window.removeEventListener('paneltec:comms-safe-mode-changed', onEvent);
+    };
+  }, [location.pathname]);
   useEffect(() => {
     let live = true;
     api.get('/workspaces')
@@ -394,16 +412,54 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
       <ApiHealthPill />
       <BackupPill />
 
-      {safeMode?.effective === 'on' && (
-        <Link
-          to="/app/settings/comms-safe-mode"
-          title={'Comms Safe Mode\nWhen ON, outgoing SMS/email are held in the Outbox instead of sending — useful for testing without spamming real people. Click to open Settings.'}
-          data-testid="comms-safe-mode-chip"
-          className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-semibold uppercase tracking-wider hover:bg-amber-200 transition-colors">
-          <Zap size={12} className="fill-amber-500 text-amber-600" />
-          Comms Safe Mode
-        </Link>
-      )}
+      {/* v58.13.92 — Always-visible color-coded Comms Safe Mode pill.
+          Previously (Phase 4.7.3) this only rendered when Safe Mode
+          was ON — a "warning-only" chip. User pain (verbatim): "i
+          will need i pill if i need to get to it quickly." So the
+          pill now renders in all three states:
+            · Safe Mode ON            → amber pill, ShieldCheck icon
+            · Safe Mode OFF           → green pill, ShieldOff icon
+            · env_locked (ON via env) → amber-plus-lock variant
+          When `safeMode` hasn't loaded yet (initial mount, or the
+          call 401s for a non-admin) we render nothing — that's the
+          same behaviour as before, avoids a skeleton flicker. */}
+      {safeMode && (() => {
+        const eff = safeMode.effective;
+        const locked = !!safeMode.env_locked;
+        const isOn = eff === 'on';
+        const cls = isOn
+          ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+          : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100';
+        const Icon = isOn ? ShieldCheck : ShieldOff;
+        const iconCls = isOn
+          ? 'fill-amber-500 text-amber-700'
+          : 'text-emerald-700';
+        const label = isOn
+          ? 'Comms Safe Mode: ON'
+          : 'Comms Safe Mode: OFF';
+        const tooltip = isOn
+          ? (locked
+              ? 'Comms Safe Mode is ON (env-locked) — outbound comms blocked. Click to manage.'
+              : 'Comms Safe Mode is ON — outbound comms blocked. Click to manage.')
+          : 'Comms Safe Mode is OFF — comms live. Click to manage.';
+        return (
+          <Link
+            to="/app/settings/comms-safe-mode"
+            title={tooltip}
+            aria-label={tooltip}
+            data-testid="comms-safe-mode-chip"
+            data-mode={eff}
+            data-env-locked={locked ? 'true' : 'false'}
+            className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${isOn ? 'focus:ring-amber-400' : 'focus:ring-emerald-400'} ${cls}`}
+          >
+            <Icon size={12} className={iconCls} aria-hidden="true" />
+            {label}
+            {locked && (
+              <Lock size={10} className="text-amber-700" aria-hidden="true" data-testid="comms-safe-mode-chip-env-lock" />
+            )}
+          </Link>
+        );
+      })()}
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

@@ -8297,7 +8297,83 @@
 //     .91 fold-in doesn't change the code path prod-side until you
 //     publish; the wrapper covers the crash class you hit.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.91';
+// v160.3.9.58.13.92 — Always-visible color-coded Comms Safe Mode pill.
+//
+// USER PAIN VERBATIM: "i will need i pill if i need to get to it
+// quickly"
+//
+// Previously (Phase 4.7.3) the top-bar pill was warning-only — it
+// rendered ONLY when Safe Mode was effectively ON. When Safe Mode
+// went OFF (real comms armed) the pill vanished entirely, so a user
+// had no at-a-glance signal of the current state AND no quick jump
+// to the admin page. .92 makes the pill:
+//
+//   · Always visible (when `/api/admin/comms-safe-mode/status`
+//     resolves — the endpoint is public to any authed user, so
+//     every logged-in role sees the same pill).
+//   · Color-coded:
+//       - ON            → amber pill + `ShieldCheck` icon.
+//       - OFF           → subdued green pill + `ShieldOff` icon.
+//       - env-locked ON → amber pill + `ShieldCheck` icon + tiny
+//                          `Lock` badge on the right so the user
+//                          can distinguish "org toggled ON" from
+//                          "operator has locked ON at the env level".
+//   · Clickable — routes to `/app/settings/comms-safe-mode` (was
+//     already the case).
+//   · Keyboard-accessible — focus ring matches pill color, `aria-
+//     label` mirrors the tooltip copy so screen readers announce
+//     the state on focus.
+//   · Live-updating — two orthogonal mechanisms:
+//       1. `useEffect` deps now include `location.pathname`, so
+//          navigating between routes refetches the status once
+//          (cheap; means clicking away from the admin page instantly
+//          reflects the new state on any dashboard).
+//       2. `CommsSafeMode.jsx::toggle()` dispatches a
+//          `paneltec:comms-safe-mode-changed` `CustomEvent` on
+//          `window` after a successful PATCH. The AppShell effect
+//          listens and refetches — so the pill flips even when the
+//          user stays on the admin page (or opens the app in
+//          another tab in the same window).
+//   · Tooltip copy:
+//       - ON:            "Comms Safe Mode is ON — outbound comms
+//                         blocked. Click to manage."
+//       - ON+env-locked: "Comms Safe Mode is ON (env-locked) —
+//                         outbound comms blocked. Click to manage."
+//       - OFF:           "Comms Safe Mode is OFF — comms live. Click
+//                         to manage."
+//   · DOM contract for downstream tests:
+//       `data-testid="comms-safe-mode-chip"`,
+//       `data-mode="on"|"off"`,
+//       `data-env-locked="true"|"false"`,
+//       (nested) `data-testid="comms-safe-mode-chip-env-lock"` when
+//       the tiny Lock badge renders.
+//
+// ── Icon note ──
+//   The Phase 4.7.3 pill used the `Zap` (lightning) icon. .92 swaps
+//   to `ShieldCheck`/`ShieldOff` because those semantically match
+//   "Safe Mode" (a protective barrier that's either on or off).
+//   Zap remains imported and is used elsewhere in the top bar so
+//   this is purely a pill-icon swap.
+//
+// ── Files ──
+//   `frontend/src/components/layout/AppShell.jsx`
+//     · New icon imports: ShieldCheck, ShieldOff, Lock.
+//     · `useEffect` for `safeMode` now depends on `location.pathname`
+//       and registers a `paneltec:comms-safe-mode-changed` listener.
+//     · Pill JSX unconditional; IIFE picks color/icon/label/tooltip.
+//   `frontend/src/pages/CommsSafeMode.jsx`
+//     · `toggle()` dispatches `paneltec:comms-safe-mode-changed`
+//       after the PATCH succeeds.
+//
+// ── SANITY ──
+//   · No backend changes in .92. No supervisor restart needed.
+//   · Preview `.env` `COMMS_SAFE_MODE=off` (lifted in .91) —
+//     untouched. If Stephen flips the org toggle from ON → OFF via
+//     the UI, the pill on preview will instantly turn green.
+//   · Prod is still on .89 / mid-repub — this ship lands with the
+//     next Path-3 publish.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.92';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
