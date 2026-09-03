@@ -8373,7 +8373,66 @@
 //   · Prod is still on .89 / mid-repub — this ship lands with the
 //     next Path-3 publish.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.92';
+// v160.3.9.58.13.93 — Blocked-outbox count badge on the Safe Mode pill.
+//
+// USER PAIN VERBATIM: "now" — user approved the "why don't you add
+// a blocked-count badge to the pill" enhancement from the .92 ship
+// report. Turns the pill from a state indicator into an actionable
+// "N blocked messages waiting" nudge.
+//
+// ── Backend (`backend/comms_safe_mode.py`) ──
+//   `SafeModeStatus` (Pydantic response model) gains a `blocked_count:
+//   int = 0` field. `get_safe_mode_status` populates it via a
+//   cheap `db.comms_outbox_blocked.count_documents({"org_id":
+//   user["org_id"]})` — org-scoped for multi-tenant safety. The
+//   count is best-effort: if the collection is missing on a fresh
+//   install, the probe silently returns `0` rather than 500'ing the
+//   status endpoint (which the top bar hits on every route change).
+//
+// ── Frontend (`frontend/src/components/layout/AppShell.jsx`) ──
+//   The IIFE that renders the pill now reads
+//   `safeMode.blocked_count` and:
+//     · Renders a subtle amber-500 rounded pill-badge to the right
+//       of the label when `ON && count > 0`. Class:
+//         ml-0.5 inline-flex items-center justify-center min-w-[16px]
+//         px-1 rounded-full bg-amber-500 text-white text-[10px]
+//         font-bold leading-none tabular-nums
+//     · Suppresses the badge entirely when `count === 0` (avoids the
+//       trailing `· 0` visual noise) and when Safe Mode is OFF.
+//     · New DOM contract: `data-blocked-count="{N}"` on the outer
+//       Link, and `data-testid="comms-safe-mode-chip-count"` on the
+//       badge element itself (nested only when it renders).
+//     · Tooltip / aria-label extends the .92 copy:
+//         ON+N=0:  "Comms Safe Mode is ON — outbound comms blocked.
+//                   Click to manage."            (unchanged)
+//         ON+N>0:  "Comms Safe Mode is ON — {N} outbound comm(s)
+//                   blocked. Click to manage."
+//         Env-locked variants mirror the same pluralisation.
+//         OFF:     unchanged.
+//     · Singular/plural correct: `"1 outbound comm blocked"` vs
+//       `"3 outbound comms blocked"`.
+//
+// ── Frontend (`frontend/src/pages/CommsSafeMode.jsx`) ──
+//   The "Clear" blocked-outbox button already refetched local page
+//   state via `load()`. It now ALSO dispatches the .92 event bus
+//   `paneltec:comms-safe-mode-changed` with `{cleared: N}` in the
+//   detail payload, so the AppShell pill drops its count badge to 0
+//   the moment the outbox is cleared — no route change, no
+//   full-page refresh.
+//
+// ── Live-update ──
+//   Reuses the .92 machinery unchanged. Two orthogonal triggers:
+//     1. Route change → `useEffect([location.pathname])` refetches.
+//     2. Toggle OR Clear on the admin page → dispatches
+//        `paneltec:comms-safe-mode-changed` → AppShell listener
+//        refetches. Both toggle and clear now fire the event.
+//
+// ── SANITY ──
+//   No new backend restart needed; hot-reload picks up the schema
+//   change. No env changes. No `/app/mobile/` changes beyond the
+//   version string.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.93';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

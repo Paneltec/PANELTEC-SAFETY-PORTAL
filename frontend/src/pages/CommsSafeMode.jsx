@@ -251,6 +251,10 @@ export default function CommsSafeMode() {
                       `/admin/comms-outbox-blocked${channelF ? `?channel=${channelF}` : ''}`
                     );
                     toast.success(`Cleared ${data?.deleted ?? 0} blocked row(s)`);
+                    // v58.13.93 — Notify the AppShell pill so its
+                    // count badge drops to 0 instantly. Reuses the
+                    // .92 event bus.
+                    window.dispatchEvent(new CustomEvent('paneltec:comms-safe-mode-changed', { detail: { cleared: data?.deleted ?? 0 } }));
                     await load();
                   } catch (e) { toast.error(apiError(e)); }
                   finally { setBusy(false); }

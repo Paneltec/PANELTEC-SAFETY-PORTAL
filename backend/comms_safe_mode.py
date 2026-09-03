@@ -117,6 +117,12 @@ class SafeModeStatus(BaseModel):
     env_locked: bool
     env_value: str
     org_value: str
+    # v58.13.93 — Count of intercepted-but-not-delivered messages for
+    # this org. Renders as a subtle badge on the top-bar pill so the
+    # user knows how many blocked comms are waiting for review without
+    # opening the admin page. `0` when the outbox is empty (frontend
+    # suppresses the badge for `0`).
+    blocked_count: int = 0
 
 
 @router.get("/comms-safe-mode/status", response_model=SafeModeStatus)
@@ -124,11 +130,24 @@ async def get_safe_mode_status(user: dict = Depends(get_current_user)):
     env_val = env_setting()
     org_val = await org_setting(user["org_id"])
     eff = await effective_mode(user["org_id"])
+    # v58.13.93 — Cheap org-scoped count. `count_documents` with an
+    # indexed `org_id` filter is O(index-scan) — fast enough to run on
+    # every status probe without caching. Best-effort: if the
+    # collection is missing on a fresh install, treat as 0 rather
+    # than 500ing the status probe.
+    try:
+        blocked = await db.comms_outbox_blocked.count_documents(
+            {"org_id": user["org_id"]}
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("blocked_count probe failed org=%s: %s", user["org_id"], exc)
+        blocked = 0
     return SafeModeStatus(
         effective=eff,
         env_locked=env_is_master_on(),
         env_value=env_val,
         org_value=org_val,
+        blocked_count=blocked,
     )
 
 

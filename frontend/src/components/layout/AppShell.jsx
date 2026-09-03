@@ -427,6 +427,11 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         const eff = safeMode.effective;
         const locked = !!safeMode.env_locked;
         const isOn = eff === 'on';
+        // v58.13.93 — Blocked-outbox count badge (rendered only when
+        // ON and count > 0 — a `· 0` trailing separator is visual
+        // noise). `blocked_count` shipped in the status payload.
+        const n = Number(safeMode.blocked_count || 0);
+        const showBadge = isOn && n > 0;
         const cls = isOn
           ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
           : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100';
@@ -439,8 +444,12 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
           : 'Comms Safe Mode: OFF';
         const tooltip = isOn
           ? (locked
-              ? 'Comms Safe Mode is ON (env-locked) — outbound comms blocked. Click to manage.'
-              : 'Comms Safe Mode is ON — outbound comms blocked. Click to manage.')
+              ? (showBadge
+                  ? `Comms Safe Mode is ON (env-locked) — ${n} outbound comm${n === 1 ? '' : 's'} blocked. Click to manage.`
+                  : 'Comms Safe Mode is ON (env-locked) — outbound comms blocked. Click to manage.')
+              : (showBadge
+                  ? `Comms Safe Mode is ON — ${n} outbound comm${n === 1 ? '' : 's'} blocked. Click to manage.`
+                  : 'Comms Safe Mode is ON — outbound comms blocked. Click to manage.'))
           : 'Comms Safe Mode is OFF — comms live. Click to manage.';
         return (
           <Link
@@ -450,10 +459,20 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
             data-testid="comms-safe-mode-chip"
             data-mode={eff}
             data-env-locked={locked ? 'true' : 'false'}
+            data-blocked-count={String(n)}
             className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-semibold uppercase tracking-wider transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 ${isOn ? 'focus:ring-amber-400' : 'focus:ring-emerald-400'} ${cls}`}
           >
             <Icon size={12} className={iconCls} aria-hidden="true" />
             {label}
+            {showBadge && (
+              <span
+                data-testid="comms-safe-mode-chip-count"
+                className="ml-0.5 inline-flex items-center justify-center min-w-[16px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none tabular-nums"
+                aria-hidden="true"
+              >
+                {n}
+              </span>
+            )}
             {locked && (
               <Lock size={10} className="text-amber-700" aria-hidden="true" data-testid="comms-safe-mode-chip-env-lock" />
             )}
