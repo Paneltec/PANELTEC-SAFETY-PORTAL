@@ -22,7 +22,7 @@ import HowThisWorks from '../components/help/HowThisWorks';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
-import { RESOURCE_LABELS, EMAIL_SUPPORTED, TEAM_VIEW_SUPPORTED, useCan } from '../lib/permissions';
+import { RESOURCE_LABELS, EMAIL_SUPPORTED, TEAM_VIEW_SUPPORTED, DELETE_SUPPORTED, OPEN_VIEW_SUPPORTED, useCan } from '../lib/permissions';
 import { Avatar, AvatarFallback, AvatarImage } from '../components/ui/avatar';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,

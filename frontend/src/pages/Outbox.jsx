@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Mail, RefreshCw, Ban, ExternalLink, AlertTriangle, Filter, Trash2, ChevronDown, Loader2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { openAuthedFile } from '../lib/downloads';
 import { PageHeader } from '../components/capture/Ui';
 // v160.3.7k — Inoculation sweep: lock body scroll while the Outbox detail drawer is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
@@ -415,7 +416,10 @@ export default function Outbox() {
             {active.attachments?.length > 0 && (
               <div className="mt-3"><div className="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Attachments</div>
                 <ul className="text-sm space-y-1">{active.attachments.map((a, i) => (
-                  <li key={i}><a href={a.file_url} className="text-brand-blue hover:underline inline-flex items-center gap-1"><ExternalLink size={11} /> {a.filename}</a></li>
+                  <li key={i}><button type="button"
+                    onClick={() => openAuthedFile(a.file_url, a.filename || 'attachment')}
+                    data-testid={`outbox-attachment-open-${i}`}
+                    className="text-brand-blue hover:underline inline-flex items-center gap-1"><ExternalLink size={11} /> {a.filename}</button></li>
                 ))}</ul>
               </div>
             )}

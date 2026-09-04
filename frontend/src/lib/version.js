@@ -1,5 +1,152 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.104 — Unified QR public-URL resolver + preview env fix.
+//                      Scheme-less `/scan/site/{token}` QR codes on
+//                      preview now encode the full customer-facing URL.
+//
+// USER PAIN (verbatim, .103 close-out):
+//   "when clicked with a phone the qr code dosent lead to anything."
+//
+// Root cause (proven by decoding the preview Paneltec Depot QR PDF via
+// pdf2image + pyzbar during the .103 investigation):
+//   · PROD  QR encoded: 'https://whs-compliance.emergent.host/scan/
+//     site/QnNhti0JYJFE'  — correct, resolves 200 end-to-end.
+//   · PREVIEW QR encoded: '/scan/site/uw5w7qQhdaUD'  — SCHEME-LESS,
+//     no host, no protocol. Phones can't open a bare-path URL from a
+//     QR camera scan.
+//
+// Why the two envs disagreed:
+//   Two separate helpers each rolled their own env-var resolution with
+//   different precedence orders and different fallback sets.
+//     · `assets.py::_public_base()`         → FRONTEND_PUBLIC_URL first
+//        → falls back to REACT_APP_BACKEND_URL.
+//     · `workers_qr.py::_public_app_url()`  → REACT_APP_BACKEND_URL first
+//        → falls back to PUBLIC_APP_URL. NO FRONTEND_PUBLIC_URL fallback.
+//   Also used by `sites_qr.py` and `suppliers_qr.py` via
+//   `from workers_qr import _public_app_url`.
+//   On PREVIEW, backend `.env` had ONLY FRONTEND_PUBLIC_URL set — and it
+//   pointed at a STALE UUID hash preview host
+//   (`3dd7823d-4048-…preview.emergentagent.com`) that pre-dated the
+//   rename to `whs-compliance.preview.emergentagent.com`. So:
+//     · Asset QRs encoded a stale-host URL that no longer routed.
+//     · Site/worker/supplier QRs encoded scheme-less relative URLs
+//       because `_public_app_url()` didn't check FRONTEND_PUBLIC_URL.
+//   On PROD, the deploy had REACT_APP_BACKEND_URL set to the correct
+//   customer host, so both helpers agreed and QRs worked.
+//
+// ── Fix — shared `qr_common.resolve_public_base()` ─────────────
+//   NEW `backend/qr_common.py`:
+//     def resolve_public_base() -> str:
+//         for name in ("REACT_APP_BACKEND_URL",
+//                      "PUBLIC_APP_URL",
+//                      "FRONTEND_PUBLIC_URL"):
+//             v = (os.environ.get(name) or "").strip().rstrip("/")
+//             if v:
+//                 return v
+//         logger.warning("resolve_public_base(): all candidate env "
+//                        "vars empty — QR codes will encode SCHEME-LESS "
+//                        "URLs and will NOT be openable from a phone …")
+//         return ""
+//   Precedence rationale:
+//     · REACT_APP_BACKEND_URL first because it's the value the compiled
+//       SPA already uses — a QR that encodes the same host will always
+//       land on the same SPA a normal user is running.
+//     · PUBLIC_APP_URL as an explicit override for custom-domain setups.
+//     · FRONTEND_PUBLIC_URL last so a legacy/stale value can't override
+//       a fresh canonical one. Kept in the chain so existing deployments
+//       that only have this variable continue to work (no forced env
+//       migration).
+//   Empty-base branch emits a WARNING log — future misconfigurations
+//   surface in the pod log at QR-generation time instead of dying
+//   silently on a customer's phone.
+//
+//   Wire-in:
+//     · `backend/assets.py::_public_base()` → shim that imports and
+//       calls the shared resolver.
+//     · `backend/workers_qr.py::_public_app_url()` → same shim shape.
+//     · `backend/sites_qr.py` + `backend/suppliers_qr.py` already import
+//       `_public_app_url` from workers_qr → automatically benefit
+//       from the delegation without further edits.
+//
+// ── Preview `.env` fix ────────────────────────────────────────
+//   `/app/backend/.env` line 11:
+//     -  FRONTEND_PUBLIC_URL="https://3dd7823d-4048-456d-b31d-e4cb598dc869.preview.emergentagent.com"
+//     +  FRONTEND_PUBLIC_URL="https://whs-compliance.preview.emergentagent.com"
+//   Backend supervisor-restarted to pick up the new value. Post-restart
+//   `resolve_public_base()` returns
+//   `'https://whs-compliance.preview.emergentagent.com'`.
+//
+//   NO PROD `.env` CHANGE. Prod's env is already correct — decoded
+//   prod Paneltec Depot QR on ship-day showed prod resolves to the
+//   customer host correctly. This ship is preview-config-only PLUS
+//   the code hardening.
+//
+// ── Wire proof (curl, ship-day) ────────────────────────────────
+//   Pre-fix (decoded pre-.104 preview PDF):
+//     '/scan/site/uw5w7qQhdaUD'
+//   Post-fix (re-generated preview PDF and decoded):
+//     'https://whs-compliance.preview.emergentagent.com/scan/site/uw5w7qQhdaUD'
+//   Simulated phone GET on that URL:
+//     HTTP/2 200
+//     <title>Paneltec Civil</title>
+//     id="root"  (SPA shell, then JS hydrates SiteScanResolver)
+//   API resolver payload:
+//     GET /api/scan/site/uw5w7qQhdaUD → 200
+//     { "scan_token": "uw5w7qQhdaUD",
+//       "site": { "name": "Paneltec Depot", "address": …, "kind": "manual" },
+//       "active_swms": [ … ] }
+//
+// ── Old QR PDF regeneration ────────────────────────────────
+//   Not automated in this ship. Any preview QR PDF the user
+//   re-downloads from the app (per-site or per-worker via the existing
+//   print buttons) will now contain the correct URL. Older PDF files
+//   sitting in `pipeline:inline_stash` still carry the broken bare-path
+//   URL until regenerated. User's brief explicitly says "NO bulk regen
+//   endpoint — user can regenerate per-site as needed via existing print
+//   button."
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_qr_public_base_v58_13_104.py`:
+//     · `qr_common.resolve_public_base` exists and iterates
+//       REACT_APP_BACKEND_URL → PUBLIC_APP_URL → FRONTEND_PUBLIC_URL
+//       in that order.
+//     · Returns empty string with a WARNING log when every var is empty
+//       (safety net for future env misconfigurations).
+//     · Trailing slashes stripped; whitespace stripped.
+//     · `assets.py::_public_base` delegates to the shared resolver
+//       (imports qr_common inside the function to avoid circular
+//       import at module load).
+//     · `workers_qr.py::_public_app_url` delegates to the shared
+//       resolver.
+//     · Preview `.env` FRONTEND_PUBLIC_URL no longer references the
+//       stale UUID hash `3dd7823d-…`.
+//     · Version-sync forward-safe pin >= 104.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Scan-resolver route paths (`/scan/`, `/scan/site/`, `/scan/worker/`,
+//     `/scan/supplier/`) — unchanged. The user's `/asan/` report was
+//     confirmed as a typo/misread; that path does not exist in the
+//     codebase and no QR PDF ever emitted it.
+//   · SiteScanResolver.jsx / WorkerScanResolver.jsx / SupplierScanResolver.jsx
+//     rendering logic — untouched.
+//   · Prod backend `.env`.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Backend supervisor-restarted (env var change).
+//   · Frontend hot-reload picks up the SW cache-version bump.
+//   · All 3 canonical version strings bumped to `.104`.
+//   · Prod post-Re-publish: no further action required — prod QRs
+//     already work. This ship harmonises code so a future
+//     env-var rename or fresh deploy can't reintroduce the divergence.
+//
+// ── Open design question queued to user (separate future ship) ─
+//   User raised whether `/scan/site/{token}` should route to a public
+//   visitor sign-in form vs the current SiteScanResolver page. Deferred
+//   to a follow-up (v58.13.105+) pending user's decision — not in .104.
+
 // v160.3.9.58.13.103 — Widened test-data purge patterns + PDF download
 //                      blob-helper for auth-gated files.
 //
@@ -9275,7 +9422,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.103';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.104';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

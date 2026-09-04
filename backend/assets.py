@@ -55,10 +55,15 @@ def _scan_token() -> str:
 
 
 def _public_base() -> str:
-    base = os.environ.get("FRONTEND_PUBLIC_URL", "").rstrip("/")
-    if not base:
-        base = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
-    return base
+    # v58.13.104 — Unified via qr_common.resolve_public_base(). Previously
+    # this function checked FRONTEND_PUBLIC_URL first, which on preview
+    # pinned QRs to a stale UUID hash host that no longer routed. The
+    # shared resolver now prefers REACT_APP_BACKEND_URL (canonical
+    # frontend URL) with PUBLIC_APP_URL and FRONTEND_PUBLIC_URL as
+    # documented fallbacks. Kept as a thin shim so callers in this
+    # module and callers elsewhere continue to work.
+    from qr_common import resolve_public_base
+    return resolve_public_base()
 
 
 def _public_scan_url(token: str) -> str:

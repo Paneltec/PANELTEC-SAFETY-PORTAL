@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, FileText, ClipboardCheck, NotebookPen, TriangleAlert, Siren, ShieldCheck, BarChart3, Sparkles, Database, Radar, FileSearch, AlertTriangle, Award, Clock, HardHat, UserCog, Users2, FolderOpen, Truck, ClipboardList } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '../lib/api';
+import { openAuthedFile } from '../lib/downloads';
 import { useWorkspace, wsParams } from '../lib/workspace';
 import { CAPTURE_TOOLS, BOTTOM_STRIP } from '../mocks/dashboard';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -553,8 +554,11 @@ export default function Dashboard() {
         ...wsParams(workspaceId),
       };
       const { data } = await api.post('/audit-exports', payload);
-      const url = `${process.env.REACT_APP_BACKEND_URL}${data.file_url}`;
-      window.open(url, '_blank', 'noopener');
+      // v58.13.105 — Bearer-authed blob open. `window.open` on a bare
+      // ${BACKEND}${data.file_url} strips the Authorization header and
+      // lands on a 401 blank tab (same class as the .103 AuditExports
+      // bug). Route through the shared helper instead.
+      await openAuthedFile(data.file_url, `${payload.title || 'audit-pack'}.pdf`);
       toast.success('PDF audit pack generated', { description: 'Opening in a new tab.' });
     } catch (e) {
       toast.error('Could not generate PDF');

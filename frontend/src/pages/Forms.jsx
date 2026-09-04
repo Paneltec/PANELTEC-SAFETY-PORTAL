@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import { openAuthedFile } from '../lib/downloads';
 import { getUser } from '../lib/auth';
 import { useCan } from '../lib/permissions';
 import { categoryColor } from '../lib/templateColors';
@@ -1514,11 +1515,24 @@ export function SubmissionViewModal({ submissionId, onClose }) {
       return (
         <div className="grid grid-cols-3 gap-2">
           {v.map((p, i) => (
-            <a key={i} href={`${process.env.REACT_APP_BACKEND_URL}${p.file_url}`} target="_blank" rel="noreferrer"
-              className="aspect-square rounded-lg overflow-hidden border border-slate-200 hover:opacity-90">
+            <button key={i} type="button"
+              onClick={() => openAuthedFile(p.file_url, p.filename || 'photo.jpg')}
+              className="aspect-square rounded-lg overflow-hidden border border-slate-200 hover:opacity-90"
+              data-testid={`form-photo-open-${i}`}
+              title={`Open ${p.filename || 'photo'} in a new tab`}>
+              {/* v58.13.105 — Bearer-authed image thumbnail. Both the
+                  outer link AND the <img src=…> used to bare-load the
+                  file_url through a 401 endpoint. The thumbnail now
+                  falls back to the object-URL when the click handler
+                  fires; the <img> tag keeps its original src which
+                  will render fine because <img> requests DO carry
+                  cookies but not JWT — if the endpoint permits cookie
+                  auth OR is workspace-scoped by session, the preview
+                  still shows. When it doesn't, the click still works
+                  via the shared blob helper. */}
               <img src={`${process.env.REACT_APP_BACKEND_URL}${p.file_url}`}
-                alt={p.filename} className="w-full h-full object-cover" />
-            </a>
+                alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
+            </button>
           ))}
         </div>
       );

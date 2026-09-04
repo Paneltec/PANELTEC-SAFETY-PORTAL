@@ -45,11 +45,16 @@ def _gen_token(n: int = 10) -> str:
 
 
 def _public_app_url() -> str:
-    """Customer-facing URL used inside the QR. Falls back to the request-derived
-    URL via `REACT_APP_BACKEND_URL` env var so QR codes work in preview env."""
-    return (os.environ.get("REACT_APP_BACKEND_URL")
-            or os.environ.get("PUBLIC_APP_URL")
-            or "").rstrip("/")
+    """Customer-facing URL used inside the QR. v58.13.104 — delegates to
+    the shared `qr_common.resolve_public_base()` so this helper agrees
+    with `assets.py::_public_base()`. The prior local implementation
+    checked only REACT_APP_BACKEND_URL then PUBLIC_APP_URL, missing
+    the FRONTEND_PUBLIC_URL fallback that assets.py used — meaning
+    on preview (where FRONTEND_PUBLIC_URL was the only var set),
+    every site/worker/supplier QR encoded a scheme-less relative URL
+    that phones couldn't open."""
+    from qr_common import resolve_public_base
+    return resolve_public_base()
 
 
 def _require_self_or_manager(user: dict, worker: dict, write: bool = False) -> None:

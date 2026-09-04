@@ -30,40 +30,10 @@ const INCLUDE_OPTIONS = [
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
-// v58.13.103 — Bearer-authed file opener. The `/api/files/exports/*`
-// endpoint (dashboard.files_router:220) is auth-gated — a bare
-// `<a href={BACKEND + file_url} target="_blank">` click issues a plain
-// GET WITHOUT the `Authorization: Bearer <jwt>` header → 401 →
-// browser shows a blank tab and the user reports "won't open".
-// This helper does an authed GET via the shared `api` axios instance
-// (which attaches the bearer), buffers the response as a Blob, and
-// hands the browser an object URL to open in a new tab. Object URL
-// is revoked after 60s so the memory doesn't leak.
-async function openAuthedFile(fileUrl, filename) {
-  try {
-    // `file_url` from the backend already carries the `/api` prefix
-    // (e.g. `/api/files/exports/…pdf`). Strip it before handing to
-    // the axios instance so we don't end up with a double prefix.
-    const path = fileUrl.replace(/^\/api/, '');
-    const r = await api.get(path, { responseType: 'blob' });
-    const mime = (filename || '').toLowerCase().endsWith('.pdf')
-      ? 'application/pdf'
-      : (r.headers?.['content-type'] || 'application/octet-stream');
-    const blob = new Blob([r.data], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const win = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!win) {
-      // Popup blocked — fall back to a synthetic anchor download.
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename || 'download';
-      document.body.appendChild(a); a.click(); a.remove();
-    }
-    setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* ignore */ } }, 60_000);
-  } catch (e) {
-    toast.error(apiError(e) || 'Could not open file');
-  }
-}
+// v58.13.105 — Shared helper now lives in lib/downloads.js so every
+// download surface (Dashboard PDF, Forms photo grid, Outbox
+// attachments, this page) uses the same bearer-authed path.
+import { openAuthedFile } from '../lib/downloads';
 
 function fmtBytes(n) { if (!n) return '0 B'; const k = 1024, u = ['B', 'KB', 'MB', 'GB']; const i = Math.floor(Math.log(n) / Math.log(k)); return `${(n / Math.pow(k, i)).toFixed(1)} ${u[i]}`; }
 
