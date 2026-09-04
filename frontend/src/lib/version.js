@@ -1,5 +1,77 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.108 — Regression-lock guard for the v58.13.88 fix
+//                       that pointed `auth_invite._send_invite_sms`
+//                       at `integrations_textmagic.safe_send_sms`
+//                       after the historical `integrations.send_sms`
+//                       rename left it silently returning False.
+//
+// USER PAIN (verbatim, brief): "SMS invites are dead — the wrapper
+// imports non-existent `integrations.send_sms` and silently returns
+// False." Investigation: the .88 ship already fixed the import.
+// Current `auth_invite.py:157` reads `from integrations_textmagic
+// import safe_send_sms`. The ONLY residual reference to the broken
+// symbol is the inline comment at line 155 that documents the
+// historical rename ("was silently returning False since a rename —
+// `integrations.send_sms` didn't exist").
+//
+// So this ship is a REGRESSION-LOCK, not a behaviour change. Pins
+// the .88 fix in pytest so any future refactor / codemod that
+// re-introduces the broken symbol fails immediately at CI instead
+// of silently killing SMS invites for another N ships.
+//
+// ── Guards added (`tests/backend_unit/test_send_invite_sms_v58_13_108.py`)
+//   1. Source pin: `auth_invite.py` must contain
+//      `from integrations_textmagic import safe_send_sms`.
+//   2. Sweep: no live import of `integrations.send_sms` OR
+//      `from integrations import send_sms` anywhere in the backend
+//      (comment-only occurrences are allowed and documented).
+//   3. Runtime import resolves: `integrations_textmagic.safe_send_sms`
+//      is a callable at test time.
+//   4. Mock-based behavioural pin: `_send_invite_sms` awaits
+//      `safe_send_sms` with the caller's org_id (positional),
+//      mobiles=[phone], text containing the kind-appropriate prefix
+//      + link, triggered_by_endpoint=`auth_invite._send_invite_sms:{kind}`,
+//      and actor_user_id=user.id (critical — otherwise safe_send_sms
+//      treats the SMS as a system-source non-prod skip).
+//   5. `reset` kind → `Paneltec password reset:` prefix + matching
+//      endpoint tag; `invite` kind → `Paneltec invite:` prefix.
+//   6. No phone → wrapper returns False without calling safe_send_sms.
+//   7. Comms Safe Mode `{ok:True, blocked:True}` → wrapper returns
+//      True (audit row logged; caller treats as held).
+//   8. ContextVar HTTP-gate pin: `integrations_textmagic.py` sources
+//      the `refuse_if_no_request_context` from `send_context` and
+//      calls it BEFORE any env / Safe-Mode gate — locks the .87
+//      guarantee that cron / startup / worker callers can never
+//      trigger an SMS.
+//   9. Version-sync forward-safe pins ≥ .108 across all three
+//      canonical version strings.
+//
+// ── Wire proof (self-verify) ────────────────────────────────
+//   Full pytest suite green (960 passing incl. the 10 new pins,
+//   0 regressions). The two pre-existing mobile-palette failures
+//   from the immutable `/app/mobile/` file remain untouched.
+//   No live HTTP curl needed — the wrapper is exercised via
+//   AsyncMock inside the pytest to keep TextMagic credentials +
+//   real phone numbers out of CI (per Comms Safe Mode rails).
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · No backend behaviour changes. `_send_invite_sms` code is
+//     untouched — the .88 fix stands as-is.
+//   · No frontend edits.
+//   · No new endpoints, no comms outbox rows, no scheduler hooks.
+//   · Auth model / rate limits / `/app/mobile/` code (only version
+//     constant bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · No supervisor restart needed (tests only).
+//   · All 3 canonical version strings bumped to `.108`.
+//   · Deferred-finish memo on disk (matches .105 / .106 / .106a /
+//     .107 pattern).
+
+
 // v160.3.9.58.13.107 — Backend prep for Mobile "Create Site with GPS"
 //                      (Expo hand-off queued). Data-plane only — no
 //                      comms, no scheduler hooks, no side-effects.
@@ -9885,7 +9957,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.107';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.108';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

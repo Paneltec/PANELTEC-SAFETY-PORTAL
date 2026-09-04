@@ -465,3 +465,28 @@
   - `frontend/public/service-worker.js` (version sync)
 - **Verified**: 4 screenshots (Login, Dashboard, Forms Library, Form Detail) + Settings palette switcher
 
+
+## Iteration 21 — Extrapolate Modern Light Theme to Remaining Screens
+- **Commit**: d9b9ba4
+- **Date**: 2026-09-04
+- **Changes**:
+  - Sites create/index headers: replaced hardcoded `#1E3A8A` dark navy with Modern Light pattern (white bg, Colors.ink text, border-bottom)
+  - QR scanner camera icon: `rgba(255,255,255,0.05)` → `Colors.surfaceLight` (was invisible on light bg)
+  - Users.tsx: CRASH FIX — added missing `useRouter` import (router was referenced but never imported)
+  - Dashboard: removed 4 duplicate StyleSheet keys (metricLabel, metricSub, captureTitle, captureDesc)
+  - shadow* → boxShadow migration across 11 files:
+    - `app/(tabs)/dashboard.tsx` (2 occurrences)
+    - `app/(tabs)/_layout.tsx` (1 occurrence)
+    - `app/forms/category/[key].tsx` (1 occurrence)
+    - `app/forms/library.tsx` (1 occurrence)
+    - `app/forms/fill/[id].tsx` (1 occurrence)
+    - `app/forms/index.tsx` (2 occurrences)
+    - `app/sites/create.tsx` (1 occurrence)
+    - `app/sites/index.tsx` (1 occurrence)
+    - `src/components/QRModal.tsx` (1 occurrence)
+    - `src/components/ConfirmModal.tsx` (1 occurrence)
+    - `src/components/ToastHost.tsx` (1 occurrence)
+- **Files modified**: 13
+- **Web files referenced**: None (this was mobile-only theme propagation)
+- **Verified**: 7 screenshots (Dashboard, Sites List, Create Site, QR Scanner, Settings, Ask AI, Fleet)
+
