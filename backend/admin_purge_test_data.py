@@ -45,6 +45,7 @@ def _require_admin(user: dict) -> None:
 
 
 TEST_PATTERNS = [
+    # v58.13.81 originals — preserved for continuity + regression coverage.
     r"^TEST-v\d+\.\d+\.\d+-",
     r"^TEST-",
     r"^test-vehicle-", r"^test-worker-", r"^test-site-", r"^test-hazard-",
@@ -52,6 +53,29 @@ TEST_PATTERNS = [
     r"^test-diary-", r"^test-prestart-", r"^test-supplier-", r"^test-cert-",
     r"^demo-", r"^sample-", r"^seed-",
     r"pytest-", r"_pytest_", r"__test__",
+    # v58.13.103 additions — user-approved widening after audit found 41
+    # additional test-pattern rows on preview (zSCRATCHv51-…, TEST_HAZ_*,
+    # TEST_SWMS_*, TEST_INC_*, Test Excavator/Vehicle/Worker/Depot/Folder,
+    # test_upload.txt, test_white_card.pdf, fake.zip, etc.). Every pattern
+    # is prefix-anchored (`^`) and requires a separator ([-_.\s]) so
+    # narrative text like "Demolition" / "scratched front lower nose cone"
+    # / "backing truck ... got tangled" is NEVER matched. Case-insensitive
+    # via existing $options: "i" on the regex query.
+    r"^TEST[_ .]",              # TEST_, "TEST ", TEST.  (dash already above)
+    r"^Test ",                  # "Test Worker", "Test Excavator 320", "Test Folder"
+    r"^test[_ .]",              # test_upload.txt, test_white_card
+    r"^zSCRATCH",               # user-reported: zSCRATCHv51-1787556742968
+    r"^SCRATCH[-_]",
+    r"^scratch[-_]",            # anchored — NOT "scratched" in narrative
+    r"^dummy[-_]",
+    r"^fake[-_.]",              # fake.zip, fake-, fake_
+    r"^example[-_]",
+    r"^foobar",
+    r"^dev[-_]",
+    r"^qa[-_]",
+    r"^staging[-_]",
+    r"^[a-zA-Z]+v\d+-\d{10,}",  # alpha-vN-<10+digit-timestamp> shape
+                                # (zSCRATCHv51-1787556742968 fingerprint)
 ]
 
 TARGET_COLLECTIONS = [

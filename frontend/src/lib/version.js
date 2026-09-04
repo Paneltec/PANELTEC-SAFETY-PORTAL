@@ -1,5 +1,146 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.103 — Widened test-data purge patterns + PDF download
+//                      blob-helper for auth-gated files.
+//
+// USER PAIN (verbatim):
+//   1. "there is 1 report in Compliance / Audit Exports … Quarterly
+//       Compliance Pack … 2026-04-13 → 2026-07-12 … pdf 6.9K … but
+//       it wont open"
+//   2. "there is 1 test asset we missed: `zSCRATCHv51-1787556742968`
+//       (starts with `zSCRATCH`, not `TEST-`)"
+//
+// ── Bug A — Auth-gated PDF opens as blank tab ─────────────────
+//   Root cause (proven by curl): `/api/files/exports/{name}` is
+//   correctly bearer-gated (401 without JWT). `AuditExports.jsx`
+//   rendered downloads as bare `<a href={BACKEND + file_url}
+//   target="_blank">` — plain anchor click, no Authorization header,
+//   opens a new tab that hits 401 and shows blank. File itself is
+//   valid: sha256 matches DB, pdftotext extracts clean Paneltec
+//   Civil audit content.
+//   Fix: NEW `openAuthedFile(fileUrl, filename)` helper in
+//   `AuditExports.jsx`:
+//     · Strips `/api` prefix from `file_url` (backend prefixes it
+//       for the raw URL; axios instance re-adds it).
+//     · GETs via the shared `api` axios instance (bearer attached).
+//     · Buffers as Blob, forces `application/pdf` MIME when
+//       filename ends `.pdf`.
+//     · `URL.createObjectURL` + `window.open('_blank', 'noopener,
+//       noreferrer')`. Falls back to a synthetic anchor download
+//       when the popup is blocked.
+//     · Revokes the object URL after 60 s so we don't leak blobs.
+//   Wired into three sites on AuditExports.jsx:
+//     · `FormatLink` (`export-download-{format}-{id}`).
+//     · Row-level "View" button (`export-view-{id}`).
+//     · Row-level "Download" button (`export-download-{id}`).
+//   All three formerly rendered as `<a href>`; now they are
+//   `<button onClick>` calling `openAuthedFile`. testids preserved.
+//   Scope: this ship covers ONLY AuditExports.jsx. A follow-up
+//   sweeps other pages that use the same bare-anchor pattern
+//   (Documents, Contractor Docs, Renewals). Deliberately staged
+//   to keep the .103 diff bounded.
+//
+// ── Bug B — Test-data purge missed non-TEST prefixes ──────────
+//   Preview audit (see ship report) found 41 additional test-pattern
+//   rows across 10 collections that the current `.81` `^TEST-` /
+//   `^demo-` / etc. whitelist did NOT catch:
+//     · assets:  3   (Test Excavator/Vehicle, zSCRATCHv51-…)
+//     · workers: 1   (Test Worker)
+//     · hazards: 3   (TEST_HAZ_*)
+//     · swms:    7   (TEST_SWMS_*)
+//     · incidents: 3 (TEST_INC_*)
+//     · doc_files: 12 (test_upload.txt, Test_First_Aid_Cert.pdf,
+//                     fake.zip, …)
+//     · doc_folders: 3 (Test Folder Q3 Renamed, …)
+//     · worker_certifications: 4 (TEST_DELETE_PERM_E2E, …)
+//     · cs_incident_issues: 2 (TEST ONLY - TRAINING …, Test\n
+//                              Working on a TasWater job …)
+//     · workspaces: 3 (Test Depot 2, Test Force Delete)
+//   Fix: `backend/admin_purge_test_data.py::TEST_PATTERNS` gains
+//   14 new prefix-anchored regexes (see file for the full list).
+//   Every new pattern requires a SEPARATOR after the alpha prefix
+//   ([-_.\s]) so narrative text like "Demolition" / "scratched
+//   front lower nose cone" / "backing truck … tangled" is
+//   ALWAYS safe. `^demo-` / `^scratch[-_]` remain prefix-anchored;
+//   bare `^demo` / bare `scratch` are DELIBERATELY NOT added.
+//   Case-insensitive via existing `$options: "i"`.
+//   User approved the two ambiguous cs_incident_issues (`TEST ONLY -
+//   TRAINING …` and `Test\nWorking on a TasWater job …`) explicitly
+//   in the .103 brief — they get purged.
+//   The user-reported `zSCRATCHv51-1787556742968` matches on two
+//   independent patterns: `^zSCRATCH` (literal) and
+//   `^[a-zA-Z]+v\d+-\d{10,}` (structural). Belt-and-braces.
+//
+// ── Preview execution (ship-day, main agent fired) ────────────
+//   Dry-run (post-.103 code deploy):
+//     grand_total: 41  (matches the pre-ship audit exactly)
+//     matches:
+//       assets: 3, workers: 1, hazards: 3, swms: 7, incidents: 3,
+//       doc_files: 12, doc_folders: 3, worker_certifications: 4,
+//       cs_incident_issues: 2, workspaces: 3
+//   Commit:
+//     deleted: 41 rows + 3 asset_service_schedules_cascade
+//              (only 3 of the 3 test assets carried service schedules)
+//     audit_log: /app/memory/purge_v58_13_81_log.txt
+//   Verify:
+//     dry_run=1 → grand_total: 0  (clean sweep verified)
+//   NOT executed on prod. Prod dry-run reported in ship report,
+//   waiting on user's explicit go for prod commit.
+//
+// ── PDF wire proof (post-fix, preview curl) ───────────────────
+//   Pre-fix reproduction:
+//     GET /api/files/exports/eb0a4a68-….pdf  (no bearer)
+//       → 401 x-auth-reason: jwt-missing
+//   Post-fix behaviour (via new blob helper):
+//     axios GET /files/exports/eb0a4a68-….pdf  (bearer attached)
+//       → 200 content-type: application/pdf, 7048 bytes,
+//         body starts with %PDF-1.4
+//     Frontend blob → window.open → PDF renders inline in the new
+//     tab. sha256 on the resulting file equals the DB record
+//     `5942219cdd40c54bb7df90e124c626a5f6dbff09db952798b696040db3a94dad`
+//     — end-to-end proof the file is intact and reachable.
+//
+// ── Tests ──────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_purge_widened_patterns_v58_13_103.py`:
+//     · TEST_PATTERNS length grew by >=14 (proves .103 patterns landed).
+//     · Each of the 14 new patterns is present in the module source.
+//     · `^scratch[-_]` present; bare `scratch` NOT in the whitelist
+//       (safety pin — "scratched" in narratives stays untouched).
+//     · `^demo-` present; bare `^demo` NOT in the whitelist (safety
+//       pin — "Demolition" SWMS stays untouched).
+//     · AuditExports.jsx defines `openAuthedFile` and strips /api
+//       prefix before axios.get.
+//     · AuditExports.jsx no longer contains a bare
+//       `<a href={`${BACKEND}${…file_url}` target="_blank">` on
+//       any of the three download sites (regression guard against
+//       reintroducing the auth mismatch).
+//     · All three download buttons carry their existing testids.
+//     · Version-sync forward-safe pin >= 103.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Purge scope for TARGET_COLLECTIONS + NAME_FIELDS unchanged.
+//   · Simpro-source guard (`source != 'simpro'`) unchanged.
+//   · Admin role guard unchanged.
+//   · Ack checkbox required (.102 viewport-safe modal) unchanged.
+//   · Backend `/api/files/exports/*` endpoint — untouched. The
+//     auth model is CORRECT; only the frontend link mechanism
+//     had to change.
+//   · Other pages with the same bare-anchor pattern (Documents,
+//     Contractor Docs, Renewals) are DEFERRED to a follow-up
+//     sweep. Scope bounded on purpose.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint
+//     warnings (still parked for v58.14.x).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Backend restart REQUIRED (admin_purge_test_data.py changed).
+//   · Frontend hot-reload picks up AuditExports.jsx changes.
+//   · All 3 canonical version strings bumped to `.103`.
+//   · Prod: after user Re-publishes .103, run the standard
+//     `--dry-run` → `--commit` sequence on prod. Any zSCRATCH /
+//     TEST_ / TEST-space / test_-underscore rows that
+//     accumulated post-.101 will surface and be purgeable.
+
 // v160.3.9.58.13.102 — Purge Test Data modal: viewport-safe restructure
 //                      + touch-friendly ack checkbox + auto-focus +
 //                      sticky footer.
@@ -9134,7 +9275,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.102';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.103';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

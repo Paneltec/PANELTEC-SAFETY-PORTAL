@@ -30,6 +30,41 @@ const INCLUDE_OPTIONS = [
 
 const BACKEND = process.env.REACT_APP_BACKEND_URL;
 
+// v58.13.103 — Bearer-authed file opener. The `/api/files/exports/*`
+// endpoint (dashboard.files_router:220) is auth-gated — a bare
+// `<a href={BACKEND + file_url} target="_blank">` click issues a plain
+// GET WITHOUT the `Authorization: Bearer <jwt>` header → 401 →
+// browser shows a blank tab and the user reports "won't open".
+// This helper does an authed GET via the shared `api` axios instance
+// (which attaches the bearer), buffers the response as a Blob, and
+// hands the browser an object URL to open in a new tab. Object URL
+// is revoked after 60s so the memory doesn't leak.
+async function openAuthedFile(fileUrl, filename) {
+  try {
+    // `file_url` from the backend already carries the `/api` prefix
+    // (e.g. `/api/files/exports/…pdf`). Strip it before handing to
+    // the axios instance so we don't end up with a double prefix.
+    const path = fileUrl.replace(/^\/api/, '');
+    const r = await api.get(path, { responseType: 'blob' });
+    const mime = (filename || '').toLowerCase().endsWith('.pdf')
+      ? 'application/pdf'
+      : (r.headers?.['content-type'] || 'application/octet-stream');
+    const blob = new Blob([r.data], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      // Popup blocked — fall back to a synthetic anchor download.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'download';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* ignore */ } }, 60_000);
+  } catch (e) {
+    toast.error(apiError(e) || 'Could not open file');
+  }
+}
+
 function fmtBytes(n) { if (!n) return '0 B'; const k = 1024, u = ['B', 'KB', 'MB', 'GB']; const i = Math.floor(Math.log(n) / Math.log(k)); return `${(n / Math.pow(k, i)).toFixed(1)} ${u[i]}`; }
 
 // Phase 3.23 — group rows by composite key so PDF + JSON siblings render
@@ -77,10 +112,9 @@ function buildGroups(items) {
 function FormatLink({ row, primary }) {
   const isPrimary = row.format === primary;
   return (
-    <a
-      href={`${BACKEND}${row.file_url}`}
-      target="_blank"
-      rel="noreferrer"
+    <button
+      type="button"
+      onClick={() => openAuthedFile(row.file_url, `${row.title || row.id}.${row.format}`)}
       data-testid={`export-download-${row.format}-${row.id}`}
       className={
         isPrimary
@@ -90,7 +124,7 @@ function FormatLink({ row, primary }) {
       title={`${row.format.toUpperCase()} · ${fmtBytes(row.size_bytes)}`}
     >
       {row.format}
-    </a>
+    </button>
   );
 }
 
@@ -266,16 +300,18 @@ export default function AuditExports() {
                             the "just show me the report" affordance
                             the user asked for. Placed LEFT of Email
                             per brief. */}
-                        <a
-                          href={`${BACKEND}${(g.byFormat.pdf || g.primary).file_url}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = g.byFormat.pdf || g.primary;
+                            openAuthedFile(target.file_url, `${target.title || target.id}.${target.format}`);
+                          }}
                           data-testid={`export-view-${anchor.id}`}
                           className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded hover:bg-slate-100 text-slate-700"
                           title="View report"
                         >
                           <Eye className="w-3 h-3" /> View
-                        </a>
+                        </button>
                         <EmailButton
                           resourceKind="audit_exports"
                           recordId={anchor.id}
@@ -294,8 +330,10 @@ export default function AuditExports() {
                           recordTitle={anchor.title || anchor.scope}
                           onDeleted={() => removeGroup(g)}
                         />
-                        <a href={`${BACKEND}${anchor.file_url}`} target="_blank" rel="noreferrer" data-testid={`export-download-${anchor.id}`}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download /> Download</a>
+                        <button type="button"
+                          onClick={() => openAuthedFile(anchor.file_url, `${anchor.title || anchor.id}.${anchor.format}`)}
+                          data-testid={`export-download-${anchor.id}`}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-brand-ink text-white text-xs font-medium hover:bg-slate-800"><Download /> Download</button>
                       </div>
                     </td>
                   </tr>
