@@ -17,6 +17,7 @@ MOBILE = ROOT / "mobile"
 
 PURGE_PY = (BACKEND / "admin_purge_test_data.py").read_text(encoding="utf-8")
 AUDIT_JSX = (FRONTEND / "src" / "pages" / "AuditExports.jsx").read_text(encoding="utf-8")
+DOWNLOADS_JS = (FRONTEND / "src" / "lib" / "downloads.js").read_text(encoding="utf-8")
 VERSION_JS = (FRONTEND / "src" / "lib" / "version.js").read_text(encoding="utf-8")
 SW_JS = (FRONTEND / "public" / "service-worker.js").read_text(encoding="utf-8")
 MOBILE_TS = (MOBILE / "src" / "lib" / "version.ts").read_text(encoding="utf-8")
@@ -104,14 +105,19 @@ def test_zscratch_and_structural_patterns_both_present():
 # ── AuditExports.jsx: blob helper + no bare anchors ─────────────
 
 def test_open_authed_file_helper_defined():
-    """New `openAuthedFile(fileUrl, filename)` helper must exist and
-    use the shared `api` axios instance (so bearer is attached)."""
+    """v58.13.105 hoisted `openAuthedFile` to `lib/downloads.js`
+    (shared across AuditExports, Dashboard, Forms, Outbox). Pin the
+    shared module here + assert AuditExports imports it."""
     m = re.search(
-        r"async\s+function\s+openAuthedFile\s*\(\s*fileUrl\s*,\s*filename\s*\)\s*\{[\s\S]{0,600}?"
+        r"export\s+async\s+function\s+openAuthedFile\s*\(\s*fileUrl\s*,\s*filename[\s\S]{0,800}?"
         r"api\.get\(\s*path\s*,\s*\{\s*responseType:\s*['\"]blob['\"]",
-        AUDIT_JSX,
+        DOWNLOADS_JS,
     )
-    assert m, "openAuthedFile helper missing or does not call api.get with responseType:'blob'"
+    assert m, "openAuthedFile helper missing from lib/downloads.js OR does not call api.get with responseType:'blob'"
+    assert re.search(
+        r"import\s*\{\s*openAuthedFile\s*\}\s*from\s*['\"]\.\./lib/downloads['\"]",
+        AUDIT_JSX,
+    ), "AuditExports.jsx does not import the shared openAuthedFile"
 
 
 def test_open_authed_file_strips_api_prefix():
@@ -120,8 +126,8 @@ def test_open_authed_file_strips_api_prefix():
     the helper MUST strip the prefix before passing to axios,
     otherwise the request goes to `/api/api/files/...` and 404s."""
     assert re.search(
-        r"fileUrl\.replace\(\s*/\^\\?/api/\s*,\s*['\"]{2}\s*\)",
-        AUDIT_JSX,
+        r"replace\(\s*/\^\\?/api/\s*,\s*['\"]{2}\s*\)",
+        DOWNLOADS_JS,
     ), "openAuthedFile does not strip the leading /api prefix"
 
 
@@ -142,17 +148,19 @@ def test_no_bare_href_backend_file_url_anchors():
 
 def test_download_buttons_call_open_authed_file():
     """All three former anchor sites must still expose their testids
-    (as JSX template literals) AND call openAuthedFile."""
+    (as JSX template literals) AND call openAuthedFile. Post-.105 the
+    helper is imported (not defined locally), so we expect >=3 call
+    sites in the JSX plus 1 import statement, for a total of >=4
+    `openAuthedFile` references in the file."""
     for tid_substring in (
         "export-download-${row.format}-${row.id}",
         "export-view-${anchor.id}",
         "export-download-${anchor.id}",
     ):
         assert tid_substring in AUDIT_JSX, f"missing testid substring: {tid_substring}"
-    # And openAuthedFile is invoked (definition + 3 sites = >=4).
-    call_sites = len(re.findall(r'openAuthedFile\s*\(', AUDIT_JSX))
+    call_sites = len(re.findall(r'\bopenAuthedFile\b', AUDIT_JSX))
     assert call_sites >= 4, (
-        f"expected >=4 openAuthedFile references (definition + 3 sites), got {call_sites}"
+        f"expected >=4 openAuthedFile references (1 import + 3 call sites), got {call_sites}"
     )
 
 

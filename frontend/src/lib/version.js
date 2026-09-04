@@ -1,5 +1,128 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.105 — Reduced ship. Items 1+2 of the .105 batch
+//                      landed; items 3+4 deferred by user directive to
+//                      keep the ship inside a bounded credit envelope.
+//
+// ── Batch state (user-approved plan A close-out) ──────────────
+//   Item 1 · PDF blob-helper sweep …………………………………………… SHIPPED
+//   Item 2 · Users & Permissions matrix — comms_safe_mode.edit … SHIPPED
+//   Item 3 · Route-link compile guard ……………………… DEFERRED → v58.13.106b
+//   Item 4 · Rate-limit test-mode bypass ………………… DEFERRED → v58.13.106c
+//   v58.13.106 · Public Visitor Form ………………………… QUEUED → next session
+//                                                  (pending credit top-up)
+//   Brief for .106 stashed at
+//   `/app/memory/v58_13_106_visitor_form_brief.md` for pickup next
+//   session.
+//
+// ── Item 1 · Shared bearer-authed file opener sweep ───────────
+//   NEW `frontend/src/lib/downloads.js` exports
+//   `openAuthedFile(fileUrl, filename, opts?)`. Same shape as the
+//   local helper AuditExports.jsx carried in .103, now lifted to
+//   a shared module so every download surface uses the same path.
+//   Behaviour:
+//     · Strips the leading `/api` from `fileUrl` (axios instance
+//       re-adds it via baseURL — otherwise we double the prefix).
+//     · `api.get(path, { responseType: 'blob' })` — bearer token
+//       auto-attached.
+//     · Forces `application/pdf` MIME when the filename ends `.pdf`;
+//       otherwise falls back to whatever the server sent.
+//     · `URL.createObjectURL(blob)` → `window.open('_blank',
+//       'noopener,noreferrer')`. Popup-blocked degrades to a
+//       synthetic `<a download>` click. `mode:'download'` flag on
+//       the helper forces the save-as path when a caller wants it.
+//     · Object URL revoked after 60 s so long sessions don't leak.
+//   Wired into 4 download surfaces (removing 4 bare-anchor auth bugs):
+//     · `pages/AuditExports.jsx`  — was local helper (.103); now
+//       imports from `lib/downloads.js`. Zero behaviour change.
+//     · `pages/Dashboard.jsx`     — Dashboard's "Generate PDF audit
+//       pack" button used `window.open(${BACKEND}${data.file_url})`
+//       which strips the bearer → 401 → blank tab. Same class as the
+//       .103 AuditExports bug. Now uses openAuthedFile.
+//     · `pages/Forms.jsx`         — photo-answer grid used a bare
+//       `<a href={BACKEND + p.file_url} target="_blank">` around
+//       each thumbnail. Thumbnail still uses <img src=…> (cookies /
+//       workspace-scoped auth handle that preview); click now
+//       routes through openAuthedFile which is bearer-authed and
+//       robust against future auth-model changes.
+//     · `pages/Outbox.jsx`        — outbox message attachment list
+//       used `<a href={a.file_url}>` (relative — hit /api/... on
+//       the current domain, 401 without bearer). Now a button that
+//       calls openAuthedFile.
+//   testids added: `form-photo-open-{i}`, `outbox-attachment-open-{i}`.
+//   Existing testids on AuditExports.jsx and the Dashboard PDF
+//   button are unchanged.
+//   DELIBERATELY NOT touched:
+//     · DocumentLibrary.jsx — already uses `fetch(..., { headers:
+//       {Authorization: …}})` + blob flow. Correct.
+//     · Contractors.jsx — already uses `api.get(..., responseType:
+//       'blob')`. Correct.
+//     · BackupTab.jsx — uses `?token=...` query-string auth, not
+//       bearer; different auth model, its download works. Out of
+//       scope for this sweep.
+//     · Renewals.jsx — no file-download surfaces (pure list page).
+//
+// ── Item 2 · Users & Permissions matrix wire-in ───────────────
+//   Backend endpoint for granting `comms_safe_mode.edit` already
+//   exists from v58.13.90. Prior to this ship the UI had no way to
+//   toggle it — admins had to use the API directly.
+//   `frontend/src/lib/permissions.js`:
+//     · `RESOURCE_LABELS.comms_safe_mode = 'Comms Safe Mode'`.
+//     · `EMAIL_SUPPORTED.comms_safe_mode        = false`.
+//     · `DELETE_SUPPORTED.comms_safe_mode       = false`.
+//     · `TEAM_VIEW_SUPPORTED.comms_safe_mode    = false`.
+//     · NEW `OPEN_VIEW_SUPPORTED` map — `comms_safe_mode: false`,
+//       every other existing resource `true`. Some resources only
+//       have a single meaningful action (`edit`); the matrix now
+//       has a way to render "—" for their `open` / `view` columns.
+//   `frontend/src/pages/UsersManagement.jsx`:
+//     · Imports `DELETE_SUPPORTED` + `OPEN_VIEW_SUPPORTED`.
+//     · Widens the `supported` computation to honour both maps
+//       when the action is delete / open / view. Uses `!== false`
+//       semantics so unmapped resources stay `supported=true` and
+//       every prior resource renders identically.
+//   Result: the `comms_safe_mode` row shows exactly one clickable
+//   cell (`edit`) with all others rendered as "—". Admins can
+//   grant or revoke the override with a single click.
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_batch_reduced_v58_13_105.py`
+//   (source-pin, matches .98/.99/.100/.101/.102/.103/.104 pattern):
+//     · `frontend/src/lib/downloads.js` exists and exports
+//       `openAuthedFile`.
+//     · AuditExports.jsx imports openAuthedFile from `../lib/downloads`
+//       and no longer defines a local helper.
+//     · Dashboard.jsx, Forms.jsx, Outbox.jsx import openAuthedFile.
+//     · Dashboard.jsx no longer contains the bare
+//       `window.open(${BACKEND}${…file_url})` pattern.
+//     · Forms.jsx no longer wraps its photo grid in a bare
+//       `<a href={${BACKEND}${p.file_url}}>` anchor.
+//     · Outbox.jsx no longer renders `<a href={a.file_url}>` on
+//       attachment lists.
+//     · RESOURCE_LABELS.comms_safe_mode = 'Comms Safe Mode'.
+//     · EMAIL_SUPPORTED / DELETE_SUPPORTED / TEAM_VIEW_SUPPORTED /
+//       OPEN_VIEW_SUPPORTED all carry the `comms_safe_mode: false`
+//       entry.
+//     · UsersManagement.jsx `supported` gate honours the four maps
+//       (regex-anchored — pins the exact expression shape).
+//     · Version-sync forward-safe pin >= 105.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Backend auth model / endpoints — nothing shipped server-side.
+//   · Route-link compile guard (Item 3) — deferred.
+//   · Rate-limit test-mode bypass (Item 4) — deferred. Full test
+//     suites still hit the 5/min slowapi login limit and need a
+//     60 s cool-off between full runs. Documented in the ship
+//     report so future runs know the pattern.
+//   · `/app/mobile/` code — only MOBILE_BUNDLE_VERSION bumped.
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed
+//     (nothing server-side changed).
+//   · All 3 canonical version strings bumped to `.105`.
+
 // v160.3.9.58.13.104 — Unified QR public-URL resolver + preview env fix.
 //                      Scheme-less `/scan/site/{token}` QR codes on
 //                      preview now encode the full customer-facing URL.
@@ -9422,7 +9545,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.104';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.105';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

@@ -2244,8 +2244,17 @@ function UserDrawer({ userRow, onClose, onReload, canEdit, defaultTab = 'profile
                         const ov = perms.overrides?.[res]?.[act];
                         const isEmail = act === 'email';
                         const isTeamView = act === 'team_view';
+                        const isDelete = act === 'delete';
+                        const isOpenOrView = act === 'open' || act === 'view';
+                        // v58.13.105 — Support gate widened to honour
+                        // DELETE_SUPPORTED and OPEN_VIEW_SUPPORTED so
+                        // resources like `comms_safe_mode` (edit-only)
+                        // render "—" for their non-applicable columns.
+                        // Prior gate only checked email + team_view.
                         const supported = (!isEmail || EMAIL_SUPPORTED[res])
-                          && (!isTeamView || TEAM_VIEW_SUPPORTED[res]);
+                          && (!isTeamView || TEAM_VIEW_SUPPORTED[res])
+                          && (!isDelete || DELETE_SUPPORTED[res] !== false)
+                          && (!isOpenOrView || OPEN_VIEW_SUPPORTED[res] !== false);
                         const eff = perms.effective?.[res]?.[act];
                         let icon, cls;
                         if (!supported) { icon = <span className="text-slate-300">—</span>; cls = ''; }
