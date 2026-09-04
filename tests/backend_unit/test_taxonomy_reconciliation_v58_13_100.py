@@ -267,7 +267,7 @@ def test_asset_service_recommends_forms_by_kind_not_asset_type():
 # ── Version-sync forward-safe pin >= 100 ─────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"could not read tail of {name}"
     return int(m.group(1))
 

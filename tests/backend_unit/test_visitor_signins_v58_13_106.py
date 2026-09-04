@@ -159,7 +159,7 @@ def test_admin_page_has_required_testids():
 # ── Version-sync pins ─────────────────────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"could not read tail of {name}"
     return int(m.group(1))
 

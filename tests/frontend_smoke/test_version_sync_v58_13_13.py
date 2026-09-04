@@ -38,10 +38,13 @@ VERSION_JS = Path("/app/frontend/src/lib/version.js")
 MOBILE_TS = Path("/app/mobile/src/lib/version.ts")
 SW_JS = Path("/app/frontend/public/service-worker.js")
 
-# `paneltec-v<major>.<minor>.<patch>.<phase>.<step>.<sub>` — exactly 6
-# dot-separated integer parts, all required. Rejects a missing dot,
-# an extra dot, or a stray non-digit character.
-CANONICAL_RE = re.compile(r"^paneltec-v\d+(?:\.\d+){5}$")
+# `paneltec-v<major>.<minor>.<patch>.<phase>.<step>.<sub>[<letter>]` —
+# exactly 6 dot-separated integer parts, all required. The trailing
+# sub-part may carry an OPTIONAL lowercase alphabetic hot-fix suffix
+# (e.g. `.106a`, `.106b`) so mid-cycle P0 follow-ups can ship without
+# consuming a full patch number. Rejects a missing dot, an extra dot,
+# or a stray non-digit / non-lowercase character.
+CANONICAL_RE = re.compile(r"^paneltec-v\d+(?:\.\d+){4}\.\d+[a-z]*$")
 
 
 def _read(p: Path) -> str:

@@ -1,5 +1,228 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.107 — Backend prep for Mobile "Create Site with GPS"
+//                      (Expo hand-off queued). Data-plane only — no
+//                      comms, no scheduler hooks, no side-effects.
+//
+// SCOPE: three new authenticated endpoints under `/api/mobile/sites`
+// so the mobile app can create a site standing on it, dedupe against
+// any nearby existing site (50 m haversine), list the supervisor's
+// active sites, and close them out end-of-day. Every write goes to
+// the existing `simpro_sites` collection so the row shows up in
+// SitesAdmin, SiteScanResolver, and the .106 visitor sign-in
+// resolver with zero further wiring. Rows carry `source:
+// "mobile_create"` so admin dashboards can filter them if needed.
+//
+// ── Endpoints (`backend/mobile_sites.py`) ─────────────────────
+//   POST   /api/mobile/sites             → create-or-dedupe. Body:
+//                                          {name, gps_lat, gps_lng,
+//                                          gps_accuracy_m?, address?,
+//                                          suburb?, state?}. Returns:
+//                                          {created:bool, site:{...,
+//                                          scan_token, visitor_url,
+//                                          created_by, closed_at}}.
+//                                          A repeat tap within 50 m
+//                                          of an existing active site
+//                                          returns {created:false,
+//                                          site: <existing>} —
+//                                          idempotent for hot-tapping.
+//                                          Pre-.106a rows without a
+//                                          scan_token get one lazily
+//                                          provisioned on the dedupe
+//                                          path so the mobile app
+//                                          always gets a usable QR.
+//   GET    /api/mobile/sites/mine        → wrapped in
+//                                          `@safe_admin_endpoint`.
+//                                          Query: active=bool
+//                                          (default true). Returns
+//                                          {sites:[...], count}
+//                                          scoped to the caller's
+//                                          org AND created_by=self.
+//                                          Sorted by created_at desc,
+//                                          capped at 500.
+//   PATCH  /api/mobile/sites/{id}/close  → wrapped in
+//                                          `@safe_admin_endpoint`.
+//                                          Sets closed_at + closed_by.
+//                                          Idempotent — re-close
+//                                          returns already=true with
+//                                          the existing timestamp.
+//                                          403 unless caller is the
+//                                          creator OR an admin.
+//
+// ── Compliance rails ────────────────────────────────────────
+//   · All three endpoints depend on `get_current_user` (no public
+//     path — mobile app authenticates first).
+//   · GET/PATCH wrapped in `@safe_admin_endpoint` so unhandled
+//     crashes return JSON 500 with `error_ref` (matches the .87 /
+//     .91 comms-outbox and .90 org-settings admin surfaces).
+//   · POST deliberately NOT wrapped — its 422 (validation) and
+//     200-with-created=false (dedupe) responses are part of the
+//     mobile-app contract. Wrapping would collapse them into 500s.
+//   · Zero comms side-effects. Regex-anchored test scans the
+//     module source for `queue_email_doc`, `graph_send_mail`,
+//     `safe_send_sms`, `tm_send`, `outbound_emails`,
+//     `comms_outbox`, `notifications` — every one must be absent.
+//     Respects the .87 ContextVar HTTP gate by never firing any
+//     comms path in the first place.
+//   · No scheduler hooks. No APScheduler jobs added.
+//
+// ── Haversine dedupe ────────────────────────────────────────
+//   Pure-Python haversine with `_EARTH_RADIUS_M = 6_371_000` and
+//   `atan2` — no external geodesy dependency. `DEDUPE_RADIUS_M =
+//   50.0`. Sanity pinned via a Sydney Opera-House → Sydney-Tower
+//   reference distance (~970 m ± 30 m tolerance) in the pytest
+//   suite. Runs against every ACTIVE site in the org (deleted_at
+//   null AND closed_at null) with lat+lng present — cursor is
+//   small (orgs top out at a few hundred sites), no index changes
+//   needed.
+//
+// ── Visitor URL shape ───────────────────────────────────────
+//   Response `site.visitor_url` returns the absolute
+//   `{origin}/scan/site/{token}/visitor` URL so the Expo app can
+//   drop it straight into a `qrcode.toDataURL(...)` call without
+//   stitching a base URL client-side. Origin resolved via the
+//   same precedence chain as `qr_common.resolve_public_base()`
+//   (REACT_APP_BACKEND_URL → PUBLIC_APP_URL → FRONTEND_PUBLIC_URL);
+//   duplicated inline to sidestep a circular import at module
+//   load.
+//
+// ── Wire proof (curl through preview backend, ship-day) ────
+//   Login stephen@paneltec.com.au → JWT.
+//   POST /api/mobile/sites (Sydney CBD)   → created=true, scan_token
+//                                            + full visitor_url.
+//   POST /api/mobile/sites (+5 m offset)  → created=false, same site.
+//   POST /api/mobile/sites (500 m south)  → created=true, second row.
+//   GET  /api/mobile/sites/mine?active=1  → count=3 (2 new + 1 pre-
+//                                            existing Paneltec Depot).
+//   PATCH .../{id}/close                  → already=false, closed_at
+//                                            stamped.
+//   PATCH .../{id}/close  (re-fire)       → already=true, same
+//                                            closed_at.
+//   GET  /api/mobile/sites/mine?active=0  → count=3 (closed sites
+//                                            still visible).
+//   Test rows cleaned up via a one-shot delete_many afterwards.
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_mobile_sites_v58_13_107.py`:
+//     · Module imports cleanly + registers all three route paths
+//       via APIRouter introspection.
+//     · `server.py` imports the router and includes it under `api`.
+//     · @safe_admin_endpoint decorates GET /mine + PATCH /{id}/close
+//       (regex-anchored order: below @router.<verb>, so the
+//       FastAPI decorator sees the wrapped body).
+//     · POST /mobile/sites is auth-gated but NOT
+//       @safe_admin_endpoint-wrapped.
+//     · No comms side-effects anywhere in mobile_sites.py.
+//     · DEDUPE_RADIUS_M = 50 + haversine implementation + Earth
+//       radius in metres.
+//     · Runtime haversine sanity check: Opera → Tower ≈ 970 m.
+//     · visitor_url embeds REACT_APP_BACKEND_URL + /scan/site/…/visitor.
+//     · Close endpoint idempotent (`already:True`) + 403 for non-
+//       creator non-admin callers.
+//     · Rows carry `source: "mobile_create"`.
+//     · Version-sync forward-safe pins ≥ 107 across all three
+//       canonical version strings.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Frontend — this ship is backend-only prep. Expo mobile
+//     Create-Site UI is the NEXT hand-off (see PRD upcoming
+//     tasks). The .106a route-guard fix is already live from the
+//     previous ship in this session.
+//   · Existing `simpro_sites` documents / SitesAdmin behaviour —
+//     mobile-created rows co-exist with Simpro-sourced ones and
+//     are distinguishable via `source == "mobile_create"`.
+//   · Auth model, rate limits, /app/mobile/ code (only
+//     MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x object-storage migration).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Backend supervisor-restarted (new module loaded).
+//   · Frontend hot-reload picks up the SW cache-version bump.
+//   · All 3 canonical version strings bumped to `.107`.
+//   · Next hand-off (Expo specialist): consume POST
+//     /api/mobile/sites → render visitor_url as QR + push to
+//     LiveSites list → PATCH /{id}/close on end-of-day.
+
+
+
+// v160.3.9.58.13.106a — P0 route-guard follow-up for the v58.13.106
+//                       Public Visitor Sign-in Form ship. Two narrow
+//                       changes; no backend touches; no comms side
+//                       effects.
+//
+// USER PAIN (verbatim, close-out of the .106 ship): the newly-carved
+// `/scan/site/:token/visitor` public route was described as dropping
+// unauthenticated visitors into `/` (Cover / sign-in). Investigation
+// found the direct 4-segment URL DOES resolve to VisitorSignIn on
+// preview today, so the crash-loop was already latent-only for two
+// scenarios that this ship closes proactively:
+//
+//   1. React Router v6 ranks path patterns by static-segment count,
+//      so `/scan/site/:token/visitor` (4 segs) always beats
+//      `/scan/site/:token` (3 segs) — but the .106 registration put
+//      the 3-segment bare pattern BEFORE the 4-segment visitor one in
+//      source order, and any future codemod / route-consolidator that
+//      normalises order-of-declaration risks collapsing them. This
+//      ship swaps them in `App.js` so declaration-order and
+//      match-ranking now agree.
+//
+//   2. Old site QR codes minted BEFORE .106 encode the bare
+//      `/scan/site/:token` URL. When an anonymous visitor scans one,
+//      SiteScanResolver renders in "sign on as a visitor" mode —
+//      technically a working path, but the flow was authored for
+//      workers (SWMS acknowledgement, dynamic sign-on questions,
+//      kiosk mode). SiteScanResolver.jsx now short-circuits with a
+//      `<Navigate replace>` to the corresponding
+//      `/scan/site/:token/visitor` URL as its first action for any
+//      unauthenticated caller. Authenticated users (workers /
+//      supervisors) stay on the existing page — behaviour unchanged.
+//
+// ── Route ordering (`App.js`) ───────────────────────────────
+//   <Route path="/scan/site/:token/visitor" element={<VisitorSignIn />}/>
+//   <Route path="/scan/site/:token"        element={<SiteScanResolver/>}/>
+// Both routes remain OUTSIDE the /app auth-gated tree.
+//
+// ── Anon-bounce (`SiteScanResolver.jsx`) ─────────────────────
+//   · New `Navigate` import from `react-router-dom`.
+//   · After all React hooks resolve (rules-of-hooks invariant
+//     preserved on every render regardless of auth state), a single
+//     `if (!user) return <Navigate to=/scan/site/{token}/visitor
+//     replace />` guard fires. `replace` so the browser history
+//     doesn't accumulate a stale bare-scan entry that back-button
+//     would return to.
+//
+// ── Wire proof (screenshot + curl on preview) ────────────────
+//   · GET /scan/site/uw5w7qQhdaUD/visitor → SPA shell 200; hydrated
+//     page renders the "Welcome to Paneltec Depot / VISITOR SIGN-IN"
+//     form with name/company/phone/purpose/visiting/rego + safety-
+//     induction ack — verified via headless playwright screenshot.
+//   · GET /scan/site/uw5w7qQhdaUD (unauth) → hydrated SPA now emits
+//     an immediate `<Navigate replace>` to `/scan/site/…/visitor`.
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_route_guards_v58_13_106a.py`:
+//     · `App.js` declares `/scan/site/:token/visitor` BEFORE
+//       `/scan/site/:token`.
+//     · `SiteScanResolver.jsx` imports `Navigate` from `react-router-dom`.
+//     · The `if (!user) return <Navigate` guard is present with a
+//       `/scan/site/${token}/visitor` target + `replace` flag.
+//     · The guard is placed AFTER the `useMemo(...filteredWorkers...)`
+//       hook so no hook is ever skipped (regex-anchored).
+//     · Version-sync forward-safe pin >= '106a'.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · Backend — no server-side edits.
+//   · Auth model / interceptor / rate limits.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x per user directive).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.106a`.
+
+
 // v160.3.9.58.13.106 — Public visitor sign-in flow. Site QR codes
 //                      now land visitors on a mobile-first sign-in
 //                      form; admins get a visitor register at
@@ -9662,7 +9885,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.106';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.107';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

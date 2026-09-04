@@ -8,7 +8,7 @@
 // Both paths capture browser GPS (if granted) so the server can flag
 // > 250m drift against the site's known coordinates.
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import {
   Building2, CheckCircle2, MapPin, ShieldCheck, Loader2, AlertCircle,
   FileText, UserCog, Search, X, Crosshair,
@@ -107,6 +107,18 @@ export default function SiteScanResolver() {
   }, [workers, kioskQuery]);
 
   const isVisitorFlow = !user || signAsVisitor;
+
+  // v58.13.106a — Unauthenticated visitors get bounced (replace) to the
+  // dedicated public visitor sign-in form. Old QR codes minted before the
+  // v58.13.106 split still encode `/scan/site/:token` (no `/visitor` suffix);
+  // without this bounce those QRs would drop anon visitors into the SWMS-ack
+  // kiosk flow which is aimed at workers. Authenticated users (workers /
+  // supervisors in kiosk mode) stay on this page — same behaviour as before
+  // the split. Placed AFTER all hook calls so React's rules-of-hooks
+  // invariant holds regardless of auth state on any given render.
+  if (!user) {
+    return <Navigate to={`/scan/site/${token}/visitor`} replace />;
+  }
 
   const requiredQuestionsMissing = () => {
     const qs = data?.signon_questions || [];

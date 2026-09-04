@@ -151,9 +151,13 @@ function App() {
             <Route path="/reset" element={<ResetPasswordPage />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
-            <Route path="/scan/site/:token" element={<SiteScanResolver />} />
-            {/* v58.13.106 — Public visitor sign-in (no auth wrapper). */}
+            {/* v58.13.106a — public visitor sign-in matched BEFORE the bare
+                site scan resolver so React Router's ranking can never
+                collapse the 4-segment /visitor path onto the 3-segment
+                worker/kiosk resolver. Both routes are outside the /app
+                auth-gated tree. */}
             <Route path="/scan/site/:token/visitor" element={<VisitorSignIn />} />
+            <Route path="/scan/site/:token" element={<SiteScanResolver />} />
             <Route path="/scan/supplier/:token" element={<SupplierScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
             {/* v160.3.9.7 — Standalone popup for Worker ID card print preview.

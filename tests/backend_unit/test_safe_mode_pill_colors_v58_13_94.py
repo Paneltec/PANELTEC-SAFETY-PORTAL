@@ -135,7 +135,7 @@ MOBILE_TS = (ROOT / "mobile" / "src" / "lib" / "version.ts").read_text(encoding=
 
 
 def _tail(text: str, name: str) -> int:
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"{name} not found"
     return int(m.group(1))
 

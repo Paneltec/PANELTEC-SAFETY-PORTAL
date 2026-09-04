@@ -164,7 +164,7 @@ def test_c13_backup_still_returns_200_on_amber():
 # ── Version-sync (forward-safe pin >= 84) ──────────────────────
 
 def _tail(text: str, name: str) -> int:
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"{name} not found"
     return int(m.group(1))
 

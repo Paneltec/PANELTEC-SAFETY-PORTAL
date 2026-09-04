@@ -167,7 +167,7 @@ def test_download_buttons_call_open_authed_file():
 # ── Version-sync forward-safe pin >= 103 ────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"could not read tail of {name}"
     return int(m.group(1))
 

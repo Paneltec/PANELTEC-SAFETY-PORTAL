@@ -231,7 +231,7 @@ def test_login_jsx_simpro_uses_classifier():
 # ── Version-sync forward-safe pin >= 99 ───────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"could not read tail of {name}"
     return int(m.group(1))
 

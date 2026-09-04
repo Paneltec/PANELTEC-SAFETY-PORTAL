@@ -40,6 +40,9 @@ from visitor_signins import (  # noqa: E402  — v58.13.106 public visitor sign-
     public_flat as visitor_public_flat_router,
     admin_router as visitor_admin_router,
 )
+# v58.13.107 — Backend prep for mobile "Create Site with GPS". Data-plane
+# only: no comms, no scheduler hooks. See module docstring.
+from mobile_sites import router as mobile_sites_router  # noqa: E402
 from db import close as close_db  # noqa: E402
 from document_library import (  # noqa: E402
     router as document_library_router,
@@ -338,6 +341,8 @@ api.include_router(files_router)
 api.include_router(visitor_public_router)
 api.include_router(visitor_public_flat_router)
 api.include_router(visitor_admin_router)
+# v58.13.107 — mobile "Create Site with GPS" backend prep.
+api.include_router(mobile_sites_router)
 # Phase 4.1 — extras MUST mount before swms_router so static sub-paths
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.

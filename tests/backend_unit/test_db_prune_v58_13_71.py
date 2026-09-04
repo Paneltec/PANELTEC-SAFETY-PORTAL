@@ -163,7 +163,7 @@ def _extract_version_tail(text: str, needle: str) -> int:
     if not found."""
     import re
     m = re.search(
-        needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)['\"]",
+        needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)[a-z]*['\"]",
         text,
     )
     assert m, f"{needle}: version literal not found in file"

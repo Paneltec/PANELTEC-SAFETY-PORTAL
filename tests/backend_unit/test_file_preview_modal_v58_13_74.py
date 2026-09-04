@@ -163,7 +163,7 @@ def test_documentlibrary_no_more_filesurl_import():
 def _tail(text: str, needle: str) -> int:
     import re
     m = re.search(
-        needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)['\"]",
+        needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)[a-z]*['\"]",
         text,
     )
     assert m, f"{needle}: version literal not found"

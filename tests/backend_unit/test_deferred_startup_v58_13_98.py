@@ -102,7 +102,7 @@ def test_fast_bootstrap_kept_in_on_startup():
 # ── Version-sync forward-safe pin >= 98 ─────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m
     return int(m.group(1))
 

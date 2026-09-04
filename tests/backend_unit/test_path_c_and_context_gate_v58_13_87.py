@@ -234,7 +234,7 @@ async def test_graph_send_mail_proceeds_when_request_context_present():
 # ── Version-sync forward-safe pin >= 87 ─────────────────────────
 
 def _tail(text: str, name: str) -> int:
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"{name} not found"
     return int(m.group(1))
 

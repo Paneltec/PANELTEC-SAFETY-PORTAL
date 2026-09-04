@@ -180,7 +180,7 @@ def test_preview_env_has_a_frontend_public_url():
 # ── Version-sync forward-safe pin >= 104 ─────────────────────────
 
 def _tail(text, name):
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"could not read tail of {name}"
     return int(m.group(1))
 

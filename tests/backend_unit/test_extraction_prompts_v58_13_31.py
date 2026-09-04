@@ -225,7 +225,7 @@ def test_version_sync_current():
     running = Path("/app/frontend/src/lib/version.js").read_text(encoding="utf-8")
     sw = Path("/app/frontend/public/service-worker.js").read_text(encoding="utf-8")
     mobile = Path("/app/mobile/src/lib/version.ts").read_text(encoding="utf-8")
-    m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+)'", running)
+    m = re.search(r"export const RUNNING_VERSION = '(paneltec-v[\d.]+[a-z]*)'", running)
     assert m
     current = m.group(1)
     assert f"'{current}'" in sw

@@ -156,7 +156,7 @@ def test_clear_blocked_dispatches_change_event():
 # ── Version-sync forward-safe pin >= 93 ─────────────────────────
 
 def _tail(text: str, name: str) -> int:
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"{name} not found"
     return int(m.group(1))
 

@@ -128,7 +128,7 @@ def test_health_endpoint_has_a_soft_wall_clock_bound():
 # ── Version-sync (forward-safe pin >= 83) ──────────────────────
 
 def _tail(text: str, name: str) -> int:
-    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)['\"]", text)
+    m = re.search(rf"{name}\s*=\s*['\"]paneltec-v[\d.]+\.(\d+)[a-z]*['\"]", text)
     assert m, f"{name} not found"
     return int(m.group(1))
 

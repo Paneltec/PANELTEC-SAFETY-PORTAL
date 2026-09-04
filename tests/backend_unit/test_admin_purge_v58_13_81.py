@@ -106,7 +106,7 @@ def test_frontend_ack_gates_delete_button():
 
 def _tail(text: str, needle: str) -> int:
     import re
-    m = re.search(needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)['\"]", text)
+    m = re.search(needle + r"\s*=\s*['\"]paneltec-v160\.3\.9\.58\.13\.(\d+)[a-z]*['\"]", text)
     assert m; return int(m.group(1))
 
 
