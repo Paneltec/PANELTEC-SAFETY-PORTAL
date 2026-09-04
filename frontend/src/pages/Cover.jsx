@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { ArrowRight, Eye, EyeOff, Loader2, AlertCircle, UserCog, Download, Share, Plus, X } from 'lucide-react';
 import { login, safeNext } from '../lib/auth';
-import { apiError } from '../lib/api';
+import { classifyAuthError } from '../lib/api';
 import { usePwaInstall } from '../lib/pwa';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 import PaneltecHero from '../components/marketing/PaneltecHero';
@@ -59,9 +59,12 @@ export default function Cover() {
       await login(em.trim(), pw);
       navigate(nextPath, { replace: true });
     } catch (err) {
-      const msg = apiError(err) || '';
-      if (msg.toLowerCase().includes('disabled')) setError(msg);
-      else setError('Invalid email or password. Please try again.');
+      // v58.13.99 — Route axios failure through the shared classifier so
+      // 5xx / 520 / network-down responses render as "server is down"
+      // instead of a misleading "Invalid password" that has users
+      // hammering the form during a prod outage. See lib/api.js.
+      const { message } = classifyAuthError(err);
+      setError(message);
     } finally { setBusy(false); }
   };
 

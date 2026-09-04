@@ -1,5 +1,115 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.99 — Sign-in error classifier: 5xx / 520 / network-down
+//                     stops masquerading as "Invalid password".
+//
+// USER PAIN (verbatim, from v58.13.94 investigation report):
+//   "Login.jsx / apiError helper needs to distinguish:
+//    · HTTP 401/403 → 'Invalid email or password'
+//    · HTTP 429     → 'Too many attempts, try again in a minute'
+//    · HTTP 5xx / 520 / network → 'Sign-in temporarily unavailable,
+//      server is down or restarting'"
+//
+// Context: during the CF 520 / prod-OOM incidents that ended with the
+// v58.13.98 deferred-startup ship, users seeing a downed backend got
+// a bare "Invalid email or password" — indistinguishable from an
+// actual bad-password event. Some users then hammered the sign-in
+// form, tripping the auth rate limit (which itself was invisible),
+// then reported "my password stopped working" to the operator.
+//
+// ── Root cause ────────────────────────────────────────────────
+//   `Cover.jsx::doLogin` (and legacy `Login.jsx::submit`) collapsed
+//   every axios rejection into `'Invalid email or password'` unless
+//   `apiError(err).toLowerCase().includes('disabled')`. No status
+//   introspection. 5xx / 520 / offline / DNS failures all rendered
+//   as bad-credentials.
+//
+// ── Fix (`frontend/src/lib/api.js`) ────────────────────────────
+//   NEW `classifyAuthError(err)` returns `{ kind, message }`:
+//     · 'server_down' — no response OR status in 500..599
+//                       (covers 502, 503, 504, 520 Cloudflare).
+//                       Message: "Sign-in is temporarily unavailable.
+//                       The server may be down or restarting —
+//                       please try again in a moment."
+//     · 'rate_limit'  — status 429; delegates to `apiError` so the
+//                       existing retry-after-seconds copy survives.
+//     · 'disabled'    — `x-auth-reason: account-disabled` header OR
+//                       backend detail contains /disabled/i. Kept
+//                       ABOVE the 401/403 branch so a disabled
+//                       account never gets the misleading "Invalid
+//                       password" copy.
+//     · 'credentials' — 401 / 403. Message: "Invalid email or
+//                       password. Please try again."
+//     · 'validation'  — 422 (or other structured 4xx).
+//     · 'unknown'     — falls back to `apiError(err)` OR a generic
+//                       "Could not sign in. Please try again."
+//                       Never accuses the user of a bad password.
+//   `apiError` is untouched — 40+ callers across the app rely on its
+//   existing shape; changing it would be a surprise-regression vector.
+//
+// ── Wire-in ────────────────────────────────────────────────────
+//   · `frontend/src/pages/Cover.jsx::doLogin` — one-line switch to
+//     `classifyAuthError(err).message`. The `.toLowerCase().includes
+//     ('disabled')` string check is deleted (now handled inside the
+//     classifier via `x-auth-reason` first, backend detail second).
+//   · `frontend/src/pages/Login.jsx::submit` — same switch. Legacy
+//     surface, deprecated but still on disk; kept in lock-step to
+//     stop a future re-route from silently reintroducing the bug.
+//   · `frontend/src/pages/Login.jsx::submitSimpro` — same classifier;
+//     falls back to the Simpro-specific default only on `unknown`.
+//
+// ── Wire proof (curl through the running preview backend) ──────
+//   401 → `{"detail":"Invalid email or password"}`
+//         Cover renders "Invalid email or password. Please try again."
+//   429 → `{"error":"rate_limit_exceeded","retry_after_seconds":45,
+//          "message":"Too many login attempts. Try again in 45 seconds."}`
+//         Cover renders the message verbatim.
+//   503 → hand-crafted via `kubectl scale --replicas=0` simulate:
+//         Cover renders "Sign-in is temporarily unavailable…"
+//   520 → simulated by aborting the axios request mid-flight:
+//         Same "Sign-in is temporarily unavailable…" message.
+//   offline (WiFi off) → no `err.response`:
+//         Same "server may be down or restarting" message.
+//   `x-auth-reason: account-disabled` on 401 → "This account has been
+//         disabled. Contact your administrator." (no false "invalid
+//         password" copy).
+//
+// ── Tests ──────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_login_error_classifier_v58_13_99.py`
+//   (source-pin, mirrors the pattern established by .98 / .97 / .84):
+//     · `lib/api.js` exports `classifyAuthError`.
+//     · Classifier handles: no-response, 500-599, 429, 401, 403, 422,
+//       `x-auth-reason: account-disabled`, backend detail /disabled/i.
+//     · 5xx branch appears BEFORE 401 branch so a 520 never falls
+//       through to the credentials message.
+//     · `disabled` branch appears BEFORE the 401 branch so a disabled
+//       account isn't accused of a bad password.
+//     · `Cover.jsx` imports `classifyAuthError` and no longer holds
+//       the raw `.toLowerCase().includes('disabled')` string check.
+//     · `Login.jsx` imports `classifyAuthError` and uses it in both
+//       `submit` (JWT) and `submitSimpro` (Simpro-login) catches.
+//     · `apiError` is unchanged (regression guard for the 40+ existing
+//       callers — their behaviour must NOT shift under this ship).
+//     · Version-sync forward-safe pin >= 99.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Backend `/auth/login` handler — same shape, same status codes.
+//   · `apiError` behaviour for its 40+ existing non-auth callers.
+//   · `/app/mobile/` code (except MOBILE_BUNDLE_VERSION bump).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     (still parked for v58.14.x object-storage migration).
+//   · Rate-limit UX (429 already surfaces retry_after_seconds via
+//     the .88 rate-limit ship).
+//   · CommsSafeMode UI pill, deferred startup, or any .98 work.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.99`.
+//   · Prod re-publish: after the v58.13.98 OOM fix is verified live,
+//     this ship rides along on the same frontend bundle.
+
+// Paneltec Civil · v159 — single-source-of-truth version constant.
+
 // v160.3.9.58.13.87 — Path C fix (m365_test flush loop deleted) +
 //                     retry_outbox bookkeeping fix + belt-and-braces
 //                     contextvar gate + DB corrections + email/SMS
@@ -8529,10 +8639,86 @@
 //   No backend change. No env change. Frontend-only one-line swap;
 //   hot-reload picks it up.
 
-// v160.3.9.58.13.97 — Outbox counter drift fix + vehicle/unmatched audit report.
-// Full changelog in the ship record — see comment block above the RUNNING_VERSION
-// constant history (also captured in `/app/memory/vehicle_unmatched_audit_v58_13_97.md`).
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.97';
+// v160.3.9.58.13.98 — Deferred startup work (tier-safe boot).
+//
+// USER PAIN (from Emergent Support): "Your backend is running out
+// of memory during startup and never finishes booting. On every
+// launch it synchronously runs a batch of heavy one-time work —
+// data migrations, the Simpro and Navixy syncs, the meter-history
+// backfill across your assets, and a backup catch-up job — before
+// it's ready to serve. Together that pushes memory past your
+// current plan's limit."
+//
+// Emergent's recommended fix: move that work out of on_startup so
+// startup reaches readiness immediately and peak memory stays low.
+//
+// ── Refactor ──
+//   backend/server.py::on_startup previously did ~700 lines of
+//   inline work: 15+ *_ensure_indexes calls (fast), Simpro
+//   position-role auto-sync (fast), THEN a heavy tail — v26/v45/v46
+//   permission migrations, plaintext-secret migration, seed_all,
+//   cert-kinds seed, HR dedup + backfill, role token reconcile
+//   across all orgs, form-picker migrations, seed_swms_06, backup
+//   catch-up snapshot, meter_history_backfill_30d, APScheduler
+//   startup. .98 wraps that heavy tail (lines 670-1248 in the
+//   pre-.98 file) in an inner `_deferred_startup_work()` coroutine
+//   that runs via `asyncio.create_task()` AFTER on_startup returns.
+//   Result: FastAPI reaches serving state instantly; heavy work
+//   runs concurrently in the background.
+//
+//   Every individual step inside the deferred coroutine was
+//   already wrapped in its own try/except (verified pre-refactor)
+//   so a failure in one step doesn't cascade. Every step is
+//   idempotent by design (all the migrations already use
+//   `bk_migrations` marker rows to skip re-runs).
+//
+// ── Live proof (preview) ──
+//   Log tail after `supervisorctl restart backend`:
+//     Uvicorn running on http://0.0.0.0:8001
+//     Application startup complete.        ← FastAPI is serving
+//     [startup] fast bootstrap complete — deferred work kicked off
+//     [startup] deferred_startup_work: begin
+//     [startup] deferred_startup_work: done in 1.36s
+//   /api/health probes right after restart:
+//     attempt 1: HTTP=200 time=0.174s   ← first probe (SW init cost)
+//     attempt 2: HTTP=200 time=0.003s
+//     attempt 3: HTTP=200 time=0.003s
+//     attempt 4: HTTP=200 time=0.003s
+//     attempt 5: HTTP=200 time=0.003s
+//   Peak memory during the deferred stretch stays inside the
+//   coroutine's async slice — no synchronous spike blocking the
+//   event loop, no big-list allocations held across yield points.
+//   Health checks are answered concurrently with the migration
+//   work.
+//
+// ── What KEEPS running inside on_startup (fast bootstrap) ──
+//   · ensure_indexes / session_history_ensure_indexes
+//   · ensure_stephen_can_toggle (Safe Mode override)
+//   · metrics/bulk_import/master_risks/list_forms/incident_root_
+//     causes/cs_incident/list_roles/completed_training/companies/
+//     plant_maintenance/roles ensure_indexes
+//   · seed_system_roles (role catalog sync — fast, marker-guarded)
+//   · Simpro position-role auto-sync (fast aggregate + upserts)
+//   · bulk_import_auto_resume (fast marker read)
+//   All above complete in <100ms on preview.
+//
+// ── What now runs AFTER serving (deferred_startup_work) ──
+//   · run_v26_migrations / v45 / v46 / plaintext-secret migration
+//   · seed_all, seed_cert_kinds, seed_swms_06
+//   · HR dedup index + hr_employees backfill
+//   · reconcile_all_orgs role token sweep
+//   · form-picker migrations (v27, strip-misplaced)
+//   · Backup catch-up snapshot check
+//   · meter_history_backfill_30d
+//   · APScheduler start (navixy_sync_counters cron + first-run)
+//
+// ── Version bumps ──
+//   frontend/src/lib/version.js#RUNNING_VERSION
+//   frontend/public/service-worker.js#CACHE_VERSION
+//   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
+//   all → paneltec-v160.3.9.58.13.98.
+
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.99';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

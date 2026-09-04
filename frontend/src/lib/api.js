@@ -112,3 +112,67 @@ export function apiError(e) {
   if (d?.msg) return d.msg;
   return JSON.stringify(d);
 }
+
+// v58.13.99 — Sign-in error classifier.
+// Cover.jsx (and legacy Login.jsx) used to collapse every axios rejection
+// into "Invalid email or password" unless the message contained the word
+// "disabled". That misclassified backend 5xx / 502 / 503 / 504 / 520 /
+// network-down responses as bad credentials — causing users to hammer the
+// sign-in form during a prod outage and blame their password. This helper
+// maps the actual axios failure onto a user-visible message keyed on the
+// HTTP status, and returns a `{ kind, message }` tuple so callers can also
+// route on it (e.g. render an outage banner vs. an inline field error).
+//
+// kinds:
+//   · 'credentials' — 401/403 (or /auth/login 400 with a credential body)
+//   · 'disabled'    — account disabled (x-auth-reason or "disabled" in msg)
+//   · 'rate_limit'  — 429
+//   · 'server_down' — 5xx / 520 / no response (offline, DNS, timeout)
+//   · 'validation'  — 422 or other 4xx with a structured detail
+//   · 'unknown'     — anything else that slipped past the above
+export function classifyAuthError(err) {
+  const resp = err?.response;
+  // Case 1: no response at all — offline, DNS failure, CORS-preflight
+  // failure, request cancelled, gateway dropped the connection.
+  if (!resp) {
+    return {
+      kind: 'server_down',
+      message: 'Sign-in is temporarily unavailable. The server may be down or restarting — please try again in a moment.',
+    };
+  }
+  const status = resp.status;
+  const reason = resp.headers?.['x-auth-reason'];
+  const detail = resp.data?.detail;
+  const detailStr =
+    typeof detail === 'string' ? detail
+    : (detail?.msg || (Array.isArray(detail) ? detail.map((x) => x?.msg || '').join(' ') : ''));
+
+  // 5xx / 520 — Cloudflare origin error, backend crash, LB timeout.
+  // The user has done nothing wrong; do NOT accuse them of a bad password.
+  if (status >= 500 && status <= 599) {
+    return {
+      kind: 'server_down',
+      message: 'Sign-in is temporarily unavailable. The server may be down or restarting — please try again in a moment.',
+    };
+  }
+  if (status === 429) {
+    return { kind: 'rate_limit', message: apiError(err) };
+  }
+  // Account-disabled must be caught BEFORE the generic 401/403 credentials
+  // branch — it's a legitimate account status, not a bad password.
+  if (
+    reason === 'account-disabled'
+    || (detailStr && /disabled/i.test(detailStr))
+  ) {
+    return { kind: 'disabled', message: detailStr || 'This account has been disabled. Contact your administrator.' };
+  }
+  if (status === 401 || status === 403) {
+    return { kind: 'credentials', message: 'Invalid email or password. Please try again.' };
+  }
+  if (status === 422) {
+    return { kind: 'validation', message: apiError(err) };
+  }
+  // Fallback: surface whatever the backend gave us, but never accuse the
+  // user of a bad password on an unrecognised code.
+  return { kind: 'unknown', message: apiError(err) || 'Could not sign in. Please try again.' };
+}

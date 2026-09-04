@@ -667,585 +667,605 @@ async def on_startup():
     except Exception as e:
         log.warning("[startup] Simpro position-role auto-sync failed "
                     "(non-blocking): %s", e)
-    try:
-        from permission_v26_migrations import run_all as run_v26_migrations
-        migs = await run_v26_migrations()
-        log.info("v26 migrations: %s", migs)
-    except Exception as e:
-        log.warning("v26 migrations failed: %s", e)
-    try:
-        from user_prefs import ensure_user_prefs_indexes
-        await ensure_user_prefs_indexes()
-    except Exception as e:
-        log.warning("user_prefs index setup failed: %s", e)
-    try:
-        from simpro_import_users import ensure_simpro_import_audit_indexes
-        await ensure_simpro_import_audit_indexes()
-    except Exception as e:
-        log.warning("simpro_import_audit index setup failed: %s", e)
 
-    # v160.3.9.40 (SEC-003) — Encrypt any plaintext integration secrets
-    # in place. Idempotent + marker-guarded, mirrors the v38 backup
-    # destination migration. Non-blocking: failures are logged and boot
-    # continues. Manual re-run via
-    # POST /api/admin/migrate-integration-secrets.
-    try:
-        from integrations import _migrate_plaintext_integration_secrets, _FERNET
-        from db import db as _db_ref
-        marker = await _db_ref.bk_migrations.find_one(
-            {"id": "v160_3_9_40_integrations_encryption"},
-            {"_id": 0, "id": 1, "completed_at": 1},
-        )
-        if not (marker and marker.get("completed_at")):
-            if _FERNET:
-                summary = await _migrate_plaintext_integration_secrets(_db_ref)
-                await _db_ref.bk_migrations.update_one(
-                    {"id": "v160_3_9_40_integrations_encryption"},
-                    {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
-                              **summary}},
-                    upsert=True,
-                )
-                log.info("[v40] integrations secrets encryption migration: %s", summary)
-            else:
-                log.warning("[v40] Skipped integrations secrets migration — "
-                            "INTEGRATIONS_ENC_KEY not configured.")
-    except Exception as e:
-        log.warning("[v40] integrations secrets migration failed at startup: %s", e)
+    # v58.13.98 — Defer heavy startup work so /api/health answers
+    # before the pod OOMs on tier boot. Emergent Support attributed
+    # the prod startup crash to the synchronous batch of migrations
+    # + Simpro/Navixy syncs + meter_history backfill + backup
+    # catch-up all landing in the same on_startup slot. This inner
+    # coroutine runs those exact tasks AFTER the app enters the
+    # serving state, via asyncio.create_task(). Every individual
+    # step below is already wrapped in its own try/except so a
+    # failure in one step doesn't abort the rest.
+    async def _deferred_startup_work():
+        import time as _dsw_time
+        _t0 = _dsw_time.monotonic()
+        log.info('[startup] deferred_startup_work: begin')
+        try:
+            from permission_v26_migrations import run_all as run_v26_migrations
+            migs = await run_v26_migrations()
+            log.info("v26 migrations: %s", migs)
+        except Exception as e:
+            log.warning("v26 migrations failed: %s", e)
+        try:
+            from user_prefs import ensure_user_prefs_indexes
+            await ensure_user_prefs_indexes()
+        except Exception as e:
+            log.warning("user_prefs index setup failed: %s", e)
+        try:
+            from simpro_import_users import ensure_simpro_import_audit_indexes
+            await ensure_simpro_import_audit_indexes()
+        except Exception as e:
+            log.warning("simpro_import_audit index setup failed: %s", e)
 
-    # v160.3.9.43.1 — Fernet key ↔ encrypted-fields mismatch self-check.
-    # Scan `integration_configs` for docs that carry any `<field>_encrypted`
-    # secret. If we find any while `_FERNET` is unloaded (or fails a
-    # decrypt smoke-test on one of them), log a high-visibility WARNING
-    # naming each affected `kind`. Non-fatal — boot continues — but the
-    # log line makes a botched `INTEGRATIONS_ENC_KEY` rotation impossible
-    # to miss. Reason it matters: without this, the first production
-    # call for any impacted integration would 500 with an opaque
-    # `KeyError` or `InvalidToken` and no operator-facing breadcrumb.
-    try:
-        from integrations import _FERNET as _FERNET_LIVE, _decrypt_integration_secret
-        from db import db as _db_ref
-        encrypted_field_suffix = "_encrypted"
-        secret_kinds_with_ciphertext: dict[str, int] = {}
-        smoke_test_failed_kinds: set[str] = set()
-        async for row in _db_ref.integration_configs.find(
-            {}, {"_id": 0, "kind": 1, "config": 1},
-        ):
-            conf = row.get("config") or {}
-            ciphertexts = [(k, v) for k, v in conf.items()
-                           if k.endswith(encrypted_field_suffix)
-                           and isinstance(v, str) and v]
-            if not ciphertexts:
-                continue
-            kind = row.get("kind") or "unknown"
-            secret_kinds_with_ciphertext[kind] = (
-                secret_kinds_with_ciphertext.get(kind, 0) + 1
+        # v160.3.9.40 (SEC-003) — Encrypt any plaintext integration secrets
+        # in place. Idempotent + marker-guarded, mirrors the v38 backup
+        # destination migration. Non-blocking: failures are logged and boot
+        # continues. Manual re-run via
+        # POST /api/admin/migrate-integration-secrets.
+        try:
+            from integrations import _migrate_plaintext_integration_secrets, _FERNET
+            from db import db as _db_ref
+            marker = await _db_ref.bk_migrations.find_one(
+                {"id": "v160_3_9_40_integrations_encryption"},
+                {"_id": 0, "id": 1, "completed_at": 1},
             )
-            if _FERNET_LIVE is not None:
-                # Smoke-test: decrypt ONE ciphertext per kind. If it
-                # raises we know the key doesn't match the ciphertext
-                # (rotation drift).
-                if kind not in smoke_test_failed_kinds:
-                    _field, _ct = ciphertexts[0]
-                    try:
-                        _decrypt_integration_secret(_ct)
-                    except Exception:
-                        smoke_test_failed_kinds.add(kind)
-        if secret_kinds_with_ciphertext and _FERNET_LIVE is None:
-            # Case A: encrypted data exists but Fernet is not loaded.
-            # Every real API call for these kinds will 500.
-            log.error(
-                "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is NOT "
-                "loaded but %d integration_configs docs carry ciphertext. "
-                "Every API call for the following kinds will fail: %s. "
-                "Rotate the key back or re-run the v40 migration.",
-                sum(secret_kinds_with_ciphertext.values()),
-                sorted(secret_kinds_with_ciphertext.keys()),
-            )
-        elif smoke_test_failed_kinds:
-            # Case B: Fernet is loaded but doesn't match the ciphertext
-            # (a NEW key was rotated in without re-encrypting the docs).
-            log.error(
-                "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is "
-                "loaded but FAILED to decrypt ciphertext for kinds: %s. "
-                "The key was likely rotated without re-encrypting the "
-                "existing docs. Rotate the key back or re-run the v40 "
-                "migration.",
-                sorted(smoke_test_failed_kinds),
-            )
-        else:
-            log.info(
-                "[v43.1 SEC-003 SELF-CHECK] OK — %d integration kinds "
-                "carry ciphertext, all decrypt cleanly.",
-                len(secret_kinds_with_ciphertext),
-            )
-    except Exception as e:
-        # Never let the self-check block boot. Log the failure so the
-        # absence of a positive OK line is itself a signal to check.
-        log.warning("[v43.1 SEC-003 self-check skipped due to error: %s]", e)
-
-    # v160.3.9.45 — Idempotent one-shot backfill of the 11 empty Simpro
-    # `custom_*` UUID roles + Traffic Controller expansion + Cleaner
-    # role insert. Marker-guarded, so a subsequent boot is a no-op.
-    try:
-        from migrations.v45_custom_role_token_backfill import run_v45_migration
-        from db import db as _v45_db
-        result = await run_v45_migration(_v45_db)
-        if result.get("skipped"):
-            log.info("[v45] custom-role token backfill: no-op (marker present)")
-        else:
-            log.info("[v45] backfill applied: %d updates + %d insert(s)",
-                     len(result.get("updates", [])), len(result.get("inserts", [])))
-    except Exception as e:
-        log.warning("[v45] custom-role token backfill failed: %s", e)
-
-    # v160.3.9.46 — Role hygiene: general_user trim, HSEQ Creator forms.edit,
-    # ephemeral fixture role sweep, empty user_permissions cleanup +
-    # permissions-resolution INFO summary.
-    try:
-        from migrations.v46_role_hygiene import (
-            run_v46_migration, report_permissions_resolution)
-        from db import db as _v46_db
-        r = await run_v46_migration(_v46_db)
-        if r.get("skipped"):
-            log.info("[v46] role hygiene: no-op (marker present)")
-        await report_permissions_resolution(_v46_db)
-    except Exception as e:
-        log.warning("[v46] role hygiene failed: %s", e)
-
-    # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
-    # rows whose `body_html` contains dangerous markup. Idempotent —
-    # bleach is a no-op on already-safe HTML. Marker-guarded so we don't
-    # re-scan the whole outbox every boot.
-    try:
-        from email_outbox import sanitize_email_body_html
-        from db import db as _db_ref
-        marker = await _db_ref.bk_migrations.find_one(
-            {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
-            {"_id": 0, "id": 1, "completed_at": 1},
-        )
-        if not (marker and marker.get("completed_at")):
-            scanned = 0
-            rewritten = 0
-            cursor = _db_ref.outbound_emails.find({}, {"_id": 0, "id": 1, "body_html": 1})
-            async for row in cursor:
-                scanned += 1
-                raw = row.get("body_html") or ""
-                sanitized = sanitize_email_body_html(raw)
-                if sanitized != raw:
-                    await _db_ref.outbound_emails.update_one(
-                        {"id": row["id"]},
-                        {"$set": {"body_html": sanitized}},
+            if not (marker and marker.get("completed_at")):
+                if _FERNET:
+                    summary = await _migrate_plaintext_integration_secrets(_db_ref)
+                    await _db_ref.bk_migrations.update_one(
+                        {"id": "v160_3_9_40_integrations_encryption"},
+                        {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
+                                  **summary}},
+                        upsert=True,
                     )
-                    rewritten += 1
-            await _db_ref.bk_migrations.update_one(
-                {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
-                {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
-                          "scanned": scanned, "rewritten": rewritten}},
-                upsert=True,
-            )
-            log.info("[v40] email_outbox sanitize backfill: scanned=%d rewritten=%d",
-                     scanned, rewritten)
-    except Exception as e:
-        log.warning("[v40] email_outbox sanitize backfill failed at startup: %s", e)
-
-    result = await seed_all()
-    log.info("Seeded: %s", result["counts"])
-    # v58.13.86 — Path A (startup cert reminder scan) deleted per user
-    # directive "I don't want anything sent automatically". The scan
-    # function itself is kept in `worker_certifications.py` behind the
-    # admin-only `POST /worker-certifications/reminders/scan` endpoint
-    # so an admin can still fire it manually when desired.
-    # No auto-invocation. See ship notes for v58.13.86.
-
-    # v160.3.1 — Simpro cert_kinds + licence_mapping seed load (idempotent).
-    try:
-        await seed_cert_kinds_on_startup()
-    except Exception as e:
-        log.warning("Simpro cert_kinds seed failed: %s", e)
-    # v160.3.3 — HR docs dedup index.
-    try:
-        await ensure_hr_dedup_index()
-    except Exception as e:
-        log.warning("HR dedup index setup failed: %s", e)
-
-    # v160.3.9.48 — HR Employees register: indexes + one-shot ingest +
-    # role-token backfill. Marker: `bk_migrations.v160_3_9_48_hr_employees_ingest`.
-    try:
-        await hr_employees_ensure_indexes()
-        marker = await _mongo_db.bk_migrations.find_one(
-            {"_id": "v160_3_9_48_hr_employees_ingest"})
-        if not marker:
-            live_total = await _mongo_db.hr_employees.count_documents(
-                {"deleted_at": None})
-            ingest_stats = {"inserted": 0, "updated": 0,
-                            "unchanged": 0, "security_flags": 0}
-            if live_total == 0:
-                from pathlib import Path as _P
-                src = (_P(__file__).resolve().parent / "scripts" / "data"
-                       / "hr_employees_source.xlsx")
-                if src.exists():
-                    from scripts.import_hr_employees import (
-                        parse_workbook, upsert_rows,
-                        ensure_indexes as _hr_idx,
-                    )
-                    await _hr_idx()
-                    rows, security_flags = parse_workbook(src)
-                    ingest_stats = await upsert_rows(
-                        rows, actor_id="v160_3_9_48_ingest_migration",
-                        security_flags=security_flags)
-                    live_total = await _mongo_db.hr_employees.count_documents(
-                        {"deleted_at": None})
-                    log.info(
-                        "[v160.3.9.48] hr_employees ingest: "
-                        "parsed=%d inserted=%d updated=%d unchanged=%d "
-                        "security_flags=%d live_total=%d",
-                        len(rows), ingest_stats["inserted"],
-                        ingest_stats["updated"], ingest_stats["unchanged"],
-                        ingest_stats["security_flags"], live_total,
-                    )
+                    log.info("[v40] integrations secrets encryption migration: %s", summary)
                 else:
-                    log.warning(
-                        "[v160.3.9.48] hr_employees xlsx missing at %s "
-                        "— ingest skipped, marker still recorded", src)
+                    log.warning("[v40] Skipped integrations secrets migration — "
+                                "INTEGRATIONS_ENC_KEY not configured.")
+        except Exception as e:
+            log.warning("[v40] integrations secrets migration failed at startup: %s", e)
+
+        # v160.3.9.43.1 — Fernet key ↔ encrypted-fields mismatch self-check.
+        # Scan `integration_configs` for docs that carry any `<field>_encrypted`
+        # secret. If we find any while `_FERNET` is unloaded (or fails a
+        # decrypt smoke-test on one of them), log a high-visibility WARNING
+        # naming each affected `kind`. Non-fatal — boot continues — but the
+        # log line makes a botched `INTEGRATIONS_ENC_KEY` rotation impossible
+        # to miss. Reason it matters: without this, the first production
+        # call for any impacted integration would 500 with an opaque
+        # `KeyError` or `InvalidToken` and no operator-facing breadcrumb.
+        try:
+            from integrations import _FERNET as _FERNET_LIVE, _decrypt_integration_secret
+            from db import db as _db_ref
+            encrypted_field_suffix = "_encrypted"
+            secret_kinds_with_ciphertext: dict[str, int] = {}
+            smoke_test_failed_kinds: set[str] = set()
+            async for row in _db_ref.integration_configs.find(
+                {}, {"_id": 0, "kind": 1, "config": 1},
+            ):
+                conf = row.get("config") or {}
+                ciphertexts = [(k, v) for k, v in conf.items()
+                               if k.endswith(encrypted_field_suffix)
+                               and isinstance(v, str) and v]
+                if not ciphertexts:
+                    continue
+                kind = row.get("kind") or "unknown"
+                secret_kinds_with_ciphertext[kind] = (
+                    secret_kinds_with_ciphertext.get(kind, 0) + 1
+                )
+                if _FERNET_LIVE is not None:
+                    # Smoke-test: decrypt ONE ciphertext per kind. If it
+                    # raises we know the key doesn't match the ciphertext
+                    # (rotation drift).
+                    if kind not in smoke_test_failed_kinds:
+                        _field, _ct = ciphertexts[0]
+                        try:
+                            _decrypt_integration_secret(_ct)
+                        except Exception:
+                            smoke_test_failed_kinds.add(kind)
+            if secret_kinds_with_ciphertext and _FERNET_LIVE is None:
+                # Case A: encrypted data exists but Fernet is not loaded.
+                # Every real API call for these kinds will 500.
+                log.error(
+                    "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is NOT "
+                    "loaded but %d integration_configs docs carry ciphertext. "
+                    "Every API call for the following kinds will fail: %s. "
+                    "Rotate the key back or re-run the v40 migration.",
+                    sum(secret_kinds_with_ciphertext.values()),
+                    sorted(secret_kinds_with_ciphertext.keys()),
+                )
+            elif smoke_test_failed_kinds:
+                # Case B: Fernet is loaded but doesn't match the ciphertext
+                # (a NEW key was rotated in without re-encrypting the docs).
+                log.error(
+                    "[v43.1 SEC-003 SELF-CHECK] INTEGRATIONS_ENC_KEY is "
+                    "loaded but FAILED to decrypt ciphertext for kinds: %s. "
+                    "The key was likely rotated without re-encrypting the "
+                    "existing docs. Rotate the key back or re-run the v40 "
+                    "migration.",
+                    sorted(smoke_test_failed_kinds),
+                )
             else:
                 log.info(
-                    "[v160.3.9.48] hr_employees already populated "
-                    "(%d rows) — ingest skipped, backfilling role tokens only",
-                    live_total,
+                    "[v43.1 SEC-003 SELF-CHECK] OK — %d integration kinds "
+                    "carry ciphertext, all decrypt cleanly.",
+                    len(secret_kinds_with_ciphertext),
                 )
-
-            # Role-token backfill. Admin gets EVERY hr_employees token via
-            # `_all_tokens()` (which iterates ACTIONS × RESOURCES now that
-            # both are extended). hseq_manager gets view+open. Legacy
-            # `auditor` doesn't have a DB doc — it falls back to the
-            # hardcoded ROLE_DEFAULTS which was extended in v48.
-            from roles_catalogue import _tokens_admin, _tokens_hseq_manager
-            admin_tokens = _tokens_admin()
-            hseq_tokens = list(set(_tokens_hseq_manager()) | {
-                "hr_employees.open", "hr_employees.view",
-            })
-            role_updates = {}
-            r_admin = await _mongo_db.roles.update_one(
-                {"role_id": "admin"},
-                {"$set": {"permission_tokens": sorted(set(admin_tokens))}},
-            )
-            role_updates["admin_matched"] = r_admin.matched_count
-            r_hseq = await _mongo_db.roles.update_one(
-                {"role_id": "hseq_manager"},
-                {"$set": {"permission_tokens": sorted(hseq_tokens)}},
-            )
-            role_updates["hseq_manager_matched"] = r_hseq.matched_count
-
-            # Invalidate the in-memory _role_tokens cache so the new
-            # tokens are picked up without a boot restart.
-            try:
-                from permissions import _bust_role_cache
-                _bust_role_cache()
-            except Exception:
-                pass
-
-            await _mongo_db.bk_migrations.insert_one({
-                "_id": "v160_3_9_48_hr_employees_ingest",
-                "at": datetime.now(timezone.utc).isoformat(),
-                "ingest_stats": ingest_stats,
-                "live_total": live_total,
-                "role_updates": role_updates,
-            })
-            log.info(
-                "[v160.3.9.48] role-token backfill complete: %s",
-                role_updates,
-            )
-        else:
-            log.info(
-                "[v160.3.9.48] hr_employees ingest marker present "
-                "— skip (was: inserted=%s security_flags=%s)",
-                (marker.get("ingest_stats") or {}).get("inserted"),
-                (marker.get("ingest_stats") or {}).get("security_flags"),
-            )
-    except Exception as e:
-        log.warning("[v160.3.9.48] hr_employees migration failed: %s", e)
-
-    # v160.3.8.4 — Reconcile every org's saved Settings-nav layout
-    # against the current registry. Any doc that predates a new nav
-    # item gets it appended to the root here so operators see it on
-    # next page load without a manual fix. Idempotent.
-    try:
-        from settings_nav import reconcile_all_orgs
-        r = await reconcile_all_orgs()
-        if r["reconciled"]:
-            log.info(
-                "Settings-nav reconcile: %d/%d org(s) updated. Diff: %s",
-                r["reconciled"], r["inspected"], r["per_org"],
-            )
-        else:
-            log.info("Settings-nav reconcile: %d org(s) already complete.", r["inspected"])
-    except Exception as e:
-        log.warning("Settings-nav reconcile skipped at startup: %s", e)
-
-    # v151.1 — auto-install server tools (LibreOffice / Tesseract / Poppler)
-    # if the container overlay has wiped them. See file_pdf.py for the full
-    # rationale. Fire-and-forget: apt runs in a background asyncio task,
-    # backend boot is not blocked, and a failure here never kills startup.
-    try:
-        from file_pdf import ensure_server_tools_or_install_bg
-        status = ensure_server_tools_or_install_bg()
-        if status["action"] == "noop":
-            log.info("Server tools OK — libreoffice/tesseract/poppler all present")
-        elif status["action"] == "queued":
-            log.info(
-                "Server tools missing (%s) — triggering async reinstall (job_id=%s)",
-                ", ".join(status["missing"]), status["job_id"],
-            )
-        else:
-            log.info("Server tools check: %s", status)
-    except Exception as e:
-        log.warning("Server tools auto-install skipped at startup: %s", e)
-
-    # Phase 3.7 — one-shot migration of seeded select fields → dynamic pickers.
-    try:
-        from migrate_form_pickers import migrate_form_pickers
-        mig = await migrate_form_pickers()
-        log.info("Form pickers migration: %s", mig)
-    except Exception as e:
-        log.warning("Form pickers migration failed: %s", e)
-
-    # Phase 3.7 v3 — strip misplaced pickers from HR-style templates (D&A,
-    # Fatigue, Leave, Behavioural). Idempotent.
-    try:
-        from migrate_strip_misplaced import migrate_strip_misplaced_pickers
-        mig3 = await migrate_strip_misplaced_pickers()
-        log.info("Misplaced pickers v3: %s", mig3)
-    except Exception as e:
-        log.warning("Misplaced pickers v3 migration failed: %s", e)
-
-    # Phase 4.x — seed the SWMS-06 Concrete/Asphalt Cutting V12.0 record
-    # exactly once per org. Idempotent — re-running is a no-op.
-    try:
-        from swms_extras import seed_swms_06
-        r = await seed_swms_06()
-        log.info("SWMS-06 seed: %s", r)
-    except Exception as e:
-        log.warning("SWMS-06 seed failed: %s", e)
-
-    # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
-    try:
-        from apscheduler.schedulers.asyncio import AsyncIOScheduler
-        scheduler = AsyncIOScheduler(timezone="UTC")
-        scheduler.add_job(sync_navixy_counters, "interval", minutes=15,
-                          id="navixy_sync_counters", max_instances=1,
-                          coalesce=True, replace_existing=True)
-        # Phase 3.14 — Simpro suppliers sync, 12h cadence. Imported here to
-        # keep server.py independent of the integrations module's import order.
-        try:
-            from integrations_simpro import sync_simpro_suppliers_all_orgs
-            scheduler.add_job(sync_simpro_suppliers_all_orgs, "interval", hours=12,
-                              id="simpro_sync_suppliers", max_instances=1,
-                              coalesce=True, replace_existing=True)
-            log.info("APScheduler job registered — simpro_sync_suppliers every 12 h")
         except Exception as e:
-            log.warning("simpro_sync_suppliers scheduler hook failed: %s", e)
-        # Phase 4.5 — daily hard-delete of expired SWMS soft-deletes (03:15 UTC).
+            # Never let the self-check block boot. Log the failure so the
+            # absence of a positive OK line is itself a signal to check.
+            log.warning("[v43.1 SEC-003 self-check skipped due to error: %s]", e)
+
+        # v160.3.9.45 — Idempotent one-shot backfill of the 11 empty Simpro
+        # `custom_*` UUID roles + Traffic Controller expansion + Cleaner
+        # role insert. Marker-guarded, so a subsequent boot is a no-op.
         try:
-            from swms_phase45 import purge_expired_swms
-            scheduler.add_job(purge_expired_swms, "cron", hour=3, minute=15,
-                              id="swms_purge_expired", max_instances=1,
-                              coalesce=True, replace_existing=True)
-            log.info("APScheduler job registered — swms_purge_expired daily at 03:15 UTC")
+            from migrations.v45_custom_role_token_backfill import run_v45_migration
+            from db import db as _v45_db
+            result = await run_v45_migration(_v45_db)
+            if result.get("skipped"):
+                log.info("[v45] custom-role token backfill: no-op (marker present)")
+            else:
+                log.info("[v45] backfill applied: %d updates + %d insert(s)",
+                         len(result.get("updates", [])), len(result.get("inserts", [])))
         except Exception as e:
-            log.warning("swms_purge_expired scheduler hook failed: %s", e)
-        # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total
-        # for every Navixy-synced asset. 01:00 UTC keeps it ahead of the
-        # working-day boundary in AU.
+            log.warning("[v45] custom-role token backfill failed: %s", e)
+
+        # v160.3.9.46 — Role hygiene: general_user trim, HSEQ Creator forms.edit,
+        # ephemeral fixture role sweep, empty user_permissions cleanup +
+        # permissions-resolution INFO summary.
         try:
-            scheduler.add_job(meter_history_daily_snapshot, "cron",
-                              hour=1, minute=0,
-                              id="meter_history_daily_snapshot", max_instances=1,
-                              coalesce=True, replace_existing=True)
-            log.info("APScheduler job registered — meter_history_daily_snapshot daily at 01:00 UTC")
+            from migrations.v46_role_hygiene import (
+                run_v46_migration, report_permissions_resolution)
+            from db import db as _v46_db
+            r = await run_v46_migration(_v46_db)
+            if r.get("skipped"):
+                log.info("[v46] role hygiene: no-op (marker present)")
+            await report_permissions_resolution(_v46_db)
         except Exception as e:
-            log.warning("meter_history_daily_snapshot scheduler hook failed: %s", e)
-        # v160.3.9.58 — Bulk-import Pre-Starts watchdog + retention.
-        # Watchdog runs every 60 s and fails jobs stuck in
-        # downloading/extracting past `BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN`.
-        # Retention runs nightly at 03:00 Sydney and purges
-        # `bulk_import_jobs` (+ their `bulk_import_dryrun` rows) older
-        # than `BULK_IMPORT_RETENTION_DAYS` (default 30).
+            log.warning("[v46] role hygiene failed: %s", e)
+
+        # v160.3.9.40 (SEC-002) — Retro-sanitize any historical email_outbox
+        # rows whose `body_html` contains dangerous markup. Idempotent —
+        # bleach is a no-op on already-safe HTML. Marker-guarded so we don't
+        # re-scan the whole outbox every boot.
         try:
-            scheduler.add_job(
-                bulk_import_watchdog_tick, "interval", seconds=60,
-                id="bulk_import_watchdog", max_instances=1,
-                coalesce=True, replace_existing=True,
+            from email_outbox import sanitize_email_body_html
+            from db import db as _db_ref
+            marker = await _db_ref.bk_migrations.find_one(
+                {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
+                {"_id": 0, "id": 1, "completed_at": 1},
             )
-            scheduler.add_job(
-                bulk_import_retention_cleanup, "cron",
-                hour=3, minute=0, timezone="Australia/Sydney",
-                id="bulk_import_retention", max_instances=1,
-                coalesce=True, replace_existing=True,
-                misfire_grace_time=6 * 3600,
-            )
-            log.info("APScheduler jobs registered — bulk_import_watchdog "
-                     "every 60s + bulk_import_retention daily 03:00 Sydney")
+            if not (marker and marker.get("completed_at")):
+                scanned = 0
+                rewritten = 0
+                cursor = _db_ref.outbound_emails.find({}, {"_id": 0, "id": 1, "body_html": 1})
+                async for row in cursor:
+                    scanned += 1
+                    raw = row.get("body_html") or ""
+                    sanitized = sanitize_email_body_html(raw)
+                    if sanitized != raw:
+                        await _db_ref.outbound_emails.update_one(
+                            {"id": row["id"]},
+                            {"$set": {"body_html": sanitized}},
+                        )
+                        rewritten += 1
+                await _db_ref.bk_migrations.update_one(
+                    {"id": "v160_3_9_40_email_outbox_sanitize_backfill"},
+                    {"$set": {"completed_at": datetime.now(timezone.utc).isoformat(),
+                              "scanned": scanned, "rewritten": rewritten}},
+                    upsert=True,
+                )
+                log.info("[v40] email_outbox sanitize backfill: scanned=%d rewritten=%d",
+                         scanned, rewritten)
         except Exception as e:
-            log.warning("bulk_import scheduler hooks failed: %s", e)
-        # Phase 4.19 (v143) — MongoDB backup snapshots.
-        # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
-        # Both wrap `_do_snapshot` (defined in backup_service.install()) which
-        # was stashed on app.state during router mount just above.
-        # v160.3.6r — Added `misfire_grace_time=3h` because the pod restarts
-        # frequently for hot-reloads. APScheduler's default 1-second grace
-        # meant that if the pod was down at 00:00 Sydney, that whole slot was
-        # skipped forever and the daily snapshot silently stopped happening.
-        # Also fires a catch-up run at startup if the last snapshot is >25h
-        # old so a restart storm can't leave the org without a fresh backup.
+            log.warning("[v40] email_outbox sanitize backfill failed at startup: %s", e)
+
+        result = await seed_all()
+        log.info("Seeded: %s", result["counts"])
+        # v58.13.86 — Path A (startup cert reminder scan) deleted per user
+        # directive "I don't want anything sent automatically". The scan
+        # function itself is kept in `worker_certifications.py` behind the
+        # admin-only `POST /worker-certifications/reminders/scan` endpoint
+        # so an admin can still fire it manually when desired.
+        # No auto-invocation. See ship notes for v58.13.86.
+
+        # v160.3.1 — Simpro cert_kinds + licence_mapping seed load (idempotent).
         try:
-            _do_snap = getattr(app.state, "bk_do_snapshot", None)
-            if _do_snap is None:
-                raise RuntimeError("bk_do_snapshot not attached — install_backup() must run first")
-            scheduler.add_job(_do_snap, "cron",
-                              hour="*/6", minute=0,
-                              timezone="Australia/Sydney",
-                              id="backup_snapshot_6h", max_instances=1,
-                              coalesce=True, replace_existing=True,
-                              misfire_grace_time=3 * 3600)
-            scheduler.add_job(_do_snap, "cron",
-                              day_of_week="mon-fri", hour=17, minute=0,
-                              timezone="Australia/Sydney",
-                              id="backup_snapshot_cob", max_instances=1,
-                              coalesce=True, replace_existing=True,
-                              misfire_grace_time=3 * 3600)
-            log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney) · grace=3h")
-            # v160.3.6r — catch-up: if the most recent snapshot is >25h old,
-            # kick one immediately. Runs 60 s after startup so the rest of
-            # the app is fully up before we start dumping Mongo.
-            async def _backup_catchup():
-                try:
-                    latest = await _mongo_db.bk_snapshots.find_one(
-                        {"status": "ready"}, sort=[("created_at", -1)])
-                    hrs = None
-                    if latest and latest.get("created_at"):
-                        raw = latest["created_at"]
-                        # created_at can be a datetime or an ISO string.
-                        if isinstance(raw, str):
-                            try:
-                                raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                            except Exception:
-                                raw = None
-                        if isinstance(raw, datetime):
-                            if raw.tzinfo is None:
-                                raw = raw.replace(tzinfo=timezone.utc)
-                            hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
-                    if hrs is None or hrs > 25:
-                        log.warning("backup catch-up: last snapshot age=%s hours — kicking now", hrs)
-                        await _do_snap()
-                        log.info("backup catch-up: snapshot completed")
+            await seed_cert_kinds_on_startup()
+        except Exception as e:
+            log.warning("Simpro cert_kinds seed failed: %s", e)
+        # v160.3.3 — HR docs dedup index.
+        try:
+            await ensure_hr_dedup_index()
+        except Exception as e:
+            log.warning("HR dedup index setup failed: %s", e)
+
+        # v160.3.9.48 — HR Employees register: indexes + one-shot ingest +
+        # role-token backfill. Marker: `bk_migrations.v160_3_9_48_hr_employees_ingest`.
+        try:
+            await hr_employees_ensure_indexes()
+            marker = await _mongo_db.bk_migrations.find_one(
+                {"_id": "v160_3_9_48_hr_employees_ingest"})
+            if not marker:
+                live_total = await _mongo_db.hr_employees.count_documents(
+                    {"deleted_at": None})
+                ingest_stats = {"inserted": 0, "updated": 0,
+                                "unchanged": 0, "security_flags": 0}
+                if live_total == 0:
+                    from pathlib import Path as _P
+                    src = (_P(__file__).resolve().parent / "scripts" / "data"
+                           / "hr_employees_source.xlsx")
+                    if src.exists():
+                        from scripts.import_hr_employees import (
+                            parse_workbook, upsert_rows,
+                            ensure_indexes as _hr_idx,
+                        )
+                        await _hr_idx()
+                        rows, security_flags = parse_workbook(src)
+                        ingest_stats = await upsert_rows(
+                            rows, actor_id="v160_3_9_48_ingest_migration",
+                            security_flags=security_flags)
+                        live_total = await _mongo_db.hr_employees.count_documents(
+                            {"deleted_at": None})
+                        log.info(
+                            "[v160.3.9.48] hr_employees ingest: "
+                            "parsed=%d inserted=%d updated=%d unchanged=%d "
+                            "security_flags=%d live_total=%d",
+                            len(rows), ingest_stats["inserted"],
+                            ingest_stats["updated"], ingest_stats["unchanged"],
+                            ingest_stats["security_flags"], live_total,
+                        )
                     else:
-                        log.info("backup catch-up: last snapshot %.1fh old — no catch-up needed", hrs)
-                except Exception as ce:
-                    log.warning("backup catch-up failed: %s", ce)
-            scheduler.add_job(_backup_catchup, "date",
-                              run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
-                              id="backup_snapshot_catchup", replace_existing=True)
-            # v160.3.7j — belt-and-braces watchdog. Every hour, verify the
-            # `backup_snapshot_6h` cron job is still registered on the
-            # scheduler. If APScheduler ever loses the job (e.g. an
-            # unhandled exception blew the trigger away, or a
-            # rare `replace_existing=True` race between two boots),
-            # re-register it AND kick a catch-up if the last snapshot is
-            # more than 25 h old. Runs quietly — never raises.
-            async def _backup_watchdog():
-                try:
-                    sched = getattr(app.state, "scheduler", None)
-                    if sched is None:
-                        return
-                    reregistered = []
-                    if sched.get_job("backup_snapshot_6h") is None:
-                        sched.add_job(
-                            _do_snap, "cron",
-                            hour="*/6", minute=0,
-                            timezone="Australia/Sydney",
-                            id="backup_snapshot_6h", max_instances=1,
-                            coalesce=True, replace_existing=True,
-                            misfire_grace_time=3 * 3600,
-                        )
-                        reregistered.append("backup_snapshot_6h")
-                    if sched.get_job("backup_snapshot_cob") is None:
-                        sched.add_job(
-                            _do_snap, "cron",
-                            day_of_week="mon-fri", hour=17, minute=0,
-                            timezone="Australia/Sydney",
-                            id="backup_snapshot_cob", max_instances=1,
-                            coalesce=True, replace_existing=True,
-                            misfire_grace_time=3 * 3600,
-                        )
-                        reregistered.append("backup_snapshot_cob")
-                    if reregistered:
                         log.warning(
-                            "backup watchdog: re-registered missing job(s): %s",
-                            ", ".join(reregistered),
-                        )
-                        # Kick a catch-up too — if the job vanished for
-                        # >25 h we want a snapshot right now, not at the
-                        # next natural cron slot.
-                        try:
-                            latest = await _mongo_db.bk_snapshots.find_one(
-                                {"status": "ready"}, sort=[("created_at", -1)])
-                            hrs = None
-                            if latest and latest.get("created_at"):
-                                raw = latest["created_at"]
-                                if isinstance(raw, str):
-                                    try:
-                                        raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-                                    except Exception:
-                                        raw = None
-                                if isinstance(raw, datetime):
-                                    if raw.tzinfo is None:
-                                        raw = raw.replace(tzinfo=timezone.utc)
-                                    hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
-                            if hrs is None or hrs > 25:
-                                log.warning(
-                                    "backup watchdog: snapshot age=%s h — kicking catch-up",
-                                    hrs,
-                                )
-                                await _do_snap()
-                        except Exception as ce:
-                            log.warning("backup watchdog catch-up failed: %s", ce)
-                except Exception as we:
-                    log.warning("backup watchdog failed: %s", we)
-            scheduler.add_job(_backup_watchdog, "interval", hours=1,
-                              id="backup_snapshot_watchdog", max_instances=1,
+                            "[v160.3.9.48] hr_employees xlsx missing at %s "
+                            "— ingest skipped, marker still recorded", src)
+                else:
+                    log.info(
+                        "[v160.3.9.48] hr_employees already populated "
+                        "(%d rows) — ingest skipped, backfilling role tokens only",
+                        live_total,
+                    )
+
+                # Role-token backfill. Admin gets EVERY hr_employees token via
+                # `_all_tokens()` (which iterates ACTIONS × RESOURCES now that
+                # both are extended). hseq_manager gets view+open. Legacy
+                # `auditor` doesn't have a DB doc — it falls back to the
+                # hardcoded ROLE_DEFAULTS which was extended in v48.
+                from roles_catalogue import _tokens_admin, _tokens_hseq_manager
+                admin_tokens = _tokens_admin()
+                hseq_tokens = list(set(_tokens_hseq_manager()) | {
+                    "hr_employees.open", "hr_employees.view",
+                })
+                role_updates = {}
+                r_admin = await _mongo_db.roles.update_one(
+                    {"role_id": "admin"},
+                    {"$set": {"permission_tokens": sorted(set(admin_tokens))}},
+                )
+                role_updates["admin_matched"] = r_admin.matched_count
+                r_hseq = await _mongo_db.roles.update_one(
+                    {"role_id": "hseq_manager"},
+                    {"$set": {"permission_tokens": sorted(hseq_tokens)}},
+                )
+                role_updates["hseq_manager_matched"] = r_hseq.matched_count
+
+                # Invalidate the in-memory _role_tokens cache so the new
+                # tokens are picked up without a boot restart.
+                try:
+                    from permissions import _bust_role_cache
+                    _bust_role_cache()
+                except Exception:
+                    pass
+
+                await _mongo_db.bk_migrations.insert_one({
+                    "_id": "v160_3_9_48_hr_employees_ingest",
+                    "at": datetime.now(timezone.utc).isoformat(),
+                    "ingest_stats": ingest_stats,
+                    "live_total": live_total,
+                    "role_updates": role_updates,
+                })
+                log.info(
+                    "[v160.3.9.48] role-token backfill complete: %s",
+                    role_updates,
+                )
+            else:
+                log.info(
+                    "[v160.3.9.48] hr_employees ingest marker present "
+                    "— skip (was: inserted=%s security_flags=%s)",
+                    (marker.get("ingest_stats") or {}).get("inserted"),
+                    (marker.get("ingest_stats") or {}).get("security_flags"),
+                )
+        except Exception as e:
+            log.warning("[v160.3.9.48] hr_employees migration failed: %s", e)
+
+        # v160.3.8.4 — Reconcile every org's saved Settings-nav layout
+        # against the current registry. Any doc that predates a new nav
+        # item gets it appended to the root here so operators see it on
+        # next page load without a manual fix. Idempotent.
+        try:
+            from settings_nav import reconcile_all_orgs
+            r = await reconcile_all_orgs()
+            if r["reconciled"]:
+                log.info(
+                    "Settings-nav reconcile: %d/%d org(s) updated. Diff: %s",
+                    r["reconciled"], r["inspected"], r["per_org"],
+                )
+            else:
+                log.info("Settings-nav reconcile: %d org(s) already complete.", r["inspected"])
+        except Exception as e:
+            log.warning("Settings-nav reconcile skipped at startup: %s", e)
+
+        # v151.1 — auto-install server tools (LibreOffice / Tesseract / Poppler)
+        # if the container overlay has wiped them. See file_pdf.py for the full
+        # rationale. Fire-and-forget: apt runs in a background asyncio task,
+        # backend boot is not blocked, and a failure here never kills startup.
+        try:
+            from file_pdf import ensure_server_tools_or_install_bg
+            status = ensure_server_tools_or_install_bg()
+            if status["action"] == "noop":
+                log.info("Server tools OK — libreoffice/tesseract/poppler all present")
+            elif status["action"] == "queued":
+                log.info(
+                    "Server tools missing (%s) — triggering async reinstall (job_id=%s)",
+                    ", ".join(status["missing"]), status["job_id"],
+                )
+            else:
+                log.info("Server tools check: %s", status)
+        except Exception as e:
+            log.warning("Server tools auto-install skipped at startup: %s", e)
+
+        # Phase 3.7 — one-shot migration of seeded select fields → dynamic pickers.
+        try:
+            from migrate_form_pickers import migrate_form_pickers
+            mig = await migrate_form_pickers()
+            log.info("Form pickers migration: %s", mig)
+        except Exception as e:
+            log.warning("Form pickers migration failed: %s", e)
+
+        # Phase 3.7 v3 — strip misplaced pickers from HR-style templates (D&A,
+        # Fatigue, Leave, Behavioural). Idempotent.
+        try:
+            from migrate_strip_misplaced import migrate_strip_misplaced_pickers
+            mig3 = await migrate_strip_misplaced_pickers()
+            log.info("Misplaced pickers v3: %s", mig3)
+        except Exception as e:
+            log.warning("Misplaced pickers v3 migration failed: %s", e)
+
+        # Phase 4.x — seed the SWMS-06 Concrete/Asphalt Cutting V12.0 record
+        # exactly once per org. Idempotent — re-running is a no-op.
+        try:
+            from swms_extras import seed_swms_06
+            r = await seed_swms_06()
+            log.info("SWMS-06 seed: %s", r)
+        except Exception as e:
+            log.warning("SWMS-06 seed failed: %s", e)
+
+        # Phase 3.5 — APScheduler for Navixy counter ingestion (15-min cadence).
+        try:
+            from apscheduler.schedulers.asyncio import AsyncIOScheduler
+            scheduler = AsyncIOScheduler(timezone="UTC")
+            scheduler.add_job(sync_navixy_counters, "interval", minutes=15,
+                              id="navixy_sync_counters", max_instances=1,
                               coalesce=True, replace_existing=True)
-        except Exception as e:
-            log.warning("backup_snapshot scheduler hook failed: %s", e)
-        # v160.3.2 — Optional Simpro delta cron (opt-in via env).
-        try:
-            register_simpro_cron(scheduler)
-        except Exception as e:
-            log.warning("simpro_delta_cron scheduler hook failed: %s", e)
-        scheduler.start()
-        app.state.scheduler = scheduler
-        # v58.13.17 — Asset-service overnight generation cron.
-        # Env-gated OFF by default (ASSET_SERVICE_GENERATE_CRON=1 to
-        # enable). Registers only if the env var is set to "1".
-        try:
-            register_asset_service_generate_cron(scheduler)
-        except Exception as e:
-            log.warning("asset_service_generate cron registration failed: %s", e)
-        # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
-        import asyncio as _asyncio
-        _asyncio.create_task(sync_navixy_counters())
-        # Phase 4.8 — one-time 30-day backfill of `asset_meter_history`. Idempotent
-        # — relies on the unique (asset_id, snapshot_date) index. Runs in the
-        # background so app startup isn't blocked.
-        async def _meter_history_first_run():
+            # Phase 3.14 — Simpro suppliers sync, 12h cadence. Imported here to
+            # keep server.py independent of the integrations module's import order.
             try:
-                await meter_history_ensure_indexes()
-                await meter_history_backfill_30d()
+                from integrations_simpro import sync_simpro_suppliers_all_orgs
+                scheduler.add_job(sync_simpro_suppliers_all_orgs, "interval", hours=12,
+                                  id="simpro_sync_suppliers", max_instances=1,
+                                  coalesce=True, replace_existing=True)
+                log.info("APScheduler job registered — simpro_sync_suppliers every 12 h")
             except Exception as e:
-                log.warning("meter_history first-run backfill failed: %s", e)
-        _asyncio.create_task(_meter_history_first_run())
-        log.info("APScheduler started — navixy_sync_counters every 15 min")
-    except Exception as e:
-        log.warning("APScheduler failed to start: %s", e)
+                log.warning("simpro_sync_suppliers scheduler hook failed: %s", e)
+            # Phase 4.5 — daily hard-delete of expired SWMS soft-deletes (03:15 UTC).
+            try:
+                from swms_phase45 import purge_expired_swms
+                scheduler.add_job(purge_expired_swms, "cron", hour=3, minute=15,
+                                  id="swms_purge_expired", max_instances=1,
+                                  coalesce=True, replace_existing=True)
+                log.info("APScheduler job registered — swms_purge_expired daily at 03:15 UTC")
+            except Exception as e:
+                log.warning("swms_purge_expired scheduler hook failed: %s", e)
+            # Phase 4.8 — daily snapshot of engine_hours_total + odometer_km_total
+            # for every Navixy-synced asset. 01:00 UTC keeps it ahead of the
+            # working-day boundary in AU.
+            try:
+                scheduler.add_job(meter_history_daily_snapshot, "cron",
+                                  hour=1, minute=0,
+                                  id="meter_history_daily_snapshot", max_instances=1,
+                                  coalesce=True, replace_existing=True)
+                log.info("APScheduler job registered — meter_history_daily_snapshot daily at 01:00 UTC")
+            except Exception as e:
+                log.warning("meter_history_daily_snapshot scheduler hook failed: %s", e)
+            # v160.3.9.58 — Bulk-import Pre-Starts watchdog + retention.
+            # Watchdog runs every 60 s and fails jobs stuck in
+            # downloading/extracting past `BULK_IMPORT_DOWNLOAD_TIMEOUT_MIN`.
+            # Retention runs nightly at 03:00 Sydney and purges
+            # `bulk_import_jobs` (+ their `bulk_import_dryrun` rows) older
+            # than `BULK_IMPORT_RETENTION_DAYS` (default 30).
+            try:
+                scheduler.add_job(
+                    bulk_import_watchdog_tick, "interval", seconds=60,
+                    id="bulk_import_watchdog", max_instances=1,
+                    coalesce=True, replace_existing=True,
+                )
+                scheduler.add_job(
+                    bulk_import_retention_cleanup, "cron",
+                    hour=3, minute=0, timezone="Australia/Sydney",
+                    id="bulk_import_retention", max_instances=1,
+                    coalesce=True, replace_existing=True,
+                    misfire_grace_time=6 * 3600,
+                )
+                log.info("APScheduler jobs registered — bulk_import_watchdog "
+                         "every 60s + bulk_import_retention daily 03:00 Sydney")
+            except Exception as e:
+                log.warning("bulk_import scheduler hooks failed: %s", e)
+            # Phase 4.19 (v143) — MongoDB backup snapshots.
+            # Cadence per user brief: every 6h + a Sydney COB (17:00 mon-fri).
+            # Both wrap `_do_snapshot` (defined in backup_service.install()) which
+            # was stashed on app.state during router mount just above.
+            # v160.3.6r — Added `misfire_grace_time=3h` because the pod restarts
+            # frequently for hot-reloads. APScheduler's default 1-second grace
+            # meant that if the pod was down at 00:00 Sydney, that whole slot was
+            # skipped forever and the daily snapshot silently stopped happening.
+            # Also fires a catch-up run at startup if the last snapshot is >25h
+            # old so a restart storm can't leave the org without a fresh backup.
+            try:
+                _do_snap = getattr(app.state, "bk_do_snapshot", None)
+                if _do_snap is None:
+                    raise RuntimeError("bk_do_snapshot not attached — install_backup() must run first")
+                scheduler.add_job(_do_snap, "cron",
+                                  hour="*/6", minute=0,
+                                  timezone="Australia/Sydney",
+                                  id="backup_snapshot_6h", max_instances=1,
+                                  coalesce=True, replace_existing=True,
+                                  misfire_grace_time=3 * 3600)
+                scheduler.add_job(_do_snap, "cron",
+                                  day_of_week="mon-fri", hour=17, minute=0,
+                                  timezone="Australia/Sydney",
+                                  id="backup_snapshot_cob", max_instances=1,
+                                  coalesce=True, replace_existing=True,
+                                  misfire_grace_time=3 * 3600)
+                log.info("APScheduler jobs registered — backup_snapshot_6h (every 6h) + backup_snapshot_cob (mon-fri 17:00 Sydney) · grace=3h")
+                # v160.3.6r — catch-up: if the most recent snapshot is >25h old,
+                # kick one immediately. Runs 60 s after startup so the rest of
+                # the app is fully up before we start dumping Mongo.
+                async def _backup_catchup():
+                    try:
+                        latest = await _mongo_db.bk_snapshots.find_one(
+                            {"status": "ready"}, sort=[("created_at", -1)])
+                        hrs = None
+                        if latest and latest.get("created_at"):
+                            raw = latest["created_at"]
+                            # created_at can be a datetime or an ISO string.
+                            if isinstance(raw, str):
+                                try:
+                                    raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                                except Exception:
+                                    raw = None
+                            if isinstance(raw, datetime):
+                                if raw.tzinfo is None:
+                                    raw = raw.replace(tzinfo=timezone.utc)
+                                hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
+                        if hrs is None or hrs > 25:
+                            log.warning("backup catch-up: last snapshot age=%s hours — kicking now", hrs)
+                            await _do_snap()
+                            log.info("backup catch-up: snapshot completed")
+                        else:
+                            log.info("backup catch-up: last snapshot %.1fh old — no catch-up needed", hrs)
+                    except Exception as ce:
+                        log.warning("backup catch-up failed: %s", ce)
+                scheduler.add_job(_backup_catchup, "date",
+                                  run_date=datetime.now(timezone.utc) + timedelta(seconds=60),
+                                  id="backup_snapshot_catchup", replace_existing=True)
+                # v160.3.7j — belt-and-braces watchdog. Every hour, verify the
+                # `backup_snapshot_6h` cron job is still registered on the
+                # scheduler. If APScheduler ever loses the job (e.g. an
+                # unhandled exception blew the trigger away, or a
+                # rare `replace_existing=True` race between two boots),
+                # re-register it AND kick a catch-up if the last snapshot is
+                # more than 25 h old. Runs quietly — never raises.
+                async def _backup_watchdog():
+                    try:
+                        sched = getattr(app.state, "scheduler", None)
+                        if sched is None:
+                            return
+                        reregistered = []
+                        if sched.get_job("backup_snapshot_6h") is None:
+                            sched.add_job(
+                                _do_snap, "cron",
+                                hour="*/6", minute=0,
+                                timezone="Australia/Sydney",
+                                id="backup_snapshot_6h", max_instances=1,
+                                coalesce=True, replace_existing=True,
+                                misfire_grace_time=3 * 3600,
+                            )
+                            reregistered.append("backup_snapshot_6h")
+                        if sched.get_job("backup_snapshot_cob") is None:
+                            sched.add_job(
+                                _do_snap, "cron",
+                                day_of_week="mon-fri", hour=17, minute=0,
+                                timezone="Australia/Sydney",
+                                id="backup_snapshot_cob", max_instances=1,
+                                coalesce=True, replace_existing=True,
+                                misfire_grace_time=3 * 3600,
+                            )
+                            reregistered.append("backup_snapshot_cob")
+                        if reregistered:
+                            log.warning(
+                                "backup watchdog: re-registered missing job(s): %s",
+                                ", ".join(reregistered),
+                            )
+                            # Kick a catch-up too — if the job vanished for
+                            # >25 h we want a snapshot right now, not at the
+                            # next natural cron slot.
+                            try:
+                                latest = await _mongo_db.bk_snapshots.find_one(
+                                    {"status": "ready"}, sort=[("created_at", -1)])
+                                hrs = None
+                                if latest and latest.get("created_at"):
+                                    raw = latest["created_at"]
+                                    if isinstance(raw, str):
+                                        try:
+                                            raw = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                                        except Exception:
+                                            raw = None
+                                    if isinstance(raw, datetime):
+                                        if raw.tzinfo is None:
+                                            raw = raw.replace(tzinfo=timezone.utc)
+                                        hrs = (datetime.now(timezone.utc) - raw).total_seconds() / 3600
+                                if hrs is None or hrs > 25:
+                                    log.warning(
+                                        "backup watchdog: snapshot age=%s h — kicking catch-up",
+                                        hrs,
+                                    )
+                                    await _do_snap()
+                            except Exception as ce:
+                                log.warning("backup watchdog catch-up failed: %s", ce)
+                    except Exception as we:
+                        log.warning("backup watchdog failed: %s", we)
+                scheduler.add_job(_backup_watchdog, "interval", hours=1,
+                                  id="backup_snapshot_watchdog", max_instances=1,
+                                  coalesce=True, replace_existing=True)
+            except Exception as e:
+                log.warning("backup_snapshot scheduler hook failed: %s", e)
+            # v160.3.2 — Optional Simpro delta cron (opt-in via env).
+            try:
+                register_simpro_cron(scheduler)
+            except Exception as e:
+                log.warning("simpro_delta_cron scheduler hook failed: %s", e)
+            scheduler.start()
+            app.state.scheduler = scheduler
+            # v58.13.17 — Asset-service overnight generation cron.
+            # Env-gated OFF by default (ASSET_SERVICE_GENERATE_CRON=1 to
+            # enable). Registers only if the env var is set to "1".
+            try:
+                register_asset_service_generate_cron(scheduler)
+            except Exception as e:
+                log.warning("asset_service_generate cron registration failed: %s", e)
+            # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
+            import asyncio as _asyncio
+            _asyncio.create_task(sync_navixy_counters())
+            # Phase 4.8 — one-time 30-day backfill of `asset_meter_history`. Idempotent
+            # — relies on the unique (asset_id, snapshot_date) index. Runs in the
+            # background so app startup isn't blocked.
+            async def _meter_history_first_run():
+                try:
+                    await meter_history_ensure_indexes()
+                    await meter_history_backfill_30d()
+                except Exception as e:
+                    log.warning("meter_history first-run backfill failed: %s", e)
+            _asyncio.create_task(_meter_history_first_run())
+            log.info("APScheduler started — navixy_sync_counters every 15 min")
+        except Exception as e:
+            log.warning("APScheduler failed to start: %s", e)
+        log.info('[startup] deferred_startup_work: done in %.2fs', _dsw_time.monotonic() - _t0)
+
+    import asyncio as _dsw_asyncio
+    _dsw_asyncio.create_task(_deferred_startup_work())
+    log.info('[startup] fast bootstrap complete — deferred work kicked off')
+
 
 
 @app.on_event("shutdown")

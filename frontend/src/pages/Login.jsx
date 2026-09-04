@@ -9,7 +9,7 @@ import { ArrowRight, Loader2, Briefcase } from 'lucide-react';
 import Logo from '../components/brand/Logo';
 import PaneltecHero from '../components/marketing/PaneltecHero';
 import { login, loginWithSimpro, safeNext } from '../lib/auth';
-import api, { apiError } from '../lib/api';
+import api, { apiError, classifyAuthError } from '../lib/api';
 import { ForgotPasswordModal } from '../components/auth/AuthBundle';
 
 export default function Login() {
@@ -45,7 +45,8 @@ export default function Login() {
       await login(email, password, { remember_me: rememberMeAllowed && rememberMe });
       navigate(nextPath, { replace: true });
     } catch (err) {
-      setError(apiError(err) || 'Invalid email or password.');
+      // v58.13.99 — status-aware error classification (see lib/api.js).
+      setError(classifyAuthError(err).message);
     } finally {
       setBusy(false);
     }
@@ -59,7 +60,11 @@ export default function Login() {
       await loginWithSimpro(email);
       navigate(nextPath, { replace: true });
     } catch (err) {
-      setError(apiError(err) || 'Could not sign in with Simpro.');
+      // v58.13.99 — Simpro-login errors also route through the classifier
+      // so 5xx / network failures are surfaced honestly. Fall back to the
+      // Simpro-specific default only for unmatched cases.
+      const { kind, message } = classifyAuthError(err);
+      setError(kind === 'unknown' ? (apiError(err) || 'Could not sign in with Simpro.') : message);
     } finally {
       setBusySimpro(false);
     }
