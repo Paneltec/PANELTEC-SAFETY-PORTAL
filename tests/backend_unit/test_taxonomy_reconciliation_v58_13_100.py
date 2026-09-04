@@ -177,60 +177,46 @@ def test_plant_vehicles_tab3_no_bare_assets_length():
 # ── Frontend: PlantMaintenanceTab chip labels ─────────────────────
 
 def test_pm_chip_labels_use_colon_form():
-    """Chip labels changed from `Matched (N)` → `Matched: N`. The colon
-    form is unambiguous; the parens form was misread as a competing
-    "unmatched-only" annotation. Same numbers, different separator.
-
-    v58.13.117 update: the Match state row's "All" label was renamed
-    to "Any" when the row was demoted from primary categorisation to
-    a secondary chip row (see .117 audit). Same three numbers, still
-    colon-form. The top-level "All: N" chip now lives on the new
-    Category chip row instead."""
+    """v58.13.100: chip labels moved from `Matched (N)` → `Matched: N`.
+    v58.13.117: match-state row demoted below a new Category row.
+    v58.13.118 (REVISED): the match-state row is REMOVED entirely
+    per user directive — matched/unmatched is not a mental model
+    users apply. Only the Category row survives, so this test now
+    locks the category row's colon-form `All: N` chip instead of
+    the retired Matched/Unmatched chips."""
     assert re.search(
-        r"label:\s*`Matched:\s*\$\{items\.length\s*-\s*unmatched\.total_unmatched_rows\}`",
+        r"All:\s*\{items\.length\}",
         PLANT_MAINT_JSX,
-    ), "Matched chip label doesn't use the colon form"
-    assert re.search(
-        r"label:\s*`Unmatched:\s*\$\{unmatched\.total_unmatched_rows\}`",
-        PLANT_MAINT_JSX,
-    ), "Unmatched chip label doesn't use the colon form"
-    # v58.13.117 — the Match state row's neutral chip is now "Any: N".
-    # The primary "All: N" chip lives on the Category row (asserted
-    # separately by test_category_chip_row_present in the .117 tests).
-    assert re.search(
-        r"label:\s*`Any:\s*\$\{items\.length\}`",
-        PLANT_MAINT_JSX,
-    ), "Match state row neutral chip doesn't use `Any: N` colon form (v58.13.117)"
+    ), "Category row `All: {items.length}` chip missing (v58.13.118 revised)"
+    # The retired chip labels must be gone from any chip config.
+    # (The `matched` / `unmatched` fields on the import-response toast
+    # are legitimate — they come straight from the backend response
+    # shape.)
+    assert re.search(r"label:\s*`Matched:", PLANT_MAINT_JSX) is None
+    assert re.search(r"label:\s*`Unmatched:", PLANT_MAINT_JSX) is None
+    assert "In asset register:" not in PLANT_MAINT_JSX
+    assert "Missing asset link:" not in PLANT_MAINT_JSX
 
 
 def test_pm_chip_labels_no_bare_paren_form():
     """Regression guard: the pre-.100 pattern `` `Matched (${...})` ``
-    must be gone from the pm-plant-toggle block."""
-    m = re.search(
-        r'data-testid="pm-plant-toggle"[\s\S]{0,600}?`Matched\s*\(',
-        PLANT_MAINT_JSX,
-    )
-    assert not m, (
+    must be gone from the file. The pm-plant-toggle testid itself is
+    gone as of v58.13.118 revised — so we assert on the whole file."""
+    assert "`Matched (" not in PLANT_MAINT_JSX, (
         "PlantMaintenanceTab still uses `Matched (N)` parens form — "
         "revert of the .100 chip-label change"
     )
 
 
 def test_pm_chip_testids_preserved():
-    """testids must not change so any existing smoke / e2e coverage
-    against `pm-filter-matched` etc. keeps working. Source form is the
-    template literal `pm-filter-${opt.k}` which renders as
-    `pm-filter-all|matched|unmatched` at runtime."""
-    assert "pm-filter-${opt.k}" in PLANT_MAINT_JSX, (
-        "pm-filter-${opt.k} template literal missing — the chip testids "
-        "would silently change and break existing e2e / smoke coverage"
-    )
-    # And the three keys still exist in the chip config so the runtime
-    # ids resolve to their stable values.
-    for k in ("'all'", "'matched'", "'unmatched'"):
-        assert re.search(rf"\{{\s*k:\s*{k}\s*,", PLANT_MAINT_JSX), (
-            f"pm chip config missing key {k}"
-        )
+    """v58.13.118 (REVISED): the match-state chip row + its testids
+    (`pm-plant-toggle`, `pm-filter-*`) are RETIRED. Category chip
+    testids (`pm-cat-*`) are the surviving contract."""
+    assert 'data-testid="pm-cat-all"' in PLANT_MAINT_JSX
+    assert 'data-testid={`pm-cat-' in PLANT_MAINT_JSX
+    # Retired testids must be gone.
+    assert 'pm-plant-toggle' not in PLANT_MAINT_JSX
+    assert 'pm-filter-' not in PLANT_MAINT_JSX
 
 
 # ── Backend endpoint consistency ─────────────────────────────────

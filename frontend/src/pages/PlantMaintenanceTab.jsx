@@ -151,9 +151,14 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           data-testid="pm-search" />
       </div>
 
-      {/* v58.13.117 — Two-row chip layout. Row 1 = maintenance category
-          (primary). Row 2 = match state (secondary, demoted from the
-          top-level "Unmatched" tab that .117 removed). */}
+      {/* v58.13.118 — Category-only chip row. The .117 "Match state"
+          second row (In asset register / Missing asset link) is
+          retired here per user directive: matched-vs-unmatched is
+          not a mental model users apply to maintenance categorisation.
+          `plantFilter` state still exists (defaults to 'all' and is
+          left untouched by the removed UI) so parent-preselect via
+          `initialPlantFilter` continues to work if a caller wires it,
+          and the `filtered` memo below is unchanged. */}
       <div className="space-y-2" data-testid="pm-chip-rows">
         <div className="flex flex-wrap items-center gap-1.5" data-testid="pm-category-chip-row">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mr-1">Category</span>
@@ -182,27 +187,6 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
               {opt.label}: {opt.count}
             </button>
           ))}
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2" data-testid="pm-match-chip-row">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mr-1">Match state</span>
-          <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-plant-toggle">
-            {[
-              // v58.13.117 — Same numbers, same keys as pre-.117; only
-              // demoted to a secondary chip row so it's no longer the
-              // primary categorisation. Labels kept as `Label: N` per
-              // .100.
-              { k: 'all', label: `Any: ${items.length}` },
-              { k: 'matched', label: `Matched: ${items.length - unmatched.total_unmatched_rows}` },
-              { k: 'unmatched', label: `Unmatched: ${unmatched.total_unmatched_rows}` },
-            ].map((opt) => (
-              <button key={opt.k} onClick={() => setPlantFilter(opt.k)}
-                data-testid={`pm-filter-${opt.k}`}
-                className={`px-3 py-1 text-xs font-semibold ${plantFilter === opt.k ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                {opt.label}
-            </button>
-          ))}
-          </div>
         </div>
       </div>
 

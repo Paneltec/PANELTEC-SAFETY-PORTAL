@@ -12,7 +12,7 @@
 // gets its own audit-log + validation ship.
 import React, { useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Printer, X as XIcon, ExternalLink, Info } from 'lucide-react';
+import { Printer, X as XIcon } from 'lucide-react';
 
 function Field({ label, value, mono = false, multiline = false, className = '' }) {
   if (value === null || value === undefined || value === '') return null;
@@ -89,7 +89,7 @@ function PrintableMaintenanceCard({ row }) {
           {row.imported_by && <li><strong>Imported by:</strong> {row.imported_by}</li>}
           {row.plant_id
             ? <li><strong>Linked asset:</strong> {row.plant_id}</li>
-            : <li><em>Unmatched — no linked asset</em></li>}
+            : <li><strong>Linked asset:</strong> —</li>}
         </ul>
       </section>
       <footer className="risk-print-footer">
@@ -131,8 +131,6 @@ export default function PlantMaintenanceDrawer({ row, onClose }) {
 
   if (!open) return null;
 
-  const unmatched = !row.plant_id;
-
   return (
     <>
       <div
@@ -156,14 +154,11 @@ export default function PlantMaintenanceDrawer({ row, onClose }) {
               <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-blue-50 text-blue-800 border border-blue-200">
                 {row.maintenance_type || 'Uncategorised'}
               </span>
-              {unmatched && (
-                <span
-                  title="This maintenance row has no linked asset in the register."
-                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200"
-                >
-                  <Info size={9} /> Unmatched
-                </span>
-              )}
+              {/* v58.13.118 — Header pill for the retired
+                  matched/unmatched concept was removed here per
+                  user directive. `plant_id` still surfaces in the
+                  drawer body's "Linked asset id" field for
+                  diagnostic use, but no chrome-level chip flags it. */}
             </div>
             <div className="text-sm text-slate-700 mt-1 line-clamp-2">
               {row.description || '—'}
@@ -217,7 +212,7 @@ export default function PlantMaintenanceDrawer({ row, onClose }) {
             <Field label="Latest usage reading" value={row.latest_usage_reading} mono />
             <Field
               label="Linked asset id"
-              value={row.plant_id || 'Not linked'}
+              value={row.plant_id || '—'}
               mono
               className="col-span-2"
             />
@@ -238,18 +233,10 @@ export default function PlantMaintenanceDrawer({ row, onClose }) {
             <Field label="Updated at" value={row.updated_at} mono />
           </div>
 
-          {unmatched && (
-            <div className="border-t border-slate-200 pt-3 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-900 flex items-start gap-2">
-              <ExternalLink size={13} className="mt-0.5 shrink-0" />
-              <div>
-                <div className="font-semibold">Link to asset — coming in v58.13.117a</div>
-                <div className="mt-0.5">
-                  This maintenance record's rego <span className="font-mono">{row.registration_no || '(none)'}</span> doesn't
-                  resolve to an asset in the register. A rego picker to attach it will ship in the next patch.
-                </div>
-              </div>
-            </div>
-          )}
+          {/* v58.13.118 — The amber "Reconcile — coming in .118a"
+              banner was removed here. Reconciliation UI was tied to
+              the retired matched/unmatched concept and won't ship
+              as a follow-on. */}
         </div>
       </aside>
       <PrintableMaintenanceCard row={printing ? row : null} />

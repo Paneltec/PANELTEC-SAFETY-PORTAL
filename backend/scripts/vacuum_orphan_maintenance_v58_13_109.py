@@ -181,16 +181,16 @@ async def _count_orphans(db) -> int:
     )
 
 
-async def main():
+async def main(dry_run: bool = True):
     load_dotenv("/app/backend/.env")
-    # Late import so `--help` (if we ever add one) doesn't crash pre-load.
     import sys
     sys.path.insert(0, "/app/backend")
     from db import db
 
     run_id = f"orphan-vac-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}"
     print("─" * 78)
-    print(f"v58.13.109 · vacuum_orphan_maintenance  run_id={run_id}")
+    mode = "DRY-RUN (read-only)" if dry_run else "LIVE COMMIT"
+    print(f"v58.13.109 · vacuum_orphan_maintenance  run_id={run_id}  mode={mode}")
     print("─" * 78)
 
     before_orphans = await _count_orphans(db)
@@ -202,6 +202,25 @@ async def main():
     missing = await _load_orphan_maint_regos(db, asset_regos)
     print(f"distinct orphan regos: {len(missing)}")
 
+    if dry_run:
+        # v58.13.118 — Safe preview branch. Enumerate what WOULD happen
+        # without touching Mongo. Committed post-.118 audit after the
+        # .118 ship discovered the pre-.118 script silently ran live
+        # when --dry-run was passed (no argparse existed). Default is
+        # now DRY-RUN so that failure mode can never recur.
+        print(f"would-create assets (pass 1): {len(missing)}")
+        for rego in list(missing)[:10]:
+            print(f"  · {rego}  (would be created)")
+        if len(missing) > 10:
+            print(f"  · … {len(missing) - 10} more")
+        would_reparent = await _dry_run_reparent(db, asset_regos, missing)
+        print(f"pass 2 (would): matchable={would_reparent}")
+        print(f"AFTER (would): plant_maintenance rows with no plant_id: 0")
+        print(f"delta (would): {before_orphans}")
+        print("─" * 78)
+        print("DRY-RUN complete — no rows written. Re-run with `--commit` to apply.")
+        return
+
     if missing:
         created = await _backfill_assets(db, missing, run_id)
         print(f"assets created (pass 1): {len(created)}")
@@ -209,7 +228,6 @@ async def main():
             print(f"  · {rego}  →  {aid}")
         if len(created) > 10:
             print(f"  · … {len(created) - 10} more")
-        # Refresh the rego → asset map so pass 2 picks up the new rows.
         asset_regos.update(created)
     else:
         print("no missing regos — pass 1 skipped")
@@ -223,5 +241,31 @@ async def main():
     print("─" * 78)
 
 
+async def _dry_run_reparent(db, asset_regos: dict, would_create: set[str]) -> int:
+    """v58.13.118 — Count-only variant of `_reparent_maint_rows` for the
+    dry-run branch. Never mutates. Assumes pass 1 would also succeed
+    so `would_create` regos are treated as available on top of the
+    live `asset_regos` map."""
+    n = 0
+    pool = {r.upper() for r in asset_regos} | {r.upper() for r in would_create}
+    async for row in db.plant_maintenance.find(
+            {"plant_id": {"$in": [None, ""]}}, {"registration_no": 1}):
+        rego = (row.get("registration_no") or "").strip().upper()
+        if rego and rego in pool:
+            n += 1
+    return n
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    import argparse
+    p = argparse.ArgumentParser(
+        description="v58.13.109 orphan-maintenance vacuum + backfill.",
+    )
+    # v58.13.118 — Explicit --commit flag; default is DRY-RUN. Never
+    # rely on the caller passing --dry-run correctly again.
+    p.add_argument("--commit", action="store_true",
+                   help="Apply writes. Default is dry-run.")
+    p.add_argument("--dry-run", action="store_true",
+                   help="No-op; dry-run is the default. Kept for compat.")
+    args = p.parse_args()
+    asyncio.run(main(dry_run=not args.commit))

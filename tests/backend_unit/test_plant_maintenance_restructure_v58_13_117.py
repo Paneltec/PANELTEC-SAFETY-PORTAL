@@ -39,24 +39,24 @@ def test_unmatched_tabcontent_removed():
     assert 'initialPlantFilter="unmatched"' not in PV
 
 
-# ── PlantMaintenanceTab: two-row chip layout ────────────────────────
+# ── PlantMaintenanceTab: category chip layout ──────────────────────
+# v58.13.118 (REVISED): the .117 "Match state" second chip row was
+# removed entirely per user directive. Only the Category row remains.
 def test_category_chip_row_present():
     assert 'data-testid="pm-chip-rows"' in PMT
     assert 'data-testid="pm-category-chip-row"' in PMT
     assert 'data-testid="pm-cat-all"' in PMT
-    # Category row lives ABOVE the Match state chip row.
-    assert PMT.index('pm-category-chip-row') < PMT.index('pm-match-chip-row')
 
 
-def test_match_state_chip_row_demoted_but_kept():
-    assert 'data-testid="pm-match-chip-row"' in PMT
-    # The three canonical match filters still exist.
-    for tid in ("pm-filter-all", "pm-filter-matched", "pm-filter-unmatched"):
-        assert f'data-testid={{`{tid}`}}' in PMT or f'data-testid="{tid}"' in PMT \
-            or f"data-testid={{`pm-filter-${{opt.k}}`}}" in PMT
-    # Match-row is labelled "Match state" so admins recognise its
-    # demoted role.
-    assert '>Match state<' in PMT
+def test_match_state_chip_row_removed_in_118():
+    # v58.13.118 (REVISED): the .117 secondary chip row is retired.
+    # Its container testid + toggle testid + label + per-filter
+    # testids must all be gone.
+    assert 'pm-match-chip-row' not in PMT
+    assert 'pm-plant-toggle' not in PMT
+    assert '>Match state<' not in PMT
+    assert 'pm-filter-matched' not in PMT
+    assert 'pm-filter-unmatched' not in PMT
 
 
 def test_category_filter_state_and_effect():
@@ -120,11 +120,17 @@ def test_drawer_print_reuses_113_portal():
     assert 'createPortal(card, document.body)' in DRAWER
 
 
-def test_drawer_shows_unmatched_flag_and_117a_note():
-    # Amber unmatched pill in the header when plant_id is falsy.
-    assert 'const unmatched = !row.plant_id' in DRAWER
-    # And the coming-in-.117a note in the body when unmatched.
-    assert 'Link to asset — coming in v58.13.117a' in DRAWER
+def test_drawer_matched_unmatched_ui_removed_in_118():
+    # v58.13.118 (REVISED): the amber "Missing asset link" pill in
+    # the header + the "Reconcile — coming in .118a" amber body
+    # banner + the `const unmatched = !row.plant_id` gate were all
+    # removed per user directive to retire the matched/unmatched UI.
+    assert 'const unmatched = !row.plant_id' not in DRAWER
+    assert 'Link to asset — coming in v58.13.117a' not in DRAWER
+    assert 'Reconcile — coming in v58.13.118a' not in DRAWER
+    # And the Info / ExternalLink icons that fed the removed chrome
+    # are no longer imported.
+    assert 'ExternalLink' not in DRAWER
 
 
 def test_drawer_renders_all_expected_fields():

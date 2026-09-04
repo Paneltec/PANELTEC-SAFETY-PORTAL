@@ -1,5 +1,130 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.118 (REVISED) — Rollback vacuum + retire
+//                                  matched/unmatched UI concept.
+//
+// USER PAIN (verbatim course correction):
+//   "kill the matched/unmatched UI concept completely from
+//    PlantMaintenanceTab and PlantMaintenanceDrawer, fix the vacuum
+//    script with a default-true --dry-run argparse, and ship as .118."
+//
+// Superseded a mid-flight .118 rename pass ("Matched / Unmatched"
+// → "In asset register / Missing asset link") after the same user
+// message flagged the whole categorisation as the wrong mental
+// model for maintenance records. That aborted rename is documented
+// only in the git log now; the runtime UI never sees those labels.
+//
+// ── Rollback (`scripts/rollback_vacuum_orphan_v58_13_118.py`) ──
+//   The .109 vacuum script shipped without an argparse dry-run guard
+//   and was invoked LIVE three times against `test_database` before
+//   the guard landed — creating 60 assets with `source=orphan_backfill`
+//   (54 from the first run, +3 from each of two subsequent partial
+//   re-runs when the drift map re-fired), and re-parenting 346
+//   plant_maintenance rows onto those phantom assets with
+//   `registration_matched=True` stamped.
+//
+//   The rollback:
+//     · Enumerates every `source=orphan_backfill` asset BEFORE
+//       writing (user directive: "enumerate first so if the count
+//       is wildly wrong you notice"). Prints run_id breakdown +
+//       first-3 sample. Asserts every deletion target's created_at
+//       falls in the 2026-09-04T11:00 .. 13:00 UTC window — a
+//       belt-and-braces guard so a future re-use of the same source
+//       label on a different date can't be caught in the delete_many.
+//     · Pass A: `plant_maintenance.update_many({plant_id ∈ phantom})`
+//       → `plant_id=null, registration_matched=null,
+//          rollback_v58_13_118=True, rollback_v58_13_118_at=<iso>`.
+//     · Pass B: `assets.delete_many({source: 'orphan_backfill'})`.
+//     · Idempotent: second run finds 0 phantoms, prints
+//       "Nothing to do", exits 0.
+//
+//   Live-run result on `test_database`:
+//     BEFORE: assets_backfill=60, pm_total=837, pm_with_plant_id=837,
+//             pm_registration_matched_true=346
+//     AFTER : assets_backfill=0,  pm_total=837, pm_with_plant_id=491,
+//             pm_registration_matched_true=0
+//   Which is exactly the pre-vacuum shape the user described
+//   (837 total, 491 truly linked, 346 unmatched-by-rego).
+//
+// ── Vacuum argparse safety (was aborted-.118, retested here) ──
+//   `backend/scripts/vacuum_orphan_maintenance_v58_13_109.py` now
+//   parses `--commit` (default false) → the script's default mode
+//   is DRY-RUN, printing what it WOULD create + reparent without
+//   touching Mongo. `--dry-run` is accepted as a no-op for callers
+//   that already pass it through wrappers.
+//
+// ── Frontend (`pages/PlantMaintenanceTab.jsx`) ────────────────
+//   · REMOVED the entire "Match state" secondary chip row that
+//     .117 added and the aborted .118 pass had renamed to
+//     `In asset register / Missing asset link`. Container +
+//     toggle + per-filter testids (`pm-match-chip-row`,
+//     `pm-plant-toggle`, `pm-filter-{all,matched,unmatched}`) are
+//     all gone from the source. `plantFilter` state is left in
+//     place with default `'all'` so parent-preselect via
+//     `initialPlantFilter` continues to work if a caller wires it
+//     (no caller does today; retained purely to keep the memo dep
+//     array stable and avoid a churn diff).
+//   · The Category chip row is untouched — that's the mental model
+//     users actually apply.
+//
+// ── Frontend (`components/vehicles/PlantMaintenanceDrawer.jsx`) ──
+//   · REMOVED the amber "Missing asset link" header pill (was gated
+//     on `!row.plant_id`).
+//   · REMOVED the amber "Reconcile — coming in v58.13.118a" body
+//     banner — the follow-on ship the pill implied won't happen.
+//   · REMOVED the `const unmatched = !row.plant_id` gate and the
+//     `Info` + `ExternalLink` lucide imports that fed the removed
+//     chrome.
+//   · When `row.plant_id` is null, the drawer body "Linked asset id"
+//     field and the printable card's "Linked asset:" line both
+//     render `—` (was "Not linked").
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   REWRITTEN `tests/backend_unit/test_pm_rename_and_orphan_count_v58_13_118.py`
+//   (15 checks) locks the .118-REVISED contract:
+//     · Category chip row present + all-chip; match-state chip row
+//       + toggle + per-filter testids GONE from PlantMaintenanceTab.
+//     · Amber pill + reconcile banner GONE from
+//       PlantMaintenanceDrawer; `ExternalLink` import gone;
+//       null-plant_id renders `—` in both drawer body + printable.
+//     · Rollback script exists, targets `source=orphan_backfill`,
+//       has time-window guard, enumerates before writing, stamps
+//       the audit marker fields.
+//     · Behavioural: seed 3 phantom assets + 3 linked pm rows →
+//       run rollback → 0 assets left, 3 pm rows nulled with audit
+//       stamp; second run is a no-op.
+//     · Time-window guard: asset with created_at=1999-01-01 in the
+//       set → script exits 2 with "OUTSIDE the safety window"; no
+//       delete happens.
+//     · Vacuum script has argparse + default dry-run + prints
+//       "DRY-RUN complete" on no-arg invocation.
+//     · Version-sync forward-safe pin >= .118.
+//   UPDATED `tests/backend_unit/test_taxonomy_reconciliation_v58_13_100.py`
+//   + `tests/backend_unit/test_plant_maintenance_restructure_v58_13_117.py`
+//   to lock the retired-chip contract instead of the pre-.118
+//   present-chip contract they used to pin.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `GET /api/plant-maintenance/orphan-count` kept per user
+//     directive — zero UI surface today, cheap to keep, useful for
+//     future admin-only data-hygiene tooling.
+//   · The `unmatched` XLSX-import result strings on the
+//     `PmImportBody` toast (`Matched: X, unmatched: Y`) are
+//     legitimate — they come straight from the backend response
+//     shape and mean "rows whose rego joined to an asset row on
+//     import" (not the retired UI concept).
+//   · The "⚠" PlantChip in the flat-view table, the pink
+//     "⚠ N unmatched regos" toolbar toggle + drill-down panel, and
+//     the "Unknown vehicles" section of the grouped view remain —
+//     these read as data-quality flags for the underlying import,
+//     not as a categorisation dimension. Flagged for a future ship
+//     if the user wants them scrubbed too.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.116 — Plant & Vehicles: in-context test-data purge
 //                       confirm modal (supersedes the .101 page-away
 //                       Link).
@@ -11326,7 +11451,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.117';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.118';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

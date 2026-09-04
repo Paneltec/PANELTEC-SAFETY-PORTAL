@@ -28,6 +28,19 @@ async def ensure_indexes():
         log.warning("plant_maintenance index setup: %s", e)
 
 
+@router.get("/orphan-count")
+async def orphan_count(user: dict = Depends(get_current_user)):
+    """v58.13.118 — Live count of `plant_maintenance` rows with no
+    `plant_id`. Admin-only; feeds the future .118a Reconcile-affordance
+    surfacing logic (drawer/banner only shown when count > 0). Cheap
+    single count_documents; safe to poll from the frontend on drawer
+    mount. Returns `{count: n}`."""
+    if user.get("role") not in ("admin", "hseq_lead"):
+        raise HTTPException(status_code=403, detail="admin-only")
+    n = await db.plant_maintenance.count_documents({"plant_id": {"$in": [None, ""]}})
+    return {"count": int(n)}
+
+
 @router.get("/")
 async def list_rows(
     q: Optional[str] = None,
