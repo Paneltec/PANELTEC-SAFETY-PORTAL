@@ -1,5 +1,122 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.106 — Public visitor sign-in flow. Site QR codes
+//                      now land visitors on a mobile-first sign-in
+//                      form; admins get a visitor register at
+//                      /app/admin/visitors with force-signout.
+//
+// Follows the archived brief at
+// `/app/memory/v58_13_106_visitor_form_brief.md` (authoritative).
+// Deviations from today's fresh spec (flagged in ship summary):
+//   · Collection name kept as `site_visitors` (brief), not
+//     `visitor_signins` (fresh spec).
+//   · Public URL family kept token-based: `/api/public/site/{token}/…`
+//     (brief), not siteId-based (fresh spec).
+//   · Field names kept per brief (`visiting_person`,
+//     `induction_acknowledged`, `source_ip`, `source_user_agent`).
+//   · Rate limit kept at 10/hour per IP for signin (brief) rather
+//     than 20/min (fresh spec).
+// Admin endpoints kept from fresh spec (additive, not
+// contradictory). Force sign-out implemented.
+//
+// ── Backend ────────────────────────────────────────────────
+// NEW `backend/visitor_signins.py` — three routers registered in
+// `server.py`:
+//   Public (no auth, rate-limited):
+//     GET  /api/public/site/{scan_token}/form
+//          → returns { site: {id,name,address}, org_display_name }.
+//     POST /api/public/visitor/site/{scan_token}/signin
+//          → 10/hour per IP. Requires `induction_acknowledged=true`.
+//          → returns { visitor_id, site_name, signed_in_at }.
+//     POST /api/public/visitor/{visitor_id}/sign-out?token=…
+//          → 30/hour per IP. Token query-arg is required (a random
+//            URL holder can't sign out arbitrary visitors).
+//   Admin (auth + RBAC on `sites_visitors.{view,edit,delete}`):
+//     GET  /api/admin/visitors?site_id=&active_only=&date_from=&date_to=&limit=
+//          → capped at 500 rows, `@safe_admin_endpoint` wrapper.
+//     GET  /api/admin/visitors/{id}
+//     POST /api/admin/visitors/{id}/force-signout
+//          → stamps signed_out_by / signed_out_reason for audit trail.
+//
+// Collection `site_visitors` fields (per brief): id, org_id, site_id,
+// site_scan_token, name, company, phone, purpose, visiting_person,
+// vehicle_rego, induction_acknowledged, signed_in_at, signed_out_at,
+// signed_out_by, signed_out_reason, source_ip, source_user_agent,
+// gps_lat, gps_lng, created_at, updated_at.
+//
+// Site validation: `_site_by_token()` reads from `simpro_sites` by
+// `scan_token`, respects `deleted_at`, and rejects archived sites
+// with HTTP 410 (Gone). No emails/SMS scheduled — Comms Safe Mode
+// respected. No new ephemeral file surfaces added — object-storage
+// lint-warning count unchanged.
+//
+// Permissions:
+//   · `permissions.py::PERMISSIONS_SCHEMA` gets `sites_visitors`
+//     (label, delete_supported=true, email_supported=false).
+//   · `permissions.py::ROLE_DEFAULTS.admin.sites_visitors = view+edit+delete`.
+//   · Other roles (member/auditor/contractor/worker) explicitly set
+//     to all-false; grant via user_permissions override if needed.
+//
+// ── Frontend ────────────────────────────────────────────────
+// NEW `pages/VisitorSignIn.jsx` — public mobile-first form at
+// `/scan/site/:token/visitor` (wired OUTSIDE the auth-gated tree in
+// `App.js`). Fields: name (required, autoFocus), company, phone,
+// purpose (dropdown), visiting person, vehicle rego (auto-uppercased),
+// safety induction ACK (large-target 20px checkbox with rose/emerald
+// state-conditional highlight strip). Persists `visitor_id +
+// site_name + signed_in_at + name` in localStorage keyed by scan
+// token so the visitor sees the receipt view on repeat visits and
+// on the sign-out deep-link `?signout=<id>`.
+//
+// Receipt view renders:
+//   · "Thanks {name}, you're signed in at {site} at {timestamp}".
+//   · QR code (generated via `qrcode` npm) encoding
+//     `${origin}/scan/site/${token}/visitor?signout=${visitor_id}` —
+//     rescan on exit to sign out.
+//   · Large red "Sign out" button.
+// Sign-out deep-link handler strips the `?signout=` query-string so
+// a refresh doesn't loop.
+//
+// NEW `pages/AdminVisitors.jsx` — admin register at
+// `/app/admin/visitors` (auth-gated, sidebar entry gated by
+// `sites_visitors.view`). Filters: site, date-from, date-to, active-
+// only. Table columns: name, company, phone, visiting, purpose,
+// signed-in, signed-out (or emerald "On site" pill), duration
+// (rounded minutes), force-sign-out action.
+//
+// Route registration in `App.js`:
+//   · Public: `/scan/site/:token/visitor` → VisitorSignIn (outside
+//     the /app auth tree).
+//   · Admin: `/app/admin/visitors` → AdminVisitors (inside the
+//     auth-gated tree).
+// Sidebar entry in `AppShell.jsx` under the same "Site Sign-In"
+// pastel section — separate row labelled "Site Visitors",
+// permission-gated `sites_visitors.view`.
+//
+// Existing `/scan/site/:token` (SiteScanResolver) is NOT modified in
+// this ship — brief's suggestion to Navigate-replace to
+// `/scan/site/{token}/visitor` deliberately deferred to a follow-up
+// so this ship stays bounded. The QR-embedded URL still lands on the
+// existing SiteScanResolver; a follow-up ship (v58.13.107 backlog)
+// can wire the redirect.
+//
+// ── Tests ──────────────────────────────────────────────────
+// NEW `tests/backend_unit/test_visitor_signins_v58_13_106.py` —
+// module-level source-pins + module-import checks. Public flow HTTP
+// contract exercised via curl in the ship report.
+//
+// ── NOT changed ────────────────────────────────────────────
+// · `/app/mobile/` — untouched. `MOBILE_BUNDLE_VERSION` NOT bumped
+//   per today's spec (mobile is the NEXT phase for the Expo
+//   specialist).
+// · Existing SiteScanResolver.jsx behaviour.
+// · Any Comms Safe Mode / rate-limit-on-login logic.
+// · The 20 pre-existing `ephemeral-upload-storage` lint warnings.
+//
+// ── SOP ────────────────────────────────────────────────────
+// · Backend supervisor-restarted for new routers.
+// · Frontend hot-reload picks up JSX. SW cache version rolled to `.106`.
+
 // v160.3.9.58.13.105 — Reduced ship. Items 1+2 of the .105 batch
 //                      landed; items 3+4 deferred by user directive to
 //                      keep the ship inside a bounded credit envelope.
@@ -9545,7 +9662,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.105';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.106';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

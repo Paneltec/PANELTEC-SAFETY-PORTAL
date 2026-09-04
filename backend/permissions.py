@@ -101,6 +101,7 @@ PERMISSIONS_SCHEMA: Dict[str, Dict[str, bool | str]] = {
     # via `/api/admin/comms-safe-mode/status`. Per-user override via
     # `db.user_permissions` (see startup seed in `server.py`).
     "comms_safe_mode": {"label": "Comms Safe Mode",        "email_supported": False, "delete_supported": False},
+    "sites_visitors":  {"label": "Site visitors",           "email_supported": False, "delete_supported": True},
 }
 
 RESOURCES: list[str] = list(PERMISSIONS_SCHEMA.keys())
@@ -289,6 +290,15 @@ ROLE_DEFAULTS["auditor"]["hr_employees"] = _grant(
 for _role in ROLE_DEFAULTS:
     ROLE_DEFAULTS[_role]["comms_safe_mode"] = _grant()  # every action False
 del _role
+
+# v58.13.106 — Public visitor sign-in flow. Admin gets view+edit by
+# default so they can see the visitor register + force-signout. All
+# other roles blocked (grant via user_permissions override if needed).
+ROLE_DEFAULTS["admin"]["sites_visitors"] = _grant(view=True, edit=True, delete=True)
+for _r in ("member", "auditor", "contractor", "worker"):
+    if _r in ROLE_DEFAULTS:
+        ROLE_DEFAULTS[_r]["sites_visitors"] = _grant()  # all False
+del _r
 
 
 async def _get_overrides(user_id: str) -> Dict[str, Dict[str, bool]]:

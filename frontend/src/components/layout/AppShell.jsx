@@ -88,6 +88,10 @@ const NAV = [
     // "visitor present". Slotted after Inspections and before Risk
     // Assessments to preserve the existing Capture ordering.
     { to: '/app/site-signin', label: 'Site Sign-In / Visitor Register', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-site-signin', pastel: 'sky' },
+    // v58.13.106 — Public-visitor register from site QR codes. Different
+    // scope from Site Sign-In: workers/inductions vs anonymous drop-in
+    // visitors.
+    { to: '/app/admin/visitors', label: 'Site Visitors', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-admin-visitors', pastel: 'sky', permission: 'sites_visitors.view' },
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.
     { to: '/app/risk-assessments', label: 'Risk Assessments', icon: ShieldTask24Regular, iconActive: ShieldTask24Filled, testid: 'nav-risk-assessments', resource: 'risk_assessments', pastel: 'lilac' },

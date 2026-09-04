@@ -35,6 +35,11 @@ from crud import (  # noqa: E402
     prestarts_router, risk_assessments_router, swms_router,
 )
 from dashboard import files_router, router as dashboard_router  # noqa: E402
+from visitor_signins import (  # noqa: E402  — v58.13.106 public visitor sign-in
+    public_router as visitor_public_router,
+    public_flat as visitor_public_flat_router,
+    admin_router as visitor_admin_router,
+)
 from db import close as close_db  # noqa: E402
 from document_library import (  # noqa: E402
     router as document_library_router,
@@ -329,6 +334,10 @@ api.include_router(imports_router)
 api.include_router(ai_router)
 api.include_router(dashboard_router)
 api.include_router(files_router)
+# v58.13.106 — public visitor sign-in flow (public + admin routers).
+api.include_router(visitor_public_router)
+api.include_router(visitor_public_flat_router)
+api.include_router(visitor_admin_router)
 # Phase 4.1 — extras MUST mount before swms_router so static sub-paths
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.

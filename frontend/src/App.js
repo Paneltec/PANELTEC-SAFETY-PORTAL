@@ -93,6 +93,8 @@ import Workers from '@/pages/Workers';
 import FormAssignmentsAdmin from '@/pages/FormAssignmentsAdmin';
 import SwmsAssignmentsAdmin from '@/pages/SwmsAssignmentsAdmin';
 import SiteScanResolver from '@/pages/SiteScanResolver';
+import VisitorSignIn from '@/pages/VisitorSignIn';
+import AdminVisitors from '@/pages/AdminVisitors';
 import SupplierScanResolver from '@/pages/SupplierScanResolver';
 import SitesAdmin, { SiteDetail } from '@/pages/SitesAdmin';
 import SystemSettings from '@/pages/SystemSettings';
@@ -150,6 +152,8 @@ function App() {
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
             <Route path="/scan/site/:token" element={<SiteScanResolver />} />
+            {/* v58.13.106 — Public visitor sign-in (no auth wrapper). */}
+            <Route path="/scan/site/:token/visitor" element={<VisitorSignIn />} />
             <Route path="/scan/supplier/:token" element={<SupplierScanResolver />} />
           <Route path="/scan/:token" element={<ScanResolver />} />
             {/* v160.3.9.7 — Standalone popup for Worker ID card print preview.
@@ -184,6 +188,8 @@ function App() {
               <Route path="inspections" element={<InspectionsList />} />
               {/* v58.13.6 — Site Sign-In / Visitor Register capture page. */}
               <Route path="site-signin" element={<SiteSigninList />} />
+              {/* v58.13.106 — Admin visitor register (public sign-ins from QR). */}
+              <Route path="admin/visitors" element={<AdminVisitors />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}
               <Route path="risk-assessments" element={<RiskAssessments />} />
               {/* v58.13.12 — Submissions bucket. CS Incidents migrated
