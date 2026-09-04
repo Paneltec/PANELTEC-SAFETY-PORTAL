@@ -289,12 +289,29 @@ export default function SystemSettings() {
 }
 
 // v58.13.81 — Purge Test Data (admin-only "danger zone" card).
+// v58.13.102 — Modal restructured for viewport safety: header + count
+// summary stay pinned at the top, table scrolls in the middle, and
+// the ack checkbox + Cancel/Delete row is now a sticky footer that
+// can never fall below the fold on short viewports (the .101 friction
+// root cause was the checkbox being centered off-screen on smaller
+// windows). Ack checkbox itself is now h-5 w-5 (touch-friendly) and
+// auto-focuses when the dry-run payload loads.
 function PurgeTestDataCard() {
   const [open, setOpen] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const [dry, setDry] = React.useState(null);   // dry-run response payload
   const [ack, setAck] = React.useState(false);  // "I understand" checkbox
   const [busy, setBusy] = React.useState(false);
+  const ackRef = React.useRef(null);
+  // v58.13.102 — Auto-focus the ack checkbox as soon as the dry-run
+  // payload lands. Keyboard users get Space-to-toggle immediately; mouse
+  // users see the focus ring, which is a visual signal for "this is
+  // the next thing to interact with".
+  React.useEffect(() => {
+    if (open && dry && dry.grand_total > 0 && !ack && ackRef.current) {
+      try { ackRef.current.focus({ preventScroll: false }); } catch { /* ignore */ }
+    }
+  }, [open, dry, ack]);
   const startDryRun = async () => {
     setLoading(true); setDry(null); setAck(false); setOpen(true);
     try {
@@ -330,15 +347,29 @@ function PurgeTestDataCard() {
       </div>
 
       {open && (
-        <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4"
-          onClick={() => !busy && setOpen(false)} data-testid="purge-test-data-modal">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display font-bold text-slate-900 text-lg">Purge Test Data — preview</h3>
-            {loading && <div className="mt-4 text-slate-500 text-sm">Loading matches…</div>}
-            {!loading && dry && (
-              <>
+        <div className="fixed inset-0 z-[90] bg-slate-950/60 flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => !busy && setOpen(false)}
+          role="dialog" aria-modal="true" aria-labelledby="purge-modal-title"
+          data-testid="purge-test-data-modal">
+          {/* v58.13.102 — Inner container is a bounded flex column:
+              header (h3 + count summary) sits at top, table scrolls in
+              the middle (flex-1 min-h-0 overflow-y-auto), footer
+              (ack + Cancel + Delete) sticks at the bottom via mt-auto
+              inside the flex column. Modal max-height is capped so it
+              never bleeds off short viewports. */}
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[calc(100vh-2rem)]"
+            onClick={(e) => e.stopPropagation()}
+            data-testid="purge-test-data-modal-inner">
+            <div className="px-6 pt-6 pb-2 flex-shrink-0">
+              <h3 id="purge-modal-title" className="font-display font-bold text-slate-900 text-lg">Purge Test Data — preview</h3>
+              {loading && <div className="mt-4 text-slate-500 text-sm">Loading matches…</div>}
+              {!loading && dry && (
                 <p className="text-xs text-slate-500 mt-1">This cannot be undone. Grand total: <b className="text-slate-900" data-testid="purge-total">{dry.grand_total}</b> rows across {dry.matches.length} collection(s).</p>
-                <div className="mt-3 max-h-72 overflow-auto border border-slate-200 rounded-lg">
+              )}
+            </div>
+            {!loading && dry && (
+              <div className="px-6 flex-1 min-h-0 overflow-y-auto" data-testid="purge-test-data-modal-scroll">
+                <div className="mt-1 border border-slate-200 rounded-lg">
                   <table className="w-full text-xs">
                     <thead className="bg-slate-50 text-slate-500 sticky top-0">
                       <tr><th className="text-left px-3 py-2">Collection</th><th className="text-right px-3 py-2">Count</th><th className="text-left px-3 py-2">Sample names</th></tr>
@@ -355,18 +386,30 @@ function PurgeTestDataCard() {
                     </tbody>
                   </table>
                 </div>
-                <label className="mt-4 flex items-start gap-2 text-xs text-slate-700 cursor-pointer">
-                  <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)}
+              </div>
+            )}
+            {!loading && dry && (
+              <div className="px-6 pt-4 pb-6 border-t border-slate-200 bg-white rounded-b-2xl flex-shrink-0"
+                data-testid="purge-test-data-modal-footer">
+                {/* v58.13.102 — Ack row gets its own highlighted rose
+                    strip when unticked so it visually screams "click
+                    me to proceed". Checkbox itself is h-5 w-5
+                    (touch-friendly, was default ~13px). */}
+                <label
+                  className={`flex items-start gap-3 text-sm cursor-pointer rounded-lg px-3 py-2.5 border ${!ack && dry.grand_total > 0 ? 'bg-rose-50 border-rose-300 text-rose-900' : 'bg-slate-50 border-slate-200 text-slate-700'}`}>
+                  <input
+                    ref={ackRef}
+                    type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)}
                     disabled={dry.grand_total === 0}
-                    className="mt-0.5" data-testid="purge-ack" />
-                  <span>I understand this cannot be undone. All matched rows will be permanently deleted.</span>
+                    className="mt-0.5 h-5 w-5 accent-rose-600 shrink-0 cursor-pointer"
+                    data-testid="purge-ack" />
+                  <span className="font-medium leading-snug">I understand this cannot be undone. All matched rows will be permanently deleted.</span>
                 </label>
-                <div className="mt-4 flex items-center justify-end gap-3">
+                <div className="mt-3 flex items-center justify-end gap-3">
                   {/* v58.13.101 — Explicit "why is the button disabled?"
-                      hint. Prior to this, the Delete button greyed out
-                      silently when the ack checkbox was unticked and
-                      users reported "there is no delete". Now the
-                      hint tells them exactly what to do. */}
+                      hint. Retained under .102's restructure — now
+                      lives inside the sticky footer so it's always
+                      visible when the ack is unticked. */}
                   {!ack && dry.grand_total > 0 && !busy && (
                     <span className="text-[11px] font-semibold text-rose-700 flex items-center gap-1.5"
                       data-testid="purge-ack-required-hint">
@@ -382,7 +425,7 @@ function PurgeTestDataCard() {
                     {busy ? 'Deleting…' : `Delete ${dry.grand_total} records permanently`}
                   </button>
                 </div>
-              </>
+              </div>
             )}
           </div>
         </div>

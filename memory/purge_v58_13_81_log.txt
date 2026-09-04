@@ -46,3 +46,9 @@
   cs_incident_issues targeted   : 0
 
 ## 2026-09-03T06:17:41.767691+00:00  user=stephen@paneltec.com.au  grand_total=0
+
+
+## 2026-09-04T02:40:32.851639+00:00  user=stephen@paneltec.com.au  grand_total=228
+  asset_service_schedules_cascade: 228
+  assets: 228
+  ids[assets]: 5b6982fb-a23d-4d8c-b0e8-706809e30631,7bea5de2-9437-4274-bfe7-03be9e96d5f2,85b901af-cc0f-4ada-ad12-b2df2c68662f,a7b13a8b-3a96-41f2-9151-e6c96cf5969e,275a9cf8-53af-4be0-bb88-908ce6a849f7,96f50c5d-b6ae-4847-b54c-80c3b6f6f5b3,a9e671c2-5a42-4037-bac0-e0003ab06c36,66ab7c46-d837-46db-941d-379d249a87e2,54c39b58-0187-4f50-b1c0-d0f3f1bf45da,dcd5ea76-b83d-4fd5-8745-a9bee492b2ac,6e09a10a-71ca-4963-a7b1-e552f123544a,daa0dfb0-93df-4a61-9753-8168f9443c8d,a7d45b32-1987-4df8-8ce0-3a50f7fde2cb,1be745b0-7da2-4994-a3db-8b13a8160c9f,ac84cb98-117d-4634-a21a-900fe1a9c92f,2aa4bcca-86ee-406b-9223-c842cbb61794,4ccda72d-6cfe-4d63-93d6-2a1c28d9b8f6,8c40077a-071e-41e1-b1be-f40b0396c4dc,243a6823-d656-4c37-8dbc-4fbb13317beb,54aa4aa2-8215-48d6-91ed-f8cff1f7126e … +208 more

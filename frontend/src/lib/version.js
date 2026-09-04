@@ -1,5 +1,143 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.102 — Purge Test Data modal: viewport-safe restructure
+//                      + touch-friendly ack checkbox + auto-focus +
+//                      sticky footer.
+//
+// USER PAIN (verbatim, ship-day):
+//   "UI got them stuck again. banner shows 228 test records but can't
+//    complete the delete via UI."
+//
+// Root cause (post-mortem, direct code inspection):
+// The .81/.101 modal centered its content vertically via
+// `flex items-center` on the backdrop, with NO cap on modal height and
+// NO scroll behaviour on either the outer or inner container. When the
+// dry-run count table + ack checkbox + footer buttons pushed the modal
+// past ~500-600 px, on any viewport shorter than the modal (laptop
+// windows with dev tools open, dock-eaten screens, split-screen setups,
+// tablets held in landscape with the on-screen keyboard raised) the TOP
+// AND BOTTOM of the modal simply BLED OFF-SCREEN. The user could see
+// the count table but the ack checkbox — which lived at the bottom —
+// was below the viewport, unreachable via scroll, and there was no
+// visual indication anything was clipped. Delete button was gated on
+// the unreachable checkbox → user reported "can't complete the delete".
+//
+// This ship restructures the modal so the actionable UI is ALWAYS
+// visible, on any viewport height, without changing the underlying
+// purge logic or safety gates.
+//
+// ── Structural change — bounded flex column ──────────────────
+//   Backdrop container gains `overflow-y-auto` so the modal itself
+//   can now scroll ITS backdrop on truly tiny viewports as a last
+//   line of defence.
+//   Inner container becomes a flex COLUMN with
+//   `max-h-[calc(100vh-2rem)]` so the modal never exceeds the
+//   viewport minus the p-4 padding. Three regions inside:
+//     1. **Header** (`flex-shrink-0`) — h3 title + grand-total
+//        summary. Always pinned at the top.
+//     2. **Scroll body** (`flex-1 min-h-0 overflow-y-auto`) — the
+//        count table. If there are enough collections to overflow,
+//        this region scrolls INTERNALLY; the header and footer
+//        stay put.
+//     3. **Sticky footer** (`flex-shrink-0` with `border-t` +
+//        `bg-white` + `rounded-b-2xl`) — ack row + hint + Cancel
+//        + Delete buttons. ALWAYS pinned at the bottom of the
+//        modal, which is always inside the viewport due to the
+//        max-h cap. This is the fix for the .101 friction.
+//   Explicit `data-testid`s carved out:
+//     · `purge-test-data-modal-inner`  — the flex column container.
+//     · `purge-test-data-modal-scroll` — the internal-scroll region.
+//     · `purge-test-data-modal-footer` — the sticky-footer region.
+//
+// ── Ack checkbox — touch-friendly + auto-focused + high-contrast ─
+//   Prior: default browser checkbox (~13 px) in a plain label with
+//   text-xs copy. Easy to overlook, hard to hit on mobile.
+//   Now:
+//     · `<input type="checkbox" className="h-5 w-5 accent-rose-600"
+//        ref={ackRef}>` — 20 px hitbox, brand-rose accent so the
+//        tick is instantly visible.
+//     · Wrapping `<label>` gains a conditional highlight strip:
+//       when unticked AND there's something to delete, the label
+//       renders `bg-rose-50 border-rose-300 text-rose-900` — a
+//       rose danger-zone strip that visually SCREAMS "click me to
+//       proceed". Post-tick, the same label calms to
+//       `bg-slate-50 border-slate-200 text-slate-700` so the user
+//       sees confirmation the ack has landed.
+//     · Copy upgraded from text-xs slate to text-sm font-medium
+//       leading-snug for readability.
+//   Auto-focus: NEW `useEffect` on the same modal open+dry payload
+//   fires `ackRef.current.focus()` as soon as the dry-run response
+//   lands (guarded on `open && dry && dry.grand_total > 0 && !ack`
+//   so it doesn't refocus after the user ticks, and doesn't
+//   re-focus if the payload is empty). Keyboard users can now
+//   Space-toggle immediately; mouse users get a focus ring as
+//   a visual "this is next" signal.
+//
+// ── Ack-required hint — preserved from .101, now sticky-footer ──
+//   The .101 "← Tick the checkbox above to enable delete" hint
+//   still renders when `!ack && dry.grand_total > 0 && !busy`, but
+//   now it lives INSIDE the sticky footer alongside the buttons —
+//   so on the failure mode the .101 hint was supposed to fix
+//   (unticked ack), the user sees the hint AND the disabled button
+//   AND the highlighted ack strip in the SAME viewport region.
+//   No more scrolling-then-hint-then-scrolling-back gymnastics.
+//
+// ── A11y ───────────────────────────────────────────────────
+//   Modal now carries `role="dialog"`, `aria-modal="true"`, and
+//   `aria-labelledby="purge-modal-title"` on the h3. Screen
+//   readers announce the dialog on open and read its title.
+//   Ack checkbox is wrapped in a `<label>` so click-target is
+//   the entire strip, not just the 20-px checkbox.
+//
+// ── Wire proof (curl) ─────────────────────────────────────
+//   Ship-day preview flow: user's banner showed 228 test records
+//   → main agent fired `POST /admin/purge-test-data?dry_run=1`
+//   → 228 confirmed → `dry_run=0` committed 228 assets + 228
+//   cascade schedules = 456 rows. Verify: second dry-run
+//   returned `grand_total: 0`. Prod dry-run: 0 test records
+//   (still clean since the .101 ship-day purge — no prod purge
+//   needed this cycle).
+//   .102 restructure is a UX shape change; endpoint behaviour and
+//   guardrails are unchanged.
+//
+// ── Tests ──────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_purge_modal_viewport_v58_13_102.py`:
+//     · Modal outer container has `overflow-y-auto` + `role="dialog"`
+//       + `aria-modal="true"` + `aria-labelledby="purge-modal-title"`.
+//     · Modal inner container has `flex flex-col` + `max-h-[calc(100vh-2rem)]`.
+//     · Header, scroll body, sticky footer all carry their new
+//       testids.
+//     · Ack checkbox: `h-5 w-5`, `accent-rose-600`, `ref={ackRef}`.
+//     · Auto-focus useEffect fires on `open && dry && grand_total > 0
+//       && !ack`.
+//     · Label strip switches between rose-50 (unticked, non-empty)
+//       and slate-50 (ticked or empty) via the conditional class.
+//     · Delete button gate `disabled={!ack || busy || dry.grand_total
+//       === 0}` PRESERVED.
+//     · Sticky footer contains the ack row + hint + both buttons.
+//     · `purge-ack-required-hint` still gated on
+//       `!ack && dry.grand_total > 0 && !busy`.
+//     · Version-sync forward-safe pin >= 102.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · `backend/admin_purge_test_data.py` handler — untouched.
+//   · Purge scope, test-data pattern set, target collections,
+//     Simpro-source guard, admin role guard.
+//   · PlantVehicles.jsx admin banner (from .101) — still there,
+//     still deep-links to `#purge-test-data` (the anchor id also
+//     from .101 was retained on the outer card wrapper).
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings.
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.102`.
+//   · On prod post-Re-publish: banner will read "0 test records
+//     detected → not rendered" because both prod and preview are
+//     currently clean. If a future test run repopulates test-pattern
+//     rows, the .102 modal will be able to close the loop end-to-end
+//     without any viewport-height friction.
+
 // v160.3.9.58.13.101 — Purge Test Data UX tail: checkbox-required
 //                      hint on the Delete button + admin-only
 //                      test-data-clutter banner on /app/vehicles.
@@ -8996,7 +9134,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.101';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.102';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports
