@@ -1284,7 +1284,7 @@
 //   Risk Assessments unaffected (its records ARE mirrored with
 //   `source = 'form_submission'`). Frontend-only, backend
 //   unchanged. SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.99';
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.100';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

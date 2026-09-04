@@ -492,9 +492,15 @@ export default function PlantVehicles() {
               data-[state=active]:bg-emerald-600 data-[state=active]:text-white data-[state=active]:hover:bg-emerald-600
               data-[state=active]:shadow-sm">
             Vehicles from Navixy
+            {/* v58.13.100 — filter by `kind === 'vehicle'` so the badge on
+                a tab literally labelled "Vehicles from Navixy" cannot
+                display a plant/tool/container count. The tab's underlying
+                list still respects the user's kind-chip selection; the
+                badge is the vehicle-only slice of that view. See
+                `/app/memory/vehicle_unmatched_audit_v58_13_97.md`. */}
             <span className="inline-flex items-center rounded-md !bg-emerald-200 !text-emerald-900 data-[state=active]:!bg-emerald-100 data-[state=active]:!text-emerald-700 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
               data-testid="vehicles-tab-list-count">
-              {assets.length}
+              {assets.filter((a) => a.kind === 'vehicle').length}
             </span>
           </TabsTrigger>
 

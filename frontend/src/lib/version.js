@@ -1,5 +1,167 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.100 — Asset taxonomy reconciliation: `kind` is the
+//                      source of truth. Frontend "Vehicles from Navixy"
+//                      tab count filtered by kind='vehicle'. Maintenance
+//                      chip labels de-ambiguated (`Matched: N` /
+//                      `Unmatched: N`).
+//
+// USER PAIN (rooted in the v58.13.97 audit):
+//   · "Vehicles from Navixy 246 [but] there only 72 vehicles" — the
+//     tab labelled "Vehicles from Navixy" was counting the entire
+//     assets collection (kind ∈ {vehicle,plant,tool,container}), not
+//     just vehicles.
+//   · "another unmatched (491)" — the paired "Matched (491)" chip in
+//     the maintenance filter was being read as a competing unmatched
+//     count because the parenthesised `(N)` form scans like a
+//     mathematical annotation next to the identically-formed
+//     "Unmatched (346)".
+//   · `assets` collection carried two taxonomy fields that had
+//     drifted apart — `kind` (top-level: vehicle/plant/tool/container)
+//     and `asset_type` (granular: ute/tipper/excavator/…). 209 rows on
+//     preview had `kind='plant'` but `asset_type='vehicle'` (an
+//     enum-invalid value), which is what surfaced as the phantom
+//     174-vehicle overcount on the tab.
+//
+// USER DIRECTIVE (verbatim, from the v58.13.100 brief):
+//   "assets.kind is the source of truth (72 vehicles). asset_type gets
+//    normalised to match. … If kind='plant' and asset_type='Vehicle' →
+//    update asset_type='Plant'."
+//   Additional scope constraints (also verbatim):
+//     · "DO NOT create the 104 missing asset records — separate
+//        decision."
+//     · "DO NOT touch the plant_maintenance collection in any way."
+//     · "Don't change how Simpro/Navixy sync works — just fix the
+//        display + reconciliation."
+//
+// ── STEP 1 — Preview DB probe ───────────────────────────────────
+//   Actual state on preview at ship-time (grew slightly since the .97
+//   audit, from 246 → 287 live assets):
+//     · total live:                   287
+//     · kind='vehicle':                72   ← unchanged (matches truth)
+//     · kind='plant':                 215
+//     · kind='plant', asset_type='vehicle':  209  ← reconciliation target
+//     · kind='vehicle', asset_type='ute'/'other'/'vacuum_truck'/
+//       'tipper'/'service_truck'/'crane_truck':  72  ← already valid
+//     · kind='plant', asset_type='excavator'/'compactor':  6  ← already valid
+//
+// ── STEP 2 — Reconciliation script ──────────────────────────────
+//   NEW `backend/scripts/analysis/reconcile_asset_taxonomy_v58_13_100.py`
+//   Rule table encodes the valid `asset_type` set per `kind`:
+//     · vehicle:   {vacuum_truck, tipper, dump_truck, semi_trailer,
+//                   ute, crane_truck, service_truck, trailer,
+//                   other, vehicle}
+//     · plant:     {excavator, loader, bulldozer, grader, compactor,
+//                   skid_steer, backhoe, generator, pump, compressor,
+//                   lighting_tower, other, plant}
+//     · tool:      {tool, other}
+//     · container: {container, other}
+//   Anything OUTSIDE the set for its kind gets rewritten to
+//   `asset_type = kind` (kind wins) with a `reconciliation_v58_13_100`
+//   marker recording the previous value + timestamp for rollback.
+//   Behaviours:
+//     · `--dry-run`  — snapshot only, no writes. Prints per-bucket
+//                     counts so the operator can eyeball before commit.
+//     · `--commit`   — writes the snapshot as `committed_at`, updates
+//                     the docs, re-scans, asserts zero mismatches
+//                     remain (belt-and-braces invariant).
+//     · Idempotent — a second `--commit` finds zero mismatches and
+//                    no-ops. Marker-guard prevents double-stamping.
+//     · Rollback snapshot at
+//       `/app/memory/asset_taxonomy_reconciliation_v58_13_100.json`
+//       carries the full pre-migration state (id, org_id, kind,
+//       asset_type, name, rego_serial, updated_at) for every affected
+//       row, plus the rule table used to make the decision.
+//
+// ── STEP 3 — Preview execution ──────────────────────────────────
+//   Dry-run  → 209 mismatched rows found, all kind='plant'
+//              asset_type='vehicle'. Snapshot written.
+//   Commit   → 209 docs updated, invariant re-verified (0 remain),
+//              snapshot marked committed_at=<utc>.
+//   Rerun    → 0 mismatches (idempotency proven).
+//   Final counts on preview:
+//              kind=vehicle:   72   (unchanged)
+//              kind=plant:    215   (unchanged)
+//              asset_type=plant: 209 (new — was asset_type=vehicle)
+//              rows carrying reconciliation_v58_13_100 marker: 209
+//   NO PLANT_MAINTENANCE WRITES. NO SIMPRO/NAVIXY SYNC WRITES.
+//   NO NEW ASSET RECORDS created for the ~104 unmatched maintenance
+//   regos (that's a separate decision the user reserved).
+//
+// ── STEP 4 — Frontend fixes ─────────────────────────────────────
+//   `frontend/src/pages/PlantVehicles.jsx`
+//     · Tab 3 "Vehicles from Navixy" badge count changed from
+//       `{assets.length}` (which showed the current kind-chip filter
+//       result — 287 on 'All', misleading given the tab label) to
+//       `{assets.filter((a) => a.kind === 'vehicle').length}` (the
+//       vehicle-only slice, 72 on 'All', still 72 on 'Vehicle',
+//       correctly 0 on 'Plant' since the tab is vehicle-specific).
+//     · Inline comment references the .97 audit + the .100 ship for
+//       traceability.
+//   `frontend/src/pages/PlantMaintenanceTab.jsx`
+//     · `pm-plant-toggle` chip labels: `All (N)` / `Matched (N)` /
+//       `Unmatched (N)`  →  `All: N` / `Matched: N` / `Unmatched: N`.
+//     · Same numbers, clearer semantics. Colon reads as
+//       "of this kind: this many", which the user proposed verbatim
+//       in the .100 brief ("Matched: 491" / "Linked: 491").
+//     · testids unchanged (`pm-filter-{all|matched|unmatched}`) so
+//       any prior e2e / smoke tests continue to work.
+//
+// ── STEP 5 — Backend endpoint consistency ───────────────────────
+//   Grep sweep confirmed vehicle-count logic already sources from
+//   `kind == 'vehicle'`, NOT from `asset_type`:
+//     · `assets.py::list_assets` — `kind` and `asset_type` are
+//       independent query params; server never hardcodes an
+//       asset_type-based vehicle filter.
+//     · `asset_service.py:464` — form-recommendation branch reads
+//       `kind == 'vehicle'` (not asset_type).
+//     · `migrate_seed_form_applies_to.py` — the applies_to seed uses
+//       `kinds: ['vehicle']`, not asset_types.
+//   No mutation shipped. The .100 pytest enforces this via source-scan
+//   so any future endpoint that HARDCODES an asset_type='vehicle'
+//   filter for vehicle-scoped logic fails CI immediately.
+//
+// ── STEP 6 — Tests ──────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_taxonomy_reconciliation_v58_13_100.py`:
+//     · Script defines VALID_BY_KIND rule table with kind ∈
+//       {vehicle,plant,tool,container}; each set includes its own
+//       kind literal + `other` as universal fallback.
+//     · Script snapshot path pinned to
+//       `/app/memory/asset_taxonomy_reconciliation_v58_13_100.json`.
+//     · Script exposes both `--dry-run` and `--commit` modes.
+//     · Script stamps `reconciliation_v58_13_100` marker with
+//       `previous_asset_type` + `reconciled_at`.
+//     · Script is idempotent: `is_valid(kind, kind)` returns True.
+//     · Snapshot file EXISTS at the pinned path with a committed_at.
+//     · Frontend: PlantVehicles.jsx Tab 3 badge count filters by
+//       `a.kind === 'vehicle'`.
+//     · Frontend: PlantMaintenanceTab.jsx chip labels use
+//       `Matched: N` / `Unmatched: N` colon-form, not parens.
+//     · Backend consistency: no endpoint hardcodes
+//       `asset_type == 'vehicle'` for vehicle-scoped logic.
+//     · Version-sync forward-safe pin >= 100.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `plant_maintenance` collection — untouched, per user constraint.
+//   · Simpro / Navixy sync logic — untouched.
+//   · No new asset records — the ~104 orphan maintenance regos remain
+//     unmatched. User reserved that decision.
+//   · `AssetType` enum in `backend/assets.py` — retains its granular
+//     literal list. `asset_type='plant'` is a legitimate DB value
+//     because the enum only validates INBOUND API payloads, not
+//     historical DB shape.
+//   · `/app/mobile/` code (only `MOBILE_BUNDLE_VERSION` bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint warnings.
+//
+// ── SOP ────────────────────────────────────────────────────────
+//   · Preview reconciliation already run (209 docs updated,
+//     idempotency verified).
+//   · Prod: after user Re-publishes .100, run the same script on prod
+//     with the same `--dry-run` → `--commit` sequence.
+//   · Frontend hot-reload picks up the JSX changes. No backend
+//     restart needed (script is standalone).
+//   · All 3 canonical version strings bumped to `.100`.
+
 // v160.3.9.58.13.99 — Sign-in error classifier: 5xx / 520 / network-down
 //                     stops masquerading as "Invalid password".
 //
@@ -8718,7 +8880,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.99';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.100';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

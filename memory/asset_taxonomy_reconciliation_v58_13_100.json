@@ -1,0 +1,46 @@
+{
+  "ship": "v58.13.100",
+  "created_at": "2026-09-04T02:21:46.231357+00:00",
+  "committed_at": "2026-09-04T02:21:46.231366+00:00",
+  "environment_hint": "unknown",
+  "db_name": "test_database",
+  "rule_table": {
+    "vehicle": [
+      "crane_truck",
+      "dump_truck",
+      "other",
+      "semi_trailer",
+      "service_truck",
+      "tipper",
+      "trailer",
+      "ute",
+      "vacuum_truck",
+      "vehicle"
+    ],
+    "plant": [
+      "backhoe",
+      "bulldozer",
+      "compactor",
+      "compressor",
+      "excavator",
+      "generator",
+      "grader",
+      "lighting_tower",
+      "loader",
+      "other",
+      "plant",
+      "pump",
+      "skid_steer"
+    ],
+    "tool": [
+      "other",
+      "tool"
+    ],
+    "container": [
+      "container",
+      "other"
+    ]
+  },
+  "count": 0,
+  "rows": []
+}

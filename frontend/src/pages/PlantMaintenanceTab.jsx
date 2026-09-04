@@ -113,9 +113,15 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
 
         <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-plant-toggle">
           {[
-            { k: 'all', label: `All (${items.length})` },
-            { k: 'matched', label: `Matched (${items.length - unmatched.total_unmatched_rows})` },
-            { k: 'unmatched', label: `Unmatched (${unmatched.total_unmatched_rows})` },
+            // v58.13.100 — label style changed from `Label (N)` to
+            // `Label: N` per user directive. The `(N)` form was
+            // misread as a math-style "unmatched-only" annotation
+            // (see .97 audit — user reported "another unmatched 491").
+            // The colon reads unambiguously as "of this kind: this
+            // many rows". Same numbers, clearer semantics.
+            { k: 'all', label: `All: ${items.length}` },
+            { k: 'matched', label: `Matched: ${items.length - unmatched.total_unmatched_rows}` },
+            { k: 'unmatched', label: `Unmatched: ${unmatched.total_unmatched_rows}` },
           ].map((opt) => (
             <button key={opt.k} onClick={() => setPlantFilter(opt.k)}
               data-testid={`pm-filter-${opt.k}`}
