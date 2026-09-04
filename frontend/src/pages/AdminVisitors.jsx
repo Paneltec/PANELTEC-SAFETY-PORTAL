@@ -7,6 +7,7 @@
 //              full site address). `include_deleted` toggle surfaces
 //              soft-deleted rows for auditors.
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import api, { apiError } from '../lib/api';
 import { toast } from 'sonner';
 
@@ -310,6 +311,31 @@ export default function AdminVisitors() {
     } catch (e) { setError(apiError(e)); } finally { setLoading(false); }
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [activeOnly, includeDeleted]);
+
+  // v58.13.115 — Deep-link auto-open. When Ask Intelligence (or any
+  // caller) navigates to `/app/admin/visitors?open=<id>` we open the
+  // detail drawer for that visitor id on mount. If the id isn't in
+  // the current filter, we also flip `include_deleted` so soft-
+  // deleted rows re-hydrate, then let the DetailDrawer's own fetch
+  // load the record by id. Runs ONCE per unique `?open=` value; the
+  // param is cleared afterwards so a back-button return doesn't
+  // re-trigger the drawer.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openParam = searchParams.get('open');
+  useEffect(() => {
+    if (!openParam) return;
+    setDrawerId(openParam);
+    const inFilter = rows.some((r) => r.id === openParam);
+    if (!inFilter && !includeDeleted) {
+      setIncludeDeleted(true);  // triggers a re-fetch via the deps above
+    }
+    // Strip `?open=` from the URL so a back/forward navigation
+    // doesn't re-open the drawer unexpectedly.
+    const next = new URLSearchParams(searchParams);
+    next.delete('open');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openParam, rows.length]);
 
   const sites = useMemo(() => {
     const s = new Map();

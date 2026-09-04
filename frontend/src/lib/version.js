@@ -1,5 +1,361 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.116 — Plant & Vehicles: in-context test-data purge
+//                       confirm modal (supersedes the .101 page-away
+//                       Link).
+//
+// USER PAIN: Admin sees a red "230 test records detected across your
+// register — Purge test data →" banner on Plant & Vehicles, but the
+// CTA punts them to /app/settings/system#purge-test-data, which is
+// a route-hop away. User asked whether the 230 rows are real; the
+// investigation report (Case A) confirmed all 230 are pure seed
+// artefacts with the fingerprint `TEST-v58.13.14-<10-digit ms>`,
+// created in a single 30-second burst, zero dependencies except the
+// auto-cascaded `asset_service_schedules`. Safe to purge.
+//
+// ── Investigation summary (delivered before the ship) ──────────
+//   · 230 assets flagged. ALL kind=plant, ALL source="", ALL rego="",
+//     100% same admin, all created within a 30 s window at
+//     2026-09-04T03:32:41.
+//   · Dependencies: 0 rows across plant_maintenance /
+//     maintenance_records / incidents / hazards / pre_starts.
+//   · Only child rows: 230 × asset_service_schedules (auto-seeded,
+//     no real service history) — already cascaded by the existing
+//     purge endpoint (admin_purge_test_data.py:154).
+//   · The banner's "TEST-*/demo-*/sample-*" pattern is NOT over-
+//     matching — every one of the 230 names starts with `TEST-`.
+//
+// ── "matched / unmatched" misread (documented for the audit trail) ─
+//   The user's phrase "keep it under its proper heading — not
+//   matched or unmatched" was based on a misread of the page's tab
+//   structure, NOT anything the banner said:
+//     · Plant & Vehicles has 5 tabs — All Maintenance / Unmatched /
+//       Vehicles from Navixy / Dashboard / Service Inbox.
+//     · The "Unmatched" tab is `plant_maintenance` rows that couldn't
+//       be joined to an asset by rego — a legitimate import-audit
+//       affordance for the DIFFERENT `plant_maintenance` table.
+//     · The asset LIST lives on "Vehicles from Navixy" and IS
+//       already categorised by `kind` via 4 chips (vehicle / plant
+//       / tool / container) at line 51-54 of PlantVehicles.jsx.
+//     · So there's nothing to move — kind-based categorisation is
+//       already the primary structure and the "Unmatched" label is
+//       not vestigial. Confirmed back to the user in the ship
+//       summary so the same explanation can be passed through.
+//
+// ── New component (`components/vehicles/PurgeTestDataModal.jsx`) ──
+//   ~180 lines. Renders a shadcn-style overlay with:
+//     · Live re-query on `open` → `POST /admin/purge-test-data?dry_run=1`
+//       so a 5-minute-stale banner count can never mislead the admin.
+//     · Audit summary card: per-collection counts + first-sample
+//       (e.g. `assets: 230 — e.g. TEST-v58.13.14-1788492761055`) +
+//       cascade note ("Linked asset_service_schedules will be
+//       cascaded automatically").
+//     · Type-to-confirm input — user MUST type literally `PURGE`
+//       (case-sensitive). Wrong case ("purge") keeps the button
+//       disabled. Verified via Playwright: button disabled=true
+//       before type, disabled=false after typing "PURGE",
+//       disabled=true after switching to lower-case "purge".
+//     · Rose destructive `Purge N records` button, `disabled=
+//       {!canConfirm}` where `canConfirm = !busy && !loading &&
+//       grandTotal > 0 && confirmText === REQUIRED_PHRASE`.
+//     · On confirm → `POST /admin/purge-test-data?dry_run=0` →
+//       `toast.success('Purged N test records (+M orphan service
+//       schedules cascaded)')` → invoke `onPurged()` so the parent
+//       resets `testDataCount=0` + reloads the asset list → close.
+//     · Full a11y: aria-label on close, focus-trap via autoFocus
+//       on the confirm input, click-outside-to-close (disabled
+//       during a live purge so a mis-click can't lose progress).
+//
+// ── Frontend wiring (`pages/PlantVehicles.jsx`) ────────────────
+//   · Imported the new modal.
+//   · New `purgeModalOpen` state.
+//   · Banner CTA changed from a `<Link to="/app/settings/system#...">`
+//     to a `<button onClick={() => setPurgeModalOpen(true)}>`.
+//   · `<PurgeTestDataModal>` mounted just after the banner block
+//     with `onPurged={() => { setTestDataCount(0); load(); }}` so
+//     a successful purge hides the banner + refreshes the asset
+//     list without a full page reload.
+//   · The banner's placement contract (between `<HowThisWorks/>`
+//     and `<Tabs>`) is unchanged — the .101
+//     `test_test_data_banner_placement_above_tabs` regression
+//     stays green.
+//
+// ── Backend (`admin_purge_test_data.py` — UNCHANGED, reused) ────
+//   The `.81` endpoint already:
+//     · Gates on `admin` role (403 for non-admin).
+//     · Excludes `source == "simpro"` server-side (never wiped).
+//     · Cascades `asset_service_schedules` for every deleted asset
+//       (line 152-155).
+//     · Writes an audit log to /app/memory/purge_v58_13_81_log.txt.
+//   No changes required. `.116` is purely a UX ship on top of it.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_purge_test_data_v58_13_116.py`
+//   (13 checks):
+//     · Endpoint admin-gated; non-admin → 403.
+//     · Behavioural round-trip: seed 5 TEST-* assets + 5
+//       asset_service_schedules → dry_run=1 returns matches + at-
+//       least-5 count + NO deletions → dry_run=0 deletes both
+//       parent + cascade rows → second call is zero.
+//     · Simpro rows excluded — one `source=simpro` + one `source=""`
+//       both matching TEST-*; only the empty-source row gets
+//       purged.
+//     · Modal source-pins: `REQUIRED_PHRASE = 'PURGE'`, `useEffect`
+//       on `[open]` firing the dry-run call, `canConfirm` gate
+//       tied to `confirmText === REQUIRED_PHRASE`, commit POST
+//       endpoint call, toast wiring, all six testids.
+//     · Plant page source-pins: banner CTA is a button that opens
+//       the modal (not the old `<Link>` to settings), old
+//       `/app/settings/system#purge-test-data` path is GONE from
+//       the file, `<PurgeTestDataModal>` mounted with correct
+//       `onPurged` reset.
+//     · Version-sync forward-safe pin >= .116.
+//   UPDATED `tests/backend_unit/test_purge_ux_v58_13_101.py`:
+//     · `test_test_data_banner_cta_deeplinks_to_purge_card` renamed
+//       to `test_test_data_banner_cta_opens_modal_v58_13_116` and
+//       flipped to lock the NEW contract. The .101 contract is
+//       explicitly superseded here — a fresh grep for the old
+//       Link path in PlantVehicles.jsx must fail (asserted).
+//
+// ── Playwright screenshots (verified live) ─────────────────────
+//   · `/app/memory/v58_13_116_purge_modal_before_type.png` —
+//     modal open, empty confirm input, "Purge 6 records" button
+//     visibly greyed. Banner behind reads "6 test records detected
+//     across your register" (production count naturally shrank as
+//     admins ran the settings-page purge — the .116 modal shows
+//     whatever the LIVE dry-run returns).
+//   · `/app/memory/v58_13_116_purge_modal_after_type.png` — after
+//     typing "PURGE", button becomes solid rose (enabled).
+//   Verifications from the same Playwright run:
+//     - disabled BEFORE type      → True
+//     - disabled AFTER typing PURGE → False (enabled)
+//     - disabled on wrong-case "purge" → True (case-sensitive gate holds)
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Backend `admin_purge_test_data.py` — reused as-is.
+//   · The 5-tab structure of Plant & Vehicles.
+//   · The `kind`-chip filter on the Vehicles-from-Navixy tab.
+//   · The `Unmatched` tab and its `/plant-maintenance/unmatched`
+//     data source.
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
+// v160.3.9.58.13.115a — Auto-clear Ask Intelligence history on new
+//                        search + manual Clear-history button.
+//
+// USER PAIN (verbatim): "should we delete the results every time we
+// do a search there is no good need to keep the search data."
+//
+// ── Backend ────────────────────────────────────────────────────
+//   1. `POST /ask` — before writing the new `ask_history` row we
+//      `delete_many({org_id, user_id})` for the caller. Scoped
+//      strictly to the calling user + org so an admin's history-
+//      wipe never touches another admin's rows. Assert order-
+//      locked in test: `delete_many` index in the source string
+//      must precede `insert_one`.
+//   2. `DELETE /ask/history` — new endpoint. Same scoping. Returns
+//      `{deleted: n}` so the UI can toast "History cleared (N rows)".
+//      Idempotent — a repeat call returns `{deleted: 0}`.
+//   3. Confirmed the briefing endpoint (`GET /ask/briefing`) never
+//      writes ask_history — locked by
+//      `test_briefing_does_not_write_history`.
+//
+// ── Frontend (`pages/Ask.jsx`) ────────────────────────────────
+//   1. Removed the "Recent Questions" panel entirely. Fresh-answer
+//      citations remain clickable (unchanged from .115).
+//   2. Added a discreet "Clear N previous answer(s)" link that fires
+//      `DELETE /ask/history`, clears local `answer` + `historyCount`
+//      state, and toasts the deleted count. Hidden when
+//      `historyCount === 0`.
+//   3. Local `history` state simplified to just a count
+//      (`historyCount`) since the panel that used the array is gone
+//      — the fetch on mount still runs so the button surfaces
+//      accurately for rows from a previous session that landed
+//      before the .115a auto-delete shipped.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_ask_history_autoclear_v58_13_115a.py`
+//   (10 checks):
+//     · Source-pin: `delete_many` precedes `insert_one` in `ask()`.
+//     · `DELETE /ask/history` registered + returns `{deleted: n}`.
+//     · Briefing never touches ask_history.
+//     · Behavioural: pre-seed 5 rows → simulate auto-delete + insert
+//       → exactly 1 row remains.
+//     · Auto-delete scoped per (user_id, org_id) — 2 users × 2 orgs
+//       matrix asserts B/A and A/B rows survive when A/A wipes.
+//     · `clear_history()` coroutine returns exact `{deleted: 3}`,
+//       leaves other user's 2 rows untouched, idempotent second
+//       call → `{deleted: 0}`.
+//     · Frontend removed Recent Questions panel + all `history-`
+//       testids, wired `ask-clear-history` button + `api.delete`
+//       call + success toast.
+//     · Version-sync forward-safe pin >= .115a.
+//   Also updated `test_ask_deep_links_v58_13_115.py`: the
+//   `test_history_panel_renders_citations` check flipped to
+//   `test_history_panel_removed_in_115a` — the .115 panel-cites
+//   contract is deliberately superseded here.
+//
+// ── Live curl trace (verified) ─────────────────────────────────
+//   $ GET  /api/ask/history        → rows: 1  (from the last ask)
+//   $ DELETE /api/ask/history      → {"deleted": 1}
+//   $ GET  /api/ask/history        → rows: 0
+//   $ DELETE /api/ask/history      → {"deleted": 0}  (idempotent)
+//
+// ── Screenshots ────────────────────────────────────────────────
+//   · `/app/memory/v58_13_115a_ask_no_recent_panel.png` — Ask page,
+//     no history panel, "Clear 1 previous answer" link visible.
+//   · `/app/memory/v58_13_115a_ask_after_clear.png` — after clicking
+//     Clear-history: green Sonner toast "History cleared (1 row)",
+//     link hidden.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · The .115 clickable-citations feature on the fresh answer
+//     (`<Answer a={answer} />`).
+//   · Suggestion chips + suggestion CRUD endpoints.
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+// v160.3.9.58.13.115 — Clickable Ask Intelligence citations +
+//                       Site Visitor drawer auto-open.
+//
+// USER PAIN: Citations in the Ask Intelligence answer were plain
+// text — you could see "user Stephen McG" was cited but had to
+// switch tabs, hunt for the record manually. User wanted a click
+// on the citation to jump straight to the source record.
+//
+// ── Backend citation payload (before → after) ──────────────────
+//   Every citation from `POST /ask` and `GET /ask/briefing` now
+//   carries a `deep_link` (string | null) plus, when null, a
+//   `deep_link_reason` telling the frontend WHY it's not linkable.
+//   BEFORE:
+//     { record_type, record_id, label }
+//   AFTER:
+//     { record_type, record_id, label,
+//       deep_link: "/app/swms/s1" | null,
+//       deep_link_reason?: "no_detail_page" | "no_template_id" |
+//                          "unknown_type" | "missing_id" }
+//
+// ── Route mapping (grep against App.js) ────────────────────────
+//   ┌────────────────────┬─────────────────────────────────────────┐
+//   │ record_type        │ deep_link (all relative)                │
+//   ├────────────────────┼─────────────────────────────────────────┤
+//   │ swms               │ /app/swms/{id}         (direct detail)  │
+//   │ contractor         │ /app/contractors/{id}  (direct detail)  │
+//   │ site_visitor       │ /app/admin/visitors?open={id}           │
+//   │ incident           │ /app/incidents?open={id}                │
+//   │ hazard             │ /app/hazards?open={id}                  │
+//   │ inspection         │ /app/inspections?open={id}              │
+//   │ pre_start          │ /app/pre-starts?open={id}               │
+//   │ site_diary         │ /app/site-diary?open={id}               │
+//   │ user               │ /app/settings/users?open={id}           │
+//   │ worker             │ /app/settings/workers?open={id}         │
+//   │ outbound_email     │ /app/outbox?open={id}&kind=email        │
+//   │ outbound_sms       │ /app/outbox?open={id}&kind=sms          │
+//   │ form_submission    │ /app/forms/templates/{tid}/submissions? │
+//   │                    │   open={id}  (tid from evidence)        │
+//   │ audit_log          │ null (no_detail_page)                   │
+//   │ *anything else*    │ null (unknown_type)                     │
+//   └────────────────────┴─────────────────────────────────────────┘
+//   Flagged for future ships: incident / hazard / inspection /
+//   pre_start / site_diary / user / worker list pages don't wire
+//   the `?open=` drawer contract yet — the click lands on the
+//   correct list page (never a 404) but the drawer stays closed.
+//   Wiring each is a ~30-line change per page; low priority since
+//   the drawer/detail-view work is bigger than the citation ask.
+//   Only `site_visitor` is fully wired in this ship (see below).
+//
+// ── Backend implementation (`ask.py`) ──────────────────────────
+//   · `_DEEP_LINK_TEMPLATES` — a plain dict of `{record_type:
+//     "/path/with/{id}"}`. Server-side so the frontend never has
+//     to know about routing.
+//   · `_build_deep_link(record_type, record_id, evidence)` — pure
+//     function, returns `(link | None, reason | None)`. Handles
+//     the `form_submission` special-case by looking up the parent
+//     `template_id` from `evidence["form_submissions"]`.
+//   · `_enrich_citations(cited, evidence)` — mutation-free
+//     enricher: never touches the LLM's original record_type /
+//     record_id / label; appends `deep_link` and (only when null)
+//     `deep_link_reason` as strictly additive fields.
+//   · `POST /ask` calls `_enrich_citations` AFTER the .114 fallback
+//     path so both LLM-native and synthesised citations get the
+//     same treatment.
+//   · `GET /briefing` calls `_enrich_citations` too so the
+//     dashboard briefing chips are clickable.
+//   · `_evidence()` projection for form_submissions now includes
+//     `template_id` so `_build_deep_link` has what it needs.
+//
+// ── Frontend implementation ────────────────────────────────────
+//   · `pages/Ask.jsx` — imported `Link` from `react-router-dom`.
+//     `ProofChip` renders a `<Link to={c.deep_link}>` with a
+//     hover-underline + hover-tint when `deep_link` is set; a
+//     `<div class="cursor-not-allowed">` with a tooltip
+//     ("No detail view yet…" / "Detail lives inside the parent
+//     form template — not yet linked" / "Not linkable (<reason>)")
+//     when null. Every chip carries a
+//     `data-testid="citation-<record_type>-<record_id[:8]>"`.
+//   · [SUPERSEDED IN .115a] Recent Questions panel briefly rendered
+//     up to 4 citation chips per historical answer.
+//   · `pages/AdminVisitors.jsx` — new `useSearchParams` effect
+//     reads `?open=<id>` on mount, calls `setDrawerId(id)`, flips
+//     `include_deleted` if the id isn't in the current filter so
+//     soft-deleted rows re-hydrate, then strips `?open=` from the
+//     URL via `setSearchParams` + `replace: true` so a
+//     back/forward navigation doesn't re-open the drawer.
+//
+// ── Live curl trace (verified) ─────────────────────────────────
+//   $ POST /api/ask {"question": "stephen"} → 200
+//     cited_evidence:
+//       user            → /app/settings/users?open=808cb7de-...
+//       user            → /app/settings/users?open=21dddcc2-...
+//       site_visitor    → /app/admin/visitors?open=04e1594e-...
+//       site_visitor    → /app/admin/visitors?open=0c7e95b9-...
+//       form_submission → /app/forms/templates/e8873f7e-.../
+//                         submissions?open=25063a6c-...
+//     Every deep_link is a real route registered in App.js.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_ask_deep_links_v58_13_115.py`
+//   (27 checks):
+//     · Parametrised 12-entry matrix — every supported
+//       record_type maps to the exact expected deep_link.
+//     · `audit_log` returns null + `no_detail_page`.
+//     · Missing record_id returns null + `missing_id`.
+//     · Unknown record_type returns null + `unknown_type`.
+//     · `form_submission` needs template_id — round-trip test
+//       covers both the "template_id present" (link built) and
+//       "template_id missing" (null + `no_template_id`) branches.
+//     · `_enrich_citations` shape locks: preserves original label
+//       / id / type, appends deep_link, appends reason ONLY when
+//       null. Skips non-dict entries silently.
+//     · Route validity spot-check: parametrised assertions that
+//       `App.js` still registers the 3 core routes
+//       (`swms/:id`, `contractors/:id`, `admin/visitors`).
+//     · Frontend Ask.jsx source-pins for `<Link to={c.deep_link}>`,
+//       the plain-div fallback, `cursor-not-allowed`,
+//       `deep_link_reason`, and the `no_detail_page` tooltip.
+//     · [Retired in .115a] history-panel citation rendering.
+//     · AdminVisitors reads `?open=` via useSearchParams,
+//       calls setDrawerId, and clears the param via
+//       `next.delete('open')`.
+//     · Version-sync forward-safe pin >= .115.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Any Ask endpoint auth / permission gates.
+//   · Confidence-override matrix from .114 (still runs before
+//     the enrichment step).
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.114 — Ask Intelligence retrieval scope + confidence
 //                       override + name-shaped fallback body.
 //
@@ -10970,7 +11326,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.114';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.116';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

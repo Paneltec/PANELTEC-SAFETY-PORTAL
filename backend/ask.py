@@ -248,7 +248,7 @@ async def _evidence(org_id: str, workspace_id: Optional[str],
         forms_hits = await db.form_submissions.find(
             forms_q,
             {"_id": 0, "id": 1, "template_name_snapshot": 1, "submitted_by_name": 1,
-             "submitted_by": 1, "submitted_at": 1},
+             "submitted_by": 1, "submitted_at": 1, "template_id": 1},
         ).sort("submitted_at", -1).limit(20).to_list(20)
 
         if matched_user_ids:
@@ -416,6 +416,84 @@ def _build_name_fallback_body(question: str, evidence: dict) -> Optional[str]:
     return body
 
 
+# v58.13.115 — Route mapping for citation deep-links. Server-side so
+# the LLM never has to know about frontend routing. Values with a
+# `{id}` placeholder are formatted with the record id; the special
+# `form_submission` key needs the parent template id, looked up from
+# the evidence bundle by `_enrich_citations()`.
+_DEEP_LINK_TEMPLATES: dict[str, str] = {
+    # Direct detail routes (App.js confirms these render <Detail /> pages).
+    "swms":            "/app/swms/{id}",
+    "contractor":      "/app/contractors/{id}",
+    # List routes with an `?open=<id>` drawer contract. `site_visitor`
+    # is fully wired in this ship; the rest are flagged in the
+    # ship-report for later (list page loads, drawer wiring deferred
+    # — never a dead link, just a page-level landing).
+    "site_visitor":    "/app/admin/visitors?open={id}",
+    "incident":        "/app/incidents?open={id}",
+    "hazard":          "/app/hazards?open={id}",
+    "inspection":      "/app/inspections?open={id}",
+    "pre_start":       "/app/pre-starts?open={id}",
+    "site_diary":      "/app/site-diary?open={id}",
+    "user":            "/app/settings/users?open={id}",
+    "worker":          "/app/settings/workers?open={id}",
+    "outbound_email":  "/app/outbox?open={id}&kind=email",
+    "outbound_sms":    "/app/outbox?open={id}&kind=sms",
+    # `form_submission` handled specially by `_enrich_citations` —
+    # requires the parent `template_id` looked up in the evidence bundle.
+    # `audit_log` — deliberately null (no detail page exists).
+}
+
+
+def _build_deep_link(record_type: str, record_id: str,
+                     evidence: dict) -> tuple[Optional[str], Optional[str]]:
+    """Return `(deep_link, reason_or_None)` for one citation.
+
+    · `deep_link` is a relative frontend path (never absolute) so the
+      React app can just pass it to `<Link to>`.
+    · `reason` is populated ONLY when `deep_link` is None so the
+      frontend can render a tooltip explaining why the link is dead.
+    """
+    if not record_id or not record_type:
+        return (None, "missing_id")
+    record_type = record_type.lower()
+    if record_type == "audit_log":
+        return (None, "no_detail_page")
+    if record_type == "form_submission":
+        # Need the parent template_id from the evidence bundle.
+        for row in evidence.get("form_submissions") or []:
+            if row.get("id") == record_id and row.get("template_id"):
+                return (f"/app/forms/templates/{row['template_id']}/submissions?open={record_id}",
+                        None)
+        return (None, "no_template_id")
+    tmpl = _DEEP_LINK_TEMPLATES.get(record_type)
+    if not tmpl:
+        return (None, "unknown_type")
+    return (tmpl.format(id=record_id), None)
+
+
+def _enrich_citations(cited: list[dict], evidence: dict) -> list[dict]:
+    """Attach `deep_link` + optional `deep_link_reason` to every
+    citation. Never mutates the LLM's original record_type / record_id
+    / label — the frontend still renders those verbatim; the new
+    fields sit alongside as strictly additive metadata."""
+    out: list[dict] = []
+    for c in cited or []:
+        if not isinstance(c, dict):
+            continue
+        rt = c.get("record_type")
+        rid = c.get("record_id")
+        link, reason = _build_deep_link(rt or "", rid or "", evidence)
+        # Preserve original citation shape (record_type/id/label) and
+        # append deep_link + reason. `deep_link_reason` is omitted
+        # when the link IS present so the payload stays tidy.
+        enriched = {**c, "deep_link": link}
+        if link is None:
+            enriched["deep_link_reason"] = reason or "unknown"
+        out.append(enriched)
+    return out
+
+
 # ────────────────────────────────────────────────────────────────────
 
 
@@ -461,6 +539,18 @@ async def ask(body: AskIn, user: dict = Depends(require_ask_access)):
             answer["cited_evidence"] = cites
             answer["confidence"] = _compute_confidence(cites, "medium")
 
+    # v58.13.115 — attach `deep_link` (+ optional `deep_link_reason`) to
+    # every citation before we hand the payload back to the frontend.
+    # Runs AFTER the fallback path so both LLM-native citations and the
+    # synthesised name-summary citations get the same treatment.
+    answer["cited_evidence"] = _enrich_citations(answer.get("cited_evidence"),
+                                                  evidence)
+
+    # v58.13.115a — Auto-clear the caller's history BEFORE inserting
+    # the new row. User asked for "delete the results every time we do
+    # a search" so only the current answer stays around. Scoped to the
+    # current org + user id — never touches other users' history.
+    await db.ask_history.delete_many({"org_id": user["org_id"], "user_id": user["id"]})
     # Store in history (best-effort)
     await db.ask_history.insert_one({
         "id": new_id(), "org_id": user["org_id"], "user_id": user["id"],
@@ -498,6 +588,12 @@ async def briefing(workspace_id: Optional[str] = Query(None), user: dict = Depen
             "confidence": "low", "cited_evidence": [], "fallback": True,
         }
     answer.setdefault("cited_evidence", [])
+    # v58.13.115 — enrich briefing citations too. Briefing evidence
+    # never has a query token so form_submission lookups will return
+    # `no_template_id`, but incident/hazard/swms/etc still get real
+    # deep-links, which is exactly what the dashboard wants.
+    answer["cited_evidence"] = _enrich_citations(answer.get("cited_evidence"),
+                                                  evidence)
     answer["cached_at"] = now_iso()
     _briefing_cache[cache_key] = (now, answer)
     return answer
@@ -510,6 +606,17 @@ async def history(limit: int = Query(10, ge=1, le=50), user: dict = Depends(get_
         {"_id": 0},
     ).sort("created_at", -1).limit(limit).to_list(limit)
     return docs
+
+
+@router.delete("/history")
+async def clear_history(user: dict = Depends(get_current_user)):
+    """v58.13.115a — Explicit "Clear history" button. Scoped strictly to
+    the calling user + org so an admin clearing their own history never
+    wipes another admin's rows. Returns `{deleted: n}` so the UI can
+    toast "History cleared (n rows)"."""
+    r = await db.ask_history.delete_many({"org_id": user["org_id"],
+                                           "user_id": user["id"]})
+    return {"deleted": int(getattr(r, "deleted_count", 0) or 0)}
 
 
 # ────────────────────── Ask suggested questions (CRUD) ──────────────────────

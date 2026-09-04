@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Check, FileSearch, Loader2, Pencil, Plus, Sparkles, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { useWorkspace, wsParams } from '../lib/workspace';
@@ -10,14 +11,48 @@ import { useCan } from '../lib/permissions';
 // v160.3.9.29-2c — Legacy set retained; authoritative gate is useCan below.
 const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
 
+// v58.13.115 — ProofChip becomes a Link when the backend supplied a
+// `deep_link`. Falls back to a plain tile with a "no detail view"
+// tooltip when the backend flagged `deep_link=null` (e.g. audit_log).
+// Kept the visual shape identical so the layout doesn't shift.
 function ProofChip({ c }) {
-  return (
-    <div className="rounded-lg border border-violet-200 bg-white p-2.5 text-xs flex gap-2 items-start">
+  const inner = (
+    <>
       <span className="px-1.5 py-0.5 rounded bg-brand-violet-soft text-brand-violet text-[10px] font-semibold uppercase tracking-wider shrink-0">{c.record_type}</span>
-      <div>
-        <div className="text-slate-700 leading-snug">{c.label}</div>
+      <div className="min-w-0">
+        <div className="text-slate-700 leading-snug truncate">{c.label}</div>
         <div className="text-[10px] text-slate-400 font-mono mt-0.5">{c.record_id?.slice(0, 8)}…</div>
       </div>
+    </>
+  );
+  const testId = `citation-${c.record_type}-${(c.record_id || '').slice(0, 8)}`;
+  if (c.deep_link) {
+    return (
+      <Link
+        to={c.deep_link}
+        data-testid={testId}
+        title={`Open ${c.record_type} — ${c.label}`}
+        className="rounded-lg border border-violet-200 bg-white p-2.5 text-xs flex gap-2 items-start hover:border-violet-400 hover:bg-brand-violet-soft/40 hover:underline decoration-brand-violet decoration-1 underline-offset-4 transition-colors"
+      >
+        {inner}
+      </Link>
+    );
+  }
+  const reason = c.deep_link_reason;
+  const tooltip = reason === 'no_detail_page'
+    ? 'No detail view yet for this record type'
+    : reason === 'no_template_id'
+      ? 'Detail lives inside the parent form template — not yet linked'
+      : reason
+        ? `Not linkable (${reason})`
+        : 'Not linkable';
+  return (
+    <div
+      data-testid={testId}
+      title={tooltip}
+      className="rounded-lg border border-violet-200 bg-white p-2.5 text-xs flex gap-2 items-start opacity-90 cursor-not-allowed"
+    >
+      {inner}
     </div>
   );
 }
@@ -148,7 +183,14 @@ export default function Ask() {
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState(null);
-  const [history, setHistory] = useState([]);
+  // v58.13.115a — Recent-questions history removed from the UI at
+  // the user's request ("no good need to keep the search data").
+  // Backend still auto-clears the caller's ask_history on every new
+  // POST /ask so state doesn't stack up. We keep the fetch on mount
+  // so admins can see whatever's still there via the "Clear history"
+  // affordance, but the list panel is gone.
+  const [historyCount, setHistoryCount] = useState(0);
+  const [clearingHistory, setClearingHistory] = useState(false);
 
   // Suggestions state
   const [suggestions, setSuggestions] = useState([]);
@@ -157,10 +199,23 @@ export default function Ask() {
   const [savingForm, setSavingForm] = useState(false);
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
-  const loadHistory = () => api.get('/ask/history', { params: { limit: 10 } }).then((r) => setHistory(r.data)).catch(() => {});
+  const loadHistory = () => api.get('/ask/history', { params: { limit: 10 } })
+    .then((r) => setHistoryCount((r.data || []).length))
+    .catch(() => setHistoryCount(0));
   const loadSuggestions = () => api.get('/ask/suggestions').then((r) => setSuggestions(r.data || [])).catch(() => setSuggestions([])).finally(() => setSuggestionsLoading(false));
 
   useEffect(() => { loadHistory(); loadSuggestions(); }, []);
+
+  const clearHistory = async () => {
+    setClearingHistory(true);
+    try {
+      const { data } = await api.delete('/ask/history');
+      toast.success(`History cleared${data?.deleted ? ` (${data.deleted} row${data.deleted === 1 ? '' : 's'})` : ''}`);
+      setAnswer(null);
+      setHistoryCount(0);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setClearingHistory(false); }
+  };
 
   const submit = async (question) => {
     const ask = question || q;
@@ -269,18 +324,24 @@ export default function Ask() {
 
       {answer && <div className="mt-6"><Answer a={answer} /></div>}
 
-      {history.length > 0 && (
-        <div className="mt-10">
-          <div className="text-[11px] font-semibold tracking-[0.18em] text-slate-500 uppercase mb-3">Recent questions</div>
-          <div className="space-y-3">
-            {history.map((h) => (
-              <div key={h.id} className="rounded-xl border border-slate-200 bg-white p-3" data-testid={`history-${h.id}`}>
-                <div className="text-xs text-slate-500">{(h.created_at || '').slice(0, 16).replace('T', ' ')}</div>
-                <div className="text-sm font-medium mt-0.5">{h.question}</div>
-                {h.answer?.body && <div className="text-xs text-slate-600 mt-1 line-clamp-2">{h.answer.body}</div>}
-              </div>
-            ))}
-          </div>
+      {/* v58.13.115a — Recent-questions panel intentionally removed.
+          Backend auto-clears the caller's history on every new POST
+          /ask (see ask.py::ask), and the current answer above is
+          always the freshest data. A discreet "Clear history" link
+          is rendered when the client-visible historyCount > 0 so an
+          admin can nuke anything the auto-delete missed (e.g. rows
+          from a previous session that never landed on this page). */}
+      {historyCount > 0 && (
+        <div className="mt-6 text-right">
+          <button
+            type="button"
+            onClick={clearHistory}
+            disabled={clearingHistory}
+            data-testid="ask-clear-history"
+            className="text-xs text-slate-500 hover:text-brand-violet underline decoration-slate-300 underline-offset-4 disabled:opacity-50"
+          >
+            {clearingHistory ? 'Clearing…' : `Clear ${historyCount} previous answer${historyCount === 1 ? '' : 's'}`}
+          </button>
         </div>
       )}
     </div>

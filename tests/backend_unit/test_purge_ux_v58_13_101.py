@@ -133,28 +133,36 @@ def test_test_data_banner_has_testids():
         assert tid in PV_JSX, f"missing testid {tid!r}"
 
 
-def test_test_data_banner_cta_deeplinks_to_purge_card():
-    """CTA must deep-link to the exact purge-card anchor added in
-    Fix 1. If either side (Link target OR card id) changes, the
-    nav goes to the top of the Settings page instead of the card."""
+def test_test_data_banner_cta_opens_modal_v58_13_116():
+    """v58.13.116 SUPERSEDES the .101 deep-link contract.
+    CTA is now a `<button onClick={() => setPurgeModalOpen(true)}>`
+    that opens an in-context confirm modal instead of navigating away
+    to /app/settings/system#purge-test-data. The type-to-confirm
+    modal keeps the destructive action behind a two-step gate."""
     m = re.search(
-        r'to="/app/settings/system#purge-test-data"[\s\S]{0,200}?'
+        r'onClick=\{\(\)\s*=>\s*setPurgeModalOpen\(true\)\}[\s\S]{0,300}?'
         r'data-testid="vehicles-test-data-banner-cta"',
         PV_JSX,
     )
     assert m, (
-        "Banner CTA does not deep-link to "
-        "/app/settings/system#purge-test-data"
+        "Banner CTA no longer wired to open the .116 purge modal — "
+        "either the state setter renamed or the testid moved"
     )
+    # The old page-away Link must be gone.
+    assert '/app/settings/system#purge-test-data' not in PV_JSX
+    # Modal is mounted with onPurged wiring.
+    assert '<PurgeTestDataModal' in PV_JSX
 
 
 def test_test_data_banner_placement_above_tabs():
     """Banner must render BETWEEN <HowThisWorks/> and <Tabs>. Placing
     it inside the tabs body would only surface on one specific sub-tab,
-    which defeats the point of the discoverability fix."""
+    which defeats the point of the discoverability fix. v58.13.116
+    adds a `<PurgeTestDataModal>` mount just after the banner block
+    (still above <Tabs>) so the position contract holds either way."""
     m = re.search(
-        r'<HowThisWorks[^/]*/>\s*[\s\S]{0,1500}?'
-        r'data-testid="vehicles-test-data-banner"[\s\S]{0,1500}?'
+        r'<HowThisWorks[^/]*/>\s*[\s\S]{0,2000}?'
+        r'data-testid="vehicles-test-data-banner"[\s\S]{0,2000}?'
         r'<Tabs\s',
         PV_JSX,
     )

@@ -18,6 +18,8 @@ import ModuleDashboard from '../components/dashboards/ModuleDashboard';
 import VehicleMapModal from '../components/VehicleMapModal';
 import AssetDrawer from '../components/AssetDrawer';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
+// v58.13.116 — In-context test-data purge modal.
+import PurgeTestDataModal from '../components/vehicles/PurgeTestDataModal';
 // v160.3.9.20 — All Maintenance sub-tab.
 import PlantMaintenanceTab from './PlantMaintenanceTab';
 // v58.13.18 — Due & Generated inbox tab (5th tab). Piggy-backs this
@@ -262,6 +264,8 @@ export default function PlantVehicles() {
   // Settings → System, but the clutter is visible on Vehicles.
   // Non-admins never see this banner (server 403s the endpoint).
   const [testDataCount, setTestDataCount] = useState(0);
+  // v58.13.116 — Modal-open state for the in-context purge confirmation.
+  const [purgeModalOpen, setPurgeModalOpen] = useState(false);
   useEffect(() => {
     if (pmUser?.role !== 'admin') return;
     let alive = true;
@@ -493,14 +497,27 @@ export default function PlantVehicles() {
               Rows matching test-data patterns (<code className="font-mono">TEST-*</code>, <code className="font-mono">demo-*</code>, <code className="font-mono">sample-*</code>). Simpro-imported data is always excluded. Use the admin purge tool to clean them up.
             </div>
           </div>
-          <Link
-            to="/app/settings/system#purge-test-data"
+          <button
+            type="button"
+            onClick={() => setPurgeModalOpen(true)}
             className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700"
             data-testid="vehicles-test-data-banner-cta">
             Purge test data →
-          </Link>
+          </button>
         </div>
       )}
+      {/* v58.13.116 — Test-data purge confirmation modal. Re-queries
+          dry-run on open (so a stale banner count can't mislead the
+          admin), renders the audit summary, and gates the destructive
+          POST behind a type-to-confirm "PURGE" input. On success we
+          bounce testDataCount to 0 so the banner disappears immediately
+          without a second dry-run round-trip, then reload the asset
+          list. */}
+      <PurgeTestDataModal
+        open={purgeModalOpen}
+        onClose={() => setPurgeModalOpen(false)}
+        onPurged={() => { setTestDataCount(0); load(); }}
+      />
 
       <Tabs defaultValue="maintenance" className="mt-2" data-testid="vehicles-tabs">
         {/* v160.3.9.21d — Equal-width, colour-coded, active=filled/inactive=ghost tab bar.
