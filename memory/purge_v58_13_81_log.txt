@@ -190,3 +190,66 @@
   asset_service_schedules_cascade: 0
   assets: 1
   ids[assets]: a-f8d1abfdc5fb
+
+
+## 2026-09-04T11:47:43.868419+00:00  user=admin@paneltec.test  grand_total=11
+  asset_service_schedules_cascade: 11
+  assets: 11
+  ids[assets]: 0869b680-241d-4189-bec4-7792d190dd2f,4e50c4ed-5649-42b5-a19d-3c1e6e145fac,c48d4c99-ee8a-42fc-9eda-967a5bb60e56,405344e4-3fc5-4274-befd-2005528ea73f,9850e409-da48-4798-a940-27e8e6733734,1d58237b-ab33-49d0-af0b-38f81ba92536,a-bf5d729b4a0b,a-c5df29b5e471,a-2181559fbdf3,a-63175dad9247,a-847cd5849a27
+
+
+## 2026-09-04T11:47:43.911886+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-2b2d9b74e47c
+
+
+## 2026-09-04T11:47:43.946550+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T11:47:43.985155+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-21224b70dba2
+
+
+## 2026-09-04T11:48:28.212258+00:00  user=admin@paneltec.test  grand_total=11
+  asset_service_schedules_cascade: 11
+  assets: 11
+  ids[assets]: 004ff703-7c81-4fd2-8684-506c2eaf1ae6,e513f137-4a86-41b5-afbc-a00411a077e9,124969b0-3599-4138-aa26-9ab227904b1c,2b542d99-e66a-4a6d-b50f-4964d40ddcf3,59a3391c-4c60-473e-9624-d08f33033fb8,2dfb8138-5166-4243-901a-289db1560fd4,a-379e05658a1e,a-8954fdb52dae,a-1522c8e858f3,a-3ff67104ab5b,a-24bb6ccd475d
+
+
+## 2026-09-04T11:48:28.248235+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-60cb9a041b18
+
+
+## 2026-09-04T11:48:28.277276+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T11:48:28.311544+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-1fef31a087d5
+
+
+## 2026-09-04T11:48:42.202395+00:00  user=admin@paneltec.test  grand_total=5
+  asset_service_schedules_cascade: 5
+  assets: 5
+  ids[assets]: a-3d616bb3cab6,a-10640cae8065,a-089d4b35604e,a-e121a438e6d3,a-cf9251a02493
+
+
+## 2026-09-04T11:48:42.242327+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-d2349638f955
+
+
+## 2026-09-04T11:48:42.272089+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T11:48:42.310499+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-458a9e7b3f26

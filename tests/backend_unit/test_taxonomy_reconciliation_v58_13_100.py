@@ -179,7 +179,13 @@ def test_plant_vehicles_tab3_no_bare_assets_length():
 def test_pm_chip_labels_use_colon_form():
     """Chip labels changed from `Matched (N)` → `Matched: N`. The colon
     form is unambiguous; the parens form was misread as a competing
-    "unmatched-only" annotation. Same numbers, different separator."""
+    "unmatched-only" annotation. Same numbers, different separator.
+
+    v58.13.117 update: the Match state row's "All" label was renamed
+    to "Any" when the row was demoted from primary categorisation to
+    a secondary chip row (see .117 audit). Same three numbers, still
+    colon-form. The top-level "All: N" chip now lives on the new
+    Category chip row instead."""
     assert re.search(
         r"label:\s*`Matched:\s*\$\{items\.length\s*-\s*unmatched\.total_unmatched_rows\}`",
         PLANT_MAINT_JSX,
@@ -188,10 +194,13 @@ def test_pm_chip_labels_use_colon_form():
         r"label:\s*`Unmatched:\s*\$\{unmatched\.total_unmatched_rows\}`",
         PLANT_MAINT_JSX,
     ), "Unmatched chip label doesn't use the colon form"
+    # v58.13.117 — the Match state row's neutral chip is now "Any: N".
+    # The primary "All: N" chip lives on the Category row (asserted
+    # separately by test_category_chip_row_present in the .117 tests).
     assert re.search(
-        r"label:\s*`All:\s*\$\{items\.length\}`",
+        r"label:\s*`Any:\s*\$\{items\.length\}`",
         PLANT_MAINT_JSX,
-    ), "All chip label doesn't use the colon form"
+    ), "Match state row neutral chip doesn't use `Any: N` colon form (v58.13.117)"
 
 
 def test_pm_chip_labels_no_bare_paren_form():

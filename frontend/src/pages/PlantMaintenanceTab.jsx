@@ -3,6 +3,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import api from '../lib/api';
 import { formatDate } from '../lib/timeFormat';
 import { useCan } from '../lib/permissions';
+// v58.13.117 — Right-side detail drawer replaces the inline expansion.
+import PlantMaintenanceDrawer from '../components/vehicles/PlantMaintenanceDrawer';
 
 function StatusChip({ v }) {
   if (!v) return <span className="text-slate-300 text-xs">—</span>;
@@ -32,6 +34,12 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
   const [showUnmatched, setShowUnmatched] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  // v58.13.117 — Category filter (drives the primary tab-row) + drawer
+  // state. `categoryFilter='all'` shows everything; any other value
+  // filters by maintenance_type. `drawerRow` is the row currently
+  // rendered in the detail drawer (replaces the .20 inline expansion).
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [drawerRow, setDrawerRow] = useState(null);
   // v160.3.9.20a — flat/grouped view toggle, persisted per-device.
   const VIEW_KEY = 'paneltec_plant_maintenance_view';
   const [viewMode, setViewMode] = useState(() => {
@@ -81,6 +89,16 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
     let out = items.filter((r) => {
       if (plantFilter === 'matched' && !r.plant_id) return false;
       if (plantFilter === 'unmatched' && r.plant_id) return false;
+      // v58.13.117 — Category filter (maintenance_type). "__none" is
+      // the "Other" bucket for rows with no maintenance_type set.
+      if (categoryFilter !== 'all') {
+        const cat = r.maintenance_type;
+        if (categoryFilter === '__none') {
+          if (cat) return false;
+        } else if (cat !== categoryFilter) {
+          return false;
+        }
+      }
       if (needle) {
         const hay = [r.maintenance_id, r.description, r.registration_no, r.registration_matched,
                      r.notes, r.performed_by, r.company, r.maintenance_type, r.type, r.sub_type]
@@ -91,7 +109,28 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
     });
     out.sort((a, b) => (b.date_completed || '').localeCompare(a.date_completed || ''));
     return out;
-  }, [items, q, plantFilter]);
+  }, [items, q, plantFilter, categoryFilter]);
+
+  // v58.13.117 — Category counts driven from the loaded items array so
+  // chips live-update with imports, deletions, or edits. Sorted by
+  // descending count so the busiest bucket always sits leftmost after
+  // "All". Null / empty maintenance_type collapses into "Other" with
+  // a "Category not set on import" tooltip so admins recognise it as
+  // a data-quality flag rather than a real bucket.
+  const categoryCounts = useMemo(() => {
+    const counts = new Map();
+    let noneCount = 0;
+    for (const r of items) {
+      const t = r.maintenance_type;
+      if (!t) { noneCount += 1; continue; }
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+    const named = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, v]) => ({ k, label: k, count: v }));
+    if (noneCount) named.push({ k: '__none', label: 'Other', count: noneCount, missing: true });
+    return named;
+  }, [items]);
 
   const submitImport = async (fileOrUrl) => {
     const fd = new FormData();
@@ -110,28 +149,65 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           placeholder="Search maintenance…"
           className="w-64 rounded-md border border-slate-300 px-3 py-2 text-sm"
           data-testid="pm-search" />
+      </div>
 
-        <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-plant-toggle">
-          {[
-            // v58.13.100 — label style changed from `Label (N)` to
-            // `Label: N` per user directive. The `(N)` form was
-            // misread as a math-style "unmatched-only" annotation
-            // (see .97 audit — user reported "another unmatched 491").
-            // The colon reads unambiguously as "of this kind: this
-            // many rows". Same numbers, clearer semantics.
-            { k: 'all', label: `All: ${items.length}` },
-            { k: 'matched', label: `Matched: ${items.length - unmatched.total_unmatched_rows}` },
-            { k: 'unmatched', label: `Unmatched: ${unmatched.total_unmatched_rows}` },
-          ].map((opt) => (
-            <button key={opt.k} onClick={() => setPlantFilter(opt.k)}
-              data-testid={`pm-filter-${opt.k}`}
-              className={`px-3 py-1 text-xs font-semibold ${plantFilter === opt.k ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-              {opt.label}
+      {/* v58.13.117 — Two-row chip layout. Row 1 = maintenance category
+          (primary). Row 2 = match state (secondary, demoted from the
+          top-level "Unmatched" tab that .117 removed). */}
+      <div className="space-y-2" data-testid="pm-chip-rows">
+        <div className="flex flex-wrap items-center gap-1.5" data-testid="pm-category-chip-row">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mr-1">Category</span>
+          <button
+            type="button"
+            onClick={() => setCategoryFilter('all')}
+            data-testid="pm-cat-all"
+            className={`px-2.5 py-1 text-xs font-semibold rounded-full border ${categoryFilter === 'all' ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'}`}
+          >
+            All: {items.length}
+          </button>
+          {categoryCounts.map((opt) => (
+            <button
+              key={opt.k}
+              type="button"
+              onClick={() => setCategoryFilter(opt.k)}
+              title={opt.missing ? 'Category not set on import' : `Filter by ${opt.label}`}
+              data-testid={`pm-cat-${opt.k === '__none' ? 'none' : opt.k.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`}
+              className={
+                `px-2.5 py-1 text-xs font-semibold rounded-full border inline-flex items-center gap-1 `
+                + (categoryFilter === opt.k
+                  ? (opt.missing ? 'bg-amber-600 text-white border-amber-600' : 'bg-blue-600 text-white border-blue-600')
+                  : (opt.missing ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100' : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'))
+              }
+            >
+              {opt.label}: {opt.count}
             </button>
           ))}
         </div>
 
-        {/* v160.3.9.20a — Flat / Grouped view toggle. */}
+        <div className="flex flex-wrap items-center gap-2" data-testid="pm-match-chip-row">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mr-1">Match state</span>
+          <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-plant-toggle">
+            {[
+              // v58.13.117 — Same numbers, same keys as pre-.117; only
+              // demoted to a secondary chip row so it's no longer the
+              // primary categorisation. Labels kept as `Label: N` per
+              // .100.
+              { k: 'all', label: `Any: ${items.length}` },
+              { k: 'matched', label: `Matched: ${items.length - unmatched.total_unmatched_rows}` },
+              { k: 'unmatched', label: `Unmatched: ${unmatched.total_unmatched_rows}` },
+            ].map((opt) => (
+              <button key={opt.k} onClick={() => setPlantFilter(opt.k)}
+                data-testid={`pm-filter-${opt.k}`}
+                className={`px-3 py-1 text-xs font-semibold ${plantFilter === opt.k ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                {opt.label}
+            </button>
+          ))}
+          </div>
+        </div>
+      </div>
+
+      {/* v160.3.9.20a — Flat / Grouped view toggle. */}
+      <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center rounded-full border border-slate-200 overflow-hidden" data-testid="pm-view-toggle">
           {[
             { k: 'flat', label: 'Flat' },
@@ -226,12 +302,12 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           </div>
           <ul className="divide-y divide-slate-100" data-testid="pm-rows">
             {filtered.map((row) => {
-              const isOpen = expanded === row.id;
+              const isOpen = drawerRow?.id === row.id;
               return (
                 <li key={row.id} className="bg-white" data-testid={`pm-row-${row.maintenance_id}`}>
                   <button className={`w-full text-left grid items-start py-2.5 hover:bg-slate-50 gap-2 px-3 ${isOpen ? 'bg-slate-50' : ''}`}
                     style={{ gridTemplateColumns: '70px 120px 200px 160px 130px 130px 140px 100px 40px' }}
-                    onClick={() => setExpanded(isOpen ? null : row.id)}
+                    onClick={() => setDrawerRow(row)}
                     aria-expanded={isOpen}>
                     <div className="font-mono text-xs text-slate-500 pt-0.5">#{row.maintenance_id}</div>
                     <div className="pt-0.5"><PlantChip row={row} /></div>
@@ -241,27 +317,8 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
                     <div className="text-xs text-slate-700 font-mono">{row.cost || '—'}</div>
                     <div className="text-xs text-slate-700 truncate" title={row.company || ''}>{row.company || '—'}</div>
                     <div className="pt-0.5"><StatusChip v={row.maintenance_status} /></div>
-                    <div className="text-center text-slate-400 text-xs pt-0.5">{isOpen ? '▾' : '▸'}</div>
+                    <div className="text-center text-slate-400 text-xs pt-0.5">▸</div>
                   </button>
-                  {isOpen && (
-                    <div className="px-4 pb-4">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 p-4 rounded-lg border border-slate-200 bg-slate-50/60" data-testid={`pm-detail-${row.maintenance_id}`}>
-                        {['type','sub_type','manufacturer','asset_code','latest_usage_reading',
-                          'due_date','due_at','performed_by','notes'].map((k) => (
-                          row[k] ? (
-                            <div key={k} className={k === 'notes' ? 'md:col-span-2' : ''}>
-                              <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
-                                {k === 'due_date' ? 'Due (preferred)' : k === 'due_at' ? 'Due (raw)' : k.replace(/_/g, ' ')}
-                              </div>
-                              <div className="text-sm text-slate-800 whitespace-pre-line">
-                                {(k === 'due_date' || k === 'due_at') ? (formatDate(new Date(row[k])) || row[k]) : String(row[k])}
-                              </div>
-                            </div>
-                          ) : null
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </li>
               );
             })}
@@ -281,6 +338,9 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           </div>
         </div>
       )}
+      {/* v58.13.117 — Right-side maintenance detail drawer. Opens on
+          any row click; closes via ✕, Esc, or backdrop click. */}
+      <PlantMaintenanceDrawer row={drawerRow} onClose={() => setDrawerRow(null)} />
     </div>
   );
 }

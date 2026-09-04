@@ -532,22 +532,17 @@ export default function PlantVehicles() {
             All Maintenance
           </TabsTrigger>
 
-          {/* Tab 2 — Unmatched (rose / warning) */}
-          <TabsTrigger value="unmatched" data-testid="vehicles-tab-unmatched"
-            className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
-              border-rose-500 text-rose-600 bg-white hover:bg-rose-50
-              data-[state=active]:bg-rose-500 data-[state=active]:text-white data-[state=active]:hover:bg-rose-500
-              data-[state=active]:shadow-sm">
-            Unmatched
-            {pmUnmatched != null && pmUnmatched > 0 && (
-              <span className="inline-flex items-center rounded-md !bg-rose-200 !text-rose-900 data-[state=active]:!bg-rose-100 data-[state=active]:!text-rose-700 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums"
-                data-testid="vehicles-tab-unmatched-count">
-                {pmUnmatched}
-              </span>
-            )}
-          </TabsTrigger>
+          {/* v58.13.117 — Removed the Tab 2 "Unmatched" trigger. It
+              was a redundant shortcut to the internal "Match state"
+              filter chip inside PlantMaintenanceTab (now demoted to a
+              secondary chip row). Users who want to see unmatched
+              maintenance rows click into "All Maintenance" and pick
+              the Unmatched match-state chip. Renumbered comments
+              below to reflect the new 4-tab order:
+              All Maintenance · Vehicles from Navixy · Dashboard ·
+              Service Inbox. */}
 
-          {/* Tab 3 — Vehicles from Navixy (emerald / live-data badge) */}
+          {/* Tab 2 — Vehicles from Navixy (emerald / live-data badge) */}
           <TabsTrigger value="list" data-testid="vehicles-tab-list"
             className="inline-flex items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold tracking-tight transition-colors
               border-emerald-600 text-emerald-700 bg-white hover:bg-emerald-50
@@ -798,9 +793,8 @@ export default function PlantVehicles() {
         <TabsContent value="maintenance" className="mt-4" data-testid="vehicles-tab-maintenance-content">
           <PlantMaintenanceTab user={pmUser} />
         </TabsContent>
-        <TabsContent value="unmatched" className="mt-4" data-testid="vehicles-tab-unmatched-content">
-          <PlantMaintenanceTab user={pmUser} initialPlantFilter="unmatched" />
-        </TabsContent>
+        {/* v58.13.117 — Unmatched TabsContent removed. See tab-trigger
+            block above for rationale. */}
         {/* v58.13.18 — Service Inbox tab: org-wide DUE schedules +
             GENERATED (cron-created) unperformed records. See
             /app/frontend/src/pages/ServiceInboxTab.jsx for the full
