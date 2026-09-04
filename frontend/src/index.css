@@ -624,3 +624,37 @@ ol.zebra-list > li:hover {
     padding-top: var(--app-topbar-height, 4rem);
 }
 
+
+/*
+ * v58.13.111 — "Made with Emergent" badge safe-zone.
+ *
+ * The platform-injected preview badge sits fixed bottom-right
+ * (~180 x 50 px on desktop, smaller on mobile). It occludes any
+ * primary/destructive action button that lands under it. Rather
+ * than patch 30+ modal call-sites individually, we ship a global
+ * utility that ANY fixed drawer/modal footer can opt into by
+ * adding `emergent-badge-safe` to its container class list.
+ *
+ * The three shared shadcn footers (SheetFooter / DialogFooter /
+ * AlertDialogFooter) apply this automatically as of .111, so
+ * every modal/drawer routed through them inherits the safe zone
+ * with zero call-site changes. Bespoke drawers (e.g. the visitor
+ * detail drawer in AdminVisitors.jsx) opt in explicitly.
+ *
+ * Sizing: 12rem right-reserve on md+ (badge is ~180 px + margin),
+ *          collapse to 4.5rem on smaller viewports where the
+ *          badge is compact. `pb` reserve of 1rem base + 4rem on
+ *          the smallest viewports to keep the button clear of the
+ *          bottom edge and any iOS home-indicator area.
+ */
+.emergent-badge-safe {
+    padding-right: 4.5rem !important;
+    padding-bottom: 4rem !important;
+}
+@media (min-width: 768px) {
+    .emergent-badge-safe {
+        padding-right: 12rem !important;
+        padding-bottom: 1rem !important;
+    }
+}
+

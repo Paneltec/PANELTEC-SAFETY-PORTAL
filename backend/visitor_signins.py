@@ -185,17 +185,25 @@ async def admin_list_visitors(
     active_only: bool = False,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    include_deleted: bool = False,  # v58.13.110 — auditor toggle
     limit: int = Query(100, ge=1, le=500),
     user: dict = Depends(require_permission("sites_visitors", "view")),
 ):
     """List visitor sign-ins. Scoped by org. Capped at 500 rows to
     prevent CF 520s on wide date ranges. Use date_from/date_to to
-    paginate historical windows."""
+    paginate historical windows.
+
+    v58.13.110 — Soft-deleted rows are excluded by default. Pass
+    `include_deleted=true` to include them (auditor / audit-trail
+    surfaces only).
+    """
     q: dict = {"org_id": user["org_id"]}
     if site_id:
         q["site_id"] = site_id
     if active_only:
         q["signed_out_at"] = None
+    if not include_deleted:
+        q["$or"] = [{"deleted_at": None}, {"deleted_at": {"$exists": False}}]
     if date_from or date_to:
         q["signed_in_at"] = {}
         if date_from:
@@ -204,7 +212,28 @@ async def admin_list_visitors(
             q["signed_in_at"]["$lte"] = date_to
     cursor = db.site_visitors.find(q, {"_id": 0}).sort("signed_in_at", -1).limit(limit)
     rows = [r async for r in cursor]
-    return {"items": rows, "count": len(rows), "capped": len(rows) >= limit}
+    # v58.13.110 — Enrich with site name/address for the decluttered
+    # main table + detail drawer header. One cheap join per distinct
+    # site_id in the result set (typically <20).
+    site_ids = {r.get("site_id") for r in rows if r.get("site_id")}
+    site_map: dict = {}
+    if site_ids:
+        async for s in db.simpro_sites.find(
+            {"org_id": user["org_id"],
+             "$or": [{"id": {"$in": list(site_ids)}},
+                     {"simpro_site_id": {"$in": list(site_ids)}}]},
+            {"_id": 0, "id": 1, "simpro_site_id": 1, "name": 1, "address": 1},
+        ):
+            key = s.get("simpro_site_id") or s.get("id")
+            if key:
+                site_map[key] = {"name": s.get("name"), "address": s.get("address")}
+    for r in rows:
+        site_meta = site_map.get(r.get("site_id"))
+        if site_meta:
+            r["site_name"] = site_meta["name"]
+            r["site_address"] = site_meta["address"]
+    return {"items": rows, "count": len(rows), "capped": len(rows) >= limit,
+            "include_deleted": include_deleted}
 
 
 @admin_router.get("/{visitor_id}")
@@ -219,7 +248,99 @@ async def admin_get_visitor(
     )
     if not v:
         raise HTTPException(404, "Visitor not found")
+    # v58.13.110 — Enrich with site info for the detail drawer header.
+    site_key = v.get("site_id")
+    if site_key:
+        s = await db.simpro_sites.find_one(
+            {"org_id": user["org_id"],
+             "$or": [{"id": site_key}, {"simpro_site_id": site_key}]},
+            {"_id": 0, "name": 1, "address": 1, "suburb": 1, "state": 1},
+        )
+        if s:
+            v["site_name"] = s.get("name")
+            v["site_address"] = s.get("address")
+            v["site_suburb"] = s.get("suburb")
+            v["site_state"] = s.get("state")
     return v
+
+
+# v58.13.110 — Delete + bulk-delete + list-includes-deleted toggle.
+class BulkDeleteIn(BaseModel):
+    ids: list[str] = Field(..., min_length=1, max_length=500)
+
+
+@admin_router.delete("/{visitor_id}")
+@safe_admin_endpoint
+async def admin_delete_visitor(
+    visitor_id: str,
+    request: Request,
+    user: dict = Depends(require_permission("sites_visitors", "delete")),
+):
+    """Soft-delete a single visitor row. Stamps `deleted_at` +
+    `deleted_by`. Idempotent — a second call returns already=True."""
+    v = await db.site_visitors.find_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "deleted_at": 1},
+    )
+    if not v:
+        raise HTTPException(404, "Visitor not found")
+    if v.get("deleted_at"):
+        return {"visitor_id": visitor_id, "deleted_at": v["deleted_at"], "already": True}
+    now = _now_iso()
+    await db.site_visitors.update_one(
+        {"id": visitor_id, "org_id": user["org_id"]},
+        {"$set": {"deleted_at": now, "deleted_by": user["id"], "updated_at": now}},
+    )
+    logger.info("visitor_delete id=%s actor=%s org=%s", visitor_id, user["id"], user["org_id"])
+    return {"visitor_id": visitor_id, "deleted_at": now, "already": False}
+
+
+@admin_router.post("/bulk-delete")
+@safe_admin_endpoint
+async def admin_bulk_delete_visitors(
+    request: Request,
+    body: BulkDeleteIn,
+    user: dict = Depends(require_permission("sites_visitors", "delete")),
+):
+    """Soft-delete up to 500 visitor rows in one shot. Returns
+    `{deleted: n, skipped: [{id, reason}]}`. Rows not found in the
+    caller's org are reported as `not_found`; rows already deleted
+    are reported as `already_deleted`. NEVER partially fails —
+    every id in the payload lands in exactly one bucket."""
+    ids = list({i for i in body.ids if i})  # dedupe, drop blanks
+    if not ids:
+        raise HTTPException(422, "ids must contain at least one non-empty value")
+    # Fetch every candidate in one query.
+    existing: dict = {}
+    async for v in db.site_visitors.find(
+        {"id": {"$in": ids}, "org_id": user["org_id"]},
+        {"_id": 0, "id": 1, "deleted_at": 1},
+    ):
+        existing[v["id"]] = v
+    now = _now_iso()
+    to_delete: list[str] = []
+    skipped: list[dict] = []
+    for vid in ids:
+        row = existing.get(vid)
+        if not row:
+            skipped.append({"id": vid, "reason": "not_found"})
+            continue
+        if row.get("deleted_at"):
+            skipped.append({"id": vid, "reason": "already_deleted"})
+            continue
+        to_delete.append(vid)
+    deleted = 0
+    if to_delete:
+        res = await db.site_visitors.update_many(
+            {"id": {"$in": to_delete}, "org_id": user["org_id"]},
+            {"$set": {"deleted_at": now, "deleted_by": user["id"], "updated_at": now}},
+        )
+        deleted = res.modified_count
+    logger.info(
+        "visitor_bulk_delete deleted=%s skipped=%s actor=%s org=%s",
+        deleted, len(skipped), user["id"], user["org_id"],
+    )
+    return {"deleted": deleted, "skipped": skipped, "requested": len(ids)}
 
 
 @admin_router.post("/{visitor_id}/force-signout")

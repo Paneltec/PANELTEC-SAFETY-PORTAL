@@ -1,5 +1,393 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.111 — Emergent-badge safe-zone (bundled with the
+//                       in-flight cert file-preview + audit-script
+//                       work per user's "piggyback or standalone"
+//                       green-light on the badge fix).
+//
+// USER PAIN (verbatim): "'Made with Emergent' badge covers action
+// buttons in most popups/drawers". Confirmed in the visitor-drawer
+// screenshot where the Force-sign-out button sat 50% under the badge.
+//
+// ── Global fix (`frontend/src/index.css` + shadcn footers) ───
+//   NEW `.emergent-badge-safe` utility class in `index.css`:
+//     · < md: padding-right 4.5rem + padding-bottom 4rem (compact
+//       badge on mobile + iOS home-indicator area).
+//     · ≥ md: padding-right 12rem + padding-bottom 1rem (badge is
+//       ~180 px on desktop + a margin).
+//   Applied automatically by the three shared shadcn footers:
+//     · `frontend/src/components/ui/sheet.jsx`::SheetFooter
+//     · `frontend/src/components/ui/dialog.jsx`::DialogFooter
+//     · `frontend/src/components/ui/alert-dialog.jsx`::AlertDialogFooter
+//   Every modal/drawer routed through those inherits the safe zone
+//   with zero call-site changes — a single-line cn() addition per
+//   file. Bespoke drawers (the visitor detail drawer in
+//   AdminVisitors.jsx + the BulkDeleteModal) opt in explicitly by
+//   putting `emergent-badge-safe` on their footer/modal container.
+//
+// ── Files touched (v58.13.111 badge fix) ────────────────────
+//   · frontend/src/index.css                              (+30 lines)
+//   · frontend/src/components/ui/sheet.jsx                (+1 class)
+//   · frontend/src/components/ui/dialog.jsx               (+1 class)
+//   · frontend/src/components/ui/alert-dialog.jsx         (+1 class)
+//   · frontend/src/pages/AdminVisitors.jsx                (+2 usages)
+//
+// ── Scope: shadcn absorbs the fix for every non-bespoke modal ──
+//   Grep across `frontend/src/pages` + `frontend/src/components`
+//   for `fixed inset-y-0 right-0` returned exactly ONE bespoke
+//   right-side drawer (AdminVisitors DetailDrawer). Every other
+//   modal in this codebase routes through shadcn Dialog / Sheet /
+//   AlertDialog → auto-inherits the safe zone. Any future bespoke
+//   fixed-position modal opts in by adding `emergent-badge-safe`
+//   to its action-row container (documented in the CSS comment).
+//
+// ── Wire proof (Playwright) ────────────────────────────
+//   Visitor detail drawer footer now shows Close (left) + Delete
+//   (right) both fully visible ABOVE the badge; the badge sits in
+//   its bottom-right slot with clear 12rem of empty space between
+//   it and the Delete button.
+//
+// ── Also bundled in this ship (cert file-preview fix — backend
+//    slice only, frontend copy fix deferred to .111a) ─────────
+//   · NEW `_sniff_kind(blob)` in `backend/file_pdf.py` — small
+//     closed-set magic-byte sniffer used by `_convert` AND the
+//     audit script.
+//   · `backend/file_pdf.py::_convert` now trusts sniffed magic
+//     over the stored `doc_files.mime` when they disagree.
+//     JPEG/PNG/WEBP/GIF stored as `.pdf` (or vice versa) now
+//     silently reroute to the `image` pipeline and render fine.
+//     Stubs / empty / unknown 415 with a clearer message:
+//       "File is {kind} ({size} bytes), not a valid PDF. Preview
+//        unavailable — please re-upload."
+//     Defensive `%PDF-` check stays.
+//   · `backend/worker_certifications.py::list_all_certs` now
+//     joins `doc_files` and surfaces `preview_broken` +
+//     `preview_broken_reason` on each cert row so the frontend
+//     can show a "please re-upload" state without triggering the
+//     415-returning /pdf fetch first.
+//   · NEW `backend/scripts/audit_doc_files_v58_13_111.py` —
+//     MANUAL invocation, idempotent, `--dry-run` flag. Walks
+//     every `doc_files` row, sniffs magic vs stored mime, prints
+//     JSONL report + summary. Auto-flags stubs
+//     (size<100 AND non-binary sniff, OR mime=pdf AND sniff=text)
+//     with `preview_broken=True` + reason string.
+//
+// ── Deferred to a follow-on ship (was in the .111 brief) ────
+//   · Frontend Certifications.jsx copy fix:
+//        "No expiry" → "Expiry not set" when
+//        `expiry_date === null && held_no_expiry !== true`;
+//        "No expiry" retained only when `held_no_expiry === true`;
+//        expiry cell null → soft-gray "Not set" text.
+//   · Frontend preview modal content-type branch (image → <img>,
+//     pdf → viewer). Not needed for the happy path — server-side
+//     sniff-and-wrap makes /pdf return a valid PDF for image
+//     originals, so the existing PDF viewer just works. Only the
+//     copy nicety remains.
+//   · Pytests for the sniff routing + copy matrix + audit-script
+//     idempotency.
+//   Reason: user redirected mid-flight to the badge fix. Backend
+//   cert work above is already merged and safe; the frontend
+//   copy tweaks are cosmetic and non-blocking, will ship as
+//   .111a.
+//
+// ── NOT changed ────────────────────────────────────────
+//   · No backend badge-related changes (badge is client-side).
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped —
+//     badge doesn't appear in the native app).
+//   · No new comms / scheduler / ephemeral-upload endpoints.
+//   · The 20 pre-existing `ephemeral-upload-storage` lint
+//     warnings (still parked for v58.14.x).
+
+
+// v160.3.9.58.13.110a — Site Visitors drawer footer UX fix.
+//
+// USER PAIN (verbatim): "When you view a site visitor you can only
+// delete when it open to the popup no back button."
+// Root cause: the .110 drawer footer wrapped its contents in
+// `{row && !row.deleted_at && (<footer>…)}`, so soft-deleted rows
+// dropped the footer entirely — the only inline exit was the tiny ✕
+// icon in the header, and the Delete button sat next to it with no
+// obvious "safe" mate. Users read the Delete button as the only
+// action, felt trapped, and (rightly) flagged it.
+//
+// ── Change (`frontend/src/pages/AdminVisitors.jsx` — DetailDrawer) ─
+//   1. Footer now ALWAYS renders (as long as `row` is loaded), so
+//      there is ALWAYS an inline Close/Back button in the drawer
+//      chrome. Even a soft-deleted row shows a solo "Close" button.
+//   2. Layout reordered: Close is on the LEFT (safe, primary),
+//      destructive actions (Force sign-out, Delete) pushed to the
+//      RIGHT with `ml-auto`. Reading order matches "here's the exit,
+//      here's the danger".
+//   3. `window.confirm(…)` REPLACED with an inline confirm view
+//      swapped into the footer region:
+//        · Tap Delete    → footer swaps to
+//          "Delete this visitor record for {name}?" +
+//          [Cancel] [Delete Anyway] buttons.
+//        · Tap Force sign-out → same pattern with the sign-out
+//          strings + a black [Sign out] confirm button (not red —
+//          it's non-destructive).
+//        · Cancel returns to the detail view. Drawer stays open.
+//        · Delete Anyway / Sign out → executes → closes drawer
+//          + refreshes the list on the parent page via the
+//          existing `onDeleted` / `onSignedOut` callbacks.
+//   4. Escape key handler: pressing Esc while the confirm view is
+//      up cancels the confirm ONLY (returns to detail); pressing
+//      Esc from the detail view closes the drawer.
+//   5. Backdrop click: same two-step — cancels a confirm first,
+//      then closes on the second click. Also consistent for a
+//      mis-click.
+//   6. `data-testid`s added: `visitor-detail-footer`,
+//      `visitor-detail-back` (the new Close button in the footer),
+//      `visitor-detail-confirm`, `visitor-detail-confirm-cancel`,
+//      `visitor-detail-confirm-go`. Existing testids preserved.
+//   7. `busy` state locks both Cancel and Confirm during the
+//      mutation so a hot-tap can't fire twice.
+//
+// ── Wire proof (Playwright — see ship memo) ──────────────────
+//   · Drawer footer visible with `[Close]` (left) + `[Force sign-
+//     out]` + `[Delete]` (right) for an active row.
+//   · Tap Delete → footer swaps to the confirm view.
+//   · Tap Cancel → returns to the detail view, drawer still open,
+//     no mutation. Verified via DOM count of the confirm testid
+//     going 1 → 0.
+//   · Tap Close (footer) → drawer dismissed, URL unchanged.
+//
+// ── NOT changed ────────────────────────────────────────
+//   · No backend edits. `DELETE /admin/visitors/{id}` +
+//     `POST /admin/visitors/bulk-delete` untouched.
+//   · No changes to the bulk-select toolbar or bulk-delete modal.
+//   · No new endpoints, no comms, no scheduler paths.
+//   · `/app/mobile/` code untouched (only version constant).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x).
+
+
+// v160.3.9.58.13.110 — Site Visitors: delete + detail drawer + declutter.
+//
+// USER PAIN: admin site-visitors page was cluttered (9 columns wide
+// on every row), had no way to delete stale test rows, and no
+// per-visitor detail view for the fields that don't fit inline.
+//
+// ── Backend (`backend/visitor_signins.py`) ──────────────────
+//   · NEW `DELETE /api/admin/visitors/{id}` — soft-delete (stamps
+//     `deleted_at` + `deleted_by`). Idempotent (`already:true` on
+//     re-fire). Auth-gated + permission `sites_visitors.delete`
+//     (schema already carries it from .106). `@safe_admin_endpoint`.
+//   · NEW `POST /api/admin/visitors/bulk-delete` — payload
+//     `{ ids: [str] }` (pydantic min_length=1, max_length=500 →
+//     automatic 422 on a 501-element payload; verified via curl).
+//     Returns `{ deleted: n, skipped: [{id, reason: 'not_found' |
+//     'already_deleted'}], requested: n }`. Same permission gate.
+//     `@safe_admin_endpoint`. Route registered BEFORE `/{visitor_id}`
+//     in file order but path-collision-free since it's `POST` and
+//     `bulk-delete` is a literal segment.
+//   · `GET /api/admin/visitors` list — added `include_deleted=false`
+//     default filter (auditor toggle to `true` re-surfaces soft-
+//     deleted rows). Now enriches each row with `site_name` +
+//     `site_address` via one cheap Mongo join per distinct
+//     `site_id` in the result window (typically ≤20 per page).
+//   · `GET /api/admin/visitors/{id}` — same site enrichment applied
+//     (`site_name`, `site_address`, `site_suburb`, `site_state`)
+//     for the detail-drawer header.
+//
+// ── Frontend (`frontend/src/pages/AdminVisitors.jsx`) ───────
+//   Full page rewrite. Same file, same route, same permission gate.
+//   · Slim table: checkbox / Name / Company / Site / Signed in
+//     (relative) / Status pill / Actions button. Every other field
+//     moved into the detail drawer.
+//   · Row selection: header checkbox = select-all on the current
+//     page (excludes soft-deleted rows so they can't accidentally be
+//     re-deleted); row checkbox = individual. Persistent black
+//     toolbar `[N selected] [Delete selected] [Clear]` appears
+//     above the table when the selection is non-empty. Clearing on
+//     every list refresh so stale selection can't outlive its data.
+//   · Detail drawer: right-slide `fixed inset-y-0 right-0 w-full
+//     max-w-md`. Header shows name / company / site / status pill
+//     + close (✕). Body sections: Contact (phone as `tel:` link) /
+//     Visit / Safety / Timeline (relative + absolute + duration) /
+//     Provenance (site name+address, source IP, user agent). Footer
+//     actions: Force sign-out (only when active), Delete (only when
+//     not already deleted), Close.
+//   · Bulk delete confirm modal lists every selected row's name +
+//     company. Loading state on the confirm button. Toast surfaces
+//     the deleted/skipped split.
+//   · New "Include deleted" toolbar checkbox re-triggers `load()`
+//     via useEffect dep. Deleted rows render with `opacity-60` and
+//     a slate "Deleted" pill.
+//   · Row body click → drawer opens for that visitor. Selection
+//     checkbox stops propagation so ticking it doesn't also open
+//     the drawer.
+//
+// ── Wire proof (curl on preview, ship-day) ──────────────────
+//   · GET /api/admin/visitors → 14 rows, `include_deleted:false`,
+//     every row now has `site_name` populated ("Paneltec Depot").
+//   · GET /api/admin/visitors/{id} → 23 fields incl. `site_name`,
+//     `site_address` on the enriched detail response.
+//   · DELETE /api/admin/visitors/{id} → 200
+//     `{visitor_id, deleted_at, already:false}`.
+//   · DELETE again → 200 `already:true` (idempotent).
+//   · GET list default → deleted row excluded.
+//   · GET list `?include_deleted=true` → deleted row present.
+//   · POST /bulk-delete (2 real + 1 nonexistent) →
+//     `{deleted:2, skipped:[{id:"does-not-exist-id", reason:"not_found"}],
+//     requested:3}`.
+//   · Bulk re-fire → `deleted:0, skipped:[3× {already_deleted /
+//     not_found}]`.
+//   · Bulk 501 ids → 422 pydantic `too_long` error (max_length=500
+//     enforced structurally, no per-request guard needed).
+//   · DELETE unauth → 401.
+//
+// ── Wire proof (Playwright) ───────────────────────────────
+//   · Row body click opens the detail drawer showing all trimmed
+//     fields — screenshot shows Contact + Visit + Safety + Timeline
+//     + Provenance sections rendering for a real visitor.
+//   · Ticking two checkboxes surfaces the black "2 selected" toolbar
+//     with Delete/Clear buttons. Delete → confirm modal listing
+//     names. Confirm → toast "Deleted 2".
+//   · "Include deleted" toggle brings the just-deleted rows back
+//     into view with the "Deleted" slate pill.
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_admin_visitors_delete_v58_13_110.py`:
+//     · DELETE unauth → 401 (source-pin via manual curl in ship
+//       memo; pytest asserts structural presence of the endpoint).
+//     · DELETE decorated with @safe_admin_endpoint +
+//       `require_permission("sites_visitors", "delete")`.
+//     · Bulk endpoint declared with pydantic `min_length=1`,
+//       `max_length=500`.
+//     · Bulk endpoint sets `deleted_at` + `deleted_by` + reports
+//       `{deleted, skipped[], requested}` shape.
+//     · List endpoint carries `include_deleted: bool = False` param
+//       and applies the `$or deleted_at null / missing` filter when
+//       `include_deleted` is False.
+//     · List + Get both enrich with `site_name`.
+//     · Behavioural: seed 3 rows, DELETE 1 → list excludes;
+//       include_deleted=True → list includes.
+//     · Bulk seed 3 rows + 1 fake id → deleted=3, skipped=[{fake:
+//       not_found}].
+//     · Version-sync forward-safe pins ≥ .110.
+//
+// ── NOT changed ────────────────────────────────────────
+//   · No new endpoints outside `/admin/visitors`.
+//   · No comms / notifications / outbox / scheduler paths.
+//   · `sites_visitors` permission schema (delete_supported already
+//     True since .106).
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x).
+
+
+// v160.3.9.58.13.109b — retire legacy /app/site-signin flow.
+//
+// User confirmed the .109a flagged "different flow" as functionally the
+// same to them. This ship follows through:
+//   · /app/site-signin route (+ any /app/site-signin/*) now redirects
+//     to /app/admin/visitors via `<Navigate replace/>`.
+//   · `SiteSigninList.jsx` file DELETED. Import in App.js retained as
+//     a commented-out breadcrumb so `git log -S` finds the removal.
+//   · Legacy in-app comment on the removed sidebar entry simplified
+//     — no longer needs to document a "different flow" caveat.
+//
+// ── Record count (drives the backfill decision) ─────────────
+//   `db.form_submissions.count({template_id:'e8873f7e-6fd4-…'}) = 1`.
+//   Well below the 1000-row threshold. Migration written.
+//
+// ── Migration ────────────────────────────────────────────
+//   NEW `backend/scripts/migrate_legacy_signins_v58_13_109b.py` —
+//   one-shot idempotent, MANUAL invocation. Field mapping in the
+//   module docstring flags every lossy field (signature, emergency
+//   contact, photo, id_sighted, vehicle_type). Each migrated row
+//   is stamped `source:"legacy_signin_migration"` + carries the
+//   originating `legacy_form_submission_id` so re-running the
+//   script skips already-migrated docs. NOT auto-run on startup.
+//
+// ── Frontend edits ──────────────────────────────────────
+//   · App.js — legacy route → Navigate replace + wildcard sibling.
+//   · App.js — SiteSigninList import commented-out (git breadcrumb).
+//   · AppShell.jsx — .109a merge comment collapsed to a 5-line
+//     provenance note now that the flow is fully retired.
+//   · pages/SiteSigninList.jsx — deleted.
+//
+// ── Wire proof (Playwright) ────────────────────────────────
+//   · GET /app/site-signin (auth) → immediate Navigate(replace) to
+//     /app/admin/visitors; URL bar reflects the new path.
+//   · pytest source-pin confirms App.js registers the redirect.
+//
+// ── Tests ────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_retire_site_signin_v58_13_109b.py`:
+//     · SiteSigninList.jsx no longer exists.
+//     · App.js registers /site-signin → /app/admin/visitors redirect.
+//     · Migration script exists + module-load resolves.
+//     · Field mapping pure-fn seed-and-verify (3 synthetic
+//       form_submissions rows → 3 site_visitors rows with the
+//       expected mapping). Uses fresh motor client per test loop
+//       (same pattern as the .109 orphan vacuum test).
+//     · Idempotent re-run leaves counts unchanged.
+//     · Version-sync forward-safe pins ≥ .109b.
+//
+// ── NOT changed ────────────────────────────────────────
+//   · No backend endpoint edits (route retirement + one-shot script
+//     only).
+//   · sites_visitors permission schema / role defaults.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x).
+
+
+// v160.3.9.58.13.109a — UI cleanup: merge duplicate visitor entries.
+//
+// USER PAIN: two sidebar entries had confusingly similar labels and
+// both surfaced visitor-adjacent data — "Site Sign-In / Visitor
+// Register" and "Site Visitors". Merged into a single "Site Visitors"
+// entry at /app/admin/visitors.
+//
+// ── Investigation finding (flagged) ────────────────────────
+// The two entries pointed at DIFFERENT flows, not duplicates:
+//   · /app/site-signin     (v58.13.6, SiteSigninList) — legacy
+//                           in-org form-template capture. Reads
+//                           `form_submissions` filtered by
+//                           `template_id == e8873f7e-6fd4-…`.
+//                           A staff member fills out the form.
+//   · /app/admin/visitors  (v58.13.106, AdminVisitors) — public-
+//                           visitor register. Reads the
+//                           `site_visitors` collection populated by
+//                           anonymous QR-scan sign-ins (via the .106
+//                           VisitorSignIn public form).
+// Per the brief's "keep a SINGLE admin entry, label 'Site Visitors',
+// route /app/admin/visitors, permission gate sites_visitors.view"
+// the legacy Capture entry was removed. The `/app/site-signin`
+// ROUTE remains registered in App.js so any existing bookmarks /
+// deep-links / audit-trail hyperlinks still resolve — only the
+// sidebar tile is gone. If a follow-up ship confirms the form-
+// template capture is fully superseded, that will drop the route +
+// component. Until then it's a deep-link-only surface.
+//
+// ── Change ────────────────────────────────────────────────
+// `frontend/src/components/layout/AppShell.jsx` — deleted the
+// `{ to: '/app/site-signin', label: 'Site Sign-In / Visitor Register',
+// testid: 'nav-site-signin', … }` NAV entry from the Capture section.
+// The `{ to: '/app/admin/visitors', label: 'Site Visitors',
+// testid: 'nav-admin-visitors', permission: 'sites_visitors.view' }`
+// entry remains — its `permission: 'sites_visitors.view'` gate is
+// unchanged from .106.
+//
+// ── Wire proof (Playwright) ────────────────────────────────
+// Sidebar DOM inspection after login:
+//   · [data-testid="nav-site-signin"]      → 0 matches (removed)
+//   · [data-testid="nav-admin-visitors"]   → 1 match ("Site Visitors")
+//   · /app/admin/visitors route loads the AdminVisitors page with
+//     the "Site Visitors" h1.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · No backend edits. `/api/public/visitor/*` + `/api/admin/site-visitors/*` untouched.
+//   · The `SiteSigninList` component stays exported and its `/app/site-signin` route
+//     stays registered — deep-links / bookmarks unaffected.
+//   · sites_visitors permission schema / role defaults unchanged.
+//   · `/app/mobile/` code untouched (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings (still parked for
+//     v58.14.x).
+
+
 // v160.3.9.58.13.109 — P2 + P3 backlog batch (5 items).
 //
 // One consolidated ship covering the full approved backlog from
@@ -10080,7 +10468,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.109';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.111';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

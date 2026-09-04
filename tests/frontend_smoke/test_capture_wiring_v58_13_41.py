@@ -103,7 +103,6 @@ def test_grouped_tiles_view_still_threads_stripe_hex():
 _GROUPED_STRIPE_CONSUMERS = (
     "pages/Incidents.jsx",
     "pages/Inspections.jsx",
-    "pages/SiteSigninList.jsx",
     "pages/CsIncidentsList.jsx",
 )
 
@@ -126,7 +125,6 @@ def test_grouped_pages_forward_ctx_stripe_hex():
 _GROUPED_DENSITY_SHARING = {
     "pages/Incidents.jsx":       "incidentsDensity",
     "pages/Inspections.jsx":     "inspectionsDensity",
-    "pages/SiteSigninList.jsx":  "density",
     "pages/CsIncidentsList.jsx": "density",
 }
 

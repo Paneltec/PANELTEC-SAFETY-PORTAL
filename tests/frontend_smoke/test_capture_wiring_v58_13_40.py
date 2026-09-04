@@ -141,7 +141,6 @@ def test_incidents_page_full_wiring():
 def test_grouped_pages_pass_page_and_page_key():
     for path, tag in (
         (INSPECTIONS, "inspections"),
-        (SITESIGNIN, "site-signin"),
         (CSINCIDENTS, "cs-incidents"),
     ):
         src = path.read_text(encoding="utf-8")

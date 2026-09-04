@@ -130,6 +130,48 @@ def _sha1_file(p: Path) -> str:
     return h.hexdigest()
 
 
+def _sniff_kind(blob: bytes) -> str:
+    """Return a short kind label from magic bytes.
+
+    v58.13.111 — used both by `_convert` (to route around a wrong stored
+    mime — e.g. a JPEG uploaded with a `.pdf` extension) AND by the
+    audit script (`audit_doc_files_v58_13_111.py`). Return values are
+    intentionally a small closed set so the audit report / test pins
+    stay stable:
+
+        'pdf' / 'jpeg' / 'png' / 'webp' / 'heic' / 'gif' /
+        'docx' / 'xlsx' / 'pptx' / 'zip' / 'text' / 'empty' / 'unknown'
+    """
+    if not blob:
+        return "empty"
+    head = blob[:16]
+    if head.startswith(b"%PDF-"):                                return "pdf"
+    if head.startswith(b"\xff\xd8\xff"):                         return "jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):                    return "png"
+    if head[:4] == b"RIFF" and blob[8:12] == b"WEBP":            return "webp"
+    if head.startswith(b"GIF87a") or head.startswith(b"GIF89a"): return "gif"
+    if any(m in head for m in (b"ftypheic", b"ftypheix",
+                                b"ftypmif1", b"ftyphevc",
+                                b"ftyphevx")):                    return "heic"
+    if head[:2] == b"PK":
+        # ZIP container — docx / xlsx / pptx / plain zip.
+        low = blob[:200].lower()
+        if b"word/" in low:      return "docx"
+        if b"xl/" in low:        return "xlsx"
+        if b"ppt/" in low:       return "pptx"
+        return "zip"
+    # Text sniff — every byte in the first 512 must be a common
+    # printable / whitespace character.
+    sample = blob[:512]
+    try:
+        sample.decode("utf-8")
+        if all(b == 9 or b == 10 or b == 13 or 32 <= b < 127 for b in sample):
+            return "text"
+    except UnicodeDecodeError:
+        pass
+    return "unknown"
+
+
 def _is_pdf(blob: bytes) -> bool:
     return blob[:5] == b"%PDF-"
 
@@ -375,10 +417,26 @@ async def _convert(doc: dict, path: Path) -> tuple[bytes, str]:
     if cached:
         return cached, pipeline
     blob = path.read_bytes()
-    if pipeline == "passthrough":
-        pdf = blob if _is_pdf(blob) else b""
-        if not pdf:
-            raise HTTPException(415, "File claims PDF but is not — refusing to serve.")
+    # v58.13.111 — magic-byte sniff. Trust the file's real content over
+    # the stored `mime` when they disagree. Common case: a JPEG uploaded
+    # with a `.pdf` extension (or vice-versa) — the pipeline picked
+    # above based on filename/mime would 415 in passthrough; the sniff
+    # lets us re-route to `image` and wrap it as PDF for the viewer.
+    # Stubs / empty / unknown drop through to a clearer 415.
+    kind = _sniff_kind(blob)
+    if pipeline == "passthrough" and kind != "pdf":
+        if kind in ("jpeg", "png", "webp", "gif"):
+            pipeline = "image"
+        elif kind == "heic":
+            pipeline = "heic"
+        else:
+            size = len(blob)
+            raise HTTPException(
+                415,
+                f"File is {kind} ({size} bytes), not a valid PDF. "
+                "Preview unavailable — please re-upload.",
+            )
+    if pipeline == "passthrough": pdf = blob  # already sniffed as pdf
     elif pipeline == "image": pdf = _img_to_pdf(blob)
     elif pipeline == "heic":  pdf = _heic_to_pdf(blob)
     elif pipeline == "text":  pdf = _text_to_pdf(blob, doc.get("filename") or "Document")

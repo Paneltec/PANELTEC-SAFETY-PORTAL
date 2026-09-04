@@ -675,12 +675,28 @@ async def list_all_certs(
             {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "mobile": 1, "email": 1},
         ):
             worker_map[w["id"]] = w
+    # v58.13.111 — join doc_files so we can surface `preview_broken` +
+    # `preview_broken_reason` per cert (audit script flags stubs so the
+    # UI can show "Preview unavailable — please re-upload" without
+    # attempting the 415-triggering /pdf fetch).
+    file_ids = [c.get("doc_file_id") for c in certs if c.get("doc_file_id")]
+    file_flags: dict = {}
+    if file_ids:
+        async for f in db.doc_files.find(
+            {"id": {"$in": file_ids}},
+            {"_id": 0, "id": 1, "preview_broken": 1, "preview_broken_reason": 1},
+        ):
+            file_flags[f["id"]] = f
     out = []
     for c in certs:
         w = worker_map.get(c["worker_id"]) or {}
         row = _serialise_cert(c, today)
         row["worker_first_name"] = w.get("first_name", "")
         row["worker_last_name"] = w.get("last_name", "")
+        fmeta = file_flags.get(c.get("doc_file_id")) if c.get("doc_file_id") else None
+        if fmeta:
+            row["preview_broken"] = bool(fmeta.get("preview_broken"))
+            row["preview_broken_reason"] = fmeta.get("preview_broken_reason")
         out.append(row)
     return out
 

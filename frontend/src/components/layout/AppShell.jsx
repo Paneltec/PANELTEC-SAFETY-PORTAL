@@ -82,15 +82,11 @@ const NAV = [
     { to: '/app/hazards', label: 'Hazard Reports', icon: Warning24Regular, iconActive: Warning24Filled, testid: 'nav-hazards', resource: 'hazards', pastel: 'peach' },
     { to: '/app/incidents', label: 'Incident Reports', icon: Alert24Regular, iconActive: Alert24Filled, testid: 'nav-incidents', resource: 'incidents', pastel: 'blush' },
     { to: '/app/inspections', label: 'Inspection Reports', icon: ShieldCheckmark24Regular, iconActive: ShieldCheckmark24Filled, testid: 'nav-inspections', resource: 'inspections', pastel: 'lavender' },
-    // v58.13.6 — Site Sign-In / Visitor Register capture entry. Reads
-    // submissions of the fixed template id via the shared endpoint.
-    // Uses PersonAvailable icon (already imported) — semantically fits
-    // "visitor present". Slotted after Inspections and before Risk
-    // Assessments to preserve the existing Capture ordering.
-    { to: '/app/site-signin', label: 'Site Sign-In / Visitor Register', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-site-signin', pastel: 'sky' },
-    // v58.13.106 — Public-visitor register from site QR codes. Different
-    // scope from Site Sign-In: workers/inductions vs anonymous drop-in
-    // visitors.
+    // v58.13.106 / v58.13.109b — Site Visitors register. Single source
+    // of truth for both anonymous QR sign-ins (populated by the .106
+    // public form) and any legacy form-template sign-ins migrated in
+    // via `backend/scripts/migrate_legacy_signins_v58_13_109b.py`.
+    // Data-visitors table renders correctly with the merged records.
     { to: '/app/admin/visitors', label: 'Site Visitors', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-admin-visitors', pastel: 'sky', permission: 'sites_visitors.view' },
     // v160.3.0-adjust-13 — new Capture bucket. Slots after Inspection
     // Reports because risk assessments feed inspection / audit workflows.

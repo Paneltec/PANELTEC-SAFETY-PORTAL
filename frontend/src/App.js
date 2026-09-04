@@ -23,7 +23,11 @@ import HazardsList, { HazardNew } from '@/pages/Hazards';
 import IncidentsList, { IncidentNew } from '@/pages/Incidents';
 import InspectionsList, { InspectionNew } from '@/pages/Inspections';
 // v58.13.6 — Site Sign-In / Visitor Register capture page.
-import SiteSigninList from '@/pages/SiteSigninList';
+// v58.13.109b — retired; component + route deleted. Import kept as a
+// comment so `git log -S` can find the removal context. See
+// backend/scripts/migrate_legacy_signins_v58_13_109b.py for the data
+// migration.
+// import SiteSigninList from '@/pages/SiteSigninList';
 import RiskAssessments from '@/pages/RiskAssessments';
 import CsIncidentsList from '@/pages/CsIncidentsList';
 import ContractorsList, { ContractorNew, ContractorDetail } from '@/pages/Contractors';
@@ -190,8 +194,15 @@ function App() {
               <Route path="incidents/new" element={<IncidentNew />} />
 
               <Route path="inspections" element={<InspectionsList />} />
-              {/* v58.13.6 — Site Sign-In / Visitor Register capture page. */}
-              <Route path="site-signin" element={<SiteSigninList />} />
+              {/* v58.13.109b — legacy site-signin route retired. Any
+                  bookmark / deep-link now redirects to the newer
+                  public-visitor register at /app/admin/visitors. The
+                  underlying data (form_submissions, template_id
+                  e8873f7e-…) is migrated to site_visitors via
+                  `backend/scripts/migrate_legacy_signins_v58_13_109b.py`
+                  (1 record on preview at ship day). */}
+              <Route path="site-signin" element={<Navigate to="/app/admin/visitors" replace />} />
+              <Route path="site-signin/*" element={<Navigate to="/app/admin/visitors" replace />} />
               {/* v58.13.106 — Admin visitor register (public sign-ins from QR). */}
               <Route path="admin/visitors" element={<AdminVisitors />} />
               {/* v160.3.0-adjust-13 — new Capture bucket. */}

@@ -38,7 +38,6 @@ _VIA_TOOLBAR = (
     "pages/RiskAssessments.jsx",
 )
 _INLINE = (
-    "pages/SiteSigninList.jsx",
     "pages/CsIncidentsList.jsx",
     "pages/PreStarts.jsx",
 )
@@ -103,7 +102,6 @@ def test_sitesignin_hotfix_specifically():
     """Explicit re-assertion of the exact regression the tester
     flagged, so any future refactor of SiteSignin that drops the
     density control fails a clearly-named test."""
-    src = (FRONTEND / "pages" / "SiteSigninList.jsx").read_text(encoding="utf-8")
     assert "useCaptureDensity('site-signin'" in src
     assert "<CaptureDensityControl" in src
     assert 'testidPrefix="site-signin"' in src

@@ -1,7 +1,6 @@
 """v58.13.38 — Capture tile-parity smoke test.
 
 Asserts against page sources (no jsdom). Covers:
-  · The 4 migrated pages (Incidents, Inspections, SiteSigninList,
     CsIncidentsList) import `CaptureCard` and route their tile body
     through `<CaptureCard`.
   · Migrated pages no longer own the bespoke `renderTile` chrome that
@@ -29,7 +28,6 @@ CC = APP / "frontend/src/components/CaptureCard.jsx"
 MIGRATED = [
     "Incidents.jsx",
     "Inspections.jsx",
-    "SiteSigninList.jsx",
     "CsIncidentsList.jsx",
 ]
 ALREADY_CANONICAL = [
@@ -85,18 +83,6 @@ def test_inspections_uses_capture_card():
     # Template-palette stripe preserved via stripeStyle.
     assert "stripeStyle" in src
     assert "paletteForType" in src
-
-
-def test_site_signin_uses_capture_card():
-    src = _src("SiteSigninList.jsx")
-    assert "import CaptureCard from '../components/CaptureCard'" in src
-    assert "<CaptureCard" in src
-    for sym in ("import DeleteRecordButton", "import SubmissionViewer"):
-        assert sym not in src, (
-            f"SiteSigninList.jsx must no longer import {sym!r}.")
-    # Site-Sign-In tiles suppress the operator row per CaptureCard's
-    # hideOperator opt-in.
-    assert "hideOperator" in src
 
 
 def test_cs_incidents_uses_capture_card_with_bespoke_viewer():
@@ -159,14 +145,6 @@ def test_inspections_chrome_untouched():
     assert "GroupedTilesView" in src
     assert "CaptureSticky" in src  # sticky toolbar container preserved
     assert "ModuleDashboard" in src
-
-
-def test_site_signin_chrome_untouched():
-    src = _src("SiteSigninList.jsx")
-    # PageHeader title unchanged.
-    assert 'title="Site Sign-In / Visitor Register"' in src
-    # GroupedTilesView still owns grouping by submitted_by_name.
-    assert "groupBy={(r) => r.submitted_by_name" in src
 
 
 def test_cs_incidents_chrome_untouched():
