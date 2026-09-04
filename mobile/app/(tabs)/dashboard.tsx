@@ -29,7 +29,8 @@ const METRIC_ROWS: { key: string; label: string; field: string; icon: any; modul
 // `null` means "always show" — used only for the compliance-hub tab
 // container (gated indirectly by its child module toggles) and the users
 // tile (kept always-on to match `profile` semantics).
-const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null }[] = [
+const MANAGE_TOOLS: { key: string; title: string; desc: string; icon: any; route: string; moduleKey: ModuleId | null; complianceHub?: boolean; supervisorOnly?: boolean }[] = [
+  { key: 'sites',            title: 'My Sites',         desc: 'Create sites with GPS, share QR sign-on',      icon: 'location',         route: '/sites',            moduleKey: 'sign_on', supervisorOnly: true },
   { key: 'forms',            title: 'Forms Library',    desc: 'Fillable templates with signature, photo & GPS', icon: 'clipboard',        route: '/forms/library',    moduleKey: 'forms' },
   { key: 'workers',          title: 'Workers',          desc: 'Field crew synced from Simpro',                  icon: 'people',           route: '/workers',          moduleKey: 'workers' },
   { key: 'suppliers',        title: 'Suppliers',        desc: 'Simpro suppliers, tasks, notes & folders',       icon: 'business',         route: '/suppliers',        moduleKey: 'suppliers' },
@@ -80,6 +81,11 @@ export default function DashboardScreen() {
   // visible; tiles with a moduleKey must have that module toggled on for
   // the current user's role.
   const visibleManage  = useMemo(() => MANAGE_TOOLS.filter(t => {
+    // v58.13.107 — Sites tile is supervisor+ only
+    if ((t as any).supervisorOnly) {
+      const role = (user?.role || '').toLowerCase();
+      if (!['admin', 'hseq_lead', 'supervisor'].includes(role)) return false;
+    }
     // v160.0.1 — Compliance Hub tile is management-flavoured. Even when
     // child modules like swms/forms/inductions are on for a worker,
     // workers reach those surfaces via the Capture tab. Hide the hub
