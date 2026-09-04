@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { runSwVersionGuard } from '@/lib/swVersionGuard';
 import RebrandNudge from '@/components/RebrandNudge';
+// v58.13.112 — In-app PWA install button + one-time banner + iOS
+// walk-through. Hidden entirely when the app is already running in
+// standalone mode.
+import { PwaInstallButton, PwaInstallBanner } from '@/components/PwaInstallControls';
 // v160.3.8.1 — Draggable Settings sub-nav replaces the flat Settings section.
 import SettingsNav from '@/components/settings/SettingsNav';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -556,6 +560,14 @@ const SidebarShell = ({ collapsed, canAdminNav, badges }) => (
       </Link>
     </div>
     <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} badges={badges} />
+    {/* v58.13.112 — PWA install affordance. Hidden entirely when the
+        app is already running in standalone mode (usePwaInstall
+        detects `display-mode: standalone` + iOS `navigator.standalone`).
+        Auto-shows on Chrome/Edge/Android after the browser fires
+        `beforeinstallprompt`; opens an iOS Safari walk-through on
+        iOS instead. Sits ABOVE the version footer so it's the last
+        real interactive control on the sidebar. */}
+    <PwaInstallButton collapsed={collapsed} />
     {/* v160.3.9.10a — Version footer, always visible. Tester was
         counting DOM matches for this string and finding zero. */}
     <div className={`mt-auto border-t border-slate-200 py-2 text-center text-[10px] font-mono text-slate-400 ${collapsed ? 'px-1' : 'px-3'}`}
@@ -652,6 +664,12 @@ export default function AppShell() {
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
           <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
+          {/* v58.13.112 — PWA install button also mounted in the mobile
+              drawer so Android Chrome users who never open the desktop
+              sidebar still see the install affordance. */}
+          <div className="mt-auto">
+            <PwaInstallButton collapsed={false} />
+          </div>
         </SheetContent>
       </Sheet>
 
@@ -682,6 +700,12 @@ export default function AppShell() {
        */}
       <div className="flex-1 flex flex-col min-w-0 relative z-40">
         <TopBar onToggleMobile={() => setMobileOpen(true)} onToggleCollapse={() => setCollapsed((c) => !c)} collapsed={collapsed} user={user} />
+        {/* v58.13.112 — One-time PWA install banner. Only renders on
+            Chrome/Edge/Android after `beforeinstallprompt` fires OR
+            on iOS Safari. Auto-persists after 30 s so subsequent
+            page loads don't repeat it; Not-now / ✕ do a session-only
+            dismiss so the same tab doesn't repeat it either. */}
+        <PwaInstallBanner />
         <RebrandNudge />
         {/* v160.3.0-adjust-7 — Kept `pt-6 / sm:pt-8 / lg:pt-10` from
          *   adjust-6 (visual breathing room below the topbar). Side +

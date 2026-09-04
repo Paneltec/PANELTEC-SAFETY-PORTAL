@@ -1,5 +1,191 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.112 — In-app PWA install affordance.
+//
+// USER PAIN: The app was already PWA-ready (v116/117 shipped the
+// manifest, icons, service worker, and standalone launcher) but the
+// only way to install it was via the browser's own address-bar menu —
+// which most site admins never spotted. Field workers in particular
+// stayed on the http:// tab in Safari because they didn't know they
+// could pin the app.
+//
+// ── New hook (`frontend/src/hooks/usePwaInstall.js`) ────────────
+//   `usePwaInstall()` returns:
+//     · `canPrompt`   — a captured `beforeinstallprompt` is ready to fire.
+//     · `isInstalled` — either `display-mode: standalone` matches
+//                       (Chrome/Edge/Android) OR `navigator.standalone`
+//                       is true (iOS Safari "Add to Home Screen").
+//     · `isIOS`       — iPhone/iPad/iPadOS (Mac UA + touch capability)
+//                       AND not already installed. Consumers use this
+//                       to swap the native prompt for a manual walk-
+//                       through modal (iOS Safari never fires
+//                       `beforeinstallprompt`).
+//     · `promptInstall()` — awaits the native prompt + returns
+//                       `{outcome: 'accepted' | 'dismissed' | ...}`
+//                       and drops the deferred event on the floor
+//                       either way (Chrome refuses to reuse it).
+//   Listens for `appinstalled` to flip `isInstalled` → true so the
+//   button vanishes without a page reload.
+//
+// ── New component (`frontend/src/components/PwaInstallControls.jsx`) ─
+//   Exports two related surfaces that key off the hook:
+//     · `<PwaInstallButton />` — sidebar-footer button. Collapsed
+//       state renders icon-only; expanded state shows the label.
+//       Renders nothing when the app is already installed OR no
+//       install signal is available. Fires the native prompt on
+//       Chrome/Edge/Android; opens the iOS walk-through modal on
+//       iOS. Wired into BOTH the desktop `<SidebarShell />` AND the
+//       mobile drawer so Android Chrome users still see it.
+//     · `<PwaInstallBanner />` — one-time top banner mounted between
+//       the TopBar and the RebrandNudge. Renders the same install
+//       flow as the button; auto-persists a
+//       `paneltec_pwa_install_banner_seen_v112` localStorage flag
+//       after 30 s so it never reappears on subsequent visits.
+//       "Not now" / ✕ do a session-only sessionStorage dismiss so
+//       the same tab doesn't repeat it. Vanishes on install.
+//     · Internal `<IOSInstallModal />` — mounted inside both public
+//       components so callers only need one import. Shows a two-
+//       step walk-through: (1) tap Share, (2) choose Add to Home
+//       Screen — with lucide Share / PlusSquare icons for visual
+//       recognition against Safari's own toolbar.
+//
+// ── AppShell wiring (`components/layout/AppShell.jsx`) ─────────
+//   Two mount points:
+//     · `SidebarShell` — `<PwaInstallButton collapsed={collapsed} />`
+//       sits ABOVE the version-string footer. Same button also
+//       mounted inside the mobile drawer's `SheetContent` under
+//       the primary sidebar nav.
+//     · Root layout — `<PwaInstallBanner />` between `<TopBar />`
+//       and `<RebrandNudge />`. Never overlaps existing banners
+//       and shares the same orange palette so it looks like one
+//       consistent notification lane.
+//
+// ── PdfPreviewModal Content-Type branch — assessed only ──────
+//   No change. Documented in the .111a block above.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_pwa_install_v58_13_112.py`
+//   (17 checks):
+//     · usePwaInstall exports default; captures `beforeinstallprompt`
+//       with `preventDefault()`; clears state on `appinstalled`;
+//       detects both `display-mode: standalone` + `navigator.standalone`;
+//       returns the full `{canPrompt, isInstalled, isIOS, promptInstall}`
+//       shape; falls through with `{outcome: 'unavailable'}`.
+//     · PwaInstallControls exports both `PwaInstallButton` +
+//       `PwaInstallBanner`; imports the hook; carries the three
+//       required testids; early-returns on installed/no-signal;
+//       auto-persists after 30 s via the seen-key; supports
+//       session-only dismiss; iOS walk-through references the
+//       Share icon + Add-to-Home-Screen step.
+//     · AppShell imports PwaInstallControls; mounts the button
+//       inside `SidebarShell`; mounts the banner between TopBar
+//       and RebrandNudge in source order.
+//     · Version-sync forward-safe pin >= .112.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No backend edits (PWA install is a browser-native flow).
+//   · No comms / notifications / scheduler paths.
+//   · Existing manifest.json + service-worker precache list.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped —
+//     the native Expo build has its own install story).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
+// v160.3.9.58.13.111a — Deferred Certifications frontend copy + preview
+//                       shortcut + audit script live-run. Closes out
+//                       the ".111a follow-on" flagged in the .111 ship
+//                       block below.
+//
+// USER PAIN (verbatim, .111 close-out):
+//   1. "No expiry" was rendered on rows where the admin had simply
+//      left the expiry field blank — indistinguishable from rows that
+//      genuinely have no expiry, so admins missed real gaps.
+//   2. Broken/stubbed PDF previews (the RICK ANTRIM class of bug —
+//      "the file claims to be a PDF but is a 4-byte text stub") were
+//      only surfaced when a user clicked View and got a 415.
+//
+// ── Audit script (LIVE run, no more --dry-run) ──────────────────
+//   `python -m backend.scripts.audit_doc_files_v58_13_111` executed
+//   against the live doc_files collection.
+//   Results (368 total rows):
+//     · flagged=4  (stubbed placeholder PDFs, all worker_certification
+//                   uploads posing as application/pdf with a 3-20 byte
+//                   text body — the exact RICK ANTRIM class):
+//         - First_Aid_Cert.pdf         (20 bytes, sniff=text)
+//         - White_Card_Induction.pdf   (16 bytes, sniff=text)
+//         - Confined Space Card.pdf    ( 3 bytes, sniff=text)
+//         - First_Aid_Cert_v2.pdf      ( 4 bytes, sniff=text)
+//     · real_pdf=94
+//     · real_image=3
+//     · real_office=265  (docx served with the right mime + zip sniff)
+//     · text=4 empty=0 unknown=2 disk_missing=0 mismatched_but_ok=0
+//   Re-run confirms idempotency: flagged=0, already_flagged=4.
+//   Every flagged row now carries preview_broken=True +
+//   preview_broken_reason so the frontend can pre-empt the click.
+//
+// ── Backend copy fix (`worker_certifications.py::_status_for`) ──
+//   Null-expiry rows now differentiate:
+//     · held_no_expiry === true  → label "No expiry"     (genuine)
+//     · held_no_expiry !== true  → label "Expiry not set" (admin gap)
+//   Filter-chip KEY stays `no_expiry` so pre-existing filter counts
+//   and chip semantics don't drift; only the row-level label changes.
+//   Every downstream consumer (CSV export, sidebar badge, ModuleDashboard)
+//   uses `status.key` — none of them re-derive the label from the field
+//   set, so the copy delta is contained to the visible chip text.
+//
+// ── Frontend polish (`pages/Certifications.jsx`) ────────────────
+//   1. Empty expiry cell — the ambiguous "—" em-dash replaced with a
+//      soft-gray italic "Not set" span (data-testid: cert-expiry-notset-<id>).
+//   2. New amber "RE-UPLOAD" pill shown next to the source pills when
+//      `c.preview_broken === true`. Tooltip carries
+//      `c.preview_broken_reason` from the backend
+//      (`stubbed placeholder (text, 20 bytes) — please re-upload`).
+//      data-testid: cert-preview-broken-<id>.
+//   3. View-PDF button short-circuits with a `toast.error(...)` when
+//      `c.preview_broken` is truthy — the preview modal is NOT
+//      opened, saving admins a click + a 415. Button border also
+//      shifts to the rose/amber palette so the row visually reads
+//      "action needed", not "click me".
+//
+// ── PdfPreviewModal Content-Type branch (assessment only) ───────
+//   The .111 brief asked whether we needed a fallback `<img>` branch
+//   for defence-in-depth. Assessment: NO change required. The .111
+//   backend `_convert` uses `_sniff_kind` to detect image-stored-as-
+//   pdf and reroutes through the image pipeline (JPEG/PNG/WEBP/GIF/
+//   HEIC → wrapped as PDF via ReportLab). The modal receives a
+//   valid PDF from the server so the pdfjs canvas render path just
+//   works. Stubbed rows never reach the modal anymore thanks to the
+//   Certifications page short-circuit, and if any historical caller
+//   still fires /pdf on a stub, the backend now returns 415 with a
+//   human-readable message which the modal already renders via its
+//   `err` state (see PdfPreviewModal:264-271). Documented here so a
+//   future agent doesn't re-open this file assuming an <img> branch
+//   is missing.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_certifications_copy_v58_13_111a.py`
+//   (10 checks):
+//     · _status_for null-expiry rows → "Expiry not set".
+//     · _status_for held_no_expiry=True rows → "No expiry".
+//     · Missing-file + valid-expiry status paths unchanged.
+//     · Certifications.jsx source-pins for the Not-set span, the
+//       preview_broken pill, and the view-button short-circuit.
+//     · audit_doc_files_v58_13_111 module-loadable + `_should_flag`
+//       matrix (real PDF/image/office → no-flag; text-as-pdf +
+//       size<100 stub → flag).
+//     · Version-sync forward-safe pin >= .111a across the 3 canonical
+//       version strings.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · No comms / notifications / scheduler paths.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings (still
+//     parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.111 — Emergent-badge safe-zone (bundled with the
 //                       in-flight cert file-preview + audit-script
 //                       work per user's "piggyback or standalone"
@@ -10468,7 +10654,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.111';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.112';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

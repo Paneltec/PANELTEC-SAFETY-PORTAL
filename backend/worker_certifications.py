@@ -209,7 +209,18 @@ def _status_for(cert: dict, today: date) -> dict:
         return {"key": "missing_file", "label": "Missing file", "days": None}
     expiry = _parse_iso(cert.get("expiry_date"))
     if expiry is None:
-        return {"key": "no_expiry", "label": "No expiry", "days": None}
+        # v58.13.111a — Copy fix. Previously EVERY null-expiry cert was
+        # labelled "No expiry", which reads as "this cert genuinely
+        # never expires" and hid rows where the admin had simply left
+        # the field blank. Now: `held_no_expiry=True` (the induction-
+        # style opt-in flag) still reads "No expiry"; every other null-
+        # expiry row reads "Expiry not set" so it's obvious the admin
+        # needs to add a date. Filter-chip key stays `no_expiry` so
+        # existing chip filters + counts don't drift; only the row-
+        # level label changes.
+        if cert.get("held_no_expiry") is True:
+            return {"key": "no_expiry", "label": "No expiry", "days": None}
+        return {"key": "no_expiry", "label": "Expiry not set", "days": None}
     delta = (expiry - today).days
     if delta < 0:
         return {"key": "expired",

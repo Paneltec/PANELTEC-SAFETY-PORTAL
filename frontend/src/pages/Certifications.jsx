@@ -788,7 +788,16 @@ export default function Certifications() {
                         </div>
                         {/* Expiry */}
                         <div className="min-w-0 text-xs">
-                          <div className="text-slate-700">{c.expiry_date || '—'}</div>
+                          <div className="text-slate-700">
+                            {c.expiry_date || (
+                              <span
+                                data-testid={`cert-expiry-notset-${c.id}`}
+                                className="italic text-slate-400"
+                              >
+                                Not set
+                              </span>
+                            )}
+                          </div>
                           {c.expiry_date && days !== null && (
                             <div
                               data-testid={`cert-days-${c.id}`}
@@ -842,15 +851,56 @@ export default function Certifications() {
                               <FileWarning size={9} /> NO FILE
                             </span>
                           )}
+                          {/* v58.13.111a — preview_broken flag surfaced by the
+                              audit script + backend join in list_all_certs.
+                              A red amber pill so the admin knows to re-upload
+                              WITHOUT clicking the view button first (which
+                              would 415 with a "please re-upload" message). */}
+                          {c.preview_broken && (
+                            <span
+                              title={c.preview_broken_reason || 'File preview unavailable — please re-upload'}
+                              data-testid={`cert-preview-broken-${c.id}`}
+                              className="inline-flex items-center gap-0.5 text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-[#fbe4e7] text-[#7a1f33] border border-[#e69aa3]"
+                            >
+                              <AlertTriangle size={9} /> RE-UPLOAD
+                            </span>
+                          )}
                         </div>
                         {/* Actions */}
                         <div className="flex items-center justify-end gap-1 flex-wrap">
                           <button
-                            onClick={() => setPreviewCert(c)}
+                            onClick={() => {
+                              // v58.13.111a — Skip the preview modal for
+                              // rows the audit script has flagged as
+                              // stubbed / broken. Surfacing the reason as
+                              // a toast is a strictly better UX than
+                              // opening the modal and letting it 415 with
+                              // a "please re-upload" message a second
+                              // later.
+                              if (c.preview_broken) {
+                                toast.error(
+                                  c.preview_broken_reason
+                                  || 'File preview unavailable — please re-upload the certificate.',
+                                );
+                                return;
+                              }
+                              setPreviewCert(c);
+                            }}
                             disabled={!c.doc_file_id}
-                            title={c.doc_file_id ? 'View PDF' : 'No file uploaded'}
+                            title={
+                              !c.doc_file_id
+                                ? 'No file uploaded'
+                                : c.preview_broken
+                                  ? (c.preview_broken_reason || 'Preview unavailable — please re-upload')
+                                  : 'View PDF'
+                            }
                             data-testid={`cert-view-${c.id}`}
-                            className="inline-flex items-center justify-center w-8 h-7 rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:opacity-40 disabled:hover:bg-white disabled:hover:text-slate-600"
+                            className={
+                              'inline-flex items-center justify-center w-8 h-7 rounded-lg border bg-white disabled:opacity-40 disabled:hover:bg-white ' +
+                              (c.preview_broken
+                                ? 'border-[#e69aa3] text-[#a8324c] hover:bg-[#fbe4e7]'
+                                : 'border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-700 disabled:hover:text-slate-600')
+                            }
                           ><Eye /></button>
                           {canEdit && (
                             <button onClick={() => setEditCert(c)} title="Edit" data-testid={`cert-edit-${c.id}`}
