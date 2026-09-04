@@ -1,5 +1,121 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.101 — Purge Test Data UX tail: checkbox-required
+//                      hint on the Delete button + admin-only
+//                      test-data-clutter banner on /app/vehicles.
+//
+// USER PAIN (verbatim, from the .100 close-out):
+//   "there is no delete and there is real lot of them."
+//
+// Post-mortem context: the .81 Purge Test Data admin card lives on
+// /app/settings/system (Server Tools page). When the user tried to
+// use it after the .99/.100 Re-publish, they either couldn't find
+// the route from the Plant & Vehicles page (where the clutter is
+// visible) OR they opened the modal but didn't tick the "I understand
+// this cannot be undone" ack checkbox — so the Delete button rendered
+// with disabled:opacity-50 and disabled:cursor-not-allowed, which
+// reads as "no button" to a casual viewer. Prod purge itself worked
+// fine when fired via curl (960 rows + 958 cascade schedule rows
+// removed, verified clean by second dry-run).
+//
+// This ship fixes the two UX discoverability gaps without changing
+// any purge logic:
+//
+// ── Fix 1 — Explicit "checkbox required" hint ─────────────────
+//   `frontend/src/pages/SystemSettings.jsx::PurgeTestDataCard`
+//   The Delete button footer used to render as a flat row: [Cancel]
+//   [Delete N records permanently]. When the ack checkbox was
+//   unticked, the second button greyed out silently. Now the same
+//   row renders a small inline hint LEFT of the buttons:
+//     ← Tick the checkbox above to enable delete
+//   in rose-700 semibold, only when `!ack && dry.grand_total > 0
+//   && !busy`. The hint disappears the moment the checkbox is
+//   ticked (ack becomes truthy), fades out during the delete
+//   (busy becomes truthy), and never appears when there's nothing
+//   to delete (grand_total===0). testid
+//   `purge-ack-required-hint` for the pytest source-scan pin.
+//   Also added `id="purge-test-data"` + `scroll-mt-24` on the card
+//   wrapper so hash-link navigation from other pages
+//   (`/app/settings/system#purge-test-data`) scrolls the card
+//   into view rather than dumping the user at the top of the
+//   Settings page.
+//
+// ── Fix 2 — Admin-only banner on /app/vehicles ────────────────
+//   `frontend/src/pages/PlantVehicles.jsx`
+//   NEW state slot `testDataCount` populated on mount from the
+//   existing `.81` dry-run endpoint
+//   `POST /admin/purge-test-data?dry_run=1`. Only fetched when
+//   `pmUser?.role === 'admin'` — non-admins never see the banner
+//   (server 403s the endpoint anyway; the role gate saves a
+//   spurious network call).
+//   When count > 0, a rose-2px-border banner renders between
+//   `<HowThisWorks/>` and the tabs bar:
+//     ⚠ N test records detected across your register
+//        Rows matching test-data patterns (TEST-*, demo-*, sample-*).
+//        Simpro-imported data is always excluded. Use the admin
+//        purge tool to clean them up.
+//     [Purge test data →]  ← deep-link to /app/settings/system#purge-test-data
+//   testids:
+//     · `vehicles-test-data-banner`         — wrapper
+//     · `vehicles-test-data-banner-count`   — inner count text
+//     · `vehicles-test-data-banner-cta`     — deep-link button
+//   The banner is non-blocking — it doesn't cover any tab or
+//   toolbar. It disappears the next time the page loads after
+//   the admin has run the purge (dry_run drops to 0).
+//   `AlertTriangle` icon added to the existing lucide-react
+//   import at the top of the file.
+//
+// ── Wire proof (curl through the prod backend on ship-day) ───
+//   Before the purge:
+//     POST /api/admin/purge-test-data?dry_run=1 →
+//       grand_total: 960 (958 assets + 1 doc_files + 1 cs_incident_issues)
+//   After the purge (fired directly by main agent per user's GO):
+//     COMMIT deleted:
+//       {assets: 958, asset_service_schedules_cascade: 958,
+//        doc_files: 1, cs_incident_issues: 1,
+//        grand_total: 960}   (960 root + 958 cascade = 1918 rows removed)
+//     Re-run dry-run → grand_total: 0  (clean sweep verified)
+//   Audit log on prod pod: /app/memory/purge_v58_13_81_log.txt
+//   (per the .81 handler — one line per collection with full id list).
+//
+// ── Tests ──────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_purge_ux_v58_13_101.py`:
+//     · SystemSettings.jsx renders the ack-required hint when
+//       `!ack && dry.grand_total > 0 && !busy`; hint carries the
+//       `purge-ack-required-hint` testid.
+//     · SystemSettings.jsx card wrapper carries `id="purge-test-data"`
+//       + `scroll-mt-24` so hash-linked navigation scrolls the card
+//       into view.
+//     · PlantVehicles.jsx imports AlertTriangle from lucide-react.
+//     · PlantVehicles.jsx admin banner renders when
+//       `pmUser?.role === 'admin' && testDataCount > 0`.
+//     · Banner carries `vehicles-test-data-banner`,
+//       `vehicles-test-data-banner-count`,
+//       `vehicles-test-data-banner-cta` testids.
+//     · Banner CTA deep-links to
+//       `/app/settings/system#purge-test-data`.
+//     · Test-data-count fetch uses the existing .81 endpoint
+//       `POST /admin/purge-test-data?dry_run=1` and is gated on
+//       `pmUser?.role === 'admin'`.
+//     · Version-sync forward-safe pin >= 101.
+//
+// ── NOT changed ────────────────────────────────────────────
+//   · `admin_purge_test_data.py` handler — untouched. Same
+//     patterns, same guards (`role == 'admin'`, `source != 'simpro'`).
+//   · Purge scope (target collections, test-data pattern set) —
+//     untouched. This ship is UX-only.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` lint
+//     warnings (still parked for v58.14.x).
+//
+// ── SOP ────────────────────────────────────────────────────
+//   · Frontend hot-reload picks it up. No backend restart needed.
+//   · All 3 canonical version strings bumped to `.101`.
+//   · On prod: after the user Re-publishes .101, the banner will
+//     read "0 test records detected" and NOT render (because the
+//     .100-era purge already cleaned prod). If a future test run
+//     re-populates test-pattern rows, the banner will surface them.
+
 // v160.3.9.58.13.100 — Asset taxonomy reconciliation: `kind` is the
 //                      source of truth. Frontend "Vehicles from Navixy"
 //                      tab count filtered by kind='vehicle'. Maintenance
@@ -8880,7 +8996,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.100';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.101';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

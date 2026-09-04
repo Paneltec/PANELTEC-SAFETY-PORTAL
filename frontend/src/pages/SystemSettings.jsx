@@ -314,7 +314,7 @@ function PurgeTestDataCard() {
     finally { setBusy(false); }
   };
   return (
-    <div className="mt-6 rounded-2xl border-2 border-rose-300 bg-white p-4 shadow-sm" data-testid="purge-test-data-card">
+    <div id="purge-test-data" className="mt-6 rounded-2xl border-2 border-rose-300 bg-white p-4 shadow-sm scroll-mt-24" data-testid="purge-test-data-card">
       <div className="flex items-center gap-2 mb-1">
         <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-rose-50 text-rose-700"><XCircle size={16} /></span>
         <div className="flex-1 min-w-0">
@@ -361,7 +361,18 @@ function PurgeTestDataCard() {
                     className="mt-0.5" data-testid="purge-ack" />
                   <span>I understand this cannot be undone. All matched rows will be permanently deleted.</span>
                 </label>
-                <div className="mt-4 flex justify-end gap-2">
+                <div className="mt-4 flex items-center justify-end gap-3">
+                  {/* v58.13.101 — Explicit "why is the button disabled?"
+                      hint. Prior to this, the Delete button greyed out
+                      silently when the ack checkbox was unticked and
+                      users reported "there is no delete". Now the
+                      hint tells them exactly what to do. */}
+                  {!ack && dry.grand_total > 0 && !busy && (
+                    <span className="text-[11px] font-semibold text-rose-700 flex items-center gap-1.5"
+                      data-testid="purge-ack-required-hint">
+                      <span aria-hidden="true">←</span> Tick the checkbox above to enable delete
+                    </span>
+                  )}
                   <button onClick={() => setOpen(false)} disabled={busy}
                     className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50"
                     data-testid="purge-cancel">Cancel</button>

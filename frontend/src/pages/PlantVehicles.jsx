@@ -1,6 +1,6 @@
 // Plant & Vehicles Register — unified live Navixy + manual plant/tool/container assets.
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapPin, Truck, Loader2, Archive, X, List as ListIcon, Map as MapIcon, Radio, ClipboardCheck } from 'lucide-react';
+import { MapPin, Truck, Loader2, Archive, X, List as ListIcon, Map as MapIcon, Radio, ClipboardCheck, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
@@ -253,6 +253,24 @@ export default function PlantVehicles() {
     return () => { alive = false; };
   }, []);
 
+  // v58.13.101 — Admin-only "test data detected" banner. Fires the
+  // existing `.81` purge dry-run endpoint on mount and surfaces the
+  // grand_total as a small in-context banner deep-linking to the
+  // Settings → System purge card. Root cause of the .100-era user
+  // complaint ("there is no delete and there is real lot of them")
+  // was route/affordance discoverability — the purge is under
+  // Settings → System, but the clutter is visible on Vehicles.
+  // Non-admins never see this banner (server 403s the endpoint).
+  const [testDataCount, setTestDataCount] = useState(0);
+  useEffect(() => {
+    if (pmUser?.role !== 'admin') return;
+    let alive = true;
+    api.post('/admin/purge-test-data?dry_run=1')
+      .then((r) => { if (alive) setTestDataCount(r.data?.grand_total ?? 0); })
+      .catch(() => { if (alive) setTestDataCount(0); });
+    return () => { alive = false; };
+  }, [pmUser?.role]);
+
   const load = async () => {
     setRefreshing(true); setError('');
     try {
@@ -456,6 +474,33 @@ export default function PlantVehicles() {
       />
 
       <HowThisWorks schematicSlug="plant_vehicles" />
+
+      {/* v58.13.101 — Admin-only test-data-clutter banner. Only renders
+          when the .81 purge dry-run reports >0 test-pattern rows AND
+          the current user is an admin. Deep-links to the purge card
+          on /app/settings/system (see `#purge-test-data` anchor). */}
+      {pmUser?.role === 'admin' && testDataCount > 0 && (
+        <div className="mt-3 rounded-xl border-2 border-rose-300 bg-rose-50 px-4 py-3 flex items-center gap-3 shadow-sm"
+          data-testid="vehicles-test-data-banner">
+          <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-rose-100 text-rose-700 shrink-0">
+            <AlertTriangle size={16} />
+          </span>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-bold text-rose-900" data-testid="vehicles-test-data-banner-count">
+              {testDataCount} test records detected across your register
+            </div>
+            <div className="text-[11px] text-rose-800/80 mt-0.5">
+              Rows matching test-data patterns (<code className="font-mono">TEST-*</code>, <code className="font-mono">demo-*</code>, <code className="font-mono">sample-*</code>). Simpro-imported data is always excluded. Use the admin purge tool to clean them up.
+            </div>
+          </div>
+          <Link
+            to="/app/settings/system#purge-test-data"
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700"
+            data-testid="vehicles-test-data-banner-cta">
+            Purge test data →
+          </Link>
+        </div>
+      )}
 
       <Tabs defaultValue="maintenance" className="mt-2" data-testid="vehicles-tabs">
         {/* v160.3.9.21d — Equal-width, colour-coded, active=filled/inactive=ghost tab bar.
