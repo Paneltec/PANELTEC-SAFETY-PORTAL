@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard from '../components/CaptureCard';
 import GroupedTilesView from '../components/capture/GroupedTilesView';
@@ -40,6 +41,10 @@ export default function IncidentsList() {
   // + sort.
   const [searchFiltered, setSearchFiltered] = useState([]);
   const incidentsDensity = useCaptureDensity('incidents', searchFiltered.length);
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
+  const { deepLinkId } = useDeepLinkOpen({
+    items, loading, notFoundMessage: 'Linked incident not found',
+  });
   useEffect(() => {
     api.get('/incidents')
       .then((r) => setItems(r.data))
@@ -133,6 +138,7 @@ export default function IncidentsList() {
                 ? [<StatusBadge key="fus" value={i.follow_up_status} />]
                 : []}
               onDeleted={evict}
+              openInitially={deepLinkId === i.id}
             />
           )}
         />

@@ -22,7 +22,7 @@
 //                     structured, high-risk indicator)
 //   onDeleted       — id => void; parent evicts the row from state
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Eye } from 'lucide-react';
 import PdfActions from './PdfActions';
 import DeleteRecordButton from './DeleteRecordButton';
@@ -78,6 +78,12 @@ export default function CaptureCard({
   showPdf = true,
   pdfResourceKind,
   pdfMirrored = false,
+  // v58.13.119 — Ask Intelligence deep-link support. When truthy on
+  // first render, the card auto-opens its SubmissionViewer once so
+  // `?open=<id>` on the list page lands on the record. The prop is
+  // a one-shot: after the initial open the card behaves normally
+  // (subsequent renders don't re-trigger even if the prop stays true).
+  openInitially = false,
 }) {
   const r = record || {};
   const title = r.template_name_snapshot || r.template_name || r.title || 'Submission';
@@ -91,6 +97,15 @@ export default function CaptureCard({
 
   // v160.3.9.10 — In-app submission viewer for the "unable to just review" bug.
   const [viewerOpen, setViewerOpen] = useState(false);
+
+  // v58.13.119 — One-shot auto-open on mount when `openInitially` is
+  // truthy (Ask Intelligence deep-link path). Empty deps ensures a
+  // parent re-render can't re-trigger it after the user has closed
+  // the viewer.
+  useEffect(() => {
+    if (openInitially) setViewerOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div

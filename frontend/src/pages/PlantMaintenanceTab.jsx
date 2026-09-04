@@ -15,23 +15,28 @@ function StatusChip({ v }) {
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold ${cls}`}>{v}</span>;
 }
 
+// v58.13.118a — Neutral rego chip. Pre-.118a variant rendered a red ⚠
+// pill when `row.plant_id` was falsy — that was the last surviving
+// matched/unmatched cue in the flat-view table. Retired per user
+// directive so every row now reads under its category, not against a
+// "matched vs unmatched" mental model. `registration_no` is still the
+// visible identifier; when it's missing we show a muted em-dash.
 function PlantChip({ row }) {
-  if (row.plant_id) {
-    return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 text-[11px] font-mono">{row.registration_no || row.registration_matched}</span>;
-  }
-  return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[11px] font-mono" title="Rego present but no matching asset">
-    ⚠ {row.registration_no || row.registration_matched}
-  </span>;
+  const rego = row.registration_no || row.registration_matched;
+  if (!rego) return <span className="text-slate-300 text-xs">—</span>;
+  return (
+    <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-mono">
+      {rego}
+    </span>
+  );
 }
 
 export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }) {
   const [items, setItems] = useState([]);
-  const [unmatched, setUnmatched] = useState({ total_unmatched_rows: 0, distinct_regos: 0, groups: [] });
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   // v160.3.9.21d — parent can preselect the filter (e.g. Unmatched tab).
   const [plantFilter, setPlantFilter] = useState(initialPlantFilter); // all | matched | unmatched | <plant_id>
-  const [showUnmatched, setShowUnmatched] = useState(false);
   const [expanded, setExpanded] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
   // v58.13.117 — Category filter (drives the primary tab-row) + drawer
@@ -63,13 +68,14 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
 
   const load = () => {
     setLoading(true);
-    Promise.all([
-      api.get('/plant-maintenance/', { params: { limit: 2000 } }),
-      api.get('/plant-maintenance/unmatched'),
-    ]).then(([listResp, unmResp]) => {
-      setItems(listResp.data.items || []);
-      setUnmatched(unmResp.data || { total_unmatched_rows: 0, distinct_regos: 0, groups: [] });
-    }).finally(() => setLoading(false));
+    // v58.13.118a — Dropped the `/plant-maintenance/unmatched` fetch
+    // that seeded the retired drill-down panel. Only the main list
+    // call remains.
+    api.get('/plant-maintenance/', { params: { limit: 2000 } })
+      .then((listResp) => {
+        setItems(listResp.data.items || []);
+      })
+      .finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, []);
   // Lazy-load grouped payload when the user first switches to Grouped view,
@@ -205,20 +211,6 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
           ))}
         </div>
 
-        {unmatched.total_unmatched_rows > 0 && (
-          <button onClick={() => setShowUnmatched(!showUnmatched)}
-            className="px-3 py-1.5 text-xs rounded-md bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100"
-            data-testid="pm-unmatched-toggle">
-            ⚠ {unmatched.distinct_regos} unmatched regos
-          </button>
-        )}
-
-        <div className="text-xs text-slate-500 ml-auto" data-testid="pm-count">
-          {viewMode === 'grouped' && grouped
-            ? `${grouped.matched_plants ?? grouped.matched?.length ?? 0} vehicles · ${grouped.unmatched_regos ?? grouped.unmatched?.length ?? 0} unmatched regos`
-            : `${filtered.length} of ${items.length} maintenance records`}
-        </div>
-
         {isAdmin && (
           <button onClick={() => setImportOpen(true)}
             className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white hover:bg-slate-50"
@@ -228,28 +220,21 @@ export default function PlantMaintenanceTab({ user, initialPlantFilter = 'all' }
         )}
       </div>
 
-      {/* Unmatched drill-down */}
-      {showUnmatched && (
-        <div className="rounded-2xl border border-rose-200 bg-rose-50/40 p-4" data-testid="pm-unmatched-panel">
-          <h4 className="text-sm font-semibold text-rose-800 mb-2">
-            Unmatched maintenance regos ({unmatched.distinct_regos})
-          </h4>
-          <p className="text-xs text-rose-700 mb-3">
-            These regos appear in maintenance records but don&apos;t match any asset. Add them to Navixy / assets to associate history.
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-            {unmatched.groups.map((g) => (
-              <div key={g.registration_matched} className="p-2 bg-white rounded-md border border-rose-100">
-                <div className="font-mono text-xs font-semibold text-rose-900">{g.registration_matched}</div>
-                <div className="text-[11px] text-slate-600">{g.count} record{g.count === 1 ? '' : 's'} · last {formatDate(new Date(g.last_date_completed)) || '—'}</div>
-                {g.sample_description && (
-                  <div className="text-[11px] text-slate-500 truncate mt-1" title={g.sample_description}>{g.sample_description}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* v58.13.118a — Slim count strip (was co-located with the
+          retired pink toolbar toggle). Grouped-view count only shows
+          matched-vehicle groups now that the phantom-rego "Unknown
+          vehicles" section is retired below. */}
+      <div className="text-xs text-slate-500" data-testid="pm-count">
+        {viewMode === 'grouped' && grouped
+          ? `${grouped.matched_plants ?? grouped.matched?.length ?? 0} vehicles`
+          : `${filtered.length} of ${items.length} maintenance records`}
+      </div>
+
+      {/* v58.13.118a — Retired the pink data-quality toolbar toggle
+          and its drill-down panel; both surfaced the same retired
+          concept as the amber pill. Import data-quality flags will
+          re-emerge as a dedicated Data Health diagnostic in a future
+          ship, not as a filter on the main maintenance list. */}
 
       {/* Table */}
       {loading ? (
@@ -341,7 +326,7 @@ function PmImportBody({ onDone, submit }) {
       if (file) resp = await submit({ file });
       else if (url.trim()) resp = await submit({ url: url.trim() });
       else { setMsg('Provide a file OR a URL.'); setBusy(false); return; }
-      setMsg(`Imported → new: ${resp.inserted}, updated: ${resp.updated}, unchanged: ${resp.unchanged}. Matched: ${resp.matched}, unmatched: ${resp.unmatched}. Live: ${resp.live_total}.`);
+      setMsg(`Imported → new: ${resp.inserted}, updated: ${resp.updated}, unchanged: ${resp.unchanged}. Total records: ${resp.live_total}.`);
       onDone();
     } catch (e) { setMsg(`Failed: ${e?.response?.data?.detail || e?.message}`); }
     finally { setBusy(false); }
@@ -367,16 +352,16 @@ function PmImportBody({ onDone, submit }) {
   );
 }
 
-// v160.3.9.20a — Grouped-by-vehicle view. Renders one card per plant
-// asset (sorted by latest maintenance date DESC) then a phantom-vehicle
-// section for rows whose rego doesn't match any asset.
+// v160.3.9.20a / v58.13.118a — Grouped-by-vehicle view. Renders one
+// card per plant asset (sorted by latest maintenance date DESC).
+// The pre-.118a "Unknown vehicles" section that surfaced phantom
+// unmatched regos was removed; unmatched rows no longer appear here.
 function GroupedView({ data, loading, openGroup, setOpenGroup, q, plantFilter }) {
   if (loading || !data) {
     return <div className="text-sm text-slate-500 p-6" data-testid="pm-grouped-loading">Loading grouped view…</div>;
   }
   const needle = (q || '').trim().toLowerCase();
   const matchGroup = (records, headerHay) => {
-    if (plantFilter === 'unmatched') return false;  // matched groups only
     if (!needle) return true;
     if (headerHay.includes(needle)) return true;
     return records.some((r) => (
@@ -385,24 +370,14 @@ function GroupedView({ data, loading, openGroup, setOpenGroup, q, plantFilter })
         .join(' ').toLowerCase().includes(needle)
     ));
   };
-  const unmatchedGroup = (records, rego) => {
-    if (plantFilter === 'matched') return false;   // unmatched groups only
-    if (!needle) return true;
-    if ((rego || '').toLowerCase().includes(needle)) return true;
-    return records.some((r) => (
-      [r.maintenance_id, r.description, r.notes, r.performed_by,
-       r.company, r.maintenance_type].filter(Boolean)
-        .join(' ').toLowerCase().includes(needle)
-    ));
-  };
+  void plantFilter;
   const matched = (data.matched || []).filter((g) => matchGroup(g.records,
     [g.plant?.name, g.plant?.rego_serial, g.sample_rego, g.plant?.asset_type,
      g.plant?.kind, g.plant?.make, g.plant?.model].filter(Boolean).join(' ').toLowerCase()));
-  const unmatched = (data.unmatched || []).filter((g) => unmatchedGroup(g.records, g.rego));
 
   return (
     <div className="space-y-3" data-testid="pm-grouped">
-      {matched.length === 0 && unmatched.length === 0 && (
+      {matched.length === 0 && (
         <div className="p-6 text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg text-center">
           No maintenance groups match this filter.
         </div>
@@ -417,27 +392,6 @@ function GroupedView({ data, loading, openGroup, setOpenGroup, q, plantFilter })
           count={g.count} latestDate={g.latest_date}
           records={g.records} matched />
       ))}
-      {unmatched.length > 0 && (
-        <div className="pt-4 mt-4 border-t border-rose-200" data-testid="pm-grouped-unmatched-section">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h4 className="text-sm font-semibold text-rose-800">
-              ⚠ Unknown vehicles — <span className="tabular-nums">{unmatched.length}</span> phantom rego{unmatched.length === 1 ? '' : 's'}
-            </h4>
-            <span className="text-[11px] text-rose-700">Rego present in maintenance records but no matching asset</span>
-          </div>
-          <div className="space-y-3">
-            {unmatched.map((g) => (
-              <GroupCard key={`rego:${g.rego}`} groupKey={`rego:${g.rego}`}
-                openGroup={openGroup} setOpenGroup={setOpenGroup}
-                title={`Unknown vehicle · rego ${g.rego}`}
-                rego={g.rego}
-                subtitle={g.sample_description || g.sample_asset_code || ''}
-                count={g.count} latestDate={g.latest_date}
-                records={g.records} matched={false} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -445,12 +399,13 @@ function GroupedView({ data, loading, openGroup, setOpenGroup, q, plantFilter })
 function GroupCard({ groupKey, openGroup, setOpenGroup, title, rego, subtitle,
                     count, latestDate, records, matched }) {
   const isOpen = openGroup === groupKey;
-  const shellCls = matched
-    ? 'border-slate-200 bg-white'
-    : 'border-rose-200 bg-rose-50/40';
-  const chipCls = matched
-    ? 'bg-blue-100 text-blue-800'
-    : 'bg-rose-100 text-rose-800';
+  // v58.13.118a — GroupedView no longer feeds `matched={false}` cards
+  // (the retired "Unknown vehicles" section). The `matched` prop is
+  // kept for signature stability but the alternate rose styling is
+  // dead code; every rendered card uses the neutral slate palette.
+  void matched;
+  const shellCls = 'border-slate-200 bg-white';
+  const chipCls = 'bg-blue-100 text-blue-800';
   return (
     <div className={`rounded-2xl border ${shellCls} overflow-hidden`} data-testid={`pm-group-${groupKey}`}>
       <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-50/60"
@@ -459,11 +414,11 @@ function GroupCard({ groupKey, openGroup, setOpenGroup, title, rego, subtitle,
         data-testid={`pm-group-toggle-${groupKey}`}>
         {rego && (
           <span className={`inline-flex items-center px-2 py-0.5 rounded-md ${chipCls} text-xs font-mono font-semibold`}>
-            {matched ? '' : '⚠ '}{rego}
+            {rego}
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className={`text-sm font-semibold truncate ${matched ? 'text-slate-800' : 'text-rose-900'}`}>{title}</div>
+          <div className="text-sm font-semibold truncate text-slate-800">{title}</div>
           {subtitle && <div className="text-xs text-slate-500 truncate">{subtitle}</div>}
         </div>
         <div className="text-right shrink-0">

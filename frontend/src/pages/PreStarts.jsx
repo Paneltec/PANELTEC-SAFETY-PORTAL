@@ -6,6 +6,7 @@ import api, { apiError } from '../lib/api';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import CaptureDensityControl from '../components/CaptureDensityControl';
 import useCaptureDensity from '../lib/useCaptureDensity';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 import { inferTemplateType, paletteForType } from '../lib/preStartsPalette';
@@ -220,6 +221,10 @@ export default function PreStartsList() {
   // min-height + subtitle clamp. Manual override via the segmented
   // control in the toolbar row.
   const density = useCaptureDensity('pre-starts', filteredCount);
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
+  const { deepLinkId } = useDeepLinkOpen({
+    items, loading, notFoundMessage: 'Linked pre-start not found',
+  });
 
   const clearAll = () => {
     setQ(''); setDateFrom(''); setDateTo(''); setTypeFilter('All');
@@ -447,6 +452,7 @@ export default function PreStartsList() {
                         hideOperator
                         stripeStyle={{ backgroundColor: g.palette.hex }}
                         onDeleted={evict}
+                        openInitially={deepLinkId === p.id}
                       />
                     );
                   })}

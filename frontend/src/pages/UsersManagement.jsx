@@ -19,6 +19,7 @@ import { getUser } from '../lib/auth';
 import { PageHeader } from '../components/capture/Ui';
 import SimproImportPickerModal from '../components/simpro/SimproImportPickerModal';
 import HowThisWorks from '../components/help/HowThisWorks';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 // Phase 4.17 v134.2 — Dashboard/List tabs.
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs';
 import ModuleDashboard from '../components/dashboards/ModuleDashboard';
@@ -528,6 +529,22 @@ export default function UsersManagement() {
   }, []);
   const [active, setActive] = useState(null);
   const [activeTab, setActiveTab] = useState('profile');
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>&tab=profile`).
+  // On mount, read the id + optional tab, look up the user row once
+  // load() completes, open the drawer. Strip the params so back-nav
+  // doesn't re-open. Reuses the same `active` drawer wire as row-click.
+  const { deepLinkId } = useDeepLinkOpen({
+    items: users, loading, notFoundMessage: 'Linked user not found',
+    extraParams: ['tab'],
+  });
+  useEffect(() => {
+    if (!deepLinkId || active) return;
+    const row = users.find((u) => u.id === deepLinkId);
+    if (row) {
+      setActiveTab('profile');
+      setActive(row);
+    }
+  }, [deepLinkId, users, active]);
   // v160.3.9.32-4c — Phase 4c grouped-by-role sections. Local state only
   // (URL persistence is a later polish).
   const [sectionOpen, setSectionOpen] = useState({});

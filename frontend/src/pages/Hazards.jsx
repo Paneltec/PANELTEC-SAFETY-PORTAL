@@ -10,6 +10,7 @@ import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import useCaptureDensity from '../lib/useCaptureDensity';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState, StatusBadge } from '../components/capture/Ui';
 import HowThisWorks from '../components/help/HowThisWorks';
@@ -24,6 +25,10 @@ export default function HazardsList() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const density = useCaptureDensity('hazards', filtered.length);
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
+  const { deepLinkId } = useDeepLinkOpen({
+    items, loading, notFoundMessage: 'Linked hazard not found',
+  });
   useEffect(() => { api.get('/hazards').then((r) => { setItems(r.data); setFiltered(r.data); }).finally(() => setLoading(false)); }, []);
   const evict = (id) => {
     setItems((prev) => prev.filter((x) => x.id !== id));
@@ -89,6 +94,7 @@ export default function HazardsList() {
                       minH={density.cardMinH}
                       badges={extraBadges}
                       onDeleted={evict}
+                      openInitially={deepLinkId === h.id}
                     />
                   </div>
                 );
@@ -104,6 +110,7 @@ export default function HazardsList() {
                   minH={density.cardMinH}
                   badges={extraBadges}
                   onDeleted={evict}
+                  openInitially={deepLinkId === h.id}
                 />
               );
             })}

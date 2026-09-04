@@ -11,6 +11,7 @@ import DeleteRecordButton from '../components/DeleteRecordButton';
 import CaptureListToolbar from '../components/CaptureListToolbar';
 import CaptureCard, { CaptureCardGrid, CaptureSticky } from '../components/CaptureCard';
 import useCaptureDensity from '../lib/useCaptureDensity';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, AiButton, Field, inputClass, EmptyState, GhostButton } from '../components/capture/Ui';
 
@@ -27,6 +28,10 @@ export default function SiteDiaryList() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const density = useCaptureDensity('site-diary', filtered.length);
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
+  const { deepLinkId } = useDeepLinkOpen({
+    items, loading, notFoundMessage: 'Linked diary entry not found',
+  });
 
   useEffect(() => {
     api.get('/site-diary')
@@ -72,6 +77,7 @@ export default function SiteDiaryList() {
                   subtitleLines={density.subtitleLines}
                   minH={density.cardMinH}
                   onDeleted={evict}
+                  openInitially={deepLinkId === d.id}
                 />
               );
             }

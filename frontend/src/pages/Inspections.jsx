@@ -11,6 +11,7 @@ import CaptureCard, { CaptureSticky } from '../components/CaptureCard';
 // source; the legacy per-template fallback was removed together with
 // GroupedTilesView's outer stripe to fix the double-stripe bug.
 import useCaptureDensity from '../lib/useCaptureDensity';
+import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import { getUser } from '../lib/auth';
 import { PageHeader, NewButton, BackButton, PrimaryButton, GhostButton, Field, inputClass, EmptyState } from '../components/capture/Ui';
 // Phase 4.17 v134.1 — Dashboard tab.
@@ -41,6 +42,10 @@ export default function InspectionsList() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const inspectionsDensity = useCaptureDensity('inspections', filtered.length);
+  // v58.13.119 — Ask Intelligence deep-link (`?open=<id>`).
+  const { deepLinkId } = useDeepLinkOpen({
+    items, loading, notFoundMessage: 'Linked inspection not found',
+  });
   useEffect(() => {
     api.get('/inspections')
       .then((r) => { setItems(r.data); setFiltered(r.data); })
@@ -121,6 +126,7 @@ export default function InspectionsList() {
                 minH={ctx.minH}
                 stripeStyle={ctx.stripeHex ? { background: ctx.stripeHex } : undefined}
                 onDeleted={evict}
+                openInitially={deepLinkId === it.id}
               />
             );
           }}
