@@ -11,8 +11,12 @@
 // (v160.3.9.6) — a synced sticky top scrollbar so admins don't have to
 // scroll to the bottom of the page to find horizontal-scroll control.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 // v160.3.9.24 — CRUD affordances + admin-only tightening.
 import useCrudModal from '../components/riskAssessments/useCrudModal';
+// v58.13.113 — Copy / Print / Edit action-bar icons for the expanded card.
+import { ClipboardCopy, Printer, Pencil } from 'lucide-react';
+import { toast } from 'sonner';
 import api from '../lib/api';
 import { loadListSort, saveListSort } from '../lib/listSort';
 import { useCan } from '../lib/permissions';
@@ -157,7 +161,178 @@ function ImportModal({ open, onClose, onDone }) {
   );
 }
 
-function DetailPanel({ row }) {
+// v58.13.113 — Copy / Print helpers for the expanded detail panel.
+//
+// Both formats keep the ORDER stable so a printed page and a pasted
+// email read the same left-to-right. `formatRiskAsText` is what lands
+// in the plain-text clipboard AND what the receipt file would carry;
+// `formatRiskAsHtml` is the rich-text sibling written alongside via
+// `navigator.clipboard.write` — pasting into Word or Outlook keeps
+// the bullets and headings intact.
+function formatRiskAsText(row) {
+  const bullets = (row.mandatory_controls || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const cls = row.classification || 'Not provided';
+  const activity = row.activity || 'Not provided';
+  const un = row.risk_score_uncontrolled || '—';
+  const co = row.risk_score_controlled || '—';
+  const lines = [
+    `Risk #${row.risk_id} — ${activity}`,
+    `Classification: ${cls} | Activity: ${activity}`,
+    `Uncontrolled: ${un} | Controlled: ${co}`,
+    '',
+    'Hazard Aspect:',
+    row.hazard_aspect || 'Not provided',
+    '',
+    'Unwanted Event:',
+    row.unwanted_event || 'Not provided',
+    '',
+    'Mandatory Controls:',
+    ...(bullets.length ? bullets.map((b) => `- ${b}`) : ['- Not provided']),
+    '',
+    'Other Controls:',
+    row.other_controls || 'Not provided',
+    '',
+    'Legal & Other References:',
+    row.legal_references || 'Not provided',
+  ];
+  return lines.join('\n');
+}
+
+function escapeHtml(s) {
+  return String(s || '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
+function formatRiskAsHtml(row) {
+  const bullets = (row.mandatory_controls || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const activity = row.activity || 'Not provided';
+  const cls = row.classification || 'Not provided';
+  const un = row.risk_score_uncontrolled || '—';
+  const co = row.risk_score_controlled || '—';
+  const bulletLis = bullets.length
+    ? bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join('')
+    : '<li>Not provided</li>';
+  return (
+    `<div style="font-family:Arial,Helvetica,sans-serif;font-size:12pt;color:#0f172a">`
+    + `<div><strong>Risk #${escapeHtml(row.risk_id)} — ${escapeHtml(activity)}</strong></div>`
+    + `<div>Classification: ${escapeHtml(cls)} | Activity: ${escapeHtml(activity)}</div>`
+    + `<div>Uncontrolled: ${escapeHtml(un)} | Controlled: ${escapeHtml(co)}</div>`
+    + `<p><strong>Hazard Aspect</strong><br/>${escapeHtml(row.hazard_aspect || 'Not provided')}</p>`
+    + `<p><strong>Unwanted Event</strong><br/>${escapeHtml(row.unwanted_event || 'Not provided')}</p>`
+    + `<p><strong>Mandatory Controls</strong></p><ul>${bulletLis}</ul>`
+    + `<p><strong>Other Controls</strong><br/>${escapeHtml(row.other_controls || 'Not provided')}</p>`
+    + `<p><strong>Legal &amp; Other References</strong><br/>${escapeHtml(row.legal_references || 'Not provided')}</p>`
+    + `</div>`
+  );
+}
+
+async function copyRiskToClipboard(row) {
+  const text = formatRiskAsText(row);
+  const html = formatRiskAsHtml(row);
+  // Dual-format write via ClipboardItem so pasting into Word / Outlook
+  // preserves the bullets + bold headings. Older browsers (Firefox
+  // <127 without dom.events.asyncClipboard.clipboardItem, Safari
+  // <15.4) fall back to plain text.
+  try {
+    if (window.ClipboardItem && navigator.clipboard?.write) {
+      const item = new window.ClipboardItem({
+        'text/plain': new Blob([text], { type: 'text/plain' }),
+        'text/html': new Blob([html], { type: 'text/html' }),
+      });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+  } catch {
+    // Ad blockers occasionally block ClipboardItem; fall through.
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Legacy execCommand fallback — last resort for pre-Blink browsers
+    // and http:// contexts (rare in production but seen inside iframes).
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } finally { ta.remove(); }
+    return true;
+  }
+}
+
+// v58.13.113 — Printable card. Rendered in a portal-friendly div that
+// is invisible on screen but the ONLY visible element under `@media
+// print` thanks to the `.risk-print-root` class defined in index.css.
+// Rendered inline (not a portal) so React sees the mount immediately
+// and `window.print()` can fire on the same tick.
+function PrintableRiskCard({ row }) {
+  if (!row) return null;
+  const bullets = (row.mandatory_controls || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+  const now = new Date();
+  // v58.13.113 — Portal to document.body so the printable card is a
+  // DIRECT sibling of `#root`. `@media print` in index.css then hides
+  // `#root` and shows this sibling cleanly — no visibility-cascade
+  // gotchas from any intermediate Tailwind layer.
+  const card = (
+    <div className="risk-print-root" data-testid="master-risks-printable">
+      <header className="risk-print-header">
+        <div className="risk-print-brand">
+          <svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 3 L21 19 L15 19 L12 13 L9 19 L3 19 Z" fill="#F97316" />
+          </svg>
+          <div>
+            <div className="risk-print-brand-name">Paneltec Civil</div>
+            <div className="risk-print-brand-sub">WHS Compliance · Master Risks Reference Library</div>
+          </div>
+        </div>
+        <div className="risk-print-riskid">Risk #{row.risk_id}</div>
+      </header>
+      <h1 className="risk-print-title">{row.activity || 'Untitled risk'}</h1>
+      <div className="risk-print-meta">
+        <span><strong>Classification:</strong> {row.classification || 'Not provided'}</span>
+        <span><strong>Activity:</strong> {row.activity || 'Not provided'}</span>
+        <span><strong>Uncontrolled:</strong> {row.risk_score_uncontrolled || '—'}</span>
+        <span><strong>Controlled:</strong> {row.risk_score_controlled || '—'}</span>
+      </div>
+      <section>
+        <h2>Hazard Aspect</h2>
+        <p>{row.hazard_aspect || 'Not provided'}</p>
+      </section>
+      <section>
+        <h2>Unwanted Event</h2>
+        <p>{row.unwanted_event || 'Not provided'}</p>
+      </section>
+      <section>
+        <h2>Mandatory Controls</h2>
+        {bullets.length ? (
+          <ul>{bullets.map((b, i) => <li key={i}>{b}</li>)}</ul>
+        ) : (
+          <p>Not provided</p>
+        )}
+      </section>
+      <section>
+        <h2>Other Controls</h2>
+        <p style={{ whiteSpace: 'pre-line' }}>{row.other_controls || 'Not provided'}</p>
+      </section>
+      <section>
+        <h2>Legal &amp; Other References</h2>
+        <p style={{ whiteSpace: 'pre-line' }}>{row.legal_references || 'Not provided'}</p>
+      </section>
+      <footer className="risk-print-footer">
+        <span>Printed {now.toLocaleString('en-AU')}</span>
+        <span>Paneltec Civil — WHS platform</span>
+      </footer>
+    </div>
+  );
+  return typeof document !== 'undefined' ? createPortal(card, document.body) : card;
+}
+
+function DetailPanel({ row, canEdit, onCopy, onPrint, onEdit }) {
   return (
     <div
       className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 p-4 rounded-lg border border-slate-200 bg-slate-50/60"
@@ -173,6 +348,41 @@ function DetailPanel({ row }) {
         {row.classification && (
           <span className="text-xs text-slate-500 ml-3">{row.classification}</span>
         )}
+        {/* v58.13.113 — action bar. Copy + Print available to every
+            authenticated viewer; Edit gated on reference_library.edit
+            via `canEdit`. */}
+        <div className="ml-auto flex items-center gap-1.5"
+             data-testid={`master-risks-detail-actions-${row.risk_id}`}>
+          <button
+            type="button"
+            onClick={() => onCopy(row)}
+            data-testid={`master-risks-detail-copy-${row.risk_id}`}
+            title="Copy this risk to clipboard (plain text + rich text)"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          >
+            <ClipboardCopy size={13} /> Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => onPrint(row)}
+            data-testid={`master-risks-detail-print-${row.risk_id}`}
+            title="Print this risk (portrait A4)"
+            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+          >
+            <Printer size={13} /> Print
+          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => onEdit(row)}
+              data-testid={`master-risks-detail-edit-${row.risk_id}`}
+              title="Edit this risk"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md bg-orange-600 text-white hover:bg-orange-700"
+            >
+              <Pencil size={13} /> Edit
+            </button>
+          )}
+        </div>
       </div>
       <Field label="Unwanted event" value={row.unwanted_event} />
       <Field label="Hazard aspect" value={row.hazard_aspect} />
@@ -300,6 +510,12 @@ export default function MasterRisksTab({ user }) {
   const [expanded, setExpanded] = useState(null);
   const [sort, setSort] = useState(() => loadListSort('master_risks', { key: 'risk_id', dir: 'asc' }));
   const [importOpen, setImportOpen] = useState(false);
+  // v58.13.113 — Row that the user is currently printing. When set, we
+  // render `<PrintableRiskCard>` into the DOM (invisible on-screen,
+  // ONLY visible in @media print) and fire `window.print()`. After the
+  // print dialog closes we clear the state so subsequent expanded
+  // panels aren't stuck under the printing-mode class.
+  const [printingRow, setPrintingRow] = useState(null);
 
   // v160.3.9.29-2b — reference_library gate migration (see CompaniesTab).
   // MasterRisksTab feeds the SWMS master risk library; treated as reference data.
@@ -319,6 +535,49 @@ export default function MasterRisksTab({ user }) {
 
   // v160.3.9.24 — CRUD affordances (Add / Edit / Delete) via shared hook.
   const crud = useCrudModal({ tabKey: 'master_risks', isAdmin, onRefresh: load });
+
+  // v58.13.113 — Copy handler. Dual-format write via ClipboardItem so
+  // Word/Outlook paste keeps bullets; plain-text fallback for older
+  // browsers. Toast surfaces the outcome.
+  const handleCopy = async (row) => {
+    const ok = await copyRiskToClipboard(row);
+    if (ok) toast.success(`Risk #${row.risk_id} copied to clipboard`);
+    else toast.error('Copy failed — please try again');
+  };
+
+  // v58.13.113 — Print handler. Sets the state → React renders the
+  // print-only card in the next tick → we fire `window.print()`. The
+  // `afterprint` event (or a fallback timeout) clears the state so the
+  // rest of the tab returns to normal.
+  const handlePrint = (row) => {
+    setPrintingRow(row);
+  };
+  useEffect(() => {
+    if (!printingRow) return;
+    // Wait one frame so React commits the print card into the DOM
+    // BEFORE the browser snapshots the printable area.
+    let cleared = false;
+    const clear = () => { if (!cleared) { cleared = true; setPrintingRow(null); } };
+    const raf = requestAnimationFrame(() => {
+      try {
+        window.print();
+      } catch { /* headless / iframe context — no-op */ }
+      // Some browsers fire `afterprint`; others don't. Clear on both.
+      window.addEventListener('afterprint', clear, { once: true });
+      // Belt-and-braces: clear after 500ms if `afterprint` never fired.
+      setTimeout(clear, 500);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener('afterprint', clear);
+    };
+  }, [printingRow]);
+
+  // v58.13.113 — Edit handler. Reuses the existing PATCH-backed edit
+  // modal from `useCrudModal` — no new endpoint, no new modal.
+  const handleEdit = (row) => {
+    crud.openEdit(row);
+  };
 
   const classifications = useMemo(() => {
     const s = new Set();
@@ -508,7 +767,15 @@ export default function MasterRisksTab({ user }) {
                       </div>
                     )}
                     {isOpen && (
-                      <div className="px-4 pb-4"><DetailPanel row={row} /></div>
+                      <div className="px-4 pb-4">
+                        <DetailPanel
+                          row={row}
+                          canEdit={canWrite}
+                          onCopy={handleCopy}
+                          onPrint={handlePrint}
+                          onEdit={handleEdit}
+                        />
+                      </div>
                     )}
                   </li>
                 );
@@ -520,6 +787,12 @@ export default function MasterRisksTab({ user }) {
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onDone={load} />
       {crud.Modals}
+      {/* v58.13.113 — Print target. Rendered in-tree (not a portal) so
+          React commits it before window.print() snapshots the layout.
+          On screen it's invisible (see .risk-print-root in index.css);
+          in @media print the app shell + everything else is hidden and
+          ONLY this element paints — one risk per printed page. */}
+      <PrintableRiskCard row={printingRow} />
     </div>
   );
 }

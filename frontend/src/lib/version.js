@@ -1,5 +1,321 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.114 — Ask Intelligence retrieval scope + confidence
+//                       override + name-shaped fallback body.
+//
+// USER PAIN (verbatim): Ask Intelligence searched "stephen" and
+// returned "HIGH CONFIDENCE — No records found for 'stephen'" when
+// Stephen is the admin, is on 8 site-visitor entries as visiting-
+// person, and authored 35 form submissions. The HIGH-confidence
+// stamp made the false-negative feel authoritative.
+//
+// ── Root cause (investigation report, .114 Step 1) ──────────────
+//   `backend/ask.py::_evidence()` fetched a STATIC 5-collection bundle
+//   (`incidents`, `hazards`, `swms`, `inspections`, `contractors`)
+//   with zero keyword pre-filtering and passed Claude's self-graded
+//   confidence through with only `setdefault("confidence", "medium")`
+//   as a guardrail. A name-only query landed in Claude's context
+//   with 0 rows referencing the name; Claude honestly said "no
+//   records" — but marked it HIGH as an anti-hallucination
+//   assertion. Backend never re-checked the citation shape.
+//   Live probe against `test_database`: "stephen" hits across
+//   collections the retriever SHOULD have seen — users=4, workers=3,
+//   site_visitors=14 (all rows), form_submissions=253 — vs the 5 it
+//   did see: 0. 274 real hits invisible to the LLM.
+//
+// ── Scope expansion (`_evidence()`) ─────────────────────────────
+//   Added 9 new collections, all query-aware:
+//     · users — regex on name/first_name/last_name/email. Cap 10.
+//       Powers all downstream user-id joins.
+//     · workers — regex on first_name/last_name/name/email. Cap 10.
+//     · site_visitors — regex on name/visiting_person/company/purpose.
+//       Cap 15, sorted by signed_in_at desc.
+//     · form_submissions — regex on submitted_by_name +
+//       template_name_snapshot OR submitted_by ∈ matched_user_ids.
+//       Cap 20, sorted by submitted_at desc.
+//     · pre_starts — created_by ∈ matched_user_ids (id-join only —
+//       operator/supervisor names aren't stored on the row). Cap 15.
+//     · site_diary_entries — created_by ∈ matched_user_ids. Cap 15.
+//     · audit_log — actor_user_id ∈ matched OR regex on
+//       actor_name/actor_email/description. Cap 20. GATED on
+//       `_can_see_audit(user)`.
+//     · outbound_emails — actor_user_id/created_by ∈ matched. Cap 10.
+//       GATED on `_can_see_comms(user)`.
+//     · outbound_sms — same gating + same shape. Cap 10.
+//   All queries scoped by org_id + deleted_at + workspace when set.
+//   The 5 domain collections stay exactly as they were (recency-based)
+//   so the briefing endpoint keeps its old behaviour unchanged —
+//   `_evidence()` is backwards-compat via defaulted `question=""` +
+//   `user=None` params; briefing passes both defaults and skips the
+//   whole query-aware branch.
+//
+// ── Query-token extractor (`_query_tokens`) ────────────────────
+//   Alphanumeric 2-40 char tokens, drops a curated stopword set
+//   ("the", "and", "for", ..., "recent", "records", "me", "my",
+//   "them", ...) so a natural-language question like "show me
+//   stephen records" reduces to `["stephen"]`. `_looks_name_shaped`
+//   returns True only when a single informative token remains.
+//
+// ── Confidence override matrix (`_compute_confidence`) ────────
+//   ┌──────────┬────────────┬──────────┬──────────┐
+//   │  hits    │ entity     │ claude   │ FINAL    │
+//   ├──────────┼────────────┼──────────┼──────────┤
+//   │  0       │  0         │ any      │ low ★    │
+//   │  1-2     │  1         │ any      │ low      │
+//   │  1-2     │  ≥2        │ high/med │ medium   │
+//   │  1-2     │  ≥2        │ low      │ low      │
+//   │  ≥3      │  1         │ high     │ medium ★ │
+//   │  ≥3      │  1         │ low      │ low      │
+//   │  ≥3      │  ≥2        │ high     │ high     │
+//   │  ≥3      │  ≥2        │ medium   │ medium   │
+//   │  ≥3      │  ≥2        │ low      │ low      │
+//   └──────────┴────────────┴──────────┴──────────┘
+//   ★ = the two rows that fix the reported bug.
+//   Applied backend-side BEFORE the fallback template kicks in,
+//   then re-applied AFTER the fallback adds citations so the
+//   final confidence reflects the ACTUAL cited shape.
+//
+// ── Name-shaped fallback body (`_build_name_fallback_body`) ────
+//   Fires when:
+//     · Query is a single informative token AND
+//     · No domain-collection row's title/description touches the
+//       token AND
+//     · At least one person / authored row matched.
+//   Emits a summary + top-3 recent activity so the user gets an
+//   answer WITHOUT a second round-trip. Example (v58.13.114 curl
+//   trace against live DB):
+//     "'stephen' matches 4 users, 3 workers, 8 site visitor records,
+//      35 authored records. Most recent:
+//      - Site visitor sign-in: Stephen Guy visiting —, 2026-09-04 09:17
+//      - Site visitor sign-in: RL Test 7 visiting Stephen, 2026-09-04 04:17
+//      - Site visitor sign-in: RL Test 5 visiting Stephen, 2026-09-04 04:17
+//      Narrow further? Try 'incidents authored by stephen' or
+//      'stephen's site visits last 30 days'."
+//   The fallback ALSO synthesises up to 5 citations from the
+//   matched user / visitor / form_submission rows so the confidence
+//   override sees real evidence too — a name query with 4 users +
+//   2 visitors ends up at MEDIUM (multi-source, 5 hits, 3 types),
+//   never at the misleading HIGH-with-zero-cites.
+//
+// ── Permission gating (respected) ───────────────────────────────
+//   `_can_see_audit(user)` — admin/hseq_lead OR
+//   `effective_permissions.audit_log.view === True`.
+//   `_can_see_comms(user)` — admin/hseq_lead OR
+//   `effective_permissions.email_outbox.view === True`.
+//   Non-privileged callers see NO citations from audit_log,
+//   outbound_emails, or outbound_sms — verified via
+//   `test_evidence_non_admin_skips_audit_and_comms`.
+//
+// ── Indexes (perf) ──────────────────────────────────────────────
+//   form_submissions@16K rows was un-indexed on submitted_by /
+//   submitted_by_name / template_name_snapshot — a regex scan would
+//   have tanked latency. Added indexes via new `ensure_indexes()`
+//   in ask.py, wired into server.on_startup alongside every other
+//   module's index setup:
+//     · form_submissions.submitted_by                (id-join)
+//     · form_submissions.submitted_by_name           (regex)
+//     · form_submissions.template_name_snapshot     (regex)
+//     · pre_starts.created_by                         (id-join)
+//     · site_diary_entries.created_by                 (id-join)
+//     · site_visitors.name, site_visitors.visiting_person (regex)
+//     · workers.first_name, workers.last_name        (regex)
+//     · audit_log.actor_user_id                       (id-join)
+//   Skipped: users.email + users.name were already indexed.
+//
+// ── Pytests ─────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_ask_intelligence_scope_v58_13_114.py`
+//   (31 checks):
+//     · Token extractor drops stopwords + module verbs.
+//     · Order + alphanumeric preservation.
+//     · Name-shape detector: single token → True, multi → False.
+//     · Regex escaping (a literal `.` in a token can't wild-match).
+//     · Audit + comms permission gating.
+//     · Confidence matrix — 16-row parametrised truth table.
+//     · Confidence rejects garbage (non-list, missing record_id,
+//       invalid claude value → low).
+//     · Fallback body fires for name-shaped zero-domain-hit query;
+//       stays None when domain touches token, when query has
+//       multiple tokens, when no person hits.
+//     · `_evidence` returns all 12 collection keys + _meta.
+//     · No-token retrieval leaves query-aware collections empty
+//       (briefing recency-fallback contract).
+//     · Non-admin caller sees empty audit_log + outbound_emails +
+//       outbound_sms even when a matching user id exists.
+//     · `ensure_indexes` creates the .114 indexes on
+//       form_submissions/pre_starts/audit_log.
+//     · Version-sync forward-safe pin >= .114.
+//
+// ── Live curl trace (verified) ─────────────────────────────────
+//   POST /api/ask {"question": "stephen"} → HTTP 200 with:
+//     confidence   = "medium"  (was "high" pre-fix)
+//     fallback     = "name_summary"
+//     cited        = 5 items across 3 entity types (user,
+//                    site_visitor, form_submission)
+//     body         = "'stephen' matches 4 users, 3 workers, 8 site
+//                    visitor records, 35 authored records..."
+//   POST /api/ask {"question": "nonexistentxyz9999"} → confidence
+//     "low" (was passthrough "high" pre-fix — bug case).
+//   POST /api/ask {"question": "recent incidents this quarter"} →
+//     confidence "low" (0 hits, correctly clamped even when Claude
+//     asserts otherwise).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Frontend Ask page (`pages/Ask.jsx`) — the answer body +
+//     confidence pill re-render automatically off the new backend
+//     response shape; no props changed. Sonner toast + suggestion
+//     chips unaffected.
+//   · Existing `POST /api/ask` route path / auth gate /
+//     `ask_history` insertion.
+//   · Briefing endpoint (`GET /api/ask/briefing`) — passes
+//     `question=""` so it keeps the pre-.114 recency behaviour.
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
+// v160.3.9.58.13.113 — Master Risks: Copy / Print / Edit on the
+//                       expanded detail card.
+//
+// USER PAIN (verbatim): "user wants Copy, Print, and Edit actions on
+// this expanded panel" (Risk #3 Tailgate Meeting screenshot). The
+// row-hover kebab already carried Edit + Delete for admins, but
+// nothing surfaced Copy or Print, and Edit was a 4px icon in a
+// hover-only toolbar that non-admins couldn't see was gated.
+//
+// ── Assumption confirmed ────────────────────────────────────────
+//   The "Classification section" in the brief = the entire expanded
+//   detail panel for a single Master Risk (NOT a filter header). The
+//   three actions are surfaced inside that panel's action-bar.
+//
+// ── Flagged (NOT implemented) ───────────────────────────────────
+//   Classification-filter-level bulk actions (e.g. "Print all Extreme
+//   risks"). No natural expansion pattern exists in the current
+//   MasterRisksTab code: filtering already narrows the visible list;
+//   the browser's own print (Ctrl+P) captures the filtered table if
+//   the admin genuinely needs a bulk report. Adding a bulk-print
+//   pipeline (ReportLab + async job + audit trail) would be a
+//   separate ~200-line ship with its own set of gnarly page-break
+//   decisions. Left out on purpose — call it out and we'll ship as
+//   .113a if the field team wants it.
+//
+// ── Backend (`master_risks.py` — UNCHANGED, reused) ───────────
+//   The existing `PATCH /api/master-risks/{risk_uid}` route (shipped
+//   in v160.3.9.13a) already:
+//     · Gates on `require_permission("reference_library", "edit")`.
+//     · Accepts every editable field via `MasterRiskPatch`
+//       (`exclude_unset=True`, so only the fields the caller
+//       actually supplied are written).
+//     · Writes a `master_risks_audit` entry with
+//       `{action: "manual-update", actor_id, fields: [...]}`.
+//     · Returns 400 `no-fields` on an empty patch and 404
+//       `not-found` for a missing risk.
+//   No changes required. `RecordFormModal` (used via
+//   `useCrudModal({tabKey: 'master_risks'})`) already produces the
+//   correct multi-field PATCH payload against this endpoint.
+//
+// ── Frontend — MasterRisksTab.jsx ────────────────────────────
+//   1. `DetailPanel` now accepts `canEdit`, `onCopy`, `onPrint`,
+//      `onEdit` props and renders a right-aligned action-bar inside
+//      the risk-id / classification header row. Copy + Print are
+//      neutral outline buttons (available to every authenticated
+//      viewer — the copy/print output is derived from data they
+//      can already see); Edit is a brand-orange filled button gated
+//      on `reference_library.edit`.
+//   2. New `copyRiskToClipboard(row)` helper writes BOTH `text/plain`
+//      and `text/html` via `navigator.clipboard.write(new
+//      ClipboardItem(...))` so a paste into Word / Outlook keeps the
+//      bullets + bold headings. Falls back to `writeText` on
+//      browsers without ClipboardItem; last-ditch fallback is a
+//      hidden `<textarea>` + `document.execCommand('copy')` for
+//      pre-Blink browsers / iframe contexts. Format order matches
+//      the .113 brief verbatim: `Risk #N — Activity`, classification/
+//      score header, then Hazard Aspect / Unwanted Event / Mandatory
+//      Controls (bullets) / Other Controls / Legal References.
+//   3. New `<PrintableRiskCard>` component rendered in-tree at the
+//      end of the tab. Invisible on screen (see `.risk-print-root` in
+//      `index.css`: `position:fixed; width:0; height:0;
+//      overflow:hidden; opacity:0`), but the ONLY visible element
+//      under `@media print`. `handlePrint(row)` sets the
+//      `printingRow` state; a `useEffect` waits one requestAnimation
+//      Frame so React commits the card, then fires `window.print()`;
+//      `afterprint` (or a 500 ms fallback) clears the state so the
+//      tab returns to normal.
+//   4. Print layout: Paneltec chevron + wordmark header on the
+//      orange brand rule, big risk title, 4-column meta strip
+//      (Classification / Activity / Uncontrolled / Controlled),
+//      Hazard Aspect / Unwanted Event / Mandatory Controls (bulleted)
+//      / Other Controls / Legal References sections with
+//      `page-break-inside: avoid`, footer with `Printed <datetime>`
+//      + `Paneltec Civil — WHS platform`. Portrait A4, 18mm ×
+//      15mm margins. No sidebar/nav/topbar/banners in the printed
+//      output.
+//   5. Edit reuses the existing `RecordFormModal` via
+//      `useCrudModal.openEdit(row)` — no new modal, no field-set
+//      drift. The hook already exposes Add/Delete via
+//      `AddButton`/`RowActions`; this ship added a matching
+//      `openEdit` export so the detail panel can drive the same
+//      modal without going through the row-hover toolbar.
+//
+// ── Frontend — `useCrudModal.jsx` ────────────────────────────
+//   Only change: return object now carries an `openEdit(row)`
+//   function that calls the internal `setEditRow(row)`. Backwards-
+//   compat — every existing caller keeps working.
+//
+// ── Frontend — `index.css` ────────────────────────────────────
+//   New `@media print` block (+~90 lines) that:
+//     · Hides every direct child of `<body>` and re-shows only
+//       `.risk-print-root` + descendants (visibility toggle so the
+//       DOM tree stays intact, no layout thrash).
+//     · Sets `@page { size: A4 portrait; margin: 18mm 15mm; }`.
+//     · Styles the print card with a 2pt orange rule under the
+//       brand header, 20pt title, 10pt-11pt body text, and
+//       `page-break-inside: avoid` on every section so a bullet
+//       list is never orphaned across two pages.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_master_risks_actions_v58_13_113.py`
+//   (14 checks):
+//     · PATCH route registered at `/master-risks/{risk_uid}` with
+//       the PATCH verb attached.
+//     · Route gated on `require_permission("reference_library",
+//       "edit")`.
+//     · `master_risks_audit` write source-pinned (`action:
+//       manual-update`, `actor_id`, `fields`).
+//     · `MasterRiskPatch` accepts every writable field on the row.
+//     · Behavioural round-trip: seed → patch two fields → assert
+//       new values + untouched fields preserved + `updated_at`
+//       bumped + audit-log entry has `actor_id` + exact field-key set.
+//     · Empty patch → 400 `no-fields`.
+//     · Missing risk → 404 `not-found` (fresh motor client to
+//       sidestep the shared-loop closed error).
+//     · Frontend testids: `master-risks-detail-copy-<risk_id>`,
+//       `master-risks-detail-print-<risk_id>`,
+//       `master-risks-detail-edit-<risk_id>`.
+//     · Clipboard write source-pin: `ClipboardItem`, `text/plain`
+//       AND `text/html` blobs.
+//     · `window.print()` + `afterprint` wiring.
+//     · Edit button rendered only when `canEdit` truthy inside
+//       `DetailPanel`; `canEdit={canWrite}` passed from the tab.
+//     · `useCrudModal` exports `openEdit` that calls `setEditRow`.
+//     · Print CSS block hides `body > *`, reveals `.risk-print-root`,
+//       and declares `@page { size: A4 ... portrait }`.
+//     · Version-sync forward-safe pin >= .113 across the 3
+//       canonical version strings.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Backend `master_risks.py` (endpoint reused, zero edits).
+//   · Existing `RecordFormModal` / `TAB_CONFIGS.master_risks`
+//     schema.
+//   · Row-hover toolbar Edit + Delete icons (kept for parity).
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.112 — In-app PWA install affordance.
 //
 // USER PAIN: The app was already PWA-ready (v116/117 shipped the
@@ -10654,7 +10970,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.112';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.114';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

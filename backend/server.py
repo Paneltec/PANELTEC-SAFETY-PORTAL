@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, FastAPI  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from ai import router as ai_router  # noqa: E402
-from ask import router as ask_router  # noqa: E402
+from ask import router as ask_router, ensure_indexes as ask_ensure_indexes  # noqa: E402
 from assets import router as assets_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router, assignments_router as form_assignments_router  # noqa: E402
 from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
@@ -606,6 +606,12 @@ async def on_startup():
         await master_risks_ensure_indexes()
     except Exception as e:
         log.warning("master_risks index setup failed: %s", e)
+    # v58.13.114 — Ask Intelligence retrieval indexes (form_submissions,
+    # pre_starts, site_diary_entries, site_visitors, workers, audit_log).
+    try:
+        await ask_ensure_indexes()
+    except Exception as e:
+        log.warning("ask index setup failed: %s", e)
     # v160.3.9.14 — List Forms index setup.
     try:
         await list_forms_ensure_indexes()

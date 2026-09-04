@@ -86,7 +86,7 @@ export default function useCrudModal({ tabKey, isAdmin, onRefresh }) {
     </>
   ) : null;
 
-  return { AddButton, RowActions, Modals };
+  return { AddButton, RowActions, Modals, openEdit: (row) => setEditRow(row) };
 }
 
 function DeleteConfirm({ row, busy, onCancel, onConfirm }) {
