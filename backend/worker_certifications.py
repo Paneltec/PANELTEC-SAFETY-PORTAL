@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field, field_validator
 from pymongo import ReturnDocument
 
@@ -1106,3 +1106,72 @@ async def bulk_clear_pending_review(
         })
 
     return {"updated": updated}
+
+
+# ── v58.13.109 — Sidebar Certifications badge ────────────────────
+#
+# Cheap count endpoint for the AppShell sidebar red pill. Two buckets:
+#   • `expired` — expiry_date < today.
+#   • `expiring_soon` — expiry_date in [today, today + window_days).
+# `window_days` defaults to 30 to match `EXPIRING_SOON_DAYS` (line 54)
+# so the badge and the per-cert `_status_for()` classifier stay in
+# lock-step; a caller can override to any value in [1, 365] for
+# alternate dashboard tiles.
+#
+# Scope mirrors `list_all_certs` above:
+#   • Privileged roles (admin / hseq_lead / supervisor) see the org.
+#   • Everyone else is auto-scoped to their own worker row so the
+#     badge doesn't leak colleague counts on a mobile client.
+#
+# Guarded by `@safe_admin_endpoint` per brief: an unhandled Mongo
+# hiccup on shell mount would otherwise 500 the sidebar and render
+# the entire app unusable.
+from admin_safe_wrapper import safe_admin_endpoint  # noqa: E402
+
+
+@certs_router.get("/expiry-count")
+@safe_admin_endpoint
+async def certifications_expiry_count(
+    request: Request,
+    window_days: int = 30,
+    user: dict = Depends(get_current_user),
+):
+    """Return `{expired: n, expiring_soon: n, window_days: int}` for
+    the sidebar Certifications badge. Cheap two-count aggregation with
+    no per-cert serialisation — designed to be polled once on shell
+    mount + on route change without pressuring Mongo."""
+    if window_days < 1 or window_days > 365:
+        raise HTTPException(422, "window_days must be in [1, 365]")
+
+    today = date.today()
+    horizon = today + timedelta(days=window_days)
+    today_iso = today.isoformat()
+    horizon_iso = horizon.isoformat()
+
+    q: dict = {"org_id": user["org_id"], "deleted_at": None,
+               "expiry_date": {"$ne": None}}
+    # Same scope logic as `list_all_certs`: privileged sees the org,
+    # everyone else sees only their own worker row.
+    role_key = (user.get("role") or "").lower()
+    privileged = role_key in {"admin", "hseq_lead", "supervisor"}
+    if not privileged:
+        me = await db.workers.find_one(
+            {"org_id": user["org_id"], "deleted_at": None,
+             "$or": [{"user_id": user["id"]},
+                     {"email": (user.get("email") or "").lower()}]},
+            {"_id": 0, "id": 1},
+        )
+        q["worker_id"] = (me or {}).get("id") or "__no_match__"
+
+    expired = await db.worker_certifications.count_documents(
+        {**q, "expiry_date": {"$lt": today_iso, "$ne": None}}
+    )
+    expiring_soon = await db.worker_certifications.count_documents(
+        {**q, "expiry_date": {"$gte": today_iso, "$lt": horizon_iso}}
+    )
+    return {
+        "expired": int(expired),
+        "expiring_soon": int(expiring_soon),
+        "window_days": window_days,
+    }
+

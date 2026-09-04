@@ -96,7 +96,15 @@ function insertAtIndex(layout, targetPath, node) {
   return copy;
 }
 
-export default function SettingsNav({ collapsed: navCollapsed, onItemClick, canAdminNav }) {
+// v58.13.109 — Sidebar-badge context. Threading `badges` through
+// SortableItem / SortableFolder / FolderBody props would touch six
+// function signatures for a single feature; a scoped React context
+// keeps the wiring local to this file. The context value is the
+// same `{ certExpiry: {expired, expiring_soon, total} }` shape
+// AppShell passes down to `<SidebarNav badges={...} />`.
+const SidebarBadgesContext = React.createContext({});
+
+export default function SettingsNav({ collapsed: navCollapsed, onItemClick, canAdminNav, badges }) {
   const can = useCan();
   // v160.3.9.29-2a — Prop renamed from `isAdmin` to `canAdminNav` to
   // reflect the new semantic (users.edit-derived, not the literal
@@ -296,6 +304,7 @@ export default function SettingsNav({ collapsed: navCollapsed, onItemClick, canA
   }
 
   return (
+    <SidebarBadgesContext.Provider value={badges || {}}>
     <div className="mb-5" data-testid="settings-nav">
       {!navCollapsed && (
         <div className="px-2 mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400">
@@ -377,15 +386,23 @@ export default function SettingsNav({ collapsed: navCollapsed, onItemClick, canA
         />
       )}
     </div>
+    </SidebarBadgesContext.Provider>
   );
 }
 
 function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }) {
   const reg = SETTINGS_NAV_BY_KEY[node.key];
+  const badges = React.useContext(SidebarBadgesContext);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id, disabled: !isAdmin });
   const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 };
   if (!reg) return null;
   const IconFilled = reg.iconActive || reg.icon;
+  // v58.13.109 — Optional red pill badge (total count of certs
+  // expired + expiring within `window_days` for the caller). Only
+  // renders when the registry entry carries a `badgeKey` AND the
+  // context has a matching positive-total entry.
+  const badge = reg.badgeKey ? badges[reg.badgeKey] : null;
+  const badgeTotal = badge && badge.total > 0 ? badge.total : 0;
   return (
     <li ref={setNodeRef} style={style} className="group relative">
       {isAdmin && !navCollapsed && (
@@ -424,6 +441,15 @@ function SortableItem({ id, node, navCollapsed, onItemClick, isAdmin, inFolder }
               style={{ width: 20, height: 20 }}
             />
             {!navCollapsed && <span className="truncate flex-1">{reg.label}</span>}
+            {!navCollapsed && badgeTotal > 0 && (
+              <span
+                data-testid={`${reg.testid}-badge`}
+                title={`${badge.expired} expired · ${badge.expiring_soon} expiring soon`}
+                className="ml-auto text-[10px] leading-none font-semibold text-white bg-red-600 rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+              >
+                {badgeTotal > 99 ? '99+' : badgeTotal}
+              </span>
+            )}
           </>
         )}
       </NavLink>

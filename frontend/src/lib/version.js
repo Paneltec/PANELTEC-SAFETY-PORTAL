@@ -1,5 +1,128 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.109 — P2 + P3 backlog batch (5 items).
+//
+// One consolidated ship covering the full approved backlog from
+// today's batch approval. Every item is small and isolated; there
+// is no cross-dependency between them.
+//
+// ── 1. Rate-limit test-mode bypass ────────────────────────
+//   `backend/rate_limit.py` — added `_is_prod()`, `_bypass_signals_present()`,
+//   `_resolve_bypass()` + module-init `_BYPASS_ACTIVE`. slowapi
+//   `Limiter(..., enabled=not _BYPASS_ACTIVE)` for both `limiter` and
+//   `user_limiter`. Signals that flip bypass ON: env
+//   `TEST_MODE_BYPASS_RATE_LIMIT=true`, `ENV=test`, or
+//   `PYTEST_CURRENT_TEST` set by pytest itself. Guardrail: `ENV=prod`
+//   OR `IS_PROD=true` REFUSES bypass unconditionally and emits a
+//   critical log line so a conflicting env combo lands on "prod
+//   wins". Unblocks the two schedule_attachments HTTP tests that
+//   were flaking against the 5/min login limit (bug parked since
+//   v58.13.105 Item 4).
+//
+// ── 2. Route-link compile guard ────────────────────────────
+//   NEW `frontend/scripts/check-routes.js` — parses App.js
+//   `<Route path="…">` registrations (stitching depth-1 nested
+//   routes into `/app/{path}`), walks `frontend/src/` for six
+//   navigation-target patterns (`to="…"`, `to='…'`, template
+//   literals, `navigate("…")`, `navigate('…')`, backticked
+//   navigate). Cross-checks each usage against the registered set
+//   with React-Router-v6-style `:param` matching. Non-zero exit +
+//   human-readable diff on any dead link. `package.json` scripts
+//   entry added: `"check-routes": "node scripts/check-routes.js"`
+//   — invokable via `yarn --cwd frontend check-routes`. INFO ONLY
+//   for this ship — not wired into the build-blocking flow yet
+//   (that's a follow-up in a future ship). Current preview state:
+//   script reports 4 dead-link findings (3 real /app/settings
+//   "Back to Settings" targets, 1 false positive from a comment in
+//   version.js) — all pre-existing and out of scope for .109.
+//
+// ── 3. Precast Panel role permissions ────────────────────
+//   INVESTIGATION FINDING (not a code change): the brief described
+//   the Precast Panel role as having drifted / empty. It hasn't.
+//   Direct DB inspection: `db.roles.find({role_id:
+//   "custom_precast_panel_employee"}).permission_tokens` returns
+//   the SAME 16 tokens as `custom_construction_worker_l1` — byte-
+//   equal after sort. The "empty permissions" the brief referenced
+//   was a UI-label confusion: the Roles Admin surface labels the
+//   `permission_tokens[]` column "permissions" — the underlying
+//   store uses the singular canonical field name. Nothing to fix.
+//   This ship adds a regression-lock:
+//     · Memo `memory/v58_13_109_permissions_storage_trace.md`
+//       documents the canonical storage path
+//       (`db.roles.permission_tokens[]`) so no future agent
+//       chases the same red herring.
+//     · Pytest `test_precast_panel_permissions_v58_13_109.py`
+//       (4 checks) locks the two roles' token sets to bit-for-bit
+//       equivalence — a symmetric-difference diff prints the exact
+//       drifted tokens when it ever fails.
+//
+// ── 4. Orphan maintenance vacuum ─────────────────────────
+//   NEW `backend/scripts/vacuum_orphan_maintenance_v58_13_109.py` —
+//   MANUAL-INVOCATION migration script (no startup wiring). Two
+//   idempotent passes:
+//     · Pass 1: for each distinct orphan rego, insert an `assets`
+//       row with `kind="vehicle"`, `source="orphan_backfill"`,
+//       `rego_serial=<REGO>`, per-run `orphan_backfill_run_id`.
+//       Fresh-fleet fields (name/make/model/workspace_id) left
+//       null for admin to complete via the standard edit surface.
+//     · Pass 2: for every plant_maintenance row with no `plant_id`
+//       whose `registration_no` now maps to an asset (either from
+//       pass 1 or pre-existing), set `plant_id` +
+//       `registration_matched=True` + `updated_at=now`.
+//   Prints before/after orphan counts. Preview state at ship day:
+//   346 orphan rows across 54 distinct regos. NO auto-run on
+//   startup; NO email/SMS; audit table untouched by design.
+//   Idempotency verified via pytest.
+//
+// ── 5. Sidebar Certifications badge ─────────────────────
+//   `backend/worker_certifications.py` — new endpoint
+//   `GET /api/certifications/expiry-count?window_days=30` (default
+//   30; 1..365). Wrapped in `@safe_admin_endpoint` per brief so a
+//   Mongo hiccup on shell mount surfaces JSON 500 instead of
+//   killing the sidebar. Scope mirrors `list_all_certs`:
+//   privileged (admin/hseq_lead/supervisor) sees the org; everyone
+//   else auto-scoped to their own worker row. Returns
+//   `{expired, expiring_soon, window_days}`. Wire proof (curl):
+//   admin org-wide → `{"expired":72,"expiring_soon":0,
+//   "window_days":30}` and `window_days=90` → `{"expired":72,
+//   "expiring_soon":6,"window_days":90}` on preview.
+//   `AppShell.jsx` — new `certBadge` state + `useEffect` polling
+//   `/certifications/expiry-count` on mount + on every route
+//   change (no interval — pathname granularity is fine for a
+//   "second-opinion" pill). Nav config carries a new `badgeKey:
+//   'certExpiry'` on the Certifications item; SidebarNav renders a
+//   red `bg-red-600` pill when the total is >0 (title shows
+//   `<expired> expired · <expiring_soon> expiring soon`; total >99
+//   collapses to `99+`). data-testid: `nav-settings-certifications-badge`.
+//   Silent zero on network failure so the pill just vanishes
+//   instead of throwing.
+//
+// ── Version bumps ────────────────────────────────────────
+//   `RUNNING_VERSION`, `MOBILE_BUNDLE_VERSION`, `CACHE_VERSION`
+//   all → `paneltec-v160.3.9.58.13.109`. `/app/mobile/` code
+//   untouched (version string constant only). One consolidated
+//   changelog block (this one) rather than five suffixed
+//   sub-versions per the brief's "bundle if code changes are all
+//   in .109" clause.
+//
+// ── Tests added ──────────────────────────────────────────
+//   · tests/backend_unit/test_rate_limit_bypass_v58_13_109.py
+//   · tests/backend_unit/test_check_routes_script_v58_13_109.py
+//   · tests/backend_unit/test_precast_panel_permissions_v58_13_109.py
+//   · tests/backend_unit/test_vacuum_orphan_maintenance_v58_13_109.py
+//     (5 checks incl. version-sync forward pins)
+//   Full pytest suite: green (see ship memo for final count).
+//
+// ── NOT changed ────────────────────────────────────────
+//   · No background email/SMS.
+//   · No new ephemeral-upload endpoints.
+//   · 20 pre-existing `ephemeral-upload-storage` lint warnings
+//     still parked for v58.14.x.
+//   · `/app/mobile/` code (only version constant).
+//   · Auth model, rate-limit key functions, existing endpoints.
+
+
+
 // v160.3.9.58.13.108 — Regression-lock guard for the v58.13.88 fix
 //                       that pointed `auth_invite._send_invite_sms`
 //                       at `integrations_textmagic.safe_send_sms`
@@ -9957,7 +10080,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.108';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.109';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

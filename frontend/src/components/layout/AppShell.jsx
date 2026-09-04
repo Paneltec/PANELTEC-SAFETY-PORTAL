@@ -125,7 +125,7 @@ const NAV = [
     { to: '/app/settings/swms-assignments', label: 'SWMS Assignments', icon: ClipboardTextLtr24Regular, iconActive: ClipboardTextLtr24Filled, testid: 'nav-settings-swms-assignments', requiresCan: ['swms', 'edit'], pastel: 'sky' },
     { to: '/app/settings/integrations', label: 'Integrations', icon: PlugConnected24Regular, iconActive: PlugConnected24Filled, testid: 'nav-settings-integrations', resource: 'integrations', pastel: 'slate' },
     { to: '/app/settings/system', label: 'System', icon: Settings24Regular, iconActive: Settings24Filled, testid: 'nav-settings-system', requiresCan: ['users', 'edit'], pastel: 'slate' },
-    { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter' },
+    { to: '/app/settings/certifications', label: 'Certifications', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-certifications', pastel: 'butter', badgeKey: 'certExpiry' },
     { to: '/app/settings/backup', label: 'Backup & Restore', icon: CloudArrowUp24Regular, iconActive: CloudArrowUp24Filled, testid: 'nav-settings-backup', requiresCan: ['users', 'edit'], pastel: 'slate' },
     // v160.3.7q — Bird's-eye program schematic (admin-oriented since it links out to every admin surface).
     { to: '/app/settings/schematic', label: 'Program Schematic', icon: Diagram24Regular, iconActive: Diagram24Filled, testid: 'nav-settings-schematic', requiresCan: ['users', 'edit'], pastel: 'lavender' },
@@ -154,7 +154,7 @@ const SECTION_TINTS = {
   Settings:   { idle: 'text-slate-500',   hover: 'group-hover:text-slate-700' },
 };
 
-const SidebarNav = ({ collapsed, onItemClick, canAdminNav }) => {
+const SidebarNav = ({ collapsed, onItemClick, canAdminNav, badges = {} }) => {
   const can = useCan();
   return (
     <nav className="flex-1 overflow-y-auto px-3 py-4" data-testid="sidebar-nav">
@@ -172,6 +172,7 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav }) => {
               collapsed={collapsed}
               onItemClick={onItemClick}
               canAdminNav={canAdminNav}
+              badges={badges}
             />
           );
         }
@@ -235,6 +236,23 @@ const SidebarNav = ({ collapsed, onItemClick, canAdminNav }) => {
                           />
                           {!collapsed && <span className="truncate flex-1">{it.label}</span>}
                           {!collapsed && it.beta && <span className="text-[9px] uppercase tracking-wider font-semibold text-brand-violet bg-brand-violet-soft px-1.5 py-0.5 rounded">Beta</span>}
+                          {/* v58.13.109 — Sidebar badge pill. Renders when
+                              the badges dict has a truthy total for the
+                              item's badgeKey. Only wired for the
+                              Certifications entry today (expired +
+                              expiring-within-30-days count). Red pill so
+                              it reads as "attention required" at a
+                              glance without being tied to a specific
+                              route colour. */}
+                          {!collapsed && it.badgeKey && badges[it.badgeKey]?.total > 0 && (
+                            <span
+                              data-testid={`${it.testid}-badge`}
+                              title={`${badges[it.badgeKey].expired} expired · ${badges[it.badgeKey].expiring_soon} expiring soon`}
+                              className="ml-auto text-[10px] leading-none font-semibold text-white bg-red-600 rounded-full px-1.5 py-0.5 min-w-[18px] text-center"
+                            >
+                              {badges[it.badgeKey].total > 99 ? '99+' : badges[it.badgeKey].total}
+                            </span>
+                          )}
                         </>
                       )}
                     </NavLink>
@@ -532,7 +550,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   );
 }
 
-const SidebarShell = ({ collapsed, canAdminNav }) => (
+const SidebarShell = ({ collapsed, canAdminNav, badges }) => (
   <aside className={`hidden md:flex flex-col bg-white border-r border-slate-200 transition-[width] duration-200 sticky top-0 h-screen z-20 ${collapsed ? 'w-[72px]' : 'w-64'}`} data-testid="sidebar-desktop">
     <div className={`h-16 flex items-center border-b border-slate-200 bg-white ${collapsed ? 'justify-center px-2' : 'px-5'}`}>
       <Link to="/app/dashboard" className="block">
@@ -541,7 +559,7 @@ const SidebarShell = ({ collapsed, canAdminNav }) => (
           : <Logo size="sm" />}
       </Link>
     </div>
-    <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} />
+    <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} badges={badges} />
     {/* v160.3.9.10a — Version footer, always visible. Tester was
         counting DOM matches for this string and finding zero. */}
     <div className={`mt-auto border-t border-slate-200 py-2 text-center text-[10px] font-mono text-slate-400 ${collapsed ? 'px-1' : 'px-3'}`}
@@ -557,6 +575,13 @@ export default function AppShell() {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [user, setUser] = useState(getUser());
+  // v58.13.109 — Sidebar Certifications badge. `{expired, expiring_soon,
+  // total}` refreshed on shell mount + on every route change. Cheap
+  // count endpoint (`/api/certifications/expiry-count`) — no polling
+  // interval, no websocket, no aggressive refetching. Server-side
+  // guarded by `@safe_admin_endpoint` so a Mongo hiccup renders the
+  // pill as absent instead of exploding the shell.
+  const [certBadge, setCertBadge] = useState({ expired: 0, expiring_soon: 0, total: 0 });
   // Phase 3.16 — idle-watch + warning modal driver. Lives here (not in
   // TopBar) so the modal can be rendered as a sibling of <main> below.
   const [warnInfo, setWarnInfo] = useState(null);
@@ -584,6 +609,26 @@ export default function AppShell() {
     }
   }, []);
 
+  // v58.13.109 — Certifications sidebar badge. Refetch on mount + every
+  // route change (`location.pathname` dep). No interval — the pill is
+  // a "second opinion" indicator not a live tracker, and the cheap
+  // /expiry-count endpoint is fine at pathname granularity. Silent
+  // fail (setCertBadge to zeros) if the user's role can't read the
+  // endpoint or the network hiccups; the pill just doesn't render.
+  useEffect(() => {
+    if (!getToken()) return;
+    let alive = true;
+    api.get('/certifications/expiry-count').then((r) => {
+      if (!alive) return;
+      const expired = Number(r?.data?.expired || 0);
+      const soon = Number(r?.data?.expiring_soon || 0);
+      setCertBadge({ expired, expiring_soon: soon, total: expired + soon });
+    }).catch(() => {
+      if (alive) setCertBadge({ expired: 0, expiring_soon: 0, total: 0 });
+    });
+    return () => { alive = false; };
+  }, [location.pathname]);
+
   if (!getToken()) return <Navigate to="/" replace />;
 
   const permsValue = {
@@ -602,7 +647,7 @@ export default function AppShell() {
   return (
     <PermissionsProvider value={permsValue}>
     <div className="min-h-screen flex bg-brand-bg" data-testid="app-shell">
-      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} />
+      <SidebarShell collapsed={collapsed} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-72 civil-chrome max-md:border-r-black">
           <SheetTitle className="sr-only">Navigation menu</SheetTitle>
@@ -610,7 +655,7 @@ export default function AppShell() {
             <Logo size="sm" />
             <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="p-2 min-w-[48px] min-h-[48px] text-civil-off-white"><X size={20} /></button>
           </div>
-          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} />
+          <SidebarNav collapsed={false} onItemClick={() => setMobileOpen(false)} canAdminNav={canAdminNav} badges={{ certExpiry: certBadge }} />
         </SheetContent>
       </Sheet>
 
