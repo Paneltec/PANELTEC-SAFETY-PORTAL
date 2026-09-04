@@ -166,10 +166,7 @@ const s = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.imBorder,
     borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
     minHeight: 48, marginBottom: 8,
-    shadowColor: Colors.imInk,
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 1 },
+    boxShadow: '0px 1px 4px rgba(0,0,0,0.06)',
     elevation: 1,
   },
   rowIcon: {

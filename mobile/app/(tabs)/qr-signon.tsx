@@ -130,7 +130,7 @@ const s = StyleSheet.create({
   scanState: { alignItems: 'center', gap: 8 },
   scanText: { color: Colors.orange, fontSize: 12, fontWeight: '800', letterSpacing: 1 },
   idleState: { alignItems: 'center', gap: 8 },
-  cameraIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.05)', alignItems: 'center', justifyContent: 'center' },
+  cameraIcon: { width: 64, height: 64, borderRadius: 32, backgroundColor: Colors.surfaceLight, alignItems: 'center', justifyContent: 'center' },
   idleText: { color: Colors.textSecondary, fontSize: 14, fontWeight: '500' },
   idleSub: { color: Colors.textTertiary, fontSize: 12 },
   inputCard: { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 16, padding: 14, marginBottom: 16 },

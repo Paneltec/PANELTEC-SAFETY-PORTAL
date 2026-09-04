@@ -569,8 +569,7 @@ function AssetQrScanField({ value, onChange, testId, autofillMap, setSiblings }:
             paddingVertical: 18, paddingHorizontal: 16,
             flexDirection: 'row', alignItems: 'center', gap: 14,
             borderWidth: 2, borderColor: Colors.orangeLight,
-            shadowColor: Colors.orange, shadowOpacity: 0.4,
-            shadowRadius: 10, shadowOffset: { width: 0, height: 4 },
+            boxShadow: '0px 4px 10px rgba(249,115,22,0.4)',
             elevation: 6,
           }}
           onPress={() => { setErr(null); scannedOnceRef.current = false; if (camPerm && !camPerm.granted) requestCamPerm(); setOpen(true); }}

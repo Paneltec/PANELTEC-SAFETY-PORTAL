@@ -333,18 +333,11 @@ const d = StyleSheet.create({
   // clearly organise the surface without shouting.
   sectionLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary, marginBottom: 10, marginTop: 16, textTransform: 'uppercase' },
   metricNum: { fontSize: 24, fontWeight: '800', color: Colors.ink, letterSpacing: -0.5 },
-  metricLabel: { fontSize: 11, fontWeight: '700', color: Colors.imInk, marginTop: 2 },
-  metricSub: { fontSize: 9, color: Colors.textTertiary, fontWeight: '700', letterSpacing: 0.8 },
-  captureTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink },
-  // v160.0.3 — Manage/Capture tile descriptions were `textSecondary`
-  // which faded to near-white on the light-blue tile background. Dark
-  // slate ensures the descriptor line reads as an equal citizen.
-  captureDesc: { fontSize: 12, color: Colors.textSecondary, marginTop: 3, fontWeight: '500' },
   metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 },
   metricCard: {
     width: '48%', flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+    boxShadow: '0px 1px 3px rgba(0,0,0,0.04)', elevation: 1,
   },
   metricIcon: { width: 36, height: 36, borderRadius: 10, backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   metricLabel: { fontSize: 13, fontWeight: '600', color: Colors.ink },
@@ -353,7 +346,7 @@ const d = StyleSheet.create({
   captureCard: {
     flexDirection: 'row', alignItems: 'center', gap: 14,
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border, borderRadius: 14, padding: 14, marginBottom: 10,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3, elevation: 1,
+    boxShadow: '0px 1px 3px rgba(0,0,0,0.04)', elevation: 1,
   },
   captureIcon: { width: 42, height: 42, borderRadius: 12, backgroundColor: Colors.orangeSoft, alignItems: 'center', justifyContent: 'center' },
   captureTitle: { fontSize: 15, fontWeight: '600', color: Colors.ink },

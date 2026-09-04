@@ -89,10 +89,7 @@ const s = StyleSheet.create({
     borderWidth: 1,
     maxWidth: 520,
     minWidth: 220,
-    shadowColor: Colors.imInk,
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    boxShadow: '0px 6px 12px rgba(0,0,0,0.35)',
     elevation: 8,
   },
   text: {

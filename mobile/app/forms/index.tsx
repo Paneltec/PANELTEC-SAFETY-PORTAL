@@ -387,8 +387,7 @@ const s = StyleSheet.create({
   card: {
     backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
     borderRadius: 18, padding: 16, marginBottom: 12,
-    shadowColor: Colors.imInk, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25, shadowRadius: 12, elevation: 3,
+    boxShadow: '0px 4px 12px rgba(0,0,0,0.25)', elevation: 3,
   },
   cardTopRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 10 },
   catBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14 },
@@ -416,7 +415,7 @@ const s = StyleSheet.create({
   fillBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.orange, minHeight: 48,
-    shadowColor: Colors.orange, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
+    boxShadow: '0px 4px 12px rgba(249,115,22,0.35)', elevation: 6,
   },
   fillBtnText: { fontSize: 13, fontWeight: '800', color: Colors.imSurface, letterSpacing: 0.3 },
   empty: { alignItems: 'center', paddingTop: 60, gap: 6 },

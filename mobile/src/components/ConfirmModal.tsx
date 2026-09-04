@@ -84,8 +84,7 @@ const s = StyleSheet.create({
     width: '100%', maxWidth: 380,
     backgroundColor: Colors.imSurface, borderRadius: 18,
     padding: 22, gap: 10, alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.28, shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 }, elevation: 10,
+    boxShadow: '0px 8px 20px rgba(0,0,0,0.28)', elevation: 10,
   },
   iconWrap: {
     width: 52, height: 52, borderRadius: 26,

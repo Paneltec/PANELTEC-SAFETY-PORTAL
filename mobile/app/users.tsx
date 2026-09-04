@@ -4,6 +4,7 @@ import {
   RefreshControl, ActivityIndicator, Alert, TextInput, Switch, Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import api, { apiError } from '../src/lib/api';
 import { getUser } from '../src/lib/auth';
@@ -28,6 +29,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 export default function UsersScreen() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);

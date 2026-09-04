@@ -135,7 +135,7 @@ export default function CreateSiteScreen() {
         {/* Header */}
         <View style={s.header}>
           <TouchableOpacity testID="create-site-back" onPress={() => router.back()} style={s.backBtn}>
-            <Ionicons name="chevron-back" size={22} color="#FFFFFF" />
+            <Ionicons name="chevron-back" size={22} color={Colors.blue} />
           </TouchableOpacity>
           <View style={{ flex: 1, alignItems: 'center' }}>
             <Text style={s.headerOverline}>NEW</Text>
@@ -262,16 +262,17 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.bg },
   header: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#1E3A8A', paddingHorizontal: 16, paddingVertical: 14,
+    backgroundColor: Colors.surface, paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: 'rgba(255,255,255,0.6)' },
-  headerTitle: { fontSize: 17, fontWeight: '700', color: '#FFFFFF' },
+  headerOverline: { fontSize: 9, fontWeight: '700', letterSpacing: 1.2, color: Colors.textTertiary },
+  headerTitle: { fontSize: 17, fontWeight: '700', color: Colors.ink },
   content: { padding: 16, paddingBottom: 48 },
   gpsCard: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 20,
     borderWidth: 1, borderColor: Colors.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.04, shadowRadius: 3,
+    boxShadow: '0px 1px 3px rgba(0,0,0,0.04)',
     elevation: 1,
   },
   gpsHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
