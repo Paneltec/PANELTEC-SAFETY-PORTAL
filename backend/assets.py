@@ -14,13 +14,15 @@ import string
 from typing import Literal, Optional
 
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 from reportlab.lib.colors import black, grey, white
 from reportlab.lib.pagesizes import A4, A6
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
+from bson import ObjectId
+from motor.motor_asyncio import AsyncIOMotorGridFSBucket
 
 from auth import get_current_user
 from permissions import require_permission
@@ -35,7 +37,12 @@ from pdf_card_template import (header_band, qr_image, qr_block, footer_brand,
 log = logging.getLogger("paneltec.assets")
 router = APIRouter(prefix="/assets", tags=["assets"])
 
-AssetKind = Literal["vehicle", "plant", "tool", "container"]
+# v58.13.120a — Add "trailer" as a fifth first-class kind.
+# The user-approved sub_type→kind map (Phase 1 backfill in
+# `scripts/backfill_maintenance_regos_v58_13_120.py`) writes 20
+# trailer rows during the initial hydration, and the new Fleet &
+# Service Register (Phase 3) will surface a Trailers filter chip.
+AssetKind = Literal["vehicle", "plant", "tool", "container", "trailer"]
 AssetType = Literal[
     "vacuum_truck", "tipper", "dump_truck", "semi_trailer", "ute",
     "crane_truck", "service_truck", "excavator", "loader", "bulldozer",
@@ -241,6 +248,22 @@ class AssetIn(BaseModel):
     photo_file_id: Optional[str] = None
     notes: Optional[str] = Field(default=None, max_length=4000)
     status: AssetStatus = "active"
+
+
+# v58.13.120a — Per-asset photo attachment metadata. The bytes live
+# in GridFS (mirrors `workers.py::upload_worker_photo`, zero
+# ephemeral-upload-storage footprint). The `photos[]` array on the
+# `assets` doc is append-only via `POST /assets/{id}/photos` and
+# tombstone-nulled by `DELETE /assets/{id}/photos/{photo_id}`.
+class AssetPhoto(BaseModel):
+    id: str
+    filename: str
+    mime: str
+    size: int
+    photo_url: str           # `/api/assets/{asset_id}/photo/{gridfs_id}`
+    photo_gridfs_id: str
+    uploaded_at: str
+    uploaded_by: Optional[str] = None
 
 
 class NfcPairIn(BaseModel):
@@ -757,7 +780,12 @@ async def asset_label_pdf(
 # ────────────────────── NFC / UHF pairing ──────────────────────
 
 class BulkLabelsIn(BaseModel):
-    asset_ids: list[str] = Field(min_length=1, max_length=200)
+    # v58.13.120a — `asset_ids` is now optional so callers can also
+    # print by `source` (e.g. every asset backfilled during the
+    # Phase 1 hydration: source="maintenance_backfill_v58_13_120").
+    # Exactly one of the two must be supplied.
+    asset_ids: Optional[list[str]] = Field(default=None, max_length=200)
+    source: Optional[str] = Field(default=None, max_length=80)
     layout: Literal["fleet_4up", "avery_l7160"] = "fleet_4up"
 
 
@@ -768,15 +796,24 @@ async def bulk_labels_pdf(
 ):
     """v160.0.11.1 — Merged multi-asset label PDF for the web admin.
 
-    Body: `{"asset_ids": [...], "layout": "fleet_4up" | "avery_l7160"}`.
+    Body: `{"asset_ids": [...], "layout": "fleet_4up" | "avery_l7160"}`
+    OR   : `{"source": "maintenance_backfill_v58_13_120", "layout": ...}`.
     Returns application/pdf with one page per 4 tiles (`fleet_4up`) or per
     21 mini labels (`avery_l7160`). Only assets the caller can `view` are
     included; missing IDs are silently dropped. Empty result → 404 so the
-    UI can toast "No printable assets"."""
+    UI can toast "No printable assets".
+
+    v58.13.120a — `source` selector lands so admins can print an
+    entire backfill run's labels in one shot without the frontend
+    reconstructing 54-length id arrays."""
     org_id = user["org_id"]
     id_list = [s for s in (body.asset_ids or []) if isinstance(s, str) and s.strip()]
+    if body.source:
+        q = {"org_id": org_id, "source": body.source, "deleted_at": None}
+        source_ids = [d["id"] async for d in db.assets.find(q, {"_id": 0, "id": 1})]
+        id_list = list({*id_list, *source_ids})
     if not id_list:
-        raise HTTPException(422, "asset_ids is required")
+        raise HTTPException(422, "asset_ids or source is required")
     cursor = db.assets.find(
         {"org_id": org_id, "id": {"$in": id_list}, "deleted_at": None},
         {"_id": 0},
@@ -843,6 +880,145 @@ async def uhf_pair(asset_id: str, body: UhfPairIn, user: dict = Depends(require_
     if res.matched_count == 0:
         raise HTTPException(404, "Asset not found")
     return await db.assets.find_one({"id": asset_id}, {"_id": 0})
+
+
+# ────────────────────── v58.13.120a photo attachments ──────────────────────
+#
+# GridFS-backed per-asset photo store. Mirrors `workers.py::upload_worker_photo`
+# exactly — bytes live in `fs.files` / `fs.chunks`, metadata rides on the
+# `assets.photos[]` array. Zero ephemeral local-disk footprint (no
+# `/tmp/uploads`, no writes outside Mongo), so this ship does NOT add to
+# the 20-item deferred `ephemeral-upload-storage` warning list.
+
+_MAX_PHOTO_BYTES = 10 * 1024 * 1024  # 10 MB per image
+
+
+def _fs_bucket() -> AsyncIOMotorGridFSBucket:
+    """Lazy handle to the shared GridFS bucket on the app DB."""
+    return AsyncIOMotorGridFSBucket(db)
+
+
+@router.post("/{asset_id}/photos")
+async def upload_asset_photo(
+    asset_id: str,
+    file: UploadFile = File(...),
+    user: dict = Depends(require_permission("assets", "edit")),
+):
+    """Append a photo to `assets.{id}.photos[]`. Bytes → GridFS; metadata
+    goes on the asset doc so the drawer can enumerate without a bucket
+    scan. Returns the updated asset."""
+    org_id = user["org_id"]
+    asset = await db.assets.find_one(
+        {"id": asset_id, "org_id": org_id, "deleted_at": None}, {"_id": 0})
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+
+    raw = await file.read()
+    if len(raw) == 0:
+        raise HTTPException(400, "Empty upload")
+    if len(raw) > _MAX_PHOTO_BYTES:
+        raise HTTPException(413,
+            f"Image too large (max {_MAX_PHOTO_BYTES // 1024 // 1024} MB)")
+
+    fs = _fs_bucket()
+    gid = await fs.upload_from_stream(
+        f"{asset_id}-{secrets.token_urlsafe(6)}.bin",
+        raw,
+        metadata={"kind": "asset_photo", "asset_id": asset_id,
+                  "org_id": org_id, "mime": file.content_type or "application/octet-stream",
+                  "orig_filename": file.filename or "photo"},
+    )
+
+    ts = now_iso()
+    photo = {
+        "id": new_id(),
+        "filename": file.filename or f"photo-{ts}.bin",
+        "mime": file.content_type or "application/octet-stream",
+        "size": len(raw),
+        "photo_url": f"/api/assets/{asset_id}/photo/{gid}",
+        "photo_gridfs_id": str(gid),
+        "uploaded_at": ts,
+        "uploaded_by": user.get("id"),
+    }
+    await db.assets.update_one(
+        {"id": asset_id, "org_id": org_id},
+        {"$push": {"photos": photo}, "$set": {"updated_at": ts}},
+    )
+    return await db.assets.find_one({"id": asset_id}, {"_id": 0})
+
+
+@router.get("/{asset_id}/photo/{gridfs_id}")
+async def stream_asset_photo(
+    asset_id: str,
+    gridfs_id: str,
+    request: Request,
+    token: Optional[str] = Query(None),
+):
+    """Stream a photo blob back to the browser. Authorises via the asset
+    org_id — the GridFS metadata's `org_id` must match too so a stolen
+    URL can't leak cross-tenant.
+
+    v58.13.120g — Adds a `?token=<jwt>` query-param auth fallback (same
+    pattern as v143 backup downloads / v154 QR PNGs). This lets a plain
+    `<img src="/api/assets/.../photo/...?token=...">` render inside the
+    PhotoTab grid without an Authorization header. Bearer header is
+    still honoured when present."""
+    from auth_helpers import verify_bearer_token
+    # Try Bearer first, fall back to ?token=.
+    auth_header = request.headers.get("authorization")
+    ok, user = await verify_bearer_token(db, auth_header)
+    if not ok and token:
+        ok, user = await verify_bearer_token(db, f"Bearer {token}")
+    if not ok or not user:
+        raise HTTPException(401, "Not authenticated")
+    asset = await db.assets.find_one(
+        {"id": asset_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+    try:
+        oid = ObjectId(gridfs_id)
+    except Exception:
+        raise HTTPException(400, "Bad photo id")
+    fs = _fs_bucket()
+    try:
+        stream = await fs.open_download_stream(oid)
+    except Exception:
+        raise HTTPException(404, "Photo not found")
+    if (stream.metadata or {}).get("org_id") != user["org_id"]:
+        raise HTTPException(403, "Cross-tenant access denied")
+    mime = (stream.metadata or {}).get("mime") or "application/octet-stream"
+    return StreamingResponse(stream, media_type=mime, headers={
+        "Cache-Control": "private, max-age=3600",
+    })
+
+
+@router.delete("/{asset_id}/photos/{photo_id}")
+async def delete_asset_photo(
+    asset_id: str, photo_id: str,
+    user: dict = Depends(require_permission("assets", "edit")),
+):
+    """Remove a photo entry from `assets.{id}.photos[]` and delete the
+    backing GridFS blob. Idempotent — a repeat 404s cleanly if the
+    entry has already been removed."""
+    asset = await db.assets.find_one(
+        {"id": asset_id, "org_id": user["org_id"], "deleted_at": None}, {"_id": 0})
+    if not asset:
+        raise HTTPException(404, "Asset not found")
+    entry = next((p for p in (asset.get("photos") or []) if p.get("id") == photo_id), None)
+    if not entry:
+        raise HTTPException(404, "Photo not found on asset")
+    fs = _fs_bucket()
+    try:
+        await fs.delete(ObjectId(entry["photo_gridfs_id"]))
+    except Exception as e:
+        log.warning("assets.delete_photo GridFS delete failed: %s", e)
+    await db.assets.update_one(
+        {"id": asset_id, "org_id": user["org_id"]},
+        {"$pull": {"photos": {"id": photo_id}},
+         "$set": {"updated_at": now_iso()}},
+    )
+    return await db.assets.find_one({"id": asset_id}, {"_id": 0})
+
 
 
 # ────────────────────── Public scan resolver ──────────────────────

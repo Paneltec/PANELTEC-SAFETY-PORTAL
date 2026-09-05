@@ -39,6 +39,17 @@ export default function useDeepLinkOpen({
 } = {}) {
   const [sp, setSp] = useSearchParams();
   const [deepLinkId, setDeepLinkId] = useState(() => sp.get('open') || null);
+  // v58.13.120f — Capture extra param values (e.g. `tab`) on mount
+  // BEFORE the strip effect wipes them from the URL. Consumers read
+  // the captured values via the returned `deepLinkExtras` object.
+  const [deepLinkExtras, setDeepLinkExtras] = useState(() => {
+    const out = {};
+    for (const k of extraParams) {
+      const v = sp.get(k);
+      if (v) out[k] = v;
+    }
+    return out;
+  });
 
   // Strip `open` (+ any extra params) from URL on mount. Empty deps
   // — the initial useState already captured the value so we never
@@ -66,5 +77,5 @@ export default function useDeepLinkOpen({
 
   const clearDeepLink = () => setDeepLinkId(null);
 
-  return { deepLinkId, clearDeepLink };
+  return { deepLinkId, clearDeepLink, deepLinkExtras };
 }

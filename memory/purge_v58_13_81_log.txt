@@ -379,3 +379,150 @@
   asset_service_schedules_cascade: 0
   assets: 1
   ids[assets]: a-cb129b625378
+
+
+## 2026-09-04T22:26:38.001763+00:00  user=admin@paneltec.test  grand_total=5
+  asset_service_schedules_cascade: 5
+  assets: 5
+  ids[assets]: a-594b97112231,a-1d40d908e932,a-f36c7cb28f8b,a-53add94019d9,a-27d4da7d37e6
+
+
+## 2026-09-04T22:26:38.039881+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-5a742e310e10
+
+
+## 2026-09-04T22:26:38.071811+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:26:38.107568+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-e48135602d32
+
+
+## 2026-09-04T22:37:04.784987+00:00  user=admin@paneltec.test  grand_total=15
+  asset_service_schedules_cascade: 15
+  assets: 15
+  ids[assets]: 1f071630-fcda-4608-8d6b-0a2c72cb87b5,a9667777-6135-4ca4-bca0-1f167332bc1d,134fd5f6-9cc4-4116-a86c-ad4a365df6f2,5bd78e36-78fa-4949-8fd3-8bf8e3ad9817,2bd19473-97d1-41f3-9d6f-778586c2dc31,25baea1b-a9e3-4da9-b07f-139c0fca9940,9082ed71-a42a-48f2-a187-2693d66e4116,ea106d4a-72e4-4bec-900b-d8f4a3c75d6f,a15813a8-2024-45b6-9caf-f1547498d7e0,2d01d1ba-f932-4f93-b5ff-adba941993d2,a-31010492526d,a-3487f3f2176a,a-883440127538,a-23d4f4c604ec,a-1212a59a123c
+
+
+## 2026-09-04T22:37:04.819192+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-b4064bf0de4d
+
+
+## 2026-09-04T22:37:04.847138+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:37:04.881762+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-0435ef6f59e0
+
+
+## 2026-09-04T22:37:41.968535+00:00  user=admin@paneltec.test  grand_total=15
+  asset_service_schedules_cascade: 15
+  assets: 15
+  ids[assets]: 11582750-2845-4eba-ac92-6391687d4709,49720576-7a40-4220-a002-5ebe2aeced8b,67645a50-05f7-4833-b4ab-e54db0372e9a,d88a6d51-4666-43f8-a453-927bf1558b90,e65e44d3-c132-4cea-998a-aede3da0ebd6,d3ef2547-ffee-4adf-874c-14fa4e5be2cb,cb9ceb48-f972-4cdc-afcc-3ac1d3a76644,98cf9d53-d73a-4703-9751-f096d65029d8,a9b31cb9-4bca-4f0f-ab62-c93616af6deb,3aa39006-bbfa-44a2-afc4-8ed911861b9f,a-0ece518a1a1d,a-301d70adc18e,a-1b4d19ecf0c4,a-c3abf865795a,a-f2a609a9eeed
+
+
+## 2026-09-04T22:37:42.009313+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-bf42ddcccdbb
+
+
+## 2026-09-04T22:37:42.053514+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:37:42.100521+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-27ae796f7231
+
+
+## 2026-09-04T22:37:57.681588+00:00  user=admin@paneltec.test  grand_total=5
+  asset_service_schedules_cascade: 5
+  assets: 5
+  ids[assets]: a-60eeec44f54b,a-87e64fc673f8,a-2353c2907013,a-b5f9c8a3895a,a-afca6fc1c8b0
+
+
+## 2026-09-04T22:37:57.719036+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-acef4f2c46fa
+
+
+## 2026-09-04T22:37:57.746315+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:37:57.781388+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-b5bfbbe23f29
+
+
+## 2026-09-04T22:45:31.615858+00:00  user=admin@paneltec.test  grand_total=5
+  asset_service_schedules_cascade: 5
+  assets: 5
+  ids[assets]: a-dbd130a7f40f,a-342592f8fbbf,a-ba7c08c5d9a1,a-fecb55d2fca1,a-a78960840323
+
+
+## 2026-09-04T22:45:31.650828+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-6aaa7fdccf7a
+
+
+## 2026-09-04T22:45:31.677022+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:45:31.714028+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-24ed8b5f0728
+
+
+## 2026-09-04T22:59:30.060329+00:00  user=admin@paneltec.test  grand_total=15
+  asset_service_schedules_cascade: 15
+  assets: 15
+  ids[assets]: 81e2f7e7-fe8c-40ea-8113-d456d4240d85,72dad7d2-44a0-4f79-a1bf-4d90c1f3b25c,01457e12-4641-4739-85c0-964011eaac88,36342ba5-989f-4257-9878-7c7f421dce41,22c78ad5-60c6-4f21-ba41-cbeef9689671,e4672053-f9d7-454f-b837-c92bc6f80444,12cdbfdd-0d5e-4ab3-a401-f8269c67dd6d,ce80b4dc-2504-471f-a634-5b40fdfb956f,a5ce9427-e2c5-4d89-921a-07d4f411d395,4952eba6-c0a8-46ae-af9d-854d21dbbcc8,a-623e22f53136,a-fa8bf4356e90,a-617282386dfa,a-0e395befd473,a-27b8a9742ebf
+
+
+## 2026-09-04T22:59:30.098535+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-4f467cabb445
+
+
+## 2026-09-04T22:59:30.132156+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:59:30.174019+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-7f1ac84b2782
+
+
+## 2026-09-04T22:59:48.039150+00:00  user=admin@paneltec.test  grand_total=15
+  asset_service_schedules_cascade: 15
+  assets: 15
+  ids[assets]: 2147fee7-8f4c-4377-9f69-3d5f93061b9f,b41e64d5-c522-45ef-9ffc-119c3a296e31,09e38da9-7273-4c4e-8b86-e54d1521e2e4,ea8f1267-718c-41c5-8fa1-5b114af85899,30d62957-8cdc-49cf-bf64-3834371bdb2a,65dbb794-4836-4df2-bd17-59a003829021,f76c36ed-606e-487b-b2f4-ffd48edbdfa7,980ea920-1450-458a-a967-fc94a6206bfe,1c4b14e2-3bf4-4424-bf6f-94284ecb476d,1d950a86-c15f-4414-812e-1e81178bf055,a-e7e538372637,a-ec83234fd729,a-5d217a4e7a19,a-9246f9fe3ee0,a-c52458201e4c
+
+
+## 2026-09-04T22:59:48.080507+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-5cce1461ad80
+
+
+## 2026-09-04T22:59:48.113118+00:00  user=admin@paneltec.test  grand_total=0
+
+
+## 2026-09-04T22:59:48.151398+00:00  user=admin@paneltec.test  grand_total=1
+  asset_service_schedules_cascade: 0
+  assets: 1
+  ids[assets]: a-a7755d03fd62

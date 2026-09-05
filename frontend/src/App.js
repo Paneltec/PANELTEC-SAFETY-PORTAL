@@ -4,7 +4,17 @@ import '@/lib/clipboard';   // v154.1 — arms the navigator.clipboard.writeText
 import '@/lib/download';    // v154.2 — arms the HTMLAnchorElement.click safety-net at app boot
 import { hydratePalette } from '@/lib/civilPalette';   // v58.13.67-palette-switcher
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
+
+// v58.13.120d/e — Fleet & Service Register grace/toast expiries.
+// LegacyVehiclesRedirect is retained INDEFINITELY (user policy call —
+// external bookmarks / old browser tabs / hard-coded links in
+// emails should keep resolving). The "This page has moved" toast is
+// only useful for the first month or so, so we self-clean it on
+// TOAST_EXPIRES_AT — 30 days from the .120e ship. After that date
+// the redirect still fires silently.
+export const TOAST_EXPIRES_AT = '2026-10-04T00:00:00Z';
+// LegacyVehiclesRedirect retained indefinitely for old bookmarks.
 
 import Cover from '@/pages/Cover';
 import Signup from '@/pages/Signup';
@@ -41,7 +51,12 @@ import SimproAdmin from '@/pages/SimproAdmin';
 import Microsoft365Admin from '@/pages/Microsoft365Admin';
 import TextMagicAdmin from '@/pages/TextMagicAdmin';
 import Vehicles from '@/pages/Vehicles';
-import PlantVehicles from '@/pages/PlantVehicles';
+// v58.13.120e — `PlantVehicles.jsx` retired and file deleted this
+// ship. The `/app/vehicles` route now resolves to
+// `LegacyVehiclesRedirect` (see this file), which navigates to
+// `/app/fleet` and fires the once-per-session moved-toast.
+import FleetRegister from '@/pages/FleetRegister';
+import AdminImports from '@/pages/settings/AdminImports';
 import ScanResolver from '@/pages/ScanResolver';
 import WorkerIdCardPrint from '@/pages/print/WorkerIdCardPrint';
 import WorkerScanResolver from '@/pages/WorkerScanResolver';
@@ -87,6 +102,47 @@ function UsersAndRolesShell() {
     </div>
   );
 }
+
+
+// v58.13.120d — Legacy /app/vehicles(...) → /app/fleet redirect.
+// Preserves `?open=<id>` so bookmarked drawer links keep working.
+// Fires a once-per-session Sonner toast so operators know their
+// bookmark landed on the new surface. Phase 5 (`FLEET_GRACE_ENDS_AT`)
+// removes this shim entirely.
+const LEGACY_VEHICLES_TOAST_SESSION_KEY = 'fleet_moved_toast_v58_13_120d';
+function LegacyVehiclesRedirect() {
+  const loc = useLocation();
+  const [sp] = useSearchParams();
+  useEffect(() => {
+    try {
+      // v58.13.120e — self-cleaning toast: only fires before
+      // TOAST_EXPIRES_AT. After that date the redirect still runs
+      // silently; the toast state key is left in sessionStorage as
+      // a harmless artefact.
+      const nowIso = new Date().toISOString();
+      const stillWithinToastWindow = nowIso < TOAST_EXPIRES_AT;
+      if (stillWithinToastWindow && !sessionStorage.getItem(LEGACY_VEHICLES_TOAST_SESSION_KEY)) {
+        sessionStorage.setItem(LEGACY_VEHICLES_TOAST_SESSION_KEY, '1');
+        toast.info('Plant & Vehicles has moved.', {
+          description: "You're now on the new Fleet & Service Register.",
+          duration: 8000,
+          action: {
+            label: 'Learn more',
+            onClick: () => toast('Fleet & Service Register',
+              { description: 'Unified register for vehicles, plant, trailers, tools, and containers with full service history. Cross-collection search + per-asset service logging + photo attachments.' }),
+          },
+        });
+      }
+    } catch (_) { /* sessionStorage unavailable in some sandboxes — no-op */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Preserve `?open=<id>` and any other query params through the redirect.
+  const qs = sp.toString();
+  const target = qs ? `/app/fleet?${qs}` : '/app/fleet';
+  void loc;  // keep the useLocation import stable for future extensions
+  return <Navigate to={target} replace />;
+}
+
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
@@ -223,8 +279,29 @@ function App() {
 
               <Route path="renewals" element={<Renewals />} />
               <Route path="audit-exports" element={<AuditExports />} />
-              <Route path="vehicles" element={<PlantVehicles />} />
+              {/* v58.13.120d — legacy `vehicles` route retired.
+                  See LegacyVehiclesRedirect + Route definitions
+                  below. */}
               <Route path="vehicles-legacy" element={<Vehicles />} />
+              {/* v58.13.120c — Fleet & Service Register (Phase 3). */}
+              <Route path="fleet" element={<FleetRegister />} />
+              {/* v58.13.120e — Bulk XLSX importer moved from the
+                  retired Plant & Vehicles surface to Settings.
+                  The `POST /api/plant-maintenance/reimport` endpoint
+                  is unchanged. */}
+              <Route path="settings/imports" element={<AdminImports />} />
+              {/* v58.13.120d — Legacy Plant & Vehicles surface is
+                  retired. Every `/app/vehicles`(...) URL redirects
+                  to `/app/fleet`, preserving `?open=<id>` so
+                  bookmarked deep-links keep working. The
+                  `LegacyVehiclesRedirect` component fires a
+                  once-per-session Sonner toast on arrival so
+                  operators know their bookmark landed somewhere
+                  new. See `FLEET_GRACE_ENDS_AT` at the top of this
+                  file — Phase 5 removes the redirects on that
+                  date. */}
+              <Route path="vehicles" element={<LegacyVehiclesRedirect />} />
+              <Route path="vehicles/*" element={<LegacyVehiclesRedirect />} />
               <Route path="sites" element={<SitesAdmin />} />
               <Route path="sites/:id" element={<SiteDetail />} />
 

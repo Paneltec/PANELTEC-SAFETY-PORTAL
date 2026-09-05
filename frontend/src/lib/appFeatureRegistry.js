@@ -29,7 +29,7 @@ const _MAIN_ITEMS = [
   { key: 'contractors',      label: 'Contractors',          route: '/app/contractors',      description: 'Sub-contractor register and onboarding' },
   { key: 'suppliers',        label: 'Suppliers',            route: '/app/suppliers',        description: 'Approved supplier register' },
   { key: 'sites',            label: 'Sites',                route: '/app/sites',            description: 'Active project sites + QR sign-on' },
-  { key: 'vehicles',         label: 'Plant & Vehicles',     route: '/app/vehicles',         description: 'Equipment and vehicle register' },
+  { key: 'vehicles',         label: 'Fleet & Service Register',     route: '/app/fleet',         description: 'Unified register for vehicles, plant, trailers, tools, and containers with full service history' },
   { key: 'document_library', label: 'Document Library',     route: '/app/document-library', description: 'Central document store' },
   { key: 'audit_exports',    label: 'Audit Exports',        route: '/app/audit-exports',    description: 'Compliance audit exports' },
   { key: 'outbox',           label: 'Email Outbox',         route: '/app/outbox',           description: 'Delivery log for all system emails' },

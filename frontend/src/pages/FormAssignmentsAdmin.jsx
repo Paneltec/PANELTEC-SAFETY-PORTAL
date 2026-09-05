@@ -497,7 +497,7 @@ export default function FormAssignmentsAdmin() {
                   <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">Applies to ASSET TYPE</h3>
                   {allTypes.length === 0 ? (
                     <div className="px-3 py-3 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-900">
-                      No asset types in your register yet. Use <strong>Any asset</strong> above or add assets on <Link to="/app/vehicles" className="font-semibold underline">Plant &amp; Vehicles</Link>.
+                      No asset types in your register yet. Use <strong>Any asset</strong> above or add assets on <Link to="/app/fleet" className="font-semibold underline">Fleet &amp; Service Register</Link>.
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-1.5">

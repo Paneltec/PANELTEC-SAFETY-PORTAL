@@ -534,7 +534,9 @@ export default function UsersManagement() {
   // load() completes, open the drawer. Strip the params so back-nav
   // doesn't re-open. Reuses the same `active` drawer wire as row-click.
   const { deepLinkId } = useDeepLinkOpen({
-    items: users, loading, notFoundMessage: 'Linked user not found',
+    items: users,
+    loading: users.length === 0,  // proxy: while users is empty we consider it loading
+    notFoundMessage: 'Linked user not found',
     extraParams: ['tab'],
   });
   useEffect(() => {

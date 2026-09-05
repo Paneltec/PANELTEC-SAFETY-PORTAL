@@ -1,8 +1,8 @@
 // Right-side drawer for create/edit asset + pairing (QR/NFC/UHF) management.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   X, Loader2, QrCode, Smartphone, Tag, Wrench, Truck, Container,
-  Printer, AlertTriangle, Check, CheckCircle2,
+  Printer, AlertTriangle, Check, CheckCircle2, Trash2, Camera,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -15,7 +15,8 @@ import PlantMaintenanceHistory from './PlantMaintenanceHistory';
 import LiveCountersPanel from './LiveCountersPanel';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
-import { useCan } from '../lib/permissions';
+import { useCan, Can } from '../lib/permissions';
+import { getToken } from '../lib/auth';
 
 // Phase 3.9b — Available forms (collapsible) inside the asset drawer.
 function AvailableFormsSection({ asset }) {
@@ -102,9 +103,12 @@ const TABS = [
   { key: 'details', label: 'Details' },
   { key: 'pairing', label: 'Pairing' },
   { key: 'schedules', label: 'Schedules' },
-  { key: 'service_log', label: 'Service log' },
+  // v58.13.120g — Renamed for consistency with the "Maintenance
+  // History" tab: this is the in-app Service Log, distinct from the
+  // XLSX-ingested Plant Maintenance history.
+  { key: 'service_log', label: 'Service Log' },
   // v160.3.9.20a — every ingested Plant Maintenance record for this asset.
-  { key: 'maintenance_history', label: 'Maintenance history' },
+  { key: 'maintenance_history', label: 'Maintenance History' },
   { key: 'photo', label: 'Photo' },
   { key: 'notes', label: 'Notes' },
 ];
@@ -253,23 +257,58 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
         className="w-full sm:max-w-xl h-full bg-white shadow-2xl border-l border-slate-200 overflow-hidden flex flex-col"
         data-testid={current?.id ? `asset-drawer-open-${current.id}` : 'asset-drawer-open-new'}
       >
-        <div className="px-5 py-4 border-b border-slate-200 flex items-start gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">{isEdit ? 'Edit asset' : 'New asset'}</div>
-            <h2 className="font-display text-xl font-bold text-slate-900 truncate">{current?.name || 'New asset'}</h2>
-            {isNavixy && (
-              <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
-                Synced from Navixy · core fields locked
-              </div>
+        {/* v58.13.120g — Header rebuilt as a fixed-height two-row
+            block. Row 1: eyebrow + title + X. Row 2: explicit action
+            toolbar (Back/Close, Print QR). `shrink-0` guarantees the
+            header can never be collapsed by flex children below it. */}
+        <div className="shrink-0 border-b border-slate-200" data-testid="asset-drawer-header">
+          <div className="px-5 pt-4 pb-2 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="text-[10px] uppercase tracking-[0.16em] font-semibold text-slate-500">{isEdit ? 'Edit asset' : 'New asset'}</div>
+              <h2 className="font-display text-xl font-bold text-slate-900 break-words">{current?.name || 'New asset'}</h2>
+              {isNavixy && (
+                <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                  Synced from Navixy · core fields locked
+                </div>
+              )}
+            </div>
+            <button onClick={onClose}
+              className="shrink-0 p-1.5 rounded-lg hover:bg-slate-100"
+              data-testid="asset-drawer-close"
+              aria-label="Close drawer">
+              <X size={18} />
+            </button>
+          </div>
+          <div className="px-5 pb-3 flex items-center gap-2 flex-wrap"
+               data-testid="asset-drawer-header-actions">
+            <button
+              type="button"
+              onClick={onClose}
+              data-testid="asset-drawer-back"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+              title="Return to the register (drawer closes)"
+            >
+              ← Close
+            </button>
+            {current?.id && (
+              <button
+                type="button"
+                onClick={() => downloadLabel('avery_l7160')}
+                data-testid="asset-header-print-qr"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+                title="Print this asset's QR label"
+              >
+                <Printer size={12} /> Print QR label
+              </button>
             )}
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-slate-100" data-testid="asset-drawer-close"><X size={18} /></button>
         </div>
 
-        <div className="px-5 pt-3 border-b border-slate-200 flex gap-1 text-sm">
+        <div className="shrink-0 px-5 border-b border-slate-200 flex gap-1 text-sm overflow-x-auto"
+             data-testid="asset-drawer-tabs">
           {TABS.map((t) => (
             <button key={t.key} onClick={() => setTab(t.key)}
-              className={`px-3 py-2 -mb-px border-b-2 font-semibold ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+              className={`shrink-0 px-3 py-2 -mb-px border-b-2 font-semibold whitespace-nowrap ${tab === t.key ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
               data-testid={`asset-tab-${t.key}`}>{t.label}</button>
           ))}
         </div>
@@ -462,16 +501,12 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
           )}
 
           {tab === 'photo' && (
-            <div className="space-y-3">
-              <h4 className="font-display text-sm font-semibold text-slate-800">Photo</h4>
-              <div className="text-sm text-slate-500">
-                Photo uploads will be wired in Phase 2 alongside the asset_scan form field.
-                For now you can drop a file path/id into the field below.
-              </div>
-              <input value={form.photo_file_id || ''} onChange={(e) => change('photo_file_id', e.target.value)}
-                placeholder="photo_file_id" className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
-                data-testid="asset-photo-id" />
-            </div>
+            <PhotoTab
+              asset={current}
+              form={form}
+              onChange={change}
+              onAssetUpdated={(a) => setCurrent(a)}
+            />
           )}
 
           {tab === 'notes' && (
@@ -490,16 +525,152 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
           )}
         </div>
 
-        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+        <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 emergent-badge-safe flex items-center justify-end gap-2">
           <button onClick={onClose} className="px-3 py-2 rounded-xl border border-slate-300 text-sm font-semibold text-slate-700 hover:bg-white" data-testid="asset-cancel">Cancel</button>
-          <button onClick={submit} disabled={saving}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
-            data-testid="asset-save">
-            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-            {isEdit ? 'Save changes' : 'Create asset'}
-          </button>
+          <Can resource="assets" action="edit">
+            <button onClick={submit} disabled={saving}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50"
+              data-testid="asset-save">
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              {isEdit ? 'Save changes' : 'Create asset'}
+            </button>
+          </Can>
         </div>
       </aside>
+    </div>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// v58.13.120f — Photo tab: renders both the legacy single-photo
+// (`assets.photo_file_id`) AND the .120a `assets.photos[]` GridFS
+// array in one grid. Drag-and-drop upload zone + delete-on-hover.
+// Permission-gated on `assets.edit`.
+// ────────────────────────────────────────────────────────────────
+function PhotoTab({ asset, form, onChange, onAssetUpdated }) {
+  const [dragHover, setDragHover] = useState(false);
+  const fileInputRef = useRef();
+  const photos = asset?.photos || [];
+  // v58.13.120g — GridFS stream endpoint requires auth but <img src>
+  // can't send Bearer headers, so we append ?token=<jwt> (backend was
+  // extended to accept it as a fallback — same v143 pattern used by
+  // backup downloads and v154 QR PNGs).
+  const authToken = getToken();
+  const _authedSrc = (rawUrl) => {
+    if (!rawUrl) return rawUrl;
+    const sep = rawUrl.includes('?') ? '&' : '?';
+    return authToken ? `${rawUrl}${sep}token=${encodeURIComponent(authToken)}` : rawUrl;
+  };
+
+  const uploadPhoto = async (file) => {
+    if (!file || !asset?.id) return;
+    if (file.size > 10 * 1024 * 1024) { toast.error('Image too large (max 10 MB)'); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      // v58.13.120g — Do NOT set Content-Type manually; axios adds the
+      // correct multipart boundary automatically when passed a FormData
+      // instance. Setting `Content-Type: multipart/form-data` without a
+      // boundary breaks the upload silently on some browsers.
+      const r = await api.post(`/assets/${asset.id}/photos`, fd);
+      onAssetUpdated?.(r.data);
+      toast.success('Photo uploaded');
+    } catch (e) {
+      toast.error(apiError(e) || 'Upload failed');
+    }
+  };
+
+  const deletePhoto = async (photoId) => {
+    if (!window.confirm('Delete this photo?')) return;
+    try {
+      const r = await api.delete(`/assets/${asset.id}/photos/${photoId}`);
+      onAssetUpdated?.(r.data);
+    } catch (e) {
+      toast.error(apiError(e) || 'Delete failed');
+    }
+  };
+
+  if (!asset?.id) {
+    return <div className="text-sm text-slate-500">Save the asset first to upload photos.</div>;
+  }
+
+  return (
+    <div className="space-y-4" data-testid="asset-photo-tab">
+      <h4 className="font-display text-sm font-semibold text-slate-800">Photos</h4>
+      <div
+        onDragOver={(e) => { e.preventDefault(); setDragHover(true); }}
+        onDragLeave={() => setDragHover(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragHover(false);
+          const files = Array.from(e.dataTransfer.files || []);
+          for (const f of files) if (f.type.startsWith('image/')) uploadPhoto(f);
+        }}
+        data-testid="asset-photos-dropzone"
+        className={`relative rounded-lg border-2 border-dashed p-2 transition-colors ${
+          dragHover ? 'border-blue-500 bg-blue-50' : 'border-slate-200'
+        }`}
+      >
+        {dragHover && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-blue-50/95 pointer-events-none z-10"
+               data-testid="asset-photos-drop-hint">
+            <span className="text-sm font-semibold text-blue-700">Drop image(s) to upload</span>
+          </div>
+        )}
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-2" data-testid="asset-photos-grid">
+          {photos.map((p) => (
+            <div key={p.id}
+                 className="relative group aspect-square rounded overflow-hidden border border-slate-200 bg-slate-100"
+                 data-testid={`asset-photo-${p.id}`}>
+              <img src={_authedSrc(p.photo_url)} alt={p.filename || 'photo'}
+                className="w-full h-full object-cover"
+                onError={(e) => { e.target.style.display = 'none'; }} />
+              <Can resource="assets" action="edit">
+                <button
+                  onClick={() => deletePhoto(p.id)}
+                  data-testid={`asset-photo-delete-${p.id}`}
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-white/90 text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </Can>
+            </div>
+          ))}
+          <Can resource="assets" action="edit">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              data-testid="asset-photo-upload-btn"
+              className="aspect-square rounded border border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50 flex flex-col items-center justify-center text-slate-400 hover:text-blue-600 text-xs"
+            >
+              <Camera size={20} />
+              <span className="mt-1">Add photo</span>
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              data-testid="asset-photo-file-input"
+              onChange={(e) => { uploadPhoto(e.target.files?.[0]); e.target.value = ''; }}
+            />
+          </Can>
+        </div>
+      </div>
+      {/* Legacy single-photo field — kept for backwards compat with
+          pre-.120a rows still carrying photo_file_id. */}
+      <div className="pt-2 border-t border-slate-100 space-y-1">
+        <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+          Legacy photo file id
+        </label>
+        <input value={form.photo_file_id || ''} onChange={(e) => onChange('photo_file_id', e.target.value)}
+          placeholder="photo_file_id (legacy)"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+          data-testid="asset-photo-id" />
+        <div className="text-[11px] text-slate-500">
+          Retained for pre-.120a asset rows. New uploads use the photos grid above.
+        </div>
+      </div>
     </div>
   );
 }

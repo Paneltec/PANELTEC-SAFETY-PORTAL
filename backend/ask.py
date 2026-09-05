@@ -439,6 +439,10 @@ _DEEP_LINK_TEMPLATES: dict[str, str] = {
     "worker":          "/app/settings/workers?open={id}",
     "outbound_email":  "/app/outbox?open={id}&kind=email",
     "outbound_sms":    "/app/outbox?open={id}&kind=sms",
+    # v58.13.120d — Fleet & Service Register assets. Ask
+    # Intelligence citations of type `asset` land on the new
+    # `/app/fleet` register with the drawer pre-opened.
+    "asset":           "/app/fleet?open={id}",
     # `form_submission` handled specially by `_enrich_citations` —
     # requires the parent `template_id` looked up in the evidence bundle.
     # `audit_log` — deliberately null (no detail page exists).

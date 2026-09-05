@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Loader2, Clock, Gauge, Calendar, Edit3, Trash2, X, Check,
-  Wrench, AlertTriangle, ShieldAlert,
+  Wrench, AlertTriangle, ShieldAlert, ClipboardCheck,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -23,6 +23,8 @@ import { AttachmentField } from './forms/BydaFields';
 // user's choice persisted per-device via localStorage.
 import RichTextEditor from './RichTextEditor';
 import ChecklistLinkPicker from './ChecklistLinkPicker';
+// v58.13.121 — Full Service Check Sheet modal.
+import ServiceCheckSheetModal from './ServiceCheckSheetModal';
 
 // v58.13.19 — Persist the Plain / Rich preference so returning users
 // don't get their preferred editor mode reset on every schedule edit.
@@ -928,6 +930,8 @@ export function ServiceLogTab({ asset, canEdit }) {
   const [records, setRecords] = useState([]);
   const [adder, setAdder] = useState(null); // {kind:'service'|'defect', record?:existing} or null
   const [deleting, setDeleting] = useState(null); // record being confirmed
+  // v58.13.121 — Service Check Sheet modal toggle.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const load = useCallback(async () => {
     if (!asset?.id) return;
     const r = await api.get(`/assets/${asset.id}/records`);
@@ -951,7 +955,20 @@ export function ServiceLogTab({ asset, canEdit }) {
         <h4 className="font-display text-sm font-semibold text-slate-800 flex-1">Service log</h4>
         {canEdit && (
           <>
-            <button onClick={() => setAdder({ kind: 'service' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold" data-testid="record-add-service"><Plus size={12} /> Log service</button>
+            {/* v58.13.121 — Primary "Log service" now opens the
+                full Service Check Sheet modal. The legacy 4-field
+                RecordEditor is retained as "Quick log" for the rare
+                cases where a full sheet is overkill. */}
+            <button onClick={() => setSheetOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700"
+              data-testid="record-add-service-sheet">
+              <ClipboardCheck size={12} /> Log service (Check Sheet)
+            </button>
+            <button onClick={() => setAdder({ kind: 'service' })}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50"
+              data-testid="record-add-service">
+              <Plus size={12} /> Quick log
+            </button>
             <button onClick={() => setAdder({ kind: 'defect' })} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-semibold" data-testid="record-add-defect"><AlertTriangle size={12} /> Report defect</button>
           </>
         )}
@@ -968,6 +985,9 @@ export function ServiceLogTab({ asset, canEdit }) {
       {adder && <RecordEditor asset={asset} kind={adder.kind} initial={adder.record || null}
         onClose={() => setAdder(null)}
         onSaved={() => { setAdder(null); load(); }} />}
+      {sheetOpen && <ServiceCheckSheetModal asset={asset}
+        onClose={() => setSheetOpen(false)}
+        onSaved={() => { setSheetOpen(false); load(); }} />}
       {deleting && (
         <DeleteRecordDialog record={deleting} onCancel={() => setDeleting(null)} onConfirm={onDelete} />
       )}

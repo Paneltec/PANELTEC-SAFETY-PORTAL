@@ -112,7 +112,13 @@ const NAV = [
     { to: '/app/renewals', label: 'Renewal Links', icon: Link24Regular, iconActive: Link24Filled, testid: 'nav-renewals', resource: 'renewals', pastel: 'sage' },
     { to: '/app/document-library', label: 'Document Library', icon: FolderOpen24Regular, iconActive: FolderOpen24Filled, testid: 'nav-document-library', pastel: 'lavender' },
     { to: '/app/audit-exports', label: 'Audit Exports', icon: ArrowDownload24Regular, iconActive: ArrowDownload24Filled, testid: 'nav-audit-exports', resource: 'audit_exports', pastel: 'coral' },
-    { to: '/app/vehicles', label: 'Plant & Vehicles', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-vehicles', resource: 'assets', pastel: 'sky' },
+    // v58.13.120d — "Plant & Vehicles" sidebar entry retired. The
+    // legacy `/app/vehicles` route still redirects to `/app/fleet`
+    // (see LegacyVehiclesRedirect in App.js) during the grace period
+    // ending 2026-09-11 so bookmarked deep-links keep working.
+    // v58.13.120c — Fleet & Service Register. Sole survivor entry
+    // for the fleet/plant/service surface.
+    { to: '/app/fleet', label: 'Fleet & Service Register', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-fleet', resource: 'assets', pastel: 'violet' },
     { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
   ]},
   { section: 'Settings', items: [

@@ -238,7 +238,7 @@ function PlantDueWidget() {
           ))}
         </ul>
       )}
-      <button onClick={() => navigate('/app/vehicles')}
+      <button onClick={() => navigate('/app/fleet')}
         data-testid="view-all-plant-link"
         className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-[#9c2a2a] hover:underline">
         View all plant <ArrowRight size={11} />
@@ -405,7 +405,7 @@ const CAPTURE_GROUPS = [
     { key: 'document-library', title: 'Document Library',  desc: '46 seed folders for licences, SDS, manuals and more.',   icon: 'FolderOpen', route: '/app/document-library' },
   ] },
   { heading: 'Ops & Fleet', extras: [
-    { key: 'vehicles', title: 'Vehicles & Fleet', desc: 'Live GPS tracking via Navixy when configured.', icon: 'Truck', route: '/app/vehicles' },
+    { key: 'vehicles', title: 'Fleet & Service Register', desc: 'Unified register for vehicles, plant, trailers, tools, and containers with full service history + Navixy tie-ins.', icon: 'Truck', route: '/app/fleet' },
   ] },
 ];
 

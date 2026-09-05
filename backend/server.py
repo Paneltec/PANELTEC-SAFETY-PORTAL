@@ -15,6 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from ai import router as ai_router  # noqa: E402
 from ask import router as ask_router, ensure_indexes as ask_ensure_indexes  # noqa: E402
 from assets import router as assets_router  # noqa: E402
+# v58.13.120b — Fleet & Service Register (Phase 2). Endpoints gated
+# by `FLEET_REGISTER_ENABLED` env flag; default off means every
+# /api/fleet/* route returns 404.
+from fleet import router as fleet_router  # noqa: E402
 from asset_service import router as asset_service_router, scan_router as asset_scan_router, assignments_router as form_assignments_router  # noqa: E402
 from asset_navixy_sync import router as asset_navixy_sync_router, sync_navixy_counters  # noqa: E402
 # Phase 4.8 — Asset meter trends (daily snapshots + week/month deltas).
@@ -487,6 +491,7 @@ api.include_router(workers_qr_router)
 api.include_router(worker_scan_router)
 api.include_router(forms_router)
 api.include_router(assets_router)
+api.include_router(fleet_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
