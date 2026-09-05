@@ -297,8 +297,16 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
       {/* v58.13.128 — Retired / Sold synthetic KIND row. Segregates
           retired assets from the active list. Clicking flips
           retired_only=true; expanded view shows sub-counts by
-          original kind so admins can see what was retired where. */}
-      <div className="mt-2 pt-2 border-t border-slate-200">
+          original kind so admins can see what was retired where.
+          v58.13.128a — Dark slate divider bar above the row with
+          an "ARCHIVED" label so admins can't mistake it for active
+          fleet at a glance. Rounded ends match the sidebar
+          aesthetic. */}
+      <div className="mt-4 rounded-md bg-slate-900 text-slate-300 text-[9px] font-bold uppercase tracking-widest text-center py-1"
+           data-testid="fleet-filter-archived-divider">
+        Archived
+      </div>
+      <div className="mt-1">
         <button
           type="button"
           onClick={chooseRetired}
