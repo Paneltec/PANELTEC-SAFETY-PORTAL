@@ -137,6 +137,9 @@ class LogServiceIn(BaseModel):
     vin_captured: Optional[str] = Field(default=None, max_length=64)
     make_model_captured: Optional[str] = Field(default=None, max_length=200)
     sheet_template_version: Optional[str] = Field(default=None, max_length=20)
+    # v58.13.122 — Which preset the sheet was submitted under. One of
+    # {"custom","minor","intermediate","major","heavy_overhaul"}.
+    service_level: Optional[str] = Field(default=None, max_length=20)
     # Persist newly-captured VIN/Make/Model back to the asset row
     # when the asset side is null/empty. Default True.
     save_to_asset_record: Optional[bool] = Field(default=True)
@@ -498,6 +501,7 @@ async def log_service(
             "vin_captured": body.vin_captured,
             "make_model_captured": body.make_model_captured,
             "sheet_template_version": body.sheet_template_version,
+            "service_level": body.service_level,
         })
         # Copy VIN / Make / Model back to the asset row if the asset
         # side is empty. Never overwrite existing values.
@@ -520,6 +524,14 @@ async def log_service(
                 patch["updated_at"] = ts
                 await db.assets.update_one({"id": asset_id}, {"$set": patch})
     await db.plant_maintenance.insert_one(rec)
+    # v58.13.122 — invalidate the schedule-status cache so the next
+    # rollup / next-service call for this asset reflects the fresh
+    # baseline.
+    try:
+        from fleet_service_schedules import invalidate_cache as _svc_invalidate
+        _svc_invalidate(asset_id)
+    except Exception:
+        pass
     rec.pop("_id", None)
     return rec
 
@@ -694,3 +706,75 @@ async def get_service_sheet_pdf(
             "X-Sheet-Template-Version": rec.get("sheet_template_version") or "",
         },
     )
+
+
+# ── v58.13.122 — Service Schedule endpoints ──────────────────────
+async def _last_pm_for(asset_id: str, org_id: str) -> Optional[dict]:
+    """Latest pm row for an asset. Used to seed `compute_next_due`."""
+    cursor = db.plant_maintenance.find(
+        {"plant_id": asset_id,
+         "$or": [{"org_id": org_id}, {"org_id": None}, {"org_id": {"$exists": False}}],
+         "deleted_at": None},
+        {"_id": 0}
+    ).sort([("date_completed", -1), ("id", -1)]).limit(1)
+    async for r in cursor:
+        return r
+    return None
+
+
+@router.get("/assets/{asset_id}/next-service")
+async def get_next_service(
+    asset_id: str,
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "view")),
+):
+    """Compute the next-service block for a single asset. Cached
+    5 min in-memory; invalidated by `log_service` on any new pm
+    row for the asset."""
+    org_id = user["org_id"]
+    a = await db.assets.find_one(
+        {"id": asset_id, "org_id": org_id, "deleted_at": None},
+        {"_id": 0},
+    )
+    if not a:
+        raise HTTPException(404, "Asset not found")
+    from fleet_service_schedules import compute_next_due
+    last_pm = await _last_pm_for(asset_id, org_id)
+    return compute_next_due(a, last_pm)
+
+
+@router.get("/service-status-rollup")
+async def get_service_status_rollup(
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "view")),
+    ids: Optional[str] = Query(None, max_length=8000,
+        description="Comma-separated asset ids. When omitted, rolls up the whole org."),
+):
+    """Batched status per asset id (used by the register table to
+    render Status pills without N HTTP calls). Response:
+    `{ statuses: {<asset_id>: {status, level, hint, ...}, ...},
+       counts: {green, amber, red, grey}, total }`."""
+    org_id = user["org_id"]
+    filt: dict = {"org_id": org_id, "deleted_at": None}
+    if ids:
+        wanted = [i.strip() for i in ids.split(",") if i.strip()]
+        if not wanted:
+            return {"statuses": {}, "counts": {"green": 0, "amber": 0, "red": 0, "grey": 0}, "total": 0}
+        filt["id"] = {"$in": wanted}
+
+    from fleet_service_schedules import compute_next_due
+    statuses: dict[str, dict] = {}
+    counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+    async for a in db.assets.find(filt, {"_id": 0}):
+        aid = a["id"]
+        last_pm = await _last_pm_for(aid, org_id)
+        block = compute_next_due(a, last_pm)
+        # Trim to just what the register-table pill needs.
+        statuses[aid] = {
+            "status": block["status"],
+            "level": block["level"],
+            "primary_metric": block["primary_metric"],
+            "hint": block["hint"],
+        }
+        counts[block["status"]] = counts.get(block["status"], 0) + 1
+    return {"statuses": statuses, "counts": counts, "total": len(statuses)}

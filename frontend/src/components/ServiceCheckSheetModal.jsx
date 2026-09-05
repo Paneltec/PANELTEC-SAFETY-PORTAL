@@ -43,6 +43,53 @@ export const CHECKLIST_V121_1 = [
   'Steering', 'Exhaust', 'Lights', 'Wipers',
 ];
 
+// v58.13.122 — Service Level presets. Selecting a level auto-populates
+// the checklist with the recommended tasks + notes. "Custom" keeps
+// the current 18-item free-form. Mirror of backend `SCHEDULE_TABLE`
+// but frontend-only for zero-latency preset application.
+export const SERVICE_LEVEL_PRESETS = {
+  custom: {
+    label: 'Custom (free-form)',
+    checked: [],
+    notes: {},
+  },
+  minor: {
+    label: 'Minor · 5–10 000 km / 250 hrs',
+    checked: ['Engine Oil', 'Oil Filter'],
+    notes: {
+      Tyres: 'Pressure + safety inspection',
+      Lights: 'Function check',
+      Wipers: 'Blade condition',
+    },
+  },
+  intermediate: {
+    label: 'Intermediate · 15–20 000 km / 500 hrs',
+    checked: ['Engine Oil', 'Oil Filter', 'Cabin Filter', 'Air Filter',
+              'Brakes', 'Battery Condition'],
+    notes: {
+      Tyres: 'Rotate',
+    },
+  },
+  major: {
+    label: 'Major · 30–45 000 km / 1 000 hrs',
+    checked: ['Engine Oil', 'Oil Filter', 'Cabin Filter', 'Air Filter',
+              'Brakes', 'Battery Condition', 'Fuel Filter', 'Coolant',
+              'Brake Fluid', 'Power Steering Fluid', 'Suspension', 'Steering'],
+    notes: {
+      Tyres: 'Rotate',
+    },
+  },
+  heavy_overhaul: {
+    label: 'Heavy Overhaul · 90–100 000+ km / 2 000+ hrs',
+    checked: CHECKLIST_V121_1.slice(),
+    notes: {
+      'Auxiliary Belt': 'Timing belt/chain — 100k service replace',
+      Suspension: 'Inspect bushings for wear',
+      Steering: 'Valve adjustment / drivetrain overhaul check',
+    },
+  },
+};
+
 const _todayIso = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -145,6 +192,30 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   const [checklist, setChecklist] = useState(() =>
     CHECKLIST_V121_1.map((item) => ({ item, checked: false, replaced: false, notes: '' }))
   );
+  // v58.13.122 — Service Level preset. Custom = user drives the checklist.
+  const [serviceLevel, setServiceLevel] = useState('custom');
+  const applyPreset = (levelKey) => {
+    setServiceLevel(levelKey);
+    const preset = SERVICE_LEVEL_PRESETS[levelKey];
+    if (!preset) return;
+    setChecklist((prev) => prev.map((row) => ({
+      ...row,
+      checked: preset.checked.includes(row.item) || (levelKey === 'custom' ? row.checked : false),
+      notes: preset.notes[row.item] || row.notes,
+    })));
+  };
+  // v58.13.122 — Auto-populate next-due from backend compute on mount.
+  useEffect(() => {
+    if (!asset?.id) return;
+    api.get(`/fleet/assets/${asset.id}/next-service`)
+      .then((r) => {
+        const d = r.data || {};
+        if (d.next_service_due_km) setNextDueKm(String(Math.round(d.next_service_due_km)));
+        if (d.next_service_due_hours) setNextDueHours(d.next_service_due_hours.toFixed(0));
+      })
+      .catch(() => { /* best-effort — modal still works without */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asset?.id]);
   const checkAll = () => {
     setChecklist((p) => p.map((r) => ({ ...r, checked: true })));
   };
@@ -214,6 +285,7 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       vin_captured: vin || null,
       make_model_captured: makeModel || null,
       sheet_template_version: 'v121.1',
+      service_level: serviceLevel,
       save_to_asset_record: saveToAssetRecord,
     };
   };
@@ -382,6 +454,23 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               <SectionHeader Icon={ClipboardCheck} title="Service Checklist"
                 chipClass="bg-emerald-50 text-emerald-700"
                 testId="sheet-section-checklist-header" />
+            </div>
+            <div className="mb-3 bg-white rounded-xl border border-slate-200 p-3 flex items-center gap-3 flex-wrap"
+                 data-testid="sheet-service-level-block">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Service Level
+              </label>
+              <select value={serviceLevel} onChange={(e) => applyPreset(e.target.value)}
+                data-testid="sheet-service-level"
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white
+                            focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500">
+                {Object.entries(SERVICE_LEVEL_PRESETS).map(([k, v]) => (
+                  <option key={k} value={k}>{v.label}</option>
+                ))}
+              </select>
+              <span className="text-[11px] text-slate-500 flex-1">
+                Selecting a level pre-checks the recommended items and pre-fills key notes.
+              </span>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
               <div className="grid grid-cols-[1fr_80px_80px_2fr] gap-2 px-3 py-2 bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500 font-bold">

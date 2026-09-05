@@ -30,7 +30,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2,
+  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -123,8 +123,33 @@ function RowChips({ row }) {
 }
 
 
+// ─────────────────────────── Status pill ─────────────────────────
+// v58.13.122 — Coloured pill per asset in the register table.
+// GREEN: healthy · AMBER: due soon · RED: overdue (pulsing dot) ·
+// GREY: no counter data.
+const _STATUS_STYLES = {
+  green:  { bg: 'bg-emerald-100', text: 'text-emerald-800', dot: 'bg-emerald-500',   label: 'On schedule' },
+  amber:  { bg: 'bg-amber-100',   text: 'text-amber-900',   dot: 'bg-amber-500',     label: 'Due soon' },
+  red:    { bg: 'bg-rose-100',    text: 'text-rose-800',    dot: 'bg-rose-500',      label: 'Overdue',   pulse: true },
+  grey:   { bg: 'bg-slate-100',   text: 'text-slate-600',   dot: 'bg-slate-400',     label: 'No data' },
+};
+function ServiceStatusPill({ block, assetId }) {
+  const s = _STATUS_STYLES[block?.status] || _STATUS_STYLES.grey;
+  return (
+    <span
+      title={block?.hint || 'Schedule not computed'}
+      data-testid={`fleet-service-status-${assetId}`}
+      data-status={block?.status || 'grey'}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${s.bg} ${s.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${s.dot} ${s.pulse ? 'animate-pulse' : ''}`} />
+      {s.label}
+    </span>
+  );
+}
+
+
 // ─────────────────────────── Filter tree ────────────────────────────
-function FilterTree({ data, filter, setFilter, loading, onAddAsset }) {
+function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount }) {
   // v58.13.120g — Gate on `assets.edit` (the permission POST /assets
   // actually requires; there is no `create` action in the catalogue).
   const canCreate = useCan()('assets', 'edit');
@@ -145,6 +170,27 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset }) {
         <span className="inline-flex items-center gap-1">
           <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           Show only Navixy-tracked
+        </span>
+      </label>
+      {/* v58.13.122 — Service-due chip. Filters the register-table
+          rows to only those the schedule engine flags AMBER or RED.
+          Count badge shows the outstanding workload. */}
+      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+             data-testid="fleet-filter-service-due-label">
+        <input
+          type="checkbox"
+          checked={!!filter.service_due}
+          onChange={(e) => setFilter({ ...filter, service_due: e.target.checked })}
+          data-testid="fleet-filter-service-due"
+          className="w-3.5 h-3.5 rounded accent-rose-600"
+        />
+        <span className="inline-flex items-center gap-1 flex-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+          Service due
+        </span>
+        <span className="tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800"
+              data-testid="fleet-filter-service-due-count">
+          {serviceDueCount ?? 0}
         </span>
       </label>
 
@@ -315,7 +361,7 @@ function SearchBar({ onOpenAsset }) {
 
 
 // ─────────────────────────── Register table ─────────────────────────
-function RegisterTable({ rows, loading, onRowClick, onDelete, page, total, limit, setPage }) {
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
   return (
@@ -329,16 +375,24 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, page, total, limit
               <th className="px-3 py-2 text-left">Kind</th>
               <th className="px-3 py-2 text-left">Sub-type</th>
               <th className="px-3 py-2 text-left">Status</th>
+              <th className="px-3 py-2 text-left">
+                <span className="inline-flex items-center gap-1"
+                      data-testid="fleet-service-column-header"
+                      title="Service schedule status — AMBER at 85% of interval, RED at 100%+. Grey means no counter data yet.">
+                  Service
+                  <Info size={10} className="text-slate-400" />
+                </span>
+              </th>
               <th className="px-3 py-2 text-left">Signals</th>
               {canDelete && <th className="px-3 py-2 text-left w-8"></th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={canDelete ? 7 : 6} className="px-3 py-8 text-center text-slate-400"><Loader2 className="inline animate-spin" size={14} /> Loading…</td></tr>
+              <tr><td colSpan={canDelete ? 8 : 7} className="px-3 py-8 text-center text-slate-400"><Loader2 className="inline animate-spin" size={14} /> Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={canDelete ? 7 : 6} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
+              <tr><td colSpan={canDelete ? 8 : 7} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
             )}
             {!loading && rows.map((r) => (
               <tr key={r.id} onClick={() => onRowClick(r.id)}
@@ -352,6 +406,9 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, page, total, limit
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase ${
                     r.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600'
                   }`}>{r.status || 'unknown'}</span>
+                </td>
+                <td className="px-3 py-2">
+                  <ServiceStatusPill block={statuses?.[r.id]} assetId={r.id} />
                 </td>
                 <td className="px-3 py-2"><RowChips row={r} /></td>
                 {canDelete && (
@@ -393,7 +450,7 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, page, total, limit
 export default function FleetRegister() {
   const [flagState, setFlagState] = useState('probing'); // probing | on | off
   const [categories, setCategories] = useState(null);
-  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false });
+  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false, service_due: false });
   const [rows, setRows] = useState([]);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -406,6 +463,10 @@ export default function FleetRegister() {
   // v58.13.120g — Confirm-delete state for row-hover delete affordance.
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // v58.13.122 — Service status rollup, keyed by asset id. Fetched
+  // as a single batched request after each register load.
+  const [statuses, setStatuses] = useState({});
+  const [statusCounts, setStatusCounts] = useState({ green: 0, amber: 0, red: 0, grey: 0 });
   const LIMIT = 50;
 
   // Probe the feature flag via the /categories 404 signal.
@@ -458,6 +519,21 @@ export default function FleetRegister() {
   }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, page]);
 
   useEffect(() => { reloadRows(); }, [reloadRows]);
+
+  // v58.13.122 — Rollup fetch every time the row set changes.
+  useEffect(() => {
+    if (!rows.length) { setStatuses({}); return; }
+    const ids = rows.map((r) => r.id).join(',');
+    let cancelled = false;
+    api.get('/fleet/service-status-rollup', { params: { ids } })
+      .then((r) => {
+        if (cancelled) return;
+        setStatuses(r.data?.statuses || {});
+        setStatusCounts(r.data?.counts || { green: 0, amber: 0, red: 0, grey: 0 });
+      })
+      .catch(() => { /* best-effort */ });
+    return () => { cancelled = true; };
+  }, [rows]);
 
   // v58.13.120g — "Add new" starts an empty asset in AssetDrawer.
   const openAddAsset = (preferredKind) => {
@@ -563,16 +639,22 @@ export default function FleetRegister() {
             filter={filter}
             setFilter={(f) => { setFilter(f); setPage(1); }}
             onAddAsset={openAddAsset}
+            serviceDueCount={(statusCounts.amber || 0) + (statusCounts.red || 0)}
           />
         </aside>
         <main>
           <RegisterTable
-            rows={rows}
+            rows={filter.service_due
+              ? rows.filter((r) => ['amber', 'red'].includes(statuses?.[r.id]?.status))
+              : rows}
             loading={rowsLoading}
             onRowClick={openAsset}
             onDelete={(r) => setPendingDelete(r)}
+            statuses={statuses}
             page={page}
-            total={total}
+            total={filter.service_due
+              ? rows.filter((r) => ['amber', 'red'].includes(statuses?.[r.id]?.status)).length
+              : total}
             limit={LIMIT}
             setPage={setPage}
           />
