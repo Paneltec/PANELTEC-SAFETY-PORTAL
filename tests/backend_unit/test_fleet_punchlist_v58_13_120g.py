@@ -128,7 +128,11 @@ def test_drawer_footer_carries_emergent_badge_safe():
 
 # ── Item 6: Navixy-only filter ────────────────────────────────────
 def test_fleet_filter_tree_has_navixy_only_checkbox():
-    assert 'fleet-filter-navixy-only' in FLEET_PAGE
+    # v58.13.125 — Navixy checkbox superseded by the Data-source
+    # radio (Option B from the .125 audit). Testids are constructed
+    # via template literal `fleet-filter-source-${opt.key}` so we
+    # look for the base pattern instead of a fully-formed testid.
+    assert 'fleet-filter-source-${opt.key}' in FLEET_PAGE
     assert 'navixy_only' in FLEET_PAGE
 
 

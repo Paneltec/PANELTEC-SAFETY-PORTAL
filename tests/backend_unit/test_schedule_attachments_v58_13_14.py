@@ -21,6 +21,16 @@ from typing import Any
 import pytest
 import requests
 
+# v58.13.125 — Env-gate: this file POSTs to the live backend and can
+# leak scratch assets when a test errors. Skip unless the caller
+# explicitly opts in via PANELTEC_ALLOW_LIVE_INTEGRATION=1.
+if os.environ.get("PANELTEC_ALLOW_LIVE_INTEGRATION") != "1":
+    pytest.skip(
+        "Live-integration tests skipped. Set "
+        "PANELTEC_ALLOW_LIVE_INTEGRATION=1 to run.",
+        allow_module_level=True,
+    )
+
 API = "http://localhost:8001/api"
 ADMIN_EMAIL = os.environ.get("PANELTEC_TEST_ADMIN_EMAIL", "stephen@paneltec.com.au")
 ADMIN_PASS = os.environ.get("PANELTEC_TEST_ADMIN_PASS", "Mcgstephen50#")
@@ -83,10 +93,14 @@ def scratch_schedule(token) -> dict[str, Any]:
     )
     assert sched_r.status_code in (200, 201), f"schedule create failed: {sched_r.status_code} {sched_r.text[:200]}"
     sid = sched_r.json()["id"]
-    yield {"asset_id": asset_id, "sid": sid, "hdr": hdr}
-    # Teardown.
-    requests.delete(f"{API}/assets/{asset_id}/schedules/{sid}", headers=hdr, timeout=10)
-    requests.delete(f"{API}/assets/{asset_id}", headers=hdr, timeout=10)
+    try:
+        yield {"asset_id": asset_id, "sid": sid, "hdr": hdr}
+    finally:
+        # v58.13.125 — try/finally guarantees teardown even when a
+        # test raises inside the yield block. Prior yield-only pattern
+        # leaked scratch assets on ERROR (as distinct from FAIL).
+        requests.delete(f"{API}/assets/{asset_id}/schedules/{sid}", headers=hdr, timeout=10)
+        requests.delete(f"{API}/assets/{asset_id}", headers=hdr, timeout=10)
 
 
 # ─── Tests ─────────────────────────────────────────────────────────────

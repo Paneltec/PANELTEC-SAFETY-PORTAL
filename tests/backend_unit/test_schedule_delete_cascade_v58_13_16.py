@@ -16,6 +16,16 @@ from pathlib import Path
 import pytest
 import requests
 
+# v58.13.125 — Env-gate: this file POSTs to the live backend and can
+# leak scratch assets when a test errors. Skip unless the caller
+# explicitly opts in via PANELTEC_ALLOW_LIVE_INTEGRATION=1.
+if os.environ.get("PANELTEC_ALLOW_LIVE_INTEGRATION") != "1":
+    pytest.skip(
+        "Live-integration tests skipped. Set "
+        "PANELTEC_ALLOW_LIVE_INTEGRATION=1 to run.",
+        allow_module_level=True,
+    )
+
 API = "http://localhost:8001/api"
 ADMIN_EMAIL = os.environ.get("PANELTEC_TEST_ADMIN_EMAIL", "stephen@paneltec.com.au")
 ADMIN_PASS = os.environ.get("PANELTEC_TEST_ADMIN_PASS", "Mcgstephen50#")

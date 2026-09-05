@@ -79,21 +79,42 @@ def _public_scan_url(token: str) -> str:
 
 
 def _parse_rego_from_label(label: str) -> Optional[str]:
-    """Best-effort: take the last whitespace-separated token, strip trailing
-    punctuation. Handles Navixy labels like 'Cap Recycler - XT96AZ',
-    'VTS - BT-50 - L07QF', 'Vacvator 2 -Hino 500-XT35DO.'."""
+    """v58.13.125 — Widened to extract Australian plates from noisy
+    Navixy labels. Scans for alpha-numeric tokens containing BOTH
+    letters and digits, 4-8 chars, skipping a stop-list of common
+    trim/variant abbreviations.
+
+    Examples that now parse (previously returned None):
+      · 'Cappelotto 1 - XT44DL - Kor 3200.'   → XT44DL   (was None)
+      · 'D/Max-M48MQ Flat ray'                → M48MQ    (was None)
+      · '500 Tipper XT29DK Isuzu.'            → XT29DK   (was None)
+      · 'VTS - D-Max - I27RE (JH)'            → I27RE    (was None)
+    """
     if not label:
         return None
-    # Split on whitespace, dashes, hyphens. Keep alphanumeric tokens.
-    tokens = re.findall(r"[A-Za-z0-9]+", label)
-    if not tokens:
-        return None
-    last = tokens[-1]
-    # Must contain at least one digit and at least one letter to look rego-ish.
-    has_digit = any(c.isdigit() for c in last)
-    has_alpha = any(c.isalpha() for c in last)
-    if has_digit and has_alpha and 4 <= len(last) <= 10:
-        return last.upper()
+    STOPS = {
+        "XLT", "LT", "JH", "IS", "AG", "LR", "LX", "VTS",
+        "AF6X4", "CCTV", "TMA", "HDD", "DAF", "TMA",
+    }
+    # Prefer 5-6 char rego shapes with a letter-digit-letter block,
+    # then fall back to any 4-8 char mixed token.
+    tokens = re.findall(r"[A-Z0-9]{3,10}", (label or "").upper())
+    # Two passes: first prefer tokens matching the AU 6-char shape
+    # (letters+digits+letters), then any mixed token.
+    for pattern in (
+        re.compile(r"^[A-Z]{1,3}\d{2,4}[A-Z]{1,3}$"),   # XT44DL, D04RF
+        re.compile(r"^[A-Z]{1,4}\d{2,4}$"),             # J46QW, M48MQ (letters+digits)
+        re.compile(r"^\d{3,4}[A-Z]{2,3}$"),             # 500XYZ style
+    ):
+        for tok in tokens:
+            if tok in STOPS:
+                continue
+            if len(tok) < 4 or len(tok) > 8:
+                continue
+            if not (any(c.isdigit() for c in tok) and any(c.isalpha() for c in tok)):
+                continue
+            if pattern.match(tok):
+                return tok
     return None
 
 
@@ -311,7 +332,12 @@ async def _backfill_from_navixy(org_id: str, user: dict) -> int:
         update = {
             "name": label,
             "asset_type": asset_type,
-            "rego_serial": _parse_rego_from_label(label) or v.get("plate"),
+            # v58.13.125 — Dropped the `v.get("plate")` fallback. On
+            # Paneltec's Navixy plan the "plate" field carries the
+            # tracker's ICCID/serial (e.g. `882285109021061`), NOT the
+            # vehicle plate — leaving `rego_serial` null so the
+            # register table falls back to `name` is better UX.
+            "rego_serial": _parse_rego_from_label(label),
             "last_known_lat": v.get("lat") if isinstance(v.get("lat"), (int, float)) else None,
             "last_known_lng": v.get("lng") if isinstance(v.get("lng"), (int, float)) else None,
             "updated_at": ts,
@@ -393,15 +419,20 @@ async def list_assets(
 @router.post("", status_code=201)
 async def create_asset(body: AssetIn, user: dict = Depends(require_permission("assets", "edit"))):
     # `assets.edit` is enforced by the dep. Workers cannot reach here.
+    # v58.13.125 — Apply canonical taxonomy map on write so the manual
+    # create path can't drift `asset_type` back to snake_case (the
+    # pytest fixture's `"Vehicle"` → `"vehicle"` regression source).
+    from asset_taxonomy import normalize_asset_type  # noqa: WPS433
     ts = now_iso()
     workspace_id = body.workspace_id or (user.get("workspace_ids") or [None])[0]
+    _at_raw = body.asset_type.strip().lower().replace(" ", "_")
     doc = {
         "id": new_id(),
         "org_id": user["org_id"],
         "workspace_id": workspace_id,
         "kind": body.kind,
         "name": body.name.strip(),
-        "asset_type": body.asset_type.strip().lower().replace(" ", "_"),
+        "asset_type": normalize_asset_type(_at_raw) or _at_raw,
         "rego_serial": (body.rego_serial or "").strip() or None,
         "make": (body.make or "").strip() or None,
         "model": (body.model or "").strip() or None,
@@ -439,12 +470,15 @@ async def get_asset(asset_id: str, user: dict = Depends(require_permission("asse
 
 @router.put("/{asset_id}")
 async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(require_permission("assets", "edit"))):
+    # v58.13.125 — Apply canonical taxonomy map on write (same as POST).
+    from asset_taxonomy import normalize_asset_type  # noqa: WPS433
     existing = await db.assets.find_one({"org_id": user["org_id"], "id": asset_id, "deleted_at": None})
     if not existing:
         raise HTTPException(404, "Asset not found")
+    _at_raw = body.asset_type.strip().lower().replace(" ", "_")
     update = {
         "name": body.name.strip(),
-        "asset_type": body.asset_type.strip().lower().replace(" ", "_"),
+        "asset_type": normalize_asset_type(_at_raw) or _at_raw,
         "rego_serial": (body.rego_serial or "").strip() or None,
         "make": (body.make or "").strip() or None,
         "model": (body.model or "").strip() or None,

@@ -67,7 +67,10 @@ const _SUBTYPE_CANONICAL_DISPLAY = {
   'crane_truck':   'Crane Truck',
   'compactor':     'Compactor',
   'vehicle':       'Vehicle',
-  'other':         'Other',
+  // v58.13.125 — display rename per user directive. Underlying value
+  // stays "other"/"Other" until a proper re-classification ship.
+  'other':         'Uncategorised',
+  'Other':         'Uncategorised',
 };
 function displaySubtype(raw) {
   if (!raw) return '(unset)';
@@ -149,66 +152,89 @@ function ServiceStatusPill({ block, assetId }) {
 
 
 // ─────────────────────────── Filter tree ────────────────────────────
-function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount }) {
-  // v58.13.120g — Gate on `assets.edit` (the permission POST /assets
-  // actually requires; there is no `create` action in the catalogue).
+// v58.13.125 — Data source is now a top-level orthogonal dimension
+// (Option B from the .125 audit). Radio semantics: exactly one of
+// All / Navixy / Manual. Clicking a specific KIND auto-resets the
+// data-source to "all" (per user's stated interaction: "if i go the
+// KIND list and choose another tab it should turn off the navixy
+// ones"). Clicking "All kinds" preserves whatever source was set.
+function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount, sourceCounts }) {
   const canCreate = useCan()('assets', 'edit');
   if (loading) return <div className="text-xs text-slate-400 p-4">Loading tree…</div>;
   if (!data) return <div className="text-xs text-slate-400 p-4">No categories yet.</div>;
+  const src = filter.data_source || 'all';
+  const setSrc = (s) => setFilter({ ...filter, data_source: s });
+  const chooseKind = (kind) => {
+    // Clicking a specific KIND resets data_source to "all".
+    // Clicking "All kinds" preserves the current data_source.
+    if (kind === null) {
+      setFilter({ ...filter, kind: null, sub_type: null });
+    } else {
+      setFilter({ ...filter, kind, sub_type: null, data_source: 'all' });
+    }
+  };
+  const resetAll = () => setFilter({
+    kind: null, sub_type: null, navixy_only: false,
+    service_due: false, data_source: 'all',
+  });
   return (
     <div className="space-y-1" data-testid="fleet-filter-tree">
-      {/* v58.13.124 — Navixy-toggle + Service-due chip strip on a
-          soft violet→indigo gradient with rounded corners + shadow,
-          echoing the header banner. */}
-      <div
-        data-testid="fleet-filter-toolbar-strip"
-        className="rounded-xl bg-gradient-to-r from-violet-100/60 via-indigo-100/40 to-blue-100/20 border border-violet-200/50 shadow-sm p-1 mb-2 space-y-0.5">
-      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold text-slate-700 hover:bg-white/60 cursor-pointer"
-             data-testid="fleet-filter-navixy-only-label">
-        <input
-          type="checkbox"
-          checked={!!filter.navixy_only}
-          onChange={(e) => setFilter({ ...filter, navixy_only: e.target.checked })}
-          data-testid="fleet-filter-navixy-only"
-          className="w-3.5 h-3.5 rounded accent-emerald-600"
-        />
-        <span className="inline-flex items-center gap-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          Show only Navixy-tracked
-        </span>
-      </label>
-      {/* v58.13.122 — Service-due chip. Filters the register-table
-          rows to only those the schedule engine flags AMBER or RED.
-          Count badge shows the outstanding workload. */}
-      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold text-slate-700 hover:bg-white/60 cursor-pointer"
-             data-testid="fleet-filter-service-due-label">
-        <input
-          type="checkbox"
-          checked={!!filter.service_due}
-          onChange={(e) => setFilter({ ...filter, service_due: e.target.checked })}
-          data-testid="fleet-filter-service-due"
-          className="w-3.5 h-3.5 rounded accent-rose-600"
-        />
-        <span className="inline-flex items-center gap-1 flex-1">
-          <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-          Service due
-        </span>
-        <span className="tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800"
-              data-testid="fleet-filter-service-due-count">
-          {serviceDueCount ?? 0}
-        </span>
-      </label>
+      {/* v58.13.125 — DATA SOURCE dimension. Radio (mutually
+          exclusive within the dimension), AND-combined with KIND. */}
+      <div className="rounded-xl bg-gradient-to-r from-violet-100/60 via-indigo-100/40 to-blue-100/20 border border-violet-200/50 shadow-sm p-2 mb-2"
+           data-testid="fleet-filter-toolbar-strip">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-1 pb-1">Data source</div>
+        {[
+          { key: 'all',    label: 'All sources',   count: sourceCounts?.total  ?? data.total, dot: 'bg-slate-400' },
+          { key: 'navixy', label: 'Navixy-tracked', count: sourceCounts?.navixy ?? 0,          dot: 'bg-emerald-500 animate-pulse' },
+          { key: 'manual', label: 'Manual',        count: sourceCounts?.manual ?? 0,          dot: 'bg-slate-500' },
+        ].map((opt) => (
+          <label key={opt.key}
+                 className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold cursor-pointer transition-colors ${
+                   src === opt.key ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-white/60'
+                 }`}
+                 data-testid={`fleet-filter-source-${opt.key}-label`}>
+            <input type="radio" name="fleet-data-source" value={opt.key}
+                   checked={src === opt.key}
+                   onChange={() => setSrc(opt.key)}
+                   data-testid={`fleet-filter-source-${opt.key}`}
+                   className="w-3.5 h-3.5 accent-violet-600" />
+            <span className={`w-1.5 h-1.5 rounded-full ${opt.dot}`} />
+            <span className="flex-1">{opt.label}</span>
+            <span className={`tabular-nums text-xs ${src === opt.key ? 'text-white/80' : 'text-slate-500'}`}>
+              {opt.count}
+            </span>
+          </label>
+        ))}
+        {/* Service-due chip stays inside the toolbar band. */}
+        <label className="flex items-center gap-2 px-3 py-1.5 mt-1 rounded-md text-sm font-semibold text-slate-700 hover:bg-white/60 cursor-pointer border-t border-violet-200/50 pt-2"
+               data-testid="fleet-filter-service-due-label">
+          <input type="checkbox" checked={!!filter.service_due}
+                 onChange={(e) => setFilter({ ...filter, service_due: e.target.checked })}
+                 data-testid="fleet-filter-service-due"
+                 className="w-3.5 h-3.5 rounded accent-rose-600" />
+          <span className="inline-flex items-center gap-1 flex-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+            Service due
+          </span>
+          <span className="tabular-nums text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800"
+                data-testid="fleet-filter-service-due-count">
+            {serviceDueCount ?? 0}
+          </span>
+        </label>
       </div>
 
-      {/* v58.13.124 — Typography bump on the KIND filter tree to
-          match the Overview drawer’s size hierarchy: uppercase
-          section eyebrow bumped from text-[10px] to text-xs, kind
-          buttons from text-xs to text-sm, sub-type children from
-          text-[11px] to text-xs. */}
-      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-2 pt-2">Kind</div>
+      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-2 pt-2 flex items-center justify-between">
+        <span>Kind</span>
+        <button type="button" onClick={resetAll}
+                data-testid="fleet-filter-reset"
+                className="text-[10px] font-semibold text-violet-700 hover:text-violet-900 hover:underline normal-case tracking-normal">
+          Reset filters
+        </button>
+      </div>
       <button
         type="button"
-        onClick={() => setFilter({ ...filter, kind: null, sub_type: null })}
+        onClick={() => chooseKind(null)}
         data-testid="fleet-filter-kind-all"
         className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
           !filter.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
@@ -222,7 +248,7 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
           <div className="w-full flex items-center gap-1">
             <button
               type="button"
-              onClick={() => setFilter({ ...filter, kind: k.kind, sub_type: null })}
+              onClick={() => chooseKind(k.kind)}
               data-testid={`fleet-filter-kind-${k.kind}`}
               className={`flex-1 text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
                 filter.kind === k.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
@@ -410,9 +436,18 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
                   data-testid={`fleet-register-row-${r.id}`}
                   data-zebra={idx % 2 === 1 ? 'odd' : 'even'}
                   className={`group cursor-pointer transition-colors ${
-                    idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'
+                    idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'
                   } hover:!bg-violet-50`}>
-                <td className="px-3 py-2 font-mono text-xs text-slate-800">{r.rego_serial || '—'}</td>
+                <td className="px-3 py-2 font-mono text-sm font-semibold text-slate-800">
+                  {/* v58.13.125 — Reject 10+ digit numeric IDs
+                      (Navixy tracker serials). Fallback chain:
+                      real rego → name → em-dash. */}
+                  {(() => {
+                    const rs = r.rego_serial;
+                    if (rs && !/^\d{10,}$/.test(rs)) return rs;
+                    return r.name || '—';
+                  })()}
+                </td>
                 <td className="px-3 py-2 text-slate-700 max-w-md truncate">{r.name || r.description || '—'}</td>
                 <td className="px-3 py-2"><KindPill kind={r.kind} /></td>
                 <td className="px-3 py-2 text-slate-600 text-xs">{displaySubtype(r.asset_type || r.sub_type)}</td>
@@ -464,7 +499,7 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
 export default function FleetRegister() {
   const [flagState, setFlagState] = useState('probing'); // probing | on | off
   const [categories, setCategories] = useState(null);
-  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false, service_due: false });
+  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false, service_due: false, data_source: 'all' });
   const [rows, setRows] = useState([]);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -525,12 +560,17 @@ export default function FleetRegister() {
     const params = { page, limit: LIMIT };
     if (filter.kind) params.kind = filter.kind;
     if (filter.sub_type) params.sub_type = filter.sub_type;
-    if (filter.navixy_only) params.navixy_only = true;
+    // v58.13.125 — Data-source dimension (Option B). Maps to the
+    // existing `navixy_only` backend param for source=navixy; for
+    // source=manual we filter client-side because /fleet/register
+    // has no `navixy_only=false` semantics today (server-side
+    // enhancement queued for `.126`).
+    if (filter.data_source === 'navixy' || filter.navixy_only) params.navixy_only = true;
     api.get('/fleet/register', { params })
       .then((r) => { setRows(r.data.items); setTotal(r.data.total); })
       .catch((e) => toast.error(apiError(e) || 'Register load failed'))
       .finally(() => setRowsLoading(false));
-  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, page]);
+  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, page]);
 
   useEffect(() => { reloadRows(); }, [reloadRows]);
 
@@ -676,13 +716,29 @@ export default function FleetRegister() {
             setFilter={(f) => { setFilter(f); setPage(1); }}
             onAddAsset={openAddAsset}
             serviceDueCount={(statusCounts.amber || 0) + (statusCounts.red || 0)}
+            sourceCounts={(() => {
+              // v58.13.125 — Rough source-counts derived from
+              // categories.total + the visible rows. Server-side
+              // canonical breakdown is queued for `.126`.
+              const total = categories?.total || 0;
+              const navixy = rows.filter((r) => !!r.navixy_device_id).length;
+              return { total, navixy, manual: Math.max(0, total - navixy) };
+            })()}
           />
         </aside>
         <main>
           <RegisterTable
-            rows={filter.service_due
-              ? rows.filter((r) => ['amber', 'red'].includes(statuses?.[r.id]?.status))
-              : rows}
+            rows={(() => {
+              let r = rows;
+              // Data-source manual filter is client-side today.
+              if (filter.data_source === 'manual') {
+                r = r.filter((row) => !row.navixy_device_id);
+              }
+              if (filter.service_due) {
+                r = r.filter((row) => ['amber', 'red'].includes(statuses?.[row.id]?.status));
+              }
+              return r;
+            })()}
             loading={rowsLoading}
             onRowClick={openAsset}
             onDelete={(r) => setPendingDelete(r)}
