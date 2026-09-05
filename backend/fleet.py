@@ -599,11 +599,13 @@ _TECHNICIANS_CACHE: dict = {"ts": 0.0, "org_id": None, "data": None}
 _TECHNICIANS_TTL_SECONDS = 300
 
 # Roles/positions considered service-technician candidates.
-_TECHNICIAN_ROLE_PREFIXES = ("admin", "supervisor", "hseq_lead",
-                              "custom_mechanic", "custom_machine",
-                              "manager")
-_TECHNICIAN_POSITION_KEYWORDS = ("mechanic", "technician", "operator",
-                                  "supervisor", "manager", "admin")
+# v58.13.123a — Narrowed per user directive. Admin/supervisor/manager
+# dropped; only tech-role users appear in the Service Check Sheet
+# picker.
+_TECHNICIAN_ROLE_PREFIXES = ("custom_mechanic", "custom_service_tech",
+                              "custom_fitter", "custom_technician")
+_TECHNICIAN_POSITION_KEYWORDS = ("mechanic", "technician", "fitter",
+                                  "service tech")
 
 
 @router.get("/technicians")
@@ -631,6 +633,7 @@ async def list_technicians(
         "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}],
     }
     rows: list[dict] = []
+    # v58.13.123a — Expanded source: users collection + workers collection.
     async for u in db.users.find(filt, {
         "_id": 0, "id": 1, "email": 1,
         "first_name": 1, "last_name": 1, "role": 1, "position": 1,
@@ -646,13 +649,32 @@ async def list_technicians(
         if not name:
             name = u.get("email") or u["id"][:8]
         rows.append({
-            "id": u["id"],
-            "name": name,
-            "role": u.get("role"),
-            "position": u.get("position"),
+            "id": u["id"], "name": name, "source": "user",
+            "role": u.get("role"), "position": u.get("position"),
             "simpro_employee_id": u.get("simpro_employee_id"),
         })
-    rows.sort(key=lambda r: r["name"].lower())
+    # v58.13.123a — Also include workers where role/position matches.
+    async for w in db.workers.find({"org_id": org_id,
+                                      "$or": [{"deleted_at": {"$exists": False}}, {"deleted_at": None}]},
+                                     {"_id": 0, "id": 1, "first_name": 1,
+                                      "last_name": 1, "position": 1, "role": 1}):
+        pos = (w.get("position") or "").lower()
+        role = (w.get("role") or "")
+        if not (any(k in pos for k in pos_keywords) if pos else False) and not any(role.startswith(p) for p in role_prefixes):
+            continue
+        name = " ".join([w.get("first_name") or "", w.get("last_name") or ""]).strip() or w["id"][:8]
+        rows.append({
+            "id": w["id"], "name": name, "source": "worker",
+            "role": w.get("role"), "position": w.get("position"),
+            "simpro_employee_id": None,
+        })
+    # Dedupe by id, keep first (users win over workers).
+    seen = set(); deduped = []
+    for r in rows:
+        if r["id"] in seen: continue
+        seen.add(r["id"]); deduped.append(r)
+    deduped.sort(key=lambda r: r["name"].lower())
+    rows = deduped
 
     data = {
         "technicians": rows,

@@ -260,9 +260,14 @@ def test_service_due_filter_chip_wired():
 
 
 # ── Navixy write-path TODO marker for .121a ──────────────────────
+# v58.13.124 — .121a was shipped as part of .124 (moved into
+# `backend/asset_taxonomy.py::normalize_asset_type`). The old
+# `.121a — TODO` comment is gone; verify the shipped note points
+# at the shared helper instead.
 def test_navixy_sync_has_121a_todo_marker():
-    assert "v58.13.121a" in NAVIXY_SYNC
-    assert "TODO" in NAVIXY_SYNC
+    assert "v58.13.121a — TODO" not in NAVIXY_SYNC
+    assert "normalize_asset_type" in NAVIXY_SYNC
+    assert "v58.13.124" in NAVIXY_SYNC
     assert "asset_type" in NAVIXY_SYNC
 
 

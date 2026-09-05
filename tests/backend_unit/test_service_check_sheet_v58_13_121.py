@@ -167,7 +167,11 @@ def test_sheet_modal_wires_expected_testids():
         "sheet-check-all",
         "sheet-advisory",
         "sheet-next-due-km", "sheet-next-due-hours", "sheet-next-due-date",
-        "sheet-tech-signature", "sheet-cust-signature",
+        "sheet-tech-signature",
+        # v58.13.123a — customer-signature pad replaced with an
+        # attachment dropzone. Keep the dropzone testid in the lock
+        # instead of the removed one.
+        "sheet-attach-dropzone",
         "sheet-cancel", "sheet-save", "sheet-save-print",
     ):
         assert f'"{tid}"' in SHEET_MODAL, f"missing testid: {tid}"

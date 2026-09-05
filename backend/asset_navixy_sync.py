@@ -312,12 +312,13 @@ async def _sync_org(org_id: str) -> dict:
         return {"org_id": org_id, "updated": 0, "skipped": 0, "errors": 0, "note": "missing_base_or_hash"}
 
     assets: list[dict] = []
-    # v58.13.121a — TODO: normalise `asset_type` on the WRITE PATH
-    # into the .120g canonical map before persisting new Navixy
-    # tracker rows. Deferred out of `.122` per user directive; the
-    # frontend `displaySubtype()` mask is the current belt-and-braces
-    # defence, and the .120g normalize script can be re-run
-    # idempotently to sweep any drift that accumulates.
+    # v58.13.124 — `.121a` write-path normalisation moved into
+    # `backend/asset_taxonomy.py::normalize_asset_type` and applied on
+    # the Navixy backfill write path in `assets.py::_navixy_backfill_assets`
+    # (which is the sole caller that writes `asset_type` from Navixy
+    # metadata). This sync loop below only writes counter values —
+    # `hours_meter`, `odo_km`, source markers — so no taxonomy work
+    # happens here at rest.
     async for a in db.assets.find(
         {"org_id": org_id, "navixy_device_id": {"$ne": None}, "deleted_at": None},
         {"_id": 0, "id": 1, "navixy_device_id": 1, "hours_meter": 1, "odo_km": 1,

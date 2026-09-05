@@ -157,8 +157,13 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
   if (!data) return <div className="text-xs text-slate-400 p-4">No categories yet.</div>;
   return (
     <div className="space-y-1" data-testid="fleet-filter-tree">
-      {/* v58.13.120g — Navixy-only checkbox above the kind list. */}
-      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+      {/* v58.13.124 — Navixy-toggle + Service-due chip strip on a
+          soft violet→indigo gradient with rounded corners + shadow,
+          echoing the header banner. */}
+      <div
+        data-testid="fleet-filter-toolbar-strip"
+        className="rounded-xl bg-gradient-to-r from-violet-100/60 via-indigo-100/40 to-blue-100/20 border border-violet-200/50 shadow-sm p-1 mb-2 space-y-0.5">
+      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold text-slate-700 hover:bg-white/60 cursor-pointer"
              data-testid="fleet-filter-navixy-only-label">
         <input
           type="checkbox"
@@ -175,7 +180,7 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
       {/* v58.13.122 — Service-due chip. Filters the register-table
           rows to only those the schedule engine flags AMBER or RED.
           Count badge shows the outstanding workload. */}
-      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+      <label className="flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold text-slate-700 hover:bg-white/60 cursor-pointer"
              data-testid="fleet-filter-service-due-label">
         <input
           type="checkbox"
@@ -193,18 +198,24 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
           {serviceDueCount ?? 0}
         </span>
       </label>
+      </div>
 
-      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-2 pt-2">Kind</div>
+      {/* v58.13.124 — Typography bump on the KIND filter tree to
+          match the Overview drawer’s size hierarchy: uppercase
+          section eyebrow bumped from text-[10px] to text-xs, kind
+          buttons from text-xs to text-sm, sub-type children from
+          text-[11px] to text-xs. */}
+      <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-2 pt-2">Kind</div>
       <button
         type="button"
         onClick={() => setFilter({ ...filter, kind: null, sub_type: null })}
         data-testid="fleet-filter-kind-all"
-        className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium flex items-center justify-between ${
+        className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
           !filter.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
         }`}
       >
         <span>All kinds</span>
-        <span className="tabular-nums text-[10px] opacity-80">{data.total}</span>
+        <span className="tabular-nums text-xs opacity-80">{data.total}</span>
       </button>
       {data.kinds.map((k) => (
         <div key={k.kind}>
@@ -213,12 +224,12 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
               type="button"
               onClick={() => setFilter({ ...filter, kind: k.kind, sub_type: null })}
               data-testid={`fleet-filter-kind-${k.kind}`}
-              className={`flex-1 text-left px-3 py-1.5 rounded-md text-xs font-medium flex items-center justify-between ${
+              className={`flex-1 text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
                 filter.kind === k.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
               }`}
             >
               <span className="capitalize">{k.kind}</span>
-              <span className="tabular-nums text-[10px] opacity-80">{k.total}</span>
+              <span className="tabular-nums text-xs opacity-80">{k.total}</span>
             </button>
             {canCreate && (
               <button
@@ -240,7 +251,7 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
                   type="button"
                   onClick={() => setFilter({ ...filter, sub_type: filter.sub_type === st ? null : st })}
                   data-testid={`fleet-filter-subtype-${st.toLowerCase().replace(/\s+/g,'-')}`}
-                  className={`w-full text-left px-2 py-1 rounded text-[11px] flex items-center justify-between ${
+                  className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between ${
                     filter.sub_type === st ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-slate-600 hover:bg-slate-50'
                   }`}
                 >
@@ -394,10 +405,13 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
             {!loading && rows.length === 0 && (
               <tr><td colSpan={canDelete ? 8 : 7} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
             )}
-            {!loading && rows.map((r) => (
+            {!loading && rows.map((r, idx) => (
               <tr key={r.id} onClick={() => onRowClick(r.id)}
                   data-testid={`fleet-register-row-${r.id}`}
-                  className="group hover:bg-blue-50 cursor-pointer">
+                  data-zebra={idx % 2 === 1 ? 'odd' : 'even'}
+                  className={`group cursor-pointer transition-colors ${
+                    idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'
+                  } hover:!bg-violet-50`}>
                 <td className="px-3 py-2 font-mono text-xs text-slate-800">{r.rego_serial || '—'}</td>
                 <td className="px-3 py-2 text-slate-700 max-w-md truncate">{r.name || r.description || '—'}</td>
                 <td className="px-3 py-2"><KindPill kind={r.kind} /></td>
@@ -602,12 +616,34 @@ export default function FleetRegister() {
   }
 
   return (
-    <div className="p-6" data-testid="fleet-register-page">
-      <header className="mb-4 flex items-baseline justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Fleet &amp; Service Register</h1>
-          <p className="text-sm text-slate-500">Unified register for vehicles, plant, trailers, tools, and containers with full service history.</p>
+    <div data-testid="fleet-register-page">
+      {/* v58.13.124 — Header banner. Full-width JPEG behind a
+          left-anchored H1 + H2 with a soft dark gradient for
+          contrast. Responsive: ~200 px on ≥md, 140 px on mobile. */}
+      <div
+        data-testid="fleet-register-header-banner"
+        className="relative w-full h-[140px] md:h-[200px] overflow-hidden"
+        style={{
+          backgroundImage: 'url(/fleet-register-header.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center 40%',
+        }}
+      >
+        <div className="absolute inset-0 bg-gradient-to-r from-slate-900/70 via-slate-900/40 to-transparent" />
+        <div className="relative h-full max-w-7xl mx-auto px-6 md:px-8 flex flex-col justify-center">
+          <h1 className="text-2xl md:text-4xl font-bold text-white tracking-tight"
+              style={{ textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+            Fleet &amp; Service Register
+          </h1>
+          <p className="mt-1 md:mt-2 text-sm md:text-base text-white/90 max-w-2xl"
+             style={{ textShadow: '0 1px 4px rgba(0,0,0,0.6)' }}>
+            Unified register for vehicles, plant, trailers, tools, and containers with full service history.
+          </p>
         </div>
+      </div>
+
+    <div className="p-6">
+      <header className="mb-4 flex items-baseline justify-end gap-4">
         <div className="flex gap-2">
           <Can resource="assets" action="view">
             <button onClick={printLabels}
@@ -713,6 +749,7 @@ export default function FleetRegister() {
           onSaved={(a) => { setDrawerAsset(a); reloadRows(); }}
         />
       )}
+    </div>
     </div>
   );
 }

@@ -171,6 +171,13 @@ async def forward(db, commit: bool) -> int:
 
     kind_breakdown: dict[str, int] = {}
     proposals = []
+    # v58.13.124 — Canonicalise sub_type via the shared taxonomy
+    # helper so a re-run of this script no longer re-drifts asset_type
+    # back to raw plant_maintenance casing (which is what produced the
+    # 5 "Vac Truck" rows post-.120g).
+    import sys as _s124
+    _s124.path.insert(0, "/app/backend")
+    from asset_taxonomy import normalize_asset_type as _norm_at  # noqa: WPS433
     for pm in targets:
         rego = _normalise_rego(pm.get("registration_no"))
         kind = _kind_for(pm.get("sub_type"))
@@ -179,7 +186,7 @@ async def forward(db, commit: bool) -> int:
         proposals.append({
             "rego_serial": rego,
             "kind": kind,
-            "asset_type": pm.get("sub_type"),
+            "asset_type": _norm_at(pm.get("sub_type")),
             "manufacturer": pm.get("manufacturer"),
             "description": (desc[:200] + " (auto from maintenance)") if desc else "(auto from maintenance)",
             "org_id": pm.get("org_id") or default_org_id,

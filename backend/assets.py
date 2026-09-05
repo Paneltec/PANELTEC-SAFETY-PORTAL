@@ -294,13 +294,19 @@ async def _backfill_from_navixy(org_id: str, user: dict) -> int:
 
     processed = 0
     ts = now_iso()
+    # v58.13.124 — Apply canonical sub-type map on the Navixy write path
+    # (the deferred `.121a` fix). Belt-and-braces defence against future
+    # drift; today `_classify_vehicle_type` already returns snake_case
+    # slugs so the map's `"vacuum_truck" → "Vacuum Truck"` etc. does the
+    # actual work.
+    from asset_taxonomy import normalize_asset_type  # noqa: WPS433
     for v in raw.get("vehicles", []) or []:
         device_id = v.get("id")
         if not device_id:
             continue
         label = v.get("label") or "Unnamed vehicle"
         tag_names = [t.get("name") for t in (v.get("tags") or []) if isinstance(t, dict) and t.get("name")]
-        asset_type = _classify_vehicle_type(label, tag_names)
+        asset_type = normalize_asset_type(_classify_vehicle_type(label, tag_names))
         existing = await db.assets.find_one({"org_id": org_id, "navixy_device_id": int(device_id)})
         update = {
             "name": label,

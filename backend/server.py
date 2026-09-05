@@ -1285,6 +1285,30 @@ async def on_startup():
             log.info("APScheduler started — navixy_sync_counters every 15 min")
         except Exception as e:
             log.warning("APScheduler failed to start: %s", e)
+        # v58.13.124 — Visibility guard for TEST-v58.13.* pollution.
+        # These seed rows have snuck back into `assets` post-.116,
+        # post-.120a and now post-.123a; the `.124` purge cleaned
+        # 90 of them but any future re-appearance should be visible
+        # in the boot log so an operator can trigger the standalone
+        # purge script. Warning-only — no auto-purge.
+        try:
+            from db import db as _db_test_guard
+            _n_test = await _db_test_guard.assets.count_documents({
+                "name": {"$regex": r"^TEST-v58\.", "$options": "i"},
+            })
+            if _n_test:
+                log.warning(
+                    "[v124] test-seed pollution guard: %d assets match "
+                    "^TEST-v58.* — run "
+                    "`python /app/backend/scripts/"
+                    "purge_test_v58_13_all_leftovers_v58_13_124.py --commit`",
+                    _n_test,
+                )
+            else:
+                log.info("[v124] test-seed pollution guard: 0 rows (clean)")
+        except Exception as e:  # pragma: no cover
+            log.warning("[v124] test-seed pollution guard failed: %s", e)
+
         log.info('[startup] deferred_startup_work: done in %.2fs', _dsw_time.monotonic() - _t0)
 
     import asyncio as _dsw_asyncio

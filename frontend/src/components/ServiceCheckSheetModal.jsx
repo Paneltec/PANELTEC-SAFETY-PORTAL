@@ -26,7 +26,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Loader2, ClipboardCheck, Wrench, PenLine, CheckCircle2, Printer,
-  AlertTriangle, Truck, ChevronDown, ChevronRight, CircleDot,
+  AlertTriangle, Truck, ChevronDown, ChevronRight, CircleDot, Plus,
+  Trash2, Paperclip, Wifi,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -246,6 +247,8 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   // Signatures.
   const [techSig, setTechSig] = useState(null);
   const [custSig, setCustSig] = useState(null);
+  // v58.13.123a — Attachments replace the Customer Signature pad.
+  const [attachments, setAttachments] = useState([]);
   // v58.13.123 — Heavy Truck state (dormant when template=v121.1).
   const [heavyMarks, setHeavyMarks] = useState({}); // {"A|Oil changed": "X"|"CHECK"|"NA"|"UNSET"}
   const [heavyNotes, setHeavyNotes] = useState({}); // same key -> string
@@ -253,6 +256,20 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   const [consumables, setConsumables] = useState('');
   const [nextInspectionDue, setNextInspectionDue] = useState('');
   const [openSection, setOpenSection] = useState('A');
+  // v58.13.123a — Ad-hoc per-sheet custom items keyed by section id.
+  const [customItems, setCustomItems] = useState({}); // {"A": ["Custom item name", ...]}
+  const addCustomItem = (sec) => {
+    const name = (window.prompt('Custom item name (this sheet only)') || '').trim();
+    if (!name) return;
+    setCustomItems((p) => ({ ...p, [sec]: [...(p[sec] || []), name] }));
+  };
+  const deleteCustomItem = (sec, name) => {
+    setCustomItems((p) => ({ ...p, [sec]: (p[sec] || []).filter((x) => x !== name) }));
+    // Also drop any marks/notes for that row.
+    const key = `${sec}|${name}`;
+    setHeavyMarks((p) => { const n = { ...p }; delete n[key]; return n; });
+    setHeavyNotes((p) => { const n = { ...p }; delete n[key]; return n; });
+  };
   const heavyTmpl = templates?.['v123.1'];
   const setMark = (sec, item, mark) => setHeavyMarks((p) => ({ ...p, [`${sec}|${item}`]: mark }));
   const setNote = (sec, item, val) => setHeavyNotes((p) => ({ ...p, [`${sec}|${item}`]: val }));
@@ -300,7 +317,7 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
     const description = advisory
       || (replaced.length ? `Replaced: ${replaced.join(', ')}` : 'Service check completed');
     const tech = technicianMode === 'picker'
-      ? technicians.find((t) => t.id === technicianId)
+      ? technicians.find((t) => t.id === technicianId || t.name.toLowerCase() === (technicianName || '').toLowerCase())
       : null;
     return {
       // Required legacy fields.
@@ -329,12 +346,21 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       save_to_asset_record: saveToAssetRecord,
       // v58.13.123 — heavy-truck additive fields (null when Light).
       checklist_items: templateVersion === 'v123.1' && heavyTmpl
-        ? heavyTmpl.sections.flatMap((s) => s.items.map((it) => ({
-            item: it,
-            section: s.id,
-            mark: heavyMarks[`${s.id}|${it}`] || 'UNSET',
-            notes: heavyNotes[`${s.id}|${it}`] || '',
-          })))
+        ? [
+            ...heavyTmpl.sections.flatMap((s) => s.items.map((it) => ({
+              item: it, section: s.id,
+              mark: heavyMarks[`${s.id}|${it}`] || 'UNSET',
+              notes: heavyNotes[`${s.id}|${it}`] || '',
+            }))),
+            // v58.13.123a — Custom per-sheet items with `custom:true`.
+            ...Object.entries(customItems).flatMap(([sec, items]) =>
+              items.map((it) => ({
+                item: it, section: sec, custom: true,
+                mark: heavyMarks[`${sec}|${it}`] || 'UNSET',
+                notes: heavyNotes[`${sec}|${it}`] || '',
+              }))
+            ),
+          ]
         : checklist,
       tread_depth_readings: templateVersion === 'v123.1' ? tread : null,
       consumables_used: templateVersion === 'v123.1' ? (consumables || null) : null,
@@ -417,7 +443,20 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               testId="sheet-section-vehicle-header" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-xl p-4 border border-slate-200">
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Registration</label>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Registration
+                  {asset?.navixy_device_id ? (
+                    <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 normal-case tracking-normal"
+                          data-testid="sheet-rego-navixy-chip">
+                      <Wifi size={9} /> Navixy · live
+                    </span>
+                  ) : (
+                    <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-600 normal-case tracking-normal"
+                          data-testid="sheet-rego-manual-chip">
+                      Manual
+                    </span>
+                  )}
+                </label>
                 <input readOnly value={asset?.rego_serial || ''}
                   data-testid="sheet-vehicle-rego"
                   className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 font-mono font-semibold text-slate-800" />
@@ -452,20 +491,31 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Technician</label>
                 {technicianMode === 'picker' && technicians.length > 0 ? (
                   <div className="flex items-center gap-2">
-                    <select value={technicianId} onChange={(e) => setTechnicianId(e.target.value)}
+                    <input
+                      list="sheet-technician-datalist"
+                      value={technicianName}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setTechnicianName(v);
+                        const hit = technicians.find(
+                          (t) => t.name.toLowerCase() === v.toLowerCase(),
+                        );
+                        setTechnicianId(hit?.id || '');
+                      }}
+                      placeholder="Search technicians (name)"
                       data-testid="sheet-technician-select"
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-                      <option value="">— Select technician —</option>
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
+                    <datalist id="sheet-technician-datalist">
                       {technicians.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}{t.position ? ` (${t.position})` : ''}
+                        <option key={t.id} value={t.name}>
+                          {t.position || t.role || ''}
                         </option>
                       ))}
-                    </select>
+                    </datalist>
                     <button type="button" onClick={() => setTechnicianMode('freetext')}
                       data-testid="sheet-technician-freetext-toggle"
                       className="px-2 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50">
-                      Type name
+                      Type new
                     </button>
                   </div>
                 ) : (
@@ -504,7 +554,7 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
           <section data-testid="sheet-template-picker-block">
             <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center gap-3 flex-wrap">
               <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                Template
+                Choose a vehicle type to service
               </label>
               <select value={templateVersion} onChange={(e) => setTemplateVersion(e.target.value)}
                 data-testid="sheet-template-picker"
@@ -563,6 +613,12 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                                 data-testid={`sheet-heavy-section-status-${sec.id}`}>
                             {pill.lbl}
                           </span>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); addCustomItem(sec.id); }}
+                            data-testid={`sheet-heavy-add-item-${sec.id}`}
+                            title="Add a custom item to this section"
+                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-100 text-violet-800 hover:bg-violet-200 inline-flex items-center gap-1">
+                            <Plus size={10} /> add
+                          </button>
                           <button type="button" onClick={(e) => { e.stopPropagation(); bulkCheckSection(sec.id); }}
                             data-testid={`sheet-heavy-bulk-check-${sec.id}`}
                             title="Mark every unset item ✓"
@@ -605,6 +661,47 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                                 </div>
                               );
                             })}
+                            {/* v58.13.123a — Custom per-sheet rows. */}
+                            {(customItems[sec.id] || []).map((item, ci) => {
+                              const mark = heavyMarks[`${sec.id}|${item}`] || 'UNSET';
+                              const tint = mark === 'X' ? 'bg-rose-50'
+                                : mark === 'CHECK' ? 'bg-emerald-50'
+                                : mark === 'NA' ? 'bg-slate-50' : 'bg-violet-50/60';
+                              return (
+                                <div key={`custom-${ci}-${item}`}
+                                  className={`grid grid-cols-[1fr_auto_2fr_28px] gap-2 items-center px-3 py-1.5 ${tint}`}
+                                  data-testid={`sheet-heavy-custom-row-${sec.id}-${ci}`}>
+                                  <div className="text-xs text-slate-800">
+                                    <span className="italic text-violet-700 mr-1">(custom)</span>{item}
+                                  </div>
+                                  <div className="flex gap-1">
+                                    {['X','CHECK','NA'].map((m) => (
+                                      <button key={m} type="button"
+                                        onClick={() => setMark(sec.id, item, mark === m ? 'UNSET' : m)}
+                                        className={`w-8 h-6 text-[10px] font-bold rounded ${
+                                          mark === m
+                                            ? (m === 'X' ? 'bg-rose-600 text-white'
+                                              : m === 'CHECK' ? 'bg-emerald-600 text-white'
+                                              : 'bg-slate-500 text-white')
+                                            : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
+                                        }`}>
+                                        {m === 'CHECK' ? '✓' : m}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <input value={heavyNotes[`${sec.id}|${item}`] || ''}
+                                    onChange={(e) => setNote(sec.id, item, e.target.value)}
+                                    placeholder="Notes"
+                                    className="w-full px-2 py-0.5 border border-slate-200 rounded text-xs bg-white" />
+                                  <button type="button" onClick={() => deleteCustomItem(sec.id, item)}
+                                    data-testid={`sheet-heavy-custom-delete-${sec.id}-${ci}`}
+                                    title="Delete this custom item"
+                                    className="p-1 rounded text-rose-600 hover:bg-rose-50">
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -614,8 +711,16 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               </section>
 
               <section data-testid="sheet-tread-depth-block">
-                <SectionHeader Icon={CircleDot} title="Tire Tread Depth (32nds)"
-                  chipClass="bg-cyan-50 text-cyan-800" />
+                <div className="flex items-center gap-2 mb-2 cursor-pointer bg-white rounded-lg border border-slate-200 px-3 py-2"
+                     onClick={() => setOpenSection(openSection === '__tread' ? null : '__tread')}
+                     data-testid="sheet-tread-depth-toggle">
+                  {openSection === '__tread' ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                  <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider bg-cyan-50 text-cyan-800`}>
+                    <CircleDot size={12} /> Tire Tread Depth (32nds)
+                  </div>
+                  <div className="flex-1 h-px bg-slate-200" />
+                </div>
+                {openSection === '__tread' && (
                 <div className="bg-white rounded-xl border border-slate-200 p-3">
                   <div className="grid grid-cols-[1fr_80px_80px] gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-bold pb-2 border-b border-slate-200">
                     <div>Position</div><div>Out</div><div>In</div>
@@ -641,6 +746,7 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                     );
                   })}
                 </div>
+                )}
               </section>
 
               <section data-testid="sheet-consumables-block">
@@ -765,11 +871,56 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               </div>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
-                  Customer signature <span className="text-slate-400 normal-case font-medium">(optional)</span>
+                  Attach documents or photos <span className="text-slate-400 normal-case font-medium">(optional)</span>
                 </label>
-                <SignaturePad value={custSig} onChange={setCustSig}
-                  ariaLabel="Customer signature pad"
-                  testId="sheet-cust-signature" />
+                <div
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={async (e) => {
+                    e.preventDefault();
+                    if (!asset?.id) { toast.error('Save the asset first to attach files'); return; }
+                    for (const f of Array.from(e.dataTransfer.files || [])) {
+                      const fd = new FormData(); fd.append('file', f);
+                      try {
+                        const r = await api.post(`/assets/${asset.id}/photos`, fd);
+                        setAttachments((p) => [...p, ...(r.data?.photos || []).slice(-1)]);
+                        toast.success(`Attached ${f.name}`);
+                      } catch (err) { toast.error(apiError(err) || `Failed: ${f.name}`); }
+                    }
+                  }}
+                  data-testid="sheet-attach-dropzone"
+                  className="rounded-lg border-2 border-dashed border-slate-300 hover:border-blue-400 p-4 bg-white text-center cursor-pointer"
+                  onClick={() => document.getElementById('sheet-attach-file-input')?.click()}
+                >
+                  <Paperclip size={18} className="mx-auto text-slate-400" />
+                  <div className="mt-1 text-xs text-slate-600">
+                    Drop images or PDFs here, or click to browse.
+                  </div>
+                  <input id="sheet-attach-file-input" type="file" accept="image/*,application/pdf" multiple className="hidden"
+                    data-testid="sheet-attach-input"
+                    onChange={async (e) => {
+                      if (!asset?.id) return;
+                      for (const f of Array.from(e.target.files || [])) {
+                        const fd = new FormData(); fd.append('file', f);
+                        try {
+                          const r = await api.post(`/assets/${asset.id}/photos`, fd);
+                          setAttachments((p) => [...p, ...(r.data?.photos || []).slice(-1)]);
+                        } catch (err) { toast.error(apiError(err) || 'Upload failed'); }
+                      }
+                      e.target.value = '';
+                    }} />
+                </div>
+                {attachments.length > 0 && (
+                  <div className="grid grid-cols-4 gap-2 mt-2" data-testid="sheet-attach-grid">
+                    {attachments.map((att, i) => (
+                      <div key={att.id || i} className="relative aspect-square rounded overflow-hidden border border-slate-200 bg-slate-100">
+                        <img src={att.photo_url ? `${att.photo_url}${att.photo_url.includes('?') ? '&' : '?'}token=${encodeURIComponent(localStorage.getItem('paneltec_token')||'')}` : ''}
+                          alt={att.filename || 'attachment'}
+                          className="w-full h-full object-cover"
+                          onError={(e) => { e.target.style.display = 'none'; }} />
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </section>
