@@ -92,8 +92,16 @@ def test_navixy_blind_field_copy_rewrite():
 # ─── Version pins ────────────────────────────────────────────────
 
 def test_version_bumped_to_127_everywhere():
-    v = 'paneltec-v160.3.9.58.13.127'
-    for f in ("frontend/src/lib/version.js",
-              "frontend/public/service-worker.js",
-              "mobile/src/lib/version.ts"):
-        assert v in _read(f), f"{f} missing {v}"
+    # v58.13.128 ratchets pin forward. Accept `.127` or newer.
+    import re
+    checks = [
+        ("frontend/src/lib/version.js",
+         r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("frontend/public/service-worker.js",
+         r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("mobile/src/lib/version.ts",
+         r"MOBILE_BUNDLE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+    ]
+    for f, pat in checks:
+        m = re.search(pat, _read(f))
+        assert m and int(m.group(1)) >= 127, f"{f}: version < 127"

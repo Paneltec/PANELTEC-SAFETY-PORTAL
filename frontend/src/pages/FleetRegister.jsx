@@ -30,7 +30,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin,
+  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin, Archive,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -159,24 +159,28 @@ function ServiceStatusPill({ block, assetId }) {
 // data-source to "all" (per user's stated interaction: "if i go the
 // KIND list and choose another tab it should turn off the navixy
 // ones"). Clicking "All kinds" preserves whatever source was set.
-function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount, sourceCounts }) {
+function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount, sourceCounts, retiredData }) {
   const canCreate = useCan()('assets', 'edit');
   if (loading) return <div className="text-xs text-slate-400 p-4">Loading tree…</div>;
   if (!data) return <div className="text-xs text-slate-400 p-4">No categories yet.</div>;
   const src = filter.data_source || 'all';
   const setSrc = (s) => setFilter({ ...filter, data_source: s });
   const chooseKind = (kind) => {
-    // Clicking a specific KIND resets data_source to "all".
-    // Clicking "All kinds" preserves the current data_source.
+    // v58.13.128 — Clicking any KIND clears the Retired/Sold view.
     if (kind === null) {
-      setFilter({ ...filter, kind: null, sub_type: null });
+      setFilter({ ...filter, kind: null, sub_type: null, retired_only: false });
     } else {
-      setFilter({ ...filter, kind, sub_type: null, data_source: 'all' });
+      setFilter({ ...filter, kind, sub_type: null, data_source: 'all', retired_only: false });
     }
+  };
+  const chooseRetired = () => {
+    // Retired/Sold is a synthetic KIND — flips the retired_only flag,
+    // clears the specific kind filter so all retired assets show mixed.
+    setFilter({ ...filter, retired_only: true, kind: null, sub_type: null });
   };
   const resetAll = () => setFilter({
     kind: null, sub_type: null, navixy_only: false,
-    service_due: false, data_source: 'all',
+    service_due: false, data_source: 'all', retired_only: false,
   });
   return (
     <div className="space-y-1" data-testid="fleet-filter-tree">
@@ -188,7 +192,7 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
         {[
           { key: 'all',    label: 'All sources',   count: sourceCounts?.total  ?? data.total, dot: 'bg-slate-400' },
           { key: 'navixy', label: 'Navixy-tracked', count: sourceCounts?.navixy ?? 0,          dot: 'bg-emerald-500 animate-pulse' },
-          { key: 'manual', label: 'Manual',        count: sourceCounts?.manual ?? 0,          dot: 'bg-slate-500' },
+          { key: 'manual', label: 'Added Manually',        count: sourceCounts?.manual ?? 0,          dot: 'bg-slate-500' },
         ].map((opt) => (
           <label key={opt.key}
                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-semibold cursor-pointer transition-colors ${
@@ -290,6 +294,40 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
           )}
         </div>
       ))}
+      {/* v58.13.128 — Retired / Sold synthetic KIND row. Segregates
+          retired assets from the active list. Clicking flips
+          retired_only=true; expanded view shows sub-counts by
+          original kind so admins can see what was retired where. */}
+      <div className="mt-2 pt-2 border-t border-slate-200">
+        <button
+          type="button"
+          onClick={chooseRetired}
+          data-testid="fleet-filter-kind-retired"
+          className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
+            filter.retired_only ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <span className="inline-flex items-center gap-2">
+            <Archive size={13} className={filter.retired_only ? 'text-white' : 'text-slate-400'} />
+            Retired / Sold
+          </span>
+          <span className="tabular-nums text-xs opacity-80">{retiredData?.total ?? 0}</span>
+        </button>
+        {filter.retired_only && retiredData && (retiredData.total ?? 0) > 0 && (
+          <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-200 pl-2"
+               data-testid="fleet-filter-retired-breakdown">
+            {Object.entries(retiredData.by_kind || {})
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, n]) => (
+                <div key={k}
+                     className="w-full px-2 py-1 rounded text-xs flex items-center justify-between text-slate-600">
+                  <span className="capitalize">{k}</span>
+                  <span className="tabular-nums text-[10px] opacity-60">{n}</span>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -440,9 +478,10 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
               <tr key={r.id} onClick={() => onRowClick(r.id)}
                   data-testid={`fleet-register-row-${r.id}`}
                   data-zebra={idx % 2 === 1 ? 'odd' : 'even'}
+                  data-retired={r.status === 'retired' ? 'true' : 'false'}
                   className={`group cursor-pointer transition-colors ${
                     idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'
-                  } hover:!bg-violet-50`}>
+                  } ${r.status === 'retired' ? 'opacity-60' : ''} hover:!bg-violet-50`}>
                 <td className="px-2 py-2 w-8 text-center" onClick={(e) => e.stopPropagation()}>
                   {/* v58.13.127 — MapPin cell. Three states:
                        · violet   → Navixy + coords → click opens map modal
@@ -469,12 +508,21 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
                 <td className="px-3 py-2 font-mono text-sm font-semibold text-slate-800">
                   {/* v58.13.125 — Reject 10+ digit numeric IDs
                       (Navixy tracker serials). Fallback chain:
-                      real rego → name → em-dash. */}
-                  {(() => {
-                    const rs = r.rego_serial;
-                    if (rs && !/^\d{10,}$/.test(rs)) return rs;
-                    return r.name || '—';
-                  })()}
+                      real rego → name → em-dash.
+                      v58.13.128 — Rose "Retired" pill inline. */}
+                  <span className="inline-flex items-center gap-2">
+                    {(() => {
+                      const rs = r.rego_serial;
+                      if (rs && !/^\d{10,}$/.test(rs)) return rs;
+                      return r.name || '—';
+                    })()}
+                    {r.status === 'retired' && (
+                      <span data-testid={`fleet-retired-pill-${r.id}`}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-rose-100 text-rose-800 normal-case tracking-normal">
+                        Retired
+                      </span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-3 py-2 text-slate-700 max-w-md truncate">{r.name || r.description || '—'}</td>
                 <td className="px-3 py-2"><KindPill kind={r.kind} /></td>
@@ -527,7 +575,7 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
 export default function FleetRegister() {
   const [flagState, setFlagState] = useState('probing'); // probing | on | off
   const [categories, setCategories] = useState(null);
-  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false, service_due: false, data_source: 'all' });
+  const [filter, setFilter] = useState({ kind: null, sub_type: null, navixy_only: false, service_due: false, data_source: 'all', retired_only: false });
   const [rows, setRows] = useState([]);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -596,11 +644,13 @@ export default function FleetRegister() {
     // has no `navixy_only=false` semantics today (server-side
     // enhancement queued for `.126`).
     if (filter.data_source === 'navixy' || filter.navixy_only) params.navixy_only = true;
+    // v58.13.128 — Retired-only filter.
+    if (filter.retired_only) params.retired_only = true;
     api.get('/fleet/register', { params })
       .then((r) => { setRows(r.data.items); setTotal(r.data.total); })
       .catch((e) => toast.error(apiError(e) || 'Register load failed'))
       .finally(() => setRowsLoading(false));
-  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, page]);
+  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, filter.retired_only, page]);
 
   useEffect(() => { reloadRows(); }, [reloadRows]);
 
@@ -746,6 +796,7 @@ export default function FleetRegister() {
             setFilter={(f) => { setFilter(f); setPage(1); }}
             onAddAsset={openAddAsset}
             serviceDueCount={(statusCounts.amber || 0) + (statusCounts.red || 0)}
+            retiredData={categories?.retired}
             sourceCounts={(() => {
               // v58.13.126 — Prefer server-authoritative counts from
               // `/api/fleet/categories.source_counts`. Falls back to

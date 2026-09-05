@@ -113,23 +113,30 @@ function SectionHeader({ Icon, title, chipClass, testId }) {
 }
 
 function NavixyBlindField({ label, value, onChange, placeholder, testId,
-                            hasNavixy = false, anyCaptured = false }) {
-  // v58.13.127 — Copy rewrite. Three states:
-  //   · value present  → green "Navixy admin · captured" chip
-  //   · empty + Navixy + no siblings captured → the collapsed top
-  //     hint already explains the story; show a neutral placeholder
-  //     with a subtle "Enter manually" chip.
-  //   · empty + Navixy + siblings captured → amber "Not yet captured
-  //     on Navixy — enter here to save" (per-field, since the top
-  //     hint won't be showing).
-  //   · empty + no Navixy → neutral "Enter manually" placeholder.
+                            hasNavixy = false, anyCaptured = false,
+                            softFill = false }) {
+  // v58.13.127 / .127a — Copy states:
+  //   · softFill (value from Navixy `name`) → neutral-blue chip
+  //     "From Navixy name — edit to refine" (distinct from real
+  //     `Navixy admin · captured` green chip so mechanics know it's
+  //     a soft-fill they should refine).
+  //   · value present + hasNavixy + !softFill → green "captured".
+  //   · empty + hasNavixy + no siblings captured → the collapsed
+  //     top hint already explains; neutral "Enter manually" chip.
+  //   · empty + hasNavixy + siblings captured → per-field amber.
+  //   · empty + no Navixy → neutral placeholder.
   const hasValue = !!value;
   const showTopHint = hasNavixy && !anyCaptured && !hasValue;
   return (
     <div>
       <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-2">
         <span>{label}</span>
-        {hasValue && hasNavixy ? (
+        {softFill && hasNavixy ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-blue-100 text-blue-800 normal-case tracking-normal"
+                data-testid={`${testId}-softfill-chip`}>
+            <Wifi size={9} /> From Navixy name — edit to refine
+          </span>
+        ) : hasValue && hasNavixy ? (
           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 normal-case tracking-normal"
                 data-testid={`${testId}-captured-chip`}>
             <Wifi size={9} /> Navixy admin · captured
@@ -146,9 +153,9 @@ function NavixyBlindField({ label, value, onChange, placeholder, testId,
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || (hasNavixy ? 'Enter to save on the vehicle record' : 'Enter manually')}
         data-testid={testId}
-        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white
-                    placeholder:italic placeholder:text-slate-400
-                    focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
+        className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 placeholder:italic placeholder:text-slate-400 ${
+          softFill ? 'bg-blue-50/50 border-blue-200 text-slate-800' : 'bg-white border-slate-300'
+        }`}
       />
       {!hasValue && !showTopHint && hasNavixy && (
         <div className="mt-1 text-[10px] text-amber-700 flex items-center gap-1">
@@ -222,9 +229,20 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   const [mileage, setMileage] = useState(asset?.odo_km ? Math.round(asset.odo_km).toString() : '');
   const [hoursAtService, setHoursAtService] = useState(asset?.hours_meter ? asset.hours_meter.toFixed(1) : '');
   // Navixy-blind fields.
-  const [makeModel, setMakeModel] = useState(
-    [asset?.make, asset?.model].filter(Boolean).join(' ')
-  );
+  // v58.13.127a — Soft-fill Make/Model from the Navixy `name` when
+  // the asset has no captured `make`/`model` (71/72 of Stephen's
+  // Navixy assets). Tracks the soft-fill state so the input can
+  // render a neutral-blue chip ("From Navixy name — edit to refine")
+  // to distinguish it from a real green "Navixy admin · captured"
+  // value. As soon as the user edits, the flag flips to false.
+  const _initialMakeModel = [asset?.make, asset?.model].filter(Boolean).join(' ');
+  const _softFilledMakeModel = !_initialMakeModel && !!asset?.name;
+  const [makeModel, setMakeModel] = useState(_initialMakeModel || asset?.name || '');
+  const [makeModelIsSoftFill, setMakeModelIsSoftFill] = useState(_softFilledMakeModel);
+  const setMakeModelAndClearSoftFill = (v) => {
+    setMakeModel(v);
+    setMakeModelIsSoftFill(false);
+  };
   const [vin, setVin] = useState(asset?.vin || '');
   const [saveToAssetRecord, setSaveToAssetRecord] = useState(true);
   // Checklist state.
@@ -363,7 +381,12 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       technician_signature_data_url: techSig,
       customer_signature_data_url: custSig,
       vin_captured: vin || null,
-      make_model_captured: makeModel || null,
+      // v58.13.127a — Don't persist the raw Navixy `name` as
+      // make_model_captured when the user hasn't edited the
+      // soft-fill. Otherwise the backend splits e.g. "Cappelotto 1 -
+      // XT44DL - Kor 3200." into make="Cappelotto" and pollutes the
+      // vehicle record. Sent as null to signal "no captured value".
+      make_model_captured: (makeModel && !makeModelIsSoftFill) ? makeModel : null,
       sheet_template_version: templateVersion,
       service_level: serviceLevel,
       save_to_asset_record: saveToAssetRecord,
@@ -490,19 +513,17 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-xl p-4 border border-slate-200">
-              {/* v58.13.127 — Collapsed hint when NO Navixy vehicle
-                  metadata was supplied (make/model/vin all empty).
-                  User's ask: "Navixy doesn't supply make/model/VIN
-                  for this device — enter them here to save on the
-                  vehicle record." */}
+              {/* v58.13.127a — Collapsed hint copy updated to reflect
+                  the new soft-fill of Make/Model from Navixy's
+                  friendly name (see setMakeModelAndClearSoftFill). */}
               {asset?.navixy_device_id
                 && !asset?.make && !asset?.model && !asset?.vin && (
                 <div className="md:col-span-2 rounded-lg px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2"
                      data-testid="sheet-navixy-blind-hint">
                   <AlertTriangle size={13} className="text-amber-600 shrink-0 mt-0.5" />
                   <span>
-                    <span className="font-bold">Navixy doesn't supply make/model/VIN for this device.</span>{' '}
-                    Enter them here to save on the vehicle record. Values will be re-used on future service sheets automatically.
+                    <span className="font-bold">Navixy supplies a friendly vehicle name.</span>{' '}
+                    Refine it below into proper make/model + add VIN. Values are saved on the vehicle record for future service sheets.
                   </span>
                 </div>
               )}
@@ -550,10 +571,11 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
               </div>
               <NavixyBlindField
-                label="Make / Model" value={makeModel} onChange={setMakeModel}
+                label="Make / Model" value={makeModel} onChange={setMakeModelAndClearSoftFill}
                 testId="sheet-vehicle-make-model"
                 hasNavixy={!!asset?.navixy_device_id}
                 anyCaptured={!!(asset?.make || asset?.model || asset?.vin)}
+                softFill={makeModelIsSoftFill}
               />
               <NavixyBlindField
                 label="VIN" value={vin} onChange={setVin}

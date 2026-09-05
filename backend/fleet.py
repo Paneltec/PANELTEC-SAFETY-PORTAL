@@ -177,19 +177,29 @@ async def get_register(
     q: Optional[str] = Query(None, max_length=200),
     # v58.13.120g — Navixy-only filter for the FilterTree checkbox.
     navixy_only: bool = Query(False),
+    # v58.13.128 — Retired segregation. Default hides retired assets
+    # from the active list. Set retired_only=true to show ONLY the
+    # retired assets (across all kinds).
+    retired_only: bool = Query(False),
     page: int = Query(1, ge=1, le=1000),
     limit: int = Query(50, ge=1, le=200),
 ):
     """Paginated cross-kind register. Server-side filter by kind /
-    status / sub_type / navixy_only. Text search via `q` applies a
-    case-insensitive regex across rego_serial + name + make + model
-    + manufacturer + asset_type + description."""
+    status / sub_type / navixy_only / retired_only. Text search via
+    `q` applies a case-insensitive regex across rego_serial + name +
+    make + model + manufacturer + asset_type + description."""
     org_id = user["org_id"]
     filt: dict = {"org_id": org_id, "deleted_at": None}
     if kind:
         filt["kind"] = kind
     if status:
         filt["status"] = status
+    elif retired_only:
+        filt["status"] = "retired"
+    else:
+        # v58.13.128 — Default view hides retired assets so the KIND
+        # totals in the sidebar match the visible register rows.
+        filt["status"] = {"$ne": "retired"}
     if navixy_only:
         # Match either a set string or a set number — both shapes
         # have been observed in the assets collection.
@@ -606,6 +616,11 @@ async def get_categories(
     ]
     kinds: dict[str, dict] = {}
     src_navixy = src_manual = 0
+    # v58.13.128 — Retired assets are segregated from the active KIND
+    # buckets so the sidebar totals match the default view. Retired
+    # counts roll up under a synthetic "Retired / Sold" heading.
+    retired = {"total": 0, "by_kind": {},
+                "source_counts": {"total": 0, "navixy": 0, "manual": 0}}
     async for r in db.assets.aggregate(pipe):
         k = r["_id"].get("kind") or "unknown"
         raw_st = r["_id"].get("sub_type") or "unknown"
@@ -613,6 +628,15 @@ async def get_categories(
         st = normalize_asset_type(raw_st) or raw_st
         status = r["_id"].get("status") or "unknown"
         has_navixy = r["_id"].get("has_navixy", False)
+        if status == "retired":
+            retired["total"] += r["n"]
+            retired["by_kind"][k] = retired["by_kind"].get(k, 0) + r["n"]
+            retired["source_counts"]["total"] += r["n"]
+            if has_navixy:
+                retired["source_counts"]["navixy"] += r["n"]
+            else:
+                retired["source_counts"]["manual"] += r["n"]
+            continue
         entry = kinds.setdefault(k, {"kind": k, "total": 0,
                                        "sub_types": {}, "statuses": {}})
         entry["total"] += r["n"]
@@ -627,12 +651,13 @@ async def get_categories(
     data = {
         "kinds": sorted(kinds.values(), key=lambda x: (-x["total"], x["kind"])),
         "total": total,
-        # v58.13.126 — Authoritative Data-source counts. Sums to total.
         "source_counts": {
             "total": total,
             "navixy": src_navixy,
             "manual": src_manual,
         },
+        # v58.13.128 — Retired / Sold roll-up for the new sidebar row.
+        "retired": retired,
         "generated_at": now_iso(),
         "cache_ttl_seconds": _CATEGORIES_TTL_SECONDS,
     }
