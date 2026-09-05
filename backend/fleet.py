@@ -898,3 +898,51 @@ async def list_sheet_templates(
         "templates": all_templates(),
         "default_for_asset_note": "Client should call pick_default_template(asset) via the frontend helper.",
     }
+
+
+# ── v58.13.130 — Service-schedule preset registry ────────────────
+# Exposes the canonical `SCHEDULE_TABLE` (from
+# `fleet_service_schedules.py`, shipped .122) to the frontend so the
+# "New Schedule" modal can offer one-click level presets
+# (Minor / Intermediate / Major / Heavy Overhaul).
+#
+# Shape per preset:
+#   {
+#     level: "minor" | "intermediate" | "major" | "heavy_overhaul",
+#     label: "Minor / Basic",                # from SCHEDULE_TABLE
+#     default_name: "Minor Service",         # applied to `name` field
+#     hours: 250,                            # applied when interval_kind == "hours"
+#     km: 10000,                             # applied when interval_kind == "km"
+#     tasks: [...],                          # tooltip content
+#   }
+#
+# `km` picks the CEILING of the (`km_min`, `km_max`) band from
+# SCHEDULE_TABLE — matches the user's spec of 10k / 20k / 45k / 100k
+# and lines up with the "amber at 85%" rule (a 10k service still
+# turns amber at 8.5k under the .122 engine).
+@router.get("/service-schedule-presets")
+async def list_service_schedule_presets(
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "view")),
+):
+    """Return the 4 canonical PM level presets for the New Schedule modal."""
+    from fleet_service_schedules import SCHEDULE_TABLE, LEVEL_ORDER
+
+    _DEFAULT_NAME = {
+        "minor": "Minor Service",
+        "intermediate": "Intermediate Service",
+        "major": "Major Service",
+        "heavy_overhaul": "Heavy Overhaul",
+    }
+    presets = []
+    for level in LEVEL_ORDER:
+        spec = SCHEDULE_TABLE[level]
+        presets.append({
+            "level": level,
+            "label": spec["label"],
+            "default_name": _DEFAULT_NAME[level],
+            "hours": spec["hours"],
+            "km": spec["km_max"],
+            "tasks": list(spec.get("tasks", [])),
+        })
+    return {"presets": presets}

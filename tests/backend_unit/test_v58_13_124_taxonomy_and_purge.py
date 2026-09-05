@@ -164,9 +164,15 @@ def test_typography_bump_on_filter_tree():
 # ─── Version pins ────────────────────────────────────────────────
 
 def test_version_bumped_to_124_everywhere():
-    # v58.13.125 ratchets the pin forward. This assertion checks
-    # the version is at least .124 (either .124 exact or a newer .125+).
-    for f in ("frontend/src/lib/version.js", "frontend/public/service-worker.js",
-              "mobile/src/lib/version.ts"):
-        src = _read(f)
-        assert "paneltec-v160.3.9.58.13.12" in src, f"{f} missing v.12x version"
+    # v58.13.130 ratchets the pin forward. Accept .124 or any newer
+    # .13.124+ ship (was `.12x` prior — widened to any numerically
+    # ≥ .124 to keep passing across .130+ ships).
+    import re as _re
+    _CANONICAL = {
+        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+    }
+    for f, pat in _CANONICAL.items():
+        m = _re.search(pat, _read(f))
+        assert m and int(m.group(1)) >= 124, f"{f} not at .124 or newer"

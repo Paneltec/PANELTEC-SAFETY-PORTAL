@@ -26,8 +26,20 @@ def test_archived_divider_present_above_retired_row():
 
 
 def test_version_bumped_to_128a_everywhere():
-    v = 'paneltec-v160.3.9.58.13.128a'
-    for f in ("frontend/src/lib/version.js",
-              "frontend/public/service-worker.js",
-              "mobile/src/lib/version.ts"):
-        assert v in _read(f), f"{f} missing {v}"
+    # v58.13.130 ratchets the pin forward. Accept .128a exact OR any
+    # numerically newer .13.129+ ship (same pattern as .124 / .128).
+    import re as _re
+    _CANONICAL = {
+        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.([\da-z]+)'",
+        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.([\da-z]+)'",
+        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.([\da-z]+)'",
+    }
+    for f, pat in _CANONICAL.items():
+        m = _re.search(pat, _read(f))
+        assert m, f"canonical constant not found in {f}"
+        tag = m.group(1)
+        if tag == "128a":
+            continue
+        # Strip trailing letter suffix and compare numerically.
+        nm = _re.match(r"(\d+)", tag)
+        assert nm and int(nm.group(1)) >= 129, f"{f} not at .128a or newer"

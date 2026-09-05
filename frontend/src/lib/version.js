@@ -1,5 +1,100 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.130 — Service-level presets on New Schedule modal
+//                       + modal viewport-height fix.
+//
+// USER PAIN (verbatim): "could you add these service options to
+// New Schedule in the image. when i open the New schedule it is
+// to tall to read and the top is cut off."
+//
+// ── Item 1: Service-level presets ──────────────────────────────
+//   The New Schedule modal (`ScheduleEditor` in
+//   `frontend/src/components/AssetServiceTabs.jsx`) now surfaces a
+//   pill-row of 5 presets directly below the Name field:
+//     · Minor / Basic          → 250 hrs · 10,000 km
+//     · Intermediate           → 500 hrs · 20,000 km
+//     · Major                  → 1,000 hrs · 45,000 km
+//     · Heavy Overhaul         → 2,000 hrs · 100,000 km
+//     · Custom                 → default; clears any active preset
+//
+//   Numbers come from the canonical `SCHEDULE_TABLE` in
+//   `backend/fleet_service_schedules.py` (shipped .122) via a new
+//   `GET /fleet/service-schedule-presets` endpoint. `km` picks
+//   `km_max` from the (`km_min`, `km_max`) band so a preset click
+//   lands on the ceiling of the .122 amber-at-85% band. Frontend
+//   ships with a hardcoded fallback (`SCHEDULE_PRESETS_FALLBACK`)
+//   so the modal stays functional if the endpoint 404s or the
+//   network hiccups.
+//
+//   Preset click behaviour:
+//     · `name` → overwritten with the preset's `default_name`
+//       ("Minor Service" / "Intermediate Service" / "Major Service"
+//       / "Heavy Overhaul").
+//     · `interval_value` → picked from the matrix using the CURRENT
+//       `interval_kind` (Hours vs Km). Calendar-kind schedules fall
+//       back to the hours column value so the field still has a
+//       sensible number.
+//     · `interval_kind` → NEVER overwritten. If the user set Km,
+//       clicking Minor gives them 10,000 km; if Hours, 250 hrs.
+//     · `activePreset` state tracks the highlighted pill. Clicking
+//       Custom (or any other pill) clears/moves it.
+//     · Each preset button carries a native `title=` tooltip listing
+//       the preset's key tasks (from SCHEDULE_TABLE[level].tasks).
+//
+// ── Item 2: Modal viewport-height fix ──────────────────────────
+//   The modal card now uses the same pattern already in place on
+//   `ServiceCheckSheetModal`, `AssetMapModal`, and `AssetDrawer`:
+//     · Card:   `flex flex-col max-h-[90vh] overflow-hidden`
+//     · Header: `shrink-0` (stays pinned at the top)
+//     · Body:   `flex-1 overflow-y-auto`  (scrolls between)
+//     · Footer: `shrink-0`  (stays pinned at the bottom)
+//   Result: the Cancel + Save buttons are ALWAYS visible, the top
+//   of the modal is NEVER cut off, and the body scrolls when the
+//   content (More details panel, dual-track, contract dates, etc.)
+//   exceeds the viewport. Same fix left the other 3 modals
+//   untouched — they were already correct.
+//
+// ── Backend (`backend/fleet.py`) ───────────────────────────────
+//   NEW `GET /fleet/service-schedule-presets` under the same
+//   `/api/fleet` prefix + `FLEET_REGISTER_ENABLED` flag as the rest
+//   of the .120b Fleet Register surface. Reuses the `assets.view`
+//   permission (same gate as `/service-sheet-templates` shipped
+//   .123). Returns `{ presets: [{level, label, default_name, hours,
+//   km, tasks}] }` in `LEVEL_ORDER` (minor → heavy_overhaul).
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_v58_13_130_bundle.py` (14 checks):
+//     · Endpoint: reads presets from the live SCHEDULE_TABLE; 4
+//       levels present; each row has label + default_name + hours
+//       + km + tasks; hours match matrix; km matches `km_max`.
+//     · Feature flag off → 404 (never leaks the endpoint).
+//     · Frontend source-pins: `SCHEDULE_PRESETS_FALLBACK` const
+//       shape, `applyPreset` function present, name +
+//       interval_value overwrite logic, interval_kind NEVER
+//       overwritten in that path, `activePreset` state used.
+//     · Modal viewport fix source-pins: card has
+//       `flex flex-col max-h-[90vh] overflow-hidden`, body has
+//       `flex-1 overflow-y-auto`, header + footer have `shrink-0`,
+//       preset-row testid + all 5 preset testids present
+//       (`sch-preset-{minor,intermediate,major,heavy-overhaul}` +
+//       `sch-preset-custom`).
+//     · Version-sync forward-safe pin >= .130.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `SCHEDULE_TABLE` — same numbers, still source-of-truth.
+//   · `compute_next_due` behaviour or the .122 amber-at-85% rule.
+//   · `ServiceCheckSheetModal`, `AssetMapModal`, `AssetDrawer` —
+//     already viewport-safe, untouched.
+//   · Existing schedule fields (dual-track, contract dates,
+//     description, phone / reported_by / project / assigned worker /
+//     notes) or the More-details toggle.
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.118 (REVISED) — Rollback vacuum + retire
 //                                  matched/unmatched UI concept.
 //
@@ -11451,7 +11546,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.129';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.130';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

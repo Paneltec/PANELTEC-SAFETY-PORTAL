@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Plus, Loader2, Clock, Gauge, Calendar, Edit3, Trash2, X, Check,
-  Wrench, AlertTriangle, ShieldAlert, ClipboardCheck,
+  Wrench, AlertTriangle, ShieldAlert, ClipboardCheck, Zap,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -208,9 +208,36 @@ export function ServiceSchedulesTab({ asset, canEdit }) {
   );
 }
 
+// v58.13.130 — Fallback preset table. Mirrors SCHEDULE_TABLE from
+// `backend/fleet_service_schedules.py` (.122). Only used when the
+// `GET /fleet/service-schedule-presets` fetch fails so the modal
+// keeps working with the same numbers.
+const SCHEDULE_PRESETS_FALLBACK = [
+  { level: 'minor',          label: 'Minor / Basic',   default_name: 'Minor Service',        hours: 250,  km: 10000,  tasks: ['Engine Oil', 'Oil Filter'] },
+  { level: 'intermediate',   label: 'Intermediate',    default_name: 'Intermediate Service', hours: 500,  km: 20000,  tasks: ['Engine Oil', 'Oil Filter', 'Cabin Filter', 'Air Filter', 'Brakes', 'Battery Condition'] },
+  { level: 'major',          label: 'Major',           default_name: 'Major Service',        hours: 1000, km: 45000,  tasks: ['Engine Oil', 'Oil Filter', 'Cabin Filter', 'Air Filter', 'Brakes', 'Battery Condition', 'Fuel Filter', 'Coolant', 'Brake Fluid', 'Power Steering Fluid', 'Suspension', 'Steering'] },
+  { level: 'heavy_overhaul', label: 'Heavy Overhaul',  default_name: 'Heavy Overhaul',       hours: 2000, km: 100000, tasks: ['Engine Oil', 'Oil Filter', 'Cabin Filter', 'Air Filter', 'Fuel Filter', 'Coolant', 'Brake Fluid', 'Power Steering Fluid', 'Windscreen Washer Fluid', 'Auxiliary Belt', 'Battery Condition', 'Tyres', 'Brakes', 'Suspension', 'Steering', 'Exhaust', 'Lights', 'Wipers'] },
+];
+
 function ScheduleEditor({ asset, initial, onClose, onSaved }) {
   useLockBodyScroll();
   const isEdit = !!initial;
+  // v58.13.130 — Service-level preset registry. Fetched from
+  // `GET /fleet/service-schedule-presets` on mount (canonical
+  // source-of-truth via backend `SCHEDULE_TABLE`). The hardcoded
+  // fallback below keeps the modal functional if the endpoint 404s
+  // (feature flag off) or the network hiccups — same 4 levels,
+  // same numbers as the .122 matrix.
+  const [presets, setPresets] = useState(SCHEDULE_PRESETS_FALLBACK);
+  const [activePreset, setActivePreset] = useState(null);
+  useEffect(() => {
+    api.get('/fleet/service-schedule-presets')
+      .then((r) => {
+        const arr = Array.isArray(r.data?.presets) ? r.data.presets : null;
+        if (arr && arr.length) setPresets(arr);
+      })
+      .catch(() => { /* keep fallback */ });
+  }, []);
   const [form, setForm] = useState(() => ({
     name: initial?.name || '', interval_kind: initial?.interval_kind || 'hours',
     interval_value: initial?.interval_value || 250,
@@ -404,6 +431,24 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
              || (k === 'km' && asset?.odo_km == null),
     }));
 
+  // v58.13.130 — Apply a service-level preset. Overwrites `name` +
+  // `interval_value` (from the matrix, using the CURRENT
+  // interval_kind so a user who's chosen Hours vs Km keeps their
+  // dimension). `interval_kind` itself is NEVER overwritten. When
+  // `interval_kind === 'calendar'` (edge case: user configured a
+  // calendar schedule) we fall back to the hours-column value —
+  // still a sensible number for the field. Custom clears the
+  // active-preset highlight.
+  const applyPreset = (p) => {
+    if (!p) {
+      setActivePreset(null);
+      return;
+    }
+    setActivePreset(p.level);
+    const iv = form.interval_kind === 'km' ? p.km : p.hours;
+    setForm((f) => ({ ...f, name: p.default_name, interval_value: iv }));
+  };
+
   const save = async () => {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
     setSaving(true);
@@ -468,13 +513,55 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()} data-testid="schedule-editor">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200">
-        <div className="px-5 py-3 border-b flex items-center"><h3 className="font-display font-bold text-slate-900 flex-1">{isEdit ? 'Edit schedule' : 'New schedule'}</h3><button onClick={onClose}><X size={16} /></button></div>
-        <div className="px-5 py-4 space-y-3 text-sm">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-hidden">
+        <div className="px-5 py-3 border-b flex items-center shrink-0"><h3 className="font-display font-bold text-slate-900 flex-1">{isEdit ? 'Edit schedule' : 'New schedule'}</h3><button onClick={onClose}><X size={16} /></button></div>
+        <div className="px-5 py-4 space-y-3 text-sm flex-1 overflow-y-auto" data-testid="sch-body">
           <div>
             <label className="block text-xs font-semibold mb-1">Name</label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg" data-testid="sch-name" placeholder="e.g. 250hr service" />
+          </div>
+          {/* v58.13.130 — Service-level presets. Clicking a level
+              auto-fills Name + Interval value from the .122 matrix
+              (keyed off the CURRENT Interval kind). Custom clears
+              the active preset. Tooltips list the key tasks. */}
+          <div data-testid="sch-preset-row">
+            <label className="block text-xs font-semibold mb-1 flex items-center gap-1">
+              <Zap size={11} className="text-blue-600" /> Service level preset
+            </label>
+            <div className="flex flex-wrap gap-1.5">
+              {presets.map((p) => {
+                const active = activePreset === p.level;
+                const iv = form.interval_kind === 'km' ? p.km : p.hours;
+                const unit = form.interval_kind === 'km' ? 'km' : 'hrs';
+                const tooltip = `${p.label} · Every ${iv.toLocaleString()} ${unit}\nKey tasks: ${p.tasks.join(', ')}`;
+                return (
+                  <button
+                    key={p.level}
+                    type="button"
+                    title={tooltip}
+                    onClick={() => applyPreset(p)}
+                    className={active
+                      ? 'px-3 py-1.5 rounded-full text-xs font-bold bg-blue-600 text-white border border-blue-600 shadow-sm'
+                      : 'px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-700 border border-slate-300 hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'}
+                    data-testid={`sch-preset-${p.level.replace(/_/g, '-')}`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                title="Clear preset — enter your own name and interval"
+                onClick={() => applyPreset(null)}
+                className={activePreset === null
+                  ? 'px-3 py-1.5 rounded-full text-xs font-bold bg-slate-800 text-white border border-slate-800 shadow-sm'
+                  : 'px-3 py-1.5 rounded-full text-xs font-semibold bg-white text-slate-500 border border-slate-300 hover:bg-slate-50'}
+                data-testid="sch-preset-custom"
+              >
+                Custom
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -877,7 +964,7 @@ function ScheduleEditor({ asset, initial, onClose, onSaved }) {
             )}
           </div>
         </div>
-        <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2">
+        <div className="px-5 py-3 border-t bg-slate-50 flex justify-end gap-2 shrink-0" data-testid="sch-footer">
           <button onClick={onClose} className="px-3 py-2 rounded-lg border border-slate-300 text-sm font-semibold" data-testid="sch-cancel">Cancel</button>
           <button onClick={save} disabled={saving} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold disabled:opacity-50" data-testid="sch-save">
             {saving ? <Loader2 size={14} className="inline animate-spin" /> : <Check size={14} className="inline" />} Save

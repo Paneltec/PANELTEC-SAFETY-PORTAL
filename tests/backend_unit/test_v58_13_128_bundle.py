@@ -66,8 +66,14 @@ def test_data_source_label_renamed_to_added_manually():
 # ─── Version pins ────────────────────────────────────────────────
 
 def test_version_bumped_to_128_everywhere():
-    v = 'paneltec-v160.3.9.58.13.128'
-    for f in ("frontend/src/lib/version.js",
-              "frontend/public/service-worker.js",
-              "mobile/src/lib/version.ts"):
-        assert v in _read(f), f"{f} missing {v}"
+    # v58.13.130 ratchets the pin forward. Accept .128 or any newer
+    # .13.128+ ship (same pattern as the .124 pin).
+    import re as _re
+    _CANONICAL = {
+        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)",
+    }
+    for f, pat in _CANONICAL.items():
+        m = _re.search(pat, _read(f))
+        assert m and int(m.group(1)) >= 128, f"{f} not at .128 or newer"

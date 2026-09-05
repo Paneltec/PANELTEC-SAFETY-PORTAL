@@ -60,7 +60,8 @@ def test_every_endpoint_guarded_by_flag_dep():
     # 5 fleet endpoints.
     endpoints = re.findall(r'@router\.(get|post)\("([^"]+)"[^\n]*\)', FLEET)
     # v58.13.123 — added /service-sheet-templates.
-    assert len(endpoints) == 10, f"expected 10 endpoints, found {endpoints}"
+    # v58.13.130 — added /service-schedule-presets.
+    assert len(endpoints) == 11, f"expected 11 endpoints, found {endpoints}"
     # Split file at each decorator; each block must include the dep.
     blocks = FLEET.split('@router.')
     for block in blocks[1:]:
