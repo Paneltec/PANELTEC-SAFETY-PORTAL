@@ -14,6 +14,12 @@
 /* v58.13.67 — CIVIL contractor phone-first theme (tokens + utilities). */
 @import './theme/civilContractor.css';
 
+/* v58.13.127 — Leaflet base CSS for the AssetMapModal.
+ * Single top-level import so it's cached with the app bundle and
+ * doesn't reload on every map modal open. */
+@import 'leaflet/dist/leaflet.css';
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

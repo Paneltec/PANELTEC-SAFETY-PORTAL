@@ -68,7 +68,18 @@ def test_service_check_sheet_navixy_status_banner():
 # ─── Version pins ────────────────────────────────────────────────
 
 def test_version_bumped_to_126_everywhere():
-    v = 'paneltec-v160.3.9.58.13.126'
-    assert v in _read("frontend/src/lib/version.js")
-    assert v in _read("frontend/public/service-worker.js")
-    assert v in _read("mobile/src/lib/version.ts")
+    # v58.13.127 ratchets pin forward. Accept >=126.
+    import re
+    checks = [
+        ("frontend/src/lib/version.js",
+         r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("frontend/public/service-worker.js",
+         r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("mobile/src/lib/version.ts",
+         r"MOBILE_BUNDLE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+    ]
+    for f, pat in checks:
+        src = _read(f)
+        m = re.search(pat, src)
+        assert m, f"{f}: canonical export not found"
+        assert int(m.group(1)) >= 126, f"{f}: version {m.group(1)} < 126"

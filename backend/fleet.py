@@ -95,6 +95,13 @@ class AssetRow(BaseModel):
     odo_km: Optional[float] = None
     hours_meter: Optional[float] = None
     nfc_uid: Optional[str] = None
+    # v58.13.127 — GPS fields for the LH MapPin cell + AssetMapModal.
+    # Populated by the 15-min Navixy scheduler; 100% coverage across
+    # Stephen's 72 Navixy assets today.
+    last_known_lat: Optional[float] = None
+    last_known_lng: Optional[float] = None
+    navixy_last_position_time: Optional[str] = None
+    vin: Optional[str] = None
 
 
 class RegisterResponse(BaseModel):

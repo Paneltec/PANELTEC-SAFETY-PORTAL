@@ -30,13 +30,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info,
+  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { Can, useCan } from '../lib/permissions';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import AssetDrawer from '../components/AssetDrawer';
+import AssetMapModal from '../components/AssetMapModal';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
 
 const KIND_STYLES = {
@@ -398,7 +399,7 @@ function SearchBar({ onOpenAsset }) {
 
 
 // ─────────────────────────── Register table ─────────────────────────
-function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage }) {
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
   return (
@@ -407,6 +408,10 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
+              {/* v58.13.127 — GPS pin column. Shows a violet MapPin
+                  on Navixy-tracked rows with coords, muted grey pin
+                  on Navixy-but-no-ping rows, empty otherwise. */}
+              <th className="px-2 py-2 w-8"></th>
               <th className="px-3 py-2 text-left">Rego</th>
               <th className="px-3 py-2 text-left">Name / description</th>
               <th className="px-3 py-2 text-left">Kind</th>
@@ -426,10 +431,10 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={canDelete ? 8 : 7} className="px-3 py-8 text-center text-slate-400"><Loader2 className="inline animate-spin" size={14} /> Loading…</td></tr>
+              <tr><td colSpan={canDelete ? 9 : 8} className="px-3 py-8 text-center text-slate-400"><Loader2 className="inline animate-spin" size={14} /> Loading…</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={canDelete ? 8 : 7} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
+              <tr><td colSpan={canDelete ? 9 : 8} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
             )}
             {!loading && rows.map((r, idx) => (
               <tr key={r.id} onClick={() => onRowClick(r.id)}
@@ -438,6 +443,29 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
                   className={`group cursor-pointer transition-colors ${
                     idx % 2 === 1 ? 'bg-slate-100' : 'bg-white'
                   } hover:!bg-violet-50`}>
+                <td className="px-2 py-2 w-8 text-center" onClick={(e) => e.stopPropagation()}>
+                  {/* v58.13.127 — MapPin cell. Three states:
+                       · violet   → Navixy + coords → click opens map modal
+                       · grey     → Navixy but no ping yet → tooltip only
+                       · empty    → not Navixy-tracked */}
+                  {r.navixy_device_id && r.last_known_lat != null && r.last_known_lng != null ? (
+                    <button
+                      type="button"
+                      onClick={() => setMapAsset(r)}
+                      data-testid={`fleet-map-pin-${r.id}`}
+                      title={`Show GPS position for ${r.rego_serial || r.name}`}
+                      className="p-1 rounded hover:bg-violet-100 text-violet-600 hover:text-violet-800 transition-colors"
+                    >
+                      <MapPin size={15} strokeWidth={2.4} />
+                    </button>
+                  ) : r.navixy_device_id ? (
+                    <span title="No GPS ping received yet"
+                          data-testid={`fleet-map-pin-noping-${r.id}`}
+                          className="inline-flex p-1 text-slate-300">
+                      <MapPin size={15} strokeWidth={2.0} />
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-3 py-2 font-mono text-sm font-semibold text-slate-800">
                   {/* v58.13.125 — Reject 10+ digit numeric IDs
                       (Navixy tracker serials). Fallback chain:
@@ -507,6 +535,8 @@ export default function FleetRegister() {
   // v58.13.120f — Drawer state now holds the FULL asset object (fetched
   // via GET /assets/{id}) so AssetDrawer receives everything it needs.
   const [drawerAsset, setDrawerAsset] = useState(null);
+  // v58.13.127 — Asset being previewed in the GPS map modal (Item 1).
+  const [mapAsset, setMapAsset] = useState(null);
   const [drawerInitialTab, setDrawerInitialTab] = useState(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
   // v58.13.120g — Confirm-delete state for row-hover delete affordance.
@@ -752,9 +782,16 @@ export default function FleetRegister() {
               : total}
             limit={LIMIT}
             setPage={setPage}
+            setMapAsset={setMapAsset}
           />
         </main>
       </div>
+
+      {/* v58.13.127 — GPS map modal. Rendered outside <main> so the
+          Leaflet container has a clean stacking context. */}
+      {mapAsset && (
+        <AssetMapModal asset={mapAsset} onClose={() => setMapAsset(null)} />
+      )}
 
       {pendingDelete && (
         <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-900/50 p-3"

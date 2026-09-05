@@ -112,24 +112,47 @@ function SectionHeader({ Icon, title, chipClass, testId }) {
   );
 }
 
-function NavixyBlindField({ label, value, onChange, placeholder, testId }) {
+function NavixyBlindField({ label, value, onChange, placeholder, testId,
+                            hasNavixy = false, anyCaptured = false }) {
+  // v58.13.127 — Copy rewrite. Three states:
+  //   · value present  → green "Navixy admin · captured" chip
+  //   · empty + Navixy + no siblings captured → the collapsed top
+  //     hint already explains the story; show a neutral placeholder
+  //     with a subtle "Enter manually" chip.
+  //   · empty + Navixy + siblings captured → amber "Not yet captured
+  //     on Navixy — enter here to save" (per-field, since the top
+  //     hint won't be showing).
+  //   · empty + no Navixy → neutral "Enter manually" placeholder.
+  const hasValue = !!value;
+  const showTopHint = hasNavixy && !anyCaptured && !hasValue;
   return (
     <div>
-      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-        {label}
+      <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1 flex items-center gap-2">
+        <span>{label}</span>
+        {hasValue && hasNavixy ? (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 normal-case tracking-normal"
+                data-testid={`${testId}-captured-chip`}>
+            <Wifi size={9} /> Navixy admin · captured
+          </span>
+        ) : !hasValue && !showTopHint ? (
+          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-600 normal-case tracking-normal"
+                data-testid={`${testId}-manual-chip`}>
+            Enter manually
+          </span>
+        ) : null}
       </label>
       <input
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder || 'Not synced from Navixy — enter to save'}
+        placeholder={placeholder || (hasNavixy ? 'Enter to save on the vehicle record' : 'Enter manually')}
         data-testid={testId}
         className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white
                     placeholder:italic placeholder:text-slate-400
                     focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500"
       />
-      {!value && (
+      {!hasValue && !showTopHint && hasNavixy && (
         <div className="mt-1 text-[10px] text-amber-700 flex items-center gap-1">
-          <AlertTriangle size={10} /> Not synced from Navixy — fill in to save on the vehicle record
+          <AlertTriangle size={10} /> Not yet captured on Navixy — enter here to save on the vehicle record
         </div>
       )}
     </div>
@@ -467,6 +490,40 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               )}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-xl p-4 border border-slate-200">
+              {/* v58.13.127 — Collapsed hint when NO Navixy vehicle
+                  metadata was supplied (make/model/vin all empty).
+                  User's ask: "Navixy doesn't supply make/model/VIN
+                  for this device — enter them here to save on the
+                  vehicle record." */}
+              {asset?.navixy_device_id
+                && !asset?.make && !asset?.model && !asset?.vin && (
+                <div className="md:col-span-2 rounded-lg px-3 py-2 text-xs bg-amber-50 border border-amber-200 text-amber-900 flex items-start gap-2"
+                     data-testid="sheet-navixy-blind-hint">
+                  <AlertTriangle size={13} className="text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    <span className="font-bold">Navixy doesn't supply make/model/VIN for this device.</span>{' '}
+                    Enter them here to save on the vehicle record. Values will be re-used on future service sheets automatically.
+                  </span>
+                </div>
+              )}
+              {/* v58.13.127 — Vehicle Name field above rego (user
+                  ask: "the biggest visual anchor for the mechanic").
+                  Read-only; sourced from `asset.name`. Green Navixy
+                  chip mirrors the pin colour used on the register. */}
+              <div className="md:col-span-2">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                  Vehicle
+                  {asset?.navixy_device_id ? (
+                    <span className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-emerald-100 text-emerald-800 normal-case tracking-normal"
+                          data-testid="sheet-vehicle-name-navixy-chip">
+                      <Wifi size={9} /> Navixy · live
+                    </span>
+                  ) : null}
+                </label>
+                <input readOnly value={asset?.name || ''}
+                  data-testid="sheet-vehicle-name"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-base font-semibold bg-slate-50 text-slate-900" />
+              </div>
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                   Registration
@@ -492,10 +549,18 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
                   data-testid="sheet-vehicle-date"
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
               </div>
-              <NavixyBlindField label="Make / Model" value={makeModel} onChange={setMakeModel}
-                testId="sheet-vehicle-make-model" />
-              <NavixyBlindField label="VIN" value={vin} onChange={setVin}
-                testId="sheet-vehicle-vin" />
+              <NavixyBlindField
+                label="Make / Model" value={makeModel} onChange={setMakeModel}
+                testId="sheet-vehicle-make-model"
+                hasNavixy={!!asset?.navixy_device_id}
+                anyCaptured={!!(asset?.make || asset?.model || asset?.vin)}
+              />
+              <NavixyBlindField
+                label="VIN" value={vin} onChange={setVin}
+                testId="sheet-vehicle-vin"
+                hasNavixy={!!asset?.navixy_device_id}
+                anyCaptured={!!(asset?.make || asset?.model || asset?.vin)}
+              />
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                   Mileage (km) {asset?.odo_km ? <span className="text-emerald-700 normal-case font-medium">· auto from Navixy</span> : null}
