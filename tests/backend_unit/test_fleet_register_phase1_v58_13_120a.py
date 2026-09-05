@@ -178,8 +178,12 @@ async def test_live_db_post_phase_1_shape():
         assert n_backfill == 54, f"expected 54 backfill rows, got {n_backfill}"
 
         # And the trailer kind is in use.
+        # v58.13.126 — Ratchet ≥20 (getgas reclassify moved 1 asset
+        # vehicle→trailer, so live count is now 21). The historic
+        # Phase-1 baseline was 20; new admin reclassifications
+        # increment above that.
         n_trailers = await d.assets.count_documents({"kind": "trailer"})
-        assert n_trailers == 20, f"expected 20 trailers, got {n_trailers}"
+        assert n_trailers >= 20, f"expected ≥20 trailers, got {n_trailers}"
     finally:
         c.close()
 

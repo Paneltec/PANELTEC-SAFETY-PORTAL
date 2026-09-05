@@ -441,6 +441,31 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
             <SectionHeader Icon={Truck} title="Vehicle Details"
               chipClass="bg-blue-50 text-blue-700"
               testId="sheet-section-vehicle-header" />
+            {/* v58.13.126 — Persistent Navixy connection banner so an
+                operator can tell at a glance whether the sheet's
+                counters + rego will auto-populate. Prior chips lived
+                inside the Registration label only, which some users
+                missed on the first scan. */}
+            <div className={`mb-2 rounded-lg px-3 py-2 text-xs flex items-center gap-2 ${
+              asset?.navixy_device_id
+                ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                : 'bg-slate-50 border border-slate-200 text-slate-700'
+            }`} data-testid="sheet-navixy-status-banner">
+              <Wifi size={13} className={asset?.navixy_device_id ? 'text-emerald-600' : 'text-slate-400'} />
+              {asset?.navixy_device_id ? (
+                <span>
+                  <span className="font-bold">Navixy · connected.</span>{' '}
+                  Live counters: odo <span className="font-semibold tabular-nums">{asset?.odo_km ? Math.round(asset.odo_km).toLocaleString() + ' km' : '—'}</span>,
+                  hours <span className="font-semibold tabular-nums">{asset?.hours_meter ? asset.hours_meter.toFixed(1) + ' h' : '—'}</span>.
+                  Device ID <span className="font-mono">{asset.navixy_device_id}</span>.
+                </span>
+              ) : (
+                <span>
+                  <span className="font-bold">Manual entry.</span>{' '}
+                  No Navixy tracker linked — mileage and hours will not auto-populate. To link, open the Pairing tab on the asset drawer.
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-white rounded-xl p-4 border border-slate-200">
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">

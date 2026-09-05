@@ -717,9 +717,12 @@ export default function FleetRegister() {
             onAddAsset={openAddAsset}
             serviceDueCount={(statusCounts.amber || 0) + (statusCounts.red || 0)}
             sourceCounts={(() => {
-              // v58.13.125 — Rough source-counts derived from
-              // categories.total + the visible rows. Server-side
-              // canonical breakdown is queued for `.126`.
+              // v58.13.126 — Prefer server-authoritative counts from
+              // `/api/fleet/categories.source_counts`. Falls back to
+              // client-derived counts for older API responses.
+              if (categories?.source_counts) {
+                return categories.source_counts;
+              }
               const total = categories?.total || 0;
               const navixy = rows.filter((r) => !!r.navixy_device_id).length;
               return { total, navixy, manual: Math.max(0, total - navixy) };

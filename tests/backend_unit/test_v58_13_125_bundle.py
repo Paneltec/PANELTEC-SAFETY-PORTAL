@@ -129,7 +129,19 @@ def test_zebra_darkened():
 # ─── Version pins ────────────────────────────────────────────────
 
 def test_version_bumped_to_125_everywhere():
-    v = 'paneltec-v160.3.9.58.13.125'
-    assert v in _read("frontend/src/lib/version.js")
-    assert v in _read("frontend/public/service-worker.js")
-    assert v in _read("mobile/src/lib/version.ts")
+    # v58.13.126 ratchets pin forward. Extract the CANONICAL export
+    # line only (not historical comments) and assert x >= 5.
+    import re
+    checks = [
+        ("frontend/src/lib/version.js",
+         r"RUNNING_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("frontend/public/service-worker.js",
+         r"CACHE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+        ("mobile/src/lib/version.ts",
+         r"MOBILE_BUNDLE_VERSION = 'paneltec-v160\.3\.9\.58\.13\.(\d+)"),
+    ]
+    for f, pat in checks:
+        src = _read(f)
+        m = re.search(pat, src)
+        assert m, f"{f}: canonical export not found"
+        assert int(m.group(1)) >= 125, f"{f}: canonical version {m.group(1)} < 125"

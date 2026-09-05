@@ -86,6 +86,15 @@ class AssetRow(BaseModel):
     scan_token: Optional[str] = None
     notes: Optional[str] = None
     photos: Optional[list[dict]] = None
+    # v58.13.126 — Surface Navixy linkage on register rows so the
+    # frontend's Data-source sourceCounts can classify each row. Prior
+    # to .126 the model silently dropped this field, which is why the
+    # Data-source radio showed `All 130 · Navixy 0 · Manual 130`
+    # (bug: manual = total - 0 = total).
+    navixy_device_id: Optional[int] = None
+    odo_km: Optional[float] = None
+    hours_meter: Optional[float] = None
+    nfc_uid: Optional[str] = None
 
 
 class RegisterResponse(BaseModel):
@@ -565,28 +574,58 @@ async def get_categories(
             and now - _CATEGORIES_CACHE["ts"] < _CATEGORIES_TTL_SECONDS):
         return _CATEGORIES_CACHE["data"]
 
+    # v58.13.126 — Normalise `asset_type` at aggregation-time so
+    # `vacuum_truck` + `Vac Truck` collapse into a single "Vacuum
+    # Truck" bucket (bug: the raw case-sensitive group produced two
+    # buttons in the filter tree, both labelled "Vacuum Truck").
+    # Also project a `has_navixy` boolean so we can return the
+    # authoritative Data-source counts (bug: frontend derived
+    # sourceCounts from list-page rows, which returned 0).
+    from asset_taxonomy import normalize_asset_type  # noqa: WPS433
     pipe = [
         {"$match": {"org_id": org_id, "deleted_at": None}},
         {"$group": {
             "_id": {"kind": "$kind", "sub_type": "$asset_type",
-                     "status": "$status"},
+                     "status": "$status",
+                     "has_navixy": {"$cond": [
+                         {"$and": [
+                             {"$ne": ["$navixy_device_id", None]},
+                             {"$ifNull": ["$navixy_device_id", False]},
+                         ]},
+                         True, False,
+                     ]}},
             "n": {"$sum": 1},
         }},
     ]
     kinds: dict[str, dict] = {}
+    src_navixy = src_manual = 0
     async for r in db.assets.aggregate(pipe):
         k = r["_id"].get("kind") or "unknown"
-        st = r["_id"].get("sub_type") or "unknown"
+        raw_st = r["_id"].get("sub_type") or "unknown"
+        # Collapse to canonical Title-Case at aggregation-time.
+        st = normalize_asset_type(raw_st) or raw_st
         status = r["_id"].get("status") or "unknown"
+        has_navixy = r["_id"].get("has_navixy", False)
         entry = kinds.setdefault(k, {"kind": k, "total": 0,
                                        "sub_types": {}, "statuses": {}})
         entry["total"] += r["n"]
         entry["sub_types"][st] = entry["sub_types"].get(st, 0) + r["n"]
         entry["statuses"][status] = entry["statuses"].get(status, 0) + r["n"]
+        if has_navixy:
+            src_navixy += r["n"]
+        else:
+            src_manual += r["n"]
 
+    total = sum(k["total"] for k in kinds.values())
     data = {
         "kinds": sorted(kinds.values(), key=lambda x: (-x["total"], x["kind"])),
-        "total": sum(k["total"] for k in kinds.values()),
+        "total": total,
+        # v58.13.126 — Authoritative Data-source counts. Sums to total.
+        "source_counts": {
+            "total": total,
+            "navixy": src_navixy,
+            "manual": src_manual,
+        },
         "generated_at": now_iso(),
         "cache_ttl_seconds": _CATEGORIES_TTL_SECONDS,
     }

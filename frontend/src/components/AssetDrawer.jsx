@@ -87,6 +87,11 @@ function AvailableFormsSection({ asset }) {
 const KIND_OPTIONS = [
   { v: 'vehicle', label: 'Vehicle', icon: Truck },
   { v: 'plant', label: 'Plant', icon: Wrench },
+  // v58.13.126 — Trailer button restored. Missing since .120a
+  // introduced `kind="trailer"` but never wired into the drawer's
+  // Kind selector, which meant admins couldn't reclassify e.g.
+  // "getgas" from Vehicle→Trailer via the UI (user report).
+  { v: 'trailer', label: 'Trailer', icon: Truck },
   { v: 'tool', label: 'Tool', icon: Tag },
   { v: 'container', label: 'Container', icon: Container },
 ];
