@@ -1,5 +1,194 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.131 — Fuel Usage / SmartFill API — DISCOVERY-ONLY.
+//
+// User's verbatim ask:
+//   "under the Fleet & Service Banner i would like you to create a
+//    Fuel usage api link the fuel usage to each vehicle and record
+//    litres/$ value record time taken day and month quantity and we
+//    may be able to flag any unusual activity in usage, build nice
+//    popup and reporting as well."
+//
+// ── This ship ─────────────────────────────────────────────────
+//   1. `backend/integrations_smartfill.py` — 240-line SmartFill
+//      JSON-RPC 2.0 client + probe helpers.
+//   2. `backend/.env` — added SMARTFILL_API_URL / _KEY / _SECRET.
+//      Read via os.environ only; never logged, never persisted,
+//      never returned in API responses.
+//   3. `/app/memory/smartfill_discovery_v58_13_131.md` — full
+//      probe report + proposed Mongo schema + endpoints + 3
+//      anomaly rules + frontend surface + hourly-cron sync +
+//      Phase .131a-f breakdown.
+//   4. `/app/memory/smartfill_probe_v58_13_131.json` — raw 28-method
+//      probe artifact (URL redacted, secret never touched).
+//   5. `/app/memory/smartfill_tank_level_shape_v58_13_131.json` —
+//      sanitized `Tank:Level` response shape (types + lengths only).
+//   6. `tests/backend_unit/test_v58_13_131_smartfill_probe.py` —
+//      15 pytest checks locking the wire-quirks (`parameters`
+//      plural, string error code, HTTP 400 + valid RPC envelope),
+//      classification taxonomy (code 1 → not_enabled, code 3 →
+//      needs_params, code 5 → method_not_found), columnar→rows
+//      transform, secret hygiene, memo + artifact presence.
+//
+// ── NOT in this ship ───────────────────────────────────────────
+//   · Mongo `fuel_transactions` collection.
+//   · `POST /fleet/fuel/sync` endpoint + hourly cron.
+//   · Anomaly detector implementation.
+//   · Frontend banner / AssetDrawer Fuel tab / anomaly inbox /
+//     `/app/fleet/fuel-report` page.
+//   · CSV/XLSX import fallback (Path 3).
+//   · Any email/SMS wiring (would only appear behind an on-demand
+//     button in Phase .131e, fired synchronously inside an HTTP
+//     request context to satisfy the ContextVar HTTP-gate).
+//
+// ── Probe result summary ───────────────────────────────────────
+//   28 candidate methods probed:
+//     · 1  AVAILABLE:            Tank:Level (columnar 1r × 10 cols)
+//     · 8  NOT_ENABLED (code 1): Tank:List, Tank:Levels, Tank:Alarms,
+//                                 Tank:Deliveries, Tank:Transactions,
+//                                 Tank:Fills, Tank:History,
+//                                 Tank:Consumption — RECOGNISED
+//                                 server-side but subscription-gated.
+//     · 19 METHOD_NOT_FOUND (code 5): all Vehicle:*, Transaction:*,
+//                                      Fill:*, Report*, introspection.
+//   Wire-quirks discovered + locked:
+//     · SmartFill param key is `parameters` (plural), not `params`.
+//     · SmartFill returns error.code as a STRING and error.error
+//       (not error.message) for the human msg.
+//     · SmartFill returns HTTP 400 for RPC-level errors WITH a valid
+//       JSON-RPC envelope — parse body BEFORE raise_for_status().
+//
+// ── Comms Safe Mode compliance ─────────────────────────────────
+//   The proposed hourly cron is a data FETCH (SmartFill → us),
+//   never emails/SMS. The anomaly detector will surface findings
+//   in the UI (amber banner pulse + anomaly inbox drawer) — never
+//   auto-email. Any future "Email me this report" surface must
+//   fire synchronously inside an HTTP request context; explicitly
+//   NOT queued to any scheduled worker.
+//
+// ── CRITICAL BLOCKER for Phase .131b ───────────────────────────
+//   The fuel-usage feature the user described (per-vehicle
+//   attribution + litres + $ + anomaly detection) requires either:
+//     · [Path 1 · recommended] User contacts SmartFill support to
+//       enable `Tank:Deliveries` + `Tank:Transactions` (or
+//       `Tank:Fills`) for account `Paneltec4869`. Those 8 gated
+//       methods are RECOGNISED (code 1, not code 5), so they exist
+//       server-side.
+//     · [Path 2 · fallback] Step-up detection via 15-min polling
+//       of Tank:Level. Vehicle attribution impossible without a
+//       vehicle-metadata source; $ impossible without a price-per-
+//       litre source.
+//     · [Path 3 · alternative] CSV/XLSX importer for Stephen's
+//       SmartFill Web Portal export.
+//   Ship .131 PAUSES for user green-light on Path choice + any
+//   spec adjustments before Phase .131b opens.
+
+
+
+// v160.3.9.58.13.130a — Quick Log Service: searchable Technician
+//                        picker (matches Service Check Sheet).
+//
+// USER PAIN (verbatim): "in the Quick Log service popup could you
+// do the same with the Technician position as you did with the
+// service check list"
+//
+// ── The change ─────────────────────────────────────────────────
+//   The Quick Log Service popup (`RecordEditor` in
+//   `frontend/src/components/AssetServiceTabs.jsx`) previously used
+//   a plain `<select>` sourced from `/workers/directory` (ALL
+//   Simpro-imported workers). It now uses the same searchable
+//   autocomplete + freetext-fallback pattern the Service Check
+//   Sheet has shipped since .123a, narrowed to tech-only roles.
+//
+// ── New shared component ───────────────────────────────────────
+//   `frontend/src/components/TechnicianPicker.jsx` (~120 lines)
+//   extracted from the inline datalist block in
+//   ServiceCheckSheetModal. Props:
+//     · technicians  — array of `{id, name, position?, role?,
+//                       simpro_employee_id?}` (parent-filtered).
+//     · value        — `{id, name}` pair (both strings).
+//     · onChange     — `({id, name}) => void`.
+//     · testidPrefix — emits `<prefix>-select` for the picker input,
+//                       `<prefix>-freetext` for the freetext input,
+//                       `<prefix>-freetext-toggle` for "Type new",
+//                       `<prefix>-back-to-picker` for "Pick from list",
+//                       `<prefix>-opt-<id>` on each datalist option.
+//     · placeholder / freetextPlaceholder — cosmetic strings.
+//     · disabled     — passed through to both inputs.
+//   Internal mode state (`picker` | `freetext`) with two
+//   auto-flip effects:
+//     1. Empty list → freetext (unless user has forced a mode).
+//     2. Legacy value that doesn't match any row → freetext (so an
+//        edited legacy record's `technician_name` isn't wiped by
+//        the datalist's "name must match" resolution).
+//
+// ── Consumer updates ───────────────────────────────────────────
+//   1. `RecordEditor` (`AssetServiceTabs.jsx`):
+//      · Fetch switched from `/workers/directory` → `/fleet/technicians`
+//        (the .123a endpoint, `roles ∈ mechanic/technician/fitter/
+//        service tech` + position-keyword match). Response shape
+//        adapts from `[…]` to `{technicians: […]}`.
+//      · Technician `<select>` block replaced with
+//        `<TechnicianPicker testidPrefix="rec-tech" …>`.
+//      · Position filter preserved: `effectiveTechs` (position-
+//        filtered list from `techs`) is what gets handed to the
+//        picker. Zero-match hint ("No workers listed with this
+//        position — showing all workers") still renders below the
+//        picker when the picked position has no matches on the
+//        tech roster.
+//      · `techMode` state / `onPickTech` / `backToPicker` retired
+//        (all managed by the picker now).
+//   2. `ServiceCheckSheetModal`:
+//      · Inline datalist + `<button>Type new</button>` block (lines
+//        604-646 pre-.130a) replaced with
+//        `<TechnicianPicker testidPrefix="sheet-technician" …>`.
+//      · `technicianMode` state + `setTechnicianMode('freetext')`
+//        fallback on empty-list retired (picker handles both).
+//      · `buildPayload()` no longer branches on `technicianMode` —
+//        it does a single `technicians.find` by id-first-then-
+//        case-insensitive-name so picker-picked AND freetext-typed
+//        matches both resolve, and unmatched freetext falls through
+//        to `technicianName` as before. `.123a` semantics preserved.
+//
+// ── Backend ────────────────────────────────────────────────────
+//   No changes. The `.121` service-log endpoint already accepts
+//   `technician_id` + `technician_name` in the POST/PUT payload,
+//   and `/fleet/technicians` (`.121`, narrowed at `.123a`) is the
+//   canonical source-of-truth.
+//
+// ── Pytests ────────────────────────────────────────────────────
+//   NEW `tests/backend_unit/test_v58_13_130a_bundle.py` (10 checks):
+//     · `TechnicianPicker.jsx` exists + exports named + default.
+//     · Emits testids matching the `<prefix>-{select,freetext,
+//       freetext-toggle,back-to-picker,opt-…}` convention.
+//     · RecordEditor imports `TechnicianPicker`, fetches from
+//       `/fleet/technicians` (not `/workers/directory`), passes
+//       `effectiveTechs` + `testidPrefix="rec-tech"` + `onChange`
+//       that writes `technician_id` + `technician_name` back to
+//       `form`, and the old `<select data-testid="rec-tech-select">`
+//       block is GONE.
+//     · ServiceCheckSheetModal imports `TechnicianPicker`, passes
+//       `testidPrefix="sheet-technician"`, and the old inline
+//       datalist block is GONE.
+//     · `technicianMode` state + `technicianMode === 'picker'`
+//       branch retired from ServiceCheckSheetModal.
+//     · buildPayload() single-find contract: `technicians.find(...)`
+//       matches by id first, then case-insensitive name.
+//     · Version-sync forward-safe pin >= .130a (accepts `.130` +
+//       optional lowercase letter suffix).
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `/fleet/technicians` endpoint (`.121`/`.123a`) — reused verbatim.
+//   · Position field (`Technician position`) + its select/freetext
+//     toggle + zero-match hint — untouched.
+//   · Any signature / attachment / heavy-service / checklist path.
+//   · Any comms / scheduler / ephemeral-upload path.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
+
+
 // v160.3.9.58.13.130 — Service-level presets on New Schedule modal
 //                       + modal viewport-height fix.
 //
@@ -11546,7 +11735,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.130';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.131';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

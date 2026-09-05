@@ -25,6 +25,10 @@ import RichTextEditor from './RichTextEditor';
 import ChecklistLinkPicker from './ChecklistLinkPicker';
 // v58.13.121 — Full Service Check Sheet modal.
 import ServiceCheckSheetModal from './ServiceCheckSheetModal';
+// v58.13.130a — Shared Technician Picker (searchable autocomplete +
+// freetext fallback). Extracted from ServiceCheckSheetModal so Quick
+// Log Service uses the same behaviour.
+import { TechnicianPicker } from './TechnicianPicker';
 
 // v58.13.19 — Persist the Plain / Rich preference so returning users
 // don't get their preferred editor mode reset on every schedule edit.
@@ -1196,7 +1200,13 @@ export function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
   //     (contractors, one-off techs, employees not yet synced).
   const [techs, setTechs] = useState([]);
   const [techsLoaded, setTechsLoaded] = useState(false);
-  const [techMode, setTechMode] = useState('picker');
+  // v58.13.130a — `techMode` is now managed internally by the shared
+  // TechnicianPicker; only kept here as a no-op setter for the
+  // initial-mode selection logic in the fetch effect below (kept as
+  // a mental cue and to preserve the "legacy records that don't match
+  // any option start in freetext" behaviour via the picker's own
+  // legacy-value fallback effect).
+  const [, setTechMode] = useState('picker');
   // v58.12.12 — Service Log Position-Primary redesign. Position is now
   // the FIRST-CLASS primary picker; Technician follows and filters by
   // matching position. Chip + pencil auto-fill UX from v58.12.10 is
@@ -1227,11 +1237,13 @@ export function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
   useEffect(() => {
     if (kind !== 'service') return;
     let cancelled = false;
-    api.get('/workers/directory', {
-      params: { active: true, source: 'simpro' },
-    }).then((r) => {
+    // v58.13.130a — Switched from `/workers/directory` to
+    // `/fleet/technicians` so the picker is narrowed to tech-only
+    // roles (Mechanic / Technician / Fitter / Service Tech) — same
+    // source as the Service Check Sheet's picker.
+    api.get('/fleet/technicians').then((r) => {
       if (cancelled) return;
-      const list = Array.isArray(r.data) ? r.data : [];
+      const list = Array.isArray(r.data?.technicians) ? r.data.technicians : [];
       setTechs(list);
       setTechsLoaded(true);
       // Decide initial mode once we have the list. Legacy records
@@ -1255,35 +1267,10 @@ export function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, [kind, initial]);
 
-  const onPickTech = (value) => {
-    if (value === '__manual__') {
-      // Preserve the currently-picked name if any so the user can
-      // edit rather than retype from scratch.
-      setTechMode('freetext');
-      setForm((f) => ({ ...f, technician_id: '' }));
-      return;
-    }
-    if (!value) {
-      setForm((f) => ({ ...f, technician_id: '', technician_name: '' }));
-      return;
-    }
-    const chosen = techs.find((t) => t.id === value);
-    if (chosen) {
-      setForm((f) => ({
-        ...f,
-        technician_id: chosen.id,
-        technician_name: chosen.name,
-        // v58.12.12 — Do NOT overwrite `technician_position` from the
-        // tech pick. Position is now the primary/upstream field and
-        // drives which techs are visible in this dropdown. Preserving
-        // the user's position choice is the whole point of the
-        // Position-Primary redesign.
-      }));
-    }
-  };
-  const backToPicker = () => {
-    setTechMode('picker');
-  };
+  // v58.13.130a — `onPickTech` / `backToPicker` retired. The shared
+  // TechnicianPicker manages its own picker↔freetext toggle and
+  // resolves the name → id lookup internally; parent just receives
+  // the `{id, name}` pair via `onChange`.
 
   const submit = async () => {
     setSaving(true);
@@ -1415,52 +1402,32 @@ export function RecordEditor({ asset, kind, initial, onClose, onSaved }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold mb-1">Technician</label>
-                {techMode === 'picker' ? (
-                  <>
-                    <select
-                      value={form.technician_id || ''}
-                      onChange={(e) => onPickTech(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white"
-                      data-testid="rec-tech-select"
-                      disabled={!techsLoaded}
-                    >
-                      <option value="">— Select technician —</option>
-                      {effectiveTechs.map((t) => (
-                        <option key={t.id} value={t.id} data-testid={`rec-tech-opt-${t.id}`}>
-                          {t.simpro_employee_id
-                            ? `${t.name} · #${t.simpro_employee_id}`
-                            : t.name}
-                        </option>
-                      ))}
-                      <option value="__manual__">— Type manually —</option>
-                    </select>
-                    {techPositionHasNoMatch && (
-                      <p
-                        data-testid="technician-position-hint-no-match"
-                        className="mt-1 text-[11px] text-slate-500 italic"
-                      >
-                        No workers listed with this position — showing all workers.
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex gap-2 items-center">
-                    <input
-                      value={form.technician_name}
-                      onChange={(e) => setForm({ ...form, technician_name: e.target.value, technician_id: '' })}
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg"
-                      data-testid="rec-tech"
-                      placeholder="Contractor or unlisted technician"
-                    />
-                    <button
-                      type="button"
-                      onClick={backToPicker}
-                      className="text-[11px] text-slate-500 hover:text-slate-900 underline whitespace-nowrap"
-                      data-testid="rec-tech-back-to-picker"
-                    >
-                      Pick from list
-                    </button>
-                  </div>
+                {/* v58.13.130a — Searchable autocomplete via shared
+                    TechnicianPicker. Narrowed to tech-only roles via
+                    `/fleet/technicians` (see fetch effect above).
+                    Position filter continues to narrow the list; the
+                    zero-match hint below still renders when the picked
+                    position has no matching technician on the roster. */}
+                <TechnicianPicker
+                  technicians={effectiveTechs}
+                  value={{ id: form.technician_id || '', name: form.technician_name || '' }}
+                  onChange={({ id, name }) => setForm((f) => ({
+                    ...f,
+                    technician_id: id || '',
+                    technician_name: name || '',
+                  }))}
+                  disabled={!techsLoaded}
+                  testidPrefix="rec-tech"
+                  placeholder="Search technicians (name)"
+                  freetextPlaceholder="Contractor or unlisted technician"
+                />
+                {techPositionHasNoMatch && (
+                  <p
+                    data-testid="technician-position-hint-no-match"
+                    className="mt-1 text-[11px] text-slate-500 italic"
+                  >
+                    No workers listed with this position — showing all workers.
+                  </p>
                 )}
               </div>
             </div>

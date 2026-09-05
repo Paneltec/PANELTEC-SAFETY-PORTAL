@@ -157,12 +157,19 @@ def test_sheet_modal_has_18_frozen_checklist_items():
 
 
 def test_sheet_modal_wires_expected_testids():
+    # v58.13.130a — `sheet-technician-select` migrated to a template-
+    # generated testid via the shared TechnicianPicker
+    # (`testidPrefix="sheet-technician"`). Verify the prefix binding
+    # is in place instead of the literal string.
+    assert 'testidPrefix="sheet-technician"' in SHEET_MODAL, (
+        "TechnicianPicker prefix not wired — sheet-technician-* testids won't be emitted"
+    )
     for tid in (
         "service-check-sheet-modal", "sheet-header", "sheet-close",
         "sheet-vehicle-rego", "sheet-vehicle-date",
         "sheet-vehicle-make-model", "sheet-vehicle-vin",
         "sheet-vehicle-mileage", "sheet-vehicle-hours",
-        "sheet-technician-select", "sheet-company",
+        "sheet-company",
         "sheet-save-to-asset",
         "sheet-check-all",
         "sheet-advisory",

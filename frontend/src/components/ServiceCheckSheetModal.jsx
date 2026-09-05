@@ -34,6 +34,9 @@ import api, { apiError } from '../lib/api';
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 import SignaturePad from './SignaturePad';
 import { openAuthedFile } from '../lib/downloads';
+// v58.13.130a — Extracted searchable-autocomplete picker (now shared
+// with the Quick Log Service popup via TechnicianPicker.jsx).
+import { TechnicianPicker } from './TechnicianPicker';
 
 // Frozen 18-item checklist per the user's template. Any future
 // variant bumps `sheet_template_version` and lives in its own array.
@@ -331,8 +334,9 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   const totalHeavyItems = heavyTmpl ? heavyTmpl.sections.reduce((n, s) => n + s.items.length, 0) : 0;
   const markedHeavyCount = Object.values(heavyMarks).filter((m) => m && m !== 'UNSET').length;
   // Technician picker.
+  // v58.13.130a — `technicianMode` retired here; the shared
+  // TechnicianPicker manages its own picker↔freetext toggle.
   const [technicians, setTechnicians] = useState([]);
-  const [technicianMode, setTechnicianMode] = useState('picker'); // 'picker' | 'freetext'
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -340,9 +344,8 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       .then((r) => {
         const list = r.data?.technicians || [];
         setTechnicians(list);
-        if (list.length === 0) setTechnicianMode('freetext');
       })
-      .catch(() => setTechnicianMode('freetext'));
+      .catch(() => setTechnicians([]));
   }, []);
 
   // ESC → confirm close
@@ -357,9 +360,16 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
     const replaced = checklist.filter((r) => r.replaced).map((r) => r.item);
     const description = advisory
       || (replaced.length ? `Replaced: ${replaced.join(', ')}` : 'Service check completed');
-    const tech = technicianMode === 'picker'
-      ? technicians.find((t) => t.id === technicianId || t.name.toLowerCase() === (technicianName || '').toLowerCase())
-      : null;
+    // v58.13.130a — Match by technicianId first (picker set both id
+    // and name), then fall back to case-insensitive name lookup for
+    // legacy code paths. `technicianMode` is no longer needed — the
+    // picker sets `technicianId` only when the typed name matches a
+    // row exactly, otherwise id stays empty and this lookup returns
+    // the freetext string via the `|| technicianName` clause below.
+    const tech = technicians.find(
+      (t) => (technicianId && t.id === technicianId)
+          || (technicianName && t.name.toLowerCase() === technicianName.toLowerCase()),
+    );
     return {
       // Required legacy fields.
       date_completed: date,
@@ -601,49 +611,23 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Technician</label>
-                {technicianMode === 'picker' && technicians.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      list="sheet-technician-datalist"
-                      value={technicianName}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setTechnicianName(v);
-                        const hit = technicians.find(
-                          (t) => t.name.toLowerCase() === v.toLowerCase(),
-                        );
-                        setTechnicianId(hit?.id || '');
-                      }}
-                      placeholder="Search technicians (name)"
-                      data-testid="sheet-technician-select"
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
-                    <datalist id="sheet-technician-datalist">
-                      {technicians.map((t) => (
-                        <option key={t.id} value={t.name}>
-                          {t.position || t.role || ''}
-                        </option>
-                      ))}
-                    </datalist>
-                    <button type="button" onClick={() => setTechnicianMode('freetext')}
-                      data-testid="sheet-technician-freetext-toggle"
-                      className="px-2 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50">
-                      Type new
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <input value={technicianName} onChange={(e) => setTechnicianName(e.target.value)}
-                      data-testid="sheet-technician-freetext"
-                      placeholder="Technician name"
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
-                    {technicians.length > 0 && (
-                      <button type="button" onClick={() => setTechnicianMode('picker')}
-                        className="px-2 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50">
-                        Pick from list
-                      </button>
-                    )}
-                  </div>
-                )}
+                {/* v58.13.130a — Delegated to the shared
+                    TechnicianPicker so this modal and the Quick Log
+                    Service popup use the exact same UX. Testids
+                    (`sheet-technician-select` / -freetext /
+                    -freetext-toggle / -back-to-picker) are preserved
+                    via the picker's `testidPrefix`. */}
+                <TechnicianPicker
+                  technicians={technicians}
+                  value={{ id: technicianId, name: technicianName }}
+                  onChange={({ id, name }) => {
+                    setTechnicianId(id || '');
+                    setTechnicianName(name || '');
+                  }}
+                  testidPrefix="sheet-technician"
+                  placeholder="Search technicians (name)"
+                  freetextPlaceholder="Technician name"
+                />
               </div>
               <div className="md:col-span-2">
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Company (workshop)</label>
