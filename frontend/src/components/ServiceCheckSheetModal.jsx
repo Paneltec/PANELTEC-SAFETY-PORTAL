@@ -26,7 +26,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X, Loader2, ClipboardCheck, Wrench, PenLine, CheckCircle2, Printer,
-  AlertTriangle, Truck,
+  AlertTriangle, Truck, ChevronDown, ChevronRight, CircleDot,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -175,6 +175,21 @@ function ChecklistRow({ item, state, onChange, index }) {
 
 export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   useLockBodyScroll();
+  // v58.13.123 — Template picker. Auto-selected from asset shape.
+  const _pickDefaultTemplate = () => {
+    const st = (asset?.asset_type || asset?.sub_type || '').toLowerCase();
+    const heavySubtypes = new Set(['vacuum truck','vac truck','vacuum_truck',
+      'tipper','service truck','service_truck','crane truck','crane_truck','commercial']);
+    if (heavySubtypes.has(st)) return 'v123.1';
+    if (asset?.kind === 'plant') return 'v123.1';
+    if (asset?.kind === 'vehicle' && (asset?.hours_meter || 0) >= 500) return 'v123.1';
+    return 'v121.1';
+  };
+  const [templateVersion, setTemplateVersion] = useState(_pickDefaultTemplate);
+  const [templates, setTemplates] = useState(null); // loaded from /service-sheet-templates
+  useEffect(() => {
+    api.get('/fleet/service-sheet-templates').then((r) => setTemplates(r.data?.templates)).catch(() => {});
+  }, []);
   // Vehicle details (auto-filled from asset).
   const [date, setDate] = useState(_todayIso());
   const [technicianId, setTechnicianId] = useState('');
@@ -231,6 +246,32 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
   // Signatures.
   const [techSig, setTechSig] = useState(null);
   const [custSig, setCustSig] = useState(null);
+  // v58.13.123 — Heavy Truck state (dormant when template=v121.1).
+  const [heavyMarks, setHeavyMarks] = useState({}); // {"A|Oil changed": "X"|"CHECK"|"NA"|"UNSET"}
+  const [heavyNotes, setHeavyNotes] = useState({}); // same key -> string
+  const [tread, setTread] = useState({}); // {position_id: {out, in}}
+  const [consumables, setConsumables] = useState('');
+  const [nextInspectionDue, setNextInspectionDue] = useState('');
+  const [openSection, setOpenSection] = useState('A');
+  const heavyTmpl = templates?.['v123.1'];
+  const setMark = (sec, item, mark) => setHeavyMarks((p) => ({ ...p, [`${sec}|${item}`]: mark }));
+  const setNote = (sec, item, val) => setHeavyNotes((p) => ({ ...p, [`${sec}|${item}`]: val }));
+  const bulkCheckSection = (sec) => {
+    if (!heavyTmpl) return;
+    const section = heavyTmpl.sections.find((s) => s.id === sec);
+    if (!section) return;
+    setHeavyMarks((p) => {
+      const next = { ...p };
+      for (const it of section.items) {
+        if (!next[`${sec}|${it}`] || next[`${sec}|${it}`] === 'UNSET') {
+          next[`${sec}|${it}`] = 'CHECK';
+        }
+      }
+      return next;
+    });
+  };
+  const totalHeavyItems = heavyTmpl ? heavyTmpl.sections.reduce((n, s) => n + s.items.length, 0) : 0;
+  const markedHeavyCount = Object.values(heavyMarks).filter((m) => m && m !== 'UNSET').length;
   // Technician picker.
   const [technicians, setTechnicians] = useState([]);
   const [technicianMode, setTechnicianMode] = useState('picker'); // 'picker' | 'freetext'
@@ -271,8 +312,7 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       company: company || null,
       notes: advisory || null,
       next_due_date: nextDueDate || null,
-      // v121 sheet extensions.
-      checklist_items: checklist,
+      // v121 legacy fields kept for backward-compat when template=v121.1.
       advisory_comments: advisory || null,
       next_service_due_km: nextDueKm ? Number(nextDueKm) : null,
       next_service_due_hours: nextDueHours ? Number(nextDueHours) : null,
@@ -284,9 +324,21 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
       customer_signature_data_url: custSig,
       vin_captured: vin || null,
       make_model_captured: makeModel || null,
-      sheet_template_version: 'v121.1',
+      sheet_template_version: templateVersion,
       service_level: serviceLevel,
       save_to_asset_record: saveToAssetRecord,
+      // v58.13.123 — heavy-truck additive fields (null when Light).
+      checklist_items: templateVersion === 'v123.1' && heavyTmpl
+        ? heavyTmpl.sections.flatMap((s) => s.items.map((it) => ({
+            item: it,
+            section: s.id,
+            mark: heavyMarks[`${s.id}|${it}`] || 'UNSET',
+            notes: heavyNotes[`${s.id}|${it}`] || '',
+          })))
+        : checklist,
+      tread_depth_readings: templateVersion === 'v123.1' ? tread : null,
+      consumables_used: templateVersion === 'v123.1' ? (consumables || null) : null,
+      next_inspection_due_date: templateVersion === 'v123.1' ? (nextInspectionDue || null) : null,
     };
   };
 
@@ -448,6 +500,171 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
             </div>
           </section>
 
+          {/* v58.13.123 — Template picker + overall progress bar. */}
+          <section data-testid="sheet-template-picker-block">
+            <div className="bg-white rounded-xl border border-slate-200 p-3 mb-4 flex items-center gap-3 flex-wrap">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                Template
+              </label>
+              <select value={templateVersion} onChange={(e) => setTemplateVersion(e.target.value)}
+                data-testid="sheet-template-picker"
+                className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white font-semibold">
+                <option value="v121.1">Light Vehicle — Service Check Sheet</option>
+                <option value="v123.1">Heavy Truck — Preventative Maintenance Checklist</option>
+              </select>
+              {templateVersion === 'v123.1' && heavyTmpl && (
+                <div className="flex-1 flex items-center gap-2 min-w-[220px]">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+                    Progress
+                  </span>
+                  <div className="flex-1 h-2 rounded-full bg-slate-100 overflow-hidden"
+                       data-testid="sheet-heavy-progress-bar">
+                    <div className={`h-full transition-all ${
+                      markedHeavyCount === totalHeavyItems ? 'bg-emerald-500'
+                      : markedHeavyCount ? 'bg-violet-500' : 'bg-slate-300'
+                    }`}
+                    style={{ width: `${(markedHeavyCount / Math.max(totalHeavyItems, 1)) * 100}%` }} />
+                  </div>
+                  <span className="text-xs font-semibold tabular-nums text-slate-700">
+                    {markedHeavyCount}/{totalHeavyItems}
+                  </span>
+                </div>
+              )}
+            </div>
+          </section>
+
+          {templateVersion === 'v123.1' && heavyTmpl && (
+            <>
+              <section data-testid="sheet-heavy-sections">
+                <SectionHeader Icon={ClipboardCheck} title="Preventative Maintenance Checklist"
+                  chipClass="bg-emerald-50 text-emerald-700" />
+                <div className="space-y-2">
+                  {heavyTmpl.sections.map((sec) => {
+                    const isOpen = openSection === sec.id;
+                    const secMarks = sec.items.map((it) => heavyMarks[`${sec.id}|${it}`] || 'UNSET');
+                    const anyX = secMarks.includes('X');
+                    const allSet = secMarks.every((m) => m !== 'UNSET');
+                    const pill = anyX
+                      ? { bg: 'bg-rose-100', txt: 'text-rose-800', lbl: 'Attention' }
+                      : allSet
+                      ? { bg: 'bg-emerald-100', txt: 'text-emerald-800', lbl: 'All OK' }
+                      : { bg: 'bg-slate-100', txt: 'text-slate-600', lbl: 'Not started' };
+                    return (
+                      <div key={sec.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+                           data-testid={`sheet-heavy-section-${sec.id}`}>
+                        <div className={`flex items-center gap-2 px-3 py-2 cursor-pointer bg-${sec.accent}-50/70`}
+                             onClick={() => setOpenSection(isOpen ? null : sec.id)}>
+                          {isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                          <span className={`text-[10px] font-bold uppercase tracking-wider text-${sec.accent}-800`}>
+                            {sec.id}
+                          </span>
+                          <span className="text-sm font-semibold text-slate-800 flex-1">{sec.label}</span>
+                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${pill.bg} ${pill.txt}`}
+                                data-testid={`sheet-heavy-section-status-${sec.id}`}>
+                            {pill.lbl}
+                          </span>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); bulkCheckSection(sec.id); }}
+                            data-testid={`sheet-heavy-bulk-check-${sec.id}`}
+                            title="Mark every unset item ✓"
+                            className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 hover:bg-emerald-200">
+                            ✓ all
+                          </button>
+                        </div>
+                        {isOpen && (
+                          <div className="divide-y divide-slate-100">
+                            {sec.items.map((item) => {
+                              const mark = heavyMarks[`${sec.id}|${item}`] || 'UNSET';
+                              const tint = mark === 'X' ? 'bg-rose-50'
+                                : mark === 'CHECK' ? 'bg-emerald-50'
+                                : mark === 'NA' ? 'bg-slate-50' : 'bg-white';
+                              return (
+                                <div key={item}
+                                     className={`grid grid-cols-[1fr_auto_2fr] gap-2 items-center px-3 py-1.5 ${tint}`}
+                                     data-testid={`sheet-heavy-row-${sec.id}-${sec.items.indexOf(item)}`}>
+                                  <div className="text-xs text-slate-800">{item}</div>
+                                  <div className="flex gap-1">
+                                    {['X','CHECK','NA'].map((m) => (
+                                      <button key={m} type="button"
+                                        onClick={() => setMark(sec.id, item, mark === m ? 'UNSET' : m)}
+                                        data-testid={`sheet-heavy-mark-${sec.id}-${sec.items.indexOf(item)}-${m}`}
+                                        className={`w-8 h-6 text-[10px] font-bold rounded ${
+                                          mark === m
+                                            ? (m === 'X' ? 'bg-rose-600 text-white'
+                                              : m === 'CHECK' ? 'bg-emerald-600 text-white'
+                                              : 'bg-slate-500 text-white')
+                                            : 'bg-white border border-slate-300 text-slate-500 hover:bg-slate-50'
+                                        }`}>
+                                        {m === 'CHECK' ? '✓' : m}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <input value={heavyNotes[`${sec.id}|${item}`] || ''}
+                                    onChange={(e) => setNote(sec.id, item, e.target.value)}
+                                    placeholder="Notes"
+                                    className="w-full px-2 py-0.5 border border-slate-200 rounded text-xs bg-white" />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section data-testid="sheet-tread-depth-block">
+                <SectionHeader Icon={CircleDot} title="Tire Tread Depth (32nds)"
+                  chipClass="bg-cyan-50 text-cyan-800" />
+                <div className="bg-white rounded-xl border border-slate-200 p-3">
+                  <div className="grid grid-cols-[1fr_80px_80px] gap-2 text-[10px] uppercase tracking-wider text-slate-500 font-bold pb-2 border-b border-slate-200">
+                    <div>Position</div><div>Out</div><div>In</div>
+                  </div>
+                  {heavyTmpl.tread_positions.map((pos) => {
+                    const val = tread[pos.id] || {};
+                    const isLow = (v) => v !== undefined && v !== '' && parseFloat(v) < 4;
+                    return (
+                      <div key={pos.id} className="grid grid-cols-[1fr_80px_80px] gap-2 items-center py-1"
+                           data-testid={`sheet-tread-row-${pos.id}`}>
+                        <div className="text-xs text-slate-800">{pos.label}</div>
+                        <input type="number" step="0.5" value={val.out || ''}
+                          onChange={(e) => setTread((p) => ({ ...p, [pos.id]: { ...(p[pos.id]||{}), out: e.target.value } }))}
+                          data-testid={`sheet-tread-out-${pos.id}`}
+                          className={`w-full px-2 py-0.5 border rounded text-xs ${isLow(val.out) ? 'border-rose-500 bg-rose-50 text-rose-800' : 'border-slate-300'}`} />
+                        {pos.has_inner ? (
+                          <input type="number" step="0.5" value={val.in || ''}
+                            onChange={(e) => setTread((p) => ({ ...p, [pos.id]: { ...(p[pos.id]||{}), in: e.target.value } }))}
+                            data-testid={`sheet-tread-in-${pos.id}`}
+                            className={`w-full px-2 py-0.5 border rounded text-xs ${isLow(val.in) ? 'border-rose-500 bg-rose-50 text-rose-800' : 'border-slate-300'}`} />
+                        ) : <span className="text-xs text-slate-300">—</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section data-testid="sheet-consumables-block">
+                <SectionHeader Icon={Wrench} title="Consumables / Parts Used"
+                  chipClass="bg-amber-50 text-amber-800" />
+                <textarea value={consumables} onChange={(e) => setConsumables(e.target.value)}
+                  rows={3} placeholder="Parts, oils, filters used…"
+                  data-testid="sheet-consumables"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
+              </section>
+
+              <section data-testid="sheet-rego-expiry-block">
+                <SectionHeader Icon={AlertTriangle} title="Rego expiry / Next inspection due"
+                  chipClass="bg-indigo-50 text-indigo-700" />
+                <input type="date" value={nextInspectionDue}
+                  onChange={(e) => setNextInspectionDue(e.target.value)}
+                  data-testid="sheet-next-inspection-due"
+                  className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" />
+              </section>
+            </>
+          )}
+
+          {templateVersion === 'v121.1' && (
+          <>
           {/* Checklist */}
           <section data-testid="sheet-section-checklist">
             <div className="flex items-center gap-2 mb-3">
@@ -532,6 +749,8 @@ export default function ServiceCheckSheetModal({ asset, onClose, onSaved }) {
           </section>
 
           {/* Sign Off */}
+          </>
+          )}
           <section data-testid="sheet-section-signoff">
             <SectionHeader Icon={PenLine} title="Sign Off"
               chipClass="bg-violet-50 text-violet-700" />

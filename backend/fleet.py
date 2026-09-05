@@ -140,6 +140,11 @@ class LogServiceIn(BaseModel):
     # v58.13.122 — Which preset the sheet was submitted under. One of
     # {"custom","minor","intermediate","major","heavy_overhaul"}.
     service_level: Optional[str] = Field(default=None, max_length=20)
+    # v58.13.123 — Heavy-truck template extension. Additive only; not
+    # required for light-vehicle submissions.
+    tread_depth_readings: Optional[dict] = Field(default=None)
+    consumables_used: Optional[str] = Field(default=None, max_length=8000)
+    next_inspection_due_date: Optional[str] = Field(default=None, max_length=32)
     # Persist newly-captured VIN/Make/Model back to the asset row
     # when the asset side is null/empty. Default True.
     save_to_asset_record: Optional[bool] = Field(default=True)
@@ -502,6 +507,9 @@ async def log_service(
             "make_model_captured": body.make_model_captured,
             "sheet_template_version": body.sheet_template_version,
             "service_level": body.service_level,
+            "tread_depth_readings": body.tread_depth_readings,
+            "consumables_used": body.consumables_used,
+            "next_inspection_due_date": body.next_inspection_due_date,
         })
         # Copy VIN / Make / Model back to the asset row if the asset
         # side is empty. Never overwrite existing values.
@@ -697,7 +705,11 @@ async def get_service_sheet_pdf(
 
     from fleet_service_sheet_pdf import render_service_sheet_pdf
     pdf_bytes = render_service_sheet_pdf(asset=a, record=rec, org_name=user.get("org_name"))
-    filename = f"service-sheet-{rec.get('maintenance_id') or maintenance_id}.pdf"
+    # v58.13.123 — filename convention: rego-date-template.
+    tv = (rec.get("sheet_template_version") or "v121.1").replace(".", "-")
+    rego = (a.get("rego_serial") or "asset").replace("/", "-").replace(" ", "-")
+    date = (rec.get("date_completed") or "")[:10] or "undated"
+    filename = f"service-sheet-{rego}-{date}-{tv}.pdf"
     return StreamingResponse(
         io.BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -778,3 +790,18 @@ async def get_service_status_rollup(
         }
         counts[block["status"]] = counts.get(block["status"], 0) + 1
     return {"statuses": statuses, "counts": counts, "total": len(statuses)}
+
+
+# ── v58.13.123 — Sheet template registry endpoint ────────────────
+@router.get("/service-sheet-templates")
+async def list_sheet_templates(
+    _flag: None = Depends(require_fleet_register_enabled),
+    user: dict = Depends(require_permission("assets", "view")),
+):
+    """Return the frozen template registry. Callers pick the version
+    via `pick_default_template(asset)` OR by explicit user choice."""
+    from fleet_service_sheet_templates import all_templates, pick_default_template
+    return {
+        "templates": all_templates(),
+        "default_for_asset_note": "Client should call pick_default_template(asset) via the frontend helper.",
+    }

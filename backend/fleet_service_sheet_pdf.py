@@ -118,11 +118,18 @@ def render_service_sheet_pdf(*, asset: dict, record: dict,
                               org_name: Optional[str] = None) -> bytes:
     """Build and return the finished PDF bytes.
 
-    Args:
-        asset:  the assets doc (org-scoped, no _id)
-        record: the plant_maintenance doc (no _id)
-        org_name: optional org display name for the footer.
+    v58.13.123 dispatches on `record.sheet_template_version`:
+      · `v121.1` → light-vehicle layout (default legacy path below).
+      · `v123.1` → heavy-truck 2-column sectioned layout.
     """
+    version = (record.get("sheet_template_version") or "v121.1")
+    if version == "v123.1":
+        return _render_heavy_truck_pdf(asset=asset, record=record, org_name=org_name)
+    return _render_light_vehicle_pdf(asset=asset, record=record, org_name=org_name)
+
+
+def _render_light_vehicle_pdf(*, asset: dict, record: dict,
+                                org_name: Optional[str] = None) -> bytes:
     buf = io.BytesIO()
     doc = BaseDocTemplate(
         buf, pagesize=A4,
@@ -284,6 +291,152 @@ def render_service_sheet_pdf(*, asset: dict, record: dict,
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ]))
     story.append(sig_table)
+
+    doc.build(story)
+    pdf_bytes = buf.getvalue()
+    buf.close()
+    return pdf_bytes
+
+
+# ── v58.13.123 — Heavy Truck PM Checklist ────────────────────────
+def _render_heavy_truck_pdf(*, asset: dict, record: dict,
+                              org_name: Optional[str] = None) -> bytes:
+    """A4 portrait, 2-column section grid, tri-state marks, tread
+    grid + consumables section. Watermark-free."""
+    from fleet_service_sheet_templates import TEMPLATE_HEAVY_TRUCK_V123_1
+    tmpl = TEMPLATE_HEAVY_TRUCK_V123_1
+    marks = {}
+    for it in (record.get("checklist_items") or []):
+        marks[(it.get("section"), it.get("item"))] = (it.get("mark") or "UNSET", it.get("notes") or "")
+
+    buf = io.BytesIO()
+    doc = BaseDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=10 * mm, rightMargin=10 * mm,
+        topMargin=38 * mm, bottomMargin=15 * mm,
+        title="Preventative Maintenance Checklist",
+    )
+    doc._rego_serial = asset.get("rego_serial")
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id="body")
+    doc.addPageTemplates([PageTemplate(id="main", frames=[frame], onPage=_draw_header_band)])
+
+    S = {
+        "h2": ParagraphStyle("h2", fontName="Helvetica-Bold", fontSize=11,
+                              textColor=colors.HexColor("#4F46E5"), spaceBefore=6, spaceAfter=4),
+        "sec": ParagraphStyle("sec", fontName="Helvetica-Bold", fontSize=9,
+                                textColor=colors.HexColor("#0F172A"), spaceAfter=2),
+        "cell": ParagraphStyle("cell", fontName="Helvetica", fontSize=7,
+                                 textColor=colors.HexColor("#0F172A"), leading=9),
+        "notes": ParagraphStyle("notes", fontName="Helvetica", fontSize=8,
+                                  textColor=colors.HexColor("#0F172A"), leading=10),
+    }
+    story: list = []
+
+    # Header details (compact).
+    header_rows = [
+        [Paragraph("<b>Rego</b>", S["cell"]), Paragraph(asset.get("rego_serial") or "—", S["cell"]),
+         Paragraph("<b>Odometer</b>", S["cell"]), Paragraph(f"{record.get('mileage_at_service') or '—'} km", S["cell"]),
+         Paragraph("<b>Hours</b>", S["cell"]), Paragraph(f"{record.get('hours_at_service') or '—'} hrs", S["cell"])],
+        [Paragraph("<b>Date</b>", S["cell"]), Paragraph(record.get("date_completed") or "—", S["cell"]),
+         Paragraph("<b>Technician</b>", S["cell"]), Paragraph(record.get("technician_name") or "—", S["cell"]),
+         Paragraph("<b>Rego expiry</b>", S["cell"]), Paragraph(record.get("next_inspection_due_date") or "—", S["cell"])],
+    ]
+    ht = Table(header_rows, colWidths=[18*mm, 42*mm, 22*mm, 32*mm, 18*mm, 32*mm])
+    ht.setStyle(TableStyle([("BOX", (0,0),(-1,-1), 0.25, colors.HexColor("#CBD5E1")),
+                             ("INNERGRID", (0,0),(-1,-1), 0.15, colors.HexColor("#E2E8F0")),
+                             ("VALIGN", (0,0),(-1,-1), "TOP")]))
+    story.append(ht)
+    story.append(Spacer(1, 6))
+
+    # Sections rendered in a 2-column grid.
+    def _mark_glyph(m: str) -> str:
+        return {"X": "<b>X</b>", "CHECK": "✓", "NA": "NA", "UNSET": ""}.get(m, "")
+
+    # Build one flowable per section, then pack 2-per-row.
+    section_blocks = []
+    for sec in tmpl["sections"]:
+        rows = [[Paragraph(f"<b>{sec['id']}. {sec['label']}</b>", S["sec"]),
+                  Paragraph("<b>Mk</b>", S["cell"]), Paragraph("<b>Notes</b>", S["cell"])]]
+        for item in sec["items"]:
+            mark, notes = marks.get((sec["id"], item), ("UNSET", ""))
+            rows.append([Paragraph(item, S["cell"]),
+                          Paragraph(_mark_glyph(mark), S["cell"]),
+                          Paragraph(notes, S["cell"])])
+        t = Table(rows, colWidths=[54*mm, 8*mm, 30*mm])
+        style = [("BOX", (0,0),(-1,-1), 0.4, colors.HexColor("#CBD5E1")),
+                  ("INNERGRID", (0,0),(-1,-1), 0.15, colors.HexColor("#E2E8F0")),
+                  ("BACKGROUND", (0,0),(-1,0), colors.HexColor("#F1F5F9")),
+                  ("VALIGN", (0,0),(-1,-1), "TOP"),
+                  ("LEFTPADDING", (0,0),(-1,-1), 2), ("RIGHTPADDING", (0,0),(-1,-1), 2),
+                  ("TOPPADDING", (0,0),(-1,-1), 1), ("BOTTOMPADDING", (0,0),(-1,-1), 1)]
+        # Tint rows by mark
+        for i, item in enumerate(sec["items"], start=1):
+            m, _ = marks.get((sec["id"], item), ("UNSET", ""))
+            if m == "X":
+                style.append(("BACKGROUND", (0,i), (-1,i), colors.HexColor("#FEE2E2")))
+            elif m == "CHECK":
+                style.append(("BACKGROUND", (0,i), (-1,i), colors.HexColor("#ECFDF5")))
+            elif m == "NA":
+                style.append(("BACKGROUND", (0,i), (-1,i), colors.HexColor("#F1F5F9")))
+        t.setStyle(TableStyle(style))
+        section_blocks.append(t)
+
+    # Pack 2 per row.
+    for i in range(0, len(section_blocks), 2):
+        pair = section_blocks[i:i+2]
+        if len(pair) == 1:
+            pair.append(Paragraph("", S["cell"]))
+        grid = Table([[pair[0], pair[1]]], colWidths=[95*mm, 95*mm], hAlign="LEFT")
+        grid.setStyle(TableStyle([("VALIGN", (0,0),(-1,-1), "TOP"),
+                                    ("LEFTPADDING", (0,0),(-1,-1), 0),
+                                    ("RIGHTPADDING", (0,0),(-1,-1), 4)]))
+        story.append(grid)
+        story.append(Spacer(1, 4))
+
+    # Tread depth grid.
+    story.append(Paragraph("Tire Tread Depth (32nds)", S["h2"]))
+    tread = record.get("tread_depth_readings") or {}
+    tread_rows = [[Paragraph("<b>Position</b>", S["cell"]),
+                    Paragraph("<b>Out</b>", S["cell"]),
+                    Paragraph("<b>In</b>", S["cell"])]]
+    for pos in tmpl["tread_positions"]:
+        r = tread.get(pos["id"]) or {}
+        tread_rows.append([Paragraph(pos["label"], S["cell"]),
+                            Paragraph(str(r.get("out") or "—"), S["cell"]),
+                            Paragraph(str(r.get("in") or "—") if pos["has_inner"] else "—", S["cell"])])
+    tt = Table(tread_rows, colWidths=[70*mm, 20*mm, 20*mm], hAlign="LEFT")
+    tt.setStyle(TableStyle([("BOX", (0,0),(-1,-1), 0.4, colors.HexColor("#CBD5E1")),
+                              ("INNERGRID", (0,0),(-1,-1), 0.15, colors.HexColor("#E2E8F0")),
+                              ("BACKGROUND", (0,0),(-1,0), colors.HexColor("#F1F5F9"))]))
+    story.append(tt)
+
+    # Consumables + comments.
+    if record.get("consumables_used"):
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Consumables / Parts Used", S["h2"]))
+        story.append(Paragraph(record["consumables_used"].replace("\n", "<br/>"), S["notes"]))
+    if record.get("advisory_comments") or record.get("description"):
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("Comments", S["h2"]))
+        story.append(Paragraph(
+            (record.get("advisory_comments") or record.get("description") or "").replace("\n","<br/>"),
+            S["notes"]))
+
+    # Signature.
+    tech_sig = _decode_signature(record.get("technician_signature_data_url"))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph("Mechanic Signature", S["h2"]))
+    sig_row = [[
+        Image(io.BytesIO(tech_sig), width=80 * mm, height=25 * mm) if tech_sig
+            else Paragraph("<i>Not signed</i>", S["cell"]),
+        Paragraph(f"<b>{record.get('technician_name') or '—'}</b><br/>{record.get('date_completed') or ''}", S["cell"]),
+    ]]
+    sig = Table(sig_row, colWidths=[85*mm, 85*mm])
+    sig.setStyle(TableStyle([("BOX", (0,0),(-1,-1), 0.4, colors.HexColor("#CBD5E1")),
+                                ("VALIGN", (0,0),(-1,-1), "TOP"),
+                                ("LEFTPADDING", (0,0),(-1,-1), 6),
+                                ("TOPPADDING", (0,0),(-1,-1), 4)]))
+    story.append(sig)
 
     doc.build(story)
     pdf_bytes = buf.getvalue()
