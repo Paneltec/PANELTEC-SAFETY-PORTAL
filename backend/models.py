@@ -154,6 +154,8 @@ class PreStartIn(BaseModel):
     asset_label: Optional[str] = None
     asset_rego: Optional[str] = None
     asset_meter_reading: Optional[float] = None
+    # v58.13.132e — draft support for mobile
+    status: Optional[str] = None
 
 
 class SiteDiaryIn(BaseModel):
@@ -161,6 +163,8 @@ class SiteDiaryIn(BaseModel):
     date: str
     raw_notes: str
     structured_log: Optional[dict] = None
+    # v58.13.132e — draft support for mobile
+    status: Optional[str] = None
 
 
 class HazardIn(BaseModel):
@@ -224,6 +228,8 @@ class InspectionIn(BaseModel):
     gps_accuracy: Optional[float] = None
     gps_street: Optional[str] = None
     gps_suburb: Optional[str] = None
+    # v58.13.132e — draft support for mobile
+    status: Optional[str] = None
 
 
 # v160.3.0-adjust-13 — Risk Assessments Capture bucket. Structurally

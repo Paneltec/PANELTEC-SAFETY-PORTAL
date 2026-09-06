@@ -1,6 +1,6 @@
 /**
  * Visitor Step 4 — Escort details + complete sign-in.
- * v58.13.132c
+ * v58.13.132d — Reconciled to use existing visitor_signins.py endpoint.
  */
 import React, { useState, useCallback } from 'react';
 import {
@@ -18,7 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function VisitorStep4() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { siteId } = useLocalSearchParams<{ siteId: string }>();
+  const { siteId, scanToken } = useLocalSearchParams<{ siteId: string; scanToken: string }>();
   const qc = useQueryClient();
 
   const [name, setName] = useState('');
@@ -28,7 +28,6 @@ export default function VisitorStep4() {
   const [escort, setEscort] = useState(false);
   const [loading, setLoading] = useState(false);
   const [hostName, setHostName] = useState('');
-  const [hostUserId, setHostUserId] = useState('');
 
   // Load host from stored session
   React.useEffect(() => {
@@ -38,31 +37,28 @@ export default function VisitorStep4() {
         if (raw) {
           const u = JSON.parse(raw);
           setHostName(u.name || u.email || 'Current user');
-          setHostUserId(u.id || '');
         }
       } catch { /* ok */ }
     })();
   }, []);
 
-  const canSubmit = name.trim().length > 0;
+  const canSubmit = name.trim().length > 0 && !!scanToken;
 
   const handleComplete = useCallback(async () => {
-    if (!canSubmit || !siteId) return;
+    if (!canSubmit || !scanToken) return;
     setLoading(true);
     try {
-      await visitorSignIn(siteId, {
-        visitor_details: {
-          name: name.trim(),
-          company: company.trim(),
-          phone: phone.trim(),
-          purpose: purpose.trim(),
-          host_user_id: hostUserId,
-          escort_required: escort,
-        },
-        ppe_ack: ['Hard hat', 'Hi-vis vest', 'Steel-cap boots', 'Safety glasses'],
-        induction_ack: true,
+      // Use the existing public visitor sign-in endpoint
+      await visitorSignIn(scanToken, {
+        name: name.trim(),
+        company: company.trim() || undefined,
+        phone: phone.trim() || undefined,
+        purpose: purpose.trim() || undefined,
+        visiting_person: hostName || undefined,
+        induction_acknowledged: true,
       });
       qc.invalidateQueries({ queryKey: ['mobile-sites'] });
+      qc.invalidateQueries({ queryKey: ['mobile-home'] });
       Alert.alert('Visitor signed in', `${name} has been signed in successfully`, [
         { text: 'OK', onPress: () => router.replace('/(tabs)/sites') },
       ]);
@@ -70,7 +66,7 @@ export default function VisitorStep4() {
       Alert.alert('Error', err?.response?.data?.detail || 'Failed to sign in visitor');
     }
     setLoading(false);
-  }, [canSubmit, siteId, name, company, phone, purpose, hostUserId, escort, qc, router]);
+  }, [canSubmit, scanToken, name, company, phone, purpose, hostName, qc, router]);
 
   return (
     <KeyboardAvoidingView
@@ -131,6 +127,13 @@ export default function VisitorStep4() {
             <Ionicons name="person-circle" size={20} color={Colors.orange} />
             <Text style={s.hostLabel}>Host: {hostName || 'Loading...'}</Text>
           </View>
+
+          {!scanToken && (
+            <View style={s.warnRow}>
+              <Ionicons name="warning-outline" size={16} color={Colors.warning} />
+              <Text style={s.warnText}>Missing scan token — visitor sign-in may not work. Ask your admin to generate a QR code for this site.</Text>
+            </View>
+          )}
         </ScrollView>
 
         <View style={s.footer}>
@@ -191,6 +194,11 @@ const s = StyleSheet.create({
     backgroundColor: Colors.orangeSoft, borderRadius: 10, padding: 12,
   },
   hostLabel: { fontSize: 14, fontWeight: '600', color: Colors.orange },
+  warnRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.warningSoft, borderRadius: 10, padding: 12, marginTop: 12,
+  },
+  warnText: { fontSize: 12, color: Colors.warning, flex: 1 },
   footer: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     padding: 20, backgroundColor: Colors.surface,

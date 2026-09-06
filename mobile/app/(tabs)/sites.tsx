@@ -1,6 +1,6 @@
 /**
  * Sites tab — site list with sign-in/out + visitor entry card.
- * v58.13.132c — M3 implementation (mockup 06).
+ * v58.13.132d — Reconciled to use existing web endpoints.
  */
 import React, { useState, useCallback, useEffect } from 'react';
 import {
@@ -63,15 +63,31 @@ export default function SitesScreen() {
     })();
   }, []);
 
-  const { data: homeData } = useQuery({ queryKey: ['mobile-home'], queryFn: fetchHome, staleTime: 60000 });
+  // Fetch home data (for company pill + sign-in status)
+  const { data: homeData } = useQuery({
+    queryKey: ['mobile-home'],
+    queryFn: fetchHome,
+    staleTime: 60000,
+  });
+
+  // Derive sign-in status from home data
+  const activeSiteId = homeData?.site?.signed_in ? homeData.site.site_id : null;
+  const activeSiteSignedAt = homeData?.site?.signed_in_at || null;
+
+  // Fetch sites (enriched with GPS distance + sign-in status from home)
   const { data, isLoading, refetch } = useQuery<SitesResponse>({
-    queryKey: ['mobile-sites', userLat, userLng],
-    queryFn: () => fetchSites(userLat, userLng),
+    queryKey: ['mobile-sites', userLat, userLng, activeSiteId],
+    queryFn: () => fetchSites(userLat, userLng, activeSiteId, activeSiteSignedAt),
     staleTime: 30000,
   });
 
   const [refreshing, setRefreshing] = useState(false);
-  const onRefresh = useCallback(async () => { setRefreshing(true); await refetch(); setRefreshing(false); }, [refetch]);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await qc.invalidateQueries({ queryKey: ['mobile-home'] });
+    await refetch();
+    setRefreshing(false);
+  }, [refetch, qc]);
 
   // Sign-in modal state
   const [signInSite, setSignInSite] = useState<Site | null>(null);
@@ -85,14 +101,18 @@ export default function SitesScreen() {
     setSignInLoading(true);
     try {
       const gps = userLat && userLng ? { lat: userLat, lng: userLng } : undefined;
-      await workerSignIn(signInSite.id, gps, photoUri);
+      await workerSignIn(signInSite.simpro_site_id, gps);
       setSignInSite(null);
       Alert.alert('Signed in', `You are now signed in to ${signInSite.name}`);
       qc.invalidateQueries({ queryKey: ['mobile-sites'] });
       qc.invalidateQueries({ queryKey: ['mobile-home'] });
     } catch (err: any) {
       if (err?.message?.includes('Network')) {
-        await enqueue({ method: 'POST', url: `/api/mobile/sites/${signInSite.id}/sign-in`, body: { kind: 'worker', gps: userLat && userLng ? { lat: userLat, lng: userLng } : null } });
+        await enqueue({
+          method: 'POST',
+          url: `/api/sites/${signInSite.simpro_site_id}/signon-v127`,
+          body: { gps_lat: userLat || null, gps_long: userLng || null, answers: [] },
+        });
         Alert.alert('Queued', 'Sign-in queued — will sync when online');
         setSignInSite(null);
       } else {
@@ -106,8 +126,7 @@ export default function SitesScreen() {
     if (!signOutSiteId) return;
     setSignOutLoading(true);
     try {
-      const gps = userLat && userLng ? { lat: userLat, lng: userLng } : undefined;
-      await workerSignOut(signOutSiteId, gps);
+      await workerSignOut();
       setSignOutSiteId(null);
       Alert.alert('Signed out', 'You have been signed out');
       qc.invalidateQueries({ queryKey: ['mobile-sites'] });
@@ -116,9 +135,7 @@ export default function SitesScreen() {
       Alert.alert('Error', err?.response?.data?.detail || 'Sign-out failed');
     }
     setSignOutLoading(false);
-  }, [signOutSiteId, userLat, userLng, qc]);
-
-  const activeSiteId = data?.user_active_sign_in_site_id;
+  }, [signOutSiteId, qc]);
 
   // Loading
   if (isLoading && !data) {
@@ -187,7 +204,16 @@ export default function SitesScreen() {
               Alert.alert('Not signed in', 'Sign in to a site first to host a visitor');
               return;
             }
-            router.push({ pathname: '/visitor/[siteId]/step1', params: { siteId: activeSiteId } } as any);
+            // Find the site's scan_token for the visitor flow
+            const activeSite = sites.find(st => st.id === activeSiteId);
+            if (!activeSite?.scan_token) {
+              Alert.alert('No QR token', 'This site does not have a scan token configured. Ask your admin to generate one.');
+              return;
+            }
+            router.push({
+              pathname: '/visitor/[siteId]/step1',
+              params: { siteId: activeSiteId, scanToken: activeSite.scan_token },
+            } as any);
           }}
           activeOpacity={activeSiteId ? 0.7 : 1}
         >
@@ -259,6 +285,12 @@ function SiteCard({ site, isSignedIn, onSignIn, onSignOut }: {
             <Text style={s.distText}>{site.distance_km} km away</Text>
           </View>
         )}
+        {site.active_signons_count > 0 && (
+          <View style={s.occupancyChip}>
+            <Ionicons name="people-outline" size={12} color={Colors.info} />
+            <Text style={s.occupancyText}>{site.active_signons_count} on site</Text>
+          </View>
+        )}
       </View>
 
       {/* Action */}
@@ -326,6 +358,8 @@ const s = StyleSheet.create({
   cardAddr: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   distChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
   distText: { fontSize: 11, color: Colors.textTertiary, fontWeight: '500' },
+  occupancyChip: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  occupancyText: { fontSize: 11, color: Colors.info, fontWeight: '500' },
   cardAction: { alignItems: 'flex-end', gap: 4 },
   signInPill: {
     backgroundColor: Colors.orange, borderRadius: 10,

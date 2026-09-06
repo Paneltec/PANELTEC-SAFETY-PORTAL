@@ -1,6 +1,6 @@
 /**
  * Root layout — providers + auth routing.
- * v58.13.132b — Added QueryClientProvider + new stack screens.
+ * v58.13.132g — Added profile detail stack screens.
  */
 import React from 'react';
 import { Stack } from 'expo-router';
@@ -24,9 +24,13 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="toolbox" />
-        <Stack.Screen name="my-fleet" />
         <Stack.Screen name="visitor" />
+        <Stack.Screen name="hazards" />
+        <Stack.Screen name="incidents" />
+        <Stack.Screen name="prestarts" />
+        <Stack.Screen name="site-diary" />
+        <Stack.Screen name="inspections" />
+        <Stack.Screen name="profile" />
       </Stack>
     </QueryClientProvider>
   );

@@ -1,31 +1,24 @@
 /**
- * Tabs layout — 5-tab bottom nav.
- * Home / Sites / Report / Pre-Start / Profile
+ * Tab layout — v58.13.132f
+ * Safety-orange active tint, slate-400 inactive, navy background.
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 
-type TabIcon = {
-  name: keyof typeof Ionicons.glyphMap;
-  focused: boolean;
-};
-
-export default function TabsLayout() {
+export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.tabActive,
-        tabBarInactiveTintColor: Colors.tabInactive,
+        tabBarActiveTintColor: Colors.orange,       // #F97316
+        tabBarInactiveTintColor: Colors.slate400,    // #94A3B8
         tabBarStyle: {
           backgroundColor: Colors.surface,
-          borderTopWidth: 1,
           borderTopColor: Colors.border,
-          height: 88,
-          paddingBottom: 28,
-          paddingTop: 8,
+          paddingBottom: 4,
+          height: 56,
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -54,7 +47,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="report"
         options={{
-          title: 'Report',
+          title: 'Hazards',
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'warning' : 'warning-outline'} size={24} color={color} />
           ),

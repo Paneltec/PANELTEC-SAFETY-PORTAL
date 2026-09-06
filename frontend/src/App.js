@@ -22,6 +22,7 @@ import Dashboard from '@/pages/Dashboard';
 import Integrations from '@/pages/Integrations';
 import Stub from '@/pages/Stub';
 import AppShell from '@/components/layout/AppShell';
+import VersionBadge from '@/components/VersionBadge';
 import { WorkspaceProvider } from '@/lib/workspace';
 
 import SwmsList, { SwmsNew, SwmsDetail } from '@/pages/Swms';
@@ -206,6 +207,12 @@ function App() {
               the SilentAgentAlert (which lives inside BackupTab) by
               virtue of being outside <Routes>. */}
           <CacheBusterBanner/>
+          {/* v58.13.132e_web_hotfix — Persistent version pill on every
+              route (landing, login, PWA reset, print, scan, etc.). The
+              sidebar's `app-version-footer` only renders on authed
+              `/app/*` routes, so anonymous / public flows previously
+              had no version indicator. */}
+          <VersionBadge />
           <Routes>
             <Route path="/" element={<Cover />} />
             <Route path="/login" element={<LoginRedirect />} />

@@ -36,6 +36,8 @@ export const Colors = {
   // ── Tab bar ──
   tabActive:      '#F97316',
   tabInactive:    '#94A3B8',
+  slate400:       '#94A3B8',
+  muted:          '#64748B',
 
   // ── Misc ──
   white:          '#FFFFFF',

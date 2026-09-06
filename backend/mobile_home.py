@@ -1,5 +1,5 @@
 """
-Mobile Home Dashboard — v58.13.132b
+Mobile Home Dashboard — v58.13.132f
 
 Endpoints:
   GET  /api/mobile/home                  — aggregated dashboard data
@@ -18,6 +18,7 @@ from pydantic import BaseModel
 from db import db
 from auth import get_current_user
 from models import now_iso
+from mobile_modules_data import MODULE_KEYS, _load_matrix
 
 _log = logging.getLogger("paneltec.mobile.home")
 
@@ -128,26 +129,28 @@ def _avatar_initials(name: str) -> str:
 
 # ── Module definitions (filtered by role permissions) ────
 
-DEFAULT_MODULES = [
-    {"key": "sites", "label": "Sites", "icon": "location", "route": "/(tabs)/sites"},
-    {"key": "hazards", "label": "Report Hazard", "icon": "warning", "route": "/(tabs)/report"},
-    {"key": "prestart", "label": "Pre-Start", "icon": "clipboard", "route": "/(tabs)/prestart"},
-    {"key": "toolbox_talk", "label": "Toolbox Talk", "icon": "megaphone", "route": "/toolbox"},
-    {"key": "my_fleet", "label": "My Fleet", "icon": "car", "route": "/my-fleet"},
-    {"key": "profile", "label": "Profile", "icon": "person", "route": "/(tabs)/profile"},
-]
-
-# Roles that can see each module (basic permission matrix)
-MODULE_ROLE_ACCESS = {
-    "sites": {"admin", "supervisor", "hseq_lead", "manager", "worker",
-              "custom_construction_worker_l2", "custom_machine_operator"},
-    "hazards": {"admin", "supervisor", "hseq_lead", "manager", "worker",
-                "custom_construction_worker_l2", "custom_machine_operator"},
-    "prestart": {"admin", "supervisor", "hseq_lead", "manager", "worker",
-                 "custom_construction_worker_l2", "custom_machine_operator"},
-    "toolbox_talk": {"admin", "supervisor", "hseq_lead", "manager"},
-    "my_fleet": {"admin", "supervisor", "hseq_lead", "manager"},
-    "profile": None,  # None = always visible
+# ── Module definitions (v58.13.132d — dynamically loaded from mobile_modules_data.py) ──
+# Maps MODULE_KEYS → mobile-friendly label, icon, route.
+MODULE_METADATA = {
+    "pre_start":          {"label": "Pre-Start",        "icon": "clipboard",      "route": "/(tabs)/prestart"},
+    "site_diary":         {"label": "Site Diary",        "icon": "book",           "route": "/(tabs)/report"},
+    "hazard":             {"label": "Hazards",           "icon": "warning",        "route": "/(tabs)/report"},
+    "incident":           {"label": "Incidents",         "icon": "alert-circle",   "route": "/incidents"},
+    "inspection":         {"label": "Inspections",       "icon": "search",         "route": "/inspections"},
+    "swms":               {"label": "SWMS",              "icon": "document",       "route": "/swms"},
+    "inductions":         {"label": "Inductions",        "icon": "school",         "route": "/inductions"},
+    "plant_vehicles":     {"label": "Fleet",             "icon": "car",            "route": "/fleet"},
+    "certifications":     {"label": "Certifications",    "icon": "ribbon",         "route": "/certifications"},
+    "ask_intel":          {"label": "Ask Intel",         "icon": "sparkles",       "route": "/ask"},
+    "sign_on":            {"label": "Sites",             "icon": "location",       "route": "/(tabs)/sites"},
+    "profile":            {"label": "Profile",           "icon": "person",         "route": "/(tabs)/profile"},
+    "forms":              {"label": "Forms",             "icon": "document-text",  "route": "/forms"},
+    "document_library":   {"label": "Documents",         "icon": "folder",         "route": "/documents"},
+    "contractors":        {"label": "Contractors",       "icon": "people",         "route": "/contractors"},
+    "suppliers":          {"label": "Suppliers",         "icon": "business",       "route": "/suppliers"},
+    "workers":            {"label": "Workers",           "icon": "people-circle",  "route": "/workers"},
+    "users_directory":    {"label": "Users",             "icon": "people",         "route": "/users"},
+    "compliance_snapshot": {"label": "Compliance",       "icon": "shield-checkmark","route": "/compliance"},
 }
 
 
@@ -214,47 +217,66 @@ async def mobile_home(user: dict = Depends(get_current_user)):
     lng = (org or {}).get("office_longitude") or DEFAULT_LNG
     weather = await _fetch_weather(lat, lng)
 
-    # ── Site sign-in status ──
+    # ── Site sign-in status (v58.13.132d — uses canonical site_signons collection) ──
     site_info = {"signed_in": False, "site_id": None, "site_name": None,
                  "signed_in_at": None, "nearest": None}
 
-    # Check for active sign-on (M3 will populate this properly)
-    active_signon = await db.site_sign_ins.find_one(
-        {"user_id": user_id, "signed_off_at": None},
-        {"_id": 0},
-    ) if hasattr(db, "site_sign_ins") else None
+    try:
+        active_signon = await db.site_signons.find_one(
+            {"signed_by_user_id": user_id, "signoff_at": None, "org_id": org_id},
+            {"_id": 0, "site_id": 1, "site_name": 1, "signed_at": 1},
+            sort=[("signed_at", -1)],
+        )
+    except Exception:
+        active_signon = None
 
     if active_signon:
         site_info["signed_in"] = True
         site_info["site_id"] = active_signon.get("site_id")
         site_info["site_name"] = active_signon.get("site_name")
-        site_info["signed_in_at"] = active_signon.get("signed_in_at")
+        site_info["signed_in_at"] = active_signon.get("signed_at")
     else:
         # Find nearest site (rough — using all active sites for now)
         try:
-            nearest_site = await db.sites.find_one(
-                {"org_id": org_id, "deleted_at": None, "status": {"$ne": "archived"}},
-                {"_id": 0, "id": 1, "name": 1},
+            nearest_site = await db.simpro_sites.find_one(
+                {"org_id": org_id, "deleted_at": None},
+                {"_id": 0, "simpro_site_id": 1, "name": 1},
             )
             if nearest_site:
                 site_info["nearest"] = {
-                    "site_id": nearest_site.get("id"),
+                    "site_id": nearest_site.get("simpro_site_id"),
                     "name": nearest_site.get("name", "Unknown Site"),
                     "distance_km": None,
                 }
         except Exception:
             pass
 
-    # ── Modules (filtered by role) ──
+    # ── Modules (v58.13.132d — dynamic from mobile_modules_data.py, role-filtered) ──
     badges = await _get_module_badges(user, active_company_id)
+    try:
+        matrix = await _load_matrix(org_id)
+    except Exception:
+        matrix = {}
+
+    # Determine role key for the matrix lookup
+    role_key = role
+    if role_key not in ("worker", "supervisor", "contractor", "admin"):
+        role_key = "worker"  # fallback for custom roles
+
+    role_modules = matrix.get(role_key, {})
     modules = []
-    for m in DEFAULT_MODULES:
-        allowed_roles = MODULE_ROLE_ACCESS.get(m["key"])
-        if allowed_roles is not None and role not in allowed_roles:
+    for mod_key in MODULE_KEYS:
+        if not role_modules.get(mod_key, False):
+            continue
+        meta = MODULE_METADATA.get(mod_key)
+        if not meta:
             continue
         modules.append({
-            **m,
-            "badge": badges.get(m["key"]),
+            "key": mod_key,
+            "label": meta["label"],
+            "icon": meta["icon"],
+            "route": meta["route"],
+            "badge": badges.get(mod_key),
         })
 
     return {
