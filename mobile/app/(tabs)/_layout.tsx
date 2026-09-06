@@ -1,6 +1,7 @@
 /**
- * Tab layout — v58.13.132f
- * Safety-orange active tint, slate-400 inactive, navy background.
+ * Tab layout — v58.13.132h M6-reset
+ * 4 tabs: Home, Forms, Sites, Profile
+ * Safety-orange active tint, slate-400 inactive.
  */
 import React from 'react';
 import { Tabs } from 'expo-router';
@@ -12,8 +13,8 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Colors.orange,       // #F97316
-        tabBarInactiveTintColor: Colors.slate400,    // #94A3B8
+        tabBarActiveTintColor: Colors.orange,
+        tabBarInactiveTintColor: Colors.slate400,
         tabBarStyle: {
           backgroundColor: Colors.surface,
           borderTopColor: Colors.border,
@@ -36,29 +37,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="forms"
+        options={{
+          title: 'Forms',
+          tabBarIcon: ({ focused, color }) => (
+            <Ionicons name={focused ? 'document-text' : 'document-text-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="sites"
         options={{
           title: 'Sites',
           tabBarIcon: ({ focused, color }) => (
             <Ionicons name={focused ? 'location' : 'location-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="report"
-        options={{
-          title: 'Hazards',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'warning' : 'warning-outline'} size={24} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
-        name="prestart"
-        options={{
-          title: 'Pre-Start',
-          tabBarIcon: ({ focused, color }) => (
-            <Ionicons name={focused ? 'clipboard' : 'clipboard-outline'} size={24} color={color} />
           ),
         }}
       />

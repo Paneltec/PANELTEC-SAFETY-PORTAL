@@ -1,10 +1,9 @@
 /**
  * Home tab — Dashboard with greeting, weather, site status, module tiles.
- * v58.13.132f — Styled to match mockup #10.
- *   - 6 primary tiles in 3×2 grid (Sites, Report Hazard, Pre-Start, Site Diary, Inspections, Profile)
- *   - "More modules" collapsible section for remaining modules
+ * v58.13.132h — M6-reset: Pruned tile grid to Forms/Sites/Profile.
+ *   - 3 primary tiles (Forms, Sites, Profile)
+ *   - "More modules" for remaining backend modules
  *   - Navy header, white cards with shadow, hero card with weather
- *   - Company toggle in header (not separate row)
  */
 import React, { useCallback, useState } from 'react';
 import {
@@ -38,11 +37,12 @@ function moduleIcon(icon: string): keyof typeof Ionicons.glyphMap {
   return (map[icon] || 'grid') as keyof typeof Ionicons.glyphMap;
 }
 
-// Primary 6 tiles shown in the main grid (matching mockup #10)
-const PRIMARY_KEYS = ['sign_on', 'hazard', 'pre_start', 'site_diary', 'inspection', 'profile'];
+// Primary tiles: Forms (covers all capture modules), Sites, Profile
+const PRIMARY_KEYS = ['forms', 'sign_on', 'profile'];
+// Form-category keys that are now inside the Forms tab — not standalone tiles
+const FORM_MODULE_KEYS = new Set(['hazard', 'pre_start', 'site_diary', 'inspection', 'incident']);
 const KNOWN_ROUTES = new Set([
-  '/(tabs)/sites', '/(tabs)/report', '/(tabs)/prestart', '/(tabs)/profile',
-  '/incidents', '/inspections', '/site-diary',
+  '/(tabs)/forms', '/(tabs)/sites', '/(tabs)/profile',
 ]);
 
 export default function HomeScreen() {
@@ -107,11 +107,11 @@ export default function HomeScreen() {
   const firstName = (d.user.name || '').split(' ')[0] || 'there';
   const badgeCount = notifCount || 0;
 
-  // Split modules into primary 6 + more
+  // Split modules: primary 3 + more (excluding form-submodules)
   const primaryModules = PRIMARY_KEYS
     .map(k => d.modules.find(m => m.key === k))
     .filter(Boolean) as HomeModule[];
-  const moreModules = d.modules.filter(m => !PRIMARY_KEYS.includes(m.key));
+  const moreModules = d.modules.filter(m => !PRIMARY_KEYS.includes(m.key) && !FORM_MODULE_KEYS.has(m.key));
 
   return (
     <View testID="home-screen" style={[s.container, { paddingTop: insets.top }]}>
@@ -216,7 +216,10 @@ export default function HomeScreen() {
                 testID={`home-tile-${m.key}`}
                 style={s.tile}
                 onPress={() => {
-                  if (KNOWN_ROUTES.has(m.route)) router.push(m.route as any);
+                  if (m.key === 'forms') router.push('/(tabs)/forms' as never);
+                  else if (m.key === 'sign_on') router.push('/(tabs)/sites' as never);
+                  else if (m.key === 'profile') router.push('/(tabs)/profile' as never);
+                  else if (KNOWN_ROUTES.has(m.route)) router.push(m.route as never);
                 }}
                 activeOpacity={0.7}
               >
