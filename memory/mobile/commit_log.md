@@ -490,3 +490,36 @@
 - **Web files referenced**: None (this was mobile-only theme propagation)
 - **Verified**: 7 screenshots (Dashboard, Sites List, Create Site, QR Scanner, Settings, Ask AI, Fleet)
 
+
+
+## Iteration M2 — Home Dashboard + Simpro company_id fix (v58.13.132b)
+- **Commit**: a44952c
+- **Date**: 2026-09-06
+- **Changes**:
+  - Patched Simpro worker sync to populate `company_id` from `_company_id`
+  - Backfilled 72 workers + 4 users with `company_id` from `simpro_company_id`
+  - Built `GET /api/mobile/home` endpoint with Open-Meteo weather, company toggle, module tiles
+  - Built `POST /api/mobile/user/active-company` for company switching
+  - Built `GET /api/mobile/notifications/count` stub
+  - Rewrote `home.tsx` with full dashboard UI (greeting, hero card, 6-tile grid)
+  - Created `toolbox/index.tsx` and `my-fleet/index.tsx` placeholder screens
+  - Installed `@tanstack/react-query@5.102.8`
+  - Created `services/home.ts` with TypeScript interfaces
+  - Updated `CompanyPill.tsx` for API-driven toggle vs static chip
+  - 21/21 tests passing
+- **Files modified**:
+  - `backend/mobile_home.py` (NEW)
+  - `backend/integrations_simpro_workers.py` (PATCHED)
+  - `backend/users.py` (PATCHED)
+  - `backend/server.py` (PATCHED)
+  - `backend/scripts/backfill_company_id.py` (NEW)
+  - `mobile/app/(tabs)/home.tsx` (REWRITTEN)
+  - `mobile/app/_layout.tsx` (REWRITTEN)
+  - `mobile/app/toolbox/index.tsx` (NEW)
+  - `mobile/app/my-fleet/index.tsx` (NEW)
+  - `mobile/src/components/CompanyPill.tsx` (REWRITTEN)
+  - `mobile/src/services/home.ts` (NEW)
+  - `mobile/src/lib/version.ts` (BUMPED)
+- **Web files referenced**: None (mobile-only dashboard, backend-only for API)
+- **Verified**: 5 screenshots (dual-company, single-company, viatec toggle, signed-in site, viatec mode)
+
