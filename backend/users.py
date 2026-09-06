@@ -830,6 +830,8 @@ async def import_from_simpro(
             "simpro_employee_id": str(emp.simpro_employee_id),
             "simpro_company_id": str(emp.simpro_company_id),
             "simpro_company_name": emp.company_name,
+            # v58.13.132b — canonical company_id for data segmentation
+            "company_id": str(emp.simpro_company_id),
             "created_at": now_iso(),
         }
         try:

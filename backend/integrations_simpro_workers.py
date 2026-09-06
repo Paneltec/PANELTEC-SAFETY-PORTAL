@@ -301,6 +301,8 @@ async def refresh_workers(
                 "source": "simpro",
                 "simpro_employee_id": str(d.get("ID")),
                 "simpro_company_id": d.get("_company_id"),
+                # v58.13.132b — canonical company_id for data segmentation
+                "company_id": d.get("_company_id"),
                 "simpro_sync_snapshot": base_snapshot,
                 "created_at": ts, "updated_at": ts, "deleted_at": None,
                 "created_by": user["id"],
@@ -319,6 +321,8 @@ async def refresh_workers(
                 "simpro_sync_snapshot": new_snapshot,
                 "snapshot_before": snapshot_before,
                 "match_reason": reason,
+                # v58.13.132b — propagate company_id on every sync
+                "company_id": d.get("_company_id"),
             })
             worker_id_for_certs = w["id"]
 
@@ -394,11 +398,40 @@ async def refresh_workers(
             ],
         }
 
+    # ─── v58.13.132b — Detect dual-company workers ───
+    # Group all planned writes by simpro_employee_id to detect cross-company staff
+    _sid_to_companies: dict[str, list[str]] = {}
+    for u in plan_updates:
+        sid = str((u["simpro_sync_snapshot"] or {}).get("simpro_employee_id") or "")
+        cid = u.get("company_id") or ""
+        if sid:
+            _sid_to_companies.setdefault(sid, [])
+            if cid and cid not in _sid_to_companies[sid]:
+                _sid_to_companies[sid].append(cid)
+    for n in plan_new_workers:
+        sid = str(n["new_doc"].get("simpro_employee_id") or "")
+        cid = n["new_doc"].get("company_id") or ""
+        if sid:
+            _sid_to_companies.setdefault(sid, [])
+            if cid and cid not in _sid_to_companies[sid]:
+                _sid_to_companies[sid].append(cid)
+
     # ─── Apply writes ───
     for u in plan_updates:
+        sid = str((u["simpro_sync_snapshot"] or {}).get("simpro_employee_id") or "")
+        companies = _sid_to_companies.get(sid, [])
+        extra_sets: dict = {
+            "simpro_sync_snapshot": u["simpro_sync_snapshot"],
+            "updated_at": ts,
+            "company_id": u.get("company_id"),
+        }
+        # v58.13.132b — dual-company support
+        if len(companies) > 1:
+            extra_sets["company_ids"] = sorted(companies)
+            extra_sets["primary_company_id"] = "2"  # Paneltec default
         await db.workers.update_one(
             {"id": u["worker_id"], "org_id": org_id},
-            {"$set": {"simpro_sync_snapshot": u["simpro_sync_snapshot"], "updated_at": ts}},
+            {"$set": extra_sets},
         )
     for n in plan_new_workers:
         await db.workers.insert_one(n["new_doc"])

@@ -1,23 +1,32 @@
 /**
  * Root layout — providers + auth routing.
- * v58.13.132a M1 shell.
+ * v58.13.132b — Added QueryClientProvider + new stack screens.
  */
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { Colors } from '../src/theme/colors';
-import { isOnboarded } from '../src/services/auth';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 60_000,
+    },
+  },
+});
 
 export default function RootLayout() {
   return (
-    <>
+    <QueryClientProvider client={queryClient}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="toolbox" />
+        <Stack.Screen name="my-fleet" />
       </Stack>
-    </>
+    </QueryClientProvider>
   );
 }
