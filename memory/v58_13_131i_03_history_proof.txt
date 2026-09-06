@@ -1,0 +1,15 @@
+=== Screenshot 3 · asset_meter_history proof for D04RF ===
+  2026-09-05  odo_km_total=  201531.3 km  hours=2313.696491944446  source=navixy_sync
+  2026-09-04  odo_km_total=  201531.3 km  hours=2313.696491944446  source=navixy_sync
+  2026-09-03  odo_km_total=  201531.3 km  hours=2313.696491944446  source=navixy_sync
+  2026-09-02  odo_km_total=  201433.3 km  hours=2306.6516497222233  source=navixy_sync
+  2026-09-01  odo_km_total=  201375.5 km  hours=2301.91391388889  source=navixy_sync
+  2026-08-29  odo_km_total=  201251.2 km  hours=2286.990531666667  source=navixy_sync
+  2026-08-28  odo_km_total=  201222.3 km  hours=2285.8417586111113  source=navixy_sync
+  2026-08-26  odo_km_total=  201020.3 km  hours=2276.9356766666674  source=navixy_sync
+  2026-08-24  odo_km_total=  200854.9 km  hours=2264.858365833334  source=navixy_sync
+  2026-08-23  odo_km_total=  200707.0 km  hours=2258.141330000001  source=navixy_sync
+
+  (showing 10 of history rows for D04RF)
+
+All assets:  odometer_km_total not null = 5037   (wrong-field-name odometer_km not null = 0)

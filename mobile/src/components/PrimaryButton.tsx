@@ -1,47 +1,51 @@
+/**
+ * PrimaryButton — safety-orange full-width CTA.
+ */
 import React from 'react';
-import { TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
-import { Colors } from '../lib/colors';
+import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native';
+import { Colors } from '../theme/colors';
 
-interface Props {
-  children: React.ReactNode;
+type Props = {
+  title: string;
   onPress: () => void;
-  busy?: boolean;
   disabled?: boolean;
+  loading?: boolean;
+  variant?: 'orange' | 'navy' | 'outline';
+  style?: ViewStyle;
   testID?: string;
-  color?: string;
-}
+};
 
-export default function PrimaryButton({ children, onPress, busy, disabled, testID, color }: Props) {
+export default function PrimaryButton({ title, onPress, disabled, loading, variant = 'orange', style, testID }: Props) {
+  const bg = variant === 'orange' ? Colors.orange : variant === 'navy' ? Colors.navy : 'transparent';
+  const textColor = variant === 'outline' ? Colors.orange : Colors.white;
+  const borderColor = variant === 'outline' ? Colors.orange : bg;
+
   return (
     <TouchableOpacity
       testID={testID}
-      style={[styles.btn, { backgroundColor: color || Colors.blue }, (busy || disabled) && styles.disabled]}
+      style={[s.btn, { backgroundColor: bg, borderColor }, (disabled || loading) && s.disabled, style]}
       onPress={onPress}
-      disabled={busy || disabled}
-      activeOpacity={0.7}
+      disabled={disabled || loading}
+      activeOpacity={0.8}
     >
-      {busy && <ActivityIndicator size="small" color={Colors.imSurface} style={{ marginRight: 6 }} />}
-      <Text style={styles.text}>{children}</Text>
+      {loading ? (
+        <ActivityIndicator color={textColor} size="small" />
+      ) : (
+        <Text style={[s.text, { color: textColor }]}>{title}</Text>
+      )}
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   btn: {
-    flexDirection: 'row',
+    height: 54,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 10,
-    minHeight: 48,
+    borderWidth: 2,
+    paddingHorizontal: 24,
   },
-  disabled: {
-    opacity: 0.6,
-  },
-  text: {
-    color: Colors.imSurface,
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  text: { fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  disabled: { opacity: 0.5 },
 });

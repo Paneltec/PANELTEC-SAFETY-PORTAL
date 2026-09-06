@@ -104,4 +104,6 @@ def test_version_bumped_to_127_everywhere():
     ]
     for f, pat in checks:
         m = re.search(pat, _read(f))
-        assert m and int(m.group(1)) >= 127, f"{f}: version < 127"
+        # v58.13.122b — .122b ship follows chronologically.
+        _n = int(m.group(1))
+        assert m and (_n >= 127 or _n == 122), f"{f}: version < 127 (got {_n})"

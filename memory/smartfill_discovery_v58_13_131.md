@@ -269,3 +269,75 @@ Two decisions blocking Phase .131b:
 2. **Any spec adjustments** to the schema / endpoints / anomaly rules / frontend surface / phase breakdown above?
 
 Once green-lit I open Phase .131b.
+
+---
+
+## v58.13.131b addendum — Confirmed SmartFill Portal Transaction schema
+
+User confirmed the per-transaction fields via a SmartFill Portal
+Transaction-detail screenshot. This supersedes the column list
+above for the CSV path.
+
+### Confirmed CSV fields (per transaction)
+| Field | Example | Notes |
+|---|---|---|
+| **Transaction Id** | `5841004940` | External primary key. Authoritative dedupe. |
+| Date/Time | `2026-09-04 19:25:30` | Combined datetime; parser accepts split Date + Time too |
+| Litres | `44.310` | 3-decimal precision |
+| Units | `Litres` | Hard-reject row when `!= Litres` (R6) |
+| Fuel Type | `Diesel` | |
+| From | `Paneltec Breadalbane` | SOURCE tank / site (not destination) |
+| Total Price | `132.930` | Capture, not used for anomaly logic |
+| **Key / Code** | `100000000536B` | **Primary match** → `assets.smartfill_key_code` |
+| Card Number | `21355` | Secondary match → `assets.smartfill_card_number` |
+| Description | `Ranger` | Fuzzy match source (difflib 0.85) |
+| Registration | `K82KU` | Rego match → `assets.rego_serial` |
+| Driver | *nullable* | "No driver is assigned." is a valid state |
+| Pump | `1` | int, nullable |
+| Odometer | `0` or km | 0 is a data-quality flag not fraud (R5) |
+
+### Revised dedupe
+1. Primary: `transaction_id` UNIQUE.
+2. Fallback (transaction_id missing): `(key_code, timestamp, litres)`.
+
+### Revised match order
+1. `key_code` → `assets.smartfill_key_code`
+2. `card_number` → `assets.smartfill_card_number`
+3. `registration` → `assets.rego_serial` (case-insensitive)
+4. Fuzzy `description` → `assets.name` (difflib 0.85)
+5. Else `unmatched`
+
+### Anomaly rule additions
+- **R5 `missing_odometer`** (LOW) — Odometer == 0 AND asset has prior non-zero reading.
+- **R6 `unit_mismatch`** — hard-reject at row level when `Units != "Litres"`. Not a flag; the row never lands in `fuel_transactions`, just in `errors[]`.
+
+### Endpoint filter additions
+- `GET /transactions` — new filters `from_site`, `fuel_type`, `driver`, `key_code`.
+- `GET /stats` — new `by_site` grouping.
+
+### Header normalisation
+CSV header matcher now normalises `lower + strip non-alnum` so
+`Transaction Id`, `TransactionID`, `TRANS_ID`, `trans-id` all
+resolve to the same canonical key.
+
+---
+
+## .131d reporting spec (confirmed by user — do NOT build in .131e)
+
+**Weekly + Monthly reports** at two scopes:
+- **Per-employee** (grouped by `fuel_transactions.driver`)
+- **Per-vehicle** (grouped by `fuel_transactions.asset_id`)
+- **Admin rollup** across all employees + all vehicles
+
+**Primary metric — Dollars-per-Litre**:
+  `sum(total_price) / sum(litres)` computed per group per period.
+
+**Secondary exposed metrics**:
+  · total_spend  · total_litres  · fill_count  · avg_fill_size
+  · top-5 highest `$/L` outliers (procurement signal — flags dodgy
+    fills or suppliers charging above market)
+
+**Export**: CSV per report (same schema as `GET /fleet/fuel/export` +
+`$/L` column).
+
+Deferred until `.131e` (AssetDrawer editors) ships.

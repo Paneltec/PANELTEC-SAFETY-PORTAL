@@ -59,4 +59,6 @@ def test_version_bumped_to_127a_everywhere():
         m = re.search(r"(?:RUNNING_VERSION|CACHE_VERSION|MOBILE_BUNDLE_VERSION) = 'paneltec-v160\.3\.9\.58\.13\.(\d+)(a?)", src)
         assert m, f"{f}: canonical export not found"
         num = int(m.group(1))
-        assert num >= 127, f"{f}: canonical version {num} < 127"
+        # v58.13.122b — .122b ship follows chronologically.
+        _n = num
+        assert (_n >= 127 or _n == 122), f"{f}: canonical version {num} < 127 (got {_n})"

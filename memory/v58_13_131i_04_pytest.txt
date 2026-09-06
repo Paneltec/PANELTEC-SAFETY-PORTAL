@@ -1,0 +1,25 @@
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 14 items
+
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_meter_history_upsert_writes_odometer_km_total PASSED [  7%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_enrich_returns_navixy_live_when_history_available PASSED [ 14%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_enrich_falls_back_to_snapshot_when_no_history PASSED [ 21%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_enrich_marks_stale_when_snapshot_older_than_24h PASSED [ 28%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_enrich_returns_csv_wins_when_positive PASSED [ 35%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_enrich_returns_unknown_when_no_signal PASSED [ 42%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_lp100_computes_normal_case PASSED [ 50%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_lp100_skips_when_delta_zero PASSED [ 57%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_lp100_skips_when_previous_stale PASSED [ 64%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_lp100_skips_when_gap_over_30d PASSED [ 71%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_lp100_skips_when_computed_over_500 PASSED [ 78%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_import_csv_auto_enriches_from_navixy_live PASSED [ 85%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_import_csv_falls_back_to_unknown_when_no_navixy PASSED [ 92%]
+tests/backend_unit/test_v58_13_131i_navixy_history_wiring.py::test_version_pinned_at_131i_or_later PASSED [100%]
+
+=============================== warnings summary ===============================
+../root/.venv/lib/python3.11/site-packages/starlette/formparsers.py:12
+  /root/.venv/lib/python3.11/site-packages/starlette/formparsers.py:12: PendingDeprecationWarning: Please use `import python_multipart` instead.
+    import multipart
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 14 passed, 1 warning in 0.38s =========================

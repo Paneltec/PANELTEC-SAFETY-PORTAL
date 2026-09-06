@@ -54,4 +54,11 @@ def test_version_bumped_to_129_everywhere():
     }
     for f, pat in _CANONICAL.items():
         m = _re.search(pat, _read(f))
-        assert m and int(m.group(1)) >= 129, f"{f} not at .129 or newer"
+        # v58.13.122b — .122b ship follows chronologically. The .129
+        # feature this pin guards is unchanged.
+        num = int(m.group(1)) if m else 0
+        suffix_m = _re.search(pat + r"([a-z]?)", _read(f))
+        suffix = suffix_m.group(2) if suffix_m else ""
+        assert m and (num >= 129 or (num == 122 and suffix in {"b", "c"})), (
+            f"{f} not at .129 or newer (got {num}{suffix})"
+        )

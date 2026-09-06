@@ -102,6 +102,18 @@ class AssetRow(BaseModel):
     last_known_lng: Optional[float] = None
     navixy_last_position_time: Optional[str] = None
     vin: Optional[str] = None
+    # v58.13.122b — informational-only pill state.
+    #   · "corrected"    — most recent PM row for this asset carries
+    #                      `_backfill_manual_override=True`.
+    #   · "needs_review" — PM rows have source strings but no write
+    #                      landed (implausible/low confidence).
+    #   · null            — nothing to surface.
+    reading_review_state: Optional[str] = None
+    # v58.13.122c — Date-anchor service schedule for non-metered kinds
+    # (trailers, tools, containers). Attached only when kind is in
+    # `fleet_date_schedule.DATE_ANCHOR_KINDS` — otherwise `None` so the
+    # frontend renders the km/hours pill unchanged.
+    date_schedule: Optional[dict] = None
 
 
 class RegisterResponse(BaseModel):
@@ -244,7 +256,115 @@ async def get_register(
         {"$project": {"_id": 0, "_null_rego_last": 0}},
     ]
     items = [d async for d in db.assets.aggregate(pipeline)]
+
+    # v58.13.122b — Reading-review pill state. For each asset in this
+    # page, decide one of:
+    #   · "corrected"     — the most recent PM row for this asset has
+    #                       `_backfill_manual_override: true` (H01PZ
+    #                       flow — user-confirmed data-entry fix).
+    #   · "needs_review"  — the asset has PM rows whose original
+    #                       `latest_usage_reading` was implausible or
+    #                       unparseable AND no writeable km/hours
+    #                       value has landed (still Grey / No Data).
+    #   · null            — nothing to surface.
+    # Cheap: one Mongo aggregation per register call, joined by
+    # `plant_maintenance.registration_no` → `assets.rego_serial`.
+    await _attach_reading_review_state(items, org_id=org_id)
+
+    # v58.13.122c — Date-anchor schedule for trailers / tools / containers.
+    _attach_date_schedule(items)
+
     return {"items": items, "total": total, "page": page, "limit": limit}
+
+
+def _attach_date_schedule(items: list) -> None:
+    """Mutates `items` in place — adds `date_schedule` block to every
+    trailer / tool / container row. Metered kinds stay untouched.
+    Zero DB roundtrips; purely computed from fields already on the row."""
+    from fleet_date_schedule import compute_date_schedule
+    for a in items:
+        sched = compute_date_schedule(
+            kind=a.get("kind"),
+            interval_days=a.get("service_interval_days"),
+            last_done_date=a.get("service_last_done_date"),
+        )
+        a["date_schedule"] = sched.to_dict() if sched else None
+
+
+async def _attach_reading_review_state(items: list, *, org_id: str) -> None:
+    """Mutates `items` in place — adds `reading_review_state` field to
+    every asset. Called from `get_register` after items are hydrated."""
+    if not items:
+        return
+    regos = sorted({(a.get("rego_serial") or "").strip()
+                    for a in items if a.get("rego_serial")})
+    if not regos:
+        for a in items:
+            a["reading_review_state"] = None
+        return
+
+    # One aggregation across every rego on this page.
+    pipeline = [
+        {"$match": {
+            "registration_no": {"$in": regos},
+            "deleted_at": None,
+            "$or": [{"org_id": org_id}, {"org_id": None},
+                     {"org_id": {"$exists": False}}],
+        }},
+        # Bucket per rego. Track:
+        #   any_override   — any row with `_backfill_manual_override`
+        #                    is truthy → "corrected".
+        #   any_write      — any row with a numeric mileage/hours set →
+        #                    the asset has data (needs_review only if
+        #                    NO write happened).
+        #   any_bad_source — any row whose original source string was
+        #                    implausible or unparseable (i.e. NOT
+        #                    successfully back-filled AND has a
+        #                    non-empty reading string).
+        {"$group": {
+            "_id": "$registration_no",
+            "any_override": {"$max": {"$cond": [
+                {"$eq": ["$_backfill_manual_override", True]}, 1, 0,
+            ]}},
+            "any_write": {"$max": {"$cond": [
+                {"$or": [
+                    {"$eq": ["$mileage_at_service_backfilled", True]},
+                    {"$eq": ["$hours_at_service_backfilled", True]},
+                    {"$and": [
+                        {"$ne": ["$mileage_at_service", None]},
+                        {"$ne": ["$mileage_at_service", 0]},
+                    ]},
+                    {"$and": [
+                        {"$ne": ["$hours_at_service", None]},
+                        {"$ne": ["$hours_at_service", 0]},
+                    ]},
+                ]}, 1, 0,
+            ]}},
+            "any_reading_source": {"$max": {"$cond": [
+                {"$and": [
+                    {"$ne": ["$latest_usage_reading", None]},
+                    {"$ne": ["$latest_usage_reading", ""]},
+                ]}, 1, 0,
+            ]}},
+        }},
+    ]
+    by_rego: dict = {}
+    async for row in db.plant_maintenance.aggregate(pipeline):
+        by_rego[row["_id"]] = row
+
+    for a in items:
+        rego = (a.get("rego_serial") or "").strip()
+        agg = by_rego.get(rego) if rego else None
+        state = None
+        if agg:
+            if agg.get("any_override"):
+                state = "corrected"
+            elif agg.get("any_reading_source") and not agg.get("any_write"):
+                # Has source strings but nothing got persisted — the
+                # only way this shape exists is when the .122b bulk +
+                # override passes both rejected the row.
+                state = "needs_review"
+        a["reading_review_state"] = state
 
 
 # ── /fleet/assets/{id} ─────────────────────────────────────────────
@@ -485,7 +605,8 @@ async def log_service(
     org_id = user["org_id"]
     a = await db.assets.find_one(
         {"id": asset_id, "org_id": org_id, "deleted_at": None},
-        {"_id": 0, "id": 1, "rego_serial": 1},
+        {"_id": 0, "id": 1, "rego_serial": 1, "kind": 1,
+         "service_last_done_date": 1},
     )
     if not a:
         raise HTTPException(404, "Asset not found")
@@ -558,6 +679,22 @@ async def log_service(
                 patch["updated_at"] = ts
                 await db.assets.update_one({"id": asset_id}, {"$set": patch})
     await db.plant_maintenance.insert_one(rec)
+    # v58.13.122c — For date-anchored kinds (trailers/tools/containers),
+    # bump `assets.service_last_done_date` when this PM is more recent
+    # than the stored value. Metered kinds stay unchanged.
+    try:
+        from fleet_date_schedule import is_date_anchor_kind
+        if is_date_anchor_kind(a.get("kind")):
+            new_last = (body.date_completed or "")[:10]
+            prev_last = (a.get("service_last_done_date") or "")[:10]
+            if new_last and new_last > prev_last:
+                await db.assets.update_one(
+                    {"id": asset_id, "org_id": org_id},
+                    {"$set": {"service_last_done_date": new_last,
+                              "updated_at": ts}},
+                )
+    except Exception:  # pylint: disable=broad-except
+        pass
     # v58.13.122 — invalidate the schedule-status cache so the next
     # rollup / next-service call for this asset reflects the fresh
     # baseline.

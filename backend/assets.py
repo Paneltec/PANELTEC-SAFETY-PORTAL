@@ -269,6 +269,17 @@ class AssetIn(BaseModel):
     photo_file_id: Optional[str] = None
     notes: Optional[str] = Field(default=None, max_length=4000)
     status: AssetStatus = "active"
+    # v58.13.131e — SmartFill fuel-CSV importer match keys (primary +
+    # secondary) and per-asset fuel-tank capacity (unlocks R2
+    # capacity_exceed anomaly). All three fields optional / nullable.
+    fuel_tank_capacity_l: Optional[float] = Field(default=None, ge=0, le=100000)
+    smartfill_key_code: Optional[str] = Field(default=None, max_length=80)
+    smartfill_card_number: Optional[str] = Field(default=None, max_length=80)
+    # v58.13.122c — Date-anchor service schedule for non-metered kinds
+    # (trailers, tools, containers). Both optional / nullable so metered
+    # assets don't have to send anything.
+    service_interval_days: Optional[int] = Field(default=None, ge=1, le=3650)
+    service_last_done_date: Optional[str] = Field(default=None, max_length=32)
 
 
 # v58.13.120a — Per-asset photo attachment metadata. The bytes live
@@ -445,6 +456,13 @@ async def create_asset(body: AssetIn, user: dict = Depends(require_permission("a
         "scan_token": _scan_token(),
         "status": body.status,
         "notes": (body.notes or "").strip() or None,
+        # v58.13.131e — SmartFill match keys + tank capacity.
+        "fuel_tank_capacity_l": body.fuel_tank_capacity_l,
+        "smartfill_key_code": (body.smartfill_key_code or "").strip().upper() or None,
+        "smartfill_card_number": (body.smartfill_card_number or "").strip() or None,
+        # v58.13.122c — Date-anchor service schedule fields.
+        "service_interval_days": body.service_interval_days,
+        "service_last_done_date": (body.service_last_done_date or "").strip()[:10] or None,
         "created_at": ts,
         "updated_at": ts,
         "created_by": user["id"],
@@ -487,6 +505,16 @@ async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(requir
         "photo_file_id": body.photo_file_id,
         "notes": (body.notes or "").strip() or None,
         "status": body.status,
+        # v58.13.131e — SmartFill match keys + tank capacity. Never
+        # touched by the Navixy-lock branch below — these are safe
+        # for admin edit on Navixy-linked vehicles too.
+        "fuel_tank_capacity_l": body.fuel_tank_capacity_l,
+        "smartfill_key_code": (body.smartfill_key_code or "").strip().upper() or None,
+        "smartfill_card_number": (body.smartfill_card_number or "").strip() or None,
+        # v58.13.122c — Date-anchor service schedule fields. Editable
+        # on all kinds; only surfaced on the UI for date-anchored ones.
+        "service_interval_days": body.service_interval_days,
+        "service_last_done_date": (body.service_last_done_date or "").strip()[:10] or None,
         "updated_at": now_iso(),
     }
     # Navixy-linked vehicles: lock immutable fields back to existing values.

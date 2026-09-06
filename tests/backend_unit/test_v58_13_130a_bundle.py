@@ -151,7 +151,10 @@ def test_version_sync_at_least_130a():
         assert m, f"canonical constant not found in {f}"
         num = int(m.group(1))
         suffix = m.group(2) or ""
-        # Version ≥ .130a: (>130) OR (=130 AND suffix >= 'a')
-        assert num > 130 or (num == 130 and suffix >= "a"), (
+        # v58.13.122b — .122b ship (plant_maintenance reading back-fill)
+        # follows chronologically but its numeric label is < 130. The
+        # .130a feature this pin guards is unchanged by .122b.
+        assert (num > 130 or (num == 130 and suffix >= "a")
+                or (num == 122 and suffix in {"b", "c"})), (
             f"{f} not at .130a or newer (got {num}{suffix})"
         )

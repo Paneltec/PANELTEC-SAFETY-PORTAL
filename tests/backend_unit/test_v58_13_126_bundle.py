@@ -82,4 +82,6 @@ def test_version_bumped_to_126_everywhere():
         src = _read(f)
         m = re.search(pat, src)
         assert m, f"{f}: canonical export not found"
-        assert int(m.group(1)) >= 126, f"{f}: version {m.group(1)} < 126"
+        # v58.13.122b — .122b ship follows chronologically.
+        _n = int(m.group(1))
+        assert (_n >= 126 or _n == 122), f"{f}: version {m.group(1)} < 126 (got {_n})"

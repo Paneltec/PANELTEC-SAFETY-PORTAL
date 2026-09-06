@@ -13,6 +13,8 @@ import { ServiceSchedulesTab, ServiceLogTab } from './AssetServiceTabs';
 // v160.3.9.20a — Plant Maintenance history section for the AssetDrawer.
 import PlantMaintenanceHistory from './PlantMaintenanceHistory';
 import LiveCountersPanel from './LiveCountersPanel';
+// v58.13.131c — SmartFill fuel history tab.
+import AssetFuelTab from './AssetFuelTab';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
 import { useCan, Can } from '../lib/permissions';
@@ -114,6 +116,8 @@ const TABS = [
   { key: 'service_log', label: 'Service Log' },
   // v160.3.9.20a — every ingested Plant Maintenance record for this asset.
   { key: 'maintenance_history', label: 'Maintenance History' },
+  // v58.13.131c — SmartFill fuel transactions attributed to this asset.
+  { key: 'fuel', label: 'Fuel' },
   { key: 'photo', label: 'Photo' },
   { key: 'notes', label: 'Notes' },
 ];
@@ -121,7 +125,14 @@ const TABS = [
 const emptyForm = {
   kind: 'plant', name: '', asset_type: 'excavator', rego_serial: '',
   make: '', model: '', year: '', owner: '', notes: '', status: 'active',
+  // v58.13.131e — SmartFill CSV-importer match keys + tank capacity.
+  fuel_tank_capacity_l: '', smartfill_key_code: '', smartfill_card_number: '',
+  // v58.13.122c — Date-anchor service schedule (trailer/tool/container).
+  service_interval_days: '', service_last_done_date: '',
 };
+
+// v58.13.122c — Kinds that use a date-anchor schedule instead of km/hours.
+const DATE_ANCHOR_KINDS = new Set(['trailer', 'tool', 'container']);
 
 export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
   useLockBodyScroll();
@@ -154,6 +165,16 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
         model: form.model || null, year: form.year ? Number(form.year) : null,
         owner: form.owner || null, notes: form.notes || null,
         status: form.status || 'active',
+        // v58.13.131e — SmartFill fields. Cast blank → null; key_code
+        // uppercased server-side but we mirror the UX on blur too.
+        fuel_tank_capacity_l: form.fuel_tank_capacity_l === '' || form.fuel_tank_capacity_l == null
+          ? null : Number(form.fuel_tank_capacity_l),
+        smartfill_key_code: (form.smartfill_key_code || '').trim().toUpperCase() || null,
+        smartfill_card_number: (form.smartfill_card_number || '').trim() || null,
+        // v58.13.122c — Date-anchor service schedule fields.
+        service_interval_days: form.service_interval_days === '' || form.service_interval_days == null
+          ? null : Number(form.service_interval_days),
+        service_last_done_date: (form.service_last_done_date || '').trim() || null,
       };
       const r = isEdit
         ? await api.put(`/assets/${asset.id}`, payload)
@@ -390,6 +411,107 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
                   ))}
                 </div>
               </div>
+              {/* v58.13.131e — Fuel & SmartFill section. Provides
+                  admin UI for the three fuel-CSV-importer fields
+                  (fuel_tank_capacity_l unlocks R2; smartfill_key_code
+                  + smartfill_card_number are primary/secondary match
+                  keys). Section renders on every kind — SmartFill
+                  cards can be paired to Plant/Trailer as well as
+                  Vehicles. */}
+              <section className="rounded-xl border border-slate-200 p-4 bg-slate-50/60" data-testid="asset-fuel-section">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-bold text-slate-900">Fuel &amp; SmartFill</h4>
+                  {(form.smartfill_key_code || form.smartfill_card_number || form.fuel_tank_capacity_l !== '' && form.fuel_tank_capacity_l != null)
+                    ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200" data-testid="asset-fuel-pill-matched">CSV-matchable</span>
+                    : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-500 border border-slate-300" data-testid="asset-fuel-pill-unmatched">Not matched</span>}
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Fuel tank capacity</label>
+                    <div className="flex items-center gap-2">
+                      <input type="number" step="0.1" min="0"
+                        value={form.fuel_tank_capacity_l ?? ''}
+                        onChange={(e) => change('fuel_tank_capacity_l', e.target.value)}
+                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        data-testid="asset-fuel-tank-capacity" placeholder="e.g. 100" />
+                      <span className="text-xs font-semibold text-slate-500">L</span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500 italic">Used to flag anomalous fills &gt; 110% of capacity.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">SmartFill Key / Code</label>
+                    <input value={form.smartfill_key_code || ''}
+                      onChange={(e) => change('smartfill_key_code', e.target.value)}
+                      onBlur={(e) => change('smartfill_key_code', (e.target.value || '').trim().toUpperCase())}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase"
+                      data-testid="asset-smartfill-key-code" placeholder="e.g. 100000000536B" />
+                    <p className="mt-1 text-[11px] text-slate-500 italic">SmartFill fob / Key/Code. <b>Primary match</b> for CSV imports.</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">SmartFill Card Number</label>
+                    <input value={form.smartfill_card_number || ''}
+                      onChange={(e) => change('smartfill_card_number', e.target.value)}
+                      onBlur={(e) => change('smartfill_card_number', (e.target.value || '').trim())}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                      data-testid="asset-smartfill-card-number" placeholder="e.g. 21355" />
+                    <p className="mt-1 text-[11px] text-slate-500 italic">SmartFill card number. <b>Secondary match</b>.</p>
+                  </div>
+                </div>
+              </section>
+              {/* v58.13.122c — Date-anchor service schedule.
+                  Trailers, tools and containers have no km/hours
+                  telemetry; they run on a calendar-day interval.
+                  Section auto-hides for metered kinds. */}
+              {DATE_ANCHOR_KINDS.has(form.kind) && (
+                <section className="rounded-xl border border-slate-200 p-4 bg-slate-50/60" data-testid="asset-date-schedule-section">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-bold text-slate-900">Service Interval</h4>
+                    {form.service_interval_days
+                      ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200" data-testid="asset-date-schedule-pill-set">Schedule set</span>
+                      : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-500 border border-slate-300" data-testid="asset-date-schedule-pill-unset">No schedule</span>}
+                  </div>
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">Service interval (days)</label>
+                      <div className="flex items-center gap-2">
+                        <input type="number" step="1" min="1" max="3650"
+                          value={form.service_interval_days ?? ''}
+                          onChange={(e) => change('service_interval_days', e.target.value)}
+                          className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                          data-testid="asset-service-interval-days" placeholder="e.g. 180" />
+                        <span className="text-xs font-semibold text-slate-500">days</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500 italic">e.g. <b>180</b> for a 6-monthly trailer inspection.</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">Last done</label>
+                      <input type="date"
+                        value={form.service_last_done_date ? String(form.service_last_done_date).slice(0, 10) : ''}
+                        onChange={(e) => change('service_last_done_date', e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+                        data-testid="asset-service-last-done" />
+                      <p className="mt-1 text-[11px] text-slate-500 italic">Auto-updates when a new PM is logged against this asset.</p>
+                    </div>
+                    {form.service_interval_days && form.service_last_done_date && (() => {
+                      const last = new Date(String(form.service_last_done_date).slice(0, 10));
+                      if (isNaN(last.getTime())) return null;
+                      const nextMs = last.getTime() + Number(form.service_interval_days) * 86400000;
+                      const next = new Date(nextMs);
+                      const nextIso = next.toISOString().slice(0, 10);
+                      const daysRemaining = Math.round((nextMs - Date.now()) / 86400000);
+                      return (
+                        <div className="rounded-lg bg-white border border-slate-200 px-3 py-2 text-xs" data-testid="asset-date-schedule-preview">
+                          <span className="font-semibold text-slate-700">Next due:</span>{' '}
+                          <span className="tabular-nums text-slate-900">{nextIso}</span>{' '}
+                          <span className="text-slate-500">
+                            ({daysRemaining >= 0 ? `in ${daysRemaining} day${daysRemaining === 1 ? '' : 's'}` : `${Math.abs(daysRemaining)} day${Math.abs(daysRemaining) === 1 ? '' : 's'} overdue`})
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
@@ -503,6 +625,10 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
             current?.id
               ? <PlantMaintenanceHistory asset={current} />
               : <div className="text-sm text-slate-500">Save the asset first to view its maintenance history.</div>
+          )}
+
+          {tab === 'fuel' && (
+            <AssetFuelTab asset={current} />
           )}
 
           {tab === 'photo' && (

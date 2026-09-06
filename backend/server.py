@@ -47,6 +47,8 @@ from visitor_signins import (  # noqa: E402  — v58.13.106 public visitor sign-
 # v58.13.107 — Backend prep for mobile "Create Site with GPS". Data-plane
 # only: no comms, no scheduler hooks. See module docstring.
 from mobile_sites import router as mobile_sites_router  # noqa: E402
+# v58.13.132a — Mobile onboarding + PIN auth.
+from mobile_auth import router as mobile_auth_router  # noqa: E402
 from db import close as close_db  # noqa: E402
 from document_library import (  # noqa: E402
     router as document_library_router,
@@ -347,6 +349,8 @@ api.include_router(visitor_public_flat_router)
 api.include_router(visitor_admin_router)
 # v58.13.107 — mobile "Create Site with GPS" backend prep.
 api.include_router(mobile_sites_router)
+# v58.13.132a — mobile onboarding + PIN auth.
+api.include_router(mobile_auth_router)
 # Phase 4.1 — extras MUST mount before swms_router so static sub-paths
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.
@@ -492,6 +496,22 @@ api.include_router(worker_scan_router)
 api.include_router(forms_router)
 api.include_router(assets_router)
 api.include_router(fleet_router)
+# v58.13.131b — Fuel usage (CSV importer + summary/anomaly).
+from fleet_fuel import (  # noqa: E402
+    router as fleet_fuel_router,
+    asset_router as fleet_fuel_asset_router,
+    ensure_indexes as fleet_fuel_ensure_indexes,
+)
+api.include_router(fleet_fuel_router)
+api.include_router(fleet_fuel_asset_router)
+# v58.13.131d — Fuel Reporting endpoints (read-only aggregations +
+# on-demand email snapshot). Mounted BEFORE the fleet_fuel router in
+# path order via its own `/fleet/fuel/reports` prefix.
+from fleet_fuel_reports import (  # noqa: E402
+    router as fleet_fuel_reports_router,
+    ensure_indexes as fleet_fuel_reports_ensure_indexes,
+)
+api.include_router(fleet_fuel_reports_router)
 api.include_router(asset_service_router)
 api.include_router(asset_scan_router)
 api.include_router(form_assignments_router)
@@ -573,6 +593,16 @@ install_backup(app, _mongo_db, require_roles("admin"))
 async def on_startup():
     await ensure_indexes()
     await session_history_ensure_indexes()
+    # v58.13.131b — Fuel-transactions + import-runs indexes.
+    try:
+        await fleet_fuel_ensure_indexes()
+    except Exception as e:
+        log.warning("fleet_fuel index setup failed: %s", e)
+    # v58.13.131d — Fuel report email audit indexes.
+    try:
+        await fleet_fuel_reports_ensure_indexes()
+    except Exception as e:
+        log.warning("fleet_fuel_reports index setup failed: %s", e)
     # v58.13.90 — Idempotent seed of the `comms_safe_mode.edit` override
     # for Stephen Guy. Runs on every backend restart; a no-op after the
     # first apply. Failure is logged but never blocks startup because

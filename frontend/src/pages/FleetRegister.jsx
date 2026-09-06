@@ -31,14 +31,17 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin, Archive,
+  Upload, BarChart3,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
-import { Can, useCan } from '../lib/permissions';
+import { Can, useCan, usePermissions } from '../lib/permissions';
 import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import AssetDrawer from '../components/AssetDrawer';
 import AssetMapModal from '../components/AssetMapModal';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
+import FuelAnomalyBanner from '../components/FuelAnomalyBanner';
+import FuelImportModal from '../components/FuelImportModal';
 
 const KIND_STYLES = {
   vehicle:   { bg: 'bg-sky-100',    text: 'text-sky-800',    border: 'border-sky-200'   },
@@ -119,6 +122,49 @@ function RowChips({ row }) {
         title="Backfilled from plant_maintenance import (.120a)"
         className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-violet-100 text-violet-800 border border-violet-200">
         backfilled
+      </span>,
+    );
+  }
+  // v58.13.122b — "Reading needs review" / "Reading corrected" pill.
+  // Informational only (non-clickable). Tooltip carries the audit
+  // context so a HSEQ lead can see why the pill fired.
+  if (row.reading_review_state === 'needs_review') {
+    chips.push(
+      <span key="reading-review"
+        data-testid={`fleet-row-chip-reading-review-${row.id}`}
+        title="Source data was flagged implausible during the v58.13.122b back-fill. A real reading is still needed."
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+        Reading needs review
+      </span>,
+    );
+  } else if (row.reading_review_state === 'corrected') {
+    chips.push(
+      <span key="reading-corrected"
+        data-testid={`fleet-row-chip-reading-corrected-${row.id}`}
+        title="A user-confirmed correction replaced the historical string during the v58.13.122b back-fill. See ship memo for source + reason."
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+        Reading corrected
+      </span>,
+    );
+  }
+  // v58.13.122c — Date-anchor schedule pill for non-metered kinds
+  // (trailer / tool / container). Backend supplies `date_schedule`;
+  // metered assets get `null` and this block is skipped.
+  if (row.date_schedule) {
+    const ds = row.date_schedule;
+    const toneMap = {
+      on_schedule: { cls: 'bg-emerald-50 text-emerald-800 border-emerald-200', label: `On schedule (${ds.days_remaining}d)` },
+      due_soon:    { cls: 'bg-amber-100 text-amber-800 border-amber-200',       label: `Due soon (${ds.days_remaining}d)` },
+      overdue:     { cls: 'bg-rose-100 text-rose-800 border-rose-200',          label: ds.days_remaining != null ? `Overdue (${Math.abs(ds.days_remaining)}d)` : 'Overdue' },
+      no_schedule: { cls: 'bg-slate-100 text-slate-600 border-slate-200',       label: 'No schedule' },
+    };
+    const tone = toneMap[ds.status] || toneMap.no_schedule;
+    chips.push(
+      <span key="date-sched"
+        data-testid={`fleet-row-chip-date-schedule-${row.id}`}
+        title={ds.next_due ? `Next due ${ds.next_due} (last done ${ds.last_done || '—'}, every ${ds.interval_days}d)` : 'Interval set but never serviced — schedule an initial PM'}
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold border ${tone.cls}`}>
+        {tone.label}
       </span>,
     );
   }
@@ -602,6 +648,12 @@ export default function FleetRegister() {
   // as a single batched request after each register load.
   const [statuses, setStatuses] = useState({});
   const [statusCounts, setStatusCounts] = useState({ green: 0, amber: 0, red: 0, grey: 0 });
+  // v58.13.131c — Admin-only Fuel CSV import modal state. Role gate
+  // mirrors the backend `_require_admin` (strict `admin`, hseq_lead
+  // deliberately excluded — see fleet_fuel.py).
+  const { role } = usePermissions();
+  const isAdmin = role === 'admin';
+  const [fuelImportOpen, setFuelImportOpen] = useState(false);
   const LIMIT = 50;
 
   // Probe the feature flag via the /categories 404 signal.
@@ -773,6 +825,27 @@ export default function FleetRegister() {
     <div className="p-6">
       <header className="mb-4 flex items-baseline justify-end gap-4">
         <div className="flex gap-2">
+          {/* v58.13.131d — Fuel Reports button (read-only, gated on assets.edit). */}
+          <Can resource="assets" action="edit">
+            <Link
+              to="/app/fleet/fuel"
+              data-testid="fleet-fuel-reports-btn"
+              className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 font-semibold"
+            >
+              <BarChart3 size={13} /> Fuel Reports
+            </Link>
+          </Can>
+          {/* v58.13.131c — Admin-only Fuel CSV importer. Server-side
+              gate: fleet_fuel.py::_require_admin — role=='admin'. */}
+          {isAdmin && (
+            <button
+              onClick={() => setFuelImportOpen(true)}
+              data-testid="fleet-import-fuel-csv-btn"
+              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 inline-flex items-center gap-1.5 font-semibold"
+            >
+              <Upload size={13} /> Import Fuel CSV
+            </button>
+          )}
           <Can resource="assets" action="view">
             <button onClick={printLabels}
               data-testid="fleet-print-labels-btn"
@@ -782,6 +855,9 @@ export default function FleetRegister() {
           </Can>
         </div>
       </header>
+
+      {/* v58.13.131c — Fuel anomaly banner. Renders nothing when count is 0. */}
+      <FuelAnomalyBanner />
 
       <div className="mb-4">
         <SearchBar onOpenAsset={openAsset} />
@@ -904,6 +980,13 @@ export default function FleetRegister() {
           onSaved={(a) => { setDrawerAsset(a); reloadRows(); }}
         />
       )}
+
+      {/* v58.13.131c — Fuel CSV import modal (admin-only). */}
+      <FuelImportModal
+        open={fuelImportOpen}
+        onClose={() => setFuelImportOpen(false)}
+        onImported={() => { /* banner refetches on next mount */ }}
+      />
     </div>
     </div>
   );

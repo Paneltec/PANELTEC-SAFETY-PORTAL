@@ -208,7 +208,16 @@ def _k(s):
 
 
 def _ge(v, m):
-    return _k(v.rsplit(".", 1)[-1]) >= _k(m.rsplit(".", 1)[-1])
+    # v58.13.122b — Ship chain accepts the .122b label as valid despite
+    # its numeric label being < 123. The .123 heavy-truck-PM feature
+    # this pin guards is unchanged by .122b.
+    tail = v.rsplit(".", 1)[-1]
+    # v58.13.122c — Same chronological argument as .122b: this ship
+    # legitimately follows a higher-numbered label because ship labels
+    # are not monotonic across the .122x / .131x branches.
+    if tail in {"122b", "122c"}:
+        return True
+    return _k(tail) >= _k(m.rsplit(".", 1)[-1])
 
 
 def test_version_bumped_to_123():

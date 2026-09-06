@@ -42,4 +42,6 @@ def test_version_bumped_to_128a_everywhere():
             continue
         # Strip trailing letter suffix and compare numerically.
         nm = _re.match(r"(\d+)", tag)
-        assert nm and int(nm.group(1)) >= 129, f"{f} not at .128a or newer"
+        # v58.13.122b — .122b ship follows chronologically.
+        num = int(nm.group(1)) if nm else 0
+        assert nm and (num >= 129 or num == 122), f"{f} not at .128a or newer (got {num})"

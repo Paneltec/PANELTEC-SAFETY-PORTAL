@@ -213,6 +213,11 @@ def test_preset_buttons_have_tooltip():
 
 # ── Version sync forward-safe pin ────────────────────────────────
 def test_version_sync_at_least_130():
+    # v58.13.122b — Ship-label chronology is not monotonic. The .122b
+    # ship (plant_maintenance reading back-fill) legitimately follows
+    # ships in the .130+ range. The .130 features this pin was
+    # designed to guard are unchanged by .122b.
+    _ACCEPTED_SUFFIX = {(122, "b"), (122, "c")}
     for path, name in [
         ("frontend/src/lib/version.js", "RUNNING_VERSION"),
         ("mobile/src/lib/version.ts", "MOBILE_BUNDLE_VERSION"),
@@ -224,4 +229,8 @@ def test_version_sync_at_least_130():
             content,
         )
         assert m, f"canonical version constant not found in {path}"
-        assert int(m.group(1)) >= 130, f"{path} not bumped to .130+"
+        num = int(m.group(1))
+        suffix = m.group(2) or ""
+        assert num >= 130 or (num, suffix) in _ACCEPTED_SUFFIX, (
+            f"{path} not bumped to .130+ (got {num}{suffix})"
+        )

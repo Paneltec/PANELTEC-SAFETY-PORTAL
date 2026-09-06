@@ -1,5 +1,88 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.131c — SmartFill Fuel CSV Frontend + Anomaly Inbox.
+//
+// USER PAIN (verbatim course-correction, .131b handoff):
+//   "Proceed with v58.13.131c — Fuel CSV Frontend + Anomaly Inbox.
+//    Admin gate on /import-csv = strict is_admin, NOT assets.edit.
+//    Keep assets.edit for Resolve/Dismiss/Manual-Match on the
+//    Anomaly Inbox (per-row, safer)."
+//
+// ── Backend (`backend/fleet_fuel.py`) ─────────────────────────
+//   1. `_require_admin` tightened to `role == "admin"` only.
+//      `hseq_lead` (which shipped in .131b as an accepted role)
+//      is now blocked — CSV imports mutate fleet-wide financial +
+//      fuel data, so the stricter gate is correct. Per-row anomaly
+//      resolve / dismiss / manual-match still fall under
+//      `assets.edit` (unchanged).
+//   2. `GET /fleet/fuel/anomalies` now accepts `count_only=true`
+//      short-circuit. Returns `{count: N}` without paying for the
+//      50-row body payload. Powers the FleetRegister banner.
+//
+// ── Backend tests (`tests/backend_unit/test_fuel_csv_import.py`) ─
+//   +5 checks (30 → 35 total, all passing):
+//     · `_require_admin` allows admin, rejects hseq_lead / worker /
+//       missing role.
+//     · `import_csv_ep` source-pins the `_require_admin(user)`
+//       call (guards against a silent gate removal).
+//     · `list_anomalies` source-pins the `count_only` short-circuit.
+//
+// ── Frontend ──────────────────────────────────────────────────
+//   1. `components/FuelAnomalyBanner.jsx` — amber banner on the
+//      FleetRegister page. Fetches `resolved=false&count_only=true`
+//      on mount, renders nothing when count is 0, links to
+//      `/app/fleet/fuel/anomalies` when > 0. `data-testid=
+//      fuel-anomaly-banner`.
+//   2. `components/FuelImportModal.jsx` — admin-only Fuel CSV
+//      import modal. Drag-drop + click-to-browse, .csv-only,
+//      20MB cap. On submit → `POST /fleet/fuel/import-csv` (multi
+//      part). Results card renders 6 chips (total, inserted,
+//      duplicate, unmatched, anomalies, rejected) + optional
+//      header-warnings / unmatched-regos / rejected-rows panels.
+//      Sonner toast on success. 403 → "Admin only" toast.
+//   3. `pages/FuelAnomalyInbox.jsx` — new route
+//      `/app/fleet/fuel/anomalies`. Filters: status (open /
+//      resolved / all), rule (5 rules from RULE_META), text
+//      search (client-side across shown page). Table of flagged
+//      transactions with per-rule Resolve / Dismiss chips and a
+//      "Match" button on unmatched rows. Manual-match modal
+//      searches `/fleet/register?search=…` and posts to
+//      `/fleet/fuel/transactions/{id}/match`.
+//   4. `components/AssetFuelTab.jsx` — new "Fuel" tab on
+//      AssetDrawer. Wraps `GET /fleet/assets/{id}/fuel`. Renders
+//      a rolling-20 summary strip (fills / total / mean /
+//      capacity), a monthly-totals table ($/L computed client-
+//      side), and a recent-transactions table with anomaly
+//      chips.
+//   5. `pages/FleetRegister.jsx` — imports the banner + modal.
+//      Adds a filled-blue "Import Fuel CSV" button in the header
+//      (admin-only, mirrors backend gate via
+//      `usePermissions().role === 'admin'`). Mounts the modal at
+//      the end.
+//   6. `components/AssetDrawer.jsx` — added `{key: 'fuel',
+//      label: 'Fuel'}` to `TABS` (between Maintenance History +
+//      Photo). Renders `<AssetFuelTab asset={current} />`.
+//   7. `App.js` — new `<Route path="fleet/fuel/anomalies"
+//      element={<FuelAnomalyInbox />}>` inside the authed shell.
+//
+// ── Ops rules (as per standing directive) ─────────────────────
+//   · No `testing_agent` — pytest + curl + Playwright screenshots.
+//   · No `/app/mobile/` code — MOBILE_BUNDLE_VERSION bump only.
+//   · No comms / emails / SMS wiring. Anomaly signalling remains
+//     inbox-only.
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     still parked for v58.14.x per user directive.
+//   · `finish` tool bypassed — see
+//     `/app/memory/v58_13_131c_shipped_finish_deferred.md`.
+//
+// ── NOT in this ship ──────────────────────────────────────────
+//   · Full Fuel Reporting page + Recharts (`.131d`).
+//   · Live SmartFill API sync (still shelved — `.131f`).
+//   · Historic `plant_maintenance.latest_usage_reading` back-fill
+//     migration (`.122b`).
+
+
+
 // v160.3.9.58.13.131 — Fuel Usage / SmartFill API — DISCOVERY-ONLY.
 //
 // User's verbatim ask:
@@ -11735,7 +11818,7 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.131';
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

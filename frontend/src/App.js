@@ -56,6 +56,10 @@ import Vehicles from '@/pages/Vehicles';
 // `LegacyVehiclesRedirect` (see this file), which navigates to
 // `/app/fleet` and fires the once-per-session moved-toast.
 import FleetRegister from '@/pages/FleetRegister';
+// v58.13.131c — SmartFill fuel-anomaly inbox route.
+import FuelAnomalyInbox from '@/pages/FuelAnomalyInbox';
+// v58.13.131d — SmartFill fuel reporting page.
+import FuelReporting from '@/pages/FuelReporting';
 import AdminImports from '@/pages/settings/AdminImports';
 import ScanResolver from '@/pages/ScanResolver';
 import WorkerIdCardPrint from '@/pages/print/WorkerIdCardPrint';
@@ -285,6 +289,10 @@ function App() {
               <Route path="vehicles-legacy" element={<Vehicles />} />
               {/* v58.13.120c — Fleet & Service Register (Phase 3). */}
               <Route path="fleet" element={<FleetRegister />} />
+              {/* v58.13.131c — SmartFill CSV Fuel Anomaly Inbox. */}
+              <Route path="fleet/fuel/anomalies" element={<FuelAnomalyInbox />} />
+              {/* v58.13.131d — SmartFill Fuel Reporting page. */}
+              <Route path="fleet/fuel" element={<FuelReporting />} />
               {/* v58.13.120e — Bulk XLSX importer moved from the
                   retired Plant & Vehicles surface to Settings.
                   The `POST /api/plant-maintenance/reimport` endpoint

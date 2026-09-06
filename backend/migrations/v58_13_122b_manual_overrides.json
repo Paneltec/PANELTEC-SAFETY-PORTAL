@@ -1,0 +1,7 @@
+{
+  "H01PZ": {
+    "kind": "km",
+    "value": 63623,
+    "reason": "User-confirmed correction; historical string was decimal-place error (63623.49 -> 6,362,349.00)"
+  }
+}

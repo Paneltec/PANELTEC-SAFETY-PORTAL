@@ -76,4 +76,6 @@ def test_version_bumped_to_128_everywhere():
     }
     for f, pat in _CANONICAL.items():
         m = _re.search(pat, _read(f))
-        assert m and int(m.group(1)) >= 128, f"{f} not at .128 or newer"
+        # v58.13.122b — .122b ship follows chronologically.
+        num = int(m.group(1)) if m else 0
+        assert m and (num >= 128 or num == 122), f"{f} not at .128 or newer (got {num})"

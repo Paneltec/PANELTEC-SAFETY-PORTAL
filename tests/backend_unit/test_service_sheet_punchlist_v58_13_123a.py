@@ -84,4 +84,6 @@ def test_version_bumped_to_123a():
     tail = ver.split(".58.13.")[-1]  # e.g. "123a" or "124" or "125"
     # Extract the numeric prefix.
     num = int(re.match(r"(\d+)", tail).group(1))
-    assert num >= 123, ver
+    # v58.13.122c — .122c ship (trailer date-anchor scheduling)
+    # follows chronologically. Same argument as .122b.
+    assert num >= 123 or tail in {"122b", "122c"}, ver

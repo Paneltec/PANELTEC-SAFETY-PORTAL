@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Paneltec Civil Field",
+    "slug": "paneltec-civil-field",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icons/icon.png",
     "scheme": "paneltec",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -20,8 +20,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "foregroundImage": "./assets/icons/adaptive-icon.png",
+        "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
       "permissions": [
@@ -40,6 +40,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-notifications",
       "expo-router",
       "expo-image-picker",
       "expo-secure-store",
@@ -64,10 +65,10 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "./assets/icons/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#0F172A"
         }
       ]
     ],

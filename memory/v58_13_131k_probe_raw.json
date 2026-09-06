@@ -1,0 +1,547 @@
+{
+  "probed_at": "2026-09-05T09:07:36.938987+00:00",
+  "auth_probes": [],
+  "jsonrpc_methods": [
+    {
+      "method": "Tank:Level",
+      "status": "available",
+      "result_keys": [
+        "columns",
+        "values"
+      ],
+      "columns": [
+        "Unit Number",
+        "Tank Number",
+        "Description",
+        "Volume",
+        "Volume Percent",
+        "Capacity",
+        "Tank SFL",
+        "Status",
+        "Last Updated",
+        "Timezone"
+      ],
+      "row_count": 1,
+      "first_row": [
+        "5841",
+        "1",
+        "SmartFill 5841 Tank 1",
+        "355",
+        "0",
+        "0",
+        "0",
+        "Offline",
+        "1970-01-01 00:00:00",
+        "Australia/Hobart"
+      ]
+    },
+    {
+      "method": "Tank:List",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:List \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Levels",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Levels \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Alarms",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Alarms \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Deliveries",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Deliveries \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Transactions",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Transactions \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Fills",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Fills \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:History",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:History \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Tank:Consumption",
+      "status": "error",
+      "code": 1,
+      "message": "SmartFill Tank:Consumption \u2192 JSON-RPC error 1: Method not supported"
+    },
+    {
+      "method": "Vehicle:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Vehicle:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Vehicle:FillHistory",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Vehicle:FillHistory \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Transaction:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Transaction:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Transaction:Detail",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Transaction:Detail \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Fill:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Fill:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Fill:Detail",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Fill:Detail \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Unit:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Unit:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Site:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Site:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipt:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipt:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipt:Get",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipt:Get \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipt:Detail",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipt:Detail \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipt:Download",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipt:Download \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipts:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipts:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Receipts:Get",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Receipts:Get \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Receipts",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Receipts \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Transactions",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Transactions \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Fills",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Fills \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Consumption",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Consumption \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Deliveries",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Deliveries \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Report:Generate",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Report:Generate \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Card:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Card:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Driver:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Driver:List \u2192 JSON-RPC error 5: Method not supported"
+    },
+    {
+      "method": "Key:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Key:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "system.listMethods",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill system.listMethods \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "System:Methods",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill System:Methods \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Method:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Method:List \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Help:Methods",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Help:Methods \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "Discover:Methods",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill Discover:Methods \u2192 JSON-RPC error 5: No such method"
+    },
+    {
+      "method": "API:List",
+      "status": "error",
+      "code": 5,
+      "message": "SmartFill API:List \u2192 JSON-RPC error 5: No such method"
+    }
+  ],
+  "rest_probes": [
+    {
+      "path": "/api/v1/transactions",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v2/transactions",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/transactions",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/tanks",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/tanks",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/units",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/vehicles",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/vehicles",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/cards",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/drivers",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/deliveries",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/transfers",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/reports/transactions",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/v1/receipts/5841004903",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/receipts/5841004903",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/receipt/5841004903",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/receipts/5841004903",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/receipt/5841004903.pdf",
+      "basic_status": 404,
+      "basic_ct": "text/html",
+      "basic_len": 162,
+      "apikey_header_status": 404,
+      "apikey_header_ct": "text/html",
+      "apikey_header_len": 162
+    },
+    {
+      "path": "/receipts/5841004903.pdf",
+      "basic_status": 404,
+      "basic_ct": "text/html",
+      "basic_len": 162,
+      "apikey_header_status": 404,
+      "apikey_header_ct": "text/html",
+      "apikey_header_len": 162
+    },
+    {
+      "path": "/api/v1/receipts/download-all",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/openapi.json",
+      "basic_status": 404,
+      "basic_ct": "text/html",
+      "basic_len": 162,
+      "apikey_header_status": 404,
+      "apikey_header_ct": "text/html",
+      "apikey_header_len": 162
+    },
+    {
+      "path": "/swagger",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/swagger.json",
+      "basic_status": 404,
+      "basic_ct": "text/html",
+      "basic_len": 162,
+      "apikey_header_status": 404,
+      "apikey_header_ct": "text/html",
+      "apikey_header_len": 162
+    },
+    {
+      "path": "/api-docs",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/api/schema",
+      "basic_status": 302,
+      "basic_ct": "text/html; charset=UTF-8",
+      "basic_len": 0,
+      "apikey_header_status": 302,
+      "apikey_header_ct": "text/html; charset=UTF-8",
+      "apikey_header_len": 0
+    },
+    {
+      "path": "/openapi.json",
+      "basic_status": 404,
+      "basic_ct": "text/html",
+      "basic_len": 162,
+      "apikey_header_status": 404,
+      "apikey_header_ct": "text/html",
+      "apikey_header_len": 162
+    }
+  ],
+  "endpoint": "https://fmtdata.com/API/api.php",
+  "client_ref_last4": "...4869",
+  "filter_probes": [
+    {
+      "method": "Tank:Level",
+      "extra": {
+        "fromDate": "2026-08-30",
+        "toDate": "2026-09-05"
+      },
+      "ok": true,
+      "row_count": 1
+    },
+    {
+      "method": "Tank:Level",
+      "extra": {
+        "unitNumber": "5841",
+        "fromDate": "2026-08-30",
+        "toDate": "2026-09-05"
+      },
+      "ok": true,
+      "row_count": 1
+    }
+  ],
+  "setdefault": [
+    {
+      "method": "Tank:Level",
+      "extra": {
+        "fromDate": "2026-08-30",
+        "toDate": "2026-09-05"
+      },
+      "ok": true,
+      "row_count": 1
+    },
+    {
+      "method": "Tank:Level",
+      "extra": {
+        "unitNumber": "5841",
+        "fromDate": "2026-08-30",
+        "toDate": "2026-09-05"
+      },
+      "ok": true,
+      "row_count": 1
+    }
+  ]
+}
