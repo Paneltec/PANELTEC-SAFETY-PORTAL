@@ -97,3 +97,24 @@
   - `/app/mobile/assets/device-frames/` (12 PNG files)
   - `/app/memory/v58_13_132g_profile_endpoints.md` (new)
 - **Web files referenced**: workers.py, worker_certifications.py, swms_extras.py, fleet.py, crud.py, models.py
+
+
+## Iteration M6-reset — v58.13.132h Categorised Forms Library
+- **Commit**: 81e880327c65540ef5b45fc5bc1591674a09989b
+- **Date**: 2026-09-06
+- **Changes**:
+  - DIRECTION CORRECTION: M5 fragmented tabs were wrong; replaced with categorised Forms library
+  - Replaced 5-tab layout with 4-tab: Home / Forms / Sites / Profile
+  - Built `app/(tabs)/forms.tsx` — categorised form template list with search, 7 category sections
+  - Built `app/forms/[id].tsx` — form runner with native field rendering + submission
+  - Built `app/forms/_layout.tsx` — stack navigation for form runner
+  - Built `src/services/forms.ts` — API client (fetchFormTemplates, submitForm, groupByCategory, etc.)
+  - Rewritten `app/(tabs)/_layout.tsx` — 4-tab layout
+  - Updated `app/(tabs)/home.tsx` — pruned tile grid to Forms/Sites/Profile
+  - Updated `app/_layout.tsx` — removed old M5 stack screens, added forms stack
+  - Archived M5 files to `_archived_m5_wrong_approach/`
+  - Version bumped .132g → .132h across all 3 canonical files
+  - Published 6 device-framed screenshots + index.html
+  - Created `test_v58_13_132h_forms.py` — 6/6 passing
+- **Files modified**: 10+ files (see commit diff)
+- **Web files referenced**: Forms.jsx, RoleFormsSection.jsx, forms.py, org_settings.py

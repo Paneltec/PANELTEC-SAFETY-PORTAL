@@ -592,7 +592,93 @@ async def get_my_worker_profile(user: dict = Depends(get_current_user)):
 
 
 # ─────────────────────────────────────────────────────────────
-# v160.3.9.34 — Worker avatar upload / delete.
+# v58.13.132i — Worker self-edit (PATCH /api/me/worker-profile)
+#
+# Lets the worker update a WHITELISTED set of their own personal
+# fields from mobile. Non-whitelisted fields are silently dropped.
+# Every change writes a `worker_change_log` row for audit.
+# ─────────────────────────────────────────────────────────────
+
+_SELF_EDIT_WHITELIST = frozenset({
+    "preferred_name", "phone", "mobile", "email",
+    "street_address", "suburb", "state", "postal_code", "country",
+    "next_of_kin", "emergency_contact",
+})
+
+
+class SelfEditBody(BaseModel):
+    preferred_name: Optional[str] = Field(default=None, max_length=80)
+    phone: Optional[str] = Field(default=None, max_length=40)
+    mobile: Optional[str] = Field(default=None, max_length=40)
+    email: Optional[str] = Field(default=None, max_length=160)
+    street_address: Optional[str] = Field(default=None, max_length=200)
+    suburb: Optional[str] = Field(default=None, max_length=120)
+    state: Optional[str] = Field(default=None, max_length=8)
+    postal_code: Optional[str] = Field(default=None, max_length=10)
+    country: Optional[str] = Field(default=None, max_length=80)
+    next_of_kin: Optional[dict] = None
+    emergency_contact: Optional[dict] = None
+
+
+@me_router.patch("/worker-profile")
+async def self_edit_worker_profile(body: SelfEditBody, user: dict = Depends(get_current_user)):
+    org_id = user["org_id"]
+    email_lower = (user.get("email") or "").lower()
+    query = {
+        "org_id": org_id, "deleted_at": None,
+        "$or": [{"user_id": user["id"]}] + ([{"email": email_lower}] if email_lower else []),
+    }
+    worker = await db.workers.find_one(query, {"_id": 0})
+    if not worker:
+        raise HTTPException(404, "No linked worker record found")
+
+    payload_raw = body.model_dump(exclude_unset=True)
+    # Whitelist filter — silently drop non-whitelisted fields
+    payload = {k: v for k, v in payload_raw.items() if k in _SELF_EDIT_WHITELIST}
+    if not payload:
+        raise HTTPException(400, "No editable fields supplied")
+
+    # Validate next_of_kin / emergency_contact shape
+    for nok_field in ("next_of_kin", "emergency_contact"):
+        if nok_field in payload and payload[nok_field] is not None:
+            nok = payload[nok_field]
+            if not isinstance(nok, dict):
+                raise HTTPException(422, f"{nok_field} must be an object")
+            # Keep only allowed sub-keys
+            payload[nok_field] = {
+                "name": str(nok.get("name") or "")[:80],
+                "phone": str(nok.get("phone") or "")[:40],
+                "relationship": str(nok.get("relationship") or "")[:60],
+            }
+
+    # Write change log rows
+    now = now_iso()
+    for field, new_val in payload.items():
+        old_val = worker.get(field)
+        if old_val != new_val:
+            await db.worker_change_log.insert_one({
+                "id": new_id(),
+                "org_id": org_id,
+                "worker_id": worker["id"],
+                "field": field,
+                "old_value": old_val,
+                "new_value": new_val,
+                "changed_by": user["id"],
+                "changed_by_name": user.get("name") or user.get("email"),
+                "source": "mobile_self_edit",
+                "timestamp": now,
+            })
+
+    payload["updated_at"] = now
+    updated = await db.workers.find_one_and_update(
+        {"id": worker["id"], "org_id": org_id, "deleted_at": None},
+        {"$set": payload},
+        projection={"_id": 0},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not updated:
+        raise HTTPException(404, "Worker update failed")
+    return {"ok": True, "worker": _serialise(updated, viewer=user)}
 #
 # `POST /api/workers/{worker_id}/photo` accepts a multipart image
 # (jpeg/png/webp) up to 10MB. Server-side canonicalisation via
