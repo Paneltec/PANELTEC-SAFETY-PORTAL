@@ -523,3 +523,17 @@
 - **Web files referenced**: None (mobile-only dashboard, backend-only for API)
 - **Verified**: 5 screenshots (dual-company, single-company, viatec toggle, signed-in site, viatec mode)
 
+
+## Iteration M3 — Sites (Worker + Visitor) (v58.13.132c)
+- **Commit**: 37edf98
+- **Date**: 2026-09-06
+- **Changes**:
+  - Built 7 backend endpoints: list sites, worker sign-in/out, visitor sign-in/out, occupancy, GPS heartbeat
+  - Sites tab rewritten with company filter, GPS distance sorting, sign-in/out modals
+  - Visitor 4-step wizard: photo, induction, PPE, escort details
+  - Installed `expo-location@57.0.16`
+  - Seeded GPS coords + company_ids on test sites
+  - 11/11 sites tests + 32 total 0 failures
+- **Files modified**: backend/mobile_sites.py, backend/server.py, mobile/app/(tabs)/sites.tsx, mobile/app/visitor/[siteId]/ (4 steps + layout), mobile/src/components/SignInModal.tsx, mobile/src/components/SignOutModal.tsx, mobile/src/services/sites.ts
+
+
