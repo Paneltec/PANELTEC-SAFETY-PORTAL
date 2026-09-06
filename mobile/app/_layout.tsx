@@ -26,6 +26,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="toolbox" />
         <Stack.Screen name="my-fleet" />
+        <Stack.Screen name="visitor" />
       </Stack>
     </QueryClientProvider>
   );

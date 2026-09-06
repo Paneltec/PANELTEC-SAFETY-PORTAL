@@ -50,6 +50,7 @@ from mobile_sites import router as mobile_sites_router  # noqa: E402
 # v58.13.132a — Mobile onboarding + PIN auth.
 from mobile_auth import router as mobile_auth_router  # noqa: E402
 from mobile_home import router as mobile_home_router  # noqa: E402
+from mobile_sites import router as mobile_sites_router  # noqa: E402
 from db import close as close_db  # noqa: E402
 from document_library import (  # noqa: E402
     router as document_library_router,
@@ -354,6 +355,8 @@ api.include_router(mobile_sites_router)
 api.include_router(mobile_auth_router)
 # v58.13.132b — mobile home dashboard.
 api.include_router(mobile_home_router)
+# v58.13.132c — mobile sites.
+api.include_router(mobile_sites_router)
 # Phase 4.1 — extras MUST mount before swms_router so static sub-paths
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.

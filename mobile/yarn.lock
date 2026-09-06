@@ -1038,6 +1038,19 @@
     resolve-from "^5.0.0"
     semver "^7.6.0"
 
+"@expo/image-utils@^0.11.5":
+  version "0.11.5"
+  resolved "https://registry.yarnpkg.com/@expo/image-utils/-/image-utils-0.11.5.tgz#47cd85c9d09ab2fb155823da62b71b9ae0f7ffa7"
+  integrity sha512-KPQBTpmpAfy/Vu9y4wPW808/qtZxjYmyJg8cm2QCPAupp+qEWA3b5zmk0ulOwQ9OgeHxuCPgUqWgkwHFo7UsrQ==
+  dependencies:
+    "@expo/require-utils" "^57.0.5"
+    "@expo/spawn-async" "^1.8.0"
+    chalk "^4.0.0"
+    getenv "^2.0.0"
+    jimp-compact "0.16.1"
+    parse-png "^2.1.0"
+    semver "^7.6.0"
+
 "@expo/image-utils@^0.8.8":
   version "0.8.14"
   resolved "https://registry.yarnpkg.com/@expo/image-utils/-/image-utils-0.8.14.tgz#1c4bf2e6787436ae14beb834b7c36133329de842"
@@ -1254,6 +1267,15 @@
   version "55.0.5"
   resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-55.0.5.tgz#50ac2bd7fa74d8c55749c88c2bef19d4d23e0b84"
   integrity sha512-U4K/CQ2VpXuwfNGsN+daKmYOt15hCP8v/pXaYH6eut7kdYZo6SfJ1yr67BIcJ+1Gzzs+QzTxswAZChKpXmceyw==
+  dependencies:
+    "@babel/code-frame" "^7.20.0"
+    "@babel/core" "^7.25.2"
+    "@babel/plugin-transform-modules-commonjs" "^7.24.8"
+
+"@expo/require-utils@^57.0.5":
+  version "57.0.5"
+  resolved "https://registry.yarnpkg.com/@expo/require-utils/-/require-utils-57.0.5.tgz#bde8d170b0b53fa1cd77aa73a305e5a16f4229a3"
+  integrity sha512-kTAXj9lDFEIPMsbAOGCGbjBbMF0oi7CqkYM79KOX0DDD9wSwXmlKL1z2h8OwsrBf7mbOo2DjlRvZu4BEjrIxGw==
   dependencies:
     "@babel/code-frame" "^7.20.0"
     "@babel/core" "^7.25.2"
@@ -3914,10 +3936,12 @@ expo-local-authentication@~17.0.8:
   dependencies:
     invariant "^2.2.4"
 
-expo-location@19.0.8:
-  version "19.0.8"
-  resolved "https://registry.yarnpkg.com/expo-location/-/expo-location-19.0.8.tgz#1805393151b1286021c1ad36246b6fd095d09b55"
-  integrity sha512-H/FI75VuJ1coodJbbMu82pf+Zjess8X8Xkiv9Bv58ZgPKS/2ztjC1YO1/XMcGz7+s9DrbLuMIw22dFuP4HqneA==
+expo-location@^57.0.16:
+  version "57.0.16"
+  resolved "https://registry.yarnpkg.com/expo-location/-/expo-location-57.0.16.tgz#42ea80dcc296537a5c3a78a23fda460d539b45d8"
+  integrity sha512-DnJXr2F5RQyFWouw4BA1tu1ckNBJe3+OQvZTfDZ4eq9f3vv1LL2Plq2DT3wppMwjH1BgV5QP/JAvu7muqqRwrw==
+  dependencies:
+    "@expo/image-utils" "^0.11.5"
 
 expo-modules-autolinking@3.0.26:
   version "3.0.26"
