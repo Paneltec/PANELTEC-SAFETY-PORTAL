@@ -161,6 +161,37 @@ class WorkerIn(BaseModel):
     client_ids: Optional[list[str]] = None
 
 
+# v58.13.131o — SmartFill card assignment entry.
+# `card_number` is the SmartFill "Card Number" from the fuel CSV /
+# Transactions:Read API. `assigned_from` / `assigned_to` are optional
+# `YYYY-MM-DD` bounds — leave both null for the currently-active card.
+# `assigned_to` set on an old assignment lets a card be re-assigned
+# to a different worker without losing the historical resolution
+# (see `resolve_driver_by_card` in `fleet_fuel.py`).
+class SmartFillCardEntry(BaseModel):
+    card_number: str = Field(min_length=1, max_length=32)
+    assigned_from: Optional[str] = Field(default=None, max_length=10)
+    assigned_to: Optional[str] = Field(default=None, max_length=10)
+    notes: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("card_number")
+    @classmethod
+    def _cn(cls, v):
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("card_number required")
+        return v
+
+    @field_validator("assigned_from", "assigned_to")
+    @classmethod
+    def _dt(cls, v):
+        if v in (None, ""):
+            return None
+        if not ISO_DATE_RE.match(v):
+            raise ValueError("date must be YYYY-MM-DD")
+        return v
+
+
 class WorkerPatch(BaseModel):
     first_name: Optional[str] = Field(default=None, min_length=1, max_length=80)
     last_name: Optional[str] = Field(default=None, max_length=80)
@@ -372,6 +403,112 @@ async def update_worker(worker_id: str, body: WorkerPatch, user: dict = Depends(
     if not result:
         raise HTTPException(404, "Worker not found")
     return _serialise(result, viewer=user)
+
+
+# ── v58.13.131o — SmartFill card ↔ worker linkage ────────────────
+# Fuel CSV imports carry a `Card Number` (e.g. 21318) but no driver
+# name. Per-employee reports need a human name — so admins link one
+# or more card numbers to each worker here. Backfill / insert-time
+# resolution lives in `fleet_fuel.py:resolve_driver_by_card`.
+
+@router.get("/{worker_id}/smartfill-cards")
+async def list_smartfill_cards(
+    worker_id: str,
+    user: dict = Depends(require_permission("workers", "view")),
+):
+    worker = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not worker:
+        raise HTTPException(404, "Worker not found")
+    return {"cards": worker.get("smartfill_card_numbers") or []}
+
+
+@router.post("/{worker_id}/smartfill-cards")
+async def add_smartfill_card(
+    worker_id: str,
+    body: SmartFillCardEntry,
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user)
+    existing = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Worker not found")
+    require_scoped_access(user, "workers", existing)
+
+    entry = body.model_dump()
+    entry["created_at"] = now_iso()
+    entry["created_by"] = user["id"]
+    cards = list(existing.get("smartfill_card_numbers") or [])
+    # Uniqueness within a worker's own list: if the same card_number
+    # already exists AND has no `assigned_to`, reject as duplicate.
+    # A card with `assigned_to` set is a historical row and can
+    # co-exist with a fresh active one.
+    for c in cards:
+        if c.get("card_number") == entry["card_number"] and not c.get("assigned_to"):
+            raise HTTPException(409, "Card number already linked to this worker (active)")
+
+    # Cross-worker uniqueness on ACTIVE assignments (assigned_to=null).
+    # A card can only be actively linked to ONE worker at a time —
+    # historical assignments (with assigned_to set) don't conflict.
+    other = await db.workers.find_one(
+        {
+            "org_id": user["org_id"],
+            "deleted_at": None,
+            "id": {"$ne": worker_id},
+            "smartfill_card_numbers": {"$elemMatch": {
+                "card_number": entry["card_number"],
+                "$or": [
+                    {"assigned_to": None},
+                    {"assigned_to": {"$exists": False}},
+                ],
+            }},
+        },
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1},
+    )
+    if other:
+        raise HTTPException(
+            409,
+            f"Card {entry['card_number']} is actively linked to "
+            f"{other.get('first_name','?')} {other.get('last_name','')}. "
+            "Close that assignment first with `assigned_to`.",
+        )
+
+    cards.append(entry)
+    await db.workers.update_one(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"$set": {"smartfill_card_numbers": cards, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "cards": cards}
+
+
+@router.delete("/{worker_id}/smartfill-cards/{card_number}", status_code=200)
+async def remove_smartfill_card(
+    worker_id: str,
+    card_number: str,
+    user: dict = Depends(get_current_user),
+):
+    _require_write(user)
+    existing = await db.workers.find_one(
+        {"id": worker_id, "org_id": user["org_id"], "deleted_at": None},
+        {"_id": 0},
+    )
+    if not existing:
+        raise HTTPException(404, "Worker not found")
+    require_scoped_access(user, "workers", existing)
+    cards = list(existing.get("smartfill_card_numbers") or [])
+    filtered = [c for c in cards if c.get("card_number") != card_number]
+    if len(filtered) == len(cards):
+        raise HTTPException(404, f"Card {card_number} not linked to this worker")
+    await db.workers.update_one(
+        {"id": worker_id, "org_id": user["org_id"]},
+        {"$set": {"smartfill_card_numbers": filtered, "updated_at": now_iso()}},
+    )
+    return {"ok": True, "removed": card_number, "cards": filtered}
 
 
 @router.delete("/{worker_id}", status_code=204)

@@ -127,10 +127,12 @@ def test_version_at_least_131e():
     # Inbox, user-directed label) followed .131e. So `.131c` is a
     # valid current tag — the pin accepts it explicitly alongside
     # any suffix >= "e".
+    # v58.13.131m widens the suffix pattern to accept multi-char
+    # suffixes (`q1`, `q2`, `p_hotfix`) that landed after `.132p`.
     _CANONICAL = {
-        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
-        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
-        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
+        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
+        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
+        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
     }
     for f, pat in _CANONICAL.items():
         m = re.search(pat, _read(f))

@@ -1,0 +1,12 @@
+{
+  "filename": "paneltec-field-app-v58.13.132at.apk",
+  "version": "1.0.6",
+  "version_code": 137,
+  "size_bytes": 121906775,
+  "sha256": "0a6112f0cc90de4d1b4907064c34dfe7044a81220143d88c18c74a0e68ab44a0",
+  "built_at": "2026-09-08T04:27:19Z",
+  "eas_build_id": "24783f93-3817-4f32-a85c-e41fea8d5734",
+  "bundle_id": "com.emergent.whscompliance.fv5aib",
+  "ship_version": "paneltec-v160.3.9.58.13.132at",
+  "changelog": "Sentry native + JS crash reporting added (EU region DSN). ErrorBoundary, boot-trace, splash retention and on-next-boot recovery screen from .132al preserved. First build capable of shipping a native stack trace off-device for the .132ai launch crash investigation."
+}

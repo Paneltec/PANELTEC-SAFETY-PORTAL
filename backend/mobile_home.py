@@ -1,5 +1,5 @@
 """
-Mobile Home Dashboard — v58.13.132f
+Mobile Home Dashboard — v58.13.132cj
 
 Endpoints:
   GET  /api/mobile/home                  — aggregated dashboard data
@@ -155,31 +155,67 @@ MODULE_METADATA = {
 
 
 async def _get_module_badges(user: dict, company_id: str) -> dict:
-    """Compute badge counts for dashboard modules."""
+    """Compute badge counts for the mobile Home tile grid.
+
+    v58.13.132p (corrected) — badge keys mirror the mobile module keys
+    (`forms`, `sites`, `profile`, `swms`, `certifications`), NOT the
+    hazards/vehicles set from an earlier mis-read of the mockup.
+    """
     org_id = user.get("org_id", "")
     badges: dict[str, Optional[int]] = {}
+    role = (user.get("role") or "").lower()
 
+    # ── forms — pending submissions (server-side drafts). Local drafts
+    #    live on-device and are counted client-side. Keeping this simple
+    #    for the first pass. ──
     try:
-        # Sites: count of active sites for the company
-        site_count = await db.sites.count_documents({
-            "org_id": org_id, "deleted_at": None, "status": {"$ne": "archived"},
+        forms_count = await db.form_submissions.count_documents({
+            "org_id": org_id, "deleted_at": None, "status": "draft",
         })
-        badges["sites"] = site_count if site_count > 0 else None
-
-        # Hazards: open hazards
-        hazard_count = await db.hazards.count_documents({
-            "org_id": org_id, "deleted_at": None, "status": "open",
-        })
-        badges["hazards"] = hazard_count if hazard_count > 0 else None
-
-        # Pre-starts: today's count
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        prestart_count = await db.pre_starts.count_documents({
-            "org_id": org_id, "deleted_at": None, "date": today,
-        })
-        badges["prestart"] = prestart_count if prestart_count > 0 else None
+        badges["forms"] = forms_count if forms_count > 0 else None
     except Exception:
-        pass  # Collections may not exist in test DB
+        badges["forms"] = None
+
+    # ── sites — count of active sites available for sign-in. ──
+    try:
+        sites_count = await db.sites.count_documents({
+            "org_id": org_id, "deleted_at": None,
+            "status": {"$ne": "archived"},
+        })
+        badges["sites"] = sites_count if sites_count > 0 else None
+    except Exception:
+        badges["sites"] = None
+
+    # ── swms — assigned SWMS the worker has not yet acked. ──
+    try:
+        swms_count = await db.swms.count_documents({
+            "org_id": org_id, "deleted_at": None,
+            "status": {"$ne": "superseded"},
+        })
+        badges["swms"] = swms_count if swms_count > 0 else None
+    except Exception:
+        badges["swms"] = None
+
+    # ── certifications — expiring within 30 days for the caller. ──
+    from datetime import timedelta
+    horizon = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    try:
+        cert_count = await db.certifications.count_documents({
+            "org_id": org_id, "deleted_at": None,
+            "expiry_date": {"$lte": horizon, "$ne": None},
+        })
+        badges["certifications"] = cert_count if cert_count > 0 else None
+    except Exception:
+        badges["certifications"] = None
+
+    # ── profile — cert-expiring + SWMS-pending rollup (mirrors what the
+    #    Profile tab surfaces in-app).
+    profile_count = 0
+    for k in ("certifications", "swms"):
+        v = badges.get(k)
+        if isinstance(v, int):
+            profile_count += v
+    badges["profile"] = profile_count if profile_count > 0 else None
 
     return badges
 
@@ -263,7 +299,15 @@ async def mobile_home(user: dict = Depends(get_current_user)):
     if role_key not in ("worker", "supervisor", "contractor", "admin"):
         role_key = "worker"  # fallback for custom roles
 
-    role_modules = matrix.get(role_key, {})
+    # v58.13.132p — preview-scope module override. When a preview session
+    # was minted via `?scope=...`, the JWT carries a pre-resolved union
+    # of the underlying roles' allowlists. Prefer that over the matrix
+    # lookup so the tile grid reflects the collapsed scope precisely.
+    preview_modules = user.get("preview_modules") or []
+    if preview_modules:
+        role_modules = {k: True for k in preview_modules}
+    else:
+        role_modules = matrix.get(role_key, {})
     modules = []
     for mod_key in MODULE_KEYS:
         if not role_modules.get(mod_key, False):
@@ -278,6 +322,9 @@ async def mobile_home(user: dict = Depends(get_current_user)):
             "route": meta["route"],
             "badge": badges.get(mod_key),
         })
+
+    # ── v58.13.132n — Today's daily-job assignment ──
+    today_job, today_job_status = await _resolve_today_job(user, org_id, today_iso)
 
     return {
         "user": {
@@ -298,7 +345,56 @@ async def mobile_home(user: dict = Depends(get_current_user)):
         "site": site_info,
         "weather": weather,
         "modules": modules,
+        # v58.13.132n
+        "today_job": today_job,
+        "today_job_status": today_job_status,
+        # v58.13.132p — 6-tile grid badge counts.
+        "module_badges": badges,
     }
+
+
+async def _resolve_today_job(user: dict, org_id: str, today_iso: str):
+    """v58.13.132n — Return (job_dict_or_None, status_string).
+
+    status ∈ {"no_job", "pending_accept", "accepted", "declined"}. Preview
+    sessions and admins-with-no-worker-row cleanly return `no_job`.
+    """
+    worker_id = None
+    if user.get("email"):
+        w = await db.workers.find_one(
+            {"org_id": org_id, "email": user["email"], "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+        worker_id = (w or {}).get("id")
+    if not worker_id:
+        return None, "no_job"
+
+    doc = await db.daily_job_assignments.find_one(
+        {"org_id": org_id, "worker_id": worker_id, "date": today_iso},
+        {"_id": 0},
+    )
+    if not doc:
+        return None, "no_job"
+
+    if doc.get("declined_at"):
+        status = "declined"
+    elif doc.get("accepted_at"):
+        status = "accepted"
+    else:
+        status = "pending_accept"
+
+    return {
+        "id": doc.get("id"),
+        "site_id": doc.get("site_id"),
+        "site_name": doc.get("site_name"),
+        "site_address": doc.get("site_address"),
+        "site_coords": doc.get("site_coords"),
+        "assigned_at": doc.get("assigned_at"),
+        "sms_sent_at": doc.get("sms_sent_at"),
+        "accepted_at": doc.get("accepted_at"),
+        "declined_at": doc.get("declined_at"),
+        "status": status,
+    }, status
 
 
 # ── POST /api/mobile/user/active-company ─────────────────

@@ -384,7 +384,14 @@ export function UserDropdownCard({ user, onChangePassword, onSignOut, onNavigate
 
       {/* Quick actions */}
       <div className="py-2">
-        <QuickRow icon={<KeyMultiple20Regular />} label="Change password" onClick={onChangePassword} testid="menu-change-password" />
+        {/* v58.13.132az — "My Profile" nav row so admins can reach
+            the MyProfile page (Change password + Admin console PIN
+            + session-wide preferences) from the header without
+            hunting the sidebar. Sits at the top of Quick Actions
+            because it's now the primary landing for account-scope
+            actions. */}
+        <QuickRow icon={<Person20Regular />}      label="My Profile"       onClick={() => onNavigate('/app/profile')} testid="menu-my-profile" />
+        <QuickRow icon={<KeyMultiple20Regular />} label="Change password"  onClick={onChangePassword} testid="menu-change-password" />
         <QuickRow icon={<Person20Regular />}      label="My apps"          onClick={() => onNavigate('/app/settings/my-apps')} testid="menu-my-apps" />
         {(user?.effective_permissions?.users?.edit) && (
           <QuickRow icon={<People20Regular />}    label="Users & permissions" onClick={() => onNavigate('/app/settings/users')} testid="menu-users" />

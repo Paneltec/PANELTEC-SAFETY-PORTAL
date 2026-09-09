@@ -12,7 +12,7 @@
 // When a SWMS has supersedes / superseded_by pointers, a small "View history"
 // link surfaces a chain modal so admins can audit who superseded what.
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Save, History, ChevronRight, X, CheckSquare, Square, AlertCircle, FileText, GitCompare } from 'lucide-react';
+import { Loader2, Save, History, ChevronRight, X, CheckSquare, Square, AlertCircle, FileText, GitCompare, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { getUser } from '../lib/auth';
@@ -30,15 +30,9 @@ import {
 // v160.3.7k — Inoculation sweep: lock body scroll while the SWMS history modal is open.
 import useLockBodyScroll from '../lib/useLockBodyScroll';
 
-const ROLE_CHOICES = [
-  ['admin', 'Admin'],
-  ['manager', 'Manager'],
-  ['hseq_lead', 'HSEQ Lead'],
-  ['supervisor', 'Supervisor'],
-  ['auditor', 'Auditor'],
-  ['worker', 'Worker'],
-];
-
+// v58.13.132bd — ROLE_CHOICES now hydrated at runtime from `/admin/roles`
+// (single source of truth: the 4 core roles + any custom roles admins
+// create). See load() below.
 const ASSET_TYPE_CHOICES = [
   ['plant', 'Plant'],
   ['vehicle', 'Vehicle'],
@@ -48,17 +42,18 @@ const ASSET_TYPE_CHOICES = [
 ];
 
 const EMPTY_APPLIES = { roles: [], worker_ids: [], company_ids: [], asset_types: [] };
-// v160.3.9.29-2b — Legacy set kept for reference; consumer moved to useCan('swms','edit').
-const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
 
 export default function SwmsAssignmentsAdmin() {
   const user = getUser();
   const canEdit = useCan()('swms', 'edit');
-  void user; void EDIT_ROLES;
+  void user;
   const [swmsList, setSwmsList] = useState([]);
   const [assignments, setAssignments] = useState({});
   const [workers, setWorkers] = useState([]);
   const [companies, setCompanies] = useState([]);
+  // v58.13.132bd — Live role choices from `/admin/roles` (was a static
+  // 6-item array pinned to legacy role_ids that no longer exist).
+  const [roleChoices, setRoleChoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedId, setSelectedId] = useState(null);
@@ -71,16 +66,29 @@ export default function SwmsAssignmentsAdmin() {
   const load = async () => {
     setLoading(true);
     try {
-      const [swmsR, assnR, wR, cR] = await Promise.all([
+      const [swmsR, assnR, wR, cR, rolesR] = await Promise.all([
         api.get('/swms'),
         api.get('/swms/assignments'),
         api.get('/workers').catch(() => ({ data: [] })),
         api.get('/contractors').catch(() => ({ data: [] })),
+        api.get('/admin/roles').catch(() => ({ data: { roles: [] } })),
       ]);
       setSwmsList(swmsR.data || []);
       setAssignments(assnR.data || {});
       setWorkers(wR.data || []);
       setCompanies(cR.data || []);
+      // v58.13.132bd — Live roles → [[role_id, label], ...].
+      // Filter out inactive rows; sort seed roles first, then custom.
+      const rs = (rolesR.data?.roles || [])
+        .filter((r) => r.is_active !== false)
+        .sort((a, b) => {
+          const aSeed = a.source === 'seed' ? 0 : 1;
+          const bSeed = b.source === 'seed' ? 0 : 1;
+          if (aSeed !== bSeed) return aSeed - bSeed;
+          return (a.name || a.role_id || '').localeCompare(b.name || b.role_id || '');
+        })
+        .map((r) => [r.role_id, r.name || r.label || r.role_id]);
+      setRoleChoices(rs);
     } catch (e) { toast.error(apiError(e)); }
     finally { setLoading(false); }
   };
@@ -159,7 +167,7 @@ export default function SwmsAssignmentsAdmin() {
         <PageHeader crumb="Settings / SWMS Assignments" title="SWMS Assignments" />
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-sm text-amber-800 inline-flex items-start gap-3">
           <AlertCircle size={16} className="mt-0.5" />
-          <div>This page is restricted to Admin, Manager and HSEQ Lead roles.</div>
+          <div>This page is restricted to users with the <code className="font-mono text-[11px] bg-amber-100 px-1 py-0.5 rounded">swms.edit</code> permission.</div>
         </div>
       </div>
     );
@@ -168,11 +176,37 @@ export default function SwmsAssignmentsAdmin() {
   return (
     <div className="p-6 lg:p-8" data-testid="swms-assignments-page">
       <PageHeader crumb="Settings / SWMS Assignments" title="SWMS Assignments" />
-      <p className="text-sm text-slate-600 -mt-2 mb-5 max-w-3xl">
+      <p className="text-sm text-slate-600 -mt-2 mb-3 max-w-3xl">
         Decide which roles, workers, companies or asset types each SWMS applies
         to. Superseded versions are hidden from the active list — open &ldquo;View
         history&rdquo; on any SWMS to audit the full version chain.
       </p>
+
+      {/* v58.13.132br — SWMS origin explainer. Placed under the
+          existing subtitle so admins new to the module immediately
+          understand where the list is populated from. */}
+      <div
+        className="bg-sky-50 border border-sky-200 rounded-lg p-3 text-sm text-slate-700 max-w-3xl mb-5 inline-flex items-start gap-2"
+        data-testid="swms-origin-note"
+      >
+        <Info size={16} className="text-sky-700 mt-0.5 shrink-0" />
+        <div>
+          <div className="font-semibold text-sky-800 mb-0.5">
+            Where do these SWMS come from?
+          </div>
+          <div>
+            SWMS shown here come from two sources:{' '}
+            <span className="font-semibold text-sky-800">
+              Capture → AI SWMS Create
+            </span>{' '}
+            (auto-generated from your job PDFs), or{' '}
+            <span className="font-semibold text-sky-800">
+              Upload → your own SWMS PDF dropped in via the Documents module
+            </span>
+            . All active versions appear here regardless of source.
+          </div>
+        </div>
+      </div>
 
       {loading ? (
         <div className="text-sm text-slate-500"><Loader2 size={14} className="inline animate-spin mr-1" /> Loading…</div>
@@ -244,6 +278,7 @@ export default function SwmsAssignmentsAdmin() {
                   draft={draft}
                   workers={workers}
                   companies={companies}
+                  roleChoices={roleChoices}
                   toggleArray={toggleArray}
                   onSave={saveBulk}
                   saving={saving}
@@ -259,6 +294,7 @@ export default function SwmsAssignmentsAdmin() {
                 draft={draft}
                 workers={workers}
                 companies={companies}
+                roleChoices={roleChoices}
                 toggleArray={toggleArray}
                 onSave={saveSingle}
                 saving={saving}
@@ -285,7 +321,7 @@ function EmptyHint({ title, body }) {
   );
 }
 
-function Editor({ title, subtitle, draft, workers, companies, toggleArray, onSave, saving, saveTestId }) {
+function Editor({ title, subtitle, draft, workers, companies, roleChoices, toggleArray, onSave, saving, saveTestId }) {
   return (
     <>
       <div className="mb-4">
@@ -295,8 +331,9 @@ function Editor({ title, subtitle, draft, workers, companies, toggleArray, onSav
       </div>
 
       <ChipGroup label="Roles" data-testid="assign-roles"
-        choices={ROLE_CHOICES} selected={draft.roles}
-        onToggle={(v) => toggleArray('roles', v)} />
+        choices={roleChoices} selected={draft.roles}
+        onToggle={(v) => toggleArray('roles', v)}
+        emptyLabel="No roles available — create one in Settings › Roles." />
 
       <SearchableMulti
         label={`Workers (${draft.worker_ids.length} selected)`}
@@ -327,11 +364,14 @@ function Editor({ title, subtitle, draft, workers, companies, toggleArray, onSav
   );
 }
 
-function ChipGroup({ label, choices, selected, onToggle, ...props }) {
+function ChipGroup({ label, choices, selected, onToggle, emptyLabel, ...props }) {
   return (
     <div className="mb-4" {...props}>
       <div className="text-xs font-semibold text-slate-700 mb-1.5">{label}</div>
       <div className="flex flex-wrap gap-1.5">
+        {(!choices || choices.length === 0) && emptyLabel && (
+          <div className="text-[11px] text-slate-500 italic">{emptyLabel}</div>
+        )}
         {choices.map(([v, l]) => {
           const isOn = selected.includes(v);
           return (

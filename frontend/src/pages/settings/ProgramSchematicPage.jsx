@@ -1,39 +1,41 @@
-// v160.3.9.56 — Program Schematic (RESPONSIVE CSS GRID).
+// v58.13.132bj — Program Schematic visual redesign (cluster cards).
 //
-// The old SVG topology (v47 → v55.4) has been retired after five
-// failed attempts to keep curved arc-labels legible + icons non-
-// overlapping at every viewport width. It is now a plain responsive
-// grid of icon tiles, grouped by cluster with a normal H2 heading
-// above each group. Boring but bulletproof:
+// Landed on top of the v56 responsive-grid layout. Purely visual —
+// no navigation / route / registry changes.
 //
-//   • Each tile: rounded square (120×140), lucide icon centred on a
-//     cluster-tinted disc, straight (not curved) label beneath.
-//   • Grid: 4 columns at ≥1280px, 3 at ≥768px, 2 at ≥480px, 1 at
-//     <480px. Achieved via CSS Grid `auto-fill / minmax(...)`.
-//   • Groups are ordered Integrations → Overview → Capture →
-//     Compliance → Register → Settings, mirroring the sidebar. Each
-//     group header renders in WHITE against the dark background with
-//     a cluster-coloured accent bar for identity.
-//   • Settings still splits into ACCESS + DATA & AUTOMATION
-//     sub-clusters — but as sub-headings under the Settings H2, not
-//     as separate top-level groups.
-//   • Click behaviour is identical to the old SVG version:
-//     react-router navigate, toast fallback if the destination is
-//     stub-only.
+// What changed vs. `.132bi` (see `/app/memory/v58_13_132bj_program_schematic_redesign_shipped_finish_deferred.md`):
+//   1. Each cluster now renders inside a `rounded-2xl shadow-md`
+//      white card with a `border-l-4` accent stripe in the cluster's
+//      Tailwind hue.
+//   2. Card hover-lifts (`hover:-translate-y-1 hover:shadow-lg`)
+//      guarded by `@media (hover: hover)` so touch devices don't
+//      trigger the animation.
+//   3. Cluster header gains a `w-10 h-10 rounded-full` badge with the
+//      cluster's soft accent-100 background + accent-600 icon.
+//   4. "N modules" pill switched from inline-hex tinting to Tailwind
+//      `bg-<accent>-100 text-<accent>-700 px-2.5 py-0.5 rounded-full
+//      text-xs font-medium`.
+//   5. Palette rotation locked per Stephen's `.132bj` brief:
+//        integrations → sky
+//        overview     → indigo
+//        capture      → emerald
+//        compliance   → amber
+//        register     → rose
+//        settings     → violet
+//      (The brief listed 6 palette entries; the DB has 6 real
+//       clusters — 1-to-1 mapping in display order. "Analysis" and
+//       "Admin" from Stephen's grid don't exist as codebase
+//       clusters; "Compliance"→amber and "Register"→rose take their
+//       slots at positions 4 and 5.)
+//   6. Body text stays neutral `text-slate-800` — the accent hue only
+//      appears in the border stripe, the icon badge, and the count
+//      pill. IconTile bodies are unchanged (`.132bi` visual is
+//      preserved so downstream tests keep passing).
 //
-// Legacy SVG geometry (bezier spokes, hub, arc labels, sub-cluster
-// chips) is archived in git history under commits tagged
-// `paneltec-v160.3.9.55.4` and earlier — restorable if the CSS grid
-// approach ever needs to be reverted. The topology registry in
-// `/app/frontend/src/lib/programSchematic.js` is now geometry-free
-// (x/y stripped) — only `cluster`, `sub`, `label`, `icon`, `route`
-// remain, so downstream consumers (`test_program_schematic_routes_v47.py`)
-// keep working.
-//
-// Contrast + overlap complaints from v51-v55.4 are solved by design:
-// grid gaps prevent any tile-to-tile overlap, WHITE section headers
-// on the dark background give 12:1+ contrast, and the label is a
-// standard HTML `<div>` — no SVG-text arc clipping possible.
+// Individual `IconTile` markup, click handlers, `SCHEMATIC_NODES`
+// registry, and every `data-testid` value are UNCHANGED. Downstream
+// `test_program_schematic_routes_v47.py` continues to pass.
+
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -54,6 +56,93 @@ const CLUSTER_ORDER = [
   'register',
   'settings',
 ];
+
+// v58.13.132bj — Cluster → Tailwind accent hue (locked per Stephen's
+// palette). Class names are written out in full so the JIT scanner
+// picks them up (dynamic template strings would be stripped in
+// production).
+const CLUSTER_ACCENT = {
+  integrations: 'sky',
+  overview:     'indigo',
+  capture:      'emerald',
+  compliance:   'amber',
+  register:     'rose',
+  settings:     'violet',
+};
+
+const ACCENT_STYLES = {
+  sky: {
+    borderLeft: 'border-l-sky-500',
+    iconBg:     'bg-sky-100',
+    iconText:   'text-sky-600',
+    pillBg:     'bg-sky-100',
+    pillText:   'text-sky-700',
+    legendBg:   'bg-sky-100',
+    legendText: 'text-sky-700',
+    legendDot:  'bg-sky-500',
+  },
+  indigo: {
+    borderLeft: 'border-l-indigo-500',
+    iconBg:     'bg-indigo-100',
+    iconText:   'text-indigo-600',
+    pillBg:     'bg-indigo-100',
+    pillText:   'text-indigo-700',
+    legendBg:   'bg-indigo-100',
+    legendText: 'text-indigo-700',
+    legendDot:  'bg-indigo-500',
+  },
+  emerald: {
+    borderLeft: 'border-l-emerald-500',
+    iconBg:     'bg-emerald-100',
+    iconText:   'text-emerald-600',
+    pillBg:     'bg-emerald-100',
+    pillText:   'text-emerald-700',
+    legendBg:   'bg-emerald-100',
+    legendText: 'text-emerald-700',
+    legendDot:  'bg-emerald-500',
+  },
+  amber: {
+    borderLeft: 'border-l-amber-500',
+    iconBg:     'bg-amber-100',
+    iconText:   'text-amber-600',
+    pillBg:     'bg-amber-100',
+    pillText:   'text-amber-700',
+    legendBg:   'bg-amber-100',
+    legendText: 'text-amber-700',
+    legendDot:  'bg-amber-500',
+  },
+  rose: {
+    borderLeft: 'border-l-rose-500',
+    iconBg:     'bg-rose-100',
+    iconText:   'text-rose-600',
+    pillBg:     'bg-rose-100',
+    pillText:   'text-rose-700',
+    legendBg:   'bg-rose-100',
+    legendText: 'text-rose-700',
+    legendDot:  'bg-rose-500',
+  },
+  violet: {
+    borderLeft: 'border-l-violet-500',
+    iconBg:     'bg-violet-100',
+    iconText:   'text-violet-600',
+    pillBg:     'bg-violet-100',
+    pillText:   'text-violet-700',
+    legendBg:   'bg-violet-100',
+    legendText: 'text-violet-700',
+    legendDot:  'bg-violet-500',
+  },
+};
+
+// v58.13.132bj — Per-cluster lucide icon for the header badge.
+// Chosen for semantic fit against the cluster's role.
+const CLUSTER_ICON = {
+  integrations: 'Plug',
+  overview:     'LayoutDashboard',
+  capture:      'ClipboardPlus',
+  compliance:   'ShieldCheck',
+  register:     'Boxes',
+  settings:     'Settings',
+};
 
 function IconTile({ node, cluster, onClick }) {
   const Icon = LucideIcons[node.icon] || LucideIcons.Circle;
@@ -87,36 +176,57 @@ function IconTile({ node, cluster, onClick }) {
   );
 }
 
-function ClusterGroup({ cluster, nodes, onNavigate }) {
+function ClusterCard({ cluster, accent, nodes, onNavigate }) {
+  const styles = ACCENT_STYLES[accent] || ACCENT_STYLES.sky;
+  const HeaderIcon = LucideIcons[CLUSTER_ICON[cluster.key]] || LucideIcons.Box;
+
   // Settings splits into two sub-clusters — render sub-headers
   // between them so the ACCESS / DATA & AUTOMATION mental model
   // survives.
   const subs = SCHEMATIC_SUB_CLUSTERS.filter((s) => s.parent === cluster.key);
   const hasSubs = subs.length > 0;
+
+  // v58.13.132bj — Card shell:
+  //   · rounded-2xl / shadow-md base
+  //   · white bg, soft slate ring, coloured left stripe
+  //   · hover-lift + hover-shadow *only on hover-capable pointers*
+  //     via Tailwind arbitrary variant `[@media(hover:hover)]:...`
+  //     (touch devices skip the transform)
+  //   · transition-all 200 ms so hover states feel like a single
+  //     coordinated lift
+  const cardCls = [
+    'rounded-2xl bg-white shadow-md',
+    'border border-slate-200',
+    'border-l-4', styles.borderLeft,
+    'p-5 md:p-6 mb-6',
+    'transition-all duration-200',
+    '[@media(hover:hover)]:hover:-translate-y-1',
+    '[@media(hover:hover)]:hover:shadow-lg',
+  ].join(' ');
+
   return (
     <section
-      className="mb-10"
+      className={cardCls}
       data-testid={`schematic-cluster-${cluster.key}`}
+      data-accent={accent}
     >
-      <div className="flex items-center gap-3 mb-4">
-        <span
-          className="inline-block w-1.5 h-8 rounded-sm"
-          style={{ background: cluster.color }}
-        />
+      {/* Header row: icon badge · title · count pill */}
+      <div className="flex items-center gap-3 mb-5">
+        <div
+          className={`w-10 h-10 rounded-full flex items-center justify-center ${styles.iconBg}`}
+          data-testid={`schematic-cluster-icon-${cluster.key}`}
+        >
+          <HeaderIcon size={20} className={styles.iconText} strokeWidth={2.25} />
+        </div>
         <h2
           className="text-slate-900 text-lg font-extrabold uppercase tracking-[0.18em]"
-          style={{ letterSpacing: '0.18em' }}
           data-testid={`schematic-cluster-label-${cluster.key}`}
         >
           {cluster.label}
         </h2>
         <span
-          className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
-          style={{
-            background: `${cluster.color}22`,
-            color: cluster.color,
-            border: `1px solid ${cluster.color}55`,
-          }}
+          className={`${styles.pillBg} ${styles.pillText} px-2.5 py-0.5 rounded-full text-xs font-medium`}
+          data-testid={`schematic-cluster-count-${cluster.key}`}
         >
           {nodes.length} {nodes.length === 1 ? 'module' : 'modules'}
         </span>
@@ -143,7 +253,7 @@ function ClusterGroup({ cluster, nodes, onNavigate }) {
           return (
             <div
               key={sub.key}
-              className="mb-6"
+              className="mb-6 last:mb-0"
               data-testid={`schematic-sub-cluster-${sub.key}`}
             >
               <h3
@@ -204,7 +314,9 @@ export default function ProgramSchematicPage() {
           textClassName="text-slate-900"
         />
 
-        {/* Legend row — one pill per cluster, colour-coded. */}
+        {/* v58.13.132bj — Legend row now uses the same Tailwind
+            palette as the cards. Preserved so at-a-glance colour ↔
+            cluster identity is still one glance away. */}
         <div
           className="flex flex-wrap gap-2 mb-8"
           data-testid="schematic-legend"
@@ -212,28 +324,21 @@ export default function ProgramSchematicPage() {
           {CLUSTER_ORDER.map((key) => {
             const c = clusterByKey[key];
             if (!c) return null;
+            const styles = ACCENT_STYLES[CLUSTER_ACCENT[key]] || ACCENT_STYLES.sky;
             return (
               <div
                 key={c.key}
-                className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold"
-                style={{
-                  background: `${c.color}1A`,
-                  color: c.color,
-                  border: `1px solid ${c.color}55`,
-                }}
+                className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${styles.legendBg} ${styles.legendText}`}
                 data-testid={`schematic-legend-${c.key}`}
               >
-                <span
-                  className="inline-block w-2 h-2 rounded-full"
-                  style={{ background: c.color }}
-                />
+                <span className={`inline-block w-2 h-2 rounded-full ${styles.legendDot}`} />
                 {c.label}
               </div>
             );
           })}
         </div>
 
-        {/* Canvas — one CSS-grid group per cluster. Wrapped in a
+        {/* Canvas — one cluster CARD per cluster. Wrapped in a
             single container so the whole schematic remains a single
             data-testid target for downstream tests. */}
         <div data-testid="schematic-canvas">
@@ -244,10 +349,12 @@ export default function ProgramSchematicPage() {
               (n) => n.cluster === key,
             );
             if (!clusterNodes.length) return null;
+            const accent = CLUSTER_ACCENT[key] || 'sky';
             return (
-              <ClusterGroup
+              <ClusterCard
                 key={cluster.key}
                 cluster={cluster}
+                accent={accent}
                 nodes={clusterNodes}
                 onNavigate={onNavigate}
               />

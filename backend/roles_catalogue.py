@@ -12,6 +12,7 @@ Phase 4 wires the UI. Phase 5 flips the read side.
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -215,7 +216,7 @@ def _tokens_general_user() -> List[str]:
 SYSTEM_ROLES: List[Dict[str, Any]] = [
     {
         "role_id": "admin",
-        "name": "Administrator",
+        "name": "Admin",  # v58.13.132bh — shortened from "Administrator"
         "description": "Full access. Owns user management, integrations, billing.",
         "permission_tokens": _tokens_admin(),
         "is_system": True,
@@ -323,14 +324,39 @@ SYSTEM_ROLES: List[Dict[str, Any]] = [
 # Idempotent seeder — called from server.py::on_startup
 # ─────────────────────────────────────────────────────────────
 
+# v58.13.132s — Legacy SYSTEM_ROLES ids that were hard-deleted in the
+# .132s role-cleanup migration. Excluded from `seed_system_roles` so a
+# backend restart doesn't resurrect them. Only `admin` remains active
+# from SYSTEM_ROLES; the 3 other targets (paneltec_civil,
+# viatec_traffic, external_contractor) are seeded by
+# `scripts/migrate_roles_to_4_v58_13_132r.py` outside this list.
+_SYSTEM_ROLES_LEGACY_SKIP = frozenset({
+    "hseq_manager", "hseq_manager_readonly", "hseq_manager_creator",
+    "report_emailing_admin", "responsible_manager", "mechanic",
+    "training_inductions_only", "contractor_rep",
+    "contractor_rep_submit_only", "general_user",
+})
+
+
 async def seed_system_roles() -> Dict[str, Any]:
     """Upserts each row in `SYSTEM_ROLES` into `roles` collection.
     Mutable fields (`permission_tokens`, `description`, `updated_at`,
     `is_active`) are refreshed every run; identity fields are
-    `$setOnInsert`. Returns a summary dict."""
+    `$setOnInsert`. Returns a summary dict.
+
+    v58.13.132s — Legacy `SYSTEM_ROLES` rows that were hard-deleted
+    in the .132s cleanup are now excluded from the re-seed so that
+    a backend restart doesn't resurrect them. `admin` (target role)
+    stays. The 3 other target roles (`paneltec_civil`,
+    `viatec_traffic`, `external_contractor`) were seeded by the
+    .132r migration outside SYSTEM_ROLES and persist independently.
+    """
     ts = now_iso()
-    counts = {"inserted": 0, "updated": 0}
+    counts = {"inserted": 0, "updated": 0, "skipped_legacy": 0}
     for spec in SYSTEM_ROLES:
+        if spec["role_id"] in _SYSTEM_ROLES_LEGACY_SKIP:
+            counts["skipped_legacy"] += 1
+            continue
         existing = await db.roles.find_one({"role_id": spec["role_id"]})
         set_doc = {
             "name": spec["name"],
@@ -710,15 +736,71 @@ async def get_role_assignees_count(
 # 100 times; first run creates all N; subsequent runs create 0.
 # ─────────────────────────────────────────────────────────────
 
+# ── v58.13.132s — 4-target role bucketing helper ───────────────────
+# Shared by Simpro sync (new-user + delta), bulk-assign-role, and the
+# gated `create_role_from_position` fallback. Rules cloned from
+# `scripts/migrate_roles_to_4_v58_13_132s.py::bucket` — keep the two in
+# sync when the FORCE_ADMIN list changes.
+_FORCE_ADMIN_EMAILS_132S = frozenset({
+    "amanda.guy@paneltec.com.au", "john@paneltec.com.au",
+    "joshua@paneltec.com.au", "mat.loone@paneltec.com.au",
+    "melinda3260@gmail.com", "patrick@paneltec.com.au",
+    "stephen@paneltec.com.au",
+})
+_FORCE_ADMIN_FIRST_NAMES_132S = frozenset({"josh", "joshua"})
+
+
+def bucket_target_role(
+    *,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    company_id: Optional[str] = None,
+    is_contractor: bool = False,
+) -> str:
+    """Return one of the 4 canonical role_ids (`admin`, `paneltec_civil`,
+    `viatec_traffic`, `external_contractor`) for a user context.
+    Ordered rules, first match wins."""
+    e = (email or "").strip().lower()
+    f = (first_name or "").strip().lower()
+    if e in _FORCE_ADMIN_EMAILS_132S or f in _FORCE_ADMIN_FIRST_NAMES_132S:
+        return "admin"
+    if is_contractor:
+        return "external_contractor"
+    cid = str(company_id) if company_id is not None else ""
+    if cid == "2":
+        return "paneltec_civil"
+    if cid == "3":
+        return "viatec_traffic"
+    return "paneltec_civil"
+
+
 async def create_role_from_position(
     *,
     position: str,
     actor: dict,
+    email: Optional[str] = None,
+    first_name: Optional[str] = None,
+    company_id: Optional[str] = None,
+    is_contractor: bool = False,
 ) -> Dict[str, Any]:
     """Create (or return existing) `custom_<slug(position)>` role.
     Returns `{"role_id": ..., "created": bool, "existing": bool}`.
     Uses the same audit flow as `POST /admin/roles` for created rows.
-    Never mutates an existing row."""
+    Never mutates an existing row.
+
+    v58.13.132s — Gated behind `SIMPRO_POSITION_ROLES_DISABLED` env flag
+    (default "true"). When disabled the function no longer creates new
+    `custom_*` roles; it returns the 4-target bucket for the supplied
+    user context and marks the response `{"disabled": True}` so callers
+    can audit the fallback path. Code path preserved per user directive.
+    """
+    if (os.environ.get("SIMPRO_POSITION_ROLES_DISABLED") or "true").lower() == "true":
+        target = bucket_target_role(
+            email=email, first_name=first_name,
+            company_id=company_id, is_contractor=is_contractor,
+        )
+        return {"role_id": target, "created": False, "existing": True,
+                "disabled": True, "role_doc": None}
     slug = _slugify(position)
     role_id = "custom_" + slug
     existing = await db.roles.find_one({"role_id": role_id}, {"_id": 0})

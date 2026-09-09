@@ -29,7 +29,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RefreshCw, X as XIcon } from 'lucide-react';
-import { RUNNING_VERSION } from '../lib/version';
+import { RUNNING_VERSION, EXPECTED_CACHE_VERSION } from '../lib/version';
 
 const HEALTH_URL = (process.env.REACT_APP_BACKEND_URL || '') + '/api/health/version';
 const POLL_MS = 5 * 60 * 1000;         // 5 minutes
@@ -119,9 +119,21 @@ export default function CacheBusterBanner() {
   // v58.13.24 — Version-scoped persistent dismiss check.
   const persistentlyDismissed = readDismissed(serverVersion);
 
+  // v58.13.132q_blink_hotfix — Under the new CACHE_VERSION batching
+  // policy the SW cache_version stays behind RUNNING_VERSION most of
+  // the time (only batched-ships bump the SW). Comparing serverVersion
+  // (== SW cache_version, via /api/health/version) against RUNNING_VERSION
+  // fires the toast on EVERY ship + puts a 1.2s pulseRing animation up
+  // for 5 seconds — which the user reads as "blinking every second".
+  //
+  // Correct compare is: SW's advertised cache_version vs. what THIS
+  // bundle expects the SW to be (EXPECTED_CACHE_VERSION). When we
+  // deliberately bump the SW, we bump EXPECTED_CACHE_VERSION in the
+  // same commit — that's the only time the toast should appear.
   const mismatched = ready
     && serverVersion
-    && serverVersion !== RUNNING_VERSION
+    && EXPECTED_CACHE_VERSION
+    && serverVersion !== EXPECTED_CACHE_VERSION
     && !dismissed
     && !persistentlyDismissed
     && (Date.now() - bootTsRef.current) >= BOOT_GRACE_MS;

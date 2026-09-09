@@ -1,0 +1,13 @@
+[
+  {
+    "_comment_todo_universal_links": "TODO(universal-links) v58.13.132ae — replace package_name and sha256_cert_fingerprints once the release signing certificate is available. Android will fetch this file from /.well-known/assetlinks.json over HTTPS to enable App Links (tapping the https URL opens the app directly). See https://developer.android.com/training/app-links/verify-android-applinks for the schema.",
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.paneltec.civilfieldapp",
+      "sha256_cert_fingerprints": [
+        "AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA:AA"
+      ]
+    }
+  }
+]

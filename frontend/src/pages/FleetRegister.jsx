@@ -28,10 +28,10 @@
  *   · Bulk Print Labels toolbar action.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin, Archive,
-  Upload, BarChart3,
+  Upload, BarChart3, Fuel, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
@@ -40,7 +40,10 @@ import useDeepLinkOpen from '../lib/useDeepLinkOpen';
 import AssetDrawer from '../components/AssetDrawer';
 import AssetMapModal from '../components/AssetMapModal';
 import FleetLiveDashboards from '../components/FleetLiveDashboards';
-import FuelAnomalyBanner from '../components/FuelAnomalyBanner';
+// v58.13.132bw — FuelAnomalyBanner removed from Fleet Register.
+// The .132bt banner on `/app/fleet/fuel` (Fuel Reports) is now the
+// canonical anomaly entry-point; keeping a duplicate here just
+// cluttered the register top.
 import FuelImportModal from '../components/FuelImportModal';
 
 const KIND_STYLES = {
@@ -388,8 +391,12 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
 
 
 // ─────────────────────────── Search bar ────────────────────────────
-function SearchBar({ onOpenAsset }) {
-  const [q, setQ] = useState('');
+function SearchBar({ onOpenAsset, registerQ, setRegisterQ }) {
+  // v58.13.132by — `q` still drives the ⌘K quick-jump dropdown, but
+  // now ALSO flows up to the parent as `registerQ` so the register
+  // table filters client-side on the same input. Two features, one
+  // search field.
+  const [q, setQ] = useState(registerQ || '');
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -440,10 +447,15 @@ function SearchBar({ onOpenAsset }) {
           ref={inputRef}
           data-testid="fleet-search-input"
           value={q}
-          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onChange={(e) => {
+            const next = e.target.value;
+            setQ(next);
+            setRegisterQ?.(next);
+            setOpen(true);
+          }}
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 200)}
-          placeholder="Search across assets, service records, inspections, hazards, incidents, pre-starts. Press ⌘K to focus."
+          placeholder="Search by rego, name, driver, card, or Simpro ID — filters the list below. Press ⌘K to focus."
           className="w-full pl-9 pr-4 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 bg-white"
         />
         {busy && <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-slate-400" />}
@@ -491,32 +503,154 @@ function SearchBar({ onOpenAsset }) {
 
 
 // ─────────────────────────── Register table ─────────────────────────
-function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset }) {
+// v58.13.132bm — Sortable column headers. Sort state is local to the
+// table (single-column, 2-click toggle asc↔desc, ↑↓ chevron
+// indicators, URL-synced via ?sort=<col>:<dir>).
+//
+// Service Signals ordinal (highest priority floats to top on DESC,
+// lowest on ASC — matches Stephen's `.132bm` acceptance):
+//    red   (overdue)      = 4   ← urgent
+//    amber (due soon)     = 3
+//    green (on schedule)  = 2
+//    grey  (no data)      = null (always sorts to bottom)
+//    undefined            = null (always sorts to bottom)
+const _SERVICE_SEVERITY = { red: 4, amber: 3, green: 2 };
+
+// Natural alphanumeric collation so "PT-10" sorts before "PT-100".
+const _NATCOLLATOR = new Intl.Collator(undefined, {
+  numeric: true, sensitivity: 'base',
+});
+const _natCmp = (a, b) => _NATCOLLATOR.compare(a || '', b || '');
+const _lowerCmp = (a, b) =>
+  (a || '').toString().toLowerCase().localeCompare((b || '').toString().toLowerCase());
+
+// Extractors — one per sortable column. Return `null` to mean "empty:
+// always sort to bottom regardless of direction" (standard UX).
+const _SORT_EXTRACTORS = {
+  rego: (r) => {
+    const rs = r.rego_serial;
+    if (rs && !/^\d{10,}$/.test(rs)) return rs;
+    return r.name || null;
+  },
+  name: (r) => r.name || r.description || null,
+  kind: (r) => r.kind || null,
+  sub_type: (r) => displaySubtype(r.asset_type || r.sub_type) || null,
+  status: (r) => r.status || null,
+  service: (r, statuses) => {
+    const st = statuses?.[r.id]?.status;
+    return _SERVICE_SEVERITY[st] ?? null;
+  },
+};
+
+const _SORT_COMPARATORS = {
+  rego:     _natCmp,
+  name:     _lowerCmp,
+  kind:     _lowerCmp,
+  sub_type: _lowerCmp,
+  status:   _lowerCmp,
+  service:  (a, b) => (a - b),
+};
+
+function _sortRows(rows, statuses, sortKey, sortDir) {
+  if (!sortKey) return rows;
+  const extract = _SORT_EXTRACTORS[sortKey];
+  const cmp = _SORT_COMPARATORS[sortKey];
+  if (!extract || !cmp) return rows;
+  const dir = sortDir === 'desc' ? -1 : 1;
+  return [...rows].sort((a, b) => {
+    const va = extract(a, statuses);
+    const vb = extract(b, statuses);
+    // Empty / null always at the bottom regardless of direction.
+    const emptyA = va == null || va === '';
+    const emptyB = vb == null || vb === '';
+    if (emptyA && emptyB) return 0;
+    if (emptyA) return 1;
+    if (emptyB) return -1;
+    return dir * cmp(va, vb);
+  });
+}
+
+function SortableTh({ label, sortKey, currentKey, currentDir, onSort, className = '', testid, title }) {
+  const active = currentKey === sortKey;
+  const upActive = active && currentDir === 'asc';
+  const downActive = active && currentDir === 'desc';
+  return (
+    <th className={`px-3 py-2 text-left ${className}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        data-testid={testid || `fleet-sort-${sortKey}`}
+        data-active={active ? 'true' : 'false'}
+        data-dir={active ? currentDir : ''}
+        title={title || `Sort by ${label}`}
+        className="inline-flex items-center gap-1 group hover:text-slate-800 transition-colors uppercase tracking-wider"
+      >
+        <span>{label}</span>
+        <span className="inline-flex flex-col leading-none -space-y-1 opacity-60 group-hover:opacity-100 transition-opacity">
+          <ChevronUp size={9} strokeWidth={3}
+            className={upActive ? 'text-slate-700' : 'text-slate-300'} />
+          <ChevronDown size={9} strokeWidth={3}
+            className={downActive ? 'text-slate-700' : 'text-slate-300'} />
+        </span>
+      </button>
+    </th>
+  );
+}
+
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
+
+  // v58.13.132bm — URL-synced sort state. Default: rego / asc.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawSort = searchParams.get('sort') || 'rego:asc';
+  const [sortKeyRaw, sortDirRaw] = rawSort.split(':');
+  const validKeys = ['rego', 'name', 'kind', 'sub_type', 'status', 'service'];
+  const sortKey = validKeys.includes(sortKeyRaw) ? sortKeyRaw : 'rego';
+  const sortDir = sortDirRaw === 'desc' ? 'desc' : 'asc';
+
+  const applySort = (key) => {
+    let nextDir;
+    if (sortKey === key) {
+      nextDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      nextDir = 'asc';
+    }
+    const next = new URLSearchParams(searchParams);
+    next.set('sort', `${key}:${nextDir}`);
+    setSearchParams(next, { replace: true });
+  };
+
+  const sortedRows = React.useMemo(
+    () => _sortRows(rows, statuses, sortKey, sortDir),
+    [rows, statuses, sortKey, sortDir],
+  );
+
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid="fleet-register-table">
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
-              {/* v58.13.127 — GPS pin column. Shows a violet MapPin
-                  on Navixy-tracked rows with coords, muted grey pin
-                  on Navixy-but-no-ping rows, empty otherwise. */}
+              {/* v58.13.127 — GPS pin column. Not sortable. */}
               <th className="px-2 py-2 w-8"></th>
-              <th className="px-3 py-2 text-left">Rego</th>
-              <th className="px-3 py-2 text-left">Name / description</th>
-              <th className="px-3 py-2 text-left">Kind</th>
-              <th className="px-3 py-2 text-left">Sub-type</th>
-              <th className="px-3 py-2 text-left">Status</th>
-              <th className="px-3 py-2 text-left">
-                <span className="inline-flex items-center gap-1"
-                      data-testid="fleet-service-column-header"
-                      title="Service schedule status — AMBER at 85% of interval, RED at 100%+. Grey means no counter data yet.">
-                  Service
-                  <Info size={10} className="text-slate-400" />
-                </span>
-              </th>
+              <SortableTh label="Rego"              sortKey="rego"     currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh label="Name / description" sortKey="name"    currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh label="Kind"              sortKey="kind"     currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh label="Sub-type"          sortKey="sub_type" currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh label="Status"            sortKey="status"   currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh
+                label={
+                  <span className="inline-flex items-center gap-1"
+                        data-testid="fleet-service-column-header"
+                        title="Service schedule status — AMBER at 85% of interval, RED at 100%+. Grey means no counter data yet.">
+                    Service
+                    <Info size={10} className="text-slate-400" />
+                  </span>
+                }
+                sortKey="service" currentKey={sortKey} currentDir={sortDir} onSort={applySort}
+                title="Sort by Service Signals (overdue → due-soon → on-schedule; no-data always at bottom)"
+              />
               <th className="px-3 py-2 text-left">Signals</th>
               {canDelete && <th className="px-3 py-2 text-left w-8"></th>}
             </tr>
@@ -525,10 +659,24 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
             {loading && (
               <tr><td colSpan={canDelete ? 9 : 8} className="px-3 py-8 text-center text-slate-400"><Loader2 className="inline animate-spin" size={14} /> Loading…</td></tr>
             )}
-            {!loading && rows.length === 0 && (
-              <tr><td colSpan={canDelete ? 9 : 8} className="px-3 py-8 text-center text-slate-400">No assets match.</td></tr>
+            {!loading && sortedRows.length === 0 && (
+              <tr><td colSpan={canDelete ? 9 : 8} className="px-3 py-8 text-center text-slate-400" data-testid="fleet-register-empty">
+                {registerQ && registerQ.trim() ? (
+                  <div className="space-y-2">
+                    <div>No vehicles match <span className="font-mono">"{registerQ}"</span> — check the rego or clear the filter.</div>
+                    <button
+                      type="button"
+                      onClick={onClearSearch}
+                      data-testid="fleet-register-empty-clear"
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 text-xs"
+                    >
+                      Clear filter
+                    </button>
+                  </div>
+                ) : 'No assets match.'}
+              </td></tr>
             )}
-            {!loading && rows.map((r, idx) => (
+            {!loading && sortedRows.map((r, idx) => (
               <tr key={r.id} onClick={() => onRowClick(r.id)}
                   data-testid={`fleet-register-row-${r.id}`}
                   data-zebra={idx % 2 === 1 ? 'odd' : 'even'}
@@ -644,6 +792,11 @@ export default function FleetRegister() {
   // v58.13.120g — Confirm-delete state for row-hover delete affordance.
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  // v58.13.132by — Register-scoped free-text filter. Populated by
+  // the top SearchBar. Also filters `rows` client-side across
+  // multi-fields (rego, name, description, sub_type, kind,
+  // smartfill card + key, simpro asset id, driver name).
+  const [registerQ, setRegisterQ] = useState('');
   // v58.13.122 — Service status rollup, keyed by asset id. Fetched
   // as a single batched request after each register load.
   const [statuses, setStatuses] = useState({});
@@ -706,11 +859,17 @@ export default function FleetRegister() {
     if (filter.data_source === 'navixy' || filter.navixy_only) params.navixy_only = true;
     // v58.13.128 — Retired-only filter.
     if (filter.retired_only) params.retired_only = true;
+    // v58.13.132by — Register search bar → server-side text filter.
+    if (registerQ && registerQ.trim()) params.q = registerQ.trim();
     api.get('/fleet/register', { params })
       .then((r) => { setRows(r.data.items); setTotal(r.data.total); })
       .catch((e) => toast.error(apiError(e) || 'Register load failed'))
       .finally(() => setRowsLoading(false));
-  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, filter.retired_only, page]);
+  }, [flagState, filter.kind, filter.sub_type, filter.navixy_only, filter.data_source, filter.retired_only, page, registerQ]);
+
+  // v58.13.132by — Reset to page 1 when the search term changes so
+  // the user sees hits from the first page, not the deep-linked one.
+  useEffect(() => { setPage(1); }, [registerQ]);
 
   useEffect(() => { reloadRows(); }, [reloadRows]);
 
@@ -825,14 +984,22 @@ export default function FleetRegister() {
     <div className="p-6">
       <header className="mb-4 flex items-baseline justify-end gap-4">
         <div className="flex gap-2">
-          {/* v58.13.131d — Fuel Reports button (read-only, gated on assets.edit). */}
+          {/* v58.13.131d — Fuel Reports button (read-only, gated on assets.edit).
+              v58.13.132av — Stephen ask: make this bigger and use a fuel
+              bowser icon with a distinctive amber colour so it stands
+              out against the neutral header pills. Text sizes up to
+              text-base + font-bold, icon jumps 13 → 18px, palette is
+              solid amber-500 with the Paneltec-standard amber-300 ring.
+              Still gated by the same `assets.edit` permission — this
+              is a styling change only, not a permission-model change. */}
           <Can resource="assets" action="edit">
             <Link
               to="/app/fleet/fuel"
               data-testid="fleet-fuel-reports-btn"
-              className="px-3 py-1.5 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1.5 font-semibold"
+              className="px-4 py-2 text-base rounded-lg bg-amber-500 text-white hover:bg-amber-600 ring-1 ring-amber-300 shadow-sm inline-flex items-center gap-2 font-bold uppercase tracking-wide transition-colors"
+              title="Fuel Reports — SmartFill rollups, drilldown, exports"
             >
-              <BarChart3 size={13} /> Fuel Reports
+              <Fuel size={18} /> Fuel Reports
             </Link>
           </Can>
           {/* v58.13.131c — Admin-only Fuel CSV importer. Server-side
@@ -856,11 +1023,23 @@ export default function FleetRegister() {
         </div>
       </header>
 
-      {/* v58.13.131c — Fuel anomaly banner. Renders nothing when count is 0. */}
-      <FuelAnomalyBanner />
-
       <div className="mb-4">
-        <SearchBar onOpenAsset={openAsset} />
+        <SearchBar onOpenAsset={openAsset} registerQ={registerQ} setRegisterQ={setRegisterQ} />
+        {/* v58.13.132by — Hint copy under the search field so admins
+            know what the search covers. */}
+        <div className="mt-1 text-[11px] text-slate-500 pl-1">
+          Search by rego, name, driver, card, or Simpro ID — filters the list below.
+          {registerQ.trim() && (
+            <button
+              type="button"
+              onClick={() => setRegisterQ('')}
+              className="ml-2 underline text-blue-600 hover:text-blue-800"
+              data-testid="fleet-register-search-clear"
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
       </div>
 
       {/* v58.13.120f — Fleet Live Dashboards banner. Mounts whenever any
@@ -905,6 +1084,32 @@ export default function FleetRegister() {
               if (filter.service_due) {
                 r = r.filter((row) => ['amber', 'red'].includes(statuses?.[row.id]?.status));
               }
+              // v58.13.132by — Multi-field client-side text filter.
+              // AND-across-tokens, OR-across-fields, case-insensitive,
+              // hyphen/space-tolerant on rego.
+              const rawQ = (registerQ || '').trim();
+              if (rawQ) {
+                const norm = (s) => (s || '').toString().toLowerCase();
+                const stripHyphens = (s) => norm(s).replace(/[-\s]/g, '');
+                const tokens = rawQ.toLowerCase().split(/\s+/).filter(Boolean);
+                r = r.filter((row) => {
+                  const fields = [
+                    row.rego_serial, row.name, row.description,
+                    row.make, row.model, row.manufacturer,
+                    row.asset_type, row.sub_type, row.kind,
+                    row.asset_code, row.scan_token,
+                    row.smartfill_card_number, row.smartfill_key,
+                    row.simpro_asset_id, row.driver_name,
+                    row.registration, row.plate,
+                  ].filter(Boolean);
+                  const hayNormal = fields.map(norm).join(' ');
+                  const hayCompact = fields.map(stripHyphens).join(' ');
+                  return tokens.every((tok) =>
+                    hayNormal.includes(tok)
+                    || hayCompact.includes(tok.replace(/[-\s]/g, '')),
+                  );
+                });
+              }
               return r;
             })()}
             loading={rowsLoading}
@@ -918,6 +1123,8 @@ export default function FleetRegister() {
             limit={LIMIT}
             setPage={setPage}
             setMapAsset={setMapAsset}
+            registerQ={registerQ}
+            onClearSearch={() => setRegisterQ('')}
           />
         </main>
       </div>

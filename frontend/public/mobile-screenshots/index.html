@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Paneltec Civil — v58.13.132i Mobile Screenshots</title>
+<title>Paneltec Civil — v58.13.132cj Mobile Screenshots</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0F172A; color: #fff; }
@@ -17,45 +17,47 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .card img { width: 100%; display: block; }
 .card .label { padding: 12px 16px; font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); }
 .card .desc { padding: 0 16px 12px; font-size: 11px; color: rgba(255,255,255,0.4); }
-.note { text-align: center; padding: 20px; font-size: 12px; color: rgba(255,255,255,0.3); }
+.note { text-align: center; padding: 20px; font-size: 12px; color: rgba(255,255,255,0.3); max-width: 700px; margin: 0 auto; }
 </style>
 </head>
 <body>
 <div class="header">
   <h1>Paneltec Civil Field</h1>
-  <p>Mobile App — v58.13.132i — Profile: Worker Self-View (Certs, Inductions, ID Card, Personal Info)</p>
+  <p>Mobile App — v58.13.132cj — Onboarding Rewrite: QR Provisioning + PIN Login + Role Auto-Detect</p>
   <span class="badge">5 Device-Framed Screenshots</span>
 </div>
 <div class="grid">
   <div class="card">
-    <img src="01_hub_framed.png" alt="Profile Hub" loading="lazy">
-    <div class="label">1. Profile Hub — 8 Rows</div>
-    <div class="desc">Personal Info, Certs, Inductions, ID Card, Fleet, SWMS, Payroll (stub), Sign Out</div>
+    <img src="132cj_01_qr_setup_framed.png" alt="QR Device Setup" loading="lazy">
+    <div class="label">1. QR Device Setup</div>
+    <div class="desc">First-launch provisioning screen. Scan QR from admin install page or enter device ID manually. Quick-setup auto-generates an ID.</div>
   </div>
   <div class="card">
-    <img src="02_personal_framed.png" alt="Personal Info" loading="lazy">
-    <div class="label">2. Personal Information (Editable)</div>
-    <div class="desc">Inline edit of contact, address, next-of-kin, emergency contact. Read-only for identity fields.</div>
+    <img src="132cj_02_pin_entry_framed.png" alt="PIN Entry" loading="lazy">
+    <div class="label">2. PIN Entry</div>
+    <div class="desc">4-digit numeric keypad with native-feeling large touch targets. Paneltec wordmark. Device ID shown at bottom. PIN dots fill as you type.</div>
   </div>
   <div class="card">
-    <img src="03_certs_framed.png" alt="Certifications" loading="lazy">
-    <div class="label">3. My Certifications</div>
-    <div class="desc">14 certs with status pills (Valid, Expired, Missing file). Tap for detail view.</div>
+    <img src="132cj_03_pin_error_framed.png" alt="PIN Error" loading="lazy">
+    <div class="label">3. PIN Error Handling</div>
+    <div class="desc">Inline error banner after wrong PIN. Dots shake and reset. Rate limiting shows countdown timer (5 fails → 60s, 10 → 15min, 20 → 24h).</div>
   </div>
   <div class="card">
-    <img src="04_inductions_framed.png" alt="Inductions" loading="lazy">
-    <div class="label">4. My Inductions</div>
-    <div class="desc">21 inductions grouped by category (Competencies, Licences, Site Inductions)</div>
+    <img src="132cj_04_admin_home_framed.png" alt="Admin Dashboard" loading="lazy">
+    <div class="label">4. Admin Dashboard (role: admin)</div>
+    <div class="desc">Full 8-module grid: Forms, Workers, Sites, SWMS, Fleet, Reports, Settings, Audit Log. "Full system access" subtitle. Avatar initials.</div>
   </div>
   <div class="card">
-    <img src="05_idcard_framed.png" alt="ID Card" loading="lazy">
-    <div class="label">5. My ID Card (Front + Back)</div>
-    <div class="desc">Digital wallet card with QR code from backend. Same data as physical lanyard.</div>
+    <img src="132cj_05_viatec_home_framed.png" alt="Viatec Traffic Home" loading="lazy">
+    <div class="label">5. Viatec Traffic Home (role: viatec_traffic)</div>
+    <div class="desc">Purple header with Viatec brand accent. 6 modules: Forms, Site Scan, Pre-Starts, Incident Report, SWMS, Timesheets. Traffic management focus.</div>
   </div>
 </div>
 <div class="note">
-  Backend extended: PATCH /api/me/worker-profile (self-edit, whitelisted fields only, change log)<br>
-  Payroll section remains <strong>MOCKED</strong> (no backend — planned for v58.13.133 WoJo integration).
+  Division picker eliminated. Role auto-detected from POST /api/auth/mobile/pin-login response.<br>
+  4 role-based landings: admin (8 modules), paneltec_civil (6), viatec_traffic (6), external_contractor (2).<br>
+  Sentry native DISABLED. expo-notifications not auto-initialized. Crash-safe onboarding path.<br>
+  Session token in expo-secure-store (native) / AsyncStorage (web). Device ID preserved across logouts.
 </div>
 </body>
 </html>

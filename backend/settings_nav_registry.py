@@ -20,6 +20,11 @@ from typing import Any
 
 SETTINGS_NAV_ITEMS: list[dict[str, Any]] = [
     {"key": "organisation",       "label": "Organisation",         "route": "/app/settings/org",                  "admin_only": False, "resource": None},
+    # v58.13.132cb — `workspaces` key kept in the registry (NOT retired
+    # server-side yet) so pre-.132cb saved nav-layouts still validate
+    # on `PUT /api/settings/nav-layout`. The frontend registry drops
+    # the entry, so SettingsNav filters it out visually. Phase B
+    # (.132cb-b) will remove this key + reject it from future layouts.
     {"key": "workspaces",         "label": "Workspaces",           "route": "/app/settings/workspaces",           "admin_only": False, "resource": None},
     {"key": "users_permissions",  "label": "Users & Permissions",  "route": "/app/settings/users",                "admin_only": True,  "resource": None},
     {"key": "permission_presets", "label": "Permission presets",   "route": "/app/settings/permission-presets",   "admin_only": True,  "resource": None},

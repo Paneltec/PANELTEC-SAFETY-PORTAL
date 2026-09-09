@@ -49,6 +49,17 @@ from visitor_signins import (  # noqa: E402  — v58.13.106 public visitor sign-
 # v58.13.132a — Mobile onboarding + PIN auth.
 from mobile_auth import router as mobile_auth_router  # noqa: E402
 from mobile_home import router as mobile_home_router  # noqa: E402
+from mobile_daily_jobs import router as mobile_daily_jobs_router  # noqa: E402
+# v58.13.132ab — admin daily-jobs + BOM weather + Nominatim geocode.
+from mobile_daily_jobs_admin import (  # noqa: E402
+    router as mobile_daily_jobs_admin_router,
+    ensure_indexes as _mobile_daily_jobs_ensure_indexes,
+)
+# v58.13.132ad — Onboarding cards PDF.
+from mobile_onboarding_cards import router as mobile_onboarding_cards_router  # noqa: E402
+# v58.13.132af — Android APK direct-install downloads.
+from mobile_downloads import router as mobile_downloads_router  # noqa: E402
+from mobile_preview import router as mobile_preview_router  # noqa: E402
 from db import close as close_db  # noqa: E402
 from document_library import (  # noqa: E402
     router as document_library_router,
@@ -79,6 +90,7 @@ from simpro_zip_import import (  # noqa: E402
 )
 from cron_simpro_delta import register_simpro_cron  # noqa: E402
 from cron_asset_service_generate import register_asset_service_generate_cron  # noqa: E402
+from cron_smartfill_auto_sync import register_smartfill_auto_sync_cron  # noqa: E402
 from integrations_m365 import router as m365_router  # noqa: E402
 from integrations_textmagic import router as textmagic_router  # noqa: E402
 from pdf_routes import router as pdf_router  # noqa: E402
@@ -90,6 +102,11 @@ from renewals import public_router as renewals_public_router, router as renewals
 from seed import ensure_indexes, seed_all  # noqa: E402
 from users import router as users_router  # noqa: E402
 from workspaces import router as workspaces_router  # noqa: E402
+# v58.13.132cb — Sites admin router (Phase A of workspaces/sites merge).
+# Lives at /api/sites/admin so it doesn't collide with the pre-existing
+# public site scan router at /api/sites (Phase 4.12, sites_qr.py). Phase B
+# (.132cb-b) will absorb the FK rename + retire /api/workspaces.
+from sites_admin import router as sites_admin_router  # noqa: E402
 from org_settings import router as org_router  # noqa: E402
 from mobile_modules import router as mobile_modules_router  # noqa: E402
 
@@ -336,6 +353,13 @@ async def gps_map_proxy(lat: float, lng: float,
     )
 
 
+from admin_console_pin import router as admin_console_pin_router  # noqa: E402
+from admin_console_pin import users_admin_router as admin_console_users_router  # noqa: E402
+# v58.13.132ci — mobile PIN → session-token onboarding endpoint.
+from auth_mobile_pin import router as auth_mobile_pin_router  # noqa: E402
+api.include_router(admin_console_pin_router)
+api.include_router(auth_mobile_pin_router)
+api.include_router(admin_console_users_router)
 api.include_router(auth_router)
 # v160.3.0-adjust-19 — Drag-drop PDF import endpoint.
 from imports import router as imports_router  # noqa: E402
@@ -352,6 +376,15 @@ api.include_router(visitor_admin_router)
 api.include_router(mobile_auth_router)
 # v58.13.132b — mobile home dashboard.
 api.include_router(mobile_home_router)
+api.include_router(mobile_daily_jobs_router)
+# v58.13.132ab — admin daily-jobs surface + weather/geocode proxies.
+api.include_router(mobile_daily_jobs_admin_router)
+# v58.13.132ad — printable onboarding cards.
+api.include_router(mobile_onboarding_cards_router)
+# v58.13.132af — Android APK direct-install downloads.
+api.include_router(mobile_downloads_router)
+# v58.13.132j — mobile preview (Live Preview iframe on Permission Presets).
+api.include_router(mobile_preview_router)
 # Phase 4.1 — extras MUST mount before swms_router so static sub-paths
 # like /swms/assignments and /swms/{id}/history aren't shadowed by the
 # generic /swms/{item_id} GET route.
@@ -467,6 +500,9 @@ api.include_router(user_prefs_section_order_router)
 from document_categories import router as document_categories_router  # noqa: E402
 api.include_router(document_categories_router)
 api.include_router(workspaces_router)
+# v58.13.132cb — /api/sites/admin (Phase A). Kept adjacent to
+# workspaces_router so the .132cb-b retire is a one-line drop.
+api.include_router(sites_admin_router)
 app.include_router(org_router)
 app.include_router(mobile_modules_router)
 api.include_router(email_router)
@@ -594,6 +630,11 @@ install_backup(app, _mongo_db, require_roles("admin"))
 async def on_startup():
     await ensure_indexes()
     await session_history_ensure_indexes()
+    # v58.13.132ab — daily_job_assignments (org_id, worker_id, date) compound.
+    try:
+        await _mobile_daily_jobs_ensure_indexes()
+    except Exception as e:
+        log.warning("mobile_daily_jobs_admin index setup failed: %s", e)
     # v58.13.131b — Fuel-transactions + import-runs indexes.
     try:
         await fleet_fuel_ensure_indexes()
@@ -1300,6 +1341,13 @@ async def on_startup():
                 register_asset_service_generate_cron(scheduler)
             except Exception as e:
                 log.warning("asset_service_generate cron registration failed: %s", e)
+            # v58.13.131m — Optional SmartFill auto-sync cron (opt-in
+            # via env AND per-org toggle). See
+            # /app/backend/cron_smartfill_auto_sync.py.
+            try:
+                register_smartfill_auto_sync_cron(scheduler)
+            except Exception as e:
+                log.warning("smartfill_auto_sync cron registration failed: %s", e)
             # Kick off a sync immediately so day-one rollout doesn't have to wait 15 min.
             import asyncio as _asyncio
             _asyncio.create_task(sync_navixy_counters())

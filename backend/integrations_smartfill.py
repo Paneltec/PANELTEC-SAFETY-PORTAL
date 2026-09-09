@@ -1,103 +1,93 @@
-"""v58.13.131 — SmartFill fuel API integration (discovery / probe).
+"""v58.13.131m — SmartFill JSON-RPC 2.0 integration (production surface).
 
-This module is Phase 1 of the fuel-usage feature. Purpose:
-  · Provide a thin, secret-safe httpx wrapper around SmartFill's
-    JSON-RPC 2.0 endpoint (`https://fmtdata.com/API/api.php`).
-  · Expose two probe helpers used by the discovery report AND the
-    forthcoming `/fleet/fuel/sync` command:
-      - `list_available_methods()`  → best-effort discovery via a
-        curated candidate list (SmartFill does NOT publish a
-        machine-readable discovery method; the JSON-RPC spec's
-        `system.listMethods` is documented as unsupported here).
-      - `call(method, params)`      → generic RPC invoker.
-  · Provide typed pass-throughs for the two methods documented in
-    the sample screenshot (`Tank:Level`) and the two we EXPECT to
-    exist based on SmartFill's public docs (`Vehicle:List`,
-    `Vehicle:FillHistory`).
+## Provenance
+- `.131`   — First probe. Discovered `parameters` (not `params`) key.
+- `.131k`  — Re-probe with a broadened candidate list. Concluded that
+             only `Tank:Level` was accessible — WRONG at the naming
+             level (candidate list never tried the `:Read` verbs).
+- `.131m`  — SmartFill support confirmed the correct method names live
+             in the FMT Data Web API PDF. Live-verified in
+             `/app/memory/v58_13_131m_probe_raw.json`:
+               · `Transactions:Read`  → available (13-col columnar)
+               · `Tank:Read`          → available (13-col columnar)
+               · `Tank:Level`         → available (10-col columnar)
+               · `Asset:Read`         → gated (code 3, needs required
+                                          params — deferred)
+               · `Driver:Read`        → available (6-col columnar)
 
-**No writes to Mongo, no user-facing endpoints, no scheduled task
-in this ship.** The `/fleet/fuel/sync` HTTP surface + persistence
-lands in v58.13.131b (Phase 2, gated on the discovery green-light).
+## What this module exposes
+- `SmartFillConfigError`     — env-missing exception.
+- `SmartFillAPIError`        — JSON-RPC error envelope; carries `code`
+                                + `message` + `method`, NEVER the raw
+                                request body (which includes the
+                                secret).
+- `SmartFillRateLimitError`  — raised when the in-process token bucket
+                                is exhausted. Carries `retry_after_s`.
+- `_creds()`                 — env lookup with clean fail-fast on
+                                missing keys.
+- `columnar_to_rows(result)` — flatten `{columns, values}` envelope.
+- `call(method, extra_params)` — generic RPC invoker with rate-limit
+                                 + Retry-After honouring.
+- `smartfill_fetch_transactions(from_iso, to_iso, page_size)`
+                              — paginated `Transactions:Read` wrapper.
+- `smartfill_fetch_tank_history(unit_number, from_iso, to_iso)`
+                              — `Tank:Read` wrapper.
+- `smartfill_fetch_tank_levels()`
+                              — `Tank:Level` wrapper.
+- `smartfill_fetch_drivers()` — `Driver:Read` wrapper.
+- `get_rate_limit_state()`    — snapshot the bucket for `/status`.
 
-## Secret handling
-- URL / clientReference / clientSecret ONLY read via
-  `os.environ` — never hardcoded, never persisted to Mongo.
-- `_creds()` centralises the lookup + raises a clean
-  `SmartFillConfigError` if either is missing (never echoes the
-  secret in the error message).
-- The `httpx` client is created per-call with a 15s timeout to
-  match `asset_navixy_sync.py`'s existing pattern.
-- Logging: `.info` on method + status. NEVER log the secret,
-  never log the raw JSON-RPC body (may include SFL codes /
-  unit identifiers that could ease lateral movement).
+## Rate limits (SmartFill contract)
+6 requests / minute · 60 / hour · 600 / day. The bucket applies to
+both the manual endpoint AND the cron.
 
-## JSON-RPC 2.0 shape (verified against user's screenshot)
-Request:
-```
-{
-  "jsonrpc": "2.0",
-  "method": "Tank:Level",
-  "params": {"clientReference": "…", "clientSecret": "…"},
-  "id": 1
-}
-```
-Response: standard JSON-RPC. Errors carry `error.code` + `error.message`.
+## Secret hygiene
+- URL / clientReference / clientSecret ONLY read via `os.environ`.
+- `_creds()` fails fast on missing values — never echoes them.
+- `call()` NEVER logs the request body. Only method + status + code.
 """
 from __future__ import annotations
+
+import asyncio
 import logging
 import os
 import time
-from typing import Any, Optional
+from typing import Any, AsyncIterator, Optional
 
 import httpx
 
 log = logging.getLogger("paneltec.smartfill")
 
-# Candidate method names probed in `list_available_methods`. Sourced
-# from the user's screenshot (`Tank:Level`), SmartFill's public API
-# guide (mirrored in `/app/memory/smartfill_discovery_v58_13_131.md`),
-# and the "colon-prefixed namespace" naming pattern the API uses.
+# ── Method catalogue (kept for future probe passes) ──────────────
+# `.131m` — Superset of the `.131k` list + the four `:Read` verbs
+# that support confirmed as canonical. `list_available_methods()`
+# still uses this so a future re-probe records the current state.
 _CANDIDATE_METHODS: tuple[str, ...] = (
-    # ── AVAILABLE on our subscription (verified .131 probe) ──
+    # ── AVAILABLE on our subscription (verified .131m re-probe) ──
+    "Transactions:Read",
+    "Tank:Read",
     "Tank:Level",
-    # ── RECOGNISED but subscription-gated (code 1: "Method not
-    #     supported") on our current tier. Kept in the list so a
-    #     future re-probe auto-detects the flip to `available` after
-    #     SmartFill support enables them — no code change needed.
-    "Tank:List",
-    "Tank:Levels",
-    "Tank:Alarms",
-    "Tank:Deliveries",
-    "Tank:Transactions",
-    "Tank:Fills",
-    "Tank:History",
-    "Tank:Consumption",
-    # ── High-confidence guesses (colon-namespaced siblings). All
-    #     returned code 5 ("No such method") on .131 probe — kept
-    #     for completeness in case SmartFill adds them later.
-    "Vehicle:List",
-    "Vehicle:FillHistory",
-    "Vehicle:Detail",
-    "Transaction:List",
-    "Transaction:Detail",
-    "Fill:List",
-    "Fill:Detail",
-    "Unit:List",
-    "Site:List",
-    # ── Introspection guesses (SmartFill does not publish these
-    #     but a probe costs nothing).
-    "system.listMethods",
-    "System:ListMethods",
-    "API:Methods",
+    "Driver:Read",
+    # ── Available in the PDF but gated on our account tier ──
+    "Asset:Read",
+    # ── Historic candidate rows (kept so a re-probe still records
+    #     their status; all returned code 5 or code 1 in .131k) ──
+    "Tank:List", "Tank:Levels", "Tank:Alarms", "Tank:Deliveries",
+    "Tank:Transactions", "Tank:Fills", "Tank:History", "Tank:Consumption",
+    "Vehicle:List", "Vehicle:FillHistory", "Vehicle:Detail",
+    "Transaction:List", "Transaction:Detail",
+    "Fill:List", "Fill:Detail", "Unit:List", "Site:List",
+    "system.listMethods", "System:ListMethods", "API:Methods",
 )
 
 
+# ── Exceptions ───────────────────────────────────────────────────
 class SmartFillConfigError(RuntimeError):
-    """Raised when SMARTFILL_API_KEY or SMARTFILL_API_SECRET are missing."""
+    """Raised when SMARTFILL_* env vars are missing."""
 
 
 class SmartFillAPIError(RuntimeError):
-    """Wraps a SmartFill JSON-RPC error response. Carries the JSON-RPC
+    """Wraps a SmartFill JSON-RPC error envelope. Carries the JSON-RPC
     error code + message but NEVER the request params (which include
     the secret)."""
     def __init__(self, code: int, message: str, method: str):
@@ -106,6 +96,16 @@ class SmartFillAPIError(RuntimeError):
         super().__init__(f"SmartFill {method} → JSON-RPC error {code}: {message}")
 
 
+class SmartFillRateLimitError(RuntimeError):
+    """Raised when the in-process token bucket is exhausted OR the
+    server returns 429. Carries `retry_after_s`."""
+    def __init__(self, retry_after_s: float, scope: str):
+        self.retry_after_s = retry_after_s
+        self.scope = scope  # "minute" | "hour" | "day" | "server_429"
+        super().__init__(f"SmartFill rate limit exhausted at {scope} scope — retry in {retry_after_s:.1f}s")
+
+
+# ── Credentials + JSON-RPC body ──────────────────────────────────
 def _creds() -> tuple[str, str, str]:
     """Return `(url, key, secret)` from env. Fail fast with a clean
     error that NEVER echoes the values."""
@@ -125,12 +125,12 @@ def _creds() -> tuple[str, str, str]:
 
 
 def _rpc_body(method: str, extra_params: Optional[dict] = None, req_id: int = 1) -> dict:
-    """Assemble the JSON-RPC 2.0 body. Credentials are injected here
-    from env so callers never touch the secret directly.
+    """Assemble the JSON-RPC 2.0 body. Credentials injected here so
+    callers never touch the secret directly.
 
-    NOTE: SmartFill diverges from strict JSON-RPC 2.0 — the param
-    key is `parameters` (plural), not `params`. Discovered by probe
-    on v58.13.131 (400 → 200 flip when the key rename landed).
+    NOTE: SmartFill diverges from strict JSON-RPC 2.0 — the param key
+    is `parameters` (plural), not `params`. Discovered by probe on
+    v58.13.131 (400 → 200 flip when the key rename landed).
     """
     _, key, secret = _creds()
     params: dict = {"clientReference": key, "clientSecret": secret}
@@ -144,32 +144,116 @@ def _rpc_body(method: str, extra_params: Optional[dict] = None, req_id: int = 1)
     }
 
 
+# ── Rate limiter (per-process token bucket) ──────────────────────
+# SmartFill contract: 6/min, 60/hour, 600/day. In this deployment
+# there is a SINGLE uvicorn worker, so the in-process bucket is
+# authoritative. If the deployment ever forks to N workers this
+# needs to move to Redis / Mongo — flagged in the discovery memo.
+class _RateBucket:
+    """Simple sliding-window bucket keyed on (minute, hour, day).
+
+    All hits are recorded as timestamps in `_hits`. Before each hit we
+    prune expired timestamps and check against the three ceilings.
+    """
+    _MINUTE_CAP = 6
+    _HOUR_CAP = 60
+    _DAY_CAP = 600
+
+    def __init__(self) -> None:
+        self._hits: list[float] = []
+        self._lock = asyncio.Lock()
+        self._last_error_at: Optional[float] = None
+        self._last_error_scope: Optional[str] = None
+
+    def _prune(self, now: float) -> None:
+        # 24 h horizon.
+        cutoff = now - 86400
+        self._hits = [t for t in self._hits if t >= cutoff]
+
+    async def check_and_add(self) -> None:
+        """Register a request or raise `SmartFillRateLimitError`."""
+        async with self._lock:
+            now = time.monotonic()
+            self._prune(now)
+            m = sum(1 for t in self._hits if t >= now - 60)
+            h = sum(1 for t in self._hits if t >= now - 3600)
+            d = len(self._hits)
+            if m >= self._MINUTE_CAP:
+                retry = 60 - (now - min(t for t in self._hits if t >= now - 60))
+                self._last_error_at = now
+                self._last_error_scope = "minute"
+                raise SmartFillRateLimitError(retry, "minute")
+            if h >= self._HOUR_CAP:
+                retry = 3600 - (now - min(t for t in self._hits if t >= now - 3600))
+                self._last_error_at = now
+                self._last_error_scope = "hour"
+                raise SmartFillRateLimitError(retry, "hour")
+            if d >= self._DAY_CAP:
+                retry = 86400 - (now - min(self._hits))
+                self._last_error_at = now
+                self._last_error_scope = "day"
+                raise SmartFillRateLimitError(retry, "day")
+            self._hits.append(now)
+
+    def snapshot(self) -> dict:
+        now = time.monotonic()
+        self._prune(now)
+        m = sum(1 for t in self._hits if t >= now - 60)
+        h = sum(1 for t in self._hits if t >= now - 3600)
+        d = len(self._hits)
+        return {
+            "minute_used": m, "minute_cap": self._MINUTE_CAP,
+            "hour_used": h, "hour_cap": self._HOUR_CAP,
+            "day_used": d, "day_cap": self._DAY_CAP,
+            "last_error_scope": self._last_error_scope,
+            "last_error_at_monotonic": self._last_error_at,
+        }
+
+
+_BUCKET = _RateBucket()
+
+
+def get_rate_limit_state() -> dict:
+    return _BUCKET.snapshot()
+
+
+# ── Generic RPC invoker ──────────────────────────────────────────
 async def call(
     method: str,
     extra_params: Optional[dict] = None,
     *,
-    timeout: float = 15.0,
+    timeout: float = 20.0,
+    _skip_rate_limit: bool = False,
 ) -> Any:
-    """Invoke a SmartFill JSON-RPC method. Returns `result` payload.
+    """Invoke a SmartFill JSON-RPC method. Returns the `result` payload.
 
-    Never logs the request body (contains the secret). Logs only the
-    method name + HTTP status + response `error.code` / `result`
-    presence.
+    Raises:
+        SmartFillConfigError   — env not configured.
+        SmartFillAPIError      — JSON-RPC error envelope.
+        SmartFillRateLimitError — bucket exhausted OR 429 from server.
+        httpx.HTTPError        — transport / 5xx.
+
+    Never logs the request body (contains the secret).
     """
+    if not _skip_rate_limit:
+        await _BUCKET.check_and_add()
+
     url, _, _ = _creds()
     body = _rpc_body(method, extra_params)
     log.info("smartfill call method=%s", method)  # do not log payload
     async with httpx.AsyncClient(timeout=timeout) as client:
         resp = await client.post(url, json=body)
     log.info("smartfill call method=%s http_status=%s", method, resp.status_code)
-    # SmartFill returns valid JSON-RPC error envelopes with HTTP 400
-    # (e.g. `{"error":{"code":"3","error":"Missing parameter",...}}`),
-    # so we parse the body FIRST and only raise on transport-level
-    # failures (5xx, non-JSON, network).
+
+    # 429 handling — SmartFill may respond with 429 + `Retry-After`.
+    if resp.status_code == 429:
+        retry = float(resp.headers.get("Retry-After", "60"))
+        raise SmartFillRateLimitError(retry, "server_429")
+
     try:
         envelope = resp.json()
     except ValueError:
-        resp.raise_for_status()  # re-raise as httpx.HTTPError with body
+        resp.raise_for_status()
         raise SmartFillAPIError(-32700, "non-json response", method)
     if resp.status_code >= 500:
         resp.raise_for_status()
@@ -177,9 +261,6 @@ async def call(
         raise SmartFillAPIError(-32700, "non-object response", method)
     if "error" in envelope and envelope["error"]:
         err = envelope["error"] or {}
-        # SmartFill returns `code` as a STRING and `error` as the
-        # message (not `message`). Bridge both spellings so callers
-        # can still `except SmartFillAPIError as e: e.code == 3`.
         raw_code = err.get("code")
         try:
             code_int = int(raw_code) if raw_code is not None else -1
@@ -190,18 +271,33 @@ async def call(
     return envelope.get("result")
 
 
+# ── Columnar → rows helper ───────────────────────────────────────
 def columnar_to_rows(result: Any) -> list[dict]:
     """SmartFill returns a `{columns: [...], values: [[...], ...]}`
     envelope for list-shaped methods. Convert to a list of dicts
     keyed by column name so downstream code doesn't drift on column
-    order. Non-columnar payloads pass through unchanged (wrapped in a
-    single-element list if dict, empty list otherwise)."""
-    if isinstance(result, dict) and isinstance(result.get("columns"), list) and isinstance(result.get("values"), list):
+    order.
+
+    v58.13.132ap — SmartFill's Transactions:Read now returns the
+    row array under the key `data` (not `values`). Both are
+    handled here so tank / driver methods keep working AND
+    transactions get parsed. Ordering: check both keys, take
+    whichever is a non-empty list of lists.
+    """
+    if isinstance(result, dict) and isinstance(result.get("columns"), list):
         cols = result["columns"]
-        return [
-            {cols[i]: (row[i] if i < len(row) else None) for i in range(len(cols))}
-            for row in result["values"]
-        ]
+        rows_raw = None
+        for k in ("values", "data", "rows"):
+            v = result.get(k)
+            if isinstance(v, list):
+                rows_raw = v
+                break
+        if rows_raw is not None:
+            return [
+                {cols[i]: (row[i] if i < len(row) else None) for i in range(len(cols))}
+                for row in rows_raw
+                if isinstance(row, list)
+            ]
     if isinstance(result, list):
         return result
     if isinstance(result, dict):
@@ -209,60 +305,105 @@ def columnar_to_rows(result: Any) -> list[dict]:
     return []
 
 
-async def get_tank_levels() -> Any:
+# ── Typed wrappers (production methods) ──────────────────────────
+async def smartfill_fetch_tank_levels() -> list[dict]:
     """`Tank:Level` — snapshot of all tank levels for the org.
-    Fields per the screenshot: Unit Number, Tank Number, Description,
-    Volume, Volume Percent, Capacity, Tank SFL, Status,
-    Last Updated, Timezone.
+    Columns: Unit Number, Tank Number, Description, Volume,
+             Volume Percent, Capacity, Tank SFL, Status,
+             Last Updated, Timezone.
     """
-    return await call("Tank:Level")
+    return columnar_to_rows(await call("Tank:Level"))
 
 
-async def get_vehicle_list() -> Any:
-    """`Vehicle:List` — HIGH-CONFIDENCE GUESS. Probe result recorded
-    in the discovery memo. If SmartFill returns
-    `method not found`, we fall through to `Fill:List` +
-    per-transaction vehicle attribution instead."""
-    return await call("Vehicle:List")
+async def smartfill_fetch_drivers() -> list[dict]:
+    """`Driver:Read` — driver register.
+    Columns: Authorisation Value, ISO Access, Sequence Number,
+             Expiry, Name, Enabled.
+    """
+    return columnar_to_rows(await call("Driver:Read"))
 
 
-async def get_vehicle_fill_history(
-    vehicle_id: Optional[str] = None,
+async def smartfill_fetch_tank_history(
+    *, from_iso: Optional[str] = None, to_iso: Optional[str] = None,
+) -> list[dict]:
+    """`Tank:Read` — tank fills + delivery history.
+    Columns: Date, Time, DateTime, Unit Number, Tank Number,
+             Record Type, Record Sub Type, Volume, Volumetric Units,
+             Order Number, Cost Price/L, Delivery Price, Timezone.
+    """
+    extra: dict = {}
+    if from_iso:
+        extra["From Timestamp"] = from_iso
+    if to_iso:
+        extra["To Timestamp"] = to_iso
+    return columnar_to_rows(await call("Tank:Read", extra or None))
+
+
+async def smartfill_fetch_transactions(
+    *,
     from_iso: Optional[str] = None,
     to_iso: Optional[str] = None,
-) -> Any:
-    """`Vehicle:FillHistory` — HIGH-CONFIDENCE GUESS. Same fallback
-    note as `get_vehicle_list`. Params (if the method is supported):
-    `vehicleId`, `fromDate`, `toDate` (ISO 8601)."""
-    extra: dict = {}
-    if vehicle_id is not None:
-        extra["vehicleId"] = vehicle_id
-    if from_iso is not None:
-        extra["fromDate"] = from_iso
-    if to_iso is not None:
-        extra["toDate"] = to_iso
-    return await call("Vehicle:FillHistory", extra or None)
+    page_size: int = 1000,
+    max_pages: int = 200,
+) -> list[dict]:
+    """`Transactions:Read` — paginated pull. Handles the SmartFill
+    `range: {offset, length}` pagination shape from the FMT Data PDF.
+
+    Columns: Date, Time, Card Number, Description, Registration,
+             From, Litres, Fuel Type, Odometer, Total Price,
+             Transaction Id, Driver Authorisation, Unit Price.
+
+    Rate-limits itself between pages so a single call never blows the
+    6/min ceiling (waits ~10s between pages if hit).
+
+    v58.13.132aq — max_pages raised 50 → 200 so orgs with 50k+ row
+    histories don't drop today's rows off the tail of the pull. Also
+    request `Sort By: Date DESC` — SmartFill silently ignores unknown
+    params (as we saw with From/To Timestamp), so worst case it's
+    a no-op; best case we get newest-first pagination and today's
+    rows land in page 1.
+    """
+    all_rows: list[dict] = []
+    offset = 0
+    for page in range(max_pages):
+        extra: dict = {
+            "range": {"offset": offset, "length": page_size},
+            "Sort By": "Date DESC",
+        }
+        if from_iso:
+            extra["From Timestamp"] = from_iso
+        if to_iso:
+            extra["To Timestamp"] = to_iso
+        try:
+            result = await call("Transactions:Read", extra)
+        except SmartFillRateLimitError as e:
+            # Per-page throttle — wait then retry once.
+            log.info("smartfill Transactions:Read rate-limit at page=%s — sleeping %.1fs",
+                     page, e.retry_after_s)
+            await asyncio.sleep(min(e.retry_after_s, 65.0))
+            result = await call("Transactions:Read", extra)
+        rows = columnar_to_rows(result)
+        all_rows.extend(rows)
+        # Stop when a page returns < page_size rows (last page).
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return all_rows
 
 
+# ── Discovery helper (unchanged surface — used by probe scripts) ─
 async def list_available_methods(
     *,
     candidates: Optional[tuple[str, ...]] = None,
 ) -> dict:
-    """Probe SmartFill for supported methods.
-
-    Iterates the `_CANDIDATE_METHODS` list (or a caller-supplied
-    list), invokes each with just the credential params, and
-    classifies:
-      · `available` — HTTP 200 + `result` key present + no `error`.
-      · `unauthorized` — JSON-RPC error code matches auth family
-                          (401 / -32001..-32003 depending on server).
-      · `method_not_found` — JSON-RPC -32601 or `"method"` in
-                          the error message (case-insensitive).
-      · `error` — everything else (transport / 5xx / unparseable).
-
-    Never returns the response body — only the classification + a
-    truncated error message for the report. Callers persist this
-    to `/app/memory/smartfill_discovery_v58_13_131.md`.
+    """Best-effort discovery. Iterates the candidate list, invokes each
+    with only the credential params, and classifies:
+      · `available` — HTTP 200 + `result` key present.
+      · `not_enabled` — code 1 "Method not supported" (subscription).
+      · `needs_params` — code 3 "Missing parameter" (method exists).
+      · `method_not_found` — code 5 "No such method".
+      · `unauthorized` — auth-family error.
+      · `error` / `transport_error` — everything else.
     """
     cands = candidates or _CANDIDATE_METHODS
     out: dict = {
@@ -276,7 +417,6 @@ async def list_available_methods(
         try:
             result = await call(m, timeout=10.0)
             entry["status"] = "available"
-            # Record only the SHAPE of the result — never the values.
             if isinstance(result, dict) and isinstance(result.get("columns"), list):
                 cols = result["columns"]
                 vals = result.get("values") or []
@@ -294,31 +434,21 @@ async def list_available_methods(
         except SmartFillAPIError as e:
             msg = (str(e) or "").lower()
             code = e.code
-            # SmartFill error taxonomy (empirical, .131 probe):
-            #   · code 1 "Method not supported"  → recognised but the
-            #                                       account/subscription
-            #                                       tier can't invoke it.
-            #                                       Fix: contact SmartFill
-            #                                       to enable.
-            #   · code 3 "Missing parameter"     → method exists + is
-            #                                       enabled; caller
-            #                                       needs to supply more
-            #                                       params.
-            #   · code 5 "No such method"        → method name doesn't
-            #                                       exist.
-            if code == 5 or "no such method" in msg or "unknown method" in msg:
+            if code == 5 or "no such method" in msg:
                 entry["status"] = "method_not_found"
             elif code == 1 or "method not supported" in msg or "not enabled" in msg:
                 entry["status"] = "not_enabled"
-            elif code == 3 and ("missing parameter" in msg or "missing" in msg):
+            elif code == 3:
                 entry["status"] = "needs_params"
-            elif code in (-32001, -32002, -32003, 401) or "auth" in msg or "credential" in msg or "unauthori" in msg:
+            elif code in (-32001, -32002, -32003, 401) or "auth" in msg or "unauthori" in msg:
                 entry["status"] = "unauthorized"
             else:
                 entry["status"] = "error"
             entry["code"] = code
-            # Truncate to keep memo compact + avoid leaking anything odd.
             entry["message"] = (str(e) or "")[:200]
+        except SmartFillRateLimitError as e:
+            entry["status"] = "rate_limited"
+            entry["retry_after_s"] = e.retry_after_s
         except httpx.HTTPError as e:
             entry["status"] = "transport_error"
             entry["message"] = str(e)[:200]

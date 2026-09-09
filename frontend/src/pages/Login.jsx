@@ -128,11 +128,10 @@ export default function Login() {
             {busySimpro ? <Loader2 size={16} className="animate-spin" /> : <Briefcase size={14} />} Sign in with Simpro
           </button>
           <p className="mt-1 text-[11px] text-slate-500">For staff imported from Simpro — enter your work email above, then tap Sign in with Simpro.</p>
-
-          <p className="mt-6 text-sm text-slate-600">
-            No account yet?{' '}
-            <Link to="/signup" className="text-orange-500 font-medium hover:underline" data-testid="login-to-signup">Start your free trial</Link>
-          </p>
+          {/* v58.13.132z — Removed "Start your free trial" link.
+              Backend `POST /users` returns 410 (deprecated); the
+              signup UI was orphaned. Onboarding now flows exclusively
+              via admin-invite → set-password OR Simpro sync + QR. */}
         </div>
       </div>
 

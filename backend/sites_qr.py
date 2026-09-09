@@ -303,7 +303,16 @@ async def list_sites(user: dict = Depends(get_current_user)):
     """List every Simpro-synced + manual site in the user's org. Soft-deleted
     rows are hidden (see /sites/recycle-bin for the bin). Phase 4.12 (v127)
     adds `kind`, `signon_questions`, `gps_override_*`, `manual_*` fields and
-    a live `active_signons_count` per row (last 24h)."""
+    a live `active_signons_count` per row (last 24h).
+
+    v58.13.132cc — Also unions in workspace-promoted rows from the new
+    canonical `sites` collection (populated by the .132cb Phase A merge
+    script). Every row now carries a `source` field so the FE can render
+    a "simpro" / "workspace_promoted" / "manual" chip; that answers
+    Stephen's ".132cb feedback: i dont see any changes to (sites)".
+    Workspace-promoted rows expose their `id` under the legacy
+    `simpro_site_id` key so the FE row-key + detail-route contracts
+    stay stable without a Phase B rename."""
     rows: list[dict] = []
     proj = {
         "_id": 0, "simpro_site_id": 1, "name": 1, "address_full": 1, "address": 1,
@@ -319,7 +328,47 @@ async def list_sites(user: dict = Depends(get_current_user)):
         ]},
         proj,
     ).sort("name", 1):
+        # v58.13.132cc — Tag every simpro_sites row as `source=simpro`
+        # so the FE can render a source chip consistent with the
+        # workspace-promoted rows unioned below.
+        s["source"] = "simpro"
         rows.append(s)
+
+    # v58.13.132cc — Union in workspace-promoted rows from the new
+    # canonical `sites` collection. Only rows with `source =
+    # workspace_promoted` are surfaced here; simpro-source rows already
+    # come from `db.simpro_sites` above. Dedupe by `id` in case a
+    # legacy row appears in both collections.
+    seen_ids = {r.get("simpro_site_id") for r in rows if r.get("simpro_site_id")}
+    async for w in db.sites.find(
+        {"org_id": user["org_id"],
+         "source": "workspace_promoted",
+         "$or": [
+             {"deleted_at": None}, {"deleted_at": {"$exists": False}},
+         ]},
+        {"_id": 0, "id": 1, "name": 1, "address_full": 1, "description": 1,
+         "source": 1, "default_for_org": 1, "_workspace_migrated_at": 1},
+    ):
+        if w.get("id") in seen_ids:
+            continue
+        rows.append({
+            "simpro_site_id": w.get("id"),
+            "name": w.get("name") or "Workspace",
+            "address_full": w.get("address_full"),
+            # workspace-promoted rows don't have Simpro-derived
+            # coordinates or a scan_token yet — surface null so the
+            # FE knows not to render a QR affordance.
+            "address": w.get("address_full"),
+            "suburb": None, "state": None,
+            "scan_token": None,
+            "latitude": None, "longitude": None,
+            "kind": "workspace_promoted",
+            "signon_questions": [],
+            "source": "workspace_promoted",
+            "default_for_org": bool(w.get("default_for_org")),
+            "_workspace_migrated_at": w.get("_workspace_migrated_at"),
+        })
+
     # Hydrate active sign-on counts (last 24h) in a single aggregation.
     if rows:
         since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()

@@ -120,10 +120,21 @@ async def replace_org_companies(body: CompaniesPatch, user: dict = Depends(get_c
 
 _FORM_CATEGORIES = ["general", "pre_start", "inspection", "near_miss", "incident", "toolbox", "admin"]
 
+# v58.13.132bk — Whitelist tightened to the 4 core seed role_ids (plus
+# `owner` which remains valid because it's a permission tier, not a
+# role_id). Legacy tokens (`worker`, `supervisor`, `foreman`,
+# `contractor`, `hseq`) are now rejected by both GET and PUT — the
+# `.132bk` backfill script rewrites any existing `role_form_allowlist`
+# rows keyed by those tokens.
+_ACCEPTED_ROLES = {
+    "admin", "owner",
+    "paneltec_civil", "viatec_traffic", "external_contractor",
+}
+
 
 def _norm_role(r: str) -> str:
     r = (r or "").lower().strip()
-    if r not in {"worker", "supervisor", "contractor", "foreman", "admin", "owner", "hseq"}:
+    if r not in _ACCEPTED_ROLES:
         raise HTTPException(400, f"Unknown role: {r}")
     return r
 
@@ -173,10 +184,20 @@ class RoleFormsPatch(BaseModel):
 @router.put("/role-presets/{role}/forms")
 async def put_role_forms(role: str, body: RoleFormsPatch, user: dict = Depends(get_current_user)):
     """Admin-only: replace the allowlist for `role`. IDs not present in
-    `form_templates` are silently dropped."""
+    `form_templates` are silently dropped.
+
+    v58.13.132bk — `admin` and `owner` are read-only "sees-everything"
+    tiers; PUT rejects them so callers can't accidentally restrict
+    admins by writing an allowlist. The Permissions Matrix UI reflects
+    this by rendering the Admin tab as read-only.
+    """
     if user.get("role") not in ("admin", "owner"):
         raise HTTPException(403, "Admin role required")
     role = _norm_role(role)
+    if role in ("admin", "owner"):
+        raise HTTPException(400,
+            "Admin/Owner see every form — cannot store a restricted "
+            "allowlist for these tiers.")
     # Validate ids belong to this org — reject unknown/foreign ids.
     ids = list({str(x) for x in (body.allowed_form_ids or []) if x})
     if ids:

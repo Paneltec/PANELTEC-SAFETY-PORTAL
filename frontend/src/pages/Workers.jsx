@@ -1984,6 +1984,62 @@ export default function Workers() {
     } catch (e) { toast.error(apiError(e)); }
   };
 
+  // v58.13.132ad — Onboarding card PDF (single worker).
+  //   Endpoint: GET /api/mobile/onboarding/cards.pdf?worker_id=<id>
+  //   Encodes a fresh `paneltec://onboard?token=...` deep link into the QR.
+  //   Reuses an existing unused unexpired token if one exists (idempotent).
+  const [onboardingBusy, setOnboardingBusy] = useState(null); // worker id or 'all' | 'selected'
+  const printOnboardingCard = async (w) => {
+    setOnboardingBusy(w.id);
+    try {
+      const r = await api.get('/mobile/onboarding/cards.pdf', {
+        params: { worker_id: w.id }, responseType: 'blob',
+      });
+      const { src } = await stashInlinePdf(r.data, `onboarding-${w.id.slice(0, 8)}.pdf`);
+      const win = window.open(src, '_blank');
+      if (!win) toast.error('Pop-up blocked — allow pop-ups for this site.');
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) toast.error("Admin role required to generate onboarding cards.");
+      else toast.error(apiError(e) || 'Could not generate onboarding card');
+    } finally { setOnboardingBusy(null); }
+  };
+
+  const [onboardingConfirm, setOnboardingConfirm] = useState(null); // { count, ids? } | null
+  const openBulkOnboardingConfirm = (ids) => {
+    // ids null → "all active"; else selected list.
+    const count = ids ? ids.length : rows.filter(x => x.active && !x.deleted_at).length;
+    if (count === 0) {
+      toast.error('No active workers to print for.');
+      return;
+    }
+    setOnboardingConfirm({ count, ids });
+  };
+  const doBulkOnboarding = async () => {
+    if (!onboardingConfirm) return;
+    setOnboardingBusy(onboardingConfirm.ids ? 'selected' : 'all');
+    try {
+      const params = onboardingConfirm.ids
+        ? { worker_ids: onboardingConfirm.ids.join(',') }
+        : { all: true };
+      const r = await api.get('/mobile/onboarding/cards.pdf', {
+        params, responseType: 'blob',
+      });
+      const generated = r.headers?.['x-paneltec-generated'] || '?';
+      const skipped = r.headers?.['x-paneltec-skipped'] || '0';
+      const { src } = await stashInlinePdf(r.data, `onboarding-cards-bulk.pdf`);
+      const win = window.open(src, '_blank');
+      if (!win) toast.error('Pop-up blocked — allow pop-ups for this site.');
+      else toast.success(`Generated ${generated} card${generated === '1' ? '' : 's'}${skipped !== '0' ? ` (${skipped} skipped)` : ''}`);
+      setOnboardingConfirm(null);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 403) toast.error("Admin role required.");
+      else toast.error(apiError(e) || 'Could not generate onboarding cards');
+    } finally { setOnboardingBusy(null); }
+  };
+
+
   // v58.13.76 — Flex-fill-remaining-viewport for the workers table.
   //
   // v58.13.75 tried a static `max-h-[calc(100vh-260px)]` budget on the
@@ -2136,6 +2192,33 @@ export default function Workers() {
           className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
           <Download /> Export CSV
         </button>
+        {/* v58.13.132ad — Bulk onboarding cards (admin only). Prints a
+            4-up A4 PDF with a fresh onboarding QR per active worker. */}
+        {canEdit && (
+          <button
+            onClick={() => openBulkOnboardingConfirm(null)}
+            disabled={onboardingBusy === 'all'}
+            data-testid="bulk-onboarding-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-300 bg-orange-50 text-sm font-semibold text-orange-800 hover:bg-orange-100 disabled:opacity-50"
+          >
+            {onboardingBusy === 'all' ? <Loader2 size={14} className="animate-spin" /> : <QrCode />}
+            Print all onboarding cards
+          </button>
+        )}
+        {/* v58.13.132bb — "Print selected onboarding cards". Reuses
+            the same confirm-and-download pipeline; enabled only when
+            at least one worker is ticked in the table. */}
+        {canEdit && selected.size > 0 && (
+          <button
+            onClick={() => openBulkOnboardingConfirm([...selected])}
+            disabled={onboardingBusy === 'selected'}
+            data-testid="bulk-onboarding-selected-btn"
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-orange-400 bg-orange-500 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-50"
+          >
+            {onboardingBusy === 'selected' ? <Loader2 size={14} className="animate-spin" /> : <QrCode />}
+            Print selected onboarding cards ({selected.size})
+          </button>
+        )}
         {canEdit && (
           <div className="relative">
             <button onClick={() => setSyncOpen((v) => !v)} disabled={syncing} data-testid="sync-dropdown"
@@ -2385,6 +2468,20 @@ export default function Workers() {
                         })()}
                         <button onClick={() => printWalletCard(w)} title="Print wallet card" data-testid={`print-${w.id}`}
                           className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#f5f3ff] text-[#5b21b6] hover:bg-[#ece6f4]"><Printer /></button>
+                        {/* v58.13.132ad — Per-row onboarding card. Admin-only:
+                            server enforces 403, we also hide the button for
+                            non-admin to avoid dead affordances. */}
+                        {canEdit && (
+                          <button
+                            onClick={() => printOnboardingCard(w)}
+                            disabled={onboardingBusy === w.id}
+                            title="Print onboarding card (QR)"
+                            data-testid={`print-onboarding-${w.id}`}
+                            className="inline-flex items-center justify-center w-7 h-7 rounded bg-[#fff4e6] text-[#c2410c] hover:bg-[#ffe4c4] disabled:opacity-40"
+                          >
+                            {onboardingBusy === w.id ? <Loader2 size={12} className="animate-spin" /> : <QrCode />}
+                          </button>
+                        )}
                         <button onClick={() => setViewingId(w.id)} title="View profile" data-testid={`view-${w.id}`}
                           className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 text-slate-700 hover:bg-slate-200"><EyeIcon /></button>
                         <button onClick={() => setEditing(w)} title="Edit" data-testid={`edit-${w.id}`}
@@ -2427,6 +2524,60 @@ export default function Workers() {
           onClose={() => setBulkZipOpen(false)}
           onDone={() => { load(); setBulkZipOpen(false); }}
         />
+      )}
+      {/* v58.13.132ad — Bulk onboarding-cards confirmation modal. */}
+      {onboardingConfirm && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => setOnboardingConfirm(null)}
+          data-testid="bulk-onboarding-modal"
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                <QrCode className="text-orange-700" />
+              </div>
+              <div>
+                <h3 className="font-display text-lg leading-tight text-slate-900">
+                  Print onboarding cards?
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Fresh QR + deep-link per worker.
+                </p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-700 mb-2">
+              Generate cards for <span className="font-bold">{onboardingConfirm.count}</span>{' '}
+              {onboardingConfirm.ids ? 'selected' : 'active'} worker{onboardingConfirm.count === 1 ? '' : 's'}?
+            </p>
+            <p className="text-xs text-slate-500 mb-5">
+              4-up on A4, one QR per worker encoding a 7-day install token.
+              Workers without a Simpro employee ID will be skipped.
+              Existing unused tokens will be reused (no burn).
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setOnboardingConfirm(null)}
+                data-testid="bulk-onboarding-cancel"
+                className="px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-lg"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={doBulkOnboarding}
+                disabled={onboardingBusy != null}
+                data-testid="bulk-onboarding-confirm"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-600 text-white text-sm font-semibold hover:bg-orange-700 disabled:opacity-60"
+              >
+                {onboardingBusy != null ? <Loader2 size={13} className="animate-spin" /> : <QrCode />}
+                Generate PDF
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

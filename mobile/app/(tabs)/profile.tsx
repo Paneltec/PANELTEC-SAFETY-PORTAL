@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { Colors } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
-import { logout } from '../../src/services/auth';
+import { clearSession, getStoredRole, type RoleId } from '../../src/services/auth';
 import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
 import {
   fetchWorkerProfile,
@@ -40,11 +40,14 @@ export default function ProfileScreen() {
   }, [refetch]);
 
   const handleLogout = useCallback(async () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
+    Alert.alert('Sign Out', 'Are you sure you want to sign out? Your device stays provisioned — only your session is cleared.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Sign Out', style: 'destructive',
-        onPress: async () => { await logout(); router.replace('/'); },
+        onPress: async () => {
+          await clearSession();
+          router.replace('/(auth)/pin-entry');
+        },
       },
     ]);
   }, [router]);
@@ -231,9 +234,9 @@ function NavRow({
 }
 
 const s = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.bg },
+  container: { flex: 1, backgroundColor: Colors.navy },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
-  loadingText: { fontSize: 14, color: Colors.textSecondary },
+  loadingText: { fontSize: 14, color: 'rgba(255,255,255,0.7)' },
   scroll: { paddingBottom: 32 },
 
   navyHeader: {
@@ -272,7 +275,7 @@ const s = StyleSheet.create({
   navSubtitle: { fontSize: 12, color: Colors.textTertiary, marginTop: 2 },
   badge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   badgeText: { fontSize: 11, fontWeight: '700' },
-  divider: { height: 8, backgroundColor: Colors.bg },
+  divider: { height: 8, backgroundColor: Colors.navy },
 
   logoutBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,

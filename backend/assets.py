@@ -254,6 +254,24 @@ def _compute_navixy_health(asset: dict) -> Optional[str]:
     return "green" if age_h <= NAVIXY_FRESH_THRESHOLD_HOURS else "red"
 
 
+# v58.13.132bi — Canonical fuel_type buckets. Anything else collapses
+# to "Unknown" so downstream anomaly rules can key off the enum.
+_FUEL_TYPE_CANON = {"Diesel", "Petrol", "AdBlue", "Unknown"}
+
+
+def _normalise_fuel_type(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    v = str(raw).strip()
+    if not v:
+        return None
+    # Case-insensitive match against the canonical set.
+    for target in _FUEL_TYPE_CANON:
+        if v.lower() == target.lower():
+            return target
+    return "Unknown"
+
+
 # ────────────────────── models ──────────────────────
 
 class AssetIn(BaseModel):
@@ -275,6 +293,15 @@ class AssetIn(BaseModel):
     fuel_tank_capacity_l: Optional[float] = Field(default=None, ge=0, le=100000)
     smartfill_key_code: Optional[str] = Field(default=None, max_length=80)
     smartfill_card_number: Optional[str] = Field(default=None, max_length=80)
+    # v58.13.132bi — Fuel & SmartFill enrichment (vehicle detail panel).
+    # `fuel_type` gates the default matcher on ambiguous multi-fuel-type
+    # stations; `current_odometer_km` and `current_engine_hours` are the
+    # admin-editable "known good" snapshots the L/100km + L/hour
+    # consumption metrics rebase against. All three optional; a vehicle
+    # will typically only use ONE of odometer OR engine hours.
+    fuel_type: Optional[str] = Field(default=None, max_length=32)
+    current_odometer_km: Optional[float] = Field(default=None, ge=0, le=10_000_000)
+    current_engine_hours: Optional[float] = Field(default=None, ge=0, le=1_000_000)
     # v58.13.122c — Date-anchor service schedule for non-metered kinds
     # (trailers, tools, containers). Both optional / nullable so metered
     # assets don't have to send anything.
@@ -460,6 +487,12 @@ async def create_asset(body: AssetIn, user: dict = Depends(require_permission("a
         "fuel_tank_capacity_l": body.fuel_tank_capacity_l,
         "smartfill_key_code": (body.smartfill_key_code or "").strip().upper() or None,
         "smartfill_card_number": (body.smartfill_card_number or "").strip() or None,
+        # v58.13.132bi — Fuel & SmartFill enrichment fields.
+        "fuel_type": _normalise_fuel_type(body.fuel_type),
+        "current_odometer_km": body.current_odometer_km,
+        "current_engine_hours": body.current_engine_hours,
+        "current_odometer_updated_at": ts if body.current_odometer_km is not None else None,
+        "current_engine_hours_updated_at": ts if body.current_engine_hours is not None else None,
         # v58.13.122c — Date-anchor service schedule fields.
         "service_interval_days": body.service_interval_days,
         "service_last_done_date": (body.service_last_done_date or "").strip()[:10] or None,
@@ -511,6 +544,23 @@ async def update_asset(asset_id: str, body: AssetIn, user: dict = Depends(requir
         "fuel_tank_capacity_l": body.fuel_tank_capacity_l,
         "smartfill_key_code": (body.smartfill_key_code or "").strip().upper() or None,
         "smartfill_card_number": (body.smartfill_card_number or "").strip() or None,
+        # v58.13.132bi — Fuel & SmartFill enrichment fields. Timestamp
+        # each numeric field on write so the UI can render a
+        # "last updated: <date>" caption; unchanged values (same as
+        # existing) do not bump the stamp.
+        "fuel_type": _normalise_fuel_type(body.fuel_type),
+        "current_odometer_km": body.current_odometer_km,
+        "current_engine_hours": body.current_engine_hours,
+        "current_odometer_updated_at": (
+            now_iso() if body.current_odometer_km is not None
+            and body.current_odometer_km != existing.get("current_odometer_km")
+            else existing.get("current_odometer_updated_at")
+        ),
+        "current_engine_hours_updated_at": (
+            now_iso() if body.current_engine_hours is not None
+            and body.current_engine_hours != existing.get("current_engine_hours")
+            else existing.get("current_engine_hours_updated_at")
+        ),
         # v58.13.122c — Date-anchor service schedule fields. Editable
         # on all kinds; only surfaced on the UI for date-anchored ones.
         "service_interval_days": body.service_interval_days,

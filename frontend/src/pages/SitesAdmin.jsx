@@ -44,10 +44,8 @@ import {
   Print20Regular as Printer,
 } from '@fluentui/react-icons';
 
-// v160.3.9.29-2b — Legacy set kept for reference; consumers now go
-// through useCan('sites', 'edit') below. Will be removed once no local
-// tests import it.
-const EDIT_ROLES = new Set(['admin', 'manager', 'hseq_lead']);
+// v58.13.132bd — Legacy EDIT_ROLES set removed. Authoritative gate is
+// useCan('sites', 'edit') / useCan('sites', 'delete').
 
 function fmtAgo(iso) {
   if (!iso) return '—';
@@ -65,7 +63,7 @@ export default function SitesAdmin() {
   // than sites.edit — matches backend `require_permission` on the
   // /api/sites/{id} DELETE route).
   const canDelete = useCan()('sites', 'delete');
-  void user; void EDIT_ROLES;
+  void user;
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -77,6 +75,26 @@ export default function SitesAdmin() {
   // v160.3.7c — single-row delete confirm state
   const [deleteFor, setDeleteFor] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+
+  // v58.13.132cc — Post-.132cb explainer banner. Shown until an admin
+  // acknowledges it via the "Got it" affordance. Answers Stephen's
+  // ".132cb feedback: i dont see any changes to (sites)" — the
+  // promoted "Work Admin" workspace now surfaces here with a
+  // `workspace_promoted` chip.
+  const MERGE_ACK_KEY = 'paneltec_sites_merge_ack_132cc';
+  const [mergeAcked, setMergeAcked] = useState(
+    () => (typeof window !== 'undefined'
+            && window.localStorage.getItem(MERGE_ACK_KEY) === '1'),
+  );
+  const promotedCount = useMemo(
+    () => rows.filter((r) => r.source === 'workspace_promoted').length,
+    [rows],
+  );
+  const ackMerge = () => {
+    try { window.localStorage.setItem(MERGE_ACK_KEY, '1'); }
+    catch (_e) { void _e; }
+    setMergeAcked(true);
+  };
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -221,6 +239,39 @@ export default function SitesAdmin() {
         )}
       </div>
 
+      {/* v58.13.132cc — Workspaces/Sites merge explainer. Rendered once
+          per admin (localStorage flag `paneltec_sites_merge_ack_132cc`)
+          so Stephen sees WHERE the retired Workspaces surface went. */}
+      {!mergeAcked && promotedCount > 0 && (
+        <div
+          className="mb-4 rounded-2xl border border-violet-200 bg-violet-50 p-4 flex items-start gap-3"
+          data-testid="sites-merge-explainer"
+        >
+          <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
+            <Archive className="text-violet-700" size={18} />
+          </div>
+          <div className="flex-1 min-w-0 text-sm">
+            <div className="font-bold text-violet-950">
+              Depots and workspaces have been merged into one Sites register.
+            </div>
+            <div className="text-violet-900 mt-1">
+              Rows tagged <span className="inline-flex items-center px-1.5 py-0 rounded-full bg-violet-100 text-violet-800 text-[10px] font-bold uppercase tracking-wider align-middle">workspace_promoted</span> were previously
+              on the retired <em>Settings → Workspaces</em> page. Simpro-synced
+              project sites keep the <span className="inline-flex items-center px-1.5 py-0 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold uppercase tracking-wider align-middle">simpro</span> tag.
+              You can dismiss this note — it won&rsquo;t come back.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={ackMerge}
+            data-testid="sites-merge-explainer-ack"
+            className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-violet-600 text-white text-xs font-bold hover:bg-violet-700"
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
       {loading ? (
         <div className="text-sm text-slate-500"><Loader2 size={14} className="inline animate-spin mr-1" /> Loading sites…</div>
       ) : filtered.length === 0 ? (
@@ -241,6 +292,11 @@ export default function SitesAdmin() {
                 <th className="text-left px-4 py-2.5">Site</th>
                 <th className="text-left px-4 py-2.5">Address</th>
                 <th className="text-left px-4 py-2.5">Kind</th>
+                {/* v58.13.132cc — Source chip so admins can distinguish
+                    Simpro-synced project sites from workspace-promoted
+                    admin rows (previously the retired Workspaces
+                    surface). */}
+                <th className="text-left px-4 py-2.5">Source</th>
                 <th className="text-left px-4 py-2.5">On-site</th>
                 <th className="text-left px-4 py-2.5">Questions</th>
                 <th className="text-right px-4 py-2.5">Actions</th>
@@ -270,6 +326,28 @@ export default function SitesAdmin() {
                   <td className="px-4 py-3">
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase font-semibold ${s.kind === 'manual' ? 'bg-violet-50 text-violet-700 border border-violet-200' : 'bg-slate-50 text-slate-700 border border-slate-200'}`}>
                       {s.kind || 'simpro'}
+                    </span>
+                  </td>
+                  {/* v58.13.132cc — Source chip cell. */}
+                  <td className="px-4 py-3">
+                    <span
+                      data-testid={`site-source-chip-${s.simpro_site_id}`}
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] uppercase font-semibold ${
+                        s.source === 'workspace_promoted'
+                          ? 'bg-violet-100 text-violet-800 border border-violet-300'
+                          : s.source === 'manual'
+                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                            : 'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                      title={
+                        s.source === 'workspace_promoted'
+                          ? 'Promoted from the retired Workspaces surface in the .132cb merge.'
+                          : s.source === 'manual'
+                            ? 'Manually added via + Add site.'
+                            : 'Synced from Simpro.'
+                      }
+                    >
+                      {s.source || 'simpro'}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-xs">

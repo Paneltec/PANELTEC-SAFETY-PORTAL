@@ -382,7 +382,11 @@ async def test_dedupe_by_transaction_id():
     r2 = await ff._import_csv(content=csv_text.encode(), filename="b.csv",
                                 org_id="ORG", workspace_id=None, user_id="U")
     assert r1.rows_inserted == 1
-    assert r2.rows_inserted == 0 and r2.rows_duplicate == 1
+    # v58.13.131n — under the default upsert-on, a re-import with the
+    # same columns counts as `rows_unchanged`, not `rows_duplicate`.
+    # Accept either so this test survives an env flag flip.
+    assert r2.rows_inserted == 0
+    assert (r2.rows_duplicate + r2.rows_unchanged) == 1
 
 
 @pytest.mark.asyncio
@@ -398,7 +402,9 @@ async def test_dedupe_fallback_composite_when_no_txn_id():
     r2 = await ff._import_csv(content=csv_text.encode(), filename="b.csv",
                                 org_id="ORG", workspace_id=None, user_id="U")
     assert r1.rows_inserted == 1
-    assert r2.rows_inserted == 0 and r2.rows_duplicate == 1
+    # v58.13.131n — accept either duplicate or unchanged (see above).
+    assert r2.rows_inserted == 0
+    assert (r2.rows_duplicate + r2.rows_unchanged) == 1
 
 
 # ── End-to-end smoke ───────────────────────────────────────────

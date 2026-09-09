@@ -112,7 +112,9 @@ async def test_reimport_deduplicates_via_composite_hash(_patch_db):
                                 org_id="ORG", workspace_id=None, user_id="U")
     assert r1.rows_inserted == 1
     assert r2.rows_inserted == 0
-    assert r2.rows_duplicate == 1
+    # v58.13.131n — under the default upsert-on, a re-import with the
+    # same columns counts as `rows_unchanged`, not `rows_duplicate`.
+    assert (r2.rows_duplicate + r2.rows_unchanged) == 1
 
 
 def test_compose_dedupe_hash_stable():

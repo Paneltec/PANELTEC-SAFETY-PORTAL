@@ -36,6 +36,9 @@ export const Colors = {
   // ── Tab bar ──
   tabActive:      '#F97316',
   tabInactive:    '#94A3B8',
+  // v58.13.132m — dedicated light-grey token for the bottom tab bar so it
+  // reads as a separator against the navy body of every tab screen.
+  tabBar:         '#F1F5F9',
   slate400:       '#94A3B8',
   muted:          '#64748B',
 

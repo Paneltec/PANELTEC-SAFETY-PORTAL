@@ -57,6 +57,28 @@ export interface HomeData {
   site: HomeSite;
   weather: HomeWeather;
   modules: HomeModule[];
+  // v58.13.132n — daily-job assignment for today.
+  today_job: {
+    id: string;
+    site_id: string;
+    site_name: string | null;
+    site_address: string | null;
+    site_coords: { lat: number; lng: number } | null;
+    assigned_at: string;
+    sms_sent_at: string | null;
+    accepted_at: string | null;
+    declined_at: string | null;
+    status: 'pending_accept' | 'accepted' | 'declined';
+  } | null;
+  today_job_status: 'no_job' | 'pending_accept' | 'accepted' | 'declined';
+  // v58.13.132p (corrected) — badge keys mirror the module keys.
+  module_badges?: {
+    forms?: number | null;
+    sites?: number | null;
+    profile?: number | null;
+    swms?: number | null;
+    certifications?: number | null;
+  };
 }
 
 async function authHeaders(): Promise<Record<string, string>> {

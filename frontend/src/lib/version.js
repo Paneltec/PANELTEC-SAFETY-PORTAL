@@ -1,5 +1,471 @@
 // Paneltec Civil · v159 — single-source-of-truth version constant.
 
+// v160.3.9.58.13.132cd — Sidebar version pill: raise + darken.
+//
+// User pain (verbatim, Stephen): "cant see the version pill in the
+// sidebar footer — it's positioned too low ... and the color contrast
+// is too light to read."
+//
+// Diagnosis: the version footer in `AppShell.jsx::SidebarShell` sat
+// AFTER `PwaInstallButton`, at the very tail of the sidebar column
+// with `mt-auto border-t text-slate-400`. Three problems:
+//   1. Order: PwaInstallButton could be tall (banner variant),
+//      pushing the version out of view on ~900px laptop viewports.
+//   2. Contrast: `text-slate-400` on `bg-white` is ~3.5:1 — below
+//      WCAG-AA 4.5:1 for small text.
+//   3. Visual weight: a plain centred grey number with no border /
+//      background didn't read as an intentional badge.
+//
+// Fix:
+//   · Reorder — version pill now sits ABOVE PwaInstallButton, still
+//     `mt-auto` so it stays anchored at the bottom of the flex column
+//     but always paints before the install button.
+//   · Restyle — proper pill: `bg-slate-100 border border-slate-300
+//     text-slate-700 rounded-full font-mono font-semibold shadow-sm`
+//     with an emerald live-status dot on the left. Contrast now
+//     ~9.8:1 (slate-700 on slate-100) — WCAG-AAA for small text.
+//   · Strip the `paneltec-` prefix in the expanded pill so the actual
+//     version tail is the readable part; the full string is preserved
+//     in the `title={RUNNING_VERSION}` tooltip for anyone hovering.
+//   · Kept the wrapper `data-testid="app-version-footer"` for backward
+//     test compat and added `data-testid="app-version-pill"` on the
+//     inner badge so future pytests can target the visual pill without
+//     depending on the wrapper.
+//
+// ── Files touched ────────────────────────────────────────────────
+//   · frontend/src/components/layout/AppShell.jsx — SidebarShell
+//     reordered + pill restyled.
+//   · frontend/src/lib/version.js + public/service-worker.js —
+//     version bump `.132cc` → `.132cd` in lockstep.
+//
+// ── NOT changed ──────────────────────────────────────────────────
+//   · Mobile drawer version footer — not present (never was).
+//   · Bottom-right `VersionBadge.jsx` — separate component, untouched.
+//   · `RUNNING_VERSION` string format — same shape, only the version
+//     tail changed.
+//   · `/app/mobile/` code — untouched. `MOBILE_BUNDLE_VERSION`
+//     unchanged.
+//   · 20 pre-existing `ephemeral-upload-storage` lint warnings —
+//     still parked for v58.14.x.
+
+// v160.3.9.58.13.132cc — Sites visibility + LAST FILL time.
+//
+// Two Stephen asks bundled after the .132cb ship:
+//
+//   1. **Compliance → Sites** shows no visible change even though
+//      `.132cb` migrated 11 workspaces into the `sites` collection.
+//      Diagnosis: SitesAdmin.jsx reads `GET /api/sites` from
+//      `sites_qr.py::list_sites`, which only queried `db.simpro_sites`.
+//      The promoted "Work Admin" workspace lived in `db.sites` with
+//      `source=workspace_promoted` and was never surfaced.
+//
+//      Fix: extend `sites_qr.py::list_sites` to UNION in the
+//      workspace-promoted rows from `db.sites` (keyed by `source ==
+//      "workspace_promoted"`), aliasing their `id` under
+//      `simpro_site_id` so the FE row-key / detail-route contracts
+//      stay stable. Every row now carries a `source` field so
+//      SitesAdmin can render a chip: `simpro` (slate) /
+//      `workspace_promoted` (violet) / `manual` (blue).
+//
+//      New Source column on the sites table, plus a violet
+//      "Depots and workspaces have been merged" explainer banner
+//      dismissed once per admin via `localStorage`
+//      (`paneltec_sites_merge_ack_132cc`).
+//
+//   2. **Per-Employee / Per-Vehicle / Admin Rollup** table's
+//      `LAST FILL` column shows only the date (regressed in .132ak
+//      when the `Fills` column was swapped for `Last fill`).
+//      Stephen wants date + 12-hour time (`DD/MM/YYYY hh:mm A`).
+//
+//      Fix: `fleet_fuel_reports.py::_aggregate` already exposes
+//      `latest_fill_timestamp` (ISO 8601) on every row (line 298
+//      of the pre-.132cc file — no backend change needed). Update
+//      the row cell in `FuelReporting.jsx` to render
+//      `fmtAusDateTime12h(r.latest_fill_timestamp)` with a
+//      graceful fallback to `fmtAusDate(latest_fill_date_iso)` for
+//      any legacy row that only carries the date. The new helper
+//      is co-located with the existing `fmtAusDate` / `fmtAusDateTime`
+//      helpers at the bottom of the file.
+//
+// ── Files touched ────────────────────────────────────────────────
+//   · backend/sites_qr.py       — `list_sites` union + `source` tag.
+//   · frontend/src/pages/SitesAdmin.jsx
+//       - `promotedCount` selector + `mergeAcked` state + `ackMerge`.
+//       - Explainer banner (violet card, single-dismiss).
+//       - New `Source` column + per-row chip.
+//   · frontend/src/pages/FuelReporting.jsx
+//       - New `fmtAusDateTime12h` helper.
+//       - Rows-table LAST FILL cell renders full timestamp + AM/PM.
+//   · frontend/src/lib/version.js + public/service-worker.js
+//       - Version bump `.132cb` → `.132cc` in lockstep.
+//
+// ── Pytests (`tests/test_v58_13_132cc_sites_visibility_and_lastfill.py`) ──
+//   9 checks:
+//     · Backend list_sites unions in db.sites workspace_promoted rows
+//       + tags every simpro row with `source=simpro`.
+//     · sites_qr.py source projection includes `default_for_org`,
+//       `_workspace_migrated_at`.
+//     · SitesAdmin explainer testid + source-chip testid pattern
+//       present.
+//     · SitesAdmin uses localStorage key `paneltec_sites_merge_ack_132cc`.
+//     · FuelReporting has `fmtAusDateTime12h` helper.
+//     · FuelReporting LAST FILL row cell uses
+//       `fmtAusDateTime12h(r.latest_fill_timestamp)` with fallback
+//       to `fmtAusDate(...)`.
+//     · fleet_fuel_reports.py continues to emit
+//       `latest_fill_timestamp` on every row.
+//     · Version-sync ≥ .132cc pin on version.js + service-worker.js.
+//     · Behavioural: `GET /api/sites` (Paneltec admin token) returns
+//       3+ rows with at least one carrying `source=workspace_promoted`.
+//
+// ── NOT changed ──────────────────────────────────────────────────
+//   · Backend field renames (workspace_id → site_id) — still Phase B.
+//   · Site detail page — reads through the same list endpoint so it
+//     inherits the fix; no direct changes.
+//   · Fuel reports CSV export — the "Last fill" column stays date-only
+//     in the CSV (matches the on-screen header for legacy exports).
+//   · `/app/mobile/` code — untouched. MOBILE_BUNDLE_VERSION unchanged.
+//   · 20 pre-existing `ephemeral-upload-storage` lint warnings —
+//     still parked for v58.14.x per Stephen directive.
+
+// v160.3.9.58.13.132cb — Workspaces / Sites merge · Phase A.
+//
+// USER PAIN (verbatim, Stephen, standing brief): The admin
+// "Workspaces" surface and the operational "Sites" register are
+// the same mental object — a physical depot / project site — but
+// live in two DB collections (`workspaces` + `simpro_sites`) with
+// two separate admin pages. Stephen wants them unified under a
+// single canonical Sites register, and the Workspaces sidebar
+// entry retired.
+//
+// ── Blast-radius warning ──────────────────────────────────────
+// The FK `workspace_id` is used on 16,624 pre_starts rows plus a
+// long tail on swms/hazards/inspections/incidents/assets/site
+// diary/audit_exports (7 collections, ~16.8k documents), and is
+// read/written by 40+ backend modules and 20+ frontend files.
+// Renaming that field in a single ship is a hard-to-verify
+// regression risk against Stephen's zero-testing-agent, pytest-
+// only guardrail. So this ship is deliberately split:
+//
+//   Phase A (this ship, .132cb):
+//     · DB migration `merge_workspaces_into_sites_v58_13_132cb.py`
+//       (dry-run default + `--commit`) populates the new canonical
+//       `sites` collection:
+//         - Every row in `simpro_sites` is copied over with
+//           `id = simpro_site_id`, `source = "simpro"`.
+//         - Every ACTIVE (non-deleted) row in `workspaces` is
+//           promoted with `source = "workspace_promoted"`, its
+//           existing `id` preserved so pre_starts.workspace_id
+//           still resolves against the new register.
+//         - Each org's `default_for_org=True` workspace becomes
+//           the `orgs.default_site_id` scalar.
+//         - `_workspace_migrated_at` audit stamp is written once
+//           per doc; idempotent re-runs preserve the original
+//           timestamp.
+//     · New backend router `backend/sites_admin.py` mounted at
+//       `/api/sites/admin` (chosen prefix so it does NOT collide
+//       with the pre-existing public site-scan router at
+//       `/api/sites` in `sites_qr.py`). Basic CRUD (list / create /
+//       patch / soft-delete) restricted to `admin` role.
+//     · Frontend surface retirement:
+//         - `frontend/src/pages/Workspaces.jsx` DELETED.
+//         - `import Workspaces from '@/pages/Workspaces';` removed
+//           from `App.js`.
+//         - Route `/app/settings/workspaces` now redirects to
+//           `/app/settings/sites` (preserves old bookmarks).
+//         - Sidebar "Workspaces" entry removed from
+//           `AppShell.jsx` (NAV.Settings section).
+//         - Draggable settings sub-nav registry
+//           (`frontend/src/lib/settingsNavRegistry.js`) no longer
+//           exports the `workspaces` key; `SettingsNav.jsx`
+//           filters unknown keys via `SETTINGS_NAV_BY_KEY[key]`
+//           returning undefined, so pre-.132cb saved layouts
+//           still render without the retired entry.
+//         - Backend registry (`settings_nav_registry.py`) KEEPS
+//           the `workspaces` key for grace-window `PUT /api/
+//           settings/nav-layout` validation — .132cb-b will remove
+//           it and start 400ing incoming layouts that reference it.
+//     · Existing state left INTACT for Phase B:
+//         - `db.workspaces` collection retained.
+//         - `workspace_id` FKs on all 7 target collections
+//           untouched.
+//         - `workspace_ids` on `users` untouched.
+//         - `/api/workspaces` router still live (used by the
+//           `TopBar` switcher and `useWorkspace` scoping context;
+//           auto-hides at ≤1 workspace via .132ak).
+//         - `lib/workspace.js` (`useWorkspace` + `wsParams`)
+//           untouched — every page still filters by workspace_id
+//           against the workspaces collection.
+//
+//   Phase B (deferred, .132cb-b):
+//     · Field rename `workspace_id` → `site_id` on the 7
+//       target collections (16.8k documents, batched).
+//     · Field rename `workspace_ids` → `site_ids` on `users`.
+//     · Backend sweep: 40+ module updates (ask.py, asset_service.
+//       py, assets.py, auth.py, bulk_import_prestarts.py, crud.py,
+//       dashboard.py, dashboards.py, exports.py, fleet.py,
+//       fleet_fuel.py, forms.py, forms_pickers.py, mobile_*.py,
+//       models.py, org_settings.py, seed*.py, sites_qr.py,
+//       sites_signon_v127.py, swms_*.py, users.py,
+//       visitor_signins.py, workers_qr.py).
+//     · Frontend sweep: `useWorkspace` → `useSite`, `wsParams` →
+//       `siteParams` across ~20 pages.
+//     · Retire `/api/workspaces` (410 gone).
+//     · Drop `db.workspaces` + `db.simpro_sites` collections.
+//     · Backend registry: retire `workspaces` key, start 400ing
+//       incoming saved-nav-layout payloads.
+//
+// ── Pytests (`tests/test_v58_13_132cb_workspaces_sites_merge.py`) ─
+//   12 checks locking Phase A:
+//     · Migration script exists with `--commit` + `--dry-run`,
+//       default is dry-run.
+//     · Script upserts into `sites` from both sources, preserves
+//       the `_workspace_migrated_at` audit stamp on re-run.
+//     · `sites_admin.py` exists at prefix `/sites/admin`, gates
+//       via `get_current_user`, reads from `db.sites`.
+//     · `server.py` mounts `sites_admin_router` and keeps
+//       `workspaces_router` for Phase B.
+//     · Frontend `Workspaces.jsx` is GONE, sidebar `label:
+//       'Workspaces'` and `testid: 'nav-settings-workspaces'`
+//       both GONE, frontend registry no longer exports the
+//       `workspaces` key.
+//     · Backend registry keeps `workspaces` key (grace window).
+//     · `App.js` redirects `settings/workspaces` → `settings/sites`
+//       AND no longer imports `pages/Workspaces`.
+//     · Version-sync forward-safe pin ≥ .132cb on both
+//       `version.js` (RUNNING_VERSION) and `service-worker.js`
+//       (CACHE_VERSION).
+//     · Behavioural round-trip: seed workspaces + simpro_sites in
+//       a scratch org, run `--commit`, confirm sites populated
+//       with the audit stamp and the correct `source` labels;
+//       second run preserves the timestamp; retired (deleted_at)
+//       workspaces are skipped.
+//
+// ── Live-DB migration output (verified) ──────────────────────
+//   BEFORE: workspaces_active=11, workspaces_total=16,
+//           simpro_sites=17, sites=0, orgs=11.
+//   AFTER : sites=27 (11 promoted + 17 simpro − 1 dedupe on
+//           DEV-SITE-001 which was soft-deleted in simpro_sites
+//           and already carried the same id shape).
+//   Paneltec org (Stephen's tenant) now shows 3 sites via
+//   `GET /api/sites/admin`: 2 × source=simpro, 1 × source=
+//   workspace_promoted ("Work Admin", 19 Connector Park Drive).
+//
+// ── NOT changed ─────────────────────────────────────────────
+//   · `useWorkspace` / `wsParams` context — untouched, still
+//     filters records by workspace_id.
+//   · TopBar workspace switcher — untouched (auto-hides at ≤1
+//     workspace anyway).
+//   · Public site scan flow (`sites_qr.py` at `/api/sites/{id}/
+//     scan-pdf`, `/api/scan/site/:token`) — untouched.
+//   · Simpro sync path (`integrations_simpro.py` writes to
+//     `simpro_sites`) — untouched for Phase A. Phase B will
+//     retarget to `sites` and drop `simpro_sites`.
+//   · `/app/mobile/` code (MOBILE_BUNDLE_VERSION unchanged —
+//     mobile still calls `/api/sites/{id}/…` public endpoints;
+//     admin surface is web-only).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings —
+//     still parked for v58.14.x per user directive.
+
+// v160.3.9.58.13.132bp — Fuel Anomaly Inbox UX hardening.
+//
+
+// USER PAIN (verbatim, Stephen · 2026-09-09):
+//   "By the way as soon as you touch it it goes away and can't see it
+//    again... there is no resolved tab and I didn't click resolve or
+//    any thing"
+//
+// The .131c inbox rendered the per-flag Resolve/Dismiss actions as
+// tiny 10-pixel emerald/slate-outlined pills (`px-1.5 py-0.5
+// text-[10px]`) that were visually indistinguishable from the
+// severity chips beside them. Stephen's investigation report
+// confirmed no auto-mutation logic exists on the page — every
+// disappearance is a mis-tap on the Resolve chip that then correctly
+// drops the row from the `resolved=false` filter. The Resolved tab
+// WAS on screen but rendered as a rounded-pill filter chip that
+// didn't read as a "tab".
+//
+// Three fixes bundled:
+//
+// ── Fix 1: Resolve / Dismiss chips → real buttons ─────────────
+//   `pages/FuelAnomalyInbox.jsx` — `openFlags.map` render.
+//     · Hit area: `px-2.5 py-1` (was `px-1.5 py-0.5`).
+//     · Type ramp: `text-xs` (was `text-[10px]`).
+//     · Fill:
+//         Resolve → `bg-emerald-600 hover:bg-emerald-700 text-white
+//                    border-emerald-700`
+//         Dismiss → `bg-slate-600 hover:bg-slate-700 text-white
+//                    border-slate-700`
+//     · Icon size 12 (was 10).
+//     · Titles rewritten to signal reversibility:
+//         Resolve → "Marks this flag as resolved — reversible via
+//                    Undo toast"
+//         Dismiss → "Dismisses this flag — reversible via Undo toast"
+//   Testids unchanged (`fuel-anomaly-resolve-<txn>-<rule>`,
+//   `fuel-anomaly-dismiss-<txn>-<rule>`).
+//
+// ── Fix 2: Undo toast + backend /reopen endpoint ──────────────
+//   Backend (`backend/fleet_fuel.py`):
+//     · New `POST /fleet/fuel/anomalies/{txn_id}/reopen` accepting
+//       `{"rule": "<rule_key>"}`. Same `require_fleet_register_enabled`
+//       + `require_permission("assets", "edit")` gates as
+//       `/resolve` and `/dismiss`.
+//     · Handler `reopen_anomaly` clears every resolution-metadata
+//       field this codebase has ever written to a flag
+//       (`resolved_at`, `resolved_by`, `resolved_action`,
+//       `resolved_note`, `resolution_reason`, `resolution_kind`,
+//       `dismissed_at`) — defensive over historical field drift.
+//     · 404 when txn missing; 400 when rule not present on the txn;
+//       400 when rule is already open (idempotency: no-op that
+//       shouts).
+//   Frontend (`FuelAnomalyInbox.jsx flip()`):
+//     · Toast on Resolve/Dismiss now carries `duration: 5000` +
+//       `action: { label: 'Undo', onClick: () => api.post(.../reopen) }`.
+//     · Emerald pill styling via `actionButtonStyle` inline object
+//       (backgroundColor emerald-600, border emerald-700, rounded-
+//       full, white text) — Sonner's default action button reads as
+//       muted text otherwise.
+//     · Undo click hits `POST /fleet/fuel/anomalies/<txn>/reopen`,
+//       then re-fires `reload()` so the row returns to the Open
+//       filter on the next fetch.
+//     · Undo error path surfaces `apiError(e) || 'Undo failed'` so
+//       a race (concurrent resolve) never dies silently.
+//
+// ── Fix 3: Status filter → real tab strip ─────────────────────
+//   The three pills (Open / Resolved / All) now render as tabs:
+//     · Wrapping container is `border-b border-slate-200` so the
+//       tabs sit above a visible baseline.
+//     · Each tab is `px-4 py-2 text-sm font-semibold -mb-px
+//       border-b-2`.
+//     · Active tab: `border-slate-900 text-slate-900`.
+//     · Inactive tab: `border-transparent text-slate-500 hover:
+//       text-slate-800 hover:bg-slate-100`.
+//     · `-mb-px` on each tab aligns the active tab's 2px underline
+//       exactly on the container's 1px baseline (classic Tabs
+//       pattern).
+//     · New group testid `fuel-anomaly-status-tabs` on the strip
+//       container; existing per-tab testids (`fuel-anomaly-status-
+//       open/resolved/all`) preserved verbatim so the .131c pytest
+//       and any downstream Playwright specs continue to run.
+//   Also: removed the now-unused `Filter` icon import from
+//   `lucide-react`. The old `<Filter size={12} /> Status` label +
+//   the vertical divider between the status pills and the rule
+//   select are both gone — the new tab strip implies the "status"
+//   semantic without needing a label.
+//
+// ── Pytests (`tests/test_v58_13_132bp_anomaly_reopen.py`) ─────
+//   9 checks, all green:
+//     · `/reopen` happy path (seed txn with a resolved flag → POST
+//       → resolved_at cleared + row re-appears in `resolved=false`).
+//     · 404 on missing txn.
+//     · 400 on rule not present on the transaction.
+//     · 400 on rule already open (idempotency guard).
+//     · Clears every resolution-metadata field (resolved_at,
+//       resolved_by, resolved_action, resolved_note).
+//     · `assets.edit` gate honoured (worker role → 403).
+//     · Frontend source pins: chip has `bg-emerald-600`, `px-2.5
+//       py-1`, `text-xs`; tab container has `border-b border-
+//       slate-200`; Undo toast wired via `actionButtonStyle` +
+//       `/reopen` call site; version pinned to .132bp on all three
+//       canonical strings.
+//
+// ── Screenshots (verified live) ────────────────────────────────
+//   · `/app/memory/v58_13_132bp_01_new_chips.jpeg` — Resolve /
+//     Dismiss as filled emerald/slate buttons with generous hit
+//     areas, sitting under the tab strip.
+//   · `/app/memory/v58_13_132bp_02_tab_strip.jpeg` — Open /
+//     Resolved / All rendered as tabs with the active tab's 2px
+//     underline visible.
+//   · `/app/memory/v58_13_132bp_03_undo_toast.jpeg` — Sonner toast
+//     "Resolved · <rule>" with the emerald pill "Undo" action.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · Bulk checkboxes / bulk-delete / bulk-dismiss — parked per
+//     Stephen's decision. Zero DELETE surface added.
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION unchanged —
+//     no mobile edits).
+//   · `metro.config.js` — untouched.
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings —
+//     still parked for v58.14.x per user directive.
+
+// v160.3.9.58.13.132bo — SmartFill card drill-down drawer wired into
+// the Fuel Reporting Top-10 leaderboards.
+//
+// USER PAIN (verbatim): "Clickable Top 10 rows on Fuel dashboard →
+// per-card popup." The .132aj admin leaderboards (Top 10 · Highest $,
+// Top 10 · Highest $/L, Top 10 · Most fills) rendered on
+// `/app/fleet/fuel` but did nothing on click — admins had to
+// hand-navigate to reach any per-card history. This ship makes every
+// row clickable, opens the SmartFill drill-down drawer for the row's
+// linked card, and shows a card chooser when a row groups multiple
+// cards under the same driver label.
+//
+// ── Backend (`fleet_fuel_reports.py`) ─────────────────────────
+//   1. `_aggregate` — each rollup bucket now accumulates a
+//      `_card_numbers` set of distinct SmartFill card numbers seen
+//      under that key (driver / employee / vehicle).
+//   2. Row output — new field `card_numbers: [sorted list]`.
+//   3. `_lb_row` — passes `card_numbers` through to the leaderboard
+//      payload so `GET /fleet/fuel/reports` responds with:
+//        {leaderboards.top_by_cost[i].card_numbers: [...]}
+//        {leaderboards.top_by_dpl[i].card_numbers: [...]}
+//        {leaderboards.top_by_fills[i].card_numbers: [...]}
+//   4. Existing `.132bo` endpoints (`/cards/{card}/summary`,
+//      `/cards/{card}/transactions`, `/cards/{card}/assign`) —
+//      unchanged from previous session; already tested by curl.
+//
+// ── Frontend (`pages/FuelReporting.jsx`) ──────────────────────
+//   1. Imported `SmartFillCardDrawer` from
+//      `../components/fleet/SmartFillCardDrawer`.
+//   2. New state: `drawerCard` (string | null) + `cardChooserRow`
+//      (row | null).
+//   3. New callback `handleLeaderboardClick(row)`:
+//        · 0 linked cards → toast.message "No SmartFill card linked".
+//        · 1 linked card → open drawer directly.
+//        · 2+ cards → open `CardChooserDialog` picker.
+//   4. `<Leaderboard>` component now accepts `onRowClick` prop and
+//      renders each clickable row with `cursor-pointer
+//      hover:bg-blue-50/60`, a title tooltip and a
+//      `<span data-testid="{root}-row-{i}-multi-card">{n} cards</span>`
+//      chip when a row has more than one linked card.
+//   5. `<SmartFillCardDrawer>` + `<CardChooserDialog>` mounted at the
+//      end of the return.
+//   6. `CardChooserDialog` — inline 50-line component with
+//      `data-testid="fuel-reporting-card-chooser"` plus a per-card
+//      option `fuel-reporting-card-chooser-opt-{card_number}`.
+//
+// ── Frontend (`components/fleet/SmartFillCardDrawer.jsx`) ─────
+//   1. `AssignVehicleDialog` — `/assets` list response uses `assets`
+//      key (not `items`). Fallback chain updated to
+//      `r.data.assets || r.data.items || r.data || []`.
+//   2. Anomaly-chip click handler — fixed the bitwise-AND typo
+//      (`setFlaggedOnly(true) & loadRows(0)`) to an explicit
+//      `if/setFlaggedOnly/loadRows` block so clicking the chip now
+//      actually filters the transactions table.
+//
+// ── Pytests (`tests/backend_unit/test_v58_13_132bo_smartfill_card_drilldown.py`) ─
+//   14 checks:
+//     · `/cards/{card}/summary` shape (all_time / ytd / fills_30d /
+//       anomaly_count_90d / top_driver_90d / linked_vehicle).
+//     · `/cards/{card}/transactions` pagination + `flagged_only`
+//       filter + `vehicle_rego` enrichment.
+//     · `/cards/{card}/assign` — happy path writes
+//       `assets.smartfill_card_number`, idempotent (no_change=true),
+//       409 on conflict when another vehicle claims the same card,
+//       400 on missing body, 404 on missing vehicle.
+//     · `assets.edit` gate on assign; `assets.view` gate on the two
+//       reads.
+//     · `_aggregate` bucket now carries `card_numbers` list.
+//     · Frontend source pins: `SmartFillCardDrawer` imported into
+//       `FuelReporting.jsx`, `handleLeaderboardClick` wired to
+//       `onRowClick`, `CardChooserDialog` present, testids stable.
+//     · Version-sync forward-safe pin >= .132bo.
+//
+// ── NOT changed ────────────────────────────────────────────────
+//   · `/app/mobile/` code (only MOBILE_BUNDLE_VERSION bumped).
+//   · The 20 pre-existing `ephemeral-upload-storage` warnings
+//     (still parked for v58.14.x per user directive).
+
 // v160.3.9.58.13.131c — SmartFill Fuel CSV Frontend + Anomaly Inbox.
 //
 // USER PAIN (verbatim course-correction, .131b handoff):
@@ -11818,7 +12284,717 @@
 //   mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION
 //   all → paneltec-v160.3.9.58.13.98.
 
-export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132i';
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132s — Role cleanup + pending-user activation + fuel banner
+//   Track 1 · Hard-delete 32 non-target role docs; rebucket 2 drift
+//             users (Josh Drew → admin, Adrian Mitchell → paneltec_civil).
+//             Roles collection: 36 → 4 (admin, paneltec_civil,
+//             viatec_traffic, external_contractor). Migration
+//             `scripts/migrate_roles_and_activate_v58_13_132s.py`,
+//             batch-id `132s-de7bdde18a70`, rollback via
+//             `role_migration_log` + backup at
+//             `/app/memory/v58_13_132s_preflight_backup/`.
+//   Track 2 · Activate all 6 `.132r_workers_to_users`-hotfixed users
+//             (temp 16-char password + must_change_password=true +
+//             activation_status/status → active + token_version bump).
+//             Passwords in `/app/memory/v58_13_132s_activation_passwords.txt`
+//             (chmod 0600). No email/SMS fired (Comms Safe Mode ON).
+//             `MustChangePasswordGuard` (AuthBundle.jsx:141) blocks
+//             the app on first sign-in until they set a new one.
+//   Track 3 · SmartFill auto-sync enabled + cursor reset to 2026-09-07.
+//             Red banner on FuelReporting when >10% of rows have no
+//             cost. F1 (user CSV re-upload) NOT executed — user will
+//             upload themselves with the Total Price column enabled;
+//             `.131n` upsert path is ready to back-fill in place.
+//   Simpro sync patch · `create_role_from_position` gated behind
+//             `SIMPRO_POSITION_ROLES_DISABLED=true` env flag. When
+//             disabled the function returns the 4-target bucket
+//             instead of spawning a `custom_<slug>` role — new
+//             `bucket_target_role()` helper in roles_catalogue.py.
+//             All 3 callers updated (selective import new-user +
+//             existing-user branches, delta sync, bulk-assign-role
+//             from-position sentinel). Position becomes a display-
+//             only attribute; delta sync no longer overwrites role_id.
+//             Code path preserved (function still callable, no
+//             deletion) per user directive.
+//   Files touched:
+//     · backend/scripts/migrate_roles_and_activate_v58_13_132s.py (new)
+//     · backend/roles_catalogue.py                (flag + helper)
+//     · backend/simpro_import_users.py            (3 call sites)
+//     · backend/users.py                          (1 call site)
+//     · backend/.env                              (flag)
+//     · frontend/src/pages/FuelReporting.jsx      (red banner)
+//     · frontend/src/lib/version.js#RUNNING_VERSION → .132s
+//     · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION → .132s
+//   CACHE_VERSION / EXPECTED_CACHE_VERSION intentionally NOT bumped
+//   (per standing policy — batching for the next CACHE ship).
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132t — Fuel display fixes + provisional $3.00 back-fill
+//   F-A · `AssetFuelTab.jsx` recent-transactions table now has a
+//         per-row `$/L` column. Provisional rows render in amber
+//         italic with an asterisk (`$3.000*`) + tooltip; real rows
+//         render plain. Null → em-dash.
+//   F-B · `FuelReporting.jsx` `Total cost` Stat now renders `—`
+//         when totals sum is 0 (was `$0.00`). When provisional
+//         rows are present the total prints `$…*` with an asterisk.
+//   F-D · Back-fill script wrote 547 rows @ $3.00/L (provisional).
+//         `price_source="provisional_static_3.00"` +
+//         `price_provisional_at=<iso>` +
+//         `total_price=round(litres*3.00, 2)` +
+//         `computed_price_per_litre=3.00`.
+//         `.131n` upsert-merge path patched to CLEAR
+//         `price_source` + `price_provisional_at` when a real
+//         `total_price` arrives via CSV re-upload
+//         (`fleet_fuel.py:894-909`).
+//         Amber banner on FuelReporting + AssetFuelTab when any
+//         visible row is still provisional.
+//   API · `fleet_fuel_reports.py` aggregation now returns
+//         `totals.has_provisional: bool` so the FE banner has a
+//         single-flag trigger.
+//   Scripts:
+//     · `backend/scripts/backfill_provisional_price_v58_13_132t.py`
+//         (executed with --commit — 547 rows modified;
+//          idempotent — second run modifies 0).
+//     · `backend/scripts/strip_provisional_prices_v58_13_132t.py`
+//         (documented, NOT run — emergency back-out only; the
+//          upsert path is the canonical replacement channel).
+//   Files touched:
+//     · backend/fleet_fuel.py                (upsert clear-flag)
+//     · backend/fleet_fuel_reports.py        (has_provisional flag)
+//     · frontend/src/components/AssetFuelTab.jsx (per-row $/L + banner)
+//     · frontend/src/pages/FuelReporting.jsx (banner + Total cost em-dash)
+//     · frontend/src/lib/version.js#RUNNING_VERSION → .132t
+//     · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION → .132t
+//   CACHE_VERSION / EXPECTED_CACHE_VERSION intentionally NOT bumped.
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132u — Cleanup + fuel-report sort polish
+//   Drops · 7 form_templates_backup_* collections (294 dead rows).
+//           `vehicles` collection did NOT exist (Rev 2 audit
+//           mis-called it out — false alarm; nothing to drop).
+//   Sort · Fuel Reports rollup table now sorts by `$/L desc` primary,
+//          `total_price desc` tiebreaker. Rows with null $/L sink to
+//          bottom. Backend-driven (`fleet_fuel_reports.py:206-213`)
+//          — frontend inherits.
+//   Files touched:
+//     · backend/fleet_fuel_reports.py         (rollup sort)
+//     · frontend/src/lib/version.js#RUNNING_VERSION → .132u
+//     · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION → .132u
+//   Pre-flight backup at
+//   `/app/memory/v58_13_132u_preflight_backup/` (chmod 0700/0600).
+//   CACHE_VERSION / EXPECTED_CACHE_VERSION intentionally NOT bumped.
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132v — Card attribution back-fill
+//   New `fuel_cards` collection, 67 rows back-filled from the
+//   existing 547 fills. Split: 59 vehicle · 1 shared (Office) ·
+//   7 unassigned (1 person-named "Daniel Butler" + 6 rego-unmatched).
+//   Unique index (org_id, card_number); helper indexes on asset_id,
+//   worker_id, attribution_kind.
+//   Script: `backend/scripts/backfill_fuel_cards_v58_13_132v.py`
+//   (executed with --commit; second run modifies 0 → idempotent).
+//   Ingest wiring (.132w) and admin UI (.132x) queued next.
+//   RUNNING_VERSION bump only. NO CACHE_VERSION / MOBILE bump this batch.
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132w — Ingest wiring for fuel_cards lookup
+//   `_resolve_asset` now consults `fuel_cards` FIRST for every fill
+//   at CSV / API sync ingest time. Return tuple bumped from
+//   (asset_id, match_status) → (asset_id, worker_id, match_status,
+//   attribution_pending). Fills stamped with `worker_id` +
+//   `attribution_pending` when applicable.
+//   Auto-creates an `unassigned` fuel_cards row for any brand-new
+//   card_number seen so admin UI can surface it (.132x).
+//   Post-match happy-path also calls `_ensure_fuel_card_doc` so a
+//   pre-existing rego-matched card that never got a fuel_cards row
+//   gets one. Idempotent.
+//   Files touched:
+//     · backend/fleet_fuel.py                (_resolve_asset + helper)
+//     · frontend/src/lib/version.js          → .132w
+//   RUNNING_VERSION bump only. NO CACHE_VERSION / MOBILE bump this batch.
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132x — Fuel Card Attribution admin UI
+//   New page `/app/fleet/fuel/cards` (`FuelCardsAdmin.jsx`) — single
+//   screen, table of all `fuel_cards` docs with per-row attribution
+//   dropdown (Vehicle | Worker | Shared | Unassigned) + searchable
+//   picker (asset or worker) + inline notes + Save.
+//   Filters: "Unassigned only" toggle (default ON so the 8 orphan
+//   cards from .132v surface first) + free-text search across
+//   card #, rego, description, notes.
+//   Backend endpoints:
+//     · GET   /api/fleet/fuel/cards          (list + enrich)
+//     · PATCH /api/fleet/fuel/cards/{cn}     (update — assets.edit)
+//   Access: `assets.edit` permission on the server; page renders
+//   for anyone who can reach it via nav (server is the gate).
+//   Files touched:
+//     · backend/fleet_fuel.py                (2 new endpoints)
+//     · frontend/src/pages/FuelCardsAdmin.jsx (new page)
+//     · frontend/src/App.js                  (route wire)
+//     · frontend/public/service-worker.js    (CACHE_VERSION → .132x)
+//     · frontend/src/lib/version.js          (EXPECTED_CACHE_VERSION → .132x)
+//     · mobile/src/lib/version.ts            (MOBILE_BUNDLE_VERSION → .132x)
+//   RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION +
+//   EXPECTED_CACHE_VERSION all bumped together this batch (new UI
+//   surface justifies the cache bust, per user's brief allowance).
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132y — Simpro role-override protection + Expo MapView wire
+//
+//   FIX A · Simpro role-override protection (backend)
+//     · New field `role_manually_set: bool = False` on user docs.
+//     · Delta sync (`simpro_import_users.py::sync_from_simpro_delta`)
+//       now guards `if _user_manual: skip role write`. Non-role
+//       fields (name, position, company) still update. Audit row
+//       `role_write_skipped_manually_set` emitted per skip.
+//     · Manual PATCH via `PATCH /api/users/{id}` on `role_id`
+//       auto-sets `role_manually_set=True` (`users.py::update_user`).
+//     · Back-fill: 6 users (all `_created_by_hotfix=v58.13.132r_
+//       workers_to_users`) now protected — Josh + Adrian +
+//       Bobby McGowan + Brock Waterworth + Emma Nippers + Wayne Nippers.
+//
+//   FIX B · Real `expo-maps` MapView on mobile home hero
+//     · `mobile/app/(tabs)/home.tsx` now tries a dynamic `require`
+//       for `expo-maps`. When present, renders a real interactive
+//       MapView centred on the site coords with an orange-tinted
+//       marker. When absent (stock Expo Go / older dev client),
+//       falls back to the legacy static-tile-with-Ionicon-overlay
+//       — no crash, no user-visible regression.
+//     · Added `expo-maps@~0.11.0` to `mobile/package.json`
+//       (`yarn install` completed successfully).
+//     · Activation requires `yarn install` (done) + `npx expo
+//       prebuild --clean` + rebuild the Expo dev client at least once
+//       to bundle the native module. Documented in the ship memo.
+//
+//   Files touched:
+//     · backend/simpro_import_users.py   (delta guard + manual_skips counter)
+//     · backend/users.py                 (PATCH sets role_manually_set)
+//     · backend/tests/test_v58_13_132y_role_manual_set.py  (NEW — 5 tests)
+//     · mobile/app/(tabs)/home.tsx       (dynamic MapView + fallback)
+//     · mobile/package.json              (+expo-maps)
+//     · frontend/src/lib/version.js#RUNNING_VERSION → .132y
+//     · mobile/src/lib/version.ts#MOBILE_BUNDLE_VERSION → .132y
+//   CACHE_VERSION / EXPECTED_CACHE_VERSION intentionally NOT bumped
+//   (no new frontend surface in FIX A; FIX B is mobile only).
+// ─────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────
+// v58.13.132z — Dead-code sweep
+//   Frontend deletions:
+//     · `/signup` route + Signup.jsx (67 LOC) + Login "Start your free
+//       trial" link → onboarding via admin-invite / Simpro QR only.
+//     · `/app/vehicles` + `/app/vehicles/*` redirects +
+//       `LegacyVehiclesRedirect` component (~40 LOC). Old bookmarks
+//       now 404 (prior "retain indefinitely" note superseded by user
+//       directive 2026-09-07).
+//     · `/app/contractors-legacy` alias route (1 line).
+//   DB deletions:
+//     · `_civil_health_probe` collection (0 rows, 0 grep hits).
+//   NOT dropped (grep flagged live consumers):
+//     · `audit_log` singular — used by `ask.py` (Ask AI Q&A audit
+//       trail; 4 refs). 0 rows because feature is low-usage.
+//     · `bulk_import_dryrun` — written by `bulk_import_prestarts.py`
+//       during dry-run mode + cleaned by `backup_service.py` at 30
+//       days. 0 rows because no imports in last 30 days.
+//   Files touched:
+//     · frontend/src/App.js               (3 route deletions + comp delete)
+//     · frontend/src/pages/Login.jsx      ("Start your free trial" link removed)
+//     · frontend/src/pages/Signup.jsx     (DELETED — 67 LOC)
+//     · frontend/src/lib/version.js       → .132z
+//   Pre-flight bson dump at /app/memory/v58_13_132z_preflight_backup/
+//   (audit_log + _civil_health_probe + bulk_import_dryrun — all 0
+//   rows so backups are metadata-only).
+//   NO CACHE_VERSION / MOBILE_BUNDLE_VERSION bump this batch.
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132aa — DIAGNOSIS ONLY (daily_job_assignments empty).
+//   Root cause: writer endpoint `POST /api/mobile/daily-jobs` exists
+//   and is mounted, but NO caller exists in the web frontend (grep
+//   `mobile/daily-jobs` / `dailyJob` in frontend/src → 0 hits). No
+//   cron/Simpro auto-writer, no SMS-reply webhook. Mobile app is a
+//   read-only consumer + accept/decline. Collection stays empty
+//   until an admin manually curls the endpoint.
+//   NOT a trivial fix — admin UI to trigger assignments was never
+//   scheduled (parked at .132n alongside inert TextMagic dispatch).
+//   Full memo: /app/memory/v58_13_132aa_daily_jobs_diagnosis.md
+//   No code changes shipped. No DB writes. Awaiting user call on
+//   A (ship admin UI) / B (Simpro auto-derive) / C (keep parked).
+//   NO CACHE_VERSION / MOBILE_BUNDLE_VERSION bump this batch.
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132ab — Mobile home redesign + admin daily-job pipeline.
+//
+// Ship: This batch spans backend + web admin + mobile.
+//
+// ── Backend (mobile_daily_jobs_admin.py + mobile_daily_jobs.py) ────
+//   NEW:  GET /api/mobile/daily-jobs/admin/workers    (paginated picker)
+//   NEW:  GET /api/mobile/daily-jobs/admin/assignments  (all today rows)
+//   NEW:  GET /api/mobile/daily-jobs/admin/sites        (distinct site names)
+//   NEW:  GET /api/mobile/geocode  (Nominatim proxy, 7-day cache)
+//   NEW:  GET /api/mobile/weather  (BOM Australia obs, 30-min cache)
+//   MOD:  POST /api/mobile/daily-jobs — duplicate guard + override flag
+//   NEW:  compound index `(org_id, worker_id, date)` on
+//         `daily_job_assignments`.
+//   Admin-only endpoints gated to `admin` / `owner` role.
+//   Pytest: 8 checks in tests/test_v58_13_132ab_admin_endpoints.py.
+//
+// ── Web admin (frontend/src/pages/AdminAssignDailyJobs.jsx) ────────
+//   New screen at `/app/mobile/assign-daily-jobs` — worker picker
+//   left, date + today's assignments center-top, site+notes form
+//   right. Duplicate assignment surfaces an override banner + a
+//   two-click confirm. Nav entry added under `Compliance` (admin
+//   filter via `users.edit`).
+//
+// ── Mobile (Expo) ──────────────────────────────────────────────────
+//   home.tsx (rewrite):
+//     · Hero doubled in height (min 320px). Two states:
+//         idle → BOM weather widget (icon, temp, condition, wind, humidity, station)
+//         accepted → site name + address + OSM static-tile map +
+//                    Directions / Details buttons
+//     · Removed: Profile tile, Sites tile.
+//     · Added:   Toolbox tile, Report Hazard tile.
+//     · Persistent footer banner (fixed above tab bar) with 4 states:
+//         idle biscuit (#D4B896)  — "Awaiting job for acceptance"
+//         flashing orange (#FF6B00) — pulses; tap to expand accept/decline
+//         accepted green (#2E7D32) — "On site: <site name>"
+//         declined → banner reverts to idle
+//     · Polling: /api/mobile/home refetchInterval = 60_000 (foreground only).
+//   toolbox.tsx (new): scaffold with empty state, disabled upload,
+//     Forms-link for templates. Hidden from tab bar (`href: null`).
+//   weather.ts (new): thin client for /api/mobile/weather.
+//   dailyJobs.ts: added `fetchTodayDailyJob()`.
+//   MOBILE_BUNDLE_VERSION bumped .132y → .132ab.
+//
+// ── TODO markers ───────────────────────────────────────────────────
+//   TODO(google-streetview): swap OSM tile for Google Street View
+//     Static API in `SiteStaticMap` once the API key is provisioned.
+//   NOTE: BOM obs feed doesn't carry forecast max/min or rain prob;
+//     `today_max_c` / `today_min_c` / `rain_probability_pct` return
+//     null until a separate `IDN60155` fetch is added (deferred P2).
+//   NOTE: pending_sms_dispatches drainer is still parked. Banner
+//     flash triggers from the /home poll response, not from a real
+//     SMS. Once Comms Safe Mode lifts, the TextMagic wire-up in
+//     `_dispatch_sms_stub` needs to be un-parked.
+//
+// CACHE_VERSION bumped to .132ab (new web route + material UI).
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132ac — Mobile home cleanup + Sites tab removal.
+//
+// USER PAIN (verbatim):
+//   "forms tile - yes remove. sites which is what the sms feature is
+//    all about. scrolling the page is no good. the sites has to go
+//    for the tenth time about the sms again you dont seem to get the
+//    concept and i am getting frustrated surly there room to fit a
+//    fixed sms in message with rounded corners like the other tiles.
+//    try again"
+//
+// ── Mobile (Expo) ──────────────────────────────────────────────────
+//   home.tsx (rewrite):
+//     · Forms tile REMOVED (duplicated with Forms tab).
+//     · Sign-On tile REMOVED (Sites concept fully retired — see below).
+//     · Full-width banner CONVERTED to a full-width TILE with the
+//       same rounded-16 shape, padding, shadow, border treatment as
+//       Toolbox / Hazard tiles. States unchanged: biscuit / orange
+//       (pulsing) / green.
+//     · ScrollView REMOVED. Whole home is a fixed `View` — everything
+//       fits above the 56px tab bar at 390×844 without scrolling.
+//     · Hero min-height 320 → 220. Weather widget stays but compacted
+//       (52px icon, 54pt temperature).
+//     · "More modules" collapsible removed (no-scroll rule).
+//     · pending_accept tap now opens `Alert.alert` with Accept/Decline
+//       so tile geometry stays fixed (no in-tile expansion → no scroll).
+//   (tabs)/_layout.tsx:
+//     · `sites` Tabs.Screen ENTRY REMOVED. Defensive `href: null`
+//       entry retained to muzzle a resurrected sites.tsx.
+//   (tabs)/sites.tsx: DELETED (~220 LOC).
+//   visitor/[siteId]/step4.tsx: post-visitor-signin redirect
+//     `/(tabs)/sites` → `/(tabs)/home`.
+//   src/services/sites.ts: KEPT (visitor-signin path still uses it).
+//
+// ── No web/backend changes ─────────────────────────────────────────
+//   No CACHE_VERSION / EXPECTED_CACHE_VERSION bump. Web `.132ab` UI
+//   surface unchanged. Backend endpoints unchanged.
+//
+// MOBILE_BUNDLE_VERSION bumped .132ab → .132ac.
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132ad — Onboarding card PDF generator (Workers tab).
+//
+// USER REQUEST (verbatim):
+//   "it could live in the worker tab in the menue that way the
+//    employee name would be imprinted and it wouls be nic to print
+//    all workers a t the same tome"
+//
+// ── Backend ────────────────────────────────────────────────────────
+//   NEW  GET /api/mobile/onboarding/cards.pdf  (admin-only)
+//        ?worker_id=X         single card, 100×62mm
+//        ?worker_ids=X,Y,Z    4-up on A4
+//        ?all=true            every active non-archived worker
+//        ?expires_days=N      TTL override, clamped 1..90 (default 7)
+//   NEW  backend/mobile_onboarding_cards.py  ~275 LOC
+//   Behaviour:
+//     · token idempotency — reuse an unused unexpired
+//       `mobile_onboarding_tokens` row before minting a new one.
+//     · bulk-skip on missing simpro_employee_id — surfaced as
+//       `X-Paneltec-Skipped` response header.
+//     · audit trail — one `user_audit` row per generation.
+//   Pytest: 8 asserts in tests/test_v58_13_132ad_onboarding_cards.py
+//   (single mode + reuse idempotency + bulk + all-true + 400 + 404 +
+//   audit row + worker-403).
+//
+// ── Web (Workers tab) ──────────────────────────────────────────────
+//   frontend/src/pages/Workers.jsx:
+//     · Per-row QR button (admin-only, orange background pill).
+//       Downloads the single-worker PDF and opens it via
+//       stashInlinePdf (same-origin, ad-blocker-safe).
+//     · Toolbar "Print all onboarding cards" button opens a
+//       confirmation modal showing the active-worker count.
+//     · Bulk generation uses `?all=true`; success toast surfaces
+//       `X-Paneltec-Generated` and `X-Paneltec-Skipped`.
+//
+// ── PDF grammar ─────────────────────────────────────────────────────
+//   Reuses backend/pdf_card_template.py primitives:
+//     header_band (navy strip + orange chevron + PANELTEC CIVIL
+//                  wordmark + "FIELD APP" eyebrow),
+//     qr_image (28mm QR block),
+//     chevron (bottom-right orange double-chevron).
+//   Zero new design assets. Version tag reads the current
+//   RUNNING_VERSION from this file at request time.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132ab → .132ad
+// (new web frontend surface — Workers tab buttons — justifies it).
+// MOBILE_BUNDLE_VERSION unchanged (no mobile code touched).
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132ae — Onboarding QR bug fix: HTTPS universal landing URL.
+//
+// USER BUG (verbatim, hit in the field):
+//   "it says ther not any apps on your phone something about a token"
+//
+// Root cause: QR encoded `paneltec://onboard?token=...` — a custom URL
+// scheme that only resolves if the target app is INSTALLED. For a
+// freshly-hired worker (the whole point of the card) the app isn't
+// installed yet → phone OS says "no app to open this" → dead-end.
+//
+// Fix: QR now encodes an HTTPS URL to a public landing page:
+//   https://<PUBLIC_APP_BASE_URL>/m/onboard/<token>?preload=<div>
+//
+// ── Backend ────────────────────────────────────────────────────────
+//   NEW  GET /api/mobile/onboarding/validate/{token} (public, no-auth)
+//        Peek endpoint — returns {valid, first_name, preload, expires_at}
+//        WITHOUT consuming the token. Never touches `used`.
+//   MOD  backend/mobile_onboarding_cards.py:
+//        · reads PUBLIC_APP_BASE_URL from env (falls back to preview URL)
+//        · `_install_url()` now returns https://.../m/onboard/<token>
+//   Env var: PUBLIC_APP_BASE_URL (optional — defaults to preview URL
+//        `https://whs-compliance.preview.emergentagent.com`; flip to
+//        the real production domain when it's live).
+//   Pytest: 8 asserts in tests/test_v58_13_132ae_onboard_landing.py
+//        (valid + expired + used + unknown + peek-not-consume + QR HTTPS
+//         + preload preserved + no paneltec:// residue).
+//
+// ── Web frontend ───────────────────────────────────────────────────
+//   NEW  frontend/src/pages/OnboardMobileLanding.jsx (public, ~250 LOC):
+//        · Fetches validate endpoint on mount
+//        · UA sniffs to iOS / Android / desktop
+//        · iOS panel  → App Store button + "Open in app" (paneltec://)
+//        · Android    → Play Store button + "Open in app"
+//        · Desktop    → mirror QR of current URL + "scan on phone"
+//        · Expired / used / unknown → friendly amber "contact your admin"
+//   NEW  Route:  /m/onboard/:token  (DIFFERENT from /onboard which is
+//        the web invite password-set — this one is public and mobile-
+//        focused).
+//
+// ── Universal Links / App Links template files ─────────────────────
+//   NEW  frontend/public/.well-known/apple-app-site-association
+//        NEW  frontend/public/.well-known/assetlinks.json
+//   Both carry a `_comment_todo_universal_links` field and are stubs
+//   until the app's real bundle ID + release-signing SHA-256 lands.
+//
+// ── TODO markers left in code ──────────────────────────────────────
+//   TODO(app-store-id)      OnboardMobileLanding.jsx:33
+//   TODO(play-store-id)     OnboardMobileLanding.jsx:35
+//   TODO(universal-links)   apple-app-site-association + assetlinks.json
+//                           top-level `_comment_todo_universal_links`
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132ad → .132ae
+// (new public route + Workers-tab QR encoding contract change).
+// MOBILE_BUNDLE_VERSION unchanged (mobile deep-link handler already
+// works with paneltec://onboard?token=..., which the landing page's
+// "Open in app" button fires directly).
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132af — Android APK direct-install (Path 2).
+//
+// USER BUG-CONTEXT: `.132ae` fixed the QR to resolve on any browser
+// (HTTPS landing page), but tapping "Install for Android" still
+// went to a Play Store placeholder — dead-end because the app is
+// not yet published.
+//
+// FIX: build a signed Android APK via EAS Build (cloud), host it on
+// the backend, swap the Android install button to a direct APK
+// download.
+//
+// ── EAS Build ──────────────────────────────────────────────────────
+//   Build ID:  93f546c9-ff4e-4b9d-a9d7-0103865a969c
+//   Platform:  android · profile: preview · buildType: apk
+//   Keystore:  EAS-managed (stephenguy account)
+//   Duration:  ~19 min (queued 07:08:16 → finished 07:27:32 UTC)
+//   Artifact:  https://expo.dev/artifacts/eas/6tA2r2D86ci7CeX58SfjRhDLw16qMSUXRVuvbiDX0Jw.apk
+//              (Expo-CDN URL — copied locally to /app/backend/static/downloads/)
+//
+//   mobile/app.json:
+//     · version           1.0.0 → 1.0.1
+//     · android.versionCode  (unset) → 132   (bump for every APK)
+//   mobile/eas.json:      NEW — preview profile with apk buildType
+//
+// ── Backend ────────────────────────────────────────────────────────
+//   NEW  backend/mobile_downloads.py:
+//     GET /api/mobile/downloads/android/version    manifest JSON
+//     GET /api/mobile/downloads/android/latest.apk APK file stream
+//   Both public (no auth) — workers scanning cards can't be authed.
+//   Version endpoint returns {available, filename, version,
+//     version_code, size_bytes, sha256, built_at, eas_build_id,
+//     bundle_id, ship_version}.
+//   APK response headers:
+//     Content-Type: application/vnd.android.package-archive
+//     Content-Disposition: attachment; filename="Paneltec-Field-App.apk"
+//     X-Paneltec-Version / X-Paneltec-Version-Code / X-Paneltec-SHA256
+//
+//   APK metadata (verified):
+//     size:    120,564,826 bytes (115 MB — includes new-arch RN libs)
+//     sha256:  954e4076748eef7fc30f47b5c69d877ea542eb3855c935bb279a6dae9a567de7
+//     magic:   PK\x03\x04 (valid ZIP → valid APK container)
+//     path:    /app/backend/static/downloads/paneltec-field-app-v58.13.132af.apk
+//
+// ── Web frontend ───────────────────────────────────────────────────
+//   frontend/src/pages/OnboardMobileLanding.jsx:
+//     · Android branch: PLAY_STORE_URL → ANDROID_APK_URL
+//       (points at /api/mobile/downloads/android/latest.apk).
+//     · New warning line: "Chrome may ask you to allow install from
+//       unknown sources — this is normal for direct installs."
+//     · TODO(play-store-id) preserved as a code comment for future
+//       Play Store publish path.
+//     · iOS branch: unchanged (still App Store placeholder — waiting
+//       on Apple Developer account signup by user).
+//     · Desktop branch: unchanged (mirror QR).
+//
+// ── iOS deferred ───────────────────────────────────────────────────
+//   iOS wire-up pending Apple Developer account signup by user.
+//   `TODO(app-store-id)` marker preserved at line 33.
+//
+// ── Security note ──────────────────────────────────────────────────
+//   EXPO_TOKEN was set in env for this build only and unset after
+//   completion. Never committed to source. Never logged. Not
+//   available to future batches without user re-authorisation.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132ae → .132af.
+// MOBILE_BUNDLE_VERSION bumped .132ac → .132af (matches APK
+// versionCode=132 shipped in this batch).
+// ─────────────────────────────────────────────────────────────────
+
+// v58.13.132au — SmartFill dedupe fix + Transaction ID columns.
+//
+// USER PAIN (verbatim, Stephen · 2026-09-08):
+//   "XT02AX shows 604 L in our portal vs 114.290 L in SmartFill.
+//    5x discrepancy — major data integrity issue."
+//
+// Root cause (diagnosis reported before ship):
+//   `_compose_dedupe_hash` in `backend/fleet_fuel.py` hashed the
+//   ISO timestamp at second precision. The SmartFill CSV export
+//   records real seconds (`06:28:07`), while the SmartFill
+//   Transactions:Read API only exposes minute precision (`6:28am`
+//   → `06:28:00`). Every fill imported once via CSV and once via
+//   API therefore produced two different hashes AND `transaction_id`
+//   is null on CSV rows — so neither dedupe path caught the twin.
+//   Fleet-wide: 542 duplicate rows / 5,503 total (9.85 %) with the
+//   full 4 Sep XT02AX weekly rollup inflated 42.7 %.
+//
+// Fix (this ship):
+//   1. `_compose_dedupe_hash` canonicalises the timestamp to
+//      minute precision before hashing. API + CSV now agree.
+//   2. `scripts/backfill_dedupe_v58_13_132au.py` — normalises the
+//      stored hash on every live row and merges API+CSV twins.
+//      Preserves the API-source row (has `transaction_id` and
+//      minute-precision time), non-destructively copies any
+//      non-null CSV-only fields onto it, then soft-deletes the CSV
+//      row with `deleted_reason='dupe_backfill_.132au'`. A matching
+//      `scripts/rollback_dedupe_v58_13_132au.py` un-soft-deletes
+//      any row tagged with that reason.
+//   3. `pytest tests/test_v58_13_132au_dedupe.py` — guardrail
+//      that ingests the same fill via both CSV + API paths and
+//      asserts exactly 1 row survives with the merged data.
+//   4. Frontend + CSV export — Transaction ID column added to
+//      the drilldown (`FuelReporting.jsx` per-fill table), the
+//      Asset drawer's Fuel tab (`AssetFuelTab.jsx` recent
+//      transactions), the Fuel Anomaly Inbox (`FuelAnomalyInbox
+//      .jsx`), and the CSV detail export (`fleet_fuel_reports
+//      .py::_stream_detail`).
+//
+// Deferred to `.132av`: MyProfile Admin PIN section + Users
+//   management Clear PIN action (from the original .132au brief).
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132as → .132au
+// (data-shape changes visible to the user on Fuel Report).
+// RUNNING_VERSION bumped .132at → .132au.
+// MOBILE_BUNDLE_VERSION unchanged (mobile untouched this ship).
+// v58.13.132av — bump RUNNING_VERSION for the UI bundle:
+//   · Fuel Reports nav button restyled (amber, bigger, Fuel icon).
+//   · MyProfile "Admin console PIN" section (Change / Rotate / Last set).
+//   · Users Management "Clear admin console PIN" action inside AccessKebab.
+//   Backend endpoints for the PIN flows were already shipped in .132as
+//   (POST /auth/admin-console/set-pin + POST /users/{id}/admin-console/clear-pin);
+//   this bundle is UI-only.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132au → .132av so users
+// on the previous batch see the "Update available" toast exactly once
+// and reload into the new button treatment.
+// MOBILE_BUNDLE_VERSION unchanged (mobile is being diagnosed via Sentry
+// on .132at; nothing here touches the mobile bundle).
+// v58.13.132aw — Time column added to Top 5 · Highest fills and
+// Top 5 · $/L outliers panels on the Fuel Report. Both panels
+// previously showed Date only; Stephen asked for Time too so a
+// single line-item is fully identifiable (same day, different fill).
+//
+// Backend `fleet_fuel_reports.py::_aggregate` now carries
+// `time_local` through the outlier_rows pipeline and includes it
+// on `top_by_fill_litres`, `top_dpl_outliers_real`, and the legacy
+// `top_dpl_outliers` payloads. Existing drilldown, Asset drawer,
+// Anomaly Inbox and CSV detail export already surfaced time — no
+// change there.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132av → .132aw.
+// MOBILE_BUNDLE_VERSION unchanged.
+// v58.13.132ax — bump RUNNING_VERSION for the click-to-detail
+// bundle:
+//   · New reusable `FuelTransactionDetailModal` component surfaces
+//     every persisted field on a fuel row (transaction id, card,
+//     driver, litres, prices, odometer, engine hours, L/100km,
+//     anomaly flags, price source, raw import JSON).
+//   · Wired into 4 surfaces: FuelReporting drilldown rows, Top-5
+//     Highest-fills rows, Top-5 $/L-outlier rows, AssetFuelTab
+//     recent-transactions rows, FuelAnomalyInbox "When" cell.
+//   · Discoverability: FuelReporting drilldown default OPEN so
+//     admins see the per-fill affordance without hunting for a
+//     toggle.
+//   · New backend endpoint `GET /fleet/fuel/transactions/{id}` for
+//     surfaces that only carry a partial payload (Top-5 tables).
+//   · Strict 4-digit-only enforcement on every admin console PIN
+//     input across the app: MyProfile PinField, Users Management
+//     AccessKebab acting-PIN input. Header AdminPillsLock is
+//     numeric-keypad-only by construction and already strict.
+//     `onKeyDown` swallows non-digits so pastes of "12ab34" get
+//     sanitised to "1234"; submit gate now requires `^\d{4}$` on
+//     every field (rather than truthy).
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132aw → .132ax.
+// MOBILE_BUNDLE_VERSION unchanged.
+// v58.13.132ay — bump RUNNING_VERSION for the invite-PIN
+// entropy change:
+//   · `auth_invite.py::generate_pin` now emits a 4-digit PIN
+//     (`randint(0, 9999):04d`), was 6-digit. Uniforms the app on
+//     4-digit PINs (mobile PIN, admin console PIN, one-time invite
+//     PIN).
+//   · Redeem endpoint tightens IP rate-limit 5/min → 3/min and
+//     auto-expires the PIN after 5 wrong attempts to compensate
+//     for the reduced entropy (10K vs 1M keyspace).
+//   · Redeem payload adopts strict `^\d{4}$` at the pydantic
+//     schema.
+// Frontend `PinRevealModal` reads whatever length the backend
+// sends — no shape assumption, so the modal now shows 4 digits
+// automatically with no code change.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132ax → .132ay
+// so the modal display refreshes for any admin holding an old
+// bundle.
+// MOBILE_BUNDLE_VERSION unchanged.
+// v58.13.132az — bump RUNNING_VERSION for the PIN-UX polish:
+//   · UserDropdownCard adds a "My Profile" nav row → /app/profile.
+//     Stephen couldn't find MyProfile from the avatar menu; it now
+//     sits at the top of Quick Actions above "Change password".
+//   · AccessSection (Users & Permissions drawer) gains a
+//     "Change admin PIN" button visible only when looking at your
+//     own row AND you are an admin. Opens the same modal shape as
+//     MyProfile's AdminPinCard, wires to `/auth/admin-console/set-pin`.
+//     Same 4-digit strict enforcement + rate-limit backstops as .132ax.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132ay → .132az.
+// MOBILE_BUNDLE_VERSION unchanged.
+// v58.13.132bb — bump RUNNING_VERSION for the invite-surfacing
+// bundle:
+//   · `PinRevealModal` extended: shows the mobile install link
+//     alongside the PIN, offers Copy PIN / Copy invite link /
+//     Email me this info. Backend `generate_pin` now also mints
+//     an onboarding install token and returns `invite_url`.
+//   · New `ResetLinkRevealModal` — same shape, shows the reset
+//     link after `send_reset` succeeds. Backend `send_reset` now
+//     returns `link` in the response.
+//   · Workers page: "Print selected onboarding cards" toolbar
+//     button (visible when ≥1 worker is ticked). Reuses the
+//     existing `openBulkOnboardingConfirm([...ids])` pipeline
+//     wired to `GET /mobile/onboarding/cards.pdf?worker_ids=…`.
+//   Comms Safe Mode stays ON — this bundle is the safer
+//   alternative to flipping it off org-wide.
+//
+// CACHE_VERSION + EXPECTED_CACHE_VERSION bumped .132az → .132bb.
+// MOBILE_BUNDLE_VERSION unchanged (mobile-only ship for the
+// diagnostic APK is `.132ba` in flight).
+// v58.13.132bc — Paneltec Civil → Viatec Traffic Solutions
+// permission mirror + admin drawer confirmation. Backend-only ship
+// with FE cache bump so admins on the previous batch reload once.
+//   · Idempotent one-shot script at
+//     `backend/scripts/mirror_paneltec_to_viatec_v58_13_132bc.py`
+//     copies `permissions`, `permission_tokens` and
+//     `supersedes_role_id` from `roles.paneltec_civil` onto
+//     `roles.viatec_traffic` and mirrors the corresponding
+//     `permission_presets` row.
+//   · Roles remain independently editable after — no ongoing hard
+//     mirror.
+//   · `test_v58_13_132bc_viatec_mirror.py` locks in completeness,
+//     independence, and idempotency (3/3 passing).
+//   · Admin drawer at `/app/settings/users` already lists both
+//     roles side-by-side with the same edit affordances — no FE
+//     code change needed.
+// v58.13.132cj — Mobile onboarding rewrite: kill role-picker, PIN → role auto-detect.
+//   · Rewrote mobile onboarding flow: QR-scan device provisioning → PIN login → role-based landing.
+//   · Eliminated the "Choose Paneltec Civil / Viatec Traffic" division picker at launch.
+//   · New PIN login screen hits POST /api/auth/mobile/pin-login (from .132ci backend).
+//   · Role auto-detected from response (admin / paneltec_civil / viatec_traffic / external_contractor).
+//   · 4 role-based home screens with filtered module grids.
+//   · Sentry native DISABLED (enableNative: false) — suspected Android pre-JS crash cause.
+//   · Session token stored via expo-secure-store (native) / AsyncStorage (web).
+//   · Logout clears session but preserves device_id.
+//   · RUNNING_VERSION + MOBILE_BUNDLE_VERSION + CACHE_VERSION + EXPECTED_CACHE_VERSION all bumped.
+export const RUNNING_VERSION = 'paneltec-v160.3.9.58.13.132cj';
+
+// v58.13.132q_blink_hotfix — CACHE_VERSION batching policy alignment.
+//   New standing rule (from .132p_hotfix): `CACHE_VERSION` in
+//   `/app/frontend/public/service-worker.js` is NOT bumped on every
+//   ship — only on batched ships where we actually want every open
+//   tab to reload. RUNNING_VERSION bumps every ship.
+//
+//   That means the "Update available" toast in `CacheBusterBanner`
+//   can NOT be driven by (serverVersion !== RUNNING_VERSION) anymore
+//   — that check would fire on EVERY ship (client at .132q1, SW still
+//   at .132o = mismatch) and put a pulseRing_1.2s animation up for 5
+//   seconds every mount, which reads as the app "blinking every
+//   second".
+//
+//   Fix: compare the SW's cache_version against this NEW constant
+//   which mirrors whatever `CACHE_VERSION` in `service-worker.js`
+//   currently reads. When the two DO match, no toast. When we
+//   deliberately bump `CACHE_VERSION` for a batch ship, we bump this
+//   too — in the same commit — and the toast fires exactly once for
+//   users on the previous batch.
+export const EXPECTED_CACHE_VERSION = 'paneltec-v160.3.9.58.13.132cj';
 
 // v160.3.9.58.12.1 — BYDA frontend renderers.
 //   New file `components/forms/BydaFields.jsx` exports

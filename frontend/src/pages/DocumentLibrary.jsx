@@ -42,10 +42,9 @@ import {
   Search20Regular as Search,
 } from '@fluentui/react-icons';
 
-// v160.3.9.29-2c — Legacy sets retained until sweep-report §3 propagation
-// consumers are updated. Authoritative gates now come from useCan below.
-const WRITE_ROLES = new Set(['admin', 'hseq_lead']);
-const DELETE_FOLDER_ROLES = new Set(['admin']);
+// v58.13.132bf — Legacy WRITE_ROLES / DELETE_FOLDER_ROLES sets removed.
+// Authoritative gates via useCan('documents', 'edit') /
+// useCan('documents', 'delete') below.
 
 const PASTEL_BG = {
   mint: 'bg-[#e8f3eb]', sky: 'bg-[#e6eff9]', peach: 'bg-[#fbeadf]',
@@ -238,7 +237,7 @@ export default function DocumentLibrary() {
   const can = useCan();
   const canEdit = can('documents', 'edit');
   const canDeleteFolder = can('documents', 'delete');
-  void user; void WRITE_ROLES; void DELETE_FOLDER_ROLES;
+  void user;
 
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -745,7 +744,11 @@ export function DocumentLibraryFolder() {
   const { folderId } = useParams();
   const navigate = useNavigate();
   const user = getUser();
-  const canEdit = WRITE_ROLES.has(user?.role);
+  // v58.13.132bf — Migrated from `WRITE_ROLES.has(user?.role)` to the
+  // granular `documents.edit` token so the paneltec_civil / viatec_traffic
+  // standard matrix (`.132be`) correctly renders this page read-only.
+  const canEdit = useCan()('documents', 'edit');
+  void user;
 
   const [folder, setFolder] = useState(null);
   const [subfolders, setSubfolders] = useState([]);

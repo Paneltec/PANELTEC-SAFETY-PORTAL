@@ -26,7 +26,7 @@ from typing import Annotated, Optional
 import bcrypt
 import jwt
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from auth import (JWT_ALGORITHM, _secret, create_access_token,
                   get_current_user, hash_password)
@@ -342,7 +342,14 @@ async def send_reset(user_id: str, request: Request,
         raise HTTPException(400, "No email or SMS channel available for this user.")
     await _audit(caller, "auth.reset_sent",
                  target_user_id=target["id"], channel=sent_via, expires_at=expires_at)
-    return {"ok": True, "channel": sent_via, "expires_at": expires_at}
+    # v58.13.132bb — Surface the raw reset link so admins can hand-
+    # deliver when comms_safe_mode blocks the M365/SMS channel.
+    # Backend is the only place the token exists in plaintext — the
+    # hash is what's stored on `users.reset_token_hash`. Returning
+    # it here is safe because the caller is already authenticated
+    # as admin and the payload is delivered over the same TLS
+    # connection they logged in on.
+    return {"ok": True, "channel": sent_via, "expires_at": expires_at, "link": link}
 
 
 @router.post("/auth/reset/redeem")
@@ -426,41 +433,114 @@ async def forgot_password(body: ForgotIn, request: Request):
 
 
 # ───── PIN fallback ──────────────────────────────────────────────────
+# v58.13.132ay — Invite PIN shortened from 6 → 4 digits.
+#
+#   Stephen: "could you change our pin access to a 4 didget please"
+#
+#   Uniforms the whole app on a 4-digit PIN (mobile PIN, admin
+#   console PIN, one-time invite PIN). Trade-off is a 100× drop in
+#   entropy (10,000 vs 1,000,000 possibilities); mitigated by:
+#     · Tightening the per-IP redeem rate-limit from 5/min → 3/min.
+#     · Auto-expiring the stored PIN after 5 wrong attempts within
+#       the 24 h TTL window — the target user must ask for a new
+#       one (a legitimate typo storm never trips this because the
+#       IP rate-limit fires first).
+#   At 3 attempts/min the expected time to guess is ~28 h — longer
+#   than the TTL — and the wrong-attempts guard drops that to
+#   ~5-attempts / 24 h in practice.
+INVITE_PIN_LENGTH = 4
+INVITE_PIN_MAX_WRONG = 5
+
+
 @router.post("/users/{user_id}/pin")
-async def generate_pin(user_id: str, caller: dict = Depends(get_current_user)):
+async def generate_pin(user_id: str, caller: dict = Depends(get_current_user), request: Request = None):
     if caller.get("role") != "admin":
         raise HTTPException(403, "Admin only")
     target = await _user_or_404(user_id, caller["org_id"])
-    pin = f"{random.SystemRandom().randint(0, 999999):06d}"
+    # v58.13.132ay — 4-digit PIN, zero-padded so leading zeros are
+    # never dropped (e.g. `0472` reads as four visible digits, not
+    # three).
+    pin = f"{random.SystemRandom().randint(0, 9999):04d}"
     pin_hash = bcrypt.hashpw(pin.encode(), bcrypt.gensalt()).decode()
     expires_at = (datetime.now(timezone.utc) + timedelta(hours=PIN_TTL_HOURS)).isoformat()
     await db.users.update_one({"id": target["id"]}, {"$set": {
         "pin_hash": pin_hash,
         "pin_expires_at": expires_at,
+        # v58.13.132ay — reset the wrong-attempts counter on each
+        # freshly-generated PIN so a previous exhausted PIN doesn't
+        # instantly block the new one.
+        "pin_wrong_attempts": 0,
         "must_change_password": True,
         "updated_at": now_iso(),
     }})
+
+    # v58.13.132bb — Also surface a mobile onboarding install link
+    # (comms_safe_mode blocks the auto-email path; admin needs a
+    # copy-paste-able URL). Best-effort — if the onboarding-cards
+    # helper fails to mint a token (e.g. worker record missing), we
+    # still return the PIN and the frontend hides the link CTA.
+    invite_url = None
+    try:
+        from mobile_onboarding_cards import (
+            _get_or_issue_token, _install_url,  # noqa
+        )
+        # Onboarding-card tokens key off a *worker* record. Look up
+        # the worker linked to this user's email (Simpro-derived).
+        worker = await db.workers.find_one({
+            "org_id": target["org_id"],
+            "email": (target.get("email") or "").lower(),
+        }, {"_id": 0})
+        if worker:
+            tok = await _get_or_issue_token(
+                worker=worker, issuer_id=caller["id"], ttl_days=INVITE_TTL_DAYS,
+            )
+            if tok:
+                invite_url = _install_url(tok, worker)
+    except Exception as e:  # noqa: BLE001
+        log.warning("auth.pin_generated invite_url skip: %s", e)
+
     await _audit(caller, "auth.pin_generated",
-                 target_user_id=target["id"], expires_at=expires_at)
-    return {"pin": pin, "expires_at": expires_at, "user_email": target["email"]}
+                 target_user_id=target["id"], expires_at=expires_at,
+                 invite_url_issued=bool(invite_url))
+    return {
+        "pin": pin,
+        "expires_at": expires_at,
+        "user_email": target["email"],
+        # v58.13.132bb — new field. Frontend renders a "Copy invite
+        # link" button when this is non-null.
+        "invite_url": invite_url,
+    }
 
 
 class PinRedeemIn(BaseModel):
     email: EmailStr
-    pin: str
+    # v58.13.132ay — strict 4-digit shape at the schema level so a
+    # bad shape never reaches bcrypt.checkpw.
+    pin: str = Field(..., pattern=r"^\d{4}$")
     new_password: str
     confirm_password: str
 
 
 @router.post("/auth/pin/redeem")
 async def pin_redeem(body: PinRedeemIn, request: Request):
-    _rate_limit("pin_redeem", 5, request)
+    # v58.13.132ay — 3/min per IP (tightened from 5/min alongside
+    # the entropy drop).
+    _rate_limit("pin_redeem", 3, request)
     user = await db.users.find_one({"email": body.email}, {"_id": 0})
     if not user or not user.get("pin_hash") or not user.get("pin_expires_at"):
         raise HTTPException(400, "Invalid PIN or PIN expired.")
     if user["pin_expires_at"] < now_iso():
         raise HTTPException(400, "Invalid PIN or PIN expired.")
     if not bcrypt.checkpw(body.pin.encode(), user["pin_hash"].encode()):
+        # v58.13.132ay — increment wrong-attempts; auto-expire the
+        # PIN once the ceiling is reached so a brute-forcer can't
+        # keep guessing against the same hash for the full 24 h TTL
+        # window.
+        wrong = (user.get("pin_wrong_attempts") or 0) + 1
+        update: dict = {"pin_wrong_attempts": wrong, "updated_at": now_iso()}
+        if wrong >= INVITE_PIN_MAX_WRONG:
+            update["pin_expires_at"] = now_iso()   # force-expire
+        await db.users.update_one({"id": user["id"]}, {"$set": update})
         raise HTTPException(400, "Invalid PIN or PIN expired.")
     if body.new_password != body.confirm_password:
         raise HTTPException(400, "Passwords don't match.")

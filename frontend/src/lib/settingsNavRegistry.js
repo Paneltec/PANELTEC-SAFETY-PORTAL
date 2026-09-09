@@ -43,7 +43,10 @@ import {
 //      users.edit rather than inventing a `system` resource).
 export const SETTINGS_NAV_REGISTRY = [
   { key: 'organisation',       label: 'Organisation',        route: '/app/settings/org',                icon: Building24Regular,        iconActive: Building24Filled,        testid: 'nav-settings-org',                                                              description: 'Company profile, ABN, address, and branding' },
-  { key: 'workspaces',         label: 'Workspaces',          route: '/app/settings/workspaces',         icon: CubeMultiple24Regular,    iconActive: CubeMultiple24Filled,    testid: 'nav-settings-workspaces',                                                       description: 'Sub-workspaces for multi-brand or multi-office setups' },
+  // v58.13.132cb — `workspaces` entry retired (Phase A of workspaces/sites
+  // merge). Saved nav-layout rows referencing "workspaces" will silently
+  // filter out here (`SETTINGS_NAV_BY_KEY[key]` returns undefined →
+  // `visibleAt` drops the item). No layout migration required.
   { key: 'users_permissions',  label: 'Users & Permissions', route: '/app/settings/users',              icon: PeopleSettings24Regular,  iconActive: PeopleSettings24Filled,  testid: 'nav-settings-users',              requiresCan: ['users', 'edit'],               description: 'Manage user accounts, roles, and tri-state permission matrix' },
   { key: 'permission_presets', label: 'Permission presets',  route: '/app/settings/permission-presets', icon: Trophy24Regular,          iconActive: Trophy24Filled,          testid: 'nav-settings-permission-presets', requiresCan: ['users', 'edit'],               description: 'Reusable permission templates for common roles' },
   // v160.3.9.31-4a — Phase 4a: Roles Admin (system-role viewer + custom-role editor).

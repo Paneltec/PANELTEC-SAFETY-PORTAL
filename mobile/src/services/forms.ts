@@ -33,6 +33,14 @@ export interface FormTemplate {
   submission_count: number;
   required_certifications?: string[];
   assigned_positions?: string[];
+  // v58.13.132l — SWMS bridge. Present when the row was projected from
+  // db.swms by backend/forms.py::_list_swms_as_form_templates. Signals the
+  // mobile Forms UI to route taps to `/profile/swms/[id]` (existing viewer)
+  // instead of the standard form runner at `/forms/[id]`.
+  is_swms?: boolean;
+  swms_status?: string;
+  swms_version?: string;
+  swms_code?: string;
 }
 
 export interface FormSubmission {
@@ -65,6 +73,10 @@ export interface CategoryMeta {
 
 export const CATEGORY_ORDER: CategoryMeta[] = [
   { key: 'general',   label: 'General',   color: '#475569', bgColor: '#E2E8F0', icon: 'document-text-outline' },
+  // v58.13.132l — SWMS category (safety document authority · navy tone).
+  // Records live in db.swms; backend/forms.py bridges them into this list
+  // with `is_swms=true` so the tap routes to /profile/swms/[id].
+  { key: 'swms',      label: 'SWMS',      color: '#0F172A', bgColor: '#CBD5E1', icon: 'shield-checkmark-outline' },
   { key: 'pre_start', label: 'Pre-Start', color: '#0369A1', bgColor: '#E0F2FE', icon: 'clipboard-outline' },
   { key: 'inspection',label: 'Inspection', color: '#1D4ED8', bgColor: '#DBEAFE', icon: 'search-outline' },
   { key: 'near_miss', label: 'Near Miss', color: '#C2410C', bgColor: '#FED7AA', icon: 'alert-circle-outline' },

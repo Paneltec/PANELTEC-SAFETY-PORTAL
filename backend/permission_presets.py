@@ -188,10 +188,17 @@ def _builtin_out(p: dict) -> dict:
 
 
 def _custom_out(doc: dict) -> dict:
+    # v58.13.132cg — Defensive .get() on `key`. A legacy custom-preset
+    # row shipped by an earlier `.132bn`-era hotfix landed without the
+    # `key` field, which crashed `GET /permission-presets` with a
+    # KeyError → the P1 500 toast on the Permissions Presets page.
+    # We fall back to `id`, then to a slug of the label so the payload
+    # always renders even if the row is malformed.
+    key = doc.get("key") or doc.get("id") or _slugify(doc.get("label") or "preset")
     return {
-        "id": doc["id"],
-        "key": doc["key"],
-        "label": doc["label"],
+        "id": doc.get("id"),
+        "key": key,
+        "label": doc.get("label") or "(unnamed preset)",
         "description": doc.get("description") or "",
         "icon": doc.get("icon"),
         "permissions": doc.get("permissions") or {},

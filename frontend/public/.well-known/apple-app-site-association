@@ -1,0 +1,17 @@
+{
+  "_comment_todo_universal_links": "TODO(universal-links) v58.13.132ae — replace teamID and bundleID once the app is provisioned. iOS will fetch this file from /.well-known/apple-app-site-association over HTTPS to enable Universal Links (tapping https://<host>/m/onboard/<token> from Messages/Mail/Notes will open the installed app directly instead of the browser). See https://developer.apple.com/documentation/xcode/supporting-associated-domains for the schema.",
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.paneltec.civilfieldapp"],
+        "components": [
+          {
+            "/": "/m/onboard/*",
+            "comment": "Onboarding card landing pages — deep-link into installed app"
+          }
+        ]
+      }
+    ]
+  }
+}

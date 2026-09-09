@@ -11,6 +11,7 @@ import { useCan } from '../../lib/permissions';
 // v160.3.7k — Inoculation sweep: lock body scroll while this modal is open.
 import useLockBodyScroll from '../../lib/useLockBodyScroll';
 import { SimproZipUploadModal } from './SimproZipUploadModal';
+import SmartFillCardsSection from './SmartFillCardsSection';
 import CameraCaptureModal from '../CameraCaptureModal';
 import { toast } from 'sonner';
 
@@ -638,9 +639,11 @@ export default function WorkerViewModal({ workerId, onClose, defaultTab }) {
                 )}
               </section>
 
+              {/* v58.13.131o — SmartFill Cards */}
+              <SmartFillCardsSection workerId={workerId} canEdit={canManageWorker} />
+
               {/* Clients */}
-              <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-clients">
-                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
+              <section className="border border-slate-200 rounded-xl px-4 py-3 bg-white" data-testid="view-section-clients">                <div className="flex items-center gap-2 mb-2 text-slate-800 font-semibold text-sm flex-wrap">
                   <Users size={14} className="text-slate-500" /> Clients
                   {(worker.client_ids || []).length === 0 ? (
                     <SummaryPill tone="manual" testid="section-clients-empty">0</SummaryPill>

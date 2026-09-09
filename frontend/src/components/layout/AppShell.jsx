@@ -67,6 +67,7 @@ import { Sheet, SheetContent, SheetTitle } from '../ui/sheet';
 import { Avatar, AvatarFallback } from '../ui/avatar';
 import { ChangePasswordModal } from '../auth/AuthBundle';
 import { ApiHealthPill, BackupPill, UserDropdownCard } from './TopbarPills';
+import AdminPillsLock from './AdminPillsLock';
 
 const NAV = [
   { section: 'Overview', items: [
@@ -120,10 +121,15 @@ const NAV = [
     // for the fleet/plant/service surface.
     { to: '/app/fleet', label: 'Fleet & Service Register', icon: VehicleTruck24Regular, iconActive: VehicleTruck24Filled, testid: 'nav-fleet', resource: 'assets', pastel: 'violet' },
     { to: '/app/sites', label: 'Sites', icon: Location24Regular, iconActive: Location24Filled, testid: 'nav-sites', requiresCan: ['sites', 'edit'], pastel: 'lavender' },
+    // v58.13.132ab — admin-only screen to assign a mobile daily job.
+    { to: '/app/mobile/assign-daily-jobs', label: 'Ad-hoc Jobs', icon: ClipboardCheckmark24Regular, iconActive: ClipboardCheckmark24Filled, testid: 'nav-assign-daily-jobs', requiresCan: ['users', 'edit'], pastel: 'coral' },
   ]},
   { section: 'Settings', items: [
     { to: '/app/settings/org', label: 'Organisation', icon: Building24Regular, iconActive: Building24Filled, testid: 'nav-settings-org', pastel: 'slate' },
-    { to: '/app/settings/workspaces', label: 'Workspaces', icon: CubeMultiple24Regular, iconActive: CubeMultiple24Filled, testid: 'nav-settings-workspaces', pastel: 'slate' },
+    // v58.13.132cb — "Workspaces" sidebar entry retired (Phase A of
+    // workspaces/sites merge). The concept is now unified with Sites,
+    // which lives under Compliance. Existing bookmarks to
+    // /app/settings/workspaces redirect to /app/settings/sites (see App.js).
     { to: '/app/settings/users', label: 'Users & Permissions', icon: PeopleSettings24Regular, iconActive: PeopleSettings24Filled, testid: 'nav-settings-users', requiresCan: ['users', 'edit'], pastel: 'slate' },
     { to: '/app/settings/permission-presets', label: 'Permission presets', icon: Trophy24Regular, iconActive: Trophy24Filled, testid: 'nav-settings-permission-presets', requiresCan: ['users', 'edit'], pastel: 'slate' },
     { to: '/app/settings/workers', label: 'Workers', icon: PersonAvailable24Regular, iconActive: PersonAvailable24Filled, testid: 'nav-settings-workers', pastel: 'sky' },
@@ -332,6 +338,10 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
   }, [location.pathname]);  // refetch when nav changes (cheap, makes deletes reflect)
 
   const hasWorkspaces = workspaces.length > 0;
+  // v58.13.132ak — Only expose the switcher when there is more than
+  // one workspace. With a single workspace the "All / <that one>"
+  // choice is a no-op and just clutters the header.
+  const showSwitcher = workspaces.length > 1;
   const options = hasWorkspaces ? [{ id: '*', name: 'All workspaces' }, ...workspaces] : [];
   const active = options.find((o) => o.id === workspaceId) || options[0] || { id: '*', name: 'No workspaces' };
 
@@ -373,56 +383,51 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
         </button>
       )}
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm max-md:bg-transparent max-md:border-civil-concrete-mid max-md:text-civil-off-white max-md:min-h-[44px]" data-testid="workspace-switcher">
-            <span className={`w-2 h-2 rounded-full ${hasWorkspaces ? 'bg-brand-blue max-md:bg-civil-hivis-orange' : 'bg-slate-300'}`} />
-            <span className="font-medium">{active.name}</span>
-            <ChevronDown size={14} className="text-slate-400 max-md:text-civil-off-white" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
-          <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {hasWorkspaces ? (
-            options.map((w) => (
+      {/* v58.13.132ak — Workspace switcher hides when there is 0 or
+          1 workspace (Stephen's Paneltec Civil case: single "Work
+          Admin" workspace makes the switcher a no-op). Multi-tenancy
+          plumbing (`useWorkspace` / `wsParams`) stays intact; the
+          switcher reappears the moment a 2nd workspace is provisioned
+          via Settings → Workspaces. */}
+      {showSwitcher && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-sm max-md:bg-transparent max-md:border-civil-concrete-mid max-md:text-civil-off-white max-md:min-h-[44px]" data-testid="workspace-switcher">
+              <span className={`w-2 h-2 rounded-full ${hasWorkspaces ? 'bg-brand-blue max-md:bg-civil-hivis-orange' : 'bg-slate-300'}`} />
+              <span className="font-medium">{active.name}</span>
+              <ChevronDown size={14} className="text-slate-400 max-md:text-civil-off-white" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-64">
+            <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {options.map((w) => (
               <DropdownMenuItem key={w.id} onClick={() => setWorkspaceId(w.id)} data-testid={`workspace-option-${w.id}`}>
                 {w.name}
               </DropdownMenuItem>
-            ))
-          ) : (
-            <div className="px-2 py-3 text-center" data-testid="workspace-empty-state">
-              <p className="text-xs text-slate-500 mb-2">No workspaces yet.</p>
-              <Link
-                to="/app/settings/workspaces"
-                data-testid="workspace-empty-create-link"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-brand-blue text-white text-xs font-medium hover:bg-blue-600"
-              >
-                <Plus size={12} /> Create your first workspace
-              </Link>
-            </div>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
-      <div className="hidden md:flex flex-1 max-w-md ml-2 relative">
-        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" aria-hidden="true" />
-        <input
-          type="search"
-          placeholder={'Try: "john smith", "swms-042", "sydney site 3"…  (⌘K)'}
-          data-testid="topbar-search"
-          title={'Global search\nFind any worker, site, SWMS, contractor, certification, or HR record across the whole platform. Full search UI queued for v54.'}
-          aria-label="Global search — find workers, sites, SWMS, contractors, certifications, or HR records"
-          className="w-full pl-9 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-blue/30 focus:border-brand-blue"
-        />
-      </div>
-      <div className="flex-1 md:hidden" />
+      {/* v58.13.132ak — Global search input removed. Was a placeholder
+          since v54 (see tooltip: "Full search UI queued for v54.") —
+          never wired to a real search endpoint. Restore JSX from the
+          .132aj revision if a real Ask-style global search lands
+          later. */}
+      <div className="flex-1" />
 
       <NotificationsBell />
       <OutboxBell />
       {/* v160.3.9.58.1 — persistent pill for in-flight bulk imports. */}
       <BulkImportPill />
 
+      {/* v58.13.132am — Wrap the 4 status pills (Import PDFs, API,
+          Backup, Comms Safe Mode) behind a PIN glance-shield.
+          Underlying endpoints stay open — this is UX only. Non-admin
+          users see nothing here; admins see 🔒 Admin, which reveals
+          the pills after PIN unlock (sessionStorage TTL). */}
+      <AdminPillsLock>
       {/* v160.3.0-adjust-19 — Drag-drop PDF import (admin only). */}
       {canImport && (
         <button
@@ -521,6 +526,7 @@ function TopBar({ onToggleMobile, onToggleCollapse, collapsed, user }) {
           </Link>
         );
       })()}
+      </AdminPillsLock>
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -566,20 +572,45 @@ const SidebarShell = ({ collapsed, canAdminNav, badges }) => (
       </Link>
     </div>
     <SidebarNav collapsed={collapsed} canAdminNav={canAdminNav} badges={badges} />
+    {/* v58.13.132cd — Version pill raised ABOVE the PWA install
+        button (previously at the very bottom of the sidebar, hard
+        to see on 900px laptops when the nav overflowed) and
+        re-styled as a proper badge with `bg-slate-100`,
+        `border-slate-200`, `text-slate-700` for a legible WCAG-AA
+        contrast against the white sidebar. Kept the same testid
+        (`app-version-footer`) and the `title={RUNNING_VERSION}`
+        tooltip so tests that rely on the source-of-truth string
+        stay green. Collapsed sidebar strips the leading
+        `paneltec-` prefix and shows only the version tail (still
+        the same string exposed to the tooltip). Bottom margin
+        `mb-2` keeps it visually separated from the PWA install
+        button below. */}
+    <div
+      className={`${collapsed ? 'px-1.5' : 'px-3'} mt-auto pt-3 pb-1`}
+      data-testid="app-version-footer"
+      title={RUNNING_VERSION}
+    >
+      <div
+        className={`w-full inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-300 bg-slate-100 text-slate-700 font-mono font-semibold text-[10px] leading-none py-1.5 ${collapsed ? 'px-1.5' : 'px-2.5'} shadow-sm`}
+        data-testid="app-version-pill"
+      >
+        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+        <span className="truncate">
+          {collapsed
+            ? RUNNING_VERSION.split('-').pop()
+            : RUNNING_VERSION.replace(/^paneltec-/, '')}
+        </span>
+      </div>
+    </div>
     {/* v58.13.112 — PWA install affordance. Hidden entirely when the
         app is already running in standalone mode (usePwaInstall
         detects `display-mode: standalone` + iOS `navigator.standalone`).
         Auto-shows on Chrome/Edge/Android after the browser fires
         `beforeinstallprompt`; opens an iOS Safari walk-through on
-        iOS instead. Sits ABOVE the version footer so it's the last
-        real interactive control on the sidebar. */}
+        iOS instead. v58.13.132cd — Now sits BELOW the version pill
+        (previous order had the pill under this button, out of view
+        on short viewports). */}
     <PwaInstallButton collapsed={collapsed} />
-    {/* v160.3.9.10a — Version footer, always visible. Tester was
-        counting DOM matches for this string and finding zero. */}
-    <div className={`mt-auto border-t border-slate-200 py-2 text-center text-[10px] font-mono text-slate-400 ${collapsed ? 'px-1' : 'px-3'}`}
-         data-testid="app-version-footer" title={RUNNING_VERSION}>
-      {collapsed ? RUNNING_VERSION.split('-').pop() : RUNNING_VERSION}
-    </div>
   </aside>
 );
 

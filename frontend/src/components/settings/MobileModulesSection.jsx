@@ -89,11 +89,12 @@ const LS_PREVIEW_SHOW_UNASSIGNED = 'perms.previewDropdown.showUnassigned';
 // toggle lifts the cap.
 const MATRIX_TOP_N_DEFAULT = 8;
 
-// v58.4 — Shared live-roles fetcher. Returns:
-//   { allRoles, groups: { inUse, seed, simpro }, matrixCols, loading }
-// `matrixCols` is the ordered list of columns to render in the matrix
-// header (top-N live roles by user count, then the 4 legacy categories
-// as always-visible editable rows if not already covered).
+// v58.13.132bn — Shared live-roles fetcher. Returns `{ allRoles,
+// loading }`. Post-`.132bn` the matrix always renders exactly the 4
+// core seed roles (Admin / Paneltec Civil / Viatec Traffic Solutions
+// / External Contractor) — no more top-N live roles merge or
+// hidden-column count. `matrixCols` is computed inline by the
+// consuming component from `allRoles` filtered to `is_system=true`.
 function useLiveRoles() {
   const [allRoles, setAllRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -176,23 +177,65 @@ function deepEq(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 //   https://<sub>.expo.preview.emergentagent.com
 // (matches EXPO_PACKAGER_PROXY_URL in /app/mobile/.env). An explicit
 // REACT_APP_EXPO_URL override wins if defined.
-function computeExpoUrl(role, token) {
+function computeExpoUrl(roleOrScope, token, workerId) {
   const explicit = process.env.REACT_APP_EXPO_URL;
   const backend = process.env.REACT_APP_BACKEND_URL || '';
   const base = (explicit && explicit.trim())
     || backend.replace(/^(https?:\/\/[^.]+)\./, '$1.expo.');
   if (!base) return '';
   const u = new URL(base);
-  u.searchParams.set('preview_role', role);
+  // v58.13.132p — three collapsed scopes take priority; anything else is
+  // treated as a legacy per-role id.
+  const SCOPES = new Set(['paneltec_civil', 'viatec_traffic', 'admin', 'external_contractor']);
+  if (SCOPES.has(roleOrScope)) {
+    u.searchParams.set('preview_scope', roleOrScope);
+    // For splash's `preview_role` param — pass through a sensible role
+    // fallback so the exchangeForPreviewSession URL is still valid.
+    u.searchParams.set('preview_role',
+      roleOrScope === 'admin' ? 'admin' : 'worker');
+  } else {
+    u.searchParams.set('preview_role', roleOrScope);
+  }
   if (token) u.searchParams.set('preview_token', token);
-  // Cache-bust so the iframe forces a fresh boot on every explicit reload.
+  if (workerId) u.searchParams.set('preview_worker_id', workerId);
+  u.searchParams.set('_t', Date.now().toString());
+  return u.toString();
+}
+
+// v58.13.132o — Splash "reset" URL: strip the preview token so the iframe
+// boots the real onboarding flow. Used by the Reset preview button.
+function computeExpoResetUrl() {
+  const explicit = process.env.REACT_APP_EXPO_URL;
+  const backend = process.env.REACT_APP_BACKEND_URL || '';
+  const base = (explicit && explicit.trim())
+    || backend.replace(/^(https?:\/\/[^.]+)\./, '$1.expo.');
+  if (!base) return '';
+  const u = new URL(base);
+  // The `?reset=1` param is only there to bypass the browser cache — the
+  // splash treats a token-less URL exactly like a fresh install.
+  u.searchParams.set('reset', '1');
   u.searchParams.set('_t', Date.now().toString());
   return u.toString();
 }
 
 function PhonePreview({ canEdit }) {
-  const [role, setRole] = useState('worker');
+  // v58.13.132q — Strict 3-scope dropdown, persist last selection in
+  // localStorage so refreshes remember it. Default: `paneltec_civil`.
+  const LS_PREVIEW_SCOPE = 'perms.previewDropdown.scope';
+  const [role, setRole] = useState(() => {
+    try {
+      const v = localStorage.getItem(LS_PREVIEW_SCOPE);
+      if (v === 'paneltec_civil' || v === 'viatec_traffic' || v === 'admin' || v === 'external_contractor') return v;
+    } catch { /* noop */ }
+    return 'paneltec_civil';
+  });
+  useEffect(() => {
+    try { localStorage.setItem(LS_PREVIEW_SCOPE, role); } catch { /* noop */ }
+  }, [role]);
   const [src, setSrc] = useState('');
+  // v58.13.132o — Preview-as-worker binding state.
+  const [previewWorkerId, setPreviewWorkerId] = useState('');
+  const [workers, setWorkers] = useState([]);
   // v160.3.9.33.3 → v58.4 — live-fetched roles now enriched with
   // `user_count` from the backend so the dropdown can prioritise
   // in-use roles and hide unassigned ones behind a checkbox.
@@ -211,6 +254,10 @@ function PhonePreview({ canEdit }) {
       const rs = (data?.roles || []).filter((r) => r.is_active !== false);
       setAllRoles(rs);
     }).catch(() => setAllRoles([]));
+    // v58.13.132o — populate the worker picker.
+    api.get('/mobile/preview-user/workers').then(({ data }) => {
+      setWorkers(data?.workers || []);
+    }).catch(() => setWorkers([]));
   }, []);
   const iframeRef = useRef(null);
 
@@ -245,17 +292,35 @@ function PhonePreview({ canEdit }) {
     : inUse.length;
 
   // Build the src once on first render — and only rebuild when the admin
-  // explicitly changes role or clicks Reload. Deliberately NOT reactive to
-  // the matrix state above (we want the iframe to reflect *saved* config).
-  const rebuild = (r = role) => setSrc(computeExpoUrl(r, getToken()));
-  useEffect(() => { rebuild(role); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // explicitly changes role / worker or clicks Reload. Deliberately NOT
+  // reactive to the matrix state above (we want the iframe to reflect
+  // *saved* config).
+  const rebuild = (r = role, wId = previewWorkerId) =>
+    setSrc(computeExpoUrl(r, getToken(), wId));
+  useEffect(() => { rebuild(role, previewWorkerId); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onRoleChange = (e) => {
     const r = e.target.value;
     setRole(r);
-    rebuild(r);
+    rebuild(r, previewWorkerId);
   };
-  const onReload = () => rebuild(role);
+  // v58.13.132o — worker picker: rebuild the iframe URL with `worker_id`
+  // so /api/mobile/preview-user mints a session bound to the picked
+  // worker's real profile + data. Read-only stays server-enforced.
+  const onWorkerChange = (e) => {
+    const wid = e.target.value;
+    setPreviewWorkerId(wid);
+    rebuild(role, wid);
+  };
+  const onReload = () => rebuild(role, previewWorkerId);
+  const onReset = () => {
+    // Wipe the picker state + point the iframe at a token-less URL so it
+    // boots the real onboarding flow. Useful for testing the
+    // welcome → division → PIN chain end-to-end without redeploying.
+    setPreviewWorkerId('');
+    setRole('worker');
+    setSrc(computeExpoResetUrl());
+  };
   const onOpen = () => {
     if (src) window.open(src, '_blank', 'noopener,noreferrer');
   };
@@ -336,50 +401,83 @@ function PhonePreview({ canEdit }) {
             onFocus={(e) => { e.currentTarget.style.borderColor = '#F5B301'; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E5E5'; }}
           >
-            {!hasLive && ROLES.map((r) => (
-              <option key={r.key} value={r.key}>{r.label}</option>
-            ))}
-            {hasLive && inUse.length > 0 && (
-              <optgroup label={`In use (${inUse.length})`}>
-                {inUse.map((r) => (
-                  <option key={r.role_id} value={r.role_id}>
-                    {r.name} · {r.user_count} user{r.user_count === 1 ? '' : 's'}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {hasLive && showUnassigned && seedGroup.length > 0 && (
-              <optgroup label={`System / seed — unassigned (${seedGroup.length})`}>
-                {seedGroup.map((r) => (
-                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
-                ))}
-              </optgroup>
-            )}
-            {hasLive && showUnassigned && simproGroup.length > 0 && (
-              <optgroup label={`Simpro — unassigned (${simproGroup.length})`}>
-                {simproGroup.map((r) => (
-                  <option key={r.role_id} value={r.role_id}>{r.name}</option>
-                ))}
-              </optgroup>
-            )}
+            {/* v58.13.132q — Strict 3-option dropdown. The 27 underlying
+                role rows are NOT surfaced here; they still live in the
+                permissions matrix runtime and remain fully functional. */}
+            <option value="paneltec_civil" data-testid="mobile-preview-scope-paneltec_civil">Paneltec Civil</option>
+            <option value="viatec_traffic" data-testid="mobile-preview-scope-viatec_traffic">Viatec Traffic Solutions</option>
+            <option value="admin"          data-testid="mobile-preview-scope-admin">Admin</option>
+            <option value="external_contractor" data-testid="mobile-preview-scope-external_contractor">External Contractor</option>
           </select>
-          {/* v58.4 — checkbox to reveal unassigned roles. Default OFF. */}
-          <label className="mt-2 flex items-center gap-2 text-[11px] cursor-pointer select-none" style={{ color: '#6B6B6B' }}>
-            <input type="checkbox"
-                   checked={showUnassigned}
-                   onChange={(e) => setShowUnassigned(e.target.checked)}
-                   data-testid="mobile-preview-show-unassigned"
-                   className="w-3.5 h-3.5 rounded"
-                   style={{ borderColor: '#E5E5E5', accentColor: '#F5B301' }} />
-            Show unassigned roles
-            <span className="tabular-nums" style={{ color: '#A0A0A0' }}>
-              (+{seedGroup.length + simproGroup.length})
-            </span>
-          </label>
+          {/* v58.13.132q — "Show unassigned roles" checkbox retired. The
+              dropdown is now strictly 3-option; per-role preview needs
+              are handled via the "Preview as specific worker" dropdown
+              below (added in .132o). */}
           <p className="mt-1 text-[10px] leading-tight" style={{ color: '#6B6B6B' }}>
             Reviewing what a user with this role would see. Per-user overrides are not reflected here.
           </p>
         </label>
+
+        {/* v58.13.132o — Preview-as-worker dropdown. Optional; default
+            "Generic preview user" mints a role-scoped preview session
+            with no worker binding (existing .132j behaviour). Picking a
+            worker scopes the session to that worker's real data. */}
+        <label className="block mt-3">
+          <div className="flex items-center justify-between mb-1">
+            <span className="block text-[10px] uppercase tracking-[0.12em] font-semibold" style={{ color: '#A0A0A0' }}>Preview as specific worker</span>
+            <span className="text-[10px] tabular-nums" style={{ color: '#A0A0A0' }}
+                  data-testid="mobile-preview-worker-count">
+              {workers.length} worker{workers.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <select
+            value={previewWorkerId}
+            onChange={onWorkerChange}
+            data-testid="mobile-preview-worker"
+            disabled={!canEdit || workers.length === 0}
+            className="w-full rounded-lg border bg-white text-sm px-3 py-2 focus:outline-none focus:ring-2"
+            style={{
+              borderColor: '#E5E5E5',
+              color: '#0A0A0A',
+              '--tw-ring-color': '#FEF3C7',
+            }}
+            onFocus={(e) => { e.currentTarget.style.borderColor = '#F5B301'; }}
+            onBlur={(e) => { e.currentTarget.style.borderColor = '#E5E5E5'; }}
+          >
+            <option value="">Generic preview user (role only)</option>
+            {workers.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}{w.position ? ` · ${w.position}` : ''}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[10px] leading-tight" style={{ color: '#6B6B6B' }}>
+            Preview session stays read-only. Writes are blocked server-side.
+          </p>
+        </label>
+
+        {/* v58.13.132o — Reset preview button. Clears the picker + points
+            the iframe at a token-less URL so the real onboarding flow
+            (welcome → division → PIN) can be exercised end-to-end. */}
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={onReset}
+            data-testid="mobile-preview-reset"
+            className="w-full text-xs font-semibold rounded-lg py-2 border transition"
+            style={{ borderColor: '#E5E5E5', color: '#6B6B6B', background: 'white' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#FEF3C7';
+              e.currentTarget.style.color = '#92400E';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'white';
+              e.currentTarget.style.color = '#6B6B6B';
+            }}
+          >
+            Reset preview · test onboarding flow
+          </button>
+        </div>
 
         {/* Phone bezel — dark body (a real phone bezel IS dark), amber
             notch dot to match the mobile team's v58.7 palette. Iframe
@@ -553,36 +651,48 @@ export default function MobileModulesSection({ canEdit }) {
   //   · Each column carries a `category` field so the non-legacy cells
   //     can render the INHERITED toggle value from that category's
   //     storage bucket (read-only — you can only edit the 4 categories).
+  // v58.13.132bn — Tabs now render EXACTLY the 4 core seed roles in
+  // Stephen's fixed order (Admin → Paneltec Civil → Viatec Traffic
+  // Solutions → External Contractor). No more "top-N live roles" merge
+  // or hidden-column counter — the underlying storage still keys off
+  // the 4 LEGACY_CATEGORIES buckets, and each core role maps to a
+  // bucket via `_categoryForRole`. Admin is rendered read-only via
+  // `is_readonly` (all toggles greyed-on).
+  const CORE_ROLE_ORDER = ['admin', 'paneltec_civil', 'viatec_traffic', 'external_contractor'];
+  const CORE_ROLE_LABELS = {
+    admin: 'Admin',
+    paneltec_civil: 'Paneltec Civil',
+    viatec_traffic: 'Viatec Traffic Solutions',
+    external_contractor: 'External Contractor',
+  };
   const matrixCols = useMemo(() => {
-    const cols = LEGACY_CATEGORIES.map((c) => ({
-      key: c.key,
-      label: c.label,
-      category: c.key,
-      is_category: true,
-      user_count: allRoles
-        .filter((r) => _categoryForRole(r.role_id, r.name) === c.key)
-        .reduce((s, r) => s + (r.user_count || 0), 0),
-    }));
-    const seenLegacy = new Set(LEGACY_CATEGORIES.map((c) => c.key));
-    const liveExtras = allRoles
-      .filter((r) => !seenLegacy.has(r.role_id))
-      .map((r) => ({
-        key: r.role_id,
-        label: r.name || r.role_id,
-        category: _categoryForRole(r.role_id, r.name),
-        is_category: false,
-        source: r.source,
-        user_count: r.user_count || 0,
-      }))
-      .sort((a, b) => (b.user_count - a.user_count)
-                     || (a.label || '').localeCompare(b.label || ''));
-    const visibleExtras = showAllCols ? liveExtras : liveExtras.slice(0, MATRIX_TOP_N_DEFAULT);
+    // Filter the live seed roles into a lookup, then materialise in
+    // Stephen's canonical order. Roles missing from the payload still
+    // render (labels come from CORE_ROLE_LABELS as fallback) so the
+    // matrix is stable if `/admin/roles` is slow.
+    const bySeed = new Map();
+    for (const r of allRoles) {
+      if (r.is_system === true && r.is_active !== false) {
+        bySeed.set(r.role_id, r);
+      }
+    }
+    const cols = CORE_ROLE_ORDER.map((rid) => {
+      const live = bySeed.get(rid);
+      return {
+        key: rid,
+        label: (live && live.name) || CORE_ROLE_LABELS[rid],
+        category: _categoryForRole(rid),
+        is_category: true,
+        is_readonly: rid === 'admin',
+        user_count: live?.user_count || 0,
+      };
+    });
     return {
-      cols: [...cols, ...visibleExtras],
-      liveExtrasCount: liveExtras.length,
-      hiddenCount: Math.max(0, liveExtras.length - visibleExtras.length),
+      cols,
+      liveExtrasCount: 0,
+      hiddenCount: 0,
     };
-  }, [allRoles, showAllCols]);
+  }, [allRoles]);
 
 
   const save = async () => {
@@ -692,34 +802,22 @@ export default function MobileModulesSection({ canEdit }) {
           phone-bezel preview on the right (stacks on < lg). */}
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
         <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-          {/* v58.4 — Column control strip. Shows the matrix ↔ preview
-              consistency count and the "show all columns" toggle. */}
+          {/* v58.13.132bn — Column strip simplified: the matrix now
+              renders exactly the 4 core roles in Stephen's canonical
+              order (Admin / Paneltec Civil / Viatec Traffic Solutions
+              / External Contractor). The pre-`.132bn` "top-N live roles"
+              merge + hidden-column counter + "Show all columns"
+              checkbox have been retired — the whole model is now one
+              column per core role. */}
           <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-100 bg-slate-50/60"
                data-testid="mobile-modules-cols-strip">
-            <div className="text-[11px] text-slate-600">
+            <div className="text-[11px] text-slate-600" data-testid="mobile-modules-subtitle">
               <span className="font-semibold text-slate-800">
                 {matrixCols.cols.length}
               </span>{' '}
-              column{matrixCols.cols.length === 1 ? '' : 's'} —
-              {' '}4 legacy categories + {' '}
-              <span className="tabular-nums">
-                {matrixCols.cols.length - LEGACY_CATEGORIES.length}
-              </span>{' '}
-              live role{matrixCols.cols.length - LEGACY_CATEGORIES.length === 1 ? '' : 's'}
-              {matrixCols.hiddenCount > 0 && (
-                <span className="text-slate-400">
-                  {' · '}{matrixCols.hiddenCount} hidden
-                </span>
-              )}
+              column{matrixCols.cols.length === 1 ? '' : 's'} — 4 core roles.
+              Toggle which modules each role sees on the mobile app.
             </div>
-            <label className="flex items-center gap-2 text-[11px] text-slate-700 cursor-pointer select-none">
-              <input type="checkbox"
-                     checked={showAllCols}
-                     onChange={(e) => setShowAllCols(e.target.checked)}
-                     data-testid="mobile-modules-show-all-cols"
-                     className="w-3.5 h-3.5 rounded border-slate-300" />
-              Show all columns
-            </label>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm" data-testid="mobile-modules-grid">
@@ -734,11 +832,15 @@ export default function MobileModulesSection({ canEdit }) {
                         <span className="text-slate-700">{r.label}</span>
                         {r.key === 'admin' && <LockClosed20Regular style={{ width: 12, height: 12 }} className="text-slate-400" />}
                       </div>
-                      {/* v58.4/v58.5 — For non-category live-role columns
-                          show which storage bucket they inherit from,
-                          user count, override count, and a "Reset to
-                          inherited" affordance. */}
-                      {!r.is_category ? (
+                      {/* v58.13.132bn — Admin column is a read-only
+                          "sees every module" tier. Explanatory chip
+                          replaces the "All on / All off" affordance. */}
+                      {r.key === 'admin' ? (
+                        <div className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-blue-100 text-blue-700 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-normal"
+                             data-testid="mobile-modules-admin-chip">
+                          Sees every module
+                        </div>
+                      ) : !r.is_category ? (
                         <div className="mt-1 flex flex-col items-center gap-0.5">
                           <span className="text-[9px] font-medium text-slate-400 normal-case tracking-normal">
                             inherits {r.category}

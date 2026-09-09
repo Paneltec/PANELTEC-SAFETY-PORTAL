@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 5.0.0"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://whs-compliance.preview.emergentagent.com",
+        "EXPO_PUBLIC_SENTRY_DSN": "https://07a59b90218092aee6f8992b31684f4b@o4512048722477056.ingest.de.sentry.io/4512048752558160"
+      },
+      "android": {
+        "buildType": "apk",
+        "credentialsSource": "remote"
+      },
+      "ios": {
+        "simulator": false
+      }
+    },
+    "production": {
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_BACKEND_URL": "https://whs-compliance.preview.emergentagent.com"
+      },
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

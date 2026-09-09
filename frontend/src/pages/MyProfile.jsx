@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Save, Eye, EyeOff, Loader2, ShieldCheck, KeyRound } from 'lucide-react';
+import { Save, Eye, EyeOff, Loader2, ShieldCheck, KeyRound, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import api, { apiError } from '../lib/api';
 import { persistToken } from '../lib/auth';
@@ -170,7 +170,226 @@ export default function MyProfile() {
           </button>
         </div>
       </div>
+
+      {/* v58.13.132av — Card 3 · Admin console PIN.
+          Admin-role only. Fetches /auth/admin-console/status on mount
+          to decide between "Set your PIN" (first-time) vs
+          "Rotate PIN" (current PIN required). Backend gate is the
+          same _require_admin dep used for /set-pin, so a viewer of
+          this page who isn't an admin never sees the card. */}
+      {me.role === 'admin' && <AdminPinCard />}
     </div>
+  );
+}
+
+// ─── v58.13.132av — Admin console PIN card ────────────────────
+function AdminPinCard() {
+  const [status, setStatus] = useState(null);   // { has_pin, set_at }
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [curPin, setCurPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [confirmPin, setConfirmPin] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const loadStatus = async () => {
+    setStatusLoading(true);
+    try {
+      const { data } = await api.post('/auth/admin-console/status');
+      setStatus(data);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setStatusLoading(false); }
+  };
+  useEffect(() => { loadStatus(); }, []);
+
+  const openModal = () => {
+    setCurPin(''); setNewPin(''); setConfirmPin('');
+    setModalOpen(true);
+  };
+  const closeModal = () => { if (!busy) setModalOpen(false); };
+
+  const submit = async () => {
+    if (!/^\d{4}$/.test(newPin)) { toast.error('New PIN must be exactly 4 digits'); return; }
+    if (newPin !== confirmPin) { toast.error('New PIN and confirmation do not match'); return; }
+    if (status?.has_pin && !/^\d{4}$/.test(curPin)) {
+      toast.error('Current PIN required to rotate'); return;
+    }
+    setBusy(true);
+    try {
+      const payload = { pin: newPin };
+      if (status?.has_pin) payload.current_pin = curPin;
+      await api.post('/auth/admin-console/set-pin', payload);
+      toast.success(status?.has_pin ? 'Admin console PIN rotated' : 'Admin console PIN set');
+      setModalOpen(false);
+      loadStatus();
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const fmtSetAt = (iso) => {
+    if (!iso) return '—';
+    try {
+      const d = new Date(iso);
+      const dd = String(d.getDate()).padStart(2, '0');
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const yy = d.getFullYear();
+      const hh = String(d.getHours()).padStart(2, '0');
+      const mn = String(d.getMinutes()).padStart(2, '0');
+      return `${dd}/${mm}/${yy} ${hh}:${mn}`;
+    } catch { return iso; }
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white" data-testid="profile-admin-pin-card">
+      <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+        <Shield size={14} className="text-amber-600" />
+        <h3 className="font-display text-sm font-semibold">Admin console PIN</h3>
+        <span className="ml-auto text-[10px] uppercase tracking-wider text-slate-400">
+          {statusLoading ? '…' : (status?.has_pin ? 'Set' : 'Not set')}
+        </span>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="text-[13px] text-slate-600 leading-relaxed">
+          A 4-digit PIN that unlocks the operational status pills in the app header
+          (Import PDFs, API health, Backup, Comms Safe Mode). Kept separate from your
+          password so you can show the app on-screen without leaking metadata.
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Status</div>
+            {statusLoading
+              ? <span className="text-[13px] text-slate-400">Loading…</span>
+              : status?.has_pin
+                ? <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-semibold uppercase bg-emerald-100 text-emerald-800" data-testid="profile-admin-pin-status">PIN set</span>
+                : <span className="inline-block text-[11px] px-2 py-0.5 rounded-full font-semibold uppercase bg-amber-100 text-amber-800" data-testid="profile-admin-pin-status">Not yet set</span>}
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Last set</div>
+            <span className="text-[13px] font-mono text-slate-700" data-testid="profile-admin-pin-set-at">
+              {statusLoading ? '…' : fmtSetAt(status?.set_at)}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+        <button
+          onClick={openModal}
+          disabled={statusLoading}
+          data-testid="profile-admin-pin-open"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50"
+        >
+          <Shield size={14} /> {status?.has_pin ? 'Change PIN' : 'Set PIN'}
+        </button>
+      </div>
+
+      {modalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4"
+          onClick={closeModal}
+          data-testid="profile-admin-pin-modal"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden"
+          >
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center gap-2">
+              <Shield size={14} className="text-amber-600" />
+              <h4 className="font-display text-sm font-semibold">
+                {status?.has_pin ? 'Change admin console PIN' : 'Set admin console PIN'}
+              </h4>
+            </div>
+            <div className="p-5 space-y-3">
+              {status?.has_pin && (
+                <PinField
+                  label="Current PIN"
+                  value={curPin}
+                  onChange={setCurPin}
+                  testId="profile-admin-pin-current"
+                  autoFocus
+                />
+              )}
+              <PinField
+                label="New PIN"
+                value={newPin}
+                onChange={setNewPin}
+                testId="profile-admin-pin-new"
+                autoFocus={!status?.has_pin}
+              />
+              <PinField
+                label="Confirm new PIN"
+                value={confirmPin}
+                onChange={setConfirmPin}
+                testId="profile-admin-pin-confirm"
+              />
+              {confirmPin && confirmPin !== newPin && (
+                <div className="text-[11px] text-rose-600">PINs do not match.</div>
+              )}
+              <div className="text-[11px] text-slate-500 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                3 wrong attempts → 30s lockout · 6 wrong attempts → 15min lockout.
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-100 flex justify-end gap-2">
+              <button
+                onClick={closeModal}
+                disabled={busy}
+                data-testid="profile-admin-pin-cancel"
+                className="px-3 py-2 rounded-lg border border-slate-300 text-slate-700 text-sm hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submit}
+                disabled={
+                  busy
+                  || !/^\d{4}$/.test(newPin)
+                  || newPin !== confirmPin
+                  || (status?.has_pin && !/^\d{4}$/.test(curPin))
+                }
+                data-testid="profile-admin-pin-submit"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600 disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Shield size={14} />}
+                {status?.has_pin ? 'Rotate PIN' : 'Set PIN'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PinField({ label, value, onChange, testId, autoFocus }) {
+  // v58.13.132ax — strict 4-digit only. `onChange` receives the
+  // sanitised value; `onKeyDown` swallows non-digit / edit keystrokes
+  // so paste of "12ab34" still produces "1234", and the browser
+  // native numeric keyboard is preferred on mobile.
+  const ALLOW = new Set([
+    'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight',
+    'Tab', 'Home', 'End', 'Enter',
+  ]);
+  const guardKey = (e) => {
+    if (ALLOW.has(e.key)) return;
+    // Copy / paste / cut / select-all combos.
+    if (e.metaKey || e.ctrlKey) return;
+    if (!/^\d$/.test(e.key)) e.preventDefault();
+  };
+  return (
+    <label className="block">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">{label}</div>
+      <input
+        type="password"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        maxLength={4}
+        autoFocus={autoFocus}
+        value={value}
+        onKeyDown={guardKey}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+        data-testid={testId}
+        className="w-full px-3 py-2.5 text-lg tracking-[0.5em] text-center font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500/25 focus:border-amber-500 outline-none"
+      />
+    </label>
   );
 }
 

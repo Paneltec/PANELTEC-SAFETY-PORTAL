@@ -56,6 +56,16 @@ class PinVerifyIn(BaseModel):
     device_id: Optional[str] = None
     simpro_employee_id: Optional[str] = None
 
+
+class PinStatusIn(BaseModel):
+    """v58.13.132n — Look up whether the device/worker already has a PIN.
+
+    Used by the new pin-entry screen to branch between CREATE mode
+    (first-time onboarding) and ENTER mode (returning user).
+    """
+    device_id: Optional[str] = None
+    simpro_employee_id: Optional[str] = None
+
 class PushRegisterIn(BaseModel):
     device_token: str
     platform: str  # "ios" | "android" | "web"
@@ -134,6 +144,56 @@ async def issue_onboarding_token(body: IssueTokenIn, user: dict = Depends(get_cu
 
 
 # ── 2. Redeem onboarding token (public) ──────────────────
+
+@router.get("/mobile/onboarding/validate/{token}")
+async def validate_onboarding_token(token: str):
+    """v58.13.132ae — public read-only peek used by the QR landing
+    page at /m/onboard/:token. Returns validity + a first name for
+    the greeting. Never consumes the token — that's `redeem`'s job.
+    """
+    doc = await db.mobile_onboarding_tokens.find_one(
+        {"token": token},
+        {"_id": 0, "used": 1, "expires_at": 1, "simpro_employee_id": 1,
+         "org_id": 1, "company_id": 1},
+    )
+    if not doc:
+        return {"valid": False, "reason": "unknown"}
+
+    if doc.get("used"):
+        return {"valid": False, "reason": "used"}
+
+    try:
+        expires = datetime.fromisoformat(doc["expires_at"])
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) > expires:
+            return {"valid": False, "reason": "expired",
+                    "expires_at": doc["expires_at"]}
+    except Exception:
+        return {"valid": False, "reason": "expired"}
+
+    # Look up worker for greeting.
+    first_name = None
+    worker = await db.workers.find_one(
+        {"simpro_employee_id": doc["simpro_employee_id"], "org_id": doc["org_id"]},
+        {"_id": 0, "first_name": 1, "company": 1, "division": 1},
+    )
+    if worker:
+        first_name = (worker.get("first_name") or "").strip() or None
+
+    # Derive preload division from company/division field.
+    preload = "civil"
+    company = ((worker or {}).get("company") or (worker or {}).get("division") or "").lower()
+    if "viatec" in company:
+        preload = "viatec"
+
+    return {
+        "valid": True,
+        "first_name": first_name,
+        "preload": preload,
+        "expires_at": doc["expires_at"],
+    }
+
 
 @router.post("/mobile/onboarding/redeem")
 async def redeem_onboarding_token(body: RedeemIn):
@@ -359,3 +419,26 @@ async def push_register(body: PushRegisterIn, user: dict = Depends(get_current_u
             }},
         )
     return {"ok": True}
+
+
+# ── v58.13.132n — PIN status probe ────────────────────────
+#
+# The mobile pin-entry screen calls this before rendering the pad so it can
+# branch between CREATE mode (no PIN on file yet) and ENTER mode (returning
+# user). Public — no auth required — because the caller is by definition
+# pre-JWT. Return payload is intentionally minimal (`{has_pin: bool}`) so it
+# leaks nothing beyond the boolean already implied by the pin-verify 400 vs
+# 401 responses.
+
+@router.post("/mobile/auth/pin-status")
+async def pin_status(body: PinStatusIn) -> dict:
+    query = {}
+    if body.device_id:
+        query = {"mobile_devices.device_id": body.device_id}
+    elif body.simpro_employee_id:
+        query = {"simpro_employee_id": body.simpro_employee_id}
+    else:
+        raise HTTPException(400, "device_id or simpro_employee_id required")
+
+    user = await db.users.find_one(query, {"_id": 0, "mobile_pin_hash": 1})
+    return {"has_pin": bool(user and user.get("mobile_pin_hash"))}

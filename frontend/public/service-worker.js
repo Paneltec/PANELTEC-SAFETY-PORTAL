@@ -1284,7 +1284,13 @@
 //   Risk Assessments unaffected (its records ARE mirrored with
 //   `source = 'form_submission'`). Frontend-only, backend
 //   unchanged. SW bumped so caches roll.
-const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132i';
+// v58.13.132bc — CACHE bumped so any open Users & Permissions
+// drawer reloads and the /api/admin/roles response cache flushes
+// for admins currently on `.132bb`.
+// v58.13.132bo — CACHE bumped so the Fuel Reporting page reloads
+// with the new leaderboard row click-through + SmartFill card
+// drill-down drawer wiring.
+const CACHE_VERSION = 'paneltec-v160.3.9.58.13.132cj';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PRECACHE = [
   '/manifest.json',

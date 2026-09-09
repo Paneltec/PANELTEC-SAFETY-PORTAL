@@ -17,7 +17,11 @@ export const TOAST_EXPIRES_AT = '2026-10-04T00:00:00Z';
 // LegacyVehiclesRedirect retained indefinitely for old bookmarks.
 
 import Cover from '@/pages/Cover';
-import Signup from '@/pages/Signup';
+// v58.13.132z — removed `import Signup from '@/pages/Signup';`
+// (dead route; backend `POST /users` returns 410).
+// v58.13.132cb — `import Workspaces from '@/pages/Workspaces';` removed;
+// Phase A of Workspaces/Sites merge. `/app/settings/workspaces` now
+// redirects to `/app/settings/sites`.
 import Dashboard from '@/pages/Dashboard';
 import Integrations from '@/pages/Integrations';
 import Stub from '@/pages/Stub';
@@ -57,6 +61,10 @@ import Vehicles from '@/pages/Vehicles';
 // `LegacyVehiclesRedirect` (see this file), which navigates to
 // `/app/fleet` and fires the once-per-session moved-toast.
 import FleetRegister from '@/pages/FleetRegister';
+// v58.13.132x — Fuel card attribution admin.
+import FuelCardsAdmin from '@/pages/FuelCardsAdmin';
+// v58.13.132ab — admin daily-job assignment for mobile home screen.
+import AdminAssignDailyJobs from '@/pages/AdminAssignDailyJobs';
 // v58.13.131c — SmartFill fuel-anomaly inbox route.
 import FuelAnomalyInbox from '@/pages/FuelAnomalyInbox';
 // v58.13.131d — SmartFill fuel reporting page.
@@ -114,44 +122,18 @@ function UsersAndRolesShell() {
 // Fires a once-per-session Sonner toast so operators know their
 // bookmark landed on the new surface. Phase 5 (`FLEET_GRACE_ENDS_AT`)
 // removes this shim entirely.
-const LEGACY_VEHICLES_TOAST_SESSION_KEY = 'fleet_moved_toast_v58_13_120d';
-function LegacyVehiclesRedirect() {
-  const loc = useLocation();
-  const [sp] = useSearchParams();
-  useEffect(() => {
-    try {
-      // v58.13.120e — self-cleaning toast: only fires before
-      // TOAST_EXPIRES_AT. After that date the redirect still runs
-      // silently; the toast state key is left in sessionStorage as
-      // a harmless artefact.
-      const nowIso = new Date().toISOString();
-      const stillWithinToastWindow = nowIso < TOAST_EXPIRES_AT;
-      if (stillWithinToastWindow && !sessionStorage.getItem(LEGACY_VEHICLES_TOAST_SESSION_KEY)) {
-        sessionStorage.setItem(LEGACY_VEHICLES_TOAST_SESSION_KEY, '1');
-        toast.info('Plant & Vehicles has moved.', {
-          description: "You're now on the new Fleet & Service Register.",
-          duration: 8000,
-          action: {
-            label: 'Learn more',
-            onClick: () => toast('Fleet & Service Register',
-              { description: 'Unified register for vehicles, plant, trailers, tools, and containers with full service history. Cross-collection search + per-asset service logging + photo attachments.' }),
-          },
-        });
-      }
-    } catch (_) { /* sessionStorage unavailable in some sandboxes — no-op */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  // Preserve `?open=<id>` and any other query params through the redirect.
-  const qs = sp.toString();
-  const target = qs ? `/app/fleet?${qs}` : '/app/fleet';
-  void loc;  // keep the useLocation import stable for future extensions
-  return <Navigate to={target} replace />;
-}
+// v58.13.132z — `LegacyVehiclesRedirect` deleted. Prior policy note
+// "retained INDEFINITELY (old bookmarks)" superseded by user directive
+// on 2026-09-07. Old `/app/vehicles/*` bookmarks now 404; users will
+// discover the new `/app/fleet` route via nav.
+// (component + routes removed below)
 
 import Outbox from '@/pages/Outbox';
 import MyProfile from '@/pages/MyProfile';
 import OrgSettings from '@/pages/OrgSettings';
-import Workspaces from '@/pages/Workspaces';
+// v58.13.132cb — `Workspaces` page retired (Phase A of workspaces/sites
+// merge). Route redirects to `/app/settings/sites`. The `.jsx` file has
+// been deleted; import removed to prevent a build-time resolve error.
 import DocumentLibrary, { DocumentLibraryFolder } from '@/pages/DocumentLibrary';
 import Suppliers from '@/pages/Suppliers';
 import Workers from '@/pages/Workers';
@@ -169,6 +151,8 @@ import Forms, { SubmissionViewModal } from '@/pages/Forms'; // eslint-disable-li
 import FormSubmissions from '@/pages/FormSubmissions';
 // Phase 4.7 — public token-driven password flows + must-change guard.
 import Onboard, { ResetPasswordPage } from '@/pages/Onboard';
+// v58.13.132ae — Public QR-landing page for onboarding cards.
+import OnboardMobileLanding from '@/pages/OnboardMobileLanding';
 import { MustChangePasswordGuard } from '@/components/auth/AuthBundle';
 // Phase 4.7.3 — Comms Safe Mode admin page.
 import CommsSafeMode from '@/pages/CommsSafeMode';
@@ -216,9 +200,17 @@ function App() {
           <Routes>
             <Route path="/" element={<Cover />} />
             <Route path="/login" element={<LoginRedirect />} />
-            <Route path="/signup" element={<Signup />} />
+            {/* v58.13.132z — `/signup` route removed. Backend
+                `POST /users` returns 410; onboarding via admin-invite
+                or Simpro sync + QR. */}
             {/* Phase 4.7 — public token-driven password flows */}
             <Route path="/onboard" element={<Onboard />} />
+            {/* v58.13.132ae — Public onboarding-card QR landing page.
+                DIFFERENT flow from /onboard (which is the web invite
+                password-set). This one is for MOBILE onboarding cards
+                and drives users into the App Store / Play Store, then
+                deep-links into the installed app. */}
+            <Route path="/m/onboard/:token" element={<OnboardMobileLanding />} />
             <Route path="/reset" element={<ResetPasswordPage />} />
             <Route path="/renew/:token" element={<PublicRenewal />} />
             <Route path="/scan/worker/:token" element={<WorkerScanResolver />} />
@@ -285,7 +277,7 @@ function App() {
               <Route path="contractors" element={<ContractorsList />} />
               <Route path="contractors/new" element={<ContractorNew />} />
               <Route path="contractors/:id" element={<ContractorDetail />} />
-              <Route path="contractors-legacy" element={<ContractorsList />} />
+              {/* v58.13.132z — `contractors-legacy` alias route removed. */}
               <Route path="suppliers" element={<Suppliers />} />
 
               <Route path="renewals" element={<Renewals />} />
@@ -298,6 +290,10 @@ function App() {
               <Route path="fleet" element={<FleetRegister />} />
               {/* v58.13.131c — SmartFill CSV Fuel Anomaly Inbox. */}
               <Route path="fleet/fuel/anomalies" element={<FuelAnomalyInbox />} />
+              {/* v58.13.132x — Fuel card attribution admin */}
+              <Route path="fleet/fuel/cards" element={<FuelCardsAdmin />} />
+              {/* v58.13.132ab — Admin: assign daily jobs to mobile workers. */}
+              <Route path="mobile/assign-daily-jobs" element={<AdminAssignDailyJobs />} />
               {/* v58.13.131d — SmartFill Fuel Reporting page. */}
               <Route path="fleet/fuel" element={<FuelReporting />} />
               {/* v58.13.120e — Bulk XLSX importer moved from the
@@ -315,8 +311,8 @@ function App() {
                   new. See `FLEET_GRACE_ENDS_AT` at the top of this
                   file — Phase 5 removes the redirects on that
                   date. */}
-              <Route path="vehicles" element={<LegacyVehiclesRedirect />} />
-              <Route path="vehicles/*" element={<LegacyVehiclesRedirect />} />
+              {/* v58.13.132z — `/app/vehicles` + `/app/vehicles/*`
+                  redirects removed. Old bookmarks now 404. */}
               <Route path="sites" element={<SitesAdmin />} />
               <Route path="sites/:id" element={<SiteDetail />} />
 
@@ -324,7 +320,11 @@ function App() {
               <Route path="document-library/:folderId" element={<DocumentLibraryFolder />} />
 
               <Route path="settings/org" element={<OrgSettings />} />
-              <Route path="settings/workspaces" element={<Workspaces />} />
+              {/* v58.13.132cb — Workspaces surface retired (Phase A of
+                  workspaces/sites merge). `/app/settings/workspaces`
+                  redirects to the canonical Sites admin. Old bookmarks
+                  keep landing on the right page. */}
+              <Route path="settings/workspaces" element={<Navigate to="/app/settings/sites" replace />} />
               <Route path="settings/integrations" element={<Integrations />} />
               <Route path="settings/comms-safe-mode" element={<CommsSafeMode />} />
               <Route path="settings/integrations/navixy" element={<NavixyAdmin />} />

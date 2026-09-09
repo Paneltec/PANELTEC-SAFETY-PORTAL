@@ -32,7 +32,7 @@ FILES = [
     (REPO / "mobile/src/lib/version.ts",           r"^export const MOBILE_BUNDLE_VERSION\s*=\s*'([^']+)'"),
     (REPO / "frontend/public/service-worker.js",   r"^const CACHE_VERSION\s*=\s*'([^']+)'"),
 ]
-VERSION_SHAPE = re.compile(r"^paneltec-v\d+\.\d+\.\d+\.\d+(?:\.\d+)*$")
+VERSION_SHAPE = re.compile(r"^paneltec-v\d+\.\d+\.\d+\.\d+(?:\.\d+[a-z]*)*$")
 
 
 def main() -> int:

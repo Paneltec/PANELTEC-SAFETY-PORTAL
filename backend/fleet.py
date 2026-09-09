@@ -21,6 +21,7 @@ import base64
 import io
 import logging
 import os
+import re
 import time
 from typing import Literal, Optional
 
@@ -217,15 +218,42 @@ async def get_register(
         # have been observed in the assets collection.
         filt["navixy_device_id"] = {"$nin": [None, ""]}
     if sub_type:
-        # `sub_type` and `asset_type` are used interchangeably in the
-        # current data model — match either.
-        filt["$or"] = [{"sub_type": sub_type}, {"asset_type": sub_type}]
+        # v58.13.132cg — Canonical-taxonomy matching. The
+        # /fleet/categories aggregation collapses raw asset_type
+        # values via `CANONICAL_ASSET_TYPE_MAP`, so `Vacuum Truck`
+        # is a bucket over `vacuum_truck`, `Vac Truck`, `vac_truck`
+        # (post-migration), etc. The pre-.132cg exact-match filter
+        # queried the canonical LABEL directly, missing every raw
+        # variant → Stephen's "Tipper 13 shows 2" bug. Fix: find
+        # every raw value that normalises to the requested label
+        # AND match case-insensitively (belt-and-braces for values
+        # not yet in the map).
+        from asset_taxonomy import CANONICAL_ASSET_TYPE_MAP
+        wanted_canon = sub_type.strip()
+        raw_variants: set[str] = {wanted_canon}
+        for raw, canon in CANONICAL_ASSET_TYPE_MAP.items():
+            if canon.lower() == wanted_canon.lower():
+                raw_variants.add(raw)
+        needle_rx = {"$regex": f"^{re.escape(wanted_canon)}$", "$options": "i"}
+        filt["$or"] = [
+            {"sub_type": {"$in": list(raw_variants)}},
+            {"asset_type": {"$in": list(raw_variants)}},
+            {"sub_type": needle_rx},
+            {"asset_type": needle_rx},
+        ]
     if q:
         needle = {"$regex": q, "$options": "i"}
+        # v58.13.132by — Broadened `q` field coverage so the register
+        # search bar also matches SmartFill card numbers, Simpro asset
+        # ids, driver name, asset code, scan token, and legacy alias
+        # fields (`registration`, `plate`).
         or_terms = [{f: needle} for f in
                     ("rego_serial", "name", "make", "model",
                      "manufacturer", "asset_type", "sub_type",
-                     "description")]
+                     "description", "smartfill_card_number",
+                     "smartfill_key", "simpro_asset_id",
+                     "driver_name", "asset_code", "scan_token",
+                     "registration", "plate")]
         # If sub_type filter already put an $or in place, merge with $and.
         if "$or" in filt:
             filt = {"$and": [{k: v for k, v in filt.items() if k != "$or"},
@@ -521,12 +549,14 @@ async def fleet_search(
 
     # v58.13.120b — Asset scan. Fields include `manufacturer` +
     # `asset_code` (the .120 audit gap).
+    # v58.13.132by — Also match `smartfill_card_number` + `smartfill_key`
+    # so searching a SmartFill card number surfaces the linked vehicle.
     if "asset" in wanted:
         await _scan(
             "assets",
             ["rego_serial", "name", "make", "model", "manufacturer",
              "asset_type", "sub_type", "asset_code", "scan_token",
-             "description"],
+             "description", "smartfill_card_number", "smartfill_key"],
             "asset",
             lambda r: (r.get("name") or r.get("rego_serial") or r["id"],
                         (r.get("description") or "")[:200] or None),
@@ -737,6 +767,16 @@ async def get_categories(
     # sourceCounts from list-page rows, which returned 0).
     from asset_taxonomy import normalize_asset_type  # noqa: WPS433
     pipe = [
+        # v58.13.132ch — Retired rows are already partitioned into the
+        # `retired` roll-up below via the per-row `if status ==
+        # "retired": … continue` guard. But rows with `deleted_at`
+        # set slipped through the `.132cg` merge (row 18 "Other"
+        # was retired AND non-deleted; the phantom-cleanup soft-
+        # deletes now write `deleted_at`). Filter the pipeline
+        # source to `deleted_at:null` so the sub_type chip totals
+        # match the `/fleet/register` list (which already applies
+        # `deleted_at:null`). Closes the "chip says 18, list says
+        # 17" mismatch flagged in the .132cg investigation.
         {"$match": {"org_id": org_id, "deleted_at": None}},
         {"$group": {
             "_id": {"kind": "$kind", "sub_type": "$asset_type",

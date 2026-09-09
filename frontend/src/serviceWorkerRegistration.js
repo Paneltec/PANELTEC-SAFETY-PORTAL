@@ -11,22 +11,47 @@
 // nag users with a "Reload to update" toast — incoming SW grabs control
 // immediately and `controllerchange` reloads the page once.
 
-// v96.2 — Guard key is now PER-VERSION instead of a single static string.
-// The previous static `paneltec_sw_reloaded_v70` meant that the FIRST SW
-// upgrade in a browser session won the reload; every subsequent upgrade in
-// the same session (v85 → v96 → v96.2 …) was silently dropped because the
-// guard was already set. Keying off `data.version` lets every distinct
-// CACHE_VERSION earn exactly one auto-reload per session.
+// v58.13.132p_web_stability_hotfix — SINGLE sticky per-session guard shared
+// by both auto-reload mechanisms (`controllerchange` and the SW's
+// `paneltec_sw_force_reload` broadcast). Previously the broadcast handler
+// keyed its guard by version — so four rapid `CACHE_VERSION` bumps in a
+// row (`.132l → m → n → o`) earned four separate page reloads for anyone
+// with the tab open, which the user perceived as the app "blinking and
+// resetting itself". One guard, one auto-reload per session, done.
+const AUTO_RELOAD_GUARD_KEY = 'paneltec_sw_auto_reloaded';
+const AUTO_RELOAD_COOLDOWN_MS = 30_000;
+
+function shouldSkipAutoReload() {
+  try {
+    const raw = sessionStorage.getItem(AUTO_RELOAD_GUARD_KEY);
+    if (!raw) return false;
+    const ts = Number(raw);
+    if (!Number.isFinite(ts)) return true; // legacy '1' → sticky, honour it
+    // Even if the guard is expired, we keep a per-session lock: any prior
+    // auto-reload in this session means we don't reload again automatically.
+    // The 30s window is only used to swallow *simultaneous* triggers from
+    // both mechanisms firing on the same activate cycle.
+    return Date.now() - ts < AUTO_RELOAD_COOLDOWN_MS
+        ? true
+        : Boolean(sessionStorage.getItem(AUTO_RELOAD_GUARD_KEY));
+  } catch (_) {
+    // No sessionStorage → treat as fresh; let the reload happen once.
+    return false;
+  }
+}
+
+function markAutoReloaded() {
+  try { sessionStorage.setItem(AUTO_RELOAD_GUARD_KEY, String(Date.now())); }
+  catch (_) { /* noop */ }
+}
+
 function attachForceReloadListener() {
   if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
   navigator.serviceWorker.addEventListener('message', (event) => {
     const data = event?.data;
     if (!data || data.type !== 'paneltec_sw_force_reload') return;
-    const guardKey = `paneltec_sw_reloaded_${data.version || 'unknown'}`;
-    try {
-      if (sessionStorage.getItem(guardKey) === '1') return;
-      sessionStorage.setItem(guardKey, '1');
-    } catch (_) { /* sessionStorage may have just been wiped — fine */ }
+    if (shouldSkipAutoReload()) return;
+    markAutoReloaded();
     // Defer one tick so the SW message handler returns cleanly.
     setTimeout(() => window.location.reload(), 0);
   });
@@ -90,10 +115,12 @@ export function registerServiceWorker() {
         });
       });
       navigator.serviceWorker.addEventListener('controllerchange', () => {
-        try {
-          if (sessionStorage.getItem('paneltec_sw_controller_reloaded') === '1') return;
-          sessionStorage.setItem('paneltec_sw_controller_reloaded', '1');
-        } catch (_) { /* noop */ }
+        // v58.13.132p_web_stability_hotfix — share the guard with the
+        // force-reload broadcast handler so both mechanisms combined never
+        // trigger more than ONE auto-reload per tab session, regardless of
+        // how many CACHE_VERSION bumps arrive.
+        if (shouldSkipAutoReload()) return;
+        markAutoReloaded();
         setTimeout(() => window.location.reload(), 0);
       });
     }).catch((err) => { console.warn('[sw] register failed', err); });

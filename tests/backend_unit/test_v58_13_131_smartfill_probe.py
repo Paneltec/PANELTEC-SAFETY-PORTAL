@@ -31,11 +31,18 @@ def test_module_imports_cleanly():
 
 
 def test_public_surface_present():
+    # v58.13.131m — Vehicle:List / Vehicle:FillHistory were confirmed
+    # non-existent (code 5) by both .131k and .131m probes, so their
+    # wrapper stubs were removed. `get_tank_levels` remains as a
+    # backwards-compat alias to `smartfill_fetch_tank_levels`.
     import backend.integrations_smartfill as m
     for name in (
-        "call", "get_tank_levels", "get_vehicle_list",
-        "get_vehicle_fill_history", "list_available_methods",
+        "call", "list_available_methods",
         "columnar_to_rows", "SmartFillConfigError", "SmartFillAPIError",
+        # v58.13.131m production surface.
+        "smartfill_fetch_tank_levels", "smartfill_fetch_transactions",
+        "smartfill_fetch_tank_history", "smartfill_fetch_drivers",
+        "SmartFillRateLimitError", "get_rate_limit_state",
     ):
         assert hasattr(m, name), f"missing public symbol {name}"
 
@@ -73,9 +80,14 @@ def test_http_400_body_is_parsed_before_raise():
     """SmartFill returns HTTP 400 for RPC-level errors WITH a valid
     JSON-RPC error envelope. The client must parse the body FIRST,
     then only raise transport errors for 5xx / non-JSON."""
-    # Locate the call() body.
+    # Locate the call() body — find the next `def ` OR `async def `
+    # after the call() header, allowing comment blocks between fns.
     idx = SRC.index("async def call(")
-    body = SRC[idx:SRC.index("\n\ndef ", idx)]
+    tail = SRC[idx:]
+    # Skip past the `async def call(` line, then find the next def.
+    next_def = re.search(r"\n(?:def |async def )", tail[1:])
+    end = (idx + 1 + next_def.start()) if next_def else len(SRC)
+    body = SRC[idx:end]
     # Ensure raise_for_status is NOT called unconditionally after post.
     # It should be gated on `>= 500` or wrapped in a `try: resp.json()`.
     assert "if resp.status_code >= 500:" in body, \
@@ -212,10 +224,12 @@ def test_probe_artifact_present_and_url_redacted():
 
 # ── Version pin ─────────────────────────────────────────────────
 def test_version_sync_at_least_131():
+    # v58.13.131m widens the suffix pattern to accept multi-char
+    # suffixes (`q1`, `q2`, `p_hotfix`) that landed after `.132p`.
     _CANONICAL = {
-        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
-        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
-        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z]?)'",
+        "frontend/src/lib/version.js": r"export const RUNNING_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
+        "frontend/public/service-worker.js": r"const CACHE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
+        "mobile/src/lib/version.ts": r"export const MOBILE_BUNDLE_VERSION\s*=\s*'paneltec-v160\.3\.9\.58\.13\.(\d+)([a-z0-9_]*)'",
     }
     for f, pat in _CANONICAL.items():
         m = re.search(pat, _read(f))

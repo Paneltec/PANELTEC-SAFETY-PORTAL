@@ -82,7 +82,11 @@ ALLOWED_CATEGORIES = {"incident", "inspection", "toolbox", "near_miss", "general
                       # previously used as template-category strings but were
                       # normalised down to `general` on write. `risk_assessment`
                       # is brand new — routes to the /app/risk-assessments tab.
-                      "hazard", "site_diary", "risk_assessment"}
+                      "hazard", "site_diary", "risk_assessment",
+                      # v58.13.132l — SWMS surfaces as a mobile Forms category
+                      # (records still live in db.swms; `list_templates` bridges
+                      # them into the FormTemplate shape with is_swms=True).
+                      "swms"}
 ALLOWED_FIELD_TYPES = {"text", "textarea", "date", "number", "select", "radio",
                        "photo", "signature", "gps", "vehicle_navixy", "asset_scan",
                        "worker_picker", "job_picker", "site_picker", "customer_picker",
@@ -436,7 +440,11 @@ async def list_templates(category: Optional[str] = None,
     if category and category != "all":
         q["category"] = _norm_category(category)
     rows = await db.form_templates.find(q, {"_id": 0}).sort("name", 1).to_list(2000)
-    if not rows:
+    # v58.13.132l — NOTE: the previous `if not rows: return []` short-circuit
+    # was retired. When `category=='swms'` the form_templates query
+    # legitimately returns zero rows and the SWMS bridge below is the only
+    # source of results — so we must fall through even on empty rows.
+    if not rows and category not in (None, "all", "swms"):
         return []
     # v160.0.13 — Per-role form allowlist. Workers/foremen only see the
     # templates enabled for their role in `org_settings.role_form_allowlist`.
@@ -500,12 +508,94 @@ async def list_templates(category: Optional[str] = None,
         )
         reasons_by_id = {r["template_id"]: r["match_reasons"] for r in resolved}
         rows = [r for r in rows if r["id"] in reasons_by_id]
-        return [
+        base = [
             {**_serialise(r), "submission_count": counts.get(r["id"], 0),
              "match_reasons": reasons_by_id.get(r["id"], [])}
             for r in rows
         ]
-    return [{**_serialise(r), "submission_count": counts.get(r["id"], 0)} for r in rows]
+        # v58.13.132l — Bridge worker-scoped SWMS into the Forms list.
+        swms_rows = await _list_swms_as_form_templates(
+            org_id=user["org_id"],
+            category=category,
+            worker_id=(worker or {}).get("id"),
+            admin_bypass=False,
+        )
+        return base + swms_rows
+    # v58.13.132l — SWMS bridge for admin / show_all / no-worker paths.
+    #   admin/manager/hseq_lead → all org SWMS (admin_bypass=True).
+    #   preview session (type='preview' from mint_preview_user) → also
+    #     admin_bypass so previewers see representative SWMS content
+    #     without needing a matching worker row keyed by email.
+    #   worker without for_worker → resolve their worker record and scope by
+    #     applies_to.worker_ids so SWMS shows up in the mobile Forms tab
+    #     alongside standard templates (no extra query param needed).
+    swms_worker_id: Optional[str] = None
+    is_preview = bool(user.get("preview")) or user.get("type") == "preview"
+    swms_admin_bypass = (
+        caller_role in ("admin", "owner", "manager", "hseq_lead")
+        or show_all
+        or is_preview
+    )
+    if not swms_admin_bypass and user.get("email"):
+        _sw = await db.workers.find_one(
+            {"org_id": user["org_id"], "email": user["email"], "deleted_at": None},
+            {"_id": 0, "id": 1},
+        )
+        swms_worker_id = (_sw or {}).get("id")
+    swms_admin = await _list_swms_as_form_templates(
+        org_id=user["org_id"],
+        category=category,
+        worker_id=swms_worker_id,
+        admin_bypass=swms_admin_bypass,
+    )
+    return [{**_serialise(r), "submission_count": counts.get(r["id"], 0)} for r in rows] + swms_admin
+
+
+# ─────────────── v58.13.132l — SWMS → FormTemplate bridge ───────────────
+
+async def _list_swms_as_form_templates(
+    *, org_id: str, category: Optional[str], worker_id: Optional[str], admin_bypass: bool,
+) -> list[dict]:
+    """Return worker-scoped SWMS docs projected into the FormTemplate shape.
+
+    Contract:
+      - Category filter: emit only when `category` is unset, 'all', or 'swms'.
+      - Worker scope: if `worker_id` set → filter by
+        `applies_to.worker_ids includes worker_id`. If `admin_bypass` → return all
+        non-superseded, non-deleted SWMS. Otherwise → return `[]` (a non-admin
+        caller without a resolvable worker sees nothing).
+      - Never mutates. Reads-only from `db.swms`.
+      - Emits `is_swms=True` so the mobile Forms tab routes taps to the existing
+        SWMS viewer at `/profile/swms/[id]` instead of the form runner.
+    """
+    if category and category not in ("all", "swms"):
+        return []
+    if not admin_bypass and not worker_id:
+        return []
+    q: dict = {"org_id": org_id, "deleted_at": None,
+               "status": {"$ne": "superseded"}}
+    out: list[dict] = []
+    async for s in db.swms.find(q, {"_id": 0}):
+        if not admin_bypass:
+            worker_ids = ((s.get("applies_to") or {}).get("worker_ids") or [])
+            if worker_id not in worker_ids:
+                continue
+        out.append({
+            "id": s.get("id"),
+            "name": (s.get("title") or "Untitled SWMS"),
+            "category": "swms",
+            "description": (s.get("job_description") or s.get("scope") or ""),
+            "fields": [],
+            "required_certifications": [],
+            "assigned_positions": [],
+            "submission_count": 0,
+            "is_swms": True,
+            "swms_status": s.get("status"),
+            "swms_version": s.get("version"),
+            "swms_code": s.get("code"),
+        })
+    out.sort(key=lambda r: (r["name"] or "").lower())
+    return out
 
 
 @router.get("/templates/{template_id}")

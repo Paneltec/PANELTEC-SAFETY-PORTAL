@@ -15,6 +15,8 @@ import PlantMaintenanceHistory from './PlantMaintenanceHistory';
 import LiveCountersPanel from './LiveCountersPanel';
 // v58.13.131c — SmartFill fuel history tab.
 import AssetFuelTab from './AssetFuelTab';
+// v58.13.132bi — Enriched Fuel & SmartFill panel (Details tab).
+import FuelSmartFillPanel from './FuelSmartFillPanel';
 import { Link, useNavigate } from 'react-router-dom';
 import { getUser } from '../lib/auth';
 import { useCan, Can } from '../lib/permissions';
@@ -127,9 +129,14 @@ const emptyForm = {
   make: '', model: '', year: '', owner: '', notes: '', status: 'active',
   // v58.13.131e — SmartFill CSV-importer match keys + tank capacity.
   fuel_tank_capacity_l: '', smartfill_key_code: '', smartfill_card_number: '',
+  // v58.13.132bi — Fuel & SmartFill enrichment fields.
+  fuel_type: '', current_odometer_km: '', current_engine_hours: '',
   // v58.13.122c — Date-anchor service schedule (trailer/tool/container).
   service_interval_days: '', service_last_done_date: '',
 };
+
+// v58.13.132bi — Canonical fuel-type options.
+const FUEL_TYPE_OPTIONS = ['Diesel', 'Petrol', 'AdBlue', 'Unknown'];
 
 // v58.13.122c — Kinds that use a date-anchor schedule instead of km/hours.
 const DATE_ANCHOR_KINDS = new Set(['trailer', 'tool', 'container']);
@@ -171,6 +178,12 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
           ? null : Number(form.fuel_tank_capacity_l),
         smartfill_key_code: (form.smartfill_key_code || '').trim().toUpperCase() || null,
         smartfill_card_number: (form.smartfill_card_number || '').trim() || null,
+        // v58.13.132bi — Fuel & SmartFill enrichment fields.
+        fuel_type: (form.fuel_type || '').trim() || null,
+        current_odometer_km: form.current_odometer_km === '' || form.current_odometer_km == null
+          ? null : Number(form.current_odometer_km),
+        current_engine_hours: form.current_engine_hours === '' || form.current_engine_hours == null
+          ? null : Number(form.current_engine_hours),
         // v58.13.122c — Date-anchor service schedule fields.
         service_interval_days: form.service_interval_days === '' || form.service_interval_days == null
           ? null : Number(form.service_interval_days),
@@ -411,53 +424,22 @@ export default function AssetDrawer({ asset, onClose, onSaved, initialTab }) {
                   ))}
                 </div>
               </div>
-              {/* v58.13.131e — Fuel & SmartFill section. Provides
-                  admin UI for the three fuel-CSV-importer fields
-                  (fuel_tank_capacity_l unlocks R2; smartfill_key_code
-                  + smartfill_card_number are primary/secondary match
-                  keys). Section renders on every kind — SmartFill
-                  cards can be paired to Plant/Trailer as well as
-                  Vehicles. */}
-              <section className="rounded-xl border border-slate-200 p-4 bg-slate-50/60" data-testid="asset-fuel-section">
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="text-sm font-bold text-slate-900">Fuel &amp; SmartFill</h4>
-                  {(form.smartfill_key_code || form.smartfill_card_number || form.fuel_tank_capacity_l !== '' && form.fuel_tank_capacity_l != null)
-                    ? <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200" data-testid="asset-fuel-pill-matched">CSV-matchable</span>
-                    : <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 text-slate-500 border border-slate-300" data-testid="asset-fuel-pill-unmatched">Not matched</span>}
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">Fuel tank capacity</label>
-                    <div className="flex items-center gap-2">
-                      <input type="number" step="0.1" min="0"
-                        value={form.fuel_tank_capacity_l ?? ''}
-                        onChange={(e) => change('fuel_tank_capacity_l', e.target.value)}
-                        className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                        data-testid="asset-fuel-tank-capacity" placeholder="e.g. 100" />
-                      <span className="text-xs font-semibold text-slate-500">L</span>
-                    </div>
-                    <p className="mt-1 text-[11px] text-slate-500 italic">Used to flag anomalous fills &gt; 110% of capacity.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">SmartFill Key / Code</label>
-                    <input value={form.smartfill_key_code || ''}
-                      onChange={(e) => change('smartfill_key_code', e.target.value)}
-                      onBlur={(e) => change('smartfill_key_code', (e.target.value || '').trim().toUpperCase())}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm uppercase"
-                      data-testid="asset-smartfill-key-code" placeholder="e.g. 100000000536B" />
-                    <p className="mt-1 text-[11px] text-slate-500 italic">SmartFill fob / Key/Code. <b>Primary match</b> for CSV imports.</p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">SmartFill Card Number</label>
-                    <input value={form.smartfill_card_number || ''}
-                      onChange={(e) => change('smartfill_card_number', e.target.value)}
-                      onBlur={(e) => change('smartfill_card_number', (e.target.value || '').trim())}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-                      data-testid="asset-smartfill-card-number" placeholder="e.g. 21355" />
-                    <p className="mt-1 text-[11px] text-slate-500 italic">SmartFill card number. <b>Secondary match</b>.</p>
-                  </div>
-                </div>
-              </section>
+              {/* v58.13.132bi — Fuel & SmartFill panel (enriched).
+                  Three admin-editable fields: fuel_type dropdown,
+                  current_odometer_km and current_engine_hours snapshot
+                  inputs. Read-only computed metrics (last fill, YTD,
+                  rolling 30-day, consumption L/100km or L/hour, top
+                  driver, anomaly count, last SmartFill sync, granular
+                  match-confidence pill) load from
+                  `/fleet/assets/{id}/fuel-summary`. Anomaly count is
+                  clickable → jumps to the Fuel tab (which renders all
+                  fills with anomaly flags inline). See `.132bi` memo. */}
+              <FuelSmartFillPanel
+                assetId={current?.id}
+                form={form}
+                change={change}
+                onOpenFuelTab={() => setTab('fuel')}
+              />
               {/* v58.13.122c — Date-anchor service schedule.
                   Trailers, tools and containers have no km/hours
                   telemetry; they run on a calendar-day interval.

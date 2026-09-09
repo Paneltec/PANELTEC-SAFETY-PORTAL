@@ -32,6 +32,7 @@ Endpoints:
 """
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -358,12 +359,18 @@ async def import_employees_selective(
             }
             # v160.3.9.33 — Phase 4d: auto-create role from position if
             # this Simpro-linked user still has no role_id.
+            # v58.13.132s — same flag gate as the new-user branch below.
             if position and not existing.get("role_id"):
-                res = await create_role_from_position(position=position, actor=user)
+                res = await create_role_from_position(
+                    position=position, actor=user,
+                    email=email, first_name=first,
+                    company_id=str(d.get("CompanyID") or "") or None,
+                    is_contractor=bool(d.get("IsContractor")),
+                )
                 set_fields["role_id"] = res["role_id"]
                 set_fields["role"] = res["role_id"]
                 set_fields["role_assigned_at"] = ts
-                if res["created"]:
+                if res.get("created"):
                     auto_created_role_ids.add(res["role_id"])
             if email and existing.get("email") != email:
                 set_fields["email"] = email
@@ -390,11 +397,21 @@ async def import_employees_selective(
         # v160.3.9.33 — Phase 4d: auto-create the position role on
         # brand-new imports so the user lands with a role_id set
         # instead of role_id=None + pending_activation.
+        # v58.13.132s — `create_role_from_position` gated behind
+        # `SIMPRO_POSITION_ROLES_DISABLED` (default true). When disabled
+        # it returns the 4-target bucket for this user context instead
+        # of spawning a `custom_<slug>` role. Response carries
+        # `disabled: True` so we can audit the fallback.
         new_role_id: Optional[str] = None
         if position:
-            res = await create_role_from_position(position=position, actor=user)
+            res = await create_role_from_position(
+                position=position, actor=user,
+                email=email, first_name=first,
+                company_id=str(d.get("CompanyID") or "") or None,
+                is_contractor=bool(d.get("IsContractor")),
+            )
             new_role_id = res["role_id"]
-            if res["created"]:
+            if res.get("created"):
                 auto_created_role_ids.add(new_role_id)
         # v160.3.9.36 (Phase 5) — Dual-write `role` + `role_id`. Legacy
         # `role` string is now derived from the mapper in `auth.py` so
@@ -479,6 +496,7 @@ async def sync_linked_users(
     changed = 0
     role_updates = 0
     lock_drifts = 0
+    manual_skips = 0  # v58.13.132y — count of rows where role write was skipped due to role_manually_set
     auto_created_role_ids: set = set()
     async for u in db.users.find(
         {"org_id": org_id, "simpro_employee_id": {"$exists": True, "$ne": None}},
@@ -502,8 +520,37 @@ async def sync_linked_users(
             changes["is_archived"] = arch
             changes["activation_status"] = "suspended" if arch else "active"
         # v160.3.9.33 — Phase 4d Option C: role sync branch.
+        # v58.13.132s — When `SIMPRO_POSITION_ROLES_DISABLED=true`
+        # (default), position becomes a display-only attribute. Role
+        # is sticky once set — never overwritten by Simpro delta sync.
+        # Admin manages role transitions manually via the drawer.
+        # v58.13.132y — Additional per-user guard `role_manually_set`.
+        # Even if a future admin flips the global flag off, users with
+        # `role_manually_set=True` NEVER have their role rewritten by
+        # Simpro sync. Set by `PATCH /api/users/{id}` whenever an admin
+        # manually changes a role via the drawer.
         role_change = None
-        if position_changed and new_pos:
+        _positions_disabled = (
+            os.environ.get("SIMPRO_POSITION_ROLES_DISABLED") or "true"
+        ).lower() == "true"
+        _user_manual = bool(u.get("role_manually_set"))
+        if _user_manual and position_changed and new_pos:
+            # Log the skip so admins can see the sticky behaviour in the
+            # audit trail. Position + non-role fields still update below.
+            manual_skips += 1
+            await db.user_audit.insert_one({
+                "id": new_id(),
+                "user_id": u["id"],
+                "action": "role_write_skipped_manually_set",
+                "before": {"simpro_position": old_pos,
+                           "role_id": u.get("role_id")},
+                "after":  {"simpro_position": new_pos,
+                           "role_id": u.get("role_id")},
+                "actor_user_id": user["id"],
+                "actor_email": user.get("email"),
+                "at": ts,
+            })
+        if position_changed and new_pos and not _positions_disabled and not _user_manual:
             desired_role_id = "custom_" + _slugify(new_pos)
             current_role_id = u.get("role_id")
             role_locked = bool(u.get("role_locked"))
@@ -577,11 +624,13 @@ async def sync_linked_users(
             "changed": changed,
             "role_updates": role_updates,
             "lock_drifts": lock_drifts,
+            "manual_skips": manual_skips,
         },
     })
     return {"scanned": scanned, "changed": changed,
             "role_updates": role_updates,
             "lock_drifts": lock_drifts,
+            "manual_skips": manual_skips,
             "auto_created_role_ids": sorted(auto_created_role_ids),
             "diffs": diffs}
 

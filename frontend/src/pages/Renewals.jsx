@@ -33,9 +33,8 @@ import {
   Save20Regular,
 } from '@fluentui/react-icons';
 
-// v160.3.9.29-2c — Legacy sets retained; authoritative gates via useCan below.
-const WRITE_ROLES = new Set(['admin', 'hseq_lead', 'manager']);
-const IMPORT_ROLES = new Set(['admin', 'manager']);
+// v58.13.132bd — Legacy WRITE_ROLES / IMPORT_ROLES sets removed.
+// Authoritative gate is useCan('renewals', 'edit') below.
 
 // v160.3.6j — Same relative-days chip pattern used across the app (v6f/v6g).
 function daysUntil(iso) {
@@ -72,7 +71,7 @@ export default function Renewals() {
   const can = useCan();
   const canEdit = can('renewals', 'edit');
   const canImport = can('renewals', 'edit');
-  void user; void WRITE_ROLES; void IMPORT_ROLES;
+  void user;
   const [items, setItems] = useState([]);
   const [contractors, setContractors] = useState([]);
   const [docTypes, setDocTypes] = useState([]);

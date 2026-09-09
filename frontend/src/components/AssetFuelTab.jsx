@@ -11,6 +11,7 @@ import { Fuel, Loader2, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api, { apiError } from '../lib/api';
 import { toast } from 'sonner';
+import FuelTransactionDetailModal from './FuelTransactionDetailModal';
 
 const SOURCE_BADGE = {
   csv:              { label: 'csv',   tone: 'bg-slate-100 text-slate-700 border-slate-200' },
@@ -31,6 +32,9 @@ const RULE_LABEL = {
 export default function AssetFuelTab({ asset }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  // v58.13.132ax — click-to-detail modal state. Rows carry the full
+  // doc so no fetch is needed.
+  const [detailTxn, setDetailTxn] = useState(null);
 
   useEffect(() => {
     if (!asset?.id) return;
@@ -87,6 +91,23 @@ export default function AssetFuelTab({ asset }) {
 
       {!loading && (
         <>
+          {/* v58.13.132t — Provisional-price banner. Rendered when
+              any transaction in the returned list carries the .132t
+              $3.00 back-fill flag. */}
+          {(data?.transactions || []).some(
+            (t) => t.price_source === 'provisional_static_3.00'
+          ) && (
+            <div
+              className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-3 text-xs text-amber-900"
+              data-testid="asset-fuel-provisional-banner"
+            >
+              <div className="font-bold mb-0.5">
+                ⚠ Fuel costs are provisional at $3.00/L pending supplier confirmation.
+              </div>
+              Re-upload the SmartFill CSV with the <strong>Total Price</strong> column enabled
+              to replace these placeholders — the upsert merges in place and clears the flag.
+            </div>
+          )}
           {/* ── Rolling summary + capacity ─────────────── */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2" data-testid="asset-fuel-summary">
             <Stat
@@ -179,8 +200,10 @@ export default function AssetFuelTab({ asset }) {
                       <th className="px-3 py-1.5 text-left">Driver</th>
                       <th className="px-3 py-1.5 text-right">Litres</th>
                       <th className="px-3 py-1.5 text-right">Cost</th>
+                      <th className="px-3 py-1.5 text-right" title="Computed as total ÷ litres per fill · v58.13.132t">$/L</th>
                       <th className="px-3 py-1.5 text-right">Odo</th>
                       <th className="px-3 py-1.5 text-right" title="Litres per 100 km · v58.13.131i">L/100km</th>
+                      <th className="px-3 py-1.5 text-left" title="SmartFill portal transaction id (v58.13.132au)">Txn ID</th>
                       <th className="px-3 py-1.5 text-left">Flags</th>
                     </tr>
                   </thead>
@@ -189,7 +212,9 @@ export default function AssetFuelTab({ asset }) {
                       <tr
                         key={t.id}
                         data-testid={`asset-fuel-txn-${t.id}`}
-                        className={t.deleted_at ? 'opacity-50' : ''}
+                        onClick={() => setDetailTxn(t)}
+                        className={`cursor-pointer hover:bg-amber-50 transition-colors ${t.deleted_at ? 'opacity-50' : ''}`}
+                        title="Click to view full transaction detail"
                       >
                         <td className="px-3 py-1.5 font-mono text-[11px] text-slate-700 whitespace-nowrap">
                           {t.date_iso} · {t.time_local?.slice(0, 5)}
@@ -202,6 +227,27 @@ export default function AssetFuelTab({ asset }) {
                         </td>
                         <td className="px-3 py-1.5 text-right tabular-nums">
                           {t.total_price != null ? `$${Number(t.total_price).toFixed(2)}` : '—'}
+                        </td>
+                        {/* v58.13.132t — Per-row $/L. Provisional rows
+                            (price_source='provisional_static_3.00')
+                            render an asterisk in amber italic; real
+                            rows render plain slate. Null → em-dash. */}
+                        <td className="px-3 py-1.5 text-right tabular-nums">
+                          {t.computed_price_per_litre != null
+                            ? (
+                              t.price_source === 'provisional_static_3.00' ? (
+                                <span
+                                  className="italic text-amber-700"
+                                  title="Provisional — awaiting real price"
+                                  data-testid={`asset-fuel-dpl-provisional-${t.id}`}
+                                >${Number(t.computed_price_per_litre).toFixed(3)}*</span>
+                              ) : (
+                                <span data-testid={`asset-fuel-dpl-${t.id}`}>
+                                  ${Number(t.computed_price_per_litre).toFixed(3)}
+                                </span>
+                              )
+                            )
+                            : '—'}
                         </td>
                         <td className="px-3 py-1.5 text-right tabular-nums text-xs text-slate-600">
                           <span className="inline-flex items-center gap-1">
@@ -230,6 +276,13 @@ export default function AssetFuelTab({ asset }) {
                           {t.litres_per_100km != null
                             ? Number(t.litres_per_100km).toFixed(2)
                             : <span className="text-slate-300">—</span>}
+                        </td>
+                        {/* v58.13.132au — SmartFill transaction id. */}
+                        <td
+                          className="px-3 py-1.5 font-mono text-[11px] text-slate-500"
+                          data-testid={`asset-fuel-txn-id-${t.id}`}
+                        >
+                          {t.transaction_id || <span className="text-slate-300">—</span>}
                         </td>
                         <td className="px-3 py-1.5">
                           {(t.anomaly_flags || []).length === 0 ? (
@@ -261,6 +314,15 @@ export default function AssetFuelTab({ asset }) {
             )}
           </div>
         </>
+      )}
+
+      {/* v58.13.132ax — click-to-detail modal. Rows carry the full
+          fuel doc so no fetch is needed here. */}
+      {detailTxn && (
+        <FuelTransactionDetailModal
+          txn={detailTxn}
+          onClose={() => setDetailTxn(null)}
+        />
       )}
     </div>
   );

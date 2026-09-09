@@ -306,7 +306,10 @@ export function bustRolesCache() {
 // these arrays. Prefer `useSystemRoles()` for anything new.
 const ROLES = LEGACY_ROLES.map((r) => r.role_id);
 const ROLE_LABELS = Object.fromEntries(LEGACY_ROLES.map((r) => [r.role_id, r.name]));
-const STATUSES = ['active', 'invited', 'disabled'];
+// v58.13.132r-4 — `pending_invite` added so Simpro-hydrated users
+// (activation_status='pending_activation') aren't hidden by the default
+// status filter. See sync_workers_to_users_v58_13_132r_hotfix.py.
+const STATUSES = ['active', 'pending_invite', 'invited', 'disabled'];
 
 // v160.3.9.33 — Phase 4d — position → role slug.
 // Each unique Simpro position IS a Paneltec role (`custom_<slug>`),
@@ -362,7 +365,7 @@ export function roleColour(role_id) {
 }
 
 
-const STATUS_LABELS = { active: 'Active', invited: 'Invited', disabled: 'Disabled' };
+const STATUS_LABELS = { active: 'Active', pending_invite: 'Pending invite', invited: 'Invited', disabled: 'Disabled' };
 const ACTIONS = ['open', 'view', 'edit', 'email'];
 const RESOURCES = Object.keys(RESOURCE_LABELS);
 
@@ -386,6 +389,7 @@ function StatusPill({ user }) {
   let key = status, label = status;
   if (user?.is_locked) { key = 'locked'; label = 'Locked'; }
   else if (user?.invite_pending && status !== 'disabled') { key = 'invited'; label = 'Invite pending'; }
+  else if (status === 'pending_invite') { key = 'invited'; label = 'Pending invite'; }
   else if (status === 'invited') { label = 'Invited'; }
   else if (status === 'disabled') { label = 'Disabled'; }
   else { label = 'Active'; }
@@ -503,7 +507,7 @@ export default function UsersManagement() {
   // the Save button (chip row still works with in-memory defaults).
   const DEFAULT_VIEWS = React.useMemo(() => ([
     { id: 'built-in-active',   name: 'All active',        builtin: true, config: { search: '', filters: { role: '', status: 'active' } } },
-    { id: 'built-in-pending',  name: 'Pending inductees', builtin: true, config: { search: '', filters: { role: '', status: 'pending_activation' } } },
+    { id: 'built-in-pending',  name: 'Pending inductees', builtin: true, config: { search: '', filters: { role: '', status: 'pending_invite' } } },
     { id: 'built-in-archived', name: 'Archived only',     builtin: true, config: { search: '', filters: { role: '', status: 'archived' } } },
   ]), []);
   const [savedViews, setSavedViews] = useState([]);
@@ -1000,7 +1004,7 @@ export default function UsersManagement() {
             </div>
             <button
               type="button"
-              onClick={() => setFilters((f) => ({ ...f, status: 'invited' }))}
+              onClick={() => setFilters((f) => ({ ...f, status: 'pending_invite' }))}
               className="text-xs font-semibold text-blue-700 hover:underline whitespace-nowrap"
               data-testid="show-pending-only"
             >
@@ -1042,15 +1046,38 @@ export default function UsersManagement() {
       <div className="flex gap-2 mb-4 items-center">
         <select value={filters.role} onChange={(e) => setFilters({ ...filters, role: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5" data-testid="users-role-filter">
           <option value="">All roles</option>
-          {systemRoles.map((r) => (
-            <option key={r.role_id} value={r.role_id}>
-              {r.name}{!r.is_active ? ' · not yet available' : ''}
-            </option>
-          ))}
+          {/* v58.13.132bg — Filter dropdown restricted to the 4 core
+              seed roles (`is_system=true`). Legacy fallback rows
+              (worker / supervisor / auditor / hseq_lead) baked into
+              LEGACY_ROLES and any admin-created / simpro-position-auto
+              custom roles are excluded — the `.132bd` sweep guarantees
+              zero active users hold non-core role_ids. Order is
+              deterministic: Admin → org roles alphabetical → External
+              Contractor last. */}
+          {systemRoles
+            .filter((r) => r.is_system === true && r.is_active !== false)
+            .sort((a, b) => {
+              const rank = (id) => id === 'admin' ? 0 : id === 'external_contractor' ? 2 : 1;
+              const ra = rank(a.role_id); const rb = rank(b.role_id);
+              if (ra !== rb) return ra - rb;
+              return (a.name || a.role_id).localeCompare(b.name || b.role_id);
+            })
+            .map((r) => (
+              <option key={r.role_id} value={r.role_id} data-testid={`users-role-filter-opt-${r.role_id}`}>
+                {r.name}
+              </option>
+            ))}
         </select>
         <select value={filters.status} onChange={(e) => setFilters({ ...filters, status: e.target.value })} className="text-sm border border-slate-300 rounded-lg px-2 py-1.5" data-testid="users-status-filter">
-          <option value="">All statuses</option>{['active', 'invited', 'disabled'].map((s) => <option key={s} value={s}>{s}</option>)}
+          <option value="">All statuses</option>{STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABELS[s] || s}</option>)}
         </select>
+        {filters.status === 'active' && segments.pending > 0 && (
+          <span className="text-[11px] text-slate-500" data-testid="users-pending-hint">
+            · {segments.pending} pending hidden ·{' '}
+            <button onClick={() => setFilters({ ...filters, status: 'pending_invite' })}
+              className="text-blue-600 hover:underline" data-testid="users-pending-hint-show">show</button>
+          </span>
+        )}
         {filters.status === 'active' && disabledCount > 0 && (
           <span className="text-[11px] text-slate-500" data-testid="users-disabled-hint">
             · {disabledCount} disabled hidden ·{' '}

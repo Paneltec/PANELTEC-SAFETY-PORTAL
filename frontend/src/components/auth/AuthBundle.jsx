@@ -206,12 +206,32 @@ export function ChannelPickerDialog({ open, onClose, title, description, confirm
 
 
 // ───── PIN reveal modal (used inside AccessSection) ─────────────────
-export function PinRevealModal({ pin, open, onClose }) {
-  const copy = () => {
-    // v154.1 — iframe-safe wrapper so a locked-down permissions
-    // policy falls through to execCommand / manual-select modal
-    // instead of throwing an uncaught error at the toast site.
+// v58.13.132bb — Extended: shows the mobile onboarding install link
+// alongside the PIN and provides Copy PIN / Copy invite link /
+// Email me buttons. `comms_safe_mode` blocks the auto-email path,
+// so admins now have a manual delivery path built in.
+export function PinRevealModal({ pin, inviteUrl, userEmail, open, onClose }) {
+  const copyPin = () => {
     copyToClipboard(pin || '', { successMsg: 'PIN copied to clipboard' });
+  };
+  const copyLink = () => {
+    copyToClipboard(inviteUrl || '', { successMsg: 'Invite link copied to clipboard' });
+  };
+  const emailMe = () => {
+    // Opens the admin's default mailer with a pre-filled draft they
+    // can forward manually — never sends via our backend, so it
+    // slides past comms_safe_mode without touching M365.
+    const subject = encodeURIComponent('Your Paneltec Civil access');
+    const body = encodeURIComponent(
+      `Hi,\n\n`
+      + `Your one-time PIN for Paneltec Civil Field is: ${pin}\n`
+      + (inviteUrl
+        ? `\nOpen this link on your phone to install / sign in:\n${inviteUrl}\n`
+        : '')
+      + `\nThe PIN is valid for 24 hours.\n\nPaneltec Civil`
+    );
+    const to = userEmail ? encodeURIComponent(userEmail) : '';
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
   };
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>
@@ -230,14 +250,89 @@ export function PinRevealModal({ pin, open, onClose }) {
             {pin}
           </div>
         </div>
-        <DialogFooter className="sm:justify-center gap-2">
-          <button type="button" onClick={copy} data-testid="pin-copy"
+        {inviteUrl && (
+          <div className="mb-3 text-left" data-testid="pin-invite-url-block">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+              Mobile install link
+            </div>
+            <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 font-mono text-[11px] text-slate-700 break-all select-all"
+                 data-testid="pin-invite-url">
+              {inviteUrl}
+            </div>
+          </div>
+        )}
+        <DialogFooter className="sm:justify-center gap-2 flex-wrap">
+          <button type="button" onClick={copyPin} data-testid="pin-copy"
             className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
             Copy PIN
           </button>
+          {inviteUrl && (
+            <button type="button" onClick={copyLink} data-testid="pin-copy-link"
+              className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
+              Copy invite link
+            </button>
+          )}
+          <button type="button" onClick={emailMe} data-testid="pin-email-me"
+            className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
+            Email me this info
+          </button>
           <button type="button" onClick={onClose} data-testid="pin-confirm"
             className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold">
-            I&rsquo;ve recorded this PIN
+            I&rsquo;ve recorded this
+          </button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// v58.13.132bb — Reset link reveal modal. Same shape as PinRevealModal
+// but shows just the reset URL — no PIN. Used after `send_reset`
+// succeeds so the admin can copy or email the link manually while
+// comms_safe_mode is on.
+export function ResetLinkRevealModal({ link, userEmail, open, onClose }) {
+  const copyLink = () => {
+    copyToClipboard(link || '', { successMsg: 'Reset link copied to clipboard' });
+  };
+  const emailMe = () => {
+    const subject = encodeURIComponent('Reset your Paneltec Civil password');
+    const body = encodeURIComponent(
+      `Hi,\n\nOpen this link to reset your Paneltec Civil password (valid 24 h):\n\n${link}\n\nPaneltec Civil`
+    );
+    const to = userEmail ? encodeURIComponent(userEmail) : '';
+    window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+  };
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose?.()}>
+      <DialogContent className="max-w-md" data-testid="reset-link-modal">
+        <DialogHeader>
+          <DialogTitle className="font-display">Reset link ready</DialogTitle>
+          <DialogDescription>
+            Comms Safe Mode is on — the automatic email may not have been delivered. Copy this
+            link and hand it to the worker, or open your mailer to forward it. Valid for 24 hours.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="my-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1">
+            Password reset URL
+          </div>
+          <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 font-mono text-[11px] text-slate-700 break-all select-all"
+               data-testid="reset-link-value">
+            {link}
+          </div>
+        </div>
+        <DialogFooter className="sm:justify-center gap-2 flex-wrap">
+          <button type="button" onClick={copyLink} data-testid="reset-link-copy"
+            className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
+            Copy reset link
+          </button>
+          <button type="button" onClick={emailMe} data-testid="reset-link-email-me"
+            className="px-3 py-2 rounded-lg text-sm font-medium text-slate-700 border border-slate-300 hover:bg-slate-50">
+            Email me this info
+          </button>
+          <button type="button" onClick={onClose} data-testid="reset-link-close"
+            className="px-4 py-2 rounded-lg bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold">
+            Done
           </button>
         </DialogFooter>
       </DialogContent>

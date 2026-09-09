@@ -218,6 +218,46 @@ async def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token",
                             headers={"X-Auth-Reason": "jwt-invalid"})
 
+    # v58.13.132j — Preview-mode JWT support for the Permission Presets
+    # admin's Live Preview iframe. Preview tokens are minted by
+    # `/api/mobile/preview-user` and:
+    #   • carry `type: "preview"`, `preview: true`, short 15-min expiry
+    #   • return a synthetic user (no DB row exists for these ids)
+    #   • only tolerate SAFE http methods — writes are rejected as 403
+    if payload.get("type") == "preview" and payload.get("preview"):
+        if request.method.upper() not in ("GET", "HEAD", "OPTIONS"):
+            raise HTTPException(
+                status_code=403,
+                detail="preview_mode_read_only",
+                headers={"X-Auth-Reason": "preview-readonly"},
+            )
+        # v58.13.132o — when the preview token carries `preview_worker_id`,
+        # scope the synthetic user by the real worker's email so downstream
+        # `/mobile/home` / `/mobile/daily-jobs/today` / `/forms/templates`
+        # resolve that worker's actual data. Write-block still enforced
+        # above.
+        worker_email = payload.get("email")
+        preview_worker_id = payload.get("preview_worker_id")
+        preview_scope = payload.get("preview_scope")
+        preview_modules = payload.get("preview_modules") or []
+        synthetic = {
+            "id": payload["sub"],
+            "email": worker_email or f"{payload['sub']}@preview.paneltec.local",
+            "name": f"Preview · {payload.get('role_id') or 'role'}",
+            "role": payload.get("role") or "worker",
+            "role_id": payload.get("role_id"),
+            "org_id": payload["org_id"],
+            "workspace_ids": [],
+            "company_id": None,
+            "activation_status": "active",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "preview": True,
+            "preview_worker_id": preview_worker_id,
+            "preview_scope": preview_scope,
+            "preview_modules": preview_modules,
+        }
+        return synthetic
+
     user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
     if not user:
         raise HTTPException(status_code=401, detail="User not found",

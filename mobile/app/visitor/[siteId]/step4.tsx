@@ -57,10 +57,9 @@ export default function VisitorStep4() {
         visiting_person: hostName || undefined,
         induction_acknowledged: true,
       });
-      qc.invalidateQueries({ queryKey: ['mobile-sites'] });
       qc.invalidateQueries({ queryKey: ['mobile-home'] });
       Alert.alert('Visitor signed in', `${name} has been signed in successfully`, [
-        { text: 'OK', onPress: () => router.replace('/(tabs)/sites') },
+        { text: 'OK', onPress: () => router.replace('/(tabs)/home') },
       ]);
     } catch (err: any) {
       Alert.alert('Error', err?.response?.data?.detail || 'Failed to sign in visitor');

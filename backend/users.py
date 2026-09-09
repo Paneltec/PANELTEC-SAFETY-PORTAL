@@ -420,6 +420,12 @@ async def update_user(user_id: str, body: UpdateUserIn, actor: dict = Depends(re
         # Mirror role_id → legacy role string (Phase 5 will drop this).
         patch.setdefault("role", patch["role_id"])
         patch.setdefault("role_assigned_at", now_iso())
+        # v58.13.132y — Any admin PATCH that changes `role_id` marks
+        # the user as manually-set. Simpro delta sync will then skip
+        # rewriting this user's role_id on future runs. Reset only
+        # via an explicit `reset_role_manually_set: true` in a
+        # subsequent PATCH (future admin UI).
+        patch["role_manually_set"] = True
     patch["updated_at"] = now_iso()
     # Status / email / role changes revoke any existing JWTs for that user.
     # Only bump token_version if the value ACTUALLY changes (not on a no-op resave).
@@ -913,9 +919,18 @@ async def bulk_assign_role(
             if not position:
                 errors.append({"user_id": uid, "reason": "no_simpro_position"})
                 continue
-            result = await create_role_from_position(position=position, actor=actor)
+            # v58.13.132s — `create_role_from_position` gated behind
+            # `SIMPRO_POSITION_ROLES_DISABLED` (default true). When
+            # disabled, response `role_id` is the 4-target bucket.
+            result = await create_role_from_position(
+                position=position, actor=actor,
+                email=target.get("email"),
+                first_name=target.get("first_name"),
+                company_id=str(target.get("company_id") or "") or None,
+                is_contractor=bool(target.get("is_contractor")),
+            )
             role_id = result["role_id"]
-            if result["created"]:
+            if result.get("created"):
                 created_role_ids.append(role_id)
             has_password = bool(target.get("password_hash"))
             set_fields: Dict[str, Any] = {

@@ -118,3 +118,53 @@
   - Created `test_v58_13_132h_forms.py` — 6/6 passing
 - **Files modified**: 10+ files (see commit diff)
 - **Web files referenced**: Forms.jsx, RoleFormsSection.jsx, forms.py, org_settings.py
+
+
+## Iteration M6i — v58.13.132i Profile: Worker Self-View
+- **Commit**: e298ffbf3fa5b08866832544e64ceaedf5760572
+- **Date**: 2026-09-06
+- **Changes**:
+  - Profile hub restructured: 8 nav rows
+  - Personal Info screen: inline editable (whitelisted fields), NOK, emergency contact
+  - Certifications list: full cert list with status pills, tap → detail
+  - Inductions list: grouped by category from /api/workers/inductions/matrix
+  - ID Card: digital wallet front+back with real QR from backend
+  - Backend: PATCH /api/me/worker-profile (self-edit + worker_change_log audit trail)
+  - Non-whitelisted field rejection verified
+  - 5 device-framed screenshots published
+  - 7/7 pytest passing + 6/6 M6h tests still green (13 total)
+  - Version bumped .132h → .132i
+- **Files modified**: workers.py (backend), 6 mobile screens, profileExtended.ts, _layout.tsx, version files
+- **Web files referenced**: workers.py, workers_inductions.py, workers_qr.py
+
+## Iteration 6 — v58.13.132cj: Mobile Onboarding Rewrite
+- **Commit**: 4331ea2
+- **Date**: 2026-09-09
+- **Changes**:
+  - Eliminated division picker ("Choose Paneltec Civil / Viatec Traffic") from launch
+  - New QR-scan device provisioning screen (welcome.tsx → QR/manual device_id entry)
+  - New PIN login screen hitting POST /api/auth/mobile/pin-login with 401/429 handling
+  - Role auto-detected from backend response (admin/paneltec_civil/viatec_traffic/external_contractor)
+  - 4 role-based home screen landings with filtered module grids
+  - Sentry native DISABLED (enableNative: false) — crash-avoidance strategy
+  - Session token in expo-secure-store (native) / AsyncStorage (web)
+  - Logout clears session but preserves device_id (→ back to PIN screen)
+  - Removed dead auth files: onboarding.tsx, login.tsx
+  - 5 device-framed screenshots: QR setup, PIN entry, PIN error, admin home, viatec home
+  - Version bumped .132ba → .132cj (mobile), .132ci → .132cj (web+SW)
+  - Ship memo: /app/memory/v58_13_132cj_mobile_onboarding_rewrite_shipped_finish_deferred.md
+- **Files modified**:
+  - app/_layout.tsx (rewrite — Sentry native disabled)
+  - app/index.tsx (rewrite — splash routing)
+  - app/(auth)/welcome.tsx (rewrite — QR provisioning)
+  - app/(auth)/pin-entry.tsx (rewrite — PIN login)
+  - app/(auth)/login.tsx (DELETED)
+  - app/(auth)/onboarding.tsx (DELETED)
+  - app/(tabs)/home.tsx (rewrite — role-based landing)
+  - app/(tabs)/profile.tsx (modified — logout → clearSession)
+  - src/services/auth.ts (rewrite — pinLogin, session management)
+  - src/lib/version.ts (bump)
+  - frontend/src/lib/version.js (bump + changelog)
+  - frontend/public/service-worker.js (bump)
+  - backend/mobile_home.py (version comment)
+- **Web files referenced**: None (backend contract from .132ci)

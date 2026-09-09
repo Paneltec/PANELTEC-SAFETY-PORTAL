@@ -2,7 +2,7 @@
   "expo": {
     "name": "Paneltec Civil Field",
     "slug": "paneltec-civil-field",
-    "version": "1.0.0",
+    "version": "1.0.7",
     "orientation": "portrait",
     "icon": "./assets/icons/icon.png",
     "scheme": "paneltec",
@@ -10,12 +10,6 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "infoPlist": {
-        "NSCameraUsageDescription": "Scan QR codes and capture hazard photos",
-        "NSPhotoLibraryUsageDescription": "Attach site photos to reports",
-        "NSFaceIDUsageDescription": "Sign in quickly with Face ID",
-        "NSLocationWhenInUseUsageDescription": "Capture GPS for site sign-on"
-      },
       "bundleIdentifier": "com.emergent.whscompliance.fv5aib"
     },
     "android": {
@@ -24,15 +18,8 @@
         "backgroundColor": "#0F172A"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "USE_BIOMETRIC",
-        "USE_FINGERPRINT",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ],
-      "package": "com.emergent.whscompliance.fv5aib"
+      "package": "com.emergent.whscompliance.fv5aib",
+      "versionCode": 138
     },
     "web": {
       "bundler": "metro",
@@ -40,28 +27,7 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-notifications",
       "expo-router",
-      "expo-image-picker",
-      "expo-secure-store",
-      [
-        "expo-local-authentication",
-        {
-          "faceIDPermission": "Sign in quickly with Face ID"
-        }
-      ],
-      [
-        "expo-location",
-        {
-          "locationWhenInUsePermission": "Capture GPS for site sign-on"
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "Scan QR codes for crew sign-on"
-        }
-      ],
       [
         "expo-splash-screen",
         {
@@ -74,6 +40,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "df0c866d-b261-4aff-a724-afdd6420389a"
+      }
+    },
+    "owner": "stephenguy"
   }
 }
