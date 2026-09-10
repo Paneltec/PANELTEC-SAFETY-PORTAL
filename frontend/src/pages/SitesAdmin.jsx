@@ -900,6 +900,8 @@ export function SiteDetail() {
   const navigate = useNavigate();
   const user = getUser();
   const canEdit = useCan()('sites', 'edit');
+  // v58.13.132dk — Persistent-URL QR generator button (admin only).
+  const canGenerateQr = (user?.role_id || '').toLowerCase() === 'admin';
   const [site, setSite] = useState(null);
   const [siteErr, setSiteErr] = useState(null);
   const [signons, setSignons] = useState([]);
@@ -990,6 +992,30 @@ export function SiteDetail() {
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-bold hover:bg-orange-600">
               <Printer /> Print site QR
             </button>
+            {canGenerateQr && (
+              <button
+                type="button"
+                data-testid={`site-detail-print-qr-signage-${site.simpro_site_id}`}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-slate-900 text-white text-sm font-bold hover:bg-slate-800"
+                onClick={async () => {
+                  try {
+                    const r = await api.get(
+                      `/sites/${encodeURIComponent(site.simpro_site_id)}/qr-signage.pdf`,
+                      { responseType: 'blob' },
+                    );
+                    const { src } = await stashInlinePdf(
+                      r.data,
+                      `${site.name || 'site'}-qr-signage.pdf`,
+                    );
+                    window.open(src, '_blank');
+                  } catch (e) {
+                    toast.error(apiError(e) || 'QR signage failed');
+                  }
+                }}
+              >
+                <Printer size={13} /> Print QR Signage
+              </button>
+            )}
           </div>
         }
       />

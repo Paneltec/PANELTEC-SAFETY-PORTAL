@@ -30,7 +30,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
-  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Plus, Trash2, Info, MapPin, Archive,
+  Truck, Search as SearchIcon, Printer, Loader2, Wifi, Radio, Trash2, Info, MapPin, Archive,
   Upload, BarChart3, Fuel, ChevronUp, ChevronDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
@@ -208,18 +208,51 @@ function ServiceStatusPill({ block, assetId }) {
 // data-source to "all" (per user's stated interaction: "if i go the
 // KIND list and choose another tab it should turn off the navixy
 // ones"). Clicking "All kinds" preserves whatever source was set.
-function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCount, sourceCounts, retiredData }) {
-  const canCreate = useCan()('assets', 'edit');
+//
+// v58.13.132dl — Sidebar KIND section replaced with TAG (Navixy).
+// The legacy vehicle/plant/tool/container KIND rows have been retired
+// in favour of the dynamic Navixy tags shipped in `.132dj`. The
+// TAG section is fed by `distinctTags` (list) + `tagsByVehicle`
+// (map used for per-tag counts) and is bi-directionally wired with
+// the top-of-table `tagFilter` dropdown — clicking a tag row in the
+// sidebar drives the same state that powers the header select, and
+// vice-versa. `filter.kind` / `filter.sub_type` are left INTACT for
+// URL deep-links and backend query support (existing callers can
+// still pass `?kind=vehicle`); the sidebar just no longer surfaces
+// them. `Reset filters` now clears the tag selection alongside the
+// other dimensions. Retired/Sold + Data source + Service due bands
+// preserved verbatim.
+function FilterTree({ data, filter, setFilter, loading, serviceDueCount, sourceCounts, retiredData, distinctTags, tagsByVehicle, tagFilter, setTagFilter }) {
+  // v58.13.132dl — Per-tag row counts derived from the live
+  // tagsByVehicle map. Falls back to zeros before the Navixy fetch
+  // resolves so the skeleton stays quiet. Hooks must precede any
+  // early return per rules-of-hooks.
+  const tagCounts = useMemo(() => {
+    const out = {};
+    if (!tagsByVehicle) return out;
+    for (const label of Object.values(tagsByVehicle)) {
+      if (!label) continue;
+      out[label] = (out[label] || 0) + 1;
+    }
+    return out;
+  }, [tagsByVehicle]);
+  const totalTagged = useMemo(
+    () => (tagsByVehicle ? Object.values(tagsByVehicle).filter(Boolean).length : 0),
+    [tagsByVehicle],
+  );
   if (loading) return <div className="text-xs text-slate-400 p-4">Loading tree…</div>;
   if (!data) return <div className="text-xs text-slate-400 p-4">No categories yet.</div>;
   const src = filter.data_source || 'all';
   const setSrc = (s) => setFilter({ ...filter, data_source: s });
-  const chooseKind = (kind) => {
-    // v58.13.128 — Clicking any KIND clears the Retired/Sold view.
-    if (kind === null) {
-      setFilter({ ...filter, kind: null, sub_type: null, retired_only: false });
+  const chooseTag = (tag) => {
+    // v58.13.132dl — Clicking any TAG clears Retired/Sold view and
+    // resets data_source to "all" (same interaction contract as the
+    // legacy KIND rows). `tag` === null → "All tags".
+    if (tag === null) {
+      setTagFilter?.('');
     } else {
-      setFilter({ ...filter, kind, sub_type: null, data_source: 'all', retired_only: false });
+      setFilter({ ...filter, data_source: 'all', retired_only: false });
+      setTagFilter?.(tag);
     }
   };
   const chooseRetired = () => {
@@ -227,10 +260,13 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
     // clears the specific kind filter so all retired assets show mixed.
     setFilter({ ...filter, retired_only: true, kind: null, sub_type: null });
   };
-  const resetAll = () => setFilter({
-    kind: null, sub_type: null, navixy_only: false,
-    service_due: false, data_source: 'all', retired_only: false,
-  });
+  const resetAll = () => {
+    setFilter({
+      kind: null, sub_type: null, navixy_only: false,
+      service_due: false, data_source: 'all', retired_only: false,
+    });
+    setTagFilter?.('');
+  };
   return (
     <div className="space-y-1" data-testid="fleet-filter-tree">
       {/* v58.13.125 — DATA SOURCE dimension. Radio (mutually
@@ -279,69 +315,45 @@ function FilterTree({ data, filter, setFilter, loading, onAddAsset, serviceDueCo
       </div>
 
       <div className="text-xs font-bold uppercase tracking-wider text-slate-500 px-2 pt-2 flex items-center justify-between">
-        <span>Kind</span>
+        <span>Tag</span>
         <button type="button" onClick={resetAll}
                 data-testid="fleet-filter-reset"
                 className="text-[10px] font-semibold text-violet-700 hover:text-violet-900 hover:underline normal-case tracking-normal">
           Reset filters
         </button>
       </div>
+      {/* v58.13.132dl — TAG rows (Navixy). Bi-directionally wired
+          with the top-of-table `fleet-tag-filter` dropdown. */}
       <button
         type="button"
-        onClick={() => chooseKind(null)}
-        data-testid="fleet-filter-kind-all"
+        onClick={() => chooseTag(null)}
+        data-testid="fleet-filter-tag-all"
         className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
-          !filter.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
+          !tagFilter ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
         }`}
       >
-        <span>All kinds</span>
-        <span className="tabular-nums text-xs opacity-80">{data.total}</span>
+        <span>All tags</span>
+        <span className="tabular-nums text-xs opacity-80">{totalTagged || data.total}</span>
       </button>
-      {data.kinds.map((k) => (
-        <div key={k.kind}>
-          <div className="w-full flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => chooseKind(k.kind)}
-              data-testid={`fleet-filter-kind-${k.kind}`}
-              className={`flex-1 text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
-                filter.kind === k.kind ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-100'
-              }`}
-            >
-              <span className="capitalize">{k.kind}</span>
-              <span className="tabular-nums text-xs opacity-80">{k.total}</span>
-            </button>
-            {canCreate && (
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); onAddAsset?.(k.kind); }}
-                data-testid={`fleet-filter-add-${k.kind}`}
-                title={`Add a new ${k.kind}`}
-                className="p-1 rounded hover:bg-emerald-50 text-emerald-700 hover:text-emerald-800"
-              >
-                <Plus size={12} />
-              </button>
-            )}
-          </div>
-          {filter.kind === k.kind && (
-            <div className="ml-3 mt-1 space-y-0.5 border-l border-slate-200 pl-2">
-              {Object.entries(k.sub_types).sort((a, b) => b[1] - a[1]).map(([st, n]) => (
-                <button
-                  key={st}
-                  type="button"
-                  onClick={() => setFilter({ ...filter, sub_type: filter.sub_type === st ? null : st })}
-                  data-testid={`fleet-filter-subtype-${st.toLowerCase().replace(/\s+/g,'-')}`}
-                  className={`w-full text-left px-2 py-1 rounded text-xs flex items-center justify-between ${
-                    filter.sub_type === st ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <span>{displaySubtype(st)}</span>
-                  <span className="tabular-nums text-[10px] opacity-60">{n}</span>
-                </button>
-              ))}
-            </div>
-          )}
+      {(distinctTags || []).length === 0 && (
+        <div className="px-3 py-2 text-[11px] text-slate-400 italic" data-testid="fleet-filter-tags-empty">
+          No Navixy tags yet — vehicles show once tags land in Navixy.
         </div>
+      )}
+      {(distinctTags || []).map((tag) => (
+        <button
+          key={tag}
+          type="button"
+          onClick={() => chooseTag(tag)}
+          data-testid={`fleet-filter-tag-${tag.toLowerCase().replace(/\s+/g, '-')}`}
+          title={tag}
+          className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
+            tagFilter === tag ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-slate-100'
+          }`}
+        >
+          <span className="truncate">{tag}</span>
+          <span className="tabular-nums text-xs opacity-80 shrink-0 ml-2">{tagCounts[tag] ?? 0}</span>
+        </button>
       ))}
       {/* v58.13.128 — Retired / Sold synthetic KIND row. Segregates
           retired assets from the active list. Clicking flips
@@ -524,16 +536,25 @@ const _natCmp = (a, b) => _NATCOLLATOR.compare(a || '', b || '');
 const _lowerCmp = (a, b) =>
   (a || '').toString().toLowerCase().localeCompare((b || '').toString().toLowerCase());
 
-// Extractors — one per sortable column. Return `null` to mean "empty:
-// always sort to bottom regardless of direction" (standard UX).
-const _SORT_EXTRACTORS = {
+// v58.13.132dj — Extractors + comparators for the Tag column
+// (populated at read time from the live Navixy fetch — see
+// `/fleet/navixy/tags`). The extractor closes over the `tagsByVehicle`
+// map so we can keep the sort signature stable.
+function _makeSortExtractors(tagsByVehicle) {
+  return {
+    ..._SORT_EXTRACTORS_STATIC,
+    tag: (r) => (tagsByVehicle && tagsByVehicle[r.id]) || null,
+  };
+}
+
+// Static extractors (Tag is spliced in at call site).
+const _SORT_EXTRACTORS_STATIC = {
   rego: (r) => {
     const rs = r.rego_serial;
     if (rs && !/^\d{10,}$/.test(rs)) return rs;
     return r.name || null;
   },
   name: (r) => r.name || r.description || null,
-  kind: (r) => r.kind || null,
   sub_type: (r) => displaySubtype(r.asset_type || r.sub_type) || null,
   status: (r) => r.status || null,
   service: (r, statuses) => {
@@ -545,15 +566,15 @@ const _SORT_EXTRACTORS = {
 const _SORT_COMPARATORS = {
   rego:     _natCmp,
   name:     _lowerCmp,
-  kind:     _lowerCmp,
+  tag:      _lowerCmp,
   sub_type: _lowerCmp,
   status:   _lowerCmp,
   service:  (a, b) => (a - b),
 };
 
-function _sortRows(rows, statuses, sortKey, sortDir) {
+function _sortRows(rows, statuses, sortKey, sortDir, extractors) {
   if (!sortKey) return rows;
-  const extract = _SORT_EXTRACTORS[sortKey];
+  const extract = extractors[sortKey];
   const cmp = _SORT_COMPARATORS[sortKey];
   if (!extract || !cmp) return rows;
   const dir = sortDir === 'desc' ? -1 : 1;
@@ -597,16 +618,22 @@ function SortableTh({ label, sortKey, currentKey, currentDir, onSort, className 
   );
 }
 
-function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch }) {
+function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, total, limit, setPage, setMapAsset, registerQ, onClearSearch, tagsByVehicle, tagsLoading, tagsError, distinctTags, tagFilter, setTagFilter, isAdmin }) {
   const canDelete = useCan()('assets', 'delete');
   const totalPages = Math.max(1, Math.ceil(total / limit));
 
   // v58.13.132bm — URL-synced sort state. Default: rego / asc.
+  // v58.13.132dj — Kind column replaced by Tag (Navixy). Sort key
+  // `kind` migrated to `tag`; legacy `?sort=kind:*` URLs are folded
+  // into `tag`.
   const [searchParams, setSearchParams] = useSearchParams();
   const rawSort = searchParams.get('sort') || 'rego:asc';
   const [sortKeyRaw, sortDirRaw] = rawSort.split(':');
-  const validKeys = ['rego', 'name', 'kind', 'sub_type', 'status', 'service'];
-  const sortKey = validKeys.includes(sortKeyRaw) ? sortKeyRaw : 'rego';
+  const validKeys = ['rego', 'name', 'tag', 'sub_type', 'status', 'service'];
+  const legacyKind = sortKeyRaw === 'kind';
+  const sortKey = legacyKind
+    ? 'tag'
+    : (validKeys.includes(sortKeyRaw) ? sortKeyRaw : 'rego');
   const sortDir = sortDirRaw === 'desc' ? 'desc' : 'asc';
 
   const applySort = (key) => {
@@ -621,13 +648,51 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
     setSearchParams(next, { replace: true });
   };
 
+  const extractors = React.useMemo(
+    () => _makeSortExtractors(tagsByVehicle),
+    [tagsByVehicle],
+  );
+
   const sortedRows = React.useMemo(
-    () => _sortRows(rows, statuses, sortKey, sortDir),
-    [rows, statuses, sortKey, sortDir],
+    () => _sortRows(rows, statuses, sortKey, sortDir, extractors),
+    [rows, statuses, sortKey, sortDir, extractors],
   );
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid="fleet-register-table">
+      {/* v58.13.132dj — Tag filter dropdown + Navixy unavailability
+          banner. Sits above the sortable header so admins can slice
+          the register by Navixy tag before scanning. */}
+      <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center gap-2 flex-wrap">
+        <label className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+          Tag
+          <select
+            value={tagFilter || ''}
+            onChange={(e) => setTagFilter(e.target.value)}
+            data-testid="fleet-tag-filter"
+            className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium normal-case tracking-normal text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
+          >
+            <option value="">All tags</option>
+            {(distinctTags || []).map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+        {tagsLoading && (
+          <span className="text-[11px] text-slate-400" data-testid="fleet-tag-filter-loading">
+            Fetching Navixy tags…
+          </span>
+        )}
+        {!tagsLoading && tagsError && isAdmin && (
+          <span
+            data-testid="fleet-tag-filter-error"
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border border-amber-300 bg-amber-50 text-amber-900"
+            title={tagsError}
+          >
+            ⚠ Navixy tags unavailable
+          </span>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
@@ -636,7 +701,7 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
               <th className="px-2 py-2 w-8"></th>
               <SortableTh label="Rego"              sortKey="rego"     currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
               <SortableTh label="Name / description" sortKey="name"    currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
-              <SortableTh label="Kind"              sortKey="kind"     currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
+              <SortableTh label="Tag"               sortKey="tag"      currentKey={sortKey} currentDir={sortDir} onSort={applySort} testid="fleet-sort-tag" />
               <SortableTh label="Sub-type"          sortKey="sub_type" currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
               <SortableTh label="Status"            sortKey="status"   currentKey={sortKey} currentDir={sortDir} onSort={applySort} />
               <SortableTh
@@ -727,7 +792,21 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
                   </span>
                 </td>
                 <td className="px-3 py-2 text-slate-700 max-w-md truncate">{r.name || r.description || '—'}</td>
-                <td className="px-3 py-2"><KindPill kind={r.kind} /></td>
+                <td className="px-3 py-2" data-testid={`fleet-tag-cell-${r.id}`}>
+                  {tagsLoading ? (
+                    <span className="inline-block h-3 w-14 rounded bg-slate-200 animate-pulse" data-testid={`fleet-tag-skeleton-${r.id}`} />
+                  ) : tagsByVehicle && tagsByVehicle[r.id] ? (
+                    <span
+                      className="inline-flex items-center px-3 py-1 rounded-full text-[11px] font-semibold border border-emerald-200 bg-emerald-100 text-emerald-800 max-w-[200px] truncate"
+                      data-testid={`fleet-tag-pill-${r.id}`}
+                      title={tagsByVehicle[r.id]}
+                    >
+                      {tagsByVehicle[r.id]}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 text-xs" data-testid={`fleet-tag-empty-${r.id}`}>—</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-slate-600 text-xs">{displaySubtype(r.asset_type || r.sub_type)}</td>
                 <td className="px-3 py-2">
                   <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase ${
@@ -807,7 +886,50 @@ export default function FleetRegister() {
   const { role } = usePermissions();
   const isAdmin = role === 'admin';
   const [fuelImportOpen, setFuelImportOpen] = useState(false);
+  // v58.13.132dl — Fleet Register vs Live Board tabs. Register is
+  // the default; Live Board embeds the Navixy live board in an
+  // iframe (with graceful "Open in new tab" fallback if the parent
+  // origin refuses to frame). Replaces the .120f
+  // <FleetLiveDashboards> collapsible banner — the tab is a
+  // superset. Backend `/api/fleet/live-dashboards` endpoints are
+  // preserved so any external consumer keeps working.
+  const [viewMode, setViewMode] = useState('register');
+  const NAVIXY_LIVE_BOARD_URL =
+    'https://track.gpstrackeraustralia.com/#/user-app/5719';
+  const [liveBoardBlocked, setLiveBoardBlocked] = useState(false);
+  // v58.13.132dj — Live Navixy tag map (populated from
+  // `GET /fleet/navixy/tags`). Read-time overlay onto register rows;
+  // no local cache table, no write-back.
+  const [tagsByVehicle, setTagsByVehicle] = useState(null);
+  const [distinctTags, setDistinctTags] = useState([]);
+  const [tagsLoading, setTagsLoading] = useState(true);
+  const [tagsError, setTagsError] = useState(null);
+  const [tagFilter, setTagFilter] = useState('');  // '' = All tags
   const LIMIT = 50;
+
+  useEffect(() => {
+    let cancelled = false;
+    setTagsLoading(true);
+    api.get('/fleet/navixy/tags')
+      .then((r) => {
+        if (cancelled) return;
+        const map = {};
+        for (const it of (r.data?.items || [])) {
+          if (it && it.vehicle_id) map[it.vehicle_id] = it.tag_label;
+        }
+        setTagsByVehicle(map);
+        setDistinctTags(r.data?.distinct_tags || []);
+        setTagsError(r.data?.error || null);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setTagsByVehicle({});
+        setDistinctTags([]);
+        setTagsError(apiError(e) || 'Navixy tags unavailable');
+      })
+      .finally(() => { if (!cancelled) setTagsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Probe the feature flag via the /categories 404 signal.
   useEffect(() => {
@@ -1042,14 +1164,88 @@ export default function FleetRegister() {
         </div>
       </div>
 
-      {/* v58.13.120f — Fleet Live Dashboards banner. Mounts whenever any
-          asset on the current page is Navixy-linked. Component
-          self-fetches and persists collapsed state. */}
-      {hasNavixyOnPage && (
-        <div data-testid="fleet-live-dashboards-banner">
-          <FleetLiveDashboards />
+      {/* v58.13.132dl — Register vs Live Board tab bar. */}
+      <div
+        role="tablist"
+        aria-label="Fleet view mode"
+        className="inline-flex rounded-full border border-slate-300 bg-slate-100 p-0.5 mb-3"
+        data-testid="fleet-view-tabs"
+      >
+        {[
+          { key: 'register', label: 'Register',  tid: 'fleet-view-tab-register' },
+          { key: 'live',     label: 'Live Board', tid: 'fleet-view-tab-live' },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={viewMode === tab.key}
+            data-testid={tab.tid}
+            onClick={() => setViewMode(tab.key)}
+            className={`px-4 py-1 rounded-full text-xs font-semibold transition ${
+              viewMode === tab.key
+                ? 'bg-white shadow text-blue-700 ring-1 ring-blue-100'
+                : 'text-slate-600 hover:text-slate-800'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {viewMode === 'live' ? (
+        <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden" data-testid="fleet-live-board">
+          {liveBoardBlocked ? (
+            <div className="p-8 text-center" data-testid="fleet-live-board-fallback">
+              <div className="text-sm font-semibold text-slate-800 mb-2">
+                This live board can't be embedded here.
+              </div>
+              <div className="text-xs text-slate-500 mb-4">
+                Navixy blocks framing on this origin. Open the live board in a new tab instead.
+              </div>
+              <a
+                href={NAVIXY_LIVE_BOARD_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="fleet-live-board-open-tab"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700"
+              >
+                Open in new tab ↗
+              </a>
+            </div>
+          ) : (
+            <iframe
+              src={NAVIXY_LIVE_BOARD_URL}
+              title="Navixy Live Board"
+              data-testid="fleet-live-board-iframe"
+              className="w-full block"
+              style={{ height: 800, border: 0 }}
+              onError={() => setLiveBoardBlocked(true)}
+              onLoad={(e) => {
+                // Attempt to detect blocked framing — most browsers
+                // still fire `load` even when framing is refused, but
+                // the iframe body ends up empty. We can't read across
+                // origin, so this is a best-effort heuristic: if the
+                // iframe never navigates away from `about:blank`,
+                // flip to the fallback branch.
+                try {
+                  const win = e.currentTarget.contentWindow;
+                  if (win && win.location && win.location.href === 'about:blank') {
+                    setLiveBoardBlocked(true);
+                  }
+                } catch (_e) {
+                  // Cross-origin access denied is the expected happy
+                  // path when framing succeeded — swallow silently.
+                }
+              }}
+            />
+          )}
         </div>
-      )}
+      ) : (
+      <>
+      {/* v58.13.132dl — FleetLiveDashboards banner retired in favour
+          of the Live Board tab. Backend endpoints preserved for
+          external consumers. */}
 
       <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-4">
         <aside className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -1057,9 +1253,12 @@ export default function FleetRegister() {
             data={categories}
             filter={filter}
             setFilter={(f) => { setFilter(f); setPage(1); }}
-            onAddAsset={openAddAsset}
             serviceDueCount={(statusCounts.amber || 0) + (statusCounts.red || 0)}
             retiredData={categories?.retired}
+            distinctTags={distinctTags}
+            tagsByVehicle={tagsByVehicle}
+            tagFilter={tagFilter}
+            setTagFilter={(t) => { setTagFilter(t); setPage(1); }}
             sourceCounts={(() => {
               // v58.13.126 — Prefer server-authoritative counts from
               // `/api/fleet/categories.source_counts`. Falls back to
@@ -1083,6 +1282,11 @@ export default function FleetRegister() {
               }
               if (filter.service_due) {
                 r = r.filter((row) => ['amber', 'red'].includes(statuses?.[row.id]?.status));
+              }
+              // v58.13.132dj — Client-side tag filter (top-of-table
+              // dropdown). Empty string = "All tags".
+              if (tagFilter && tagsByVehicle) {
+                r = r.filter((row) => tagsByVehicle[row.id] === tagFilter);
               }
               // v58.13.132by — Multi-field client-side text filter.
               // AND-across-tokens, OR-across-fields, case-insensitive,
@@ -1125,9 +1329,18 @@ export default function FleetRegister() {
             setMapAsset={setMapAsset}
             registerQ={registerQ}
             onClearSearch={() => setRegisterQ('')}
+            tagsByVehicle={tagsByVehicle}
+            tagsLoading={tagsLoading}
+            tagsError={tagsError}
+            distinctTags={distinctTags}
+            tagFilter={tagFilter}
+            setTagFilter={setTagFilter}
+            isAdmin={isAdmin}
           />
         </main>
       </div>
+      </>
+      )}
 
       {/* v58.13.127 — GPS map modal. Rendered outside <main> so the
           Leaflet container has a clean stacking context. */}

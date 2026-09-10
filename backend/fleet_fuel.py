@@ -2098,6 +2098,34 @@ async def get_transaction(
     )
     if not doc:
         raise HTTPException(status_code=404, detail="tx not found")
+    # v58.13.132dj — Preserve the raw SmartFill values as audit
+    # references, then reprice at read time to match the list
+    # endpoint + aggregations. Under `provisional_all`, EVERY row's
+    # displayed total + $/L is `litres × provisional_price`.
+    # Stored values in Mongo are never mutated.
+    raw_total = doc.get("total_price")
+    raw_dpl   = doc.get("computed_price_per_litre")
+    provisional_price, override_smartfill = await get_org_price_state(user["org_id"])
+    new_total = effective_total_price(doc, provisional_price, override_smartfill)
+    doc["total_price"] = new_total
+    try:
+        litres = float(doc.get("litres") or 0)
+    except (TypeError, ValueError):
+        litres = 0.0
+    if litres > 0:
+        doc["computed_price_per_litre"] = round(new_total / litres, 4)
+    # Audit references — always populated so the FE can display
+    # the raw SmartFill numbers alongside the effective ones when
+    # override is active.
+    doc["raw_total_price"] = raw_total
+    doc["raw_computed_price_per_litre"] = raw_dpl
+    doc["price_state"] = {
+        "provisional_price_per_litre": provisional_price,
+        "override_smartfill_real": override_smartfill,
+        "override_mode": ("provisional_all"
+                          if override_smartfill
+                          else "smartfill_with_fallback"),
+    }
     return doc
 
 

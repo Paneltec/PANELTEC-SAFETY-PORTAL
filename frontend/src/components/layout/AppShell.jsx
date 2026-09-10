@@ -584,9 +584,12 @@ const SidebarShell = ({ collapsed, canAdminNav, badges }) => (
         `paneltec-` prefix and shows only the version tail (still
         the same string exposed to the tooltip). Bottom margin
         `mb-2` keeps it visually separated from the PWA install
-        button below. */}
+        button below.
+        v58.13.132dj — Lifted ~20px higher off the bottom edge per
+        Stephen's UX brief: bottom padding pb-5 (was pb-1) so the
+        pill floats clear of the sidebar chrome on short laptops. */}
     <div
-      className={`${collapsed ? 'px-1.5' : 'px-3'} mt-auto pt-3 pb-1`}
+      className={`${collapsed ? 'px-1.5' : 'px-3'} mt-auto pt-3 pb-5`}
       data-testid="app-version-footer"
       title={RUNNING_VERSION}
     >

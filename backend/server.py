@@ -29,6 +29,7 @@ from asset_meter_history import (  # noqa: E402
     ensure_indexes as meter_history_ensure_indexes,
 )
 from asset_navixy_dashboards import router as asset_navixy_dashboards_router  # noqa: E402
+from fleet_navixy_tags import router as fleet_navixy_tags_router  # noqa: E402
 from forms_pickers import router as forms_pickers_router  # noqa: E402
 from help_routes import router as help_router  # noqa: E402
 from notifications import router as notifications_router  # noqa: E402 — v57
@@ -602,6 +603,10 @@ api.include_router(admin_purge_router)
 from session_history import router as session_history_router, ensure_indexes as session_history_ensure_indexes  # noqa: E402
 api.include_router(session_history_router)
 from sites_qr import scan_router as site_scan_router, sites_router  # noqa: E402
+from sites_qr_v132dk import (  # noqa: E402
+    sites_router as sites_qr_v132dk_router,
+    public_router as sign_on_public_router,
+)
 from sites_signon_v127 import router as sites_v127_router, me_router as me_v127_router  # noqa: E402
 from suppliers_qr import (  # noqa: E402
     scan_router as supplier_scan_router,
@@ -609,11 +614,14 @@ from suppliers_qr import (  # noqa: E402
 )
 api.include_router(site_scan_router)
 api.include_router(sites_router)
+api.include_router(sites_qr_v132dk_router)
+api.include_router(sign_on_public_router)
 api.include_router(sites_v127_router)
 api.include_router(me_v127_router)
 api.include_router(supplier_scan_router)
 api.include_router(contractors_qr_router)
 api.include_router(asset_navixy_dashboards_router)
+api.include_router(fleet_navixy_tags_router)
 api.include_router(forms_pickers_router)
 api.include_router(help_router)
 api.include_router(notifications_router)  # v57 — header bell + read tracking

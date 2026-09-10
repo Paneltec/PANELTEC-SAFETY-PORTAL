@@ -101,6 +101,24 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
   const flags = (t.anomaly_flags || []).filter((f) => f?.rule);
   const openFlags = flags.filter((f) => !f.resolved_at);
 
+  // v58.13.132dj — Provisional-override display awareness. When the
+  // org has flipped the `.132dh` toggle to `provisional_all`, the
+  // backend already reprices `total_price` + `computed_price_per_litre`
+  // at read time; we also receive `raw_total_price` and
+  // `raw_computed_price_per_litre` so the modal can surface the raw
+  // SmartFill numbers as an audit reference row.
+  const overrideActive = t.price_state?.override_mode === 'provisional_all';
+  const provPrice = t.price_state?.provisional_price_per_litre;
+  const rawTotal = t.raw_total_price;
+  const rawDpl = t.raw_computed_price_per_litre;
+  const priceHint = overrideActive
+    ? 'Provisional override'
+    : (priceMeta ? priceMeta.label : (t.price_source || '—'));
+  const dplHint = overrideActive
+    ? 'Provisional override'
+    : (isProv ? 'Provisional — awaiting real price' : 'Total ÷ Litres');
+  const priceTone = overrideActive ? 'amber' : (isProv ? 'amber' : 'slate');
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 px-4 pt-20 pb-8 overflow-y-auto"
@@ -132,6 +150,16 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
               )}
             </div>
           </div>
+          {/* v58.13.132dj — Provisional override pill (mirrors the
+              header segmented control on Fuel Reporting). */}
+          {overrideActive && !loading && (
+            <span
+              data-testid="fuel-txn-detail-override-pill"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border border-amber-400 bg-amber-100 text-amber-900"
+            >
+              ⚠ Provisional override active
+            </span>
+          )}
           <button
             type="button"
             onClick={onClose}
@@ -185,15 +213,15 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
               <Metric
                 label="Total price"
                 value={fmtDollar(t.total_price)}
-                hint={priceMeta ? priceMeta.label : (t.price_source || '—')}
-                tone={isProv ? 'amber' : 'slate'}
+                hint={priceHint}
+                tone={priceTone}
                 testId="fuel-txn-detail-total-price"
               />
               <Metric
                 label="$/L (computed)"
                 value={dpl != null ? fmtDollar(dpl, 3) : '—'}
-                hint={isProv ? 'Provisional — awaiting real price' : 'Total ÷ Litres'}
-                tone={isProv ? 'amber' : 'slate'}
+                hint={dplHint}
+                tone={priceTone}
                 testId="fuel-txn-detail-dpl"
               />
             </div>
@@ -257,17 +285,61 @@ export default function FuelTransactionDetailModal({ txn, txnId, onClose }) {
                 value={t.from_site || <span className="text-slate-300">—</span>}
                 testId="fuel-txn-detail-from-site"
               />
-              {t.unit_price != null && (
+              {/* v58.13.132dl — Portal unit price row respects the
+                  `.132dh` override policy. When the org has flipped
+                  `override_mode` to `provisional_all`, we surface the
+                  provisional price (e.g. $2.250) with an amber sub-
+                  label so admins never see stale SmartFill numbers
+                  masquerading as the authoritative unit price. When
+                  the toggle is `smartfill_with_fallback` (default),
+                  the raw portal value is shown as before. Read-time
+                  only — no DB mutation. */}
+              {(t.unit_price != null || (overrideActive && provPrice != null)) && (
                 <Row
                   icon={<CircleDollarSign size={12} />}
                   label="Portal unit price"
                   value={
-                    <>
-                      <span className="font-mono">{fmtDollar(t.unit_price, 3)}</span>
-                      <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
-                        stale — ignored, we use total ÷ litres
+                    overrideActive && provPrice != null ? (
+                      <span data-testid="fuel-txn-detail-portal-unit-price-override">
+                        <span className="font-mono">{fmtDollar(provPrice, 3)}</span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-800">
+                          Provisional override active — reflects fuel price policy
+                        </span>
                       </span>
-                    </>
+                    ) : (
+                      <span data-testid="fuel-txn-detail-portal-unit-price">
+                        <span className="font-mono">{fmtDollar(t.unit_price, 3)}</span>
+                        <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-400">
+                          stale — ignored, we use total ÷ litres
+                        </span>
+                      </span>
+                    )
+                  }
+                />
+              )}
+              {/* v58.13.132dj — Raw SmartFill audit reference row.
+                  Only rendered when the .132dh toggle is
+                  `provisional_all` AND the raw values are actually
+                  distinguishable from the displayed ones. Preserves
+                  the SmartFill numbers as evidence of what was
+                  imported, without mutating the DB. */}
+              {overrideActive && rawTotal != null && (
+                <Row
+                  icon={<CircleDollarSign size={12} />}
+                  label="SmartFill raw (reference)"
+                  value={
+                    <span data-testid="fuel-txn-detail-smartfill-raw">
+                      <span className="font-mono">{fmtDollar(rawTotal)}</span>
+                      {rawDpl != null && (
+                        <>
+                          <span className="mx-1 text-slate-400">@</span>
+                          <span className="font-mono">{fmtDollar(rawDpl, 3)}/L</span>
+                        </>
+                      )}
+                      <span className="ml-2 text-[10px] uppercase tracking-wider text-amber-800">
+                        Displayed values reflect provisional override (${fmtNum(provPrice, 3)}/L)
+                      </span>
+                    </span>
                   }
                 />
               )}
