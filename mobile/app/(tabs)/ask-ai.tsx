@@ -1,34 +1,90 @@
 /**
- * Ask AI — v58.13.132cz
- * Placeholder for AI assistant.
- * ⚠️ MOCKED: No AI endpoint wired yet.
+ * Ask AI — v58.13.132dc
+ * Wired to POST /api/mobile/ai/ask (real endpoint).
+ * Handles 429 rate limit with retry-after countdown.
  */
-import React, { useState } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View, Text, StyleSheet, TextInput, TouchableOpacity,
-  KeyboardAvoidingView, Platform, ScrollView,
+  KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
+import { clearSession } from '../../src/services/auth';
+import { authPost } from '../../src/services/apiClient';
 
 const SUGGESTIONS = [
   'What pre-starts are due today?',
   'Show my expiring certifications',
   'Any open hazards on my sites?',
-  'Summarise yesterday\'s incidents',
+  'Summarise yesterday\u0027s incidents',
 ];
+
+interface AskResponse {
+  answer: string;
+  sources: string[];
+}
 
 export default function AskAIScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [query, setQuery] = useState('');
   const [response, setResponse] = useState<string | null>(null);
+  const [sources, setSources] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [rateLimitCountdown, setRateLimitCountdown] = useState(0);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const handleSend = () => {
-    if (!query.trim()) return;
-    setResponse(`[MOCKED RESPONSE]\n\nYou asked: "${query}"\n\nThis is a placeholder. The AI assistant endpoint is not yet wired. When connected, it will query your organisation's compliance data and return real-time answers.`);
-    setQuery('');
-  };
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current);
+    };
+  }, []);
+
+  const startCountdown = useCallback((seconds: number) => {
+    setRateLimitCountdown(seconds);
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    countdownRef.current = setInterval(() => {
+      setRateLimitCountdown((prev) => {
+        if (prev <= 1) {
+          if (countdownRef.current) clearInterval(countdownRef.current);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  const handleSend = useCallback(async () => {
+    const q = query.trim();
+    if (!q) return;
+    if (rateLimitCountdown > 0) return;
+
+    setLoading(true);
+    setError('');
+    setResponse(null);
+    setSources([]);
+
+    const res = await authPost<AskResponse>('/api/mobile/ai/ask', { prompt: q });
+
+    if (res.ok) {
+      setResponse(res.data.answer);
+      setSources(res.data.sources || []);
+      setQuery('');
+    } else if ('expired' in res && res.expired) {
+      await clearSession();
+      router.replace('/(auth)/pin-entry');
+    } else if ('rateLimited' in res && res.rateLimited) {
+      startCountdown(res.retryAfter || 30);
+      setError(`Rate limited. Try again in ${res.retryAfter || 30}s.`);
+    } else {
+      setError('error' in res ? res.error : 'Request failed');
+    }
+    setLoading(false);
+  }, [query, rateLimitCountdown, router, startCountdown]);
 
   return (
     <KeyboardAvoidingView
@@ -39,15 +95,35 @@ export default function AskAIScreen() {
         <View style={s.header}>
           <Ionicons name="sparkles" size={20} color={Colors.orange} />
           <Text style={s.headerTitle}>Ask AI</Text>
-          <View style={s.mockPill}>
-            <Text style={s.mockPillText}>MOCKED</Text>
-          </View>
         </View>
 
         <ScrollView contentContainerStyle={s.scrollContent} keyboardShouldPersistTaps="handled">
-          {!response ? (
+          {loading ? (
+            <View style={s.loadingWrap}>
+              <ActivityIndicator size="large" color={Colors.orange} />
+              <Text style={s.loadingText}>Thinking...</Text>
+            </View>
+          ) : response ? (
+            <View style={s.responseCard}>
+              <View style={s.responseHeader}>
+                <Ionicons name="sparkles" size={16} color={Colors.orange} />
+                <Text style={s.responseLabel}>AI Response</Text>
+              </View>
+              <Text style={s.responseText}>{response}</Text>
+              {sources.length > 0 && (
+                <View style={s.sourcesSection}>
+                  <Text style={s.sourcesLabel}>Sources</Text>
+                  {sources.map((src, i) => (
+                    <Text key={i} style={s.sourceText}>• {src}</Text>
+                  ))}
+                </View>
+              )}
+              <TouchableOpacity testID="ai-clear-btn" style={s.clearBtn} onPress={() => { setResponse(null); setSources([]); }}>
+                <Text style={s.clearBtnText}>Ask another question</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
             <>
-              {/* Welcome */}
               <View style={s.welcomeSection}>
                 <View style={s.aiCircle}>
                   <Ionicons name="sparkles" size={36} color={Colors.orange} />
@@ -58,7 +134,6 @@ export default function AskAIScreen() {
                 </Text>
               </View>
 
-              {/* Suggestions */}
               <Text style={s.suggestLabel}>SUGGESTED QUESTIONS</Text>
               {SUGGESTIONS.map((q, i) => (
                 <TouchableOpacity
@@ -72,20 +147,19 @@ export default function AskAIScreen() {
                 </TouchableOpacity>
               ))}
             </>
-          ) : (
-            <View style={s.responseCard}>
-              <View style={s.responseHeader}>
-                <Ionicons name="sparkles" size={16} color={Colors.orange} />
-                <Text style={s.responseLabel}>AI Response</Text>
-              </View>
-              <Text style={s.responseText}>{response}</Text>
-              <View style={s.mockBadge}>
-                <Ionicons name="flask-outline" size={12} color="#DC2626" />
-                <Text style={s.mockBadgeText}>No AI endpoint — response is mocked</Text>
-              </View>
-              <TouchableOpacity testID="ai-clear-btn" style={s.clearBtn} onPress={() => setResponse(null)}>
-                <Text style={s.clearBtnText}>Ask another question</Text>
-              </TouchableOpacity>
+          )}
+
+          {error ? (
+            <View style={s.errorBanner}>
+              <Ionicons name="alert-circle" size={14} color={Colors.error} />
+              <Text style={s.errorText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {rateLimitCountdown > 0 && (
+            <View style={s.countdownBanner}>
+              <Ionicons name="timer-outline" size={16} color={Colors.warning} />
+              <Text style={s.countdownText}>Rate limit — retry in {rateLimitCountdown}s</Text>
             </View>
           )}
         </ScrollView>
@@ -101,14 +175,19 @@ export default function AskAIScreen() {
             placeholderTextColor={Colors.textTertiary}
             returnKeyType="send"
             onSubmitEditing={handleSend}
+            editable={!loading && rateLimitCountdown === 0}
           />
           <TouchableOpacity
             testID="ai-send-btn"
-            style={[s.sendBtn, !query.trim() && s.sendBtnDisabled]}
+            style={[s.sendBtn, (!query.trim() || loading || rateLimitCountdown > 0) && s.sendBtnDisabled]}
             onPress={handleSend}
-            disabled={!query.trim()}
+            disabled={!query.trim() || loading || rateLimitCountdown > 0}
           >
-            <Ionicons name="send" size={18} color={Colors.white} />
+            {loading ? (
+              <ActivityIndicator size="small" color={Colors.white} />
+            ) : (
+              <Ionicons name="send" size={18} color={Colors.white} />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -123,12 +202,11 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12,
   },
   headerTitle: { color: Colors.white, fontSize: 22, fontWeight: '800', flex: 1 },
-  mockPill: {
-    backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-  },
-  mockPillText: { fontSize: 8, fontWeight: '800', color: '#DC2626', letterSpacing: 0.5 },
 
   scrollContent: { padding: 16, paddingBottom: 100 },
+
+  loadingWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, gap: 12 },
+  loadingText: { color: 'rgba(255,255,255,0.5)', fontSize: 14, fontWeight: '600' },
 
   welcomeSection: { alignItems: 'center', paddingVertical: 32 },
   aiCircle: {
@@ -162,8 +240,25 @@ const s = StyleSheet.create({
   responseHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   responseLabel: { fontSize: 13, fontWeight: '700', color: Colors.orange },
   responseText: { fontSize: 14, color: Colors.ink, lineHeight: 22 },
+  sourcesSection: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.borderLight },
+  sourcesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
+  sourceText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
   clearBtn: { alignSelf: 'center', marginTop: 16 },
   clearBtnText: { fontSize: 13, fontWeight: '600', color: Colors.orange, textDecorationLine: 'underline' },
+
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginTop: 12,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorText: { fontSize: 11, fontWeight: '600', color: '#DC2626', flex: 1 },
+
+  countdownBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: Colors.warningSoft, borderRadius: 10, padding: 10, marginTop: 8,
+    borderWidth: 1, borderColor: '#F59E0B30',
+  },
+  countdownText: { fontSize: 11, fontWeight: '700', color: Colors.warning },
 
   inputBar: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
@@ -182,11 +277,4 @@ const s = StyleSheet.create({
     backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.4 },
-
-  mockBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 8, marginTop: 12,
-    borderWidth: 1, borderColor: '#FECACA',
-  },
-  mockBadgeText: { fontSize: 10, fontWeight: '700', color: '#DC2626' },
 });

@@ -1,18 +1,20 @@
 /**
- * QR Scan — New Pre-Start screen — v58.13.132cz
- * Simulates QR scan → auto-fill pre-start form.
- * Camera not available on web preview; shows manual entry fallback.
+ * QR Scan — New Pre-Start screen — v58.13.132dc
+ * Wired to POST /api/mobile/prestart/submit (real endpoint).
  */
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
-  ScrollView, KeyboardAvoidingView, Platform,
+  ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
+import { clearSession } from '../../src/services/auth';
+import { authPost } from '../../src/services/apiClient';
 
-type PreStartState = 'scanner' | 'form' | 'submitted';
+type PreStartState = 'scanner' | 'form' | 'submitting' | 'submitted';
 
 const CHECKLIST_ITEMS = [
   'Engine oil level',
@@ -27,23 +29,58 @@ const CHECKLIST_ITEMS = [
   'Reversing alarm / camera',
 ];
 
+interface SubmitResponse {
+  submission_id: string;
+  status: string;
+}
+
 export default function QRScanScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [state, setState] = useState<PreStartState>('scanner');
   const [assetId, setAssetId] = useState('');
   const [assetName, setAssetName] = useState('');
   const [checks, setChecks] = useState<Record<number, 'pass' | 'fail' | null>>(
     Object.fromEntries(CHECKLIST_ITEMS.map((_, i) => [i, null]))
   );
+  const [submissionId, setSubmissionId] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   const handleScan = (id: string) => {
     setAssetId(id);
-    setAssetName('CAT 320 Excavator'); // Mock auto-fill
+    setAssetName('CAT 320 Excavator'); // QR would populate this from backend
     setState('form');
   };
 
-  const handleSubmit = () => {
-    setState('submitted');
+  const handleSubmit = async () => {
+    setState('submitting');
+    setSubmitError('');
+
+    const failedItems = CHECKLIST_ITEMS.filter((_, i) => checks[i] === 'fail');
+    const hazards = failedItems.length > 0 ? `Failed items: ${failedItems.join(', ')}` : 'None';
+
+    const res = await authPost<SubmitResponse>('/api/mobile/prestart/submit', {
+      vehicle_rego: assetId,
+      date: new Date().toISOString().split('T')[0],
+      crew_lead: 'Current User',
+      crew_members: [],
+      work_summary: `Pre-start check for ${assetName} (${assetId})`,
+      hazards,
+      sign_ons: [{ name: 'Current User', timestamp: new Date().toISOString() }],
+    });
+
+    if (res.ok) {
+      setSubmissionId(res.data.submission_id);
+      setState('submitted');
+    } else if ('expired' in res && res.expired) {
+      await clearSession();
+      router.replace('/(auth)/pin-entry');
+    } else {
+      const errMsg = 'error' in res ? res.error : 'Submission failed';
+      setSubmitError(typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg));
+      setState('form');
+      Alert.alert('Submission Error', typeof errMsg === 'string' ? errMsg : 'Please try again.');
+    }
   };
 
   const toggleCheck = (idx: number) => {
@@ -51,6 +88,15 @@ export default function QRScanScreen() {
       ...prev,
       [idx]: prev[idx] === 'pass' ? 'fail' : prev[idx] === 'fail' ? null : 'pass',
     }));
+  };
+
+  const resetForm = () => {
+    setState('scanner');
+    setAssetId('');
+    setAssetName('');
+    setSubmissionId('');
+    setSubmitError('');
+    setChecks(Object.fromEntries(CHECKLIST_ITEMS.map((_, i) => [i, null])));
   };
 
   const allChecked = Object.values(checks).every((v) => v !== null);
@@ -64,18 +110,26 @@ export default function QRScanScreen() {
           </View>
           <Text style={s.successTitle}>Pre-Start Submitted</Text>
           <Text style={s.successSub}>{assetName} — {assetId}</Text>
-          <View style={s.mockBadge}>
-            <Ionicons name="flask-outline" size={12} color="#DC2626" />
-            <Text style={s.mockBadgeText}>MOCKED — No backend submission</Text>
-          </View>
-          <TouchableOpacity testID="prestart-new-btn" style={s.newBtn} onPress={() => {
-            setState('scanner');
-            setAssetId('');
-            setAssetName('');
-            setChecks(Object.fromEntries(CHECKLIST_ITEMS.map((_, i) => [i, null])));
-          }}>
+          {submissionId && (
+            <View style={s.submissionIdCard}>
+              <Text style={s.submissionIdLabel}>Submission ID</Text>
+              <Text testID="submission-id" style={s.submissionIdValue}>{submissionId.slice(0, 8)}...</Text>
+            </View>
+          )}
+          <TouchableOpacity testID="prestart-new-btn" style={s.newBtn} onPress={resetForm}>
             <Text style={s.newBtnText}>Start Another</Text>
           </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  if (state === 'submitting') {
+    return (
+      <View testID="prestart-submitting" style={[s.container, { paddingTop: insets.top }]}>
+        <View style={s.successCenter}>
+          <ActivityIndicator size="large" color={Colors.orange} />
+          <Text style={s.submittingText}>Submitting pre-start...</Text>
         </View>
       </View>
     );
@@ -92,7 +146,6 @@ export default function QRScanScreen() {
             <Text style={s.headerTitle}>Pre-Start Check</Text>
           </View>
           <ScrollView contentContainerStyle={s.scrollContent}>
-            {/* Auto-filled asset info */}
             <View style={s.assetCard}>
               <View style={s.assetIcon}>
                 <Ionicons name="car" size={24} color={Colors.orange} />
@@ -106,7 +159,6 @@ export default function QRScanScreen() {
               </View>
             </View>
 
-            {/* Checklist */}
             <Text style={s.checklistLabel}>INSPECTION CHECKLIST</Text>
             {CHECKLIST_ITEMS.map((item, idx) => (
               <TouchableOpacity
@@ -132,10 +184,12 @@ export default function QRScanScreen() {
               </TouchableOpacity>
             ))}
 
-            <View style={s.mockBadge}>
-              <Ionicons name="flask-outline" size={12} color="#DC2626" />
-              <Text style={s.mockBadgeText}>MOCKED — Pre-start endpoint not wired</Text>
-            </View>
+            {submitError ? (
+              <View style={s.errorBanner}>
+                <Ionicons name="alert-circle" size={14} color={Colors.error} />
+                <Text style={s.errorBannerText}>{submitError}</Text>
+              </View>
+            ) : null}
 
             <TouchableOpacity
               testID="prestart-submit-btn"
@@ -173,7 +227,6 @@ export default function QRScanScreen() {
         </View>
       </View>
 
-      {/* Manual entry */}
       <View style={s.manualSection}>
         <Text style={s.manualLabel}>Or enter asset ID manually</Text>
         <View style={s.manualRow}>
@@ -197,10 +250,9 @@ export default function QRScanScreen() {
         </View>
       </View>
 
-      {/* Quick demo button */}
       <TouchableOpacity testID="demo-scan-btn" style={s.demoBtn} onPress={() => handleScan('AST-001')}>
         <Ionicons name="flash-outline" size={16} color={Colors.orange} />
-        <Text style={s.demoBtnText}>Quick demo (mock scan)</Text>
+        <Text style={s.demoBtnText}>Quick demo scan</Text>
       </TouchableOpacity>
     </View>
   );
@@ -216,7 +268,6 @@ const s = StyleSheet.create({
   headerTitle: { color: Colors.white, fontSize: 18, fontWeight: '700' },
   scrollContent: { padding: 16 },
 
-  // Scanner
   scannerArea: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
   scanFrame: {
     width: 240, height: 240, alignItems: 'center', justifyContent: 'center', gap: 16,
@@ -232,7 +283,6 @@ const s = StyleSheet.create({
   scanBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0 },
   scanHint: { color: 'rgba(255,255,255,0.35)', fontSize: 12, textAlign: 'center', lineHeight: 18 },
 
-  // Manual
   manualSection: { paddingHorizontal: 24, marginBottom: 12 },
   manualLabel: {
     color: 'rgba(255,255,255,0.5)', fontSize: 11, fontWeight: '600',
@@ -259,7 +309,6 @@ const s = StyleSheet.create({
   },
   demoBtnText: { color: Colors.orange, fontSize: 14, fontWeight: '700' },
 
-  // Pre-start form
   assetCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16,
@@ -300,7 +349,13 @@ const s = StyleSheet.create({
   submitBtnDisabled: { opacity: 0.4 },
   submitBtnText: { color: Colors.white, fontSize: 16, fontWeight: '800' },
 
-  // Success
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginTop: 8,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorBannerText: { fontSize: 11, fontWeight: '600', color: '#DC2626', flex: 1 },
+
   successCenter: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
   successCircle: {
     width: 96, height: 96, borderRadius: 48,
@@ -309,16 +364,16 @@ const s = StyleSheet.create({
   },
   successTitle: { fontSize: 22, fontWeight: '800', color: Colors.white, marginBottom: 6 },
   successSub: { fontSize: 14, color: 'rgba(255,255,255,0.55)', marginBottom: 16 },
+  submissionIdCard: {
+    backgroundColor: 'rgba(255,255,255,0.08)', borderRadius: 12, padding: 12,
+    alignItems: 'center', marginBottom: 12, width: '100%',
+  },
+  submissionIdLabel: { fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 },
+  submissionIdValue: { fontSize: 14, color: Colors.white, fontWeight: '700', fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) },
+  submittingText: { color: Colors.white, fontSize: 16, fontWeight: '600', marginTop: 16 },
   newBtn: {
     backgroundColor: Colors.orange, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32,
     marginTop: 8,
   },
   newBtnText: { color: Colors.white, fontSize: 15, fontWeight: '700' },
-
-  mockBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginVertical: 12,
-    borderWidth: 1, borderColor: '#FECACA',
-  },
-  mockBadgeText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
 });

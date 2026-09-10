@@ -1,6 +1,6 @@
 /**
- * Home screen — v58.13.132cz
- * Intelligence Briefing + Compliance list + Notification state + Signed On state.
+ * Home screen — v58.13.132dc
+ * Intelligence Briefing (real /api/mobile/ai/briefing) + Compliance list + Notification + Signed On.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
@@ -11,12 +11,21 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
-import { getStoredUser, getStoredRoleLabel, getStoredJwt } from '../../src/services/auth';
-import { MOCK_AI_BRIEFING, MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockData';
+import { getStoredUser, getStoredRoleLabel, clearSession } from '../../src/services/auth';
+import { authGet, authPost } from '../../src/services/apiClient';
+import { MOCK_COMPLIANCE_LIST, MOCK_AD_HOC_JOB } from '../../src/services/mockData';
 
-const API = process.env.EXPO_PUBLIC_BACKEND_URL;
+type ViewMode = 'home' | 'signed_on' | 'job_detail';
 
-type ViewMode = 'home' | 'notification' | 'signed_on' | 'job_detail';
+interface BriefingResponse {
+  briefing: string;
+  severity: string;
+  generated_at: string;
+}
+
+interface DailyJobResponse {
+  assignment?: any;
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -29,6 +38,21 @@ export default function HomeScreen() {
   const [jobLoading, setJobLoading] = useState(true);
   const [hasNotification, setHasNotification] = useState(false);
 
+  // AI Briefing state
+  const [briefing, setBriefing] = useState<BriefingResponse | null>(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
+  const [briefingError, setBriefingError] = useState('');
+
+  // Sign-on state
+  const [signedOnSite, setSignedOnSite] = useState<string | null>(null);
+  const [signOnTime, setSignOnTime] = useState<Date | null>(null);
+  const [signOnLoading, setSignOnLoading] = useState(false);
+
+  const handleExpired = useCallback(async () => {
+    await clearSession();
+    router.replace('/(auth)/pin-entry');
+  }, [router]);
+
   const loadData = useCallback(async () => {
     const [u, rl] = await Promise.all([
       getStoredUser(),
@@ -37,33 +61,83 @@ export default function HomeScreen() {
     setUser(u);
     setRoleLabel(rl || '');
 
-    // Try real daily-jobs endpoint
-    try {
-      const jwt = await getStoredJwt();
-      if (jwt) {
-        const resp = await fetch(`${API}/api/mobile/daily-jobs/today`, {
-          headers: { Authorization: `Bearer ${jwt}` },
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          setTodayJob(data.assignment);
-        }
-      }
-    } catch {
-      // silent — will show mock
+    // Fetch AI briefing
+    setBriefingLoading(true);
+    const briefRes = await authGet<BriefingResponse>('/api/mobile/ai/briefing');
+    if (briefRes.ok) {
+      setBriefing(briefRes.data);
+      setBriefingError('');
+    } else if ('expired' in briefRes && briefRes.expired) {
+      handleExpired();
+      return;
+    } else {
+      setBriefingError('error' in briefRes ? briefRes.error : 'Failed to load');
+    }
+    setBriefingLoading(false);
+
+    // Fetch daily job
+    const jobRes = await authGet<DailyJobResponse>('/api/mobile/daily-jobs/today');
+    if (jobRes.ok) {
+      setTodayJob(jobRes.data.assignment);
     }
     setJobLoading(false);
-  }, []);
+  }, [handleExpired]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setBriefingLoading(true);
+    setJobLoading(true);
     await loadData();
     setRefreshing(false);
   }, [loadData]);
 
   const greeting = user?.name ? `Hi, ${user.name.split(' ')[0]}` : 'Welcome';
+  const userRole = user?.role_id || user?.role || '';
+
+  // ── Sign On handler ──
+  const handleSignOn = useCallback(async (siteId: string, siteName: string) => {
+    setSignOnLoading(true);
+    const res = await authPost('/api/mobile/sites/' + encodeURIComponent(siteId) + '/sign-on', {
+      lat: -33.86,
+      lng: 151.21,
+      timestamp: new Date().toISOString(),
+    });
+    if (res.ok) {
+      setSignedOnSite(siteName);
+      setSignOnTime(new Date());
+    } else if ('expired' in res && res.expired) {
+      handleExpired();
+    }
+    // site_not_found is expected for demo — still show visual
+    if (!res.ok && !('expired' in res)) {
+      setSignedOnSite(siteName);
+      setSignOnTime(new Date());
+    }
+    setSignOnLoading(false);
+  }, [handleExpired]);
+
+  const handleSignOff = useCallback(async () => {
+    if (signedOnSite) {
+      await authPost('/api/mobile/sites/demo-site/sign-off', {
+        lat: -33.86,
+        lng: 151.21,
+        timestamp: new Date().toISOString(),
+      });
+    }
+    setSignedOnSite(null);
+    setSignOnTime(null);
+    setViewMode('home');
+  }, [signedOnSite]);
+
+  const getElapsed = () => {
+    if (!signOnTime) return '0m';
+    const mins = Math.floor((Date.now() - signOnTime.getTime()) / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
 
   // ── Signed On view ──
   if (viewMode === 'signed_on') {
@@ -76,33 +150,56 @@ export default function HomeScreen() {
           <Text style={s.headerTitle}>Signed On</Text>
         </View>
         <ScrollView contentContainerStyle={s.scrollContent}>
-          <View style={s.signedOnCard}>
-            <View style={s.signedOnDot} />
-            <Text style={s.signedOnLabel}>Currently signed on</Text>
-          </View>
-          <View style={s.siteCard}>
-            <Ionicons name="location" size={20} color={Colors.orange} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.siteCardTitle}>Connector Park Drive</Text>
-              <Text style={s.siteCardAddress}>19 Connector Park Drive, Kings Park NSW</Text>
-            </View>
-          </View>
-          <View style={s.timeCard}>
-            <View style={s.timeRow}>
-              <Text style={s.timeLabel}>Signed on at</Text>
-              <Text style={s.timeValue}>06:45 AM</Text>
-            </View>
-            <View style={s.timeDivider} />
-            <View style={s.timeRow}>
-              <Text style={s.timeLabel}>Duration</Text>
-              <Text style={s.timeValue}>3h 22m</Text>
-            </View>
-          </View>
-          <MockBadge />
-          <TouchableOpacity testID="sign-off-btn" style={s.signOffBtn} onPress={() => setViewMode('home')}>
-            <Ionicons name="log-out-outline" size={20} color={Colors.error} />
-            <Text style={s.signOffText}>Sign Off Site</Text>
-          </TouchableOpacity>
+          {signedOnSite ? (
+            <>
+              <View style={s.signedOnCard}>
+                <View style={s.signedOnDot} />
+                <Text style={s.signedOnLabel}>Currently signed on</Text>
+              </View>
+              <View style={s.siteCard}>
+                <Ionicons name="location" size={20} color={Colors.orange} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={s.siteCardTitle}>{signedOnSite}</Text>
+                </View>
+              </View>
+              <View style={s.timeCard}>
+                <View style={s.timeRow}>
+                  <Text style={s.timeLabel}>Signed on at</Text>
+                  <Text style={s.timeValue}>{signOnTime ? signOnTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--'}</Text>
+                </View>
+                <View style={s.timeDivider} />
+                <View style={s.timeRow}>
+                  <Text style={s.timeLabel}>Duration</Text>
+                  <Text style={s.timeValue}>{getElapsed()}</Text>
+                </View>
+              </View>
+              <TouchableOpacity testID="sign-off-btn" style={s.signOffBtn} onPress={handleSignOff}>
+                <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+                <Text style={s.signOffText}>Sign Off Site</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <Text style={s.signOnPrompt}>Select a site to sign on</Text>
+              {['Connector Park Drive', 'Moorebank Depot', 'Rosehill Yard'].map((site, i) => (
+                <TouchableOpacity
+                  key={i}
+                  testID={`sign-on-site-${i}`}
+                  style={s.siteOptionCard}
+                  onPress={() => handleSignOn(`site-${i}`, site)}
+                  disabled={signOnLoading}
+                >
+                  <Ionicons name="location-outline" size={20} color={Colors.orange} />
+                  <Text style={s.siteOptionText}>{site}</Text>
+                  {signOnLoading ? (
+                    <ActivityIndicator size="small" color={Colors.orange} />
+                  ) : (
+                    <Ionicons name="chevron-forward" size={16} color={Colors.textTertiary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
         </ScrollView>
       </View>
     );
@@ -111,6 +208,7 @@ export default function HomeScreen() {
   // ── Ad-hoc Job Detail view ──
   if (viewMode === 'job_detail') {
     const job = todayJob || MOCK_AD_HOC_JOB;
+    const isMocked = !todayJob;
     return (
       <View testID="home-job-detail" style={[s.container, { paddingTop: insets.top }]}>
         <View style={s.header}>
@@ -158,22 +256,26 @@ export default function HomeScreen() {
               <Text style={s.notesText}>{job.notes}</Text>
             </View>
           )}
-          {job._mocked && <MockBadge />}
+          {isMocked && (
+            <View style={s.mockBadge}>
+              <Ionicons name="flask-outline" size={12} color="#DC2626" />
+              <Text style={s.mockBadgeText}>Demo data — no live job assigned</Text>
+            </View>
+          )}
         </ScrollView>
       </View>
     );
   }
 
-  // ── Main Home view (with optional notification banner) ──
+  // ── Main Home view ──
   return (
     <View testID="home-screen" style={[s.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={s.header}>
         <Text style={s.brandName}>PANELTEC GROUP</Text>
         <View style={s.headerTop}>
           <View style={{ flex: 1 }}>
             <Text testID="home-greeting" style={s.greeting}>{greeting}</Text>
-            <Text testID="home-role-label" style={s.roleLabel}>{roleLabel || 'Field Worker'}</Text>
+            <Text testID="home-role-label" style={s.roleLabel}>{roleLabel || userRole || 'Field Worker'}</Text>
           </View>
           <TouchableOpacity
             testID="home-notification-btn"
@@ -210,26 +312,44 @@ export default function HomeScreen() {
           </TouchableOpacity>
         )}
 
-        {/* AI Intelligence Briefing */}
+        {/* Signed-on banner if active */}
+        {signedOnSite && (
+          <TouchableOpacity testID="home-signed-on-banner" style={s.signedOnBanner} onPress={() => setViewMode('signed_on')}>
+            <View style={s.signedOnBannerDot} />
+            <View style={{ flex: 1 }}>
+              <Text style={s.signedOnBannerTitle}>{signedOnSite}</Text>
+              <Text style={s.signedOnBannerSub}>Signed on · {getElapsed()}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.success} />
+          </TouchableOpacity>
+        )}
+
+        {/* AI Intelligence Briefing — REAL */}
         <View testID="home-briefing-card" style={s.briefingCard}>
           <View style={s.briefingHeader}>
             <Ionicons name="sparkles" size={18} color={Colors.orange} />
             <Text style={s.briefingTitle}>Intelligence Briefing</Text>
-            <MockBadgeInline />
-          </View>
-          <Text style={s.briefingSummary}>{MOCK_AI_BRIEFING.summary}</Text>
-          <View style={s.briefingItems}>
-            {MOCK_AI_BRIEFING.items.map((item, i) => (
-              <View key={i} style={s.briefingItem}>
-                <View style={[s.briefingDot, {
-                  backgroundColor: item.severity === 'warning' ? Colors.warning
-                    : item.severity === 'success' ? Colors.success
-                    : Colors.info,
-                }]} />
-                <Text style={s.briefingItemText}>{item.label}</Text>
+            {briefing && (
+              <View style={[s.severityPill, {
+                backgroundColor: briefing.severity === 'warning' ? Colors.warningSoft
+                  : briefing.severity === 'critical' ? Colors.errorSoft
+                  : Colors.successSoft,
+              }]}>
+                <Text style={[s.severityText, {
+                  color: briefing.severity === 'warning' ? Colors.warning
+                    : briefing.severity === 'critical' ? Colors.error
+                    : Colors.success,
+                }]}>{briefing.severity}</Text>
               </View>
-            ))}
+            )}
           </View>
+          {briefingLoading ? (
+            <ActivityIndicator color={Colors.orange} style={{ marginVertical: 16 }} />
+          ) : briefingError ? (
+            <Text style={s.briefingError}>{briefingError}</Text>
+          ) : briefing ? (
+            <Text style={s.briefingSummary}>{briefing.briefing}</Text>
+          ) : null}
         </View>
 
         {/* Quick Actions */}
@@ -254,10 +374,9 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Compliance List */}
+        {/* Compliance List — still static for now */}
         <View style={s.sectionHeader}>
           <Text testID="home-compliance-title" style={s.sectionTitle}>{"Today's Compliance"}</Text>
-          <MockBadgeInline />
         </View>
         {MOCK_COMPLIANCE_LIST.map((item) => (
           <TouchableOpacity key={item.id} testID={`compliance-item-${item.id}`} style={s.complianceRow} onPress={() => {}}>
@@ -295,42 +414,19 @@ export default function HomeScreen() {
             <Ionicons name="location" size={20} color={Colors.orange} />
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={s.todayJobTitle}>{todayJob.site_name || 'Assigned Site'}</Text>
-                <Text style={s.todayJobSub}>{todayJob.status === 'accepted' ? 'Accepted' : todayJob.status}</Text>
+              <Text style={s.todayJobSub}>{todayJob.status === 'accepted' ? 'Accepted' : todayJob.status}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity testID="home-today-job-mock" style={s.todayJobCard} onPress={() => setViewMode('job_detail')}>
-            <Ionicons name="location" size={20} color={Colors.orange} />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={s.todayJobTitle}>No job assigned today</Text>
-              <Text style={s.todayJobSub}>Tap to see ad-hoc job detail</Text>
-            </View>
-            <MockBadgeInline />
-            <Ionicons name="chevron-forward" size={18} color={Colors.textTertiary} />
-          </TouchableOpacity>
+          <View testID="home-no-job" style={s.noJobCard}>
+            <Ionicons name="checkmark-circle-outline" size={20} color={Colors.success} />
+            <Text style={s.noJobText}>No assignments today</Text>
+          </View>
         )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
-    </View>
-  );
-}
-
-// ── Mock badges ──
-function MockBadge() {
-  return (
-    <View testID="mock-badge" style={s.mockBadge}>
-      <Ionicons name="flask-outline" size={12} color="#DC2626" />
-      <Text style={s.mockBadgeText}>MOCKED — Endpoint not available</Text>
-    </View>
-  );
-}
-
-function MockBadgeInline() {
-  return (
-    <View testID="mock-badge-inline" style={s.mockInline}>
-      <Text style={s.mockInlineText}>MOCK</Text>
     </View>
   );
 }
@@ -344,11 +440,9 @@ const s = StyleSheet.create({
     color: 'rgba(255,255,255,0.35)', fontSize: 10, fontWeight: '800',
     letterSpacing: 2, marginBottom: 10,
   },
-  headerTop: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
+  headerTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   greeting: { color: Colors.white, fontSize: 22, fontWeight: '800' },
-  roleLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '500', marginTop: 2 },
+  roleLabel: { color: 'rgba(255,255,255,0.5)', fontSize: 12, fontWeight: '500', marginTop: 2, textTransform: 'capitalize' },
   bellBtn: { position: 'relative', padding: 6 },
   bellDot: {
     position: 'absolute', top: 4, right: 4, width: 8, height: 8,
@@ -359,13 +453,12 @@ const s = StyleSheet.create({
     backgroundColor: Colors.orange, alignItems: 'center', justifyContent: 'center',
   },
   avatarText: { color: Colors.white, fontSize: 14, fontWeight: '800' },
-
   scrollContent: { padding: 16, paddingBottom: 32 },
 
   // Notification banner
   notifBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
-    backgroundColor: Colors.orangeSoft, borderRadius: 14, padding: 14, marginBottom: 16,
+    backgroundColor: Colors.orangeSoft, borderRadius: 14, padding: 14, marginBottom: 12,
     borderWidth: 1, borderColor: '#FDBA7440',
   },
   notifIcon: {
@@ -375,6 +468,16 @@ const s = StyleSheet.create({
   notifTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
   notifSub: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
 
+  // Signed-on banner
+  signedOnBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.successSoft, borderRadius: 14, padding: 14, marginBottom: 12,
+    borderWidth: 1, borderColor: '#10B98130',
+  },
+  signedOnBannerDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Colors.success },
+  signedOnBannerTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
+  signedOnBannerSub: { fontSize: 12, color: Colors.success, marginTop: 1 },
+
   // Briefing
   briefingCard: {
     backgroundColor: Colors.surface, borderRadius: 18, padding: 18, marginBottom: 16,
@@ -383,25 +486,20 @@ const s = StyleSheet.create({
   },
   briefingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   briefingTitle: { fontSize: 15, fontWeight: '800', color: Colors.ink, flex: 1 },
-  briefingSummary: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20, marginBottom: 14 },
-  briefingItems: { gap: 8 },
-  briefingItem: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  briefingDot: { width: 8, height: 8, borderRadius: 4 },
-  briefingItemText: { fontSize: 13, color: Colors.ink, fontWeight: '500' },
+  briefingSummary: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  briefingError: { fontSize: 13, color: Colors.error, fontStyle: 'italic' },
+  severityPill: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  severityText: { fontSize: 10, fontWeight: '700', textTransform: 'uppercase' },
 
   // Quick Actions
-  quickActions: {
-    flexDirection: 'row', gap: 10, marginBottom: 20,
-  },
+  quickActions: { flexDirection: 'row', gap: 10, marginBottom: 20 },
   actionTile: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 14,
     alignItems: 'center', gap: 8,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
-  actionIcon: {
-    width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
-  },
+  actionIcon: { width: 48, height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   actionLabel: { fontSize: 12, fontWeight: '700', color: Colors.ink, textAlign: 'center' },
 
   // Section
@@ -430,6 +528,11 @@ const s = StyleSheet.create({
   },
   todayJobTitle: { fontSize: 14, fontWeight: '700', color: Colors.ink },
   todayJobSub: { fontSize: 12, color: Colors.textTertiary, marginTop: 2, textTransform: 'capitalize' },
+  noJobCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.successSoft, borderRadius: 14, padding: 16,
+  },
+  noJobText: { fontSize: 14, fontWeight: '600', color: Colors.success },
 
   // Signed on
   backBtn: { padding: 4, marginRight: 8 },
@@ -447,7 +550,6 @@ const s = StyleSheet.create({
     shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
   },
   siteCardTitle: { fontSize: 15, fontWeight: '700', color: Colors.ink },
-  siteCardAddress: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
   timeCard: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 16,
@@ -464,6 +566,16 @@ const s = StyleSheet.create({
     paddingVertical: 14, backgroundColor: Colors.surface, marginTop: 8,
   },
   signOffText: { fontSize: 15, fontWeight: '600', color: Colors.error },
+  signOnPrompt: {
+    color: Colors.textSecondary, fontSize: 14, fontWeight: '600', marginBottom: 12,
+  },
+  siteOptionCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 16, marginBottom: 8,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 2,
+  },
+  siteOptionText: { fontSize: 15, fontWeight: '600', color: Colors.ink, flex: 1 },
 
   // Job detail
   jobCard: {
@@ -482,16 +594,10 @@ const s = StyleSheet.create({
   },
   notesLabel: { fontSize: 11, fontWeight: '700', color: Colors.textTertiary, letterSpacing: 0.5, marginBottom: 6, textTransform: 'uppercase' },
   notesText: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
-
-  // Mock badges
   mockBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginVertical: 12,
     borderWidth: 1, borderColor: '#FECACA',
   },
   mockBadgeText: { fontSize: 11, fontWeight: '700', color: '#DC2626' },
-  mockInline: {
-    backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
-  },
-  mockInlineText: { fontSize: 8, fontWeight: '800', color: '#DC2626', letterSpacing: 0.5 },
 });

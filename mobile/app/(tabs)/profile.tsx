@@ -1,10 +1,10 @@
 /**
- * Profile — v58.13.132cz
- * ⚠️ MOCKED: /api/users/me returns 401. Uses stored session + mock fallback.
+ * Profile — v58.13.132dc
+ * Wired to GET /api/auth/me (real endpoint). Falls back to stored session.
  */
 import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert,
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -12,28 +12,59 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
 import Wordmark from '../../src/components/Wordmark';
 import { getStoredUser, getStoredRoleLabel, clearSession } from '../../src/services/auth';
-import { MOCK_USER_PROFILE } from '../../src/services/mockData';
+import { authGet } from '../../src/services/apiClient';
 import { MOBILE_BUNDLE_VERSION } from '../../src/lib/version';
+
+interface MeResponse {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  role_id: string;
+  org_id: string;
+  activation_status: string;
+  company_id?: string;
+  created_at?: string;
+  effective_permissions?: Record<string, Record<string, boolean>>;
+  [key: string]: unknown;
+}
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [roleLabel, setRoleLabel] = useState('');
-  const [usingMock, setUsingMock] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [dataSource, setDataSource] = useState<'api' | 'stored' | 'none'>('none');
 
   const loadProfile = useCallback(async () => {
-    const storedUser = await getStoredUser();
-    const rl = await getStoredRoleLabel();
-    if (storedUser?.name) {
-      setUser(storedUser);
-      setUsingMock(false);
+    setLoading(true);
+
+    // Try real /api/auth/me first
+    const res = await authGet<MeResponse>('/api/auth/me');
+    if (res.ok) {
+      setUser(res.data);
+      setDataSource('api');
+      const rl = await getStoredRoleLabel();
+      setRoleLabel(rl || res.data.role_id || res.data.role || '');
+    } else if ('expired' in res && res.expired) {
+      await clearSession();
+      router.replace('/(auth)/pin-entry');
+      return;
     } else {
-      setUser(MOCK_USER_PROFILE);
-      setUsingMock(true);
+      // Fall back to stored session data
+      const storedUser = await getStoredUser();
+      const rl = await getStoredRoleLabel();
+      if (storedUser?.name) {
+        setUser(storedUser);
+        setDataSource('stored');
+      } else {
+        setDataSource('none');
+      }
+      setRoleLabel(rl || '');
     }
-    setRoleLabel(rl || '');
-  }, []);
+    setLoading(false);
+  }, [router]);
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
@@ -55,6 +86,15 @@ export default function ProfileScreen() {
     ? user.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
   const fullName = user?.name || 'Unknown User';
+  const userRole = roleLabel || user?.role_id || user?.role || user?.position || 'Worker';
+
+  if (loading) {
+    return (
+      <View testID="profile-loading" style={[s.container, { paddingTop: insets.top, justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color={Colors.orange} />
+      </View>
+    );
+  }
 
   return (
     <View testID="profile-screen" style={[s.container, { paddingTop: insets.top }]}>
@@ -66,20 +106,25 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flex: 1, marginLeft: 14 }}>
             <Text testID="profile-name" style={s.headerName} numberOfLines={1}>{fullName}</Text>
-            <Text testID="profile-role" style={s.headerRole}>{roleLabel || user?.position || 'Worker'}</Text>
-            {user?.email && <Text style={s.headerEmail}>{user.email}</Text>}
+            <Text testID="profile-role" style={s.headerRole}>{userRole}</Text>
+            {user?.email && <Text testID="profile-email" style={s.headerEmail}>{user.email}</Text>}
           </View>
         </View>
-        {usingMock && (
-          <View style={s.mockBanner}>
-            <Ionicons name="flask-outline" size={12} color="#DC2626" />
-            <Text style={s.mockBannerText}>/api/users/me → 401. Using stored session data.</Text>
+        {dataSource === 'api' && (
+          <View style={s.liveBanner}>
+            <Ionicons name="checkmark-circle" size={12} color={Colors.success} />
+            <Text style={s.liveBannerText}>Live from /api/auth/me</Text>
+          </View>
+        )}
+        {dataSource === 'stored' && (
+          <View style={s.storedBanner}>
+            <Ionicons name="phone-portrait-outline" size={12} color={Colors.warning} />
+            <Text style={s.storedBannerText}>Showing cached session data</Text>
           </View>
         )}
       </View>
 
       <ScrollView contentContainerStyle={s.scrollContent}>
-        {/* Profile sections */}
         <ProfileRow
           testID="profile-nav-personal"
           icon="person-outline"
@@ -205,14 +250,20 @@ const s = StyleSheet.create({
   },
   avatarText: { color: Colors.white, fontSize: 22, fontWeight: '800' },
   headerName: { color: Colors.white, fontSize: 20, fontWeight: '700' },
-  headerRole: { color: Colors.orange, fontSize: 13, fontWeight: '600', marginTop: 2 },
+  headerRole: { color: Colors.orange, fontSize: 13, fontWeight: '600', marginTop: 2, textTransform: 'capitalize' },
   headerEmail: { color: 'rgba(255,255,255,0.35)', fontSize: 11, marginTop: 4 },
-  mockBanner: {
+  liveBanner: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 8, marginTop: 12,
-    borderWidth: 1, borderColor: '#FECACA',
+    backgroundColor: Colors.successSoft, borderRadius: 10, padding: 8, marginTop: 12,
+    borderWidth: 1, borderColor: '#10B98130',
   },
-  mockBannerText: { fontSize: 10, fontWeight: '600', color: '#DC2626', flex: 1 },
+  liveBannerText: { fontSize: 10, fontWeight: '600', color: Colors.success, flex: 1 },
+  storedBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: Colors.warningSoft, borderRadius: 10, padding: 8, marginTop: 12,
+    borderWidth: 1, borderColor: '#F59E0B30',
+  },
+  storedBannerText: { fontSize: 10, fontWeight: '600', color: Colors.warning, flex: 1 },
 
   scrollContent: { paddingBottom: 32 },
 

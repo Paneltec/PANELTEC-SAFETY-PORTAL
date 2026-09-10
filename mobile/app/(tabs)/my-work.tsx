@@ -1,120 +1,192 @@
 /**
- * My Work / My Records — v58.13.132cz
- * Shows records grouped by type (pre-starts, hazards, incidents, etc.)
- * ⚠️ MOCKED: /api/mobile/records/mine returns 404.
+ * My Work / My Records — v58.13.132dc
+ * Wired to GET /api/mobile/records/mine (real endpoint).
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../src/theme/colors';
-import { MOCK_MY_RECORDS, type RecordGroup } from '../../src/services/mockData';
+import { clearSession } from '../../src/services/auth';
+import { authGet } from '../../src/services/apiClient';
+
+interface RecordItem {
+  id: string;
+  title: string;
+  date: string;
+  status: string;
+}
+
+interface RecordGroup {
+  category: string;
+  label: string;
+  count: number;
+  items: RecordItem[];
+}
+
+interface RecordsResponse {
+  groups: RecordGroup[];
+}
+
+const CATEGORY_ICONS: Record<string, { icon: string; color: string }> = {
+  pre_start:  { icon: 'checkbox-outline', color: '#10B981' },
+  toolbox:    { icon: 'people-outline', color: '#3B82F6' },
+  incident:   { icon: 'alert-circle-outline', color: '#EF4444' },
+  inspection: { icon: 'clipboard-outline', color: '#3B82F6' },
+  general:    { icon: 'document-text-outline', color: '#64748B' },
+  near_miss:  { icon: 'warning-outline', color: '#F59E0B' },
+  hazard:     { icon: 'warning-outline', color: '#F59E0B' },
+  swms:       { icon: 'shield-checkmark-outline', color: '#8B5CF6' },
+};
 
 export default function MyWorkScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
+  const [groups, setGroups] = useState<RecordGroup[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  const toggleGroup = (type: string) => {
-    setExpanded((prev) => (prev === type ? null : type));
+  const loadRecords = useCallback(async () => {
+    const res = await authGet<RecordsResponse>('/api/mobile/records/mine');
+    if (res.ok) {
+      setGroups(res.data.groups || []);
+      setError('');
+    } else if ('expired' in res && res.expired) {
+      await clearSession();
+      router.replace('/(auth)/pin-entry');
+      return;
+    } else {
+      setError('error' in res ? res.error : 'Failed to load records');
+    }
+    setLoading(false);
+  }, [router]);
+
+  useEffect(() => { loadRecords(); }, [loadRecords]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadRecords();
+    setRefreshing(false);
+  }, [loadRecords]);
+
+  const toggleGroup = (cat: string) => {
+    setExpanded((prev) => (prev === cat ? null : cat));
   };
+
+  const totalRecords = groups.reduce((sum, g) => sum + g.count, 0);
 
   return (
     <View testID="my-work-screen" style={[s.container, { paddingTop: insets.top }]}>
       <View style={s.header}>
         <Text style={s.headerTitle}>My Records</Text>
-        <View style={s.mockInline}>
-          <Text style={s.mockInlineText}>MOCKED</Text>
-        </View>
       </View>
       <Text style={s.headerSub}>All your submissions grouped by type</Text>
 
-      <ScrollView contentContainerStyle={s.scrollContent}>
-        {/* Mock warning */}
-        <View style={s.mockBanner}>
-          <Ionicons name="flask-outline" size={14} color="#DC2626" />
-          <Text style={s.mockBannerText}>
-            /api/mobile/records/mine → 404. This data is mocked.
-          </Text>
+      {loading ? (
+        <View style={s.loadingWrap}>
+          <ActivityIndicator size="large" color={Colors.orange} />
+          <Text style={s.loadingText}>Loading records...</Text>
         </View>
-
-        {MOCK_MY_RECORDS.map((group: RecordGroup) => {
-          const isExpanded = expanded === group.type;
-          return (
-            <View key={group.type}>
-              <TouchableOpacity
-                testID={`record-group-${group.type}`}
-                style={s.groupCard}
-                onPress={() => toggleGroup(group.type)}
-                activeOpacity={0.7}
-              >
-                <View style={[s.groupIcon, { backgroundColor: group.color + '18' }]}>
-                  <Ionicons name={group.icon as keyof typeof Ionicons.glyphMap} size={22} color={group.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.groupLabel}>{group.label}</Text>
-                  <Text style={s.groupCount}>{group.count} record{group.count !== 1 ? 's' : ''}</Text>
-                </View>
-                <Ionicons
-                  name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                  size={18}
-                  color={Colors.textTertiary}
-                />
-              </TouchableOpacity>
-
-              {isExpanded && (
-                <View style={s.itemsContainer}>
-                  {group.items.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      testID={`record-item-${item.id}`}
-                      style={s.itemRow}
-                      onPress={() => {}}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={s.itemTitle} numberOfLines={1}>{item.title}</Text>
-                        <Text style={s.itemMeta}>
-                          {item.date} {item.site ? `· ${item.site}` : ''}
-                        </Text>
-                      </View>
-                      <View style={[s.statusPill, {
-                        backgroundColor: item.status === 'open' ? Colors.warningSoft
-                          : item.status === 'resolved' || item.status === 'closed' ? Colors.successSoft
-                          : Colors.infoSoft,
-                      }]}>
-                        <Text style={[s.statusText, {
-                          color: item.status === 'open' ? Colors.warning
-                            : item.status === 'resolved' || item.status === 'closed' ? Colors.success
-                            : Colors.info,
-                        }]}>{item.status}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                  {group.items.length < group.count && (
-                    <Text style={s.moreText}>
-                      + {group.count - group.items.length} more
-                    </Text>
-                  )}
-                </View>
-              )}
-            </View>
-          );
-        })}
-
-        {/* Summary card */}
-        <View style={s.summaryCard}>
-          <Text style={s.summaryTitle}>Total Records</Text>
-          <Text style={s.summaryCount}>
-            {MOCK_MY_RECORDS.reduce((sum, g) => sum + g.count, 0)}
-          </Text>
-          <Text style={s.summaryTypes}>
-            across {MOCK_MY_RECORDS.length} categories
-          </Text>
+      ) : error ? (
+        <View style={s.errorWrap}>
+          <Ionicons name="cloud-offline-outline" size={32} color={Colors.error} />
+          <Text style={s.errorText}>{error}</Text>
+          <TouchableOpacity testID="records-retry-btn" style={s.retryBtn} onPress={loadRecords}>
+            <Text style={s.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
         </View>
+      ) : (
+        <ScrollView
+          contentContainerStyle={s.scrollContent}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.orange]} />}
+        >
+          {groups.map((group) => {
+            const isExpanded = expanded === group.category;
+            const meta = CATEGORY_ICONS[group.category] || { icon: 'folder-outline', color: '#64748B' };
+            return (
+              <View key={group.category}>
+                <TouchableOpacity
+                  testID={`record-group-${group.category}`}
+                  style={s.groupCard}
+                  onPress={() => toggleGroup(group.category)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[s.groupIcon, { backgroundColor: meta.color + '18' }]}>
+                    <Ionicons name={meta.icon as keyof typeof Ionicons.glyphMap} size={22} color={meta.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.groupLabel}>{group.label}</Text>
+                    <Text style={s.groupCount}>{group.count} record{group.count !== 1 ? 's' : ''}</Text>
+                  </View>
+                  <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={18}
+                    color={Colors.textTertiary}
+                  />
+                </TouchableOpacity>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+                {isExpanded && (
+                  <View style={s.itemsContainer}>
+                    {group.items.slice(0, 10).map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        testID={`record-item-${item.id}`}
+                        style={s.itemRow}
+                        onPress={() => {}}
+                      >
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.itemTitle} numberOfLines={1}>{item.title}</Text>
+                          <Text style={s.itemMeta}>
+                            {new Date(item.date).toLocaleDateString()}
+                          </Text>
+                        </View>
+                        <View style={[s.statusPill, {
+                          backgroundColor: item.status === 'open' || item.status === 'draft' ? Colors.warningSoft
+                            : item.status === 'submitted' || item.status === 'completed' ? Colors.successSoft
+                            : Colors.infoSoft,
+                        }]}>
+                          <Text style={[s.statusText, {
+                            color: item.status === 'open' || item.status === 'draft' ? Colors.warning
+                              : item.status === 'submitted' || item.status === 'completed' ? Colors.success
+                              : Colors.info,
+                          }]}>{item.status}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                    {group.items.length > 10 && (
+                      <Text style={s.moreText}>
+                        + {group.count - 10} more
+                      </Text>
+                    )}
+                    {group.items.length < group.count && group.items.length <= 10 && (
+                      <Text style={s.moreText}>
+                        + {group.count - group.items.length} more in backend
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+
+          {/* Summary card */}
+          <View style={s.summaryCard}>
+            <Text style={s.summaryTitle}>Total Records</Text>
+            <Text style={s.summaryCount}>{totalRecords}</Text>
+            <Text style={s.summaryTypes}>
+              across {groups.length} categories
+            </Text>
+          </View>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -131,17 +203,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 20, marginTop: 2, marginBottom: 8,
   },
   scrollContent: { padding: 16, paddingBottom: 32 },
-
-  mockInline: {
-    backgroundColor: '#FEE2E2', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2,
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { color: 'rgba(255,255,255,0.5)', fontSize: 13 },
+  errorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 32 },
+  errorText: { color: Colors.error, fontSize: 13, textAlign: 'center' },
+  retryBtn: {
+    backgroundColor: Colors.orange, borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10,
   },
-  mockInlineText: { fontSize: 8, fontWeight: '800', color: '#DC2626', letterSpacing: 0.5 },
-  mockBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    backgroundColor: '#FEE2E2', borderRadius: 10, padding: 10, marginBottom: 14,
-    borderWidth: 1, borderColor: '#FECACA',
-  },
-  mockBannerText: { fontSize: 11, fontWeight: '600', color: '#DC2626', flex: 1 },
+  retryBtnText: { color: Colors.white, fontSize: 14, fontWeight: '700' },
 
   groupCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,

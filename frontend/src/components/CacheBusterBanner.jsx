@@ -119,21 +119,31 @@ export default function CacheBusterBanner() {
   // v58.13.24 — Version-scoped persistent dismiss check.
   const persistentlyDismissed = readDismissed(serverVersion);
 
-  // v58.13.132q_blink_hotfix — Under the new CACHE_VERSION batching
-  // policy the SW cache_version stays behind RUNNING_VERSION most of
-  // the time (only batched-ships bump the SW). Comparing serverVersion
-  // (== SW cache_version, via /api/health/version) against RUNNING_VERSION
-  // fires the toast on EVERY ship + puts a 1.2s pulseRing animation up
-  // for 5 seconds — which the user reads as "blinking every second".
+  // v58.13.132q_blink_hotfix + v58.13.132da hardened.
   //
-  // Correct compare is: SW's advertised cache_version vs. what THIS
-  // bundle expects the SW to be (EXPECTED_CACHE_VERSION). When we
-  // deliberately bump the SW, we bump EXPECTED_CACHE_VERSION in the
-  // same commit — that's the only time the toast should appear.
+  // The original .132q fix rightly moved the compare off RUNNING_VERSION
+  // (which changes every ship) onto EXPECTED_CACHE_VERSION (which only
+  // moves on batched SW bumps). That fixed the every-ship blink.
+  //
+  // .132da hardens it further: if a ship bumps RUNNING_VERSION + the
+  // SW CACHE_VERSION but forgets to bump EXPECTED_CACHE_VERSION (real
+  // regression Stephen hit at .132cz), the banner would fire in a
+  // permanent loop — server = SW = .132cz but EXPECTED stuck at .132cx,
+  // so mismatch stays true forever, and the reload button just reloads
+  // the same bundle. The user reads the banner as "You're on .132cz ·
+  // .132cz ready. Reload now" — visually claiming a match while asking
+  // for a reload. Confusing.
+  //
+  // Guard: require BOTH a mismatch against EXPECTED and a mismatch
+  // against RUNNING. When serverVersion === RUNNING_VERSION the user's
+  // bundle IS already in sync with the SW — reloading is pointless.
+  // The banner only fires when there's an actual drift the user can
+  // resolve by reloading.
   const mismatched = ready
     && serverVersion
     && EXPECTED_CACHE_VERSION
     && serverVersion !== EXPECTED_CACHE_VERSION
+    && serverVersion !== RUNNING_VERSION
     && !dismissed
     && !persistentlyDismissed
     && (Date.now() - bootTsRef.current) >= BOOT_GRACE_MS;
@@ -205,9 +215,11 @@ export default function CacheBusterBanner() {
             data-testid="cache-buster-versions">
             You&apos;re on{' '}
             <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">{RUNNING_VERSION}</code>
-            {' · '}
+            {' · '}SW cached{' '}
             <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">{serverVersion}</code>
-            {' '}ready.
+            {' · '}expected{' '}
+            <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px]">{EXPECTED_CACHE_VERSION}</code>
+            . Reload to sync.
           </div>
           <div className="mt-2 flex items-center gap-2">
             <button

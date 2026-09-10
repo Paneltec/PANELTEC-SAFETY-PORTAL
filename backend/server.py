@@ -363,7 +363,11 @@ from admin_console_pin import users_admin_router as admin_console_users_router  
 from auth_mobile_pin import router as auth_mobile_pin_router  # noqa: E402
 # v58.13.132cr / .132cx — Program Schematic overlays (admin edits).
 from program_schematic_overlays import router as program_schematic_overlays_router  # noqa: E402
+# v58.13.132db — mobile data endpoints (records/mine, ai/briefing,
+# prestart/submit, sites/sign-on|off, ai/ask).
+from mobile_data import router as mobile_data_router  # noqa: E402
 api.include_router(program_schematic_overlays_router, prefix="/program-schematic")
+api.include_router(mobile_data_router)
 api.include_router(admin_console_pin_router)
 api.include_router(auth_mobile_pin_router)
 api.include_router(admin_console_users_router)
