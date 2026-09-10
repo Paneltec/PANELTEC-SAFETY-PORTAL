@@ -340,21 +340,38 @@ function FilterTree({ data, filter, setFilter, loading, serviceDueCount, sourceC
           No Navixy tags yet — vehicles show once tags land in Navixy.
         </div>
       )}
-      {(distinctTags || []).map((tag) => (
-        <button
-          key={tag}
-          type="button"
-          onClick={() => chooseTag(tag)}
-          data-testid={`fleet-filter-tag-${tag.toLowerCase().replace(/\s+/g, '-')}`}
-          title={tag}
-          className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${
-            tagFilter === tag ? 'bg-emerald-600 text-white' : 'text-slate-700 hover:bg-slate-100'
-          }`}
-        >
-          <span className="truncate">{tag}</span>
-          <span className="tabular-nums text-xs opacity-80 shrink-0 ml-2">{tagCounts[tag] ?? 0}</span>
-        </button>
-      ))}
+      {(distinctTags || []).map((entry) => {
+        // v58.13.132dm — Sidebar renders every tag defined in Navixy
+        // (union of `/tag/list` + tags on linked vehicles). Zero-count
+        // tags dim to `text-slate-400` and show their `0` count so
+        // admins can see the full universe including tags that haven't
+        // been attached to any Fleet asset yet. Selecting a zero-count
+        // tag surfaces an empty-state hint on the register table.
+        const tag = typeof entry === 'string' ? entry : entry.label;
+        const apiCount = typeof entry === 'string' ? null : entry.count;
+        const displayCount = apiCount != null ? apiCount : (tagCounts[tag] ?? 0);
+        const isZero = displayCount === 0;
+        const isActive = tagFilter === tag;
+        const cls = isActive
+          ? 'bg-emerald-600 text-white'
+          : isZero
+            ? 'text-slate-400 hover:bg-slate-50 hover:text-slate-500'
+            : 'text-slate-700 hover:bg-slate-100';
+        return (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => chooseTag(tag)}
+            data-testid={`fleet-filter-tag-${tag.toLowerCase().replace(/\s+/g, '-')}`}
+            data-count={displayCount}
+            title={isZero ? `${tag} — no vehicles linked yet` : tag}
+            className={`w-full text-left px-3 py-1.5 rounded-md text-sm font-medium flex items-center justify-between ${cls}`}
+          >
+            <span className="truncate">{tag}</span>
+            <span className="tabular-nums text-xs opacity-80 shrink-0 ml-2">{displayCount}</span>
+          </button>
+        );
+      })}
       {/* v58.13.128 — Retired / Sold synthetic KIND row. Segregates
           retired assets from the active list. Clicking flips
           retired_only=true; expanded view shows sub-counts by
@@ -673,9 +690,19 @@ function RegisterTable({ rows, loading, onRowClick, onDelete, statuses, page, to
             className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium normal-case tracking-normal text-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-300"
           >
             <option value="">All tags</option>
-            {(distinctTags || []).map((t) => (
-              <option key={t} value={t}>{t}</option>
-            ))}
+            {(distinctTags || []).map((t) => {
+              // v58.13.132dm — `distinct_tags` now returns
+              // `[{label, count}]`. Zero-count tags (defined in Navixy
+              // but not attached to any linked vehicle) render with a
+              // "(0)" suffix so admins can spot the gap directly in
+              // the dropdown.
+              const label = typeof t === 'string' ? t : t.label;
+              const count = typeof t === 'string' ? null : t.count;
+              const suffix = count === 0 ? ' (0)' : '';
+              return (
+                <option key={label} value={label}>{label}{suffix}</option>
+              );
+            })}
           </select>
         </label>
         {tagsLoading && (
@@ -1273,6 +1300,30 @@ export default function FleetRegister() {
           />
         </aside>
         <main>
+          {/* v58.13.132dm — Zero-count tag empty-state hint. Fires
+              when admin has selected a tag that exists in Navixy but
+              has no linked Fleet vehicles yet. */}
+          {tagFilter && (() => {
+            const hit = (distinctTags || []).find(
+              (t) => (typeof t === 'string' ? t : t.label) === tagFilter,
+            );
+            const cnt = hit && typeof hit === 'object' ? hit.count : null;
+            if (cnt === 0) {
+              return (
+                <div
+                  data-testid="fleet-tag-zero-hint"
+                  className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 flex items-start gap-2"
+                >
+                  <Info size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                  <div>
+                    No vehicles linked to <span className="font-semibold text-slate-900">{tagFilter}</span> yet.
+                    Attach the tag to a tracker in Navixy and it will appear here on the next refresh.
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
           <RegisterTable
             rows={(() => {
               let r = rows;

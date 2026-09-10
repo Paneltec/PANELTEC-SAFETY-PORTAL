@@ -103,14 +103,30 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
         _cache_set(org_id, payload)
         return payload
 
-    # ── Live fetch: tags + trackers in parallel ─────────────────────
+    # ── Live fetch: tags + trackers, split so a `/tag/list` failure
+    # doesn't take down the whole endpoint. `.132dm` — the previous
+    # single-await pattern meant a `/tag/list` 5xx wiped out
+    # `/tracker/list` results too; we now degrade to
+    # linked-only tag discovery when `/tag/list` fails but
+    # `/tracker/list` succeeds.
     tag_by_id: dict[int, str] = {}
-    trackers: list[dict] = []
+    tag_list_ok = False
+    tag_data: dict = {}
+    trk_data: dict = {}
     try:
         async with httpx.AsyncClient(timeout=20) as c:
-            tag_resp = await c.post(f"{base}/v2/tag/list", json={"hash": h})
+            try:
+                tag_resp = await c.post(f"{base}/v2/tag/list", json={"hash": h})
+                tag_data = tag_resp.json() or {}
+                tag_list_ok = True
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning(
+                    "navixy /tag/list failed for org=%s: %s — falling back "
+                    "to linked-vehicle-derived tags only",
+                    org_id, exc,
+                )
+                tag_data = {}
             trk_resp = await c.post(f"{base}/v2/tracker/list", json={"hash": h})
-            tag_data = tag_resp.json() or {}
             trk_data = trk_resp.json() or {}
     except (httpx.HTTPError, ValueError) as exc:
         log.warning("navixy tag fetch failed for org=%s: %s", org_id, exc)
@@ -152,7 +168,6 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
             asset_by_tracker[str(tid)] = a["id"]
 
     items: list[dict] = []
-    seen_labels: set[str] = set()
     for tr in trackers:
         tid = tr.get("id")
         if tid is None:
@@ -191,13 +206,31 @@ async def get_navixy_tags(user: dict = Depends(get_current_user)):
             # Tag was deleted from Navixy but the binding lingered.
             continue
         items.append({"vehicle_id": vehicle_id, "tag_label": label})
-        seen_labels.add(label)
+
+    # v58.13.132dm — `distinct_tags` shape upgraded to
+    # `[{label, count}]`. Union of (a) every tag defined in Navixy
+    # (from `/v2/tag/list`) with (b) every tag observed on a linked
+    # vehicle. `count` = number of linked vehicles carrying that
+    # label. Tags defined in Navixy but not attached to any linked
+    # vehicle surface with `count: 0` so admins can see the full
+    # universe.
+    label_counts: dict[str, int] = {}
+    for it in items:
+        label_counts[it["tag_label"]] = label_counts.get(it["tag_label"], 0) + 1
+    all_labels: set[str] = set(label_counts.keys())
+    if tag_list_ok:
+        all_labels |= set(tag_by_id.values())
+    distinct_tags = [
+        {"label": lbl, "count": label_counts.get(lbl, 0)}
+        for lbl in sorted(all_labels, key=lambda s: s.lower())
+    ]
 
     payload = {
         "items": items,
         "connected": True,
         "error": None,
-        "distinct_tags": sorted(seen_labels, key=lambda s: s.lower()),
+        "distinct_tags": distinct_tags,
+        "tag_list_source": "navixy_and_linked" if tag_list_ok else "linked_only",
     }
     _cache_set(org_id, payload)
     return payload

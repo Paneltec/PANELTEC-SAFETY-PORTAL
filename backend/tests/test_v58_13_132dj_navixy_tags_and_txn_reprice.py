@@ -141,7 +141,13 @@ async def test_happy_path_maps_trackers_to_vehicles_and_first_tag_wins(caplog):
             f"asset-B-{org_id}": "SITE:METRO",
         }
         assert f"asset-C-{org_id}" not in items  # tracker w/ no tags omitted
-        assert set(out["distinct_tags"]) == {"SITE:CBD", "SITE:METRO"}
+        # v58.13.132dm — `distinct_tags` shape upgraded to
+        # `[{label, count}]`. Both tags defined in Navixy surface here
+        # even though only one linked vehicle carries each.
+        by_label = {t["label"]: t["count"] for t in out["distinct_tags"]}
+        assert set(by_label.keys()) == {"SITE:CBD", "SITE:METRO"}
+        assert by_label["SITE:CBD"] == 1
+        assert by_label["SITE:METRO"] == 1
         # And it logged a warning about the multi-tag tracker.
         assert any("multiple tags" in r.message for r in caplog.records)
     finally:
